@@ -460,7 +460,7 @@ def test_a_20k_asset_run_builds_its_pdf_and_states_cut_vex_entries(api, world, m
             s.execute(CbomCollectedAsset.__table__.insert(), rows[start:start + 2_000])
         s.commit()
     monkeypatch.setattr(ROUTE.EXPORT_SLOTS, "LOCK_DIR", str(Path(os.environ.get("TMPDIR", "/tmp")) / "w7-slots"))
-    pdf = ROUTE._report(engine, 1, run["id"])
+    pdf, _ctx = ROUTE._report(engine, 1, run["id"])
     assert pdf.startswith(b"%PDF")
     vex = json.loads(ROUTE._vex_doc(engine, 1, run["id"]))
     entry = next(v for v in vex["vulnerabilities"] if v["id"] == "ZS-CBOM-NO_PQ_KEX")

@@ -427,10 +427,13 @@ REPRODUCIBLE = {"bom.cdx.json": True, "bom.cdx.xml": True, "oscal-assessment-res
 
 def evidence_pack(*, run: CbomCollectionRun, sources: list[dict[str, Any]], at: _dt.datetime,
                   files: list[PackFile], omitted: list[dict[str, str]], head: dict[str, Any],
-                  signature: dict[str, Any] | None) -> BinaryIO:
+                  signature: dict[str, Any] | None, logo_sha256: str | None = None) -> BinaryIO:
     """Zip of ``files`` plus ``manifest.json`` with the sha256 of each, written to a temp file (at its start). Large
     files (the CycloneDX JSON and XML) are copied in from their temp files, never held whole in memory. Every time in
-    it (manifest, zip entries) is ``at``: a finished run's pack is the same bytes on every download."""
+    it (manifest, zip entries) is ``at``: a finished run's pack is the same bytes on every download.
+
+    Inputs: the run's rows, the day's judgement and build, and (``logo_sha256``) the team's report logo drawn in
+    report.pdf. The logo is recorded only when one is set, so a team without one gets today's manifest exactly."""
     meta = props(head)
     entries = []
     for name, body, media, endpoint in files:
@@ -449,10 +452,13 @@ def evidence_pack(*, run: CbomCollectionRun, sources: list[dict[str, Any]], at: 
                    "kb_version": meta.get("zs:kb_version"), "build": meta.get("zs:build"),
                    "judged_on": meta.get("zs:judged_on"), "asset_count": int(meta.get("zs:asset_count") or 0),
                    "export_cap": INV.EXPORT_CAP, "truncated": meta.get("zs:truncated") == "true",
-                   "vex_rules": f"{VEX.VEX_RULES}+{PLAN_OVERLAY}"},
+                   "vex_rules": f"{VEX.VEX_RULES}+{PLAN_OVERLAY}",
+                   **({"logo_sha256": logo_sha256} if logo_sha256 else {})},
         "files": entries,
         "endpoint_note": ("endpoint_same_bytes: the route answers with these exact bytes again (finished run; the "
-                          "same day's judgement and build). OSCAL's route stamps last-modified with the request time; "
+                          "same day's judgement and build"
+                          + ("; for report.pdf, the same team report logo" if logo_sha256 else "")
+                          + "). OSCAL's route stamps last-modified with the request time; "
                           "this copy carries the run's time."),
         "omitted": omitted,
         "signature": ({"covers": "bom.cdx.json", "alg": signature.get("alg"), "key_id": signature.get("key_id"),

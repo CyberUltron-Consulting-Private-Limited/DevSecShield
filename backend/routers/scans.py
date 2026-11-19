@@ -1,13 +1,16 @@
+import contextlib
 import json
 import os
 import tempfile
+import time
 from typing import Annotated
 
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import APIRouter, Form, UploadFile
 from fastapi import BackgroundTasks, Depends, HTTPException, Header, Query, Request, status
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import JSONResponse, Response
 from backend.utilities.ratelimit import RateLimiter
 from backend.utilities.rbac.policy import Access
 from pydantic import ValidationError
@@ -24,6 +27,11 @@ from backend.utilities.db.functions import get_messages_from_scan, return_scan_l
 from backend.utilities.db.metadata import get_scan_metadata_for_type
 from backend.utilities.db.findings import get_findings_for_scan_type, is_ticketable_finding
 from backend.utilities.pdf import UnsupportedPdfExport, prepare_pdf_export_payload, write_scan_pdf
+from backend.utilities.pdf.report_context import ReportContext
+from backend.utilities.pdf.report_http import LARGE_PDF_ROWS, log_export, options_from_request, report_headers, status_join_error
+from backend.utilities.db.finding_rows import StatusesUnavailable, StatusStoreDown, read_statuses, row_count
+from backend.utilities.team.branding import load_report_branding
+from backend.utilities.cbom_sources import export_slots as EXPORT_SLOTS
 from backend.utilities.team import (
     check_if_user_is_in_team,
 )
@@ -904,63 +912,102 @@ async def update_scan(
 
 
 # revamped ✅
-@router.get("/{team_id}/{type}/scan/{scan_id}/export",summary="Export the results of a scan", dependencies=[Depends(write_limiter), access.team("scan.read")])
+def _build_scan_report(engine, team_id: int, type: str, scan_id: int, options) -> tuple[bytes, ReportContext, int | None]:
+    """The whole export, run in a worker thread: scan row, optional status join, team logo, PDF. Sessions are opened
+    here (never shared with the event loop). Returns (pdf bytes, the filled report context, slot wait in ms or None)."""
+    with Session(engine) as session:
+        scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id).where(Scan.scan_type == type)).first()
+        if not scan:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found for specified team and scan id")
+        if scan.scan_status not in ["success"]:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan has not completed yet or failed, cannot export results")
+        if not (scan.scan_data and "results" in scan.scan_data):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan data not found for specified team and scan id")
+        raw = scan.scan_data
+        scan_data = prepare_pdf_export_payload(type, raw)
+        started_at, completed_at = scan.created_at, scan.last_updated
+
+    row_statuses = None
+    if options.statuses is not None:  # Mongo is read only when the report is filtered by status
+        try:
+            row_statuses = read_statuses(scan_id, type, raw)
+        except (StatusesUnavailable, StatusStoreDown) as exc:
+            raise status_join_error(exc) from None
+
+    with Session(engine) as session:
+        branding = load_report_branding(session, team_id)
+    ctx = ReportContext(options=options, branding=branding, row_statuses=row_statuses)
+
+    temp_pdf_file = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+    temp_pdf_path = temp_pdf_file.name
+    temp_pdf_file.close()
+    slot_wait_ms = None
+    try:
+        with contextlib.ExitStack() as stack:
+            if row_count(type, raw) >= LARGE_PDF_ROWS:
+                waited = time.monotonic()
+                try:
+                    stack.enter_context(EXPORT_SLOTS.slot())
+                except EXPORT_SLOTS.Busy:
+                    raise HTTPException(
+                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                        headers={"Retry-After": str(EXPORT_SLOTS.RETRY_AFTER_S)},
+                        detail=f"The server is busy building other large reports; retry in {EXPORT_SLOTS.RETRY_AFTER_S} s.",
+                    ) from None
+                slot_wait_ms = int((time.monotonic() - waited) * 1000)
+            try:
+                write_scan_pdf(type, scan_data, temp_pdf_path, started_at=started_at, completed_at=completed_at, ctx=ctx)
+            except UnsupportedPdfExport as e:
+                # write_scan_pdf already unlinked the temp file.
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        with open(temp_pdf_path, "rb") as fh:
+            return fh.read(), ctx, slot_wait_ms
+    finally:
+        try:
+            os.unlink(temp_pdf_path)
+        except OSError:
+            pass
+
+
+@router.get("/{team_id}/{type}/scan/{scan_id}/export",summary="Export the results of a scan as a PDF report", dependencies=[Depends(write_limiter), access.team("scan.read")])
 async def export_scan(
     type: scan_types, 
     scan_id: int, 
     team_id: int,
-    background_tasks: BackgroundTasks,
+    request: Request,
     Authorization: Annotated[str | None, Header()] = None ,
     ):
     """
-    Export the results of a scan.
+    Export the results of a scan as a PDF report.
+
+    Optional query parameters shape the report (all optional; none gives the full report):
+    ``preset`` (executive | technical | full), ``sections``, ``severities``, ``statuses`` (comma lists),
+    ``prepared_for``, ``title``, ``label`` (confidential | internal | restricted | public) and ``hide_evidence``.
+    The team's report logo, when set, appears on the cover and in every page header.
     """
+    started = time.monotonic()
     try:
         # STEP [ 0 ] : =========== Get the engine and user ======================
         engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
-        # user = User(id=1) # for testing purposes
-        
+
         # STEP [ 1 ] : =========== Check if user is in team ======================
         check_if_user_is_in_team(user.id, team_id, engine)
-        
-        
-        # STEP [ 2 ] : ======================= Get the conversation from main db and check if export_results is already populated ========================================
-        scan = None
-        scan_data = None
-        with Session(engine) as session:
-            scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id).where(Scan.scan_type == type)).first()
-            if not scan:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found for specified team and scan id")
-            if scan.scan_status not in ["success"]:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan has not completed yet or failed, cannot export results")
-            if scan.scan_data and "results" in scan.scan_data:
-                scan_data = prepare_pdf_export_payload(type, scan.scan_data)
-            else:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan data not found for specified team and scan id")
 
+        # STEP [ 2 ] : =========== Report options (422 names the parameter) ======================
+        options = options_from_request(request.query_params, "scan", scan_type=type)
 
-        
-        # STEP [ 3 ] : =========================== create a temp pdf file to create the exported scan data pdf ========================================
-        temp_pdf_file = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
-        temp_pdf_path = temp_pdf_file.name
-        temp_pdf_file.close()
-        try:
-            write_scan_pdf(type, scan_data, temp_pdf_path,
-                           started_at=scan.created_at, completed_at=scan.last_updated)
-        except UnsupportedPdfExport as e:
-            # write_scan_pdf already unlinked the temp file.
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        # STEP [ 3 ] : =========== Build off the event loop ======================
+        body, ctx, slot_wait_ms = await run_in_threadpool(_build_scan_report, engine, team_id, type, scan_id, options)
+        log_export("scan", type=type, team=team_id, id=scan_id, user=user.id, ctx=ctx, size=len(body),
+                   started=started, slot_wait_ms=slot_wait_ms)
+        return Response(content=body, media_type="application/pdf",
+                        headers=report_headers(ctx, f"{type}-scan-{scan_id}-report.pdf"))
 
-
-        # STEP [ 4 ] : =========================== return the pdf file as a response and schedule cleanup ========================================
-        background_tasks.add_task(os.unlink, temp_pdf_path)
-        return FileResponse(temp_pdf_path, media_type="application/pdf")
-    
     except HTTPException as e:
         raise e
     except Exception as e:
-        console.print(f"Error in exporting scan with id: {scan_id} for team: {team_id}: {redact(str(e))}",style="bold red", markup=False)
+        console.print(f"Error in exporting scan with id: {scan_id} for team: {team_id}: {e.__class__.__name__}",style="bold red", markup=False)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in exporting scan , please try again later")
 
 

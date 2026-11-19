@@ -7,6 +7,7 @@ from rich.console import Console
 from fastapi import Depends, FastAPI
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
+from backend.utilities.pdf.report_http import CBOM_EXPOSED_HEADERS, REPORT_EXPOSED_HEADERS
 from backend.routers.auth import router as auth_router
 from backend.routers.scans import router as scans_router
 from backend.routers.certin import router as certin_router
@@ -139,7 +140,9 @@ app = DssApp(lifespan=lifespan, dependencies=[
         allow_methods=["*"],
         allow_headers=["*"],
         # the UI can show the request id next to an error's ref (build_info.py); X-ZS-Build only where exposed
-        expose_headers=["X-ZS-Request-Id", "X-ZS-Build", "Retry-After"],  # the UI reads Retry-After on a 429
+        # Retry-After: the UI reads it on a 429. The report headers (file name, rows shown, logo applied) and the
+        # CBOM download headers (estate SHA-256, fidelity, ...) are read by the export dialog and download toasts.
+        expose_headers=["X-ZS-Request-Id", "X-ZS-Build", "Retry-After", *REPORT_EXPOSED_HEADERS, *CBOM_EXPOSED_HEADERS],
     ),
     # X-ZS-Deployment on every /cbom/node/* response (401s included), so a scan node can tell its own server apart
     Middleware(NodeDeploymentHeader),

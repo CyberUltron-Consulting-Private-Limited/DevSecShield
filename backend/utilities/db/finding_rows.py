@@ -72,6 +72,23 @@ def mongo_rows(scan_type: str, scan_results: dict) -> list[dict]:
     raise KeyError(f"no stored findings for scan type {scan_type!r}")
 
 
+def row_count(scan_type: str, scan_data: Any) -> int:
+    """How many finding rows a scan's results hold (no copies); 0 for shapes the writer does not ingest. Used to
+    decide whether a PDF build is large enough to take an export slot, so an estimate is never needed."""
+    try:
+        results = scan_data["results"]
+        if scan_type == "sast":
+            return sum(len(item["vulnerabilities"]) for item in results)
+        if scan_type == "mcp":
+            return sum(len(entry["vulnerabilities"]) for group in ("tools", "prompts", "resources")
+                       for entry in results[group])
+        if scan_type == "llm":
+            return len(results["vulnerabilities"])
+        return len(results)
+    except (KeyError, TypeError, AttributeError):
+        return 0
+
+
 def fingerprint(row: Any) -> str:
     return json.dumps(row, sort_keys=True, separators=(",", ":"), default=str, ensure_ascii=False)
 
