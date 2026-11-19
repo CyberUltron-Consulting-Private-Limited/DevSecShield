@@ -496,54 +496,78 @@ OCI_GROUP = "ZeroShieldCBOMReaders"
 OCI_USER = "zeroshield-cbom-reader"
 
 
-def oci_policy_statements(group: str = OCI_GROUP) -> list[str]:
+def oci_grants() -> tuple[str, ...]:
     from backend.utilities.cbom_sources.oci_collect import POLICY_STATEMENTS
 
-    return [f"Allow group {group} to {statement}" for statement in POLICY_STATEMENTS]
+    return POLICY_STATEMENTS
+
+
+def oci_policy_statements(group: str = OCI_GROUP) -> list[str]:
+    return [f"Allow group {group} to {statement}" for statement in oci_grants()]
 
 
 OCI_READER = r"""#!/usr/bin/env bash
-# zs-cbom-oci-reader.sh -- ZeroShield CBOM: a read-only user for Oracle Cloud crypto METADATA
+# zs-cbom-oci-reader.sh -- ZeroShield CBOM: read-only access for Oracle Cloud crypto METADATA
 # Vault keys (shape, protection mode, rotation, versions), secret metadata, certificates and CAs, load balancer TLS
-# and Object Storage encryption. Never key use (no "use keys"), secret contents (no "read secret-bundles") or
-# certificate private keys. Run in OCI Cloud Shell as a tenancy administrator, in the HOME region.
+# and Object Storage encryption. Never key use (no "use keys"), secret contents (no secret bundles) or certificate
+# private keys. Run in OCI Cloud Shell as a tenancy administrator, in the HOME region.
+#
+# It creates (or reuses) the group and its read-only policy, adds the user to the group, and adds ZeroShield's public
+# key to that user. Leave USER_OCID empty to create the user "__USER__"; or set it to a user you already have
+# (for example one you added the key to in the Console).
 set -euo pipefail
-TENANCY_OCID="<tenancy OCID you enter in ZeroShield>"
+TENANCY_OCID="${OCI_TENANCY:-<tenancy OCID shown in ZeroShield>}"   # Cloud Shell sets OCI_TENANCY
+USER_OCID=""        # empty: create the user below
+USER_EMAIL=""       # required to create the user in tenancies with identity domains (every new tenancy)
 PUBLIC_KEY_PEM="$(cat <<'PEM'
 <public key PEM shown in ZeroShield>
 PEM
 )"
 GROUP="__GROUP__"
 USER_NAME="__USER__"
+POLICY_NAME="zeroshield-cbom-reader"
 
 GROUP_ID=$(oci iam group list --compartment-id "$TENANCY_OCID" --name "$GROUP" --query 'data[0].id' --raw-output 2>/dev/null || true)
 if [ -z "$GROUP_ID" ] || [ "$GROUP_ID" = "null" ]; then
   GROUP_ID=$(oci iam group create --compartment-id "$TENANCY_OCID" --name "$GROUP" \
     --description "ZeroShield CBOM read-only access to crypto metadata" --query 'data.id' --raw-output)
 fi
-USER_ID=$(oci iam user list --compartment-id "$TENANCY_OCID" --name "$USER_NAME" --query 'data[0].id' --raw-output 2>/dev/null || true)
-if [ -z "$USER_ID" ] || [ "$USER_ID" = "null" ]; then
-  USER_ID=$(oci iam user create --compartment-id "$TENANCY_OCID" --name "$USER_NAME" \
-    --description "ZeroShield CBOM collector (API key only, no console password)" --query 'data.id' --raw-output)
+if [ -z "$USER_OCID" ]; then
+  USER_OCID=$(oci iam user list --compartment-id "$TENANCY_OCID" --name "$USER_NAME" --query 'data[0].id' --raw-output 2>/dev/null || true)
+  if [ -z "$USER_OCID" ] || [ "$USER_OCID" = "null" ]; then
+    DOMAIN_ID=$(oci iam domain list --compartment-id "$TENANCY_OCID" --query 'data[0].id' --raw-output 2>/dev/null || true)
+    if [ -z "$USER_EMAIL" ] && [ -n "$DOMAIN_ID" ] && [ "$DOMAIN_ID" != "null" ]; then
+      echo "Set USER_EMAIL at the top of the script: this tenancy uses identity domains, which need an email for a new user" >&2
+      exit 1
+    fi
+    USER_OCID=$(oci iam user create --compartment-id "$TENANCY_OCID" --name "$USER_NAME" ${USER_EMAIL:+--email "$USER_EMAIL"} \
+      --description "ZeroShield CBOM collector (API key only, no console password)" --query 'data.id' --raw-output)
+  fi
 fi
-oci iam group add-user --group-id "$GROUP_ID" --user-id "$USER_ID" >/dev/null 2>&1 || true
+oci iam group add-user --group-id "$GROUP_ID" --user-id "$USER_OCID" >/dev/null 2>&1 || true
 
 cat > zs-cbom-policy.json <<JSON
 __STATEMENTS__
 JSON
-POLICY_ID=$(oci iam policy list --compartment-id "$TENANCY_OCID" --name zeroshield-cbom-reader --query 'data[0].id' --raw-output 2>/dev/null || true)
+POLICY_ID=$(oci iam policy list --compartment-id "$TENANCY_OCID" --name "$POLICY_NAME" --query 'data[0].id' --raw-output 2>/dev/null || true)
 if [ -z "$POLICY_ID" ] || [ "$POLICY_ID" = "null" ]; then
-  oci iam policy create --compartment-id "$TENANCY_OCID" --name zeroshield-cbom-reader \
+  oci iam policy create --compartment-id "$TENANCY_OCID" --name "$POLICY_NAME" \
     --description "ZeroShield CBOM: inspect/read-only access to crypto metadata" --statements file://zs-cbom-policy.json >/dev/null
 else
   oci iam policy update --policy-id "$POLICY_ID" --statements file://zs-cbom-policy.json --force >/dev/null
 fi
 
+# the key, unless the user already has it (added in the Console): its fingerprint is listed then
 printf '%s\n' "$PUBLIC_KEY_PEM" > zs-cbom-public.pem
-oci iam user api-key upload --user-id "$USER_ID" --key-file zs-cbom-public.pem --query 'data.fingerprint' --raw-output
-echo "User OCID (enter it in ZeroShield): $USER_ID"
-# The fingerprint printed above must match the one ZeroShield shows. A statement left out shows up in ZeroShield as a
-# coverage row naming it, never as a silent "nothing found".
+FINGERPRINT="$(openssl rsa -pubin -in zs-cbom-public.pem -outform DER 2>/dev/null | openssl md5 -c | awk '{print $NF}')"
+if oci iam user api-key list --user-id "$USER_OCID" --query 'data[].fingerprint' --raw-output 2>/dev/null | grep -q "$FINGERPRINT"; then
+  echo "The key is already on the user (fingerprint $FINGERPRINT)"
+else
+  oci iam user api-key upload --user-id "$USER_OCID" --key-file zs-cbom-public.pem --query 'data.fingerprint' --raw-output
+fi
+echo "User OCID (enter it in ZeroShield): $USER_OCID"
+# The fingerprint must match the one ZeroShield shows. A statement left out shows up in ZeroShield as a coverage row
+# naming it, never as a silent "nothing found".
 """
 
 
@@ -557,7 +581,9 @@ def oci_reader_text() -> str:
 _OCI_STACK_MAIN = """# ZeroShield CBOM: a read-only Oracle Cloud user for crypto metadata (OCI Resource Manager stack).
 # Creates one group, one user (API key only), the inspect/read-only policy below, and adds ZeroShield's PUBLIC key as
 # that user's API key. ZeroShield keeps the matching private key; nothing secret is in this stack.
-# Create the stack in your HOME region (IAM changes are made there). Output user_ocid goes into ZeroShield.
+# IAM changes are made in the home region (looked up below). Output user_ocid goes into ZeroShield.
+# A new key for the same source: edit this stack, upload the new .zip and Apply (do not create a second stack).
+# Another ZeroShield source in the same tenancy: change the group, user and policy names in the stack form.
 terraform {
   required_providers {
     oci = { source = "oracle/oci" }
@@ -568,33 +594,56 @@ provider "oci" {
   region = var.region
 }
 
+# IAM changes are made in the home region: the identity resources below use this provider, wherever the stack runs
+data "oci_identity_region_subscriptions" "home" {
+  tenancy_id = var.tenancy_ocid
+  filter {
+    name   = "is_home_region"
+    values = [true]
+  }
+}
+
+provider "oci" {
+  alias  = "home"
+  region = data.oci_identity_region_subscriptions.home.region_subscriptions[0].region_name
+}
+
 resource "oci_identity_group" "zs" {
+  provider       = oci.home
   compartment_id = var.tenancy_ocid
   name           = var.group_name
   description    = "ZeroShield CBOM read-only access to crypto metadata"
 }
 
 resource "oci_identity_user" "zs" {
+  provider       = oci.home
   compartment_id = var.tenancy_ocid
   name           = var.user_name
   description    = "ZeroShield CBOM collector (API key only, no console password)"
-  email          = var.user_email == "" ? null : var.user_email
+  email          = var.user_email
 }
 
 resource "oci_identity_user_group_membership" "zs" {
+  provider       = oci.home
   group_id = oci_identity_group.zs.id
   user_id  = oci_identity_user.zs.id
 }
 
+locals {
+  # inspect/read only: no "use keys", no secret or certificate bundles, no objects
+  grants = __GRANTS__
+}
+
 resource "oci_identity_policy" "zs" {
+  provider       = oci.home
   compartment_id = var.tenancy_ocid
-  name           = "zeroshield-cbom-reader"
+  name           = var.policy_name
   description    = "ZeroShield CBOM: inspect/read-only access to crypto metadata"
-  statements     = __STATEMENTS__
-  depends_on     = [oci_identity_group.zs]
+  statements     = [for grant in local.grants : "Allow group ${oci_identity_group.zs.name} to ${grant}"]
 }
 
 resource "oci_identity_api_key" "zs" {
+  provider       = oci.home
   user_id   = oci_identity_user.zs.id
   key_value = var.zeroshield_public_key
 }
@@ -619,10 +668,12 @@ variable "user_name" {
   default = "__USER__"
 }
 
-# Tenancies with identity domains may require an email for a new user; leave empty otherwise.
-variable "user_email" {
-  default = ""
+variable "policy_name" {
+  default = "zeroshield-cbom-reader"
 }
+
+# Tenancies with identity domains (every new tenancy) require an email for a new user: a mailbox your team reads.
+variable "user_email" {}
 
 # ZeroShield's public key for this source (fingerprint __FINGERPRINT__)
 variable "zeroshield_public_key" {
@@ -639,7 +690,7 @@ version: "20190304"
 locale: "en"
 variableGroups:
   - title: "Read-only user"
-    variables: [group_name, user_name, user_email]
+    variables: [group_name, user_name, policy_name, user_email]
   - title: "Hidden"
     visible: false
     variables: [tenancy_ocid, region, zeroshield_public_key]
@@ -652,10 +703,14 @@ variables:
     type: string
     title: "User name"
     required: true
+  policy_name:
+    type: string
+    title: "Policy name"
+    required: true
   user_email:
     type: string
-    title: "User email (only if your identity domain requires one)"
-    required: false
+    title: "User email (required for a new user in tenancies with identity domains)"
+    required: true
 outputs:
   user_ocid:
     type: copyableString
@@ -674,7 +729,7 @@ def oci_stack_zip(public_key_pem: str, fingerprint: str) -> bytes:
 
     pem = "\n".join("    " + line for line in public_key_pem.strip().splitlines())
     files = {
-        "main.tf": _OCI_STACK_MAIN.replace("__STATEMENTS__", json.dumps(oci_policy_statements())),
+        "main.tf": _OCI_STACK_MAIN.replace("__GRANTS__", json.dumps(list(oci_grants()))),
         "variables.tf": (_OCI_STACK_VARIABLES.replace("__GROUP__", OCI_GROUP).replace("__USER__", OCI_USER)
                          .replace("__FINGERPRINT__", fingerprint).replace("__PEM__", pem)),
         "schema.yaml": _OCI_STACK_SCHEMA,

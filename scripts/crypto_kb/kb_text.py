@@ -474,7 +474,9 @@ entry("KMS_NO_ROTATION", title="Key without automatic rotation", category="cloud
       description="Key material in a cloud KMS, a key vault or Vault transit has no automatic rotation, so the same key "
                   "version keeps protecting new data until someone rotates it by hand: an AWS KMS key with rotation "
                   "off, a Google Cloud KMS key without a rotation period, an Azure Key Vault key whose rotation policy "
-                  "has no Rotate action, or a Vault transit key with auto_rotate_period 0. On AWS KMS, keys with "
+                  "has no Rotate action, an OCI Vault key in a virtual private vault with auto-rotation off, or a Vault "
+                  "transit key with "
+                  "auto_rotate_period 0. On AWS KMS, keys with "
                   "imported material or in a custom key store cannot rotate automatically and are not reported, and a "
                   "multi-Region replica takes its rotation from its primary key.",
       attack="A key that never rotates protects more data for longer, so any compromise exposes more.", cwe=["CWE-324", "CWE-320"], owasp=["crypto"], cves=[], standards=["NIST SP 800-57 Part 1 (cryptoperiods)"],
@@ -487,6 +489,10 @@ entry("KMS_NO_ROTATION", title="Key without automatic rotation", category="cloud
           {"platform": "Azure Key Vault", "how": "az keyvault key rotation-policy update --vault-name <vault> --name <key> "
                                                  "--value policy.json (a lifetimeActions entry with action Rotate, e.g. "
                                                  "timeAfterCreate P90D)"},
+          {"platform": "OCI Vault (virtual private vault)", "how": "oci kms management key update --key-id <key-ocid> "
+                                                                   "--is-auto-rotation-enabled true --auto-key-rotation-details "
+                                                                   "'{\"rotationIntervalInDays\": 90}' --endpoint <vault "
+                                                                   "management endpoint>"},
           {"platform": "HashiCorp Vault transit", "how": "vault write transit/keys/<key>/config auto_rotate_period=90d "
                                                          "(set min_decryption_version after rewrapping old data)"}]},
       verify=[{"label": "AWS KMS: rotation status", "command": "aws kms get-key-rotation-status --key-id {resource}"},
@@ -496,6 +502,7 @@ entry("KMS_NO_ROTATION", title="Key without automatic rotation", category="cloud
       references=["https://docs.aws.amazon.com/kms/latest/developerguide/rotate-keys.html",
                   "https://cloud.google.com/kms/docs/rotate-key",
                   "https://learn.microsoft.com/azure/key-vault/keys/how-to-configure-key-rotation",
+                  "https://docs.oracle.com/iaas/Content/KeyManagement/home.htm",
                   "https://developer.hashicorp.com/vault/api-docs/secret/transit#update-key-configuration"])
 entry("KMS_PENDING_DELETION", title="KMS key pending deletion", category="cloud", default_impact="Low", description="The KMS key is scheduled for deletion.",
       attack="Data still encrypted under it becomes unrecoverable when the key is deleted.", cwe=["CWE-320"], owasp=["crypto"], cves=[], standards=[], compliance=["key_mgmt"],

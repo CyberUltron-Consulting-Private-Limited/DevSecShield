@@ -286,7 +286,7 @@ def _key_rules(out: _Out, algorithm: Any, size: Any, what: str) -> None:
 
 
 def _kms_no_rotation_text(facts: dict[str, Any]) -> str:
-    """KMS_NO_ROTATION's text, naming the command of the provider the key lives in (the KB entry lists all four).
+    """KMS_NO_ROTATION's text, naming the command of the provider the key lives in (the KB entry lists each provider).
     AWS: automatic rotation exists only for keys whose material AWS KMS generated (origin AWS_KMS; imported material
     and custom key stores cannot rotate automatically, CB-33 B1). A multi-Region replica takes its rotation from its
     primary key, so the text names the primary; a Disabled key must be enabled first."""
@@ -328,9 +328,10 @@ def azure_no_rotation_text(facts: dict[str, Any]) -> str:
 
 
 def oci_no_rotation_text(facts: dict[str, Any]) -> str:
-    return ("OCI Vault key has automatic rotation off; turn on auto-rotation for the key in the Console (Vault > Master "
-            "Encryption Keys > the key > Edit Auto-Rotation), or rotate it now with oci kms management key-version create "
-            f"--key-id {_key_ref(facts, '<key-ocid>')} --endpoint <the vault's management endpoint>")
+    return ("OCI Vault key in a virtual private vault has automatic rotation off; turn it on with oci kms management key "
+            f"update --key-id {_key_ref(facts, '<key-ocid>')} --is-auto-rotation-enabled true --auto-key-rotation-details "
+            "'{\"rotationIntervalInDays\": 90}' --endpoint <the vault's management endpoint> (or Edit auto-rotation "
+            "settings on the key in the Console)")
 
 
 def vault_no_rotation_text(facts: dict[str, Any]) -> str:
@@ -843,6 +844,10 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
             if facts.get("rotation_enabled") is False and facts.get("key_spec") == "SYMMETRIC_DEFAULT" \
                     and facts.get("key_manager") == "CUSTOMER" and facts.get("origin") in (None, "AWS_KMS"):
                 out.add("KMS_NO_ROTATION", "Medium", _kms_no_rotation_text(facts))
+            elif facts.get("provider") == "oci" and facts.get("rotation_enabled") is False:
+                # OCI rotates any key type of a virtual private vault on its schedule (rotation_enabled is None for
+                # the other vaults, where auto-rotation does not exist)
+                out.add("KMS_NO_ROTATION", "Medium", oci_no_rotation_text(facts))
             elif facts.get("provider") == "azure" and facts.get("rotation_enabled") is False:
                 # Azure Key Vault rotates any key type (RSA, EC, oct-HSM) by its rotation policy: a key whose policy has
                 # no Rotate action never rotates.  Same code and severity as AWS / Google Cloud KMS and Vault transit

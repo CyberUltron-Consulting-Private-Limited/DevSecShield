@@ -47,8 +47,10 @@ import {
   OCI_NEVER_GRANTED,
   OCI_POLICY_GRANTS,
   OCI_STACK_FILENAME,
+  OCI_USER_NAME,
   checkOciForm,
   fillOciPublicKey,
+  fillOciTenancy,
   ociMethodOf,
   ociPolicyStatement,
   ociResourceManagerUrl,
@@ -1868,6 +1870,7 @@ function OciForm({
   const fingerprint = cfgString(source, "fingerprint");
   const publicKey = cfgString(source, "public_key_pem");
   const savedRegion = cfgString(source, "home_region");
+  const savedTenancy = cfgString(source, "tenancy_ocid");
   // The generated key pair exists (the server writes its fingerprint on every save): steps 2 and 3 can be shown.
   const keyReady = method !== "own" && saved?.keyOrigin === "generated" && !!fingerprint;
   const tenancyChanged = !!saved && tenancy.trim() !== saved.tenancy;
@@ -1903,6 +1906,10 @@ function OciForm({
     const values = { method, tenancy, homeRegion, regions, compartments, userOcid, privateKey };
     const check = checkOciForm(values, saved, validate);
     const next: Record<string, string | null> = { name: nameError(name), ...check.errors };
+    if (validate && tenancyChanged && saved?.keyOrigin === "generated" && method !== "own") {
+      // a different tenancy makes a new key on save, which no user holds yet: validating now could only fail
+      next.tenancy = "Save the new tenancy with Save and create key in step 1 first, then add the new key to the user";
+    }
     setErrors(next);
     if (Object.values(next).some(Boolean)) return;
     const { secrets, clear } = ociSecretsOf(values, saved, replaceKey);
@@ -2170,12 +2177,14 @@ function OciForm({
                     Create a stack from the downloaded .zip in the home region{" "}
                     <span className="font-mono text-xs text-zinc-900 dark:text-white">{savedRegion}</span>.
                   </li>
+                  <li>Enter an email your team reads for the new user (tenancies with identity domains require one).</li>
                   <li>Choose Apply and wait for the job to succeed.</li>
                   <li>Copy the <span className="font-mono text-xs">user_ocid</span> output into step 3.</li>
                 </ol>
                 <p className="text-xs text-zinc-500">
                   The stack creates a user, the group {OCI_GROUP} and a policy with inspect and read grants only, and adds this key to the user.
-                  Destroying the stack removes them.
+                  Destroying the stack removes them. A new key for this source: edit the same stack, upload the new .zip and Apply. Another
+                  ZeroShield source in the same tenancy: change the group, user and policy names in the stack form.
                 </p>
               </div>
             ) : (
@@ -2187,17 +2196,13 @@ function OciForm({
                   </p>
                   <CodeSnippet code={publicKey} language="text" />
                 </div>
-                <ol className="list-decimal space-y-1 pl-5 text-sm text-zinc-600 dark:text-zinc-400">
-                  <li>In the Console, open Identity &gt; Users and choose the user ZeroShield will sign in as (create one if needed).</li>
-                  <li>Under API keys, choose Add API key, then Paste public key, and paste the key above.</li>
-                  <li>Check that the fingerprint the Console shows matches the one above.</li>
-                </ol>
                 <ReaderScript
                   teamId={teamId}
                   provider="oci"
-                  fill={(script) => fillOciPublicKey(script, publicKey)}
-                  text={`Then run this script in OCI Cloud Shell as an administrator. It sets up the group ${OCI_GROUP} and its policy, with inspect and read grants only. Fill in what it asks for before running it.`}
+                  fill={(script) => fillOciTenancy(fillOciPublicKey(script, publicKey), savedTenancy)}
+                  text={`Run this script in OCI Cloud Shell as an administrator, in the home region. It creates the group ${OCI_GROUP} and its policy (inspect and read grants only), creates the user ${OCI_USER_NAME}, adds it to the group and adds the public key above to it, then prints the user OCID for step 3. To use a user you already have instead, set USER_OCID at the top of the script; if you already pasted the key on that user in the Console (Identity > Users > the user > API keys > Add API key > Paste public key), the script leaves it.`}
                 />
+                <p className="text-xs text-zinc-500">Check that the fingerprint the script or the Console shows matches the one above.</p>
               </div>
             )}
           </li>
@@ -2220,7 +2225,7 @@ function OciForm({
         open={confirmNewKey}
         onOpenChange={setConfirmNewKey}
         title="Generate a new key?"
-        description="ZeroShield replaces the stored key pair at once, so the key on the user stops working for ZeroShield. Add the new public key to the user (download and apply the stack again, or paste it in the Console), then Save and validate."
+        description="ZeroShield replaces the stored key pair at once, so the key on the user stops working for ZeroShield. Add the new public key to the user (edit the existing stack, upload the new .zip and Apply; or run the script again, or paste it in the Console), then Save and validate."
         confirmLabel="Generate a new key"
         destructive
         pending={save.isPending}
@@ -2282,7 +2287,7 @@ function ReaderScript({ teamId, provider, text, fill }: {
         onClick={() => setOpen((v) => !v)}
         data-testid={`cloud-${provider}-reader-toggle`}
       >
-        {open ? "Hide the read-only role script" : "Show the read-only role script"}
+        {open ? `Hide the read-only ${provider === "oci" ? "policy" : "role"} script` : `Show the read-only ${provider === "oci" ? "policy" : "role"} script`}
       </button>
       {open &&
         (query.isLoading ? (

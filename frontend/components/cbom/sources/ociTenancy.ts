@@ -21,6 +21,7 @@ const MAX_KEY_BYTES = 64 * 1024
 export const OCI_GROUP = "ZeroShieldCBOMReaders"
 /** The policy verbs and resource types ZeroShield needs: inspect and read only, never use or manage. */
 export const OCI_POLICY_GRANTS = [
+  "inspect tenancies",
   "inspect compartments",
   "read vaults",
   "read keys",
@@ -36,6 +37,10 @@ export const OCI_NEVER_GRANTED = ["use keys", "read secret-bundles", "read leaf-
 export const OCI_STACK_FILENAME = "zeroshield-cbom-oci-stack.zip"
 /** The line of the oci-reader script that the source's public key replaces. */
 export const OCI_PUBLIC_KEY_PLACEHOLDER = "<public key PEM shown in ZeroShield>"
+/** The reader script's tenancy placeholder (Cloud Shell's OCI_TENANCY fills it there; the form fills it here). */
+export const OCI_TENANCY_PLACEHOLDER = "<tenancy OCID shown in ZeroShield>"
+/** The user the stack and the reader script create (backend templates.OCI_USER). */
+export const OCI_USER_NAME = "zeroshield-cbom-reader"
 
 /** One policy statement as written in OCI: "Allow group ZeroShieldCBOMReaders to read keys in tenancy". */
 export function ociPolicyStatement(grant: string): string {
@@ -54,6 +59,13 @@ export function fillOciPublicKey(script: string, publicKeyPem: string | null | u
   const pem = (publicKeyPem ?? "").trim()
   if (!pem || !pem.includes("PUBLIC KEY-----")) return script
   return script.split(OCI_PUBLIC_KEY_PLACEHOLDER).join(pem)
+}
+
+/** The reader script with the source's tenancy OCID in place of its placeholder (unchanged without a valid one). */
+export function fillOciTenancy(script: string, tenancyOcid: string | null | undefined): string {
+  const ocid = (tenancyOcid ?? "").trim()
+  if (!OCI_TENANCY_RE.test(ocid)) return script
+  return script.split(OCI_TENANCY_PLACEHOLDER).join(ocid)
 }
 
 /** The method an existing source was saved with: an uploaded key is "own"; a generated one opens on the stack. */

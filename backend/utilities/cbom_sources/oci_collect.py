@@ -50,6 +50,7 @@ BUCKET_READ_CAP = 500  # GetBucket calls per region (the list has no kmsKeyId)
 SERVICES = ("kms", "secrets", "certificates", "loadbalancer", "objectstorage")
 # the policy statement a denied service needs (named in coverage rows and validation warnings)
 POLICY = {
+    "regions": "inspect tenancies in tenancy",
     "compartments": "inspect compartments in tenancy",
     "kms": "read vaults in tenancy and read keys in tenancy",
     "secrets": "inspect secrets in tenancy",
@@ -58,6 +59,7 @@ POLICY = {
     "objectstorage": "read objectstorage-namespaces in tenancy and read buckets in tenancy",
 }
 POLICY_STATEMENTS = (
+    "inspect tenancies in tenancy",  # ListRegionSubscriptions (TENANCY_INSPECT)
     "inspect compartments in tenancy",
     "read vaults in tenancy",
     "read keys in tenancy",
@@ -159,6 +161,9 @@ def _key_asset(key: dict[str, Any], vault: dict[str, Any], region: str, label: s
     protection = key.get("protectionMode")
     rotation = key.get("autoKeyRotationDetails") if isinstance(key.get("autoKeyRotationDetails"), dict) else {}
     auto = key.get("isAutoRotationEnabled")
+    # automatic rotation exists only for keys in a virtual private vault; elsewhere it is not applicable (None), and
+    # the key is rotated by hand (a new key version)
+    private_vault = vault.get("vaultType") == "VIRTUAL_PRIVATE"
     listed = versions or []
     interval = rotation.get("rotationIntervalInDays")
     return {"type": "kms_key", "target": label, "location": _loc(region, "kms", ocid), "name": key.get("displayName") or _short(ocid),
@@ -168,9 +173,10 @@ def _key_asset(key: dict[str, Any], vault: dict[str, Any], region: str, label: s
                       # a key held outside OCI (External KMS, HYOK) rotates where it lives: not OCI's rotation rule
                       "origin": "EXTERNAL" if protection == "EXTERNAL" else None,
                       "key_manager": "CUSTOMER", "key_state": _STATE.get(str(key.get("lifecycleState") or ""), key.get("lifecycleState")),
-                      "rotation_enabled": auto if isinstance(auto, bool) else None,
+                      "rotation_enabled": (auto if isinstance(auto, bool) else None) if private_vault else None,
+                      "auto_rotation_supported": private_vault,
                       "rotation_period": f"{interval}d" if isinstance(interval, int) else None,
-                      "next_rotation": rotation.get("timeOfScheduleStart") or key.get("timeOfNextRotation"),
+                      "next_rotation": rotation.get("timeOfNextRotation") or rotation.get("timeOfScheduleStart"),
                       "last_rotation": rotation.get("timeOfLastRotation"),
                       "created": key.get("timeCreated"), "deletion_time": key.get("timeOfDeletion"),
                       "current_version": key.get("currentKeyVersion"), "vault": vault.get("displayName"),
@@ -264,8 +270,8 @@ def _secret_asset(secret: dict[str, Any], region: str, label: str) -> dict[str, 
 
 def _static_rsa(ciphers: list[str]) -> bool:
     """An OpenSSL-named suite without (EC)DHE key exchange (AES128-SHA, DES-CBC3-SHA, ...): RSA key transport."""
-    return any(not c.upper().startswith(("ECDHE", "DHE", "TLS_")) and any(x in c.upper() for x in ("AES", "DES", "CAMELLIA", "RC4", "SEED", "IDEA"))
-               for c in ciphers)
+    return any(not c.upper().startswith(("ECDHE", "DHE", "ECDH-", "DH-", "TLS_", "PSK", "SRP"))
+               and any(x in c.upper() for x in ("AES", "DES", "CAMELLIA", "RC4", "SEED", "IDEA")) for c in ciphers)
 
 
 def _cert_from_pem(pem: Any) -> tuple[str | None, int | None, dict[str, Any]]:
@@ -316,6 +322,9 @@ class _Region:
                 failed.append((compartment, exc))
             if total >= ITEM_CAP:
                 self.gap(service, "truncated", f"More than {ITEM_CAP} items; the first {ITEM_CAP} were read", "-cap")
+                if failed:
+                    self.gap(service, _status(failed[0][1]), f"{len(failed)} compartment(s) not read before the cap: "
+                             f"{failed[0][1]}", "-compartments", compartments=[c for c, _e in failed][:50])
                 return "truncated"
         if failed and len(failed) == len(self.compartments):
             raise failed[0][1]
@@ -330,9 +339,9 @@ class _Region:
     # Vault keys -------------------------------------------------------------------------------------------------
     def kms(self) -> str:
         vaults: list[dict[str, Any]] = []
+        # a compartment whose vaults cannot be listed is its own gap: keys are still read from the vaults that were
+        # found (R-oci1: one stale compartment used to drop every key of the region)
         status = self.per_compartment("kms", lambda c: self._vaults(c, vaults))
-        if status != "ok":
-            return status
         unread: list[str] = []
         count = 0
         for vault in vaults:
@@ -361,7 +370,7 @@ class _Region:
             self.gap("kms", "denied", f"keys of {len(unread)} vault/compartment pair(s) not listed ({POLICY['kms']} needed)",
                      "-vaults", vaults=unread[:50])
             return "partial"
-        return "ok"
+        return status
 
     def _vaults(self, compartment: str, into: list[dict[str, Any]]) -> int:
         found, _cut = self.http.oci_pages(f"{KMS.format(r=self.region)}/vaults", self.sign, cap=ITEM_CAP,
@@ -533,10 +542,27 @@ class _Region:
 
 
 # --------------------------------------------------------------------------------------------------- scope listing
-def _regions(http: CloudHttp, sign: Signer, cfg: dict[str, Any]) -> tuple[list[str], list[str]]:
-    """(regions to read, configured regions the tenancy does not subscribe to)."""
+class RegionsUnlisted(Exception):
+    """ListRegionSubscriptions was refused (the policy lacks ``inspect tenancies``): the key itself was accepted."""
+
+    def __init__(self, exc: CloudHttpError):
+        self.exc = exc
+        super().__init__(str(exc))
+
+
+def _regions(http: CloudHttp, sign: Signer, cfg: dict[str, Any], *, fallback: bool = True) -> tuple[list[str], list[str]]:
+    """(regions to read, configured regions the tenancy does not subscribe to).  When the subscriptions cannot be
+    listed for want of ``inspect tenancies`` (404 NotAuthorizedOrNotFound -- OCI answered, so the signature was
+    accepted), the home region and the configured regions are read instead (``fallback``), else RegionsUnlisted."""
     home = cfg["home_region"]
-    answer = http.oci_get(f"{IDENTITY.format(r=home)}/tenancies/{quote(cfg['tenancy_ocid'], safe='')}/regionSubscriptions", sign)
+    try:
+        answer = http.oci_get(f"{IDENTITY.format(r=home)}/tenancies/{quote(cfg['tenancy_ocid'], safe='')}/regionSubscriptions", sign)
+    except CloudHttpError as exc:
+        if _status(exc) != "denied":
+            raise
+        if not fallback:
+            raise RegionsUnlisted(exc) from None
+        return list(dict.fromkeys([home, *(cfg.get("regions") or [])]))[:REGION_CAP], []
     ready = [str(s.get("regionName")) for s in answer.get("value") or []
              if isinstance(s, dict) and s.get("regionName") and s.get("status") in (None, "READY")]
     wanted = list(cfg.get("regions") or [])
@@ -562,8 +588,13 @@ def collect_oci(team_id: int, cfg: dict[str, Any], secrets: dict[str, str], emit
     sign = signer(cfg, secrets)
     targets: list[dict[str, Any]] = []
     with CloudHttp(transport) as http:
+        fell_back = False
         try:
-            regions, unsubscribed = _regions(http, sign, cfg)
+            try:
+                regions, unsubscribed = _regions(http, sign, cfg, fallback=False)
+            except RegionsUnlisted:
+                fell_back = True
+                regions, unsubscribed = _regions(http, sign, cfg)
             compartments = _compartments(http, sign, cfg)
         except CloudHttpError as exc:
             status = _status(exc)
@@ -575,6 +606,10 @@ def collect_oci(team_id: int, cfg: dict[str, Any], secrets: dict[str, str], emit
         for region in unsubscribed:
             targets.append({"target": f"oci:{region}", "status": "not_supported", "assets": 0,
                             "error": "the tenancy does not subscribe to this region"})
+        if fell_back:
+            emit({"type": "coverage", "target": f"oci:{cfg['home_region']}", "location": "oci://tenancy#regions",
+                  "facts": {"check": "subscribed regions", "status": "denied", "scope": ["oci://"],
+                            "detail": f"{POLICY['regions']} needed: only the home region and the source's regions were read"}})
         for region in regions:
             label = f"oci:{region}"
             reason = should_stop()
@@ -635,13 +670,19 @@ def test_oci(cfg: dict[str, Any], secrets: dict[str, str], *, transport: Any = N
         return {"status": "failed", "message": str(exc), "checks": [{"check": "API signing key", "status": "fail", "detail": str(exc)}]}
     with CloudHttp(transport) as http:
         try:
-            regions, unsubscribed = _regions(http, sign, cfg)
+            regions, unsubscribed = _regions(http, sign, cfg, fallback=False)
             checks.append({"check": "Signed in to Oracle Cloud", "status": "pass",
                            "detail": f"API key accepted; the tenancy subscribes to {len(regions) + len(unsubscribed) if cfg.get('regions') else len(regions)} region(s)"})
+        except RegionsUnlisted as exc:
+            regions, unsubscribed = _regions(http, sign, cfg)  # the fallback: home and configured regions
+            checks.append({"check": "Signed in to Oracle Cloud", "status": "pass", "detail": "API key accepted"})
+            checks.append({"check": "List subscribed regions", "status": "warning", "detail": (
+                f"Not granted: allow group ZeroShieldCBOMReaders to {POLICY['regions']}. Until it is, runs read the home "
+                f"region and the regions listed on the source only ({exc.exc.code})")[:240]})
         except CloudHttpError as exc:
             status = _status(exc)
             detail = (f"Oracle Cloud refused the key ({exc.code}): check the user OCID, the home region, and that the "
-                      "public key (fingerprint shown on the source) is added to that user" if status in ("auth_failed", "denied")
+                      "public key (fingerprint shown on the source) is added to that user" if status == "auth_failed"
                       else f"Could not reach Oracle Cloud identity in {cfg.get('home_region')}: {exc}")
             return {"status": "failed", "message": detail[:512], "checks": [{"check": "Signed in to Oracle Cloud", "status": "fail", "detail": detail[:240]}]}
         for region in unsubscribed:

@@ -844,9 +844,15 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Sou
         current = decrypt_secrets(source.secret_encrypted)
         provided = {k: v for k, v in body.secrets.items() if v != ""}
         reset = credential_changed or (where_changed and bool(current))
-        if source.kind == "oci_tenancy":  # a generated key pair: kept, or made again when cleared / the tenancy changed
-            provided = oci_keys.prepare_secrets(new_dump, current, provided, body.clear_secrets, reset)
-        merged = _merge_secrets(source.kind, cfg, current, provided, clear=body.clear_secrets, reset=reset,
+        clear = list(body.clear_secrets)
+        if source.kind == "oci_tenancy":
+            # switching between a generated and an uploaded key never keeps the other kind's key under the new label:
+            # generated makes a new pair, uploaded needs the customer's key (R-oci1)
+            if old_dump.get("key_origin") != new_dump.get("key_origin") and not provided.get("api_signing_key"):
+                clear.append("api_signing_key")
+            # a generated key pair: kept, or made again when cleared / the tenancy changed
+            provided = oci_keys.prepare_secrets(new_dump, current, provided, clear, reset)
+        merged = _merge_secrets(source.kind, cfg, current, provided, clear=clear, reset=reset,
                                 where_changed=where_changed)
         if source.kind == "oci_tenancy":  # fingerprint / public key from the stored key, never from the client
             cfg = oci_keys.with_public_facts(cfg, merged)

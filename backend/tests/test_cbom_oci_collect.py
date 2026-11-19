@@ -86,7 +86,7 @@ def _routes(region: str) -> list[tuple[str, object]]:
             {"regionKey": "FRA", "regionName": OTHER, "status": "READY", "isHomeRegion": False}]),
         (f"{ident}/compartments", [{"id": COMP, "name": "prod", "compartmentId": TENANCY, "lifecycleState": "ACTIVE"}]),
         (f"https://kms.{region}.oraclecloud.com/20180608/vaults", lambda q: [
-            {"id": VAULT, "displayName": "prod-vault", "vaultType": "DEFAULT", "lifecycleState": "ACTIVE",
+            {"id": VAULT, "displayName": "prod-vault", "vaultType": "VIRTUAL_PRIVATE", "lifecycleState": "ACTIVE",
              "compartmentId": COMP, "managementEndpoint": MGMT, "cryptoEndpoint": MGMT.replace("management", "crypto")}]
             if region == HOME and q.get("compartmentId") == COMP else []),
         (f"{MGMT}/20180608/keys/{AES_KEY}/keyVersions", [{"id": "ocid1.keyversion.oc1.iad.v1", "keyId": AES_KEY,
@@ -261,11 +261,41 @@ def test_findings_from_the_rows():
     now = dt.datetime(2026, 1, 25)  # classify works in naive UTC; 7 days before the certificate's not_after
     codes = {r["name"]: classify(r["type"], r.get("algorithm"), r.get("key_size"), r.get("protocol"), r["facts"], now=now)["finding_codes"]
              for r in rows if r["type"] in ("kms_key", "load_balancer_tls", "certificate")}
-    assert "KMS_NO_ROTATION" in codes["data-key"]  # AES, auto-rotation off
-    assert "KMS_NO_ROTATION" not in codes["sign-key"] and "KMS_NO_ROTATION" not in codes["ec-key"]
+    assert "KMS_NO_ROTATION" in codes["data-key"]  # auto-rotation off in a virtual private vault
+    assert "KMS_NO_ROTATION" not in codes["sign-key"]  # no rotation setting read: unknown, not "off"
+    assert "KMS_NO_ROTATION" not in codes["ec-key"]  # rotates every 90 days
+    # a DEFAULT (virtual) vault has no auto-rotation: not applicable, never a finding (R-oci1)
+    default_vault = {"id": VAULT, "vaultType": "DEFAULT", "displayName": "v"}
+    row = oci_collect._key_asset({"id": AES_KEY, "keyShape": {"algorithm": "AES", "length": 32}, "isAutoRotationEnabled": False},
+                                 default_vault, HOME, "oci:x", [], None, None)
+    assert row["facts"]["rotation_enabled"] is None and row["facts"]["auto_rotation_supported"] is False
+    assert "KMS_NO_ROTATION" not in classify("kms_key", "AES", 256, None, row["facts"], now=now)["finding_codes"]
     lb = next(k for k in codes if k.startswith("shop-lb"))
     assert {"PROTO_TLS11", "WEAK_CIPHER", "STATIC_RSA_KEX"} <= set(codes[lb])
     assert "CERT_EXPIRES_30D" in codes["CN=api.example.com"]
+
+
+def test_one_unreadable_compartment_keeps_the_keys_of_the_others():
+    """R-oci1: a stale configured compartment used to drop every Vault key of the region."""
+    stale = "ocid1.compartment.oc1..aaaaaaaastalestalestalestalestalestalestalestalestale"
+    deny = (404, {"code": "NotAuthorizedOrNotFound", "message": "x"})
+
+    class Stale(FakeOci):
+        def __call__(self, request):
+            if stale in str(request.url) and "/vaults" in str(request.url):
+                self.calls.append(str(request.url))
+                return httpx.Response(*deny[:1], json=deny[1])
+            return super().__call__(request)
+
+    out, rows = _collect(Stale(), {**CFG, "regions": [HOME], "compartment_ocids": [COMP, stale]})
+    keys = [r for r in rows if r["type"] == "kms_key"]
+    assert len(keys) == 3 and next(r for r in rows if r["type"] == "cloud_ca")["key_size"] == 384
+    assert out["targets"][0]["services"]["kms"] == "partial"
+    assert any(r["location"] == f"oci://{HOME}#kms-compartments" and stale in r["facts"]["compartments"] for r in rows)
+
+
+def test_static_ecdh_is_not_rsa_key_exchange():
+    assert oci_collect._static_rsa(["AES128-SHA"]) and not oci_collect._static_rsa(["ECDH-RSA-AES128-SHA", "ECDHE-RSA-AES128-GCM-SHA256"])
 
 
 def test_denied_service_is_a_named_gap_not_a_failed_region():
@@ -285,6 +315,19 @@ def test_wrong_key_is_refused_with_a_reason():
                                 transport=httpx.MockTransport(FakeOci()))
     with pytest.raises(oci_collect.OciCollectError, match="user OCID"):
         oci_collect.signer({**CFG, "user_ocid": None}, SECRETS)
+
+
+def test_regions_fall_back_when_the_policy_lacks_inspect_tenancies():
+    """R-oci2 M2: a 404 on ListRegionSubscriptions is a missing statement, not a refused key."""
+    deny = (404, {"code": "NotAuthorizedOrNotFound", "message": "Authorization failed or requested resource not found."})
+    over = {f"https://identity.{HOME}.oci.oraclecloud.com/20160918/tenancies/{TENANCY}/regionSubscriptions": deny}
+    out, rows = _collect(FakeOci(overrides=over), {**CFG, "regions": [OTHER]})
+    assert {t["target"] for t in out["targets"]} == {f"oci:{HOME}", f"oci:{OTHER}"}
+    gap = next(r for r in rows if r["location"] == "oci://tenancy#regions")
+    assert "inspect tenancies in tenancy" in gap["facts"]["detail"]
+    checked = oci_collect.test_oci(CFG, SECRETS, transport=httpx.MockTransport(FakeOci(overrides=over)))
+    assert checked["status"] == "passed" and checked["checks"][0]["status"] == "pass"
+    assert any(c["status"] == "warning" and "inspect tenancies" in c["detail"] for c in checked["checks"])
 
 
 def test_configured_scope_and_unsubscribed_region():
@@ -350,11 +393,19 @@ def test_stack_zip_and_reader_script_are_read_only():
     assert set(files) == {"main.tf", "variables.tf", "schema.yaml"}
     assert PUBLIC_PEM.strip().splitlines()[1] in files["variables.tf"] and FINGERPRINT in files["variables.tf"]
     assert "PRIVATE KEY" not in "".join(files.values())
-    statements = json.loads(re.search(r"statements\s+=\s+(\[.*\])", files["main.tf"]).group(1))  # type: ignore[union-attr]
-    assert statements == [f"Allow group ZeroShieldCBOMReaders to {s}" for s in oci_collect.POLICY_STATEMENTS]
+    grants = json.loads(re.search(r"grants\s+=\s+(\[.*\])", files["main.tf"]).group(1))  # type: ignore[union-attr]
+    assert grants == list(oci_collect.POLICY_STATEMENTS)
+    # the statements name the group the stack creates, so a renamed group keeps its grants (R-oci2 M1)
+    assert '"Allow group ${oci_identity_group.zs.name} to ${grant}"' in files["main.tf"]
+    assert "name           = var.policy_name" in files["main.tf"] and "policy_name" in files["schema.yaml"]
+    statements = [f"Allow group ZeroShieldCBOMReaders to {g}" for g in grants]
     assert all(s.split()[0] in ("inspect", "read") for s in oci_collect.POLICY_STATEMENTS)  # never use / manage
     assert not any(x in s for s in oci_collect.POLICY_STATEMENTS for x in ("bundle", "secret-family", " objects in"))
-    assert json.dumps(statements, indent=2) in oci_reader_text()  # the script grants exactly the stack's statements
+    script = oci_reader_text()
+    assert json.dumps(statements, indent=2) in script  # the script grants exactly the stack's statements
+    assert "inspect tenancies in tenancy" in grants  # ListRegionSubscriptions needs TENANCY_INSPECT (R-oci2 M2)
+    # one model (R-oci2 M3): an existing user (USER_OCID) or a created one; the key is added only when missing
+    assert 'USER_OCID=""' in script and "api-key list --user-id" in script and '${OCI_TENANCY:-' in script
     assert oci_stack_zip(PUBLIC_PEM, FINGERPRINT) == data  # stable bytes for one key
 
 
@@ -489,5 +540,15 @@ def test_uploaded_key_is_checked_and_never_returned(tmp_path, monkeypatch):
                                                    "secrets": SECRETS, "test_after_save": True})
     assert r.status_code == 201, r.text
     assert r.json()["source"]["config"]["fingerprint"] == FINGERPRINT and r.json()["test"]["status"] == "passed"
+    src = r.json()["source"]
+    # switching to a generated key never keeps the customer's key under the new label (R-oci1): a new pair is made
+    gen = api("PATCH", f"/1/cbom/sources/items/{src['id']}", json={"config": {**CFG, "key_origin": "generated"},
+                                                                    "expected_version": src["row_version"]})
+    assert gen.status_code == 200, gen.text
+    assert gen.json()["source"]["config"]["fingerprint"] not in (None, FINGERPRINT)
+    # and back to an uploaded key: the customer's key is required, the generated one is not relabelled
+    back = api("PATCH", f"/1/cbom/sources/items/{src['id']}", json={"config": {**CFG, "key_origin": "uploaded"},
+                                                                     "expected_version": gen.json()["source"]["row_version"]})
+    assert back.status_code == 400 and "api_signing_key" in back.text
     body_line = PRIVATE_PEM.splitlines()[2]
     assert not any(body_line in text for text in api.seen)  # the stored key is never returned

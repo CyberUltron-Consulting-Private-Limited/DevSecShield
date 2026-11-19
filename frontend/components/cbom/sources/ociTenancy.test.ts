@@ -13,9 +13,15 @@ import {
   OCI_NEVER_GRANTED,
   OCI_POLICY_GRANTS,
   OCI_PUBLIC_KEY_PLACEHOLDER,
+  OCI_COMPARTMENT_RE,
   OCI_REGION_RE,
+  OCI_TENANCY_PLACEHOLDER,
+  OCI_TENANCY_RE,
+  OCI_USER_NAME,
+  OCI_USER_RE,
   checkOciForm,
   fillOciPublicKey,
+  fillOciTenancy,
   ociMethodOf,
   ociPolicyStatement,
   ociPrivateKeyError,
@@ -148,6 +154,7 @@ assert.equal(fillOciPublicKey(script, ""), script, "unchanged without a key")
 assert.equal(fillOciPublicKey(script, "not a key"), script)
 assert.equal(ociPolicyStatement("read keys"), `Allow group ${OCI_GROUP} to read keys in tenancy`)
 assert.deepEqual(OCI_POLICY_GRANTS, [
+  "inspect tenancies",
   "inspect compartments",
   "read vaults",
   "read keys",
@@ -180,7 +187,8 @@ assert.ok(tab.includes("href={ociResourceManagerUrl(savedRegion)} target=\"_blan
 assert.ok(tab.includes('accept=".pem,'), "the key file input takes .pem")
 assert.ok(tab.includes('const [privateKey, setPrivateKey] = useState("");') && !/cfgString\(source, "api_signing_key"\)/.test(tab),
   "the key field always starts blank: a stored key is never shown back")
-assert.ok(tab.includes('provider="oci"\n                  fill={(script) => fillOciPublicKey(script, publicKey)}'), "the script gets the public key")
+assert.ok(tab.includes('provider="oci"\n                  fill={(script) => fillOciTenancy(fillOciPublicKey(script, publicKey), savedTenancy)}'),
+  "the script gets the public key and the tenancy")
 
 // every other place that lists the cloud kinds
 assert.ok(read("ReviewRunTab.tsx").includes('oci_tenancy: "Oracle Cloud",'))
@@ -190,3 +198,29 @@ const api = fs.readFileSync(path.join(dir, "../../../utils/backend_api.ts"), "ut
 assert.ok(api.includes('| "gcp_project" | "oci_tenancy" |'), "CbomSourceKind")
 assert.ok(api.includes("/items/${source_id}/oci/stack`, { responseType: \"blob\" }") && api.includes("    downloadCbomOciStack,"), "the stack download")
 console.log("oci tenancy tests passed")
+
+// ---- parity with the backend sources (R-oci2 m1): read them, never restate them
+const backend = (rel: string): string => fs.readFileSync(path.join(__dirname, "../../../../backend/utilities/cbom_sources", rel), "utf8")
+const kinds = backend("kinds.py")
+const collect = backend("oci_collect.py")
+const templates = backend("templates.py")
+const pyRegex = (name: string): string => {
+  const m = new RegExp(`${name} = re\\.compile\\(r"([^"]+)"\\)`).exec(kinds)
+  assert.ok(m, `${name} is in kinds.py`)
+  return m![1]
+}
+assert.equal(OCI_TENANCY_RE.source, pyRegex("_OCI_TENANCY_RE").replace(/\\\./g, "\\."), "tenancy pattern = server")
+assert.equal(OCI_USER_RE.source, pyRegex("_OCI_USER_RE"), "user pattern = server")
+assert.equal(OCI_COMPARTMENT_RE.source, pyRegex("_OCI_COMPARTMENT_RE").replace("(?:", "("), "compartment pattern = server")
+assert.equal(OCI_REGION_RE.source, pyRegex("OCI_REGION_RE"), "region pattern = server")
+const statements = /POLICY_STATEMENTS = \(([\s\S]*?)\n\)/.exec(collect)
+assert.ok(statements, "oci_collect.POLICY_STATEMENTS")
+const serverGrants = [...statements![1].matchAll(/"([a-z -]+) in tenancy"/g)].map((m) => m[1])
+assert.deepEqual(OCI_POLICY_GRANTS, serverGrants, "the grants shown are the ones the stack and script make")
+assert.ok(templates.includes(`OCI_GROUP = "${OCI_GROUP}"`) && templates.includes(`OCI_USER = "${OCI_USER_NAME}"`), "group and user names")
+assert.ok(templates.includes(OCI_PUBLIC_KEY_PLACEHOLDER) && templates.includes(OCI_TENANCY_PLACEHOLDER), "script placeholders")
+const tenancyScript = `TENANCY_OCID="\${OCI_TENANCY:-${OCI_TENANCY_PLACEHOLDER}}"`
+assert.equal(fillOciTenancy(tenancyScript, TENANCY), `TENANCY_OCID="\${OCI_TENANCY:-${TENANCY}}"`)
+assert.equal(fillOciTenancy(tenancyScript, "not an ocid"), tenancyScript)
+
+console.log("oci tenancy parity tests passed")
