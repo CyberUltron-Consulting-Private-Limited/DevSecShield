@@ -27,6 +27,7 @@ ONLINE_SECONDS = 120
 CLOUD_NOT_CONNECTED = {
     "azure_subscription": "Not available until the Azure tenant is connected: Save and validate must pass first",
     "gcp_project": "Not available until the Google Cloud project is connected: Save and validate must pass first",
+    "oci_tenancy": "Not available until the Oracle Cloud tenancy is connected: Save and validate must pass first",
 }
 RATES_C = {"server": 20, "kubernetes": 200, "database": 100, "cloud_account": 400, "network_block": 100}
 # WP8b: a host agent is charged like one server; a registry image like one code scan (1 credit, decision D3).

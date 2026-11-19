@@ -19,6 +19,7 @@ import { getCbomAwsReaderTemplate, getCbomCloudReaderScript, type CbomAwsOptIns 
 import {
   createCbomSource,
   deleteCbomSource,
+  downloadCbomOciStack,
   getCbomTemplate,
   getCbomSourcesOverview,
   getCbomSourcesSettings,
@@ -41,6 +42,24 @@ import { CA_API_URL_EXAMPLE, alreadyListed, normalizeDomain } from "./certDomain
 import { caCardStatus, worstCardStatus, type CaCardStatus } from "./caCardStatus";
 import { cbomSourcesKeys } from "./keys";
 import { keepLiveValidation } from "./liveValidation";
+import {
+  OCI_GROUP,
+  OCI_NEVER_GRANTED,
+  OCI_POLICY_GRANTS,
+  OCI_STACK_FILENAME,
+  OCI_USER_NAME,
+  checkOciForm,
+  fillOciPublicKey,
+  fillOciTenancy,
+  ociKeyReady,
+  ociMethodOf,
+  ociPolicyStatement,
+  ociResourceManagerUrl,
+  ociSecretsOf,
+  type OciKeyOrigin,
+  type OciMethod,
+  type OciSaved,
+} from "./ociTenancy";
 import { SourceMetadataDialog } from "./SourceMetadata";
 import { LabModeBanner } from "./LabModeBanner";
 import { ctProviderSentence, ctRunCredits, formatDateTime, orgEstimateLines, orgEstimateStale, pluralize, readTextFile, splitLines } from "./logic";
@@ -69,7 +88,9 @@ import { InfoTip } from "@/components/ui/info-tip";
 import type { InfoTipId } from "@/content/infotips";
 
 // ---------------------------------------------------------------------------- constants
-type Provider = "aws" | "azure" | "gcp";
+type Provider = "aws" | "azure" | "gcp" | "oci";
+/** The providers connected with credentials ZeroShield holds (no role to assume): Save and validate connects them. */
+type KeyedProvider = Exclude<Provider, "aws">;
 type AwsScope = "account" | "organization";
 type CaProvider = "adcs" | "aws_private_ca" | "vault" | "venafi" | "keyfactor" | "digicert" | "ejbca" | "sectigo" | "other";
 type IdpProvider = "entra_id" | "okta" | "keycloak" | "adfs";
@@ -89,9 +110,15 @@ const PROVIDERS: { value: Provider; label: string; description: string }[] = [
     description:
       "Cloud KMS keys and versions, CA Service, Secret Manager and Certificate Manager (metadata), plus load-balancer TLS policies and certificates and bucket encryption, through a read-only service account.",
   },
+  {
+    value: "oci",
+    label: "Oracle Cloud",
+    description:
+      "Vault keys, secrets and certificate authorities (metadata), plus load-balancer TLS and bucket encryption, through a read-only user that signs requests with an API key.",
+  },
 ];
-const PROVIDER_LABEL: Record<Provider, string> = { aws: "AWS", azure: "Azure", gcp: "Google Cloud" };
-const PROVIDER_OF_KIND: Record<string, Provider> = { aws_account: "aws", azure_subscription: "azure", gcp_project: "gcp" };
+const PROVIDER_LABEL: Record<Provider, string> = { aws: "AWS", azure: "Azure", gcp: "Google Cloud", oci: "Oracle Cloud" };
+const PROVIDER_OF_KIND: Record<string, Provider> = { aws_account: "aws", azure_subscription: "azure", gcp_project: "gcp", oci_tenancy: "oci" };
 
 interface CaRow {
   key: string;
@@ -167,10 +194,16 @@ const CLOUDFORMATION_CONSOLE = "https://console.aws.amazon.com/cloudformation/ho
 // "other" only: kinds._ca_secrets asks for no key, and the scan node has no collector for it.
 const CLM_NOT_COLLECTED = "Not collected: ZeroShield has no connector for this product yet. Nothing is read from it, no key is needed and it is never charged; only its name and API address are saved. Certificates it issued are found where other sources see them: network TLS scans, Certificate Transparency and cloud accounts.";
 // Same sentences as the backend's planning.CLOUD_NOT_CONNECTED (the run estimate's skip reason).
-const CLOUD_NOT_CONNECTED: Record<"azure" | "gcp", string> = {
+const CLOUD_NOT_CONNECTED: Record<KeyedProvider, string> = {
   azure: "Not available until the Azure tenant is connected: Save and validate must pass first",
   gcp: "Not available until the Google Cloud project is connected: Save and validate must pass first",
+  oci: "Not available until the Oracle Cloud tenancy is connected: Save and validate must pass first",
 };
+/** The sentence for an account whose Save and validate has not passed (an unknown kind reads as Azure, as before). */
+function notConnected(kind: string): string {
+  const provider = PROVIDER_OF_KIND[kind];
+  return CLOUD_NOT_CONNECTED[provider && provider !== "aws" ? provider : "azure"];
+}
 // The exact read-only grants the reader scripts make (templates.AZURE_READER / GCP_READER); nothing else is needed.
 const AZURE_READ_ACTIONS = [
   "Microsoft.Resources/subscriptions/read",
@@ -263,7 +296,11 @@ function uniqueName(base: string, taken: string[]): string {
 }
 
 function saveTextFile(text: string, filename: string, type: string) {
-  const url = URL.createObjectURL(new Blob([text], { type }));
+  saveBlob(new Blob([text], { type }), filename);
+}
+
+function saveBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
   link.download = filename;
@@ -507,6 +544,15 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
   const shownValidation = liveValidation ?? viewFromSource(editingCloud) ?? viewFromSource(latestValidated);
   const validating =
     awsMutation.isPending || (testMutation.isPending && PROVIDER_OF_KIND[testMutation.variables?.kind ?? ""] === form.provider);
+  // Oracle Cloud saves twice (the key pair first, then Save and validate), so the form keeps editing the saved tenancy
+  // like AWS does: fixing the user or policy and validating again updates it instead of adding a copy.
+  const onOciSaved = (data: CbomSourceSaveResponse) => {
+    setForm((f) => ({ provider: "oci", source: data.source, nonce: f.nonce }));
+    if (isAwsResult(data.test)) {
+      setValidation(viewFromTest(data.source, data.test));
+      toastValidation(data.test, "oci");
+    }
+  };
   const onCloudSaved = (data: CbomSourceSaveResponse) => {
     if (isAwsResult(data.test)) {
       setValidation(viewFromTest(data.source, data.test));
@@ -522,7 +568,8 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
     rowMenu.request("cbom-cloud-connect");
   };
 
-  const formKey = `${form.provider}-${form.source?.id ?? "new"}-${form.nonce}`;
+  // Oracle Cloud keeps its form (and the chosen way to connect) mounted when its first save hands it the new source.
+  const formKey = form.provider === "oci" ? `oci-${form.nonce}` : `${form.provider}-${form.source?.id ?? "new"}-${form.nonce}`;
   // AWS on a deployment without AWS collection: no form, so the side panel must not ask for one (lab UI r1)
   const awsUnavailable = settings.aws_collection_configured === false;
   const awsOff = form.provider === "aws" && awsUnavailable;
@@ -593,6 +640,9 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
           )}
           {form.provider === "gcp" && (
             <GcpForm key={formKey} teamId={teamId} source={form.source} onSaved={onCloudSaved} onCancel={() => resetForm()} />
+          )}
+          {form.provider === "oci" && (
+            <OciForm key={formKey} teamId={teamId} source={form.source} onSaved={onOciSaved} onCancel={() => resetForm()} />
           )}
         </SectionCard>
 
@@ -669,14 +719,14 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                         </TableCell>
                         <TableCell className="text-zinc-600 dark:text-zinc-400">{scopeLabel(s)}</TableCell>
                         <TableCell className="text-right text-zinc-600 dark:text-zinc-400">
-                          {s.kind === "aws_account" ? cfgList(s, "regions").length : "—"}
+                          {s.kind === "aws_account" ? cfgList(s, "regions").length : s.kind === "oci_tenancy" ? cfgList(s, "regions").length || "All" : "—"}
                         </TableCell>
                         <TableCell className="text-zinc-600 dark:text-zinc-400">{s.last_test_at ? formatDateTime(s.last_test_at) : "Never"}</TableCell>
                         <TableCell>
                           {busy ? <TestStatusBadge status="pending" /> : <TestStatusBadge status={s.last_test_status} title={s.last_test_summary} />}
                           {!busy && s.kind !== "aws_account" && s.last_test_status !== "passed" && s.last_test_status !== "failed" && (
                             <span className="mt-1 block max-w-[220px] text-xs text-zinc-500" data-testid={`cloud-account-not-connected-${s.id}`}>
-                              {CLOUD_NOT_CONNECTED[PROVIDER_OF_KIND[s.kind] === "gcp" ? "gcp" : "azure"]}
+                              {notConnected(s.kind)}
                             </span>
                           )}
                           {!busy && orgEstimateStale(s) && (
@@ -865,7 +915,9 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
           deleting
             ? deleting.kind === "aws_account"
               ? `${deleting.name} is removed from ZeroShield. The read-only role stays in your AWS account until you delete its stack.`
-              : `${deleting.name} and any secret stored for it are removed from ZeroShield.`
+              : deleting.kind === "oci_tenancy"
+                ? `${deleting.name} and its API key are removed from ZeroShield. The read-only user, group and policy stay in your tenancy until you destroy the stack or delete them.`
+                : `${deleting.name} and any secret stored for it are removed from ZeroShield.`
             : ""
         }
         confirmLabel="Delete"
@@ -935,6 +987,14 @@ function AccountCell({ source }: { source: CbomSource }) {
       </div>
     );
   }
+  if (source.kind === "oci_tenancy") {
+    return (
+      <div className="min-w-0">
+        <Truncate className="font-mono text-xs text-zinc-900 dark:text-white" text={cfgString(source, "tenancy_ocid") || "—"} />
+        <span className="block text-xs text-zinc-500">Oracle Cloud tenancy</span>
+      </div>
+    );
+  }
   const org = cfgString(source, "organization_id");
   const projects = cfgList(source, "project_ids");
   return (
@@ -953,6 +1013,10 @@ function scopeLabel(source: CbomSource): string {
   if (source.kind === "azure_subscription") {
     const subs = cfgList(source, "subscription_ids").length;
     return subs ? pluralize(subs, "subscription") : "Tenant";
+  }
+  if (source.kind === "oci_tenancy") {
+    const compartments = cfgList(source, "compartment_ocids").length;
+    return compartments ? pluralize(compartments, "compartment") : "Tenancy";
   }
   if (cfgString(source, "organization_id")) return "Organization";
   return pluralize(cfgList(source, "project_ids").length, "project");
@@ -995,7 +1059,7 @@ function ValidationPanel({ view, pending, provider, awsNotConfigured = false }: 
       )}
       {!isAws && (!view || view.checks.some((c) => c.status === "fail" || c.status === "error")) && (
         <p className="text-xs text-amber-700 dark:text-amber-300" data-testid="cloud-validation-not-connected">
-          {CLOUD_NOT_CONNECTED[provider as "azure" | "gcp"]}.
+          {CLOUD_NOT_CONNECTED[provider as KeyedProvider]}.
         </p>
       )}
       {view && (
@@ -1044,7 +1108,9 @@ function ValidationPanel({ view, pending, provider, awsNotConfigured = false }: 
           ? "Every call the role makes lands in your CloudTrail."
           : provider === "azure"
             ? "Every call lands in your Azure Activity Log and the vaults' diagnostic logs."
-            : "Every call lands in your Cloud Audit Logs (Data Access logs, where enabled)."}
+            : provider === "oci"
+              ? "Every call lands in your tenancy's Audit log, under the ZeroShield user."
+              : "Every call lands in your Cloud Audit Logs (Data Access logs, where enabled)."}
       </p>
       {!isAws && view?.checks.some((c) => c.status === "warning") && (
         <p className="text-xs text-amber-700 dark:text-amber-300" data-testid="cloud-validation-rerun-script">
@@ -1755,7 +1821,457 @@ function GcpForm({
   );
 }
 
-function ReaderScript({ teamId, provider, text }: { teamId: number; provider: "azure" | "gcp"; text: string }) {
+// ---------------------------------------------------------------------------- Oracle Cloud
+const OCI_METHODS: { value: OciMethod; title: string; description: string }[] = [
+  {
+    value: "stack",
+    title: "Deploy to Oracle Cloud",
+    description: "Recommended. A Resource Manager stack creates the read-only user, group and policy, and adds the key.",
+  },
+  {
+    value: "console",
+    title: "Generate a key, run a script",
+    description: "ZeroShield creates the key pair; a Cloud Shell script creates the read-only user, group and policy, and adds the key.",
+  },
+  { value: "own", title: "Use my own API key", description: "Upload the private key of a user that already has the read-only policy." },
+];
+
+function savedOci(source: CbomSource | null): OciSaved | null {
+  if (!source) return null;
+  const origin: OciKeyOrigin = cfgString(source, "key_origin") === "uploaded" ? "uploaded" : "generated";
+  return { tenancy: cfgString(source, "tenancy_ocid"), keyOrigin: origin, keySet: source.secrets_set.includes("api_signing_key") };
+}
+
+function OciForm({
+  teamId,
+  source,
+  onSaved,
+  onCancel,
+}: {
+  teamId: number;
+  source: CbomSource | null;
+  onSaved: (data: CbomSourceSaveResponse) => void;
+  onCancel: () => void;
+}) {
+  const invalidate = useInvalidate(teamId);
+  const queryClient = useQueryClient();
+  const saved = savedOci(source);
+  const [method, setMethod] = useState<OciMethod>(ociMethodOf(saved?.keyOrigin));
+  const [name, setName] = useState(source?.name ?? "");
+  const [tenancy, setTenancy] = useState(cfgString(source, "tenancy_ocid"));
+  const [homeRegion, setHomeRegion] = useState(cfgString(source, "home_region"));
+  const [regions, setRegions] = useState(cfgList(source, "regions").join("\n"));
+  const [compartments, setCompartments] = useState(cfgList(source, "compartment_ocids").join("\n"));
+  const [userOcid, setUserOcid] = useState(cfgString(source, "user_ocid"));
+  const [privateKey, setPrivateKey] = useState("");
+  const [keyFile, setKeyFile] = useState<string | null>(null);
+  const [errors, setErrors] = useState<Record<string, string | null>>({});
+  const [confirmNewKey, setConfirmNewKey] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const fingerprint = cfgString(source, "fingerprint");
+  const publicKey = cfgString(source, "public_key_pem");
+  const savedRegion = cfgString(source, "home_region");
+  const savedTenancy = cfgString(source, "tenancy_ocid");
+  // The generated key pair exists for the tenancy in the form (the server writes its fingerprint on every save).
+  const keyReady = ociKeyReady(method, saved, fingerprint, tenancy);
+  const tenancyChanged = !!saved && tenancy.trim() !== saved.tenancy;
+
+  const save = useMutation({
+    mutationFn: (v: { name: string; config: Record<string, unknown>; secrets: Record<string, string>; clear: string[]; validate: boolean }) =>
+      source
+        ? updateCbomSource(teamId, source.id, {
+            name: v.name,
+            config: v.config,
+            secrets: v.secrets,
+            ...(v.clear.length ? { clear_secrets: v.clear } : {}),
+            expected_version: source.row_version,
+            test_after_save: v.validate,
+          })
+        : createCbomSource(teamId, { kind: "oci_tenancy", name: v.name, config: v.config, secrets: v.secrets, test_after_save: v.validate }),
+    onSuccess: (data) => {
+      setPrivateKey("");
+      setKeyFile(null);
+      onSaved(data);
+    },
+    onError: (err) => {
+      if (source && (httpStatus(err) === 409 || httpStatus(err) === 404)) onCancel();
+    },
+    onSettled: () => {
+      invalidate();
+      refreshCreditBalance(queryClient); // a changed connection refunds the source's pending collect jobs
+    },
+  });
+
+  /** validate: Save and validate (needs the user OCID); otherwise the save that creates (or replaces) the key pair. */
+  const submit = (validate: boolean, replaceKey = false) => {
+    const values = { method, tenancy, homeRegion, regions, compartments, userOcid, privateKey };
+    const check = checkOciForm(values, saved, validate);
+    const next: Record<string, string | null> = { name: nameError(name), ...check.errors };
+    if (validate && tenancyChanged && saved?.keyOrigin === "generated" && method !== "own") {
+      // a different tenancy makes a new key on save, which no user holds yet: validating now could only fail
+      next.tenancy = "Save the new tenancy with Save and create key in step 1 first, then add the new key to the user";
+    }
+    setErrors(next);
+    if (Object.values(next).some(Boolean)) return;
+    const { secrets, clear } = ociSecretsOf(values, saved, replaceKey);
+    save.mutate({ name: name.trim(), config: { ...check.config }, secrets, clear, validate });
+  };
+
+  const downloadStack = async () => {
+    if (!source) return;
+    setDownloading(true);
+    try {
+      saveBlob(await downloadCbomOciStack(teamId, source.id), OCI_STACK_FILENAME);
+    } catch {
+      toast.error("Could not download the stack. Please try again.");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const nameField = (
+    <Field infoId="cbsrc.oci.name" label="Name" htmlFor="oci-name" required error={errors.name}>
+      <Input id="oci-name" data-testid="cloud-oci-name" value={name} maxLength={64} placeholder="oci-prod" onChange={(e) => setName(e.target.value)} />
+    </Field>
+  );
+  const tenancyField = (
+    <Field
+      infoId="cbsrc.oci.tenancy"
+      label="Tenancy OCID"
+      htmlFor="oci-tenancy"
+      required
+      error={errors.tenancy}
+      hint={
+        tenancyChanged && saved?.keyOrigin === "generated" && method !== "own"
+          ? "Saving a different tenancy creates a new key; add it to the user again."
+          : "Profile menu > Tenancy, then copy the OCID."
+      }
+    >
+      <Input
+        id="oci-tenancy"
+        data-testid="cloud-oci-tenancy"
+        className="font-mono text-sm"
+        value={tenancy}
+        maxLength={128}
+        spellCheck={false}
+        autoComplete="off"
+        placeholder="ocid1.tenancy.oc1..aaaaaaaa…"
+        onChange={(e) => setTenancy(e.target.value)}
+      />
+    </Field>
+  );
+  const homeRegionField = (
+    <Field infoId="cbsrc.oci.home_region" label="Home region" htmlFor="oci-home-region" required error={errors.homeRegion} hint="Shown on the tenancy's page, such as us-ashburn-1.">
+      <Input
+        id="oci-home-region"
+        data-testid="cloud-oci-home-region"
+        className="font-mono text-sm"
+        value={homeRegion}
+        maxLength={32}
+        spellCheck={false}
+        autoComplete="off"
+        placeholder="us-ashburn-1"
+        onChange={(e) => setHomeRegion(e.target.value)}
+      />
+    </Field>
+  );
+  const userField = (
+    <Field
+      infoId="cbsrc.oci.user"
+      label="User OCID"
+      htmlFor="oci-user"
+      required
+      error={errors.userOcid}
+      hint={method === "stack" ? "The user_ocid output of the stack's Apply job." : "From the user's page in Identity > Users."}
+    >
+      <Input
+        id="oci-user"
+        data-testid="cloud-oci-user"
+        className="font-mono text-sm"
+        value={userOcid}
+        maxLength={128}
+        spellCheck={false}
+        autoComplete="off"
+        placeholder="ocid1.user.oc1..aaaaaaaa…"
+        onChange={(e) => setUserOcid(e.target.value)}
+      />
+    </Field>
+  );
+  const scopeFields = (
+    <>
+      <Field infoId="cbsrc.oci.regions" label="Regions" htmlFor="oci-regions" error={errors.regions} hint="One per line. Optional: blank reads every region the tenancy subscribes to.">
+        <Textarea
+          id="oci-regions"
+          data-testid="cloud-oci-regions"
+          className="font-mono text-xs min-h-[88px]"
+          value={regions}
+          spellCheck={false}
+          placeholder={"us-ashburn-1\neu-frankfurt-1"}
+          onChange={(e) => setRegions(e.target.value)}
+        />
+      </Field>
+      <Field
+        infoId="cbsrc.oci.compartments"
+        label="Compartment OCIDs"
+        htmlFor="oci-compartments"
+        error={errors.compartments}
+        hint="One per line. Optional: blank reads every compartment in the tenancy."
+      >
+        <Textarea
+          id="oci-compartments"
+          data-testid="cloud-oci-compartments"
+          className="font-mono text-xs min-h-[88px]"
+          value={compartments}
+          spellCheck={false}
+          placeholder={"ocid1.compartment.oc1..aaaaaaaa…"}
+          onChange={(e) => setCompartments(e.target.value)}
+        />
+      </Field>
+    </>
+  );
+  const fingerprintRow = (
+    <div className="space-y-1" data-testid="cloud-oci-fingerprint">
+      <p className="text-xs text-zinc-500">
+        Key fingerprint <InfoTip id="cbsrc.oci.fingerprint" />
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <code className="flex-1 min-w-[200px] break-all rounded-md border bg-zinc-50 dark:bg-zinc-950 px-3 py-2 font-mono text-sm text-zinc-900 dark:text-zinc-100">
+          {fingerprint}
+        </code>
+        <Button variant="ghost" size="sm" className="cursor-pointer" disabled={save.isPending} onClick={() => setConfirmNewKey(true)} data-testid="cloud-oci-new-key">
+          Generate a new key
+        </Button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-5">
+      {source && <EditingBanner name={source.name} onCancel={onCancel} />}
+      <div data-testid="cloud-oci-method">
+        <ChoiceCards
+          infoId="cbsrc.oci.method"
+          name="oci-method"
+          label="How to connect"
+          columns={3}
+          value={method}
+          onChange={(v) => {
+            setMethod(v);
+            setErrors({});
+          }}
+          options={OCI_METHODS}
+        />
+      </div>
+      <PermissionsHelp provider="oci" />
+
+      {method === "own" ? (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {nameField}
+            {tenancyField}
+            {userField}
+            {homeRegionField}
+            <SecretField
+              infoId="cbsrc.oci.private_key"
+              id="oci-private-key"
+              label="Private key (PEM)"
+              value={privateKey}
+              onChange={(v) => {
+                setPrivateKey(v);
+                setKeyFile(null);
+              }}
+              isSet={saved?.keyOrigin === "uploaded" && saved.keySet}
+              multiline
+              required
+              error={errors.privateKey}
+              placeholder="-----BEGIN PRIVATE KEY-----"
+              hint={
+                keyFile
+                  ? `Loaded ${keyFile}`
+                  : saved?.keyOrigin === "uploaded" && saved.keySet
+                    ? "Saved. Leave blank to keep it; changing the tenancy OCID clears it."
+                    : STORED_HINT
+              }
+            />
+            <Field infoId="cbsrc.oci.key_file" label="Upload the key file" htmlFor="oci-key-file" error={errors.keyFile} hint="The unencrypted .pem private key of the user's API key">
+              <Input
+                id="oci-key-file"
+                data-testid="cloud-oci-key-file"
+                type="file"
+                accept=".pem,.key,application/x-pem-file,text/plain"
+                className="cursor-pointer"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  try {
+                    const text = await readTextFile(file, 64 * 1024);
+                    setPrivateKey(text);
+                    setKeyFile(file.name);
+                    setErrors((x) => ({ ...x, keyFile: null, privateKey: null }));
+                  } catch (err) {
+                    setErrors((x) => ({ ...x, keyFile: (err as Error).message }));
+                  }
+                }}
+              />
+            </Field>
+            {scopeFields}
+          </div>
+          <FormFooter pending={save.isPending} onSave={() => submit(true)} testId="cloud-oci-save" />
+        </>
+      ) : (
+        <ol className="space-y-8">
+          <li>
+            <StepTitle n={1} title="Tenancy" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {nameField}
+              {tenancyField}
+              {homeRegionField}
+              <div className="hidden md:block" aria-hidden />
+              {scopeFields}
+            </div>
+            {!keyReady && (
+              <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
+                <p className="text-xs text-zinc-500 mr-auto">
+                  {saved?.keyOrigin === "uploaded"
+                    ? "Replaces the uploaded key with a key pair ZeroShield creates. Nothing is read yet."
+                    : saved?.keyOrigin === "generated" && tenancyChanged
+                      ? "Saves the new tenancy and creates a new key pair; the key on the old user stops working for ZeroShield. Nothing is read yet."
+                      : "Saves the tenancy and creates an API key pair; the private key never leaves ZeroShield. Nothing is read yet."}
+                </p>
+                <Button
+                  className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
+                  disabled={save.isPending}
+                  onClick={() => submit(false)}
+                  data-testid="cloud-oci-create-key"
+                >
+                  {save.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  Save and create key
+                </Button>
+              </div>
+            )}
+          </li>
+
+          <li>
+            <StepTitle n={2} title={method === "stack" ? "Deploy the stack" : "Run the script"} />
+            {!keyReady ? (
+              <p className="text-sm text-zinc-500">Available after step 1 creates the key.</p>
+            ) : method === "stack" ? (
+              <div className="space-y-4" data-testid="cloud-oci-stack">
+                {fingerprintRow}
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
+                    disabled={downloading}
+                    onClick={downloadStack}
+                    data-testid="cloud-oci-download-stack"
+                  >
+                    {downloading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+                    Download stack
+                  </Button>
+                  <Button variant="outline" className="cursor-pointer" asChild>
+                    <a href={ociResourceManagerUrl(savedRegion)} target="_blank" rel="noopener noreferrer" data-testid="cloud-oci-resource-manager">
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Open Resource Manager
+                    </a>
+                  </Button>
+                </div>
+                <ol className="list-decimal space-y-1 pl-5 text-sm text-zinc-600 dark:text-zinc-400">
+                  <li>
+                    Create a stack from the downloaded .zip (any region; the identity resources go to the home region{" "}
+                    <span className="font-mono text-xs text-zinc-900 dark:text-white">{savedRegion}</span>).
+                  </li>
+                  <li>Enter an email your team reads for the new user (tenancies with identity domains require one).</li>
+                  <li>Choose Apply and wait for the job to succeed.</li>
+                  <li>Copy the <span className="font-mono text-xs">user_ocid</span> output into step 3.</li>
+                </ol>
+                <p className="text-xs text-zinc-500">
+                  The stack creates a user, the group {OCI_GROUP} and a policy with inspect and read grants only, and adds this key to the user.
+                  Destroying the stack removes them. A new key for this source: edit the same stack, upload the new .zip and Apply. Another
+                  ZeroShield source in the same tenancy: change the group, user and policy names in the stack form.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4" data-testid="cloud-oci-console">
+                {fingerprintRow}
+                <div className="space-y-1 min-w-0" data-testid="cloud-oci-public-key">
+                  <p className="text-xs text-zinc-500">
+                    Public key <InfoTip id="cbsrc.oci.public_key" />
+                  </p>
+                  <CodeSnippet code={publicKey} language="text" />
+                </div>
+                <ReaderScript
+                  teamId={teamId}
+                  provider="oci"
+                  fill={(script) => fillOciTenancy(fillOciPublicKey(script, publicKey), savedTenancy)}
+                  text={`Run this script in OCI Cloud Shell as an administrator, in the home region. It creates the group ${OCI_GROUP} and its policy (inspect and read grants only), creates the user ${OCI_USER_NAME}, adds it to the group and adds the public key above to it, then prints the user OCID for step 3. To use a user you already have instead, set USER_OCID at the top of the script; if you already pasted the key on that user in the Console (Identity > Users > the user > API keys > Add API key > Paste public key), the script leaves it.`}
+                />
+                <p className="text-xs text-zinc-500">Check that the fingerprint the script or the Console shows matches the one above.</p>
+              </div>
+            )}
+          </li>
+
+          <li>
+            <StepTitle n={3} title="Connect the user" />
+            {!keyReady ? (
+              <p className="text-sm text-zinc-500">Available after step 1 creates the key.</p>
+            ) : (
+              <div className="space-y-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{userField}</div>
+                <FormFooter pending={save.isPending} onSave={() => submit(true)} testId="cloud-oci-validate" />
+              </div>
+            )}
+          </li>
+        </ol>
+      )}
+
+      <ConfirmDialog
+        open={confirmNewKey}
+        onOpenChange={setConfirmNewKey}
+        title="Generate a new key?"
+        description="ZeroShield replaces the stored key pair at once, so the key on the user stops working for ZeroShield. Add the new public key to the user (edit the existing stack, upload the new .zip and Apply; or run the script again, or paste it in the Console), then Save and validate."
+        confirmLabel="Generate a new key"
+        destructive
+        pending={save.isPending}
+        onConfirm={() => {
+          setConfirmNewKey(false);
+          submit(false, true);
+        }}
+      />
+    </div>
+  );
+}
+
+function OciPermissionsHelp() {
+  return (
+    <details className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-4 text-sm" data-testid="cloud-oci-permissions">
+      <summary className="cursor-pointer font-medium text-zinc-900 dark:text-white">Exact permissions ZeroShield needs (read-only)</summary>
+      <div className="mt-3 space-y-3 text-zinc-600 dark:text-zinc-400">
+        <div>
+          <p className="text-xs font-medium text-zinc-500">
+            Policy statements <InfoTip id="cbsrc.oci.policy" />
+          </p>
+          <ul className="mt-1 list-disc pl-5 font-mono text-xs">
+            {OCI_POLICY_GRANTS.map((grant) => (
+              <li key={grant}>{ociPolicyStatement(grant)}</li>
+            ))}
+          </ul>
+        </div>
+        <p className="text-xs">
+          Metadata only. Never granted: <span className="font-mono">{OCI_NEVER_GRANTED.join(", ")}</span>, so ZeroShield cannot use a key or read
+          the contents of a secret or certificate.
+        </p>
+      </div>
+    </details>
+  );
+}
+
+function ReaderScript({ teamId, provider, text, fill }: {
+  teamId: number;
+  provider: KeyedProvider;
+  text: string;
+  /** Fills in what the script leaves as a placeholder (Oracle Cloud: the source's public key); the cache keeps the raw script. */
+  fill?: (script: string) => string;
+}) {
   const [open, setOpen] = useState(false);
   const query = useQuery({
     queryKey: cbomSourcesKeys.template(teamId, `${provider}-reader`),
@@ -1774,7 +2290,7 @@ function ReaderScript({ teamId, provider, text }: { teamId: number; provider: "a
         onClick={() => setOpen((v) => !v)}
         data-testid={`cloud-${provider}-reader-toggle`}
       >
-        {open ? "Hide the read-only role script" : "Show the read-only role script"}
+        {open ? `Hide the read-only ${provider === "oci" ? "policy" : "role"} script` : `Show the read-only ${provider === "oci" ? "policy" : "role"} script`}
       </button>
       {open &&
         (query.isLoading ? (
@@ -1783,14 +2299,15 @@ function ReaderScript({ teamId, provider, text }: { teamId: number; provider: "a
           <ErrorBlock message="Could not load the script." error={query.error} onRetry={() => query.refetch()} />
         ) : (
           <div className="min-w-0">
-            <CodeSnippet code={query.data} language="bash" />
+            <CodeSnippet code={fill ? fill(query.data) : query.data} language="bash" />
           </div>
         ))}
     </div>
   );
 }
 
-function PermissionsHelp({ provider }: { provider: "azure" | "gcp" }) {
+function PermissionsHelp({ provider }: { provider: KeyedProvider }) {
+  if (provider === "oci") return <OciPermissionsHelp />;
   const azure = provider === "azure";
   return (
     <details className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-4 text-sm" data-testid={`cloud-${provider}-permissions`}>

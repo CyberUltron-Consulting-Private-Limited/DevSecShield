@@ -25,7 +25,7 @@ export const AREA_PREFIXES = {
   "cbsrc-nodes": ["cbsrc.nodes", "cbsrc.pool", "cbsrc.sched"],
   "cbsrc-servers": ["cbsrc.servers", "cbsrc.test", "cbsrc.app"],
   "cbsrc-workloads": ["cbsrc.k8s", "cbsrc.k8sdb", "cbsrc.db", "cbsrc.km", "cbsrc.img"],
-  "cbsrc-cloud": ["cbsrc.cloud", "cbsrc.aws", "cbsrc.azure", "cbsrc.gcp", "cbsrc.idp", "cbsrc.ca", "cbsrc.cert", "cbsrc.ct"],
+  "cbsrc-cloud": ["cbsrc.cloud", "cbsrc.aws", "cbsrc.azure", "cbsrc.gcp", "cbsrc.oci", "cbsrc.idp", "cbsrc.ca", "cbsrc.cert", "cbsrc.ct"],
   "cbsrc-network": ["cbsrc.net"],
   "cbsrc-evidence": ["cbsrc.ev", "cbsrc.cmdb"],
   "cbsrc-run": ["cbsrc.rr"],

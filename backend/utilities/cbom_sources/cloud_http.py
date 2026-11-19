@@ -1,7 +1,10 @@
-"""HTTPS for the Azure and Google Cloud collectors (cloud worker): JSON over a fixed set of provider hosts.
+"""HTTPS for the Azure, Google Cloud and Oracle Cloud collectors (cloud worker): JSON over a fixed set of provider hosts.
 
-A bearer token is only ever sent to an allow-listed provider host over HTTPS: the fixed ARM, Entra ID and Google API
-hosts, and Azure Key Vault data-plane hosts (``<vault>.vault.azure.net``).  Next-page links are followed only when they
+A bearer token or a request signature is only ever sent to an allow-listed provider host over HTTPS: the fixed ARM,
+Entra ID and Google API hosts, Azure Key Vault data-plane hosts (``<vault>.vault.azure.net``), and the OCI regional
+service hosts of the commercial realm (``identity.<region>.oci.oraclecloud.com``, ``kms.<region>.oraclecloud.com`` and a
+vault's ``<id>-management.kms.<region>.oraclecloud.com``, ...).  OCI requests are signed per request (``signer``) over the
+exact path and query sent; OCI list pages follow the ``opc-next-page`` header.  Next-page links are followed only when they
 stay on the host of the request that returned them.  No redirects, short timeouts, a response size cap, up to four
 retries on 429/503 (honouring Retry-After up to 10 s, else a growing back-off); a call still throttled after that fails
 with the code ``Throttled``, which the collectors turn into a coverage row.  The TLS context is the one ``safe_fetch`` uses (TLS 1.2+, plus
@@ -12,8 +15,8 @@ from __future__ import annotations
 import json
 import re
 import time
-from typing import Any
-from urllib.parse import urlsplit
+from typing import Any, Callable
+from urllib.parse import quote, urlencode, urlsplit
 
 import httpx
 
@@ -26,11 +29,20 @@ FIXED_HOSTS = frozenset({
     "compute.googleapis.com", "storage.googleapis.com",
 })
 _VAULT_HOST = re.compile(r"[a-z0-9][a-z0-9-]{1,22}[a-z0-9]\.vault\.azure\.net")  # vault names: 3-24 characters
+_OCI_REGION = r"[a-z]{2,4}-[a-z]{3,16}-[1-9]"
+_OCI_HOST = re.compile(
+    rf"(?:(?:identity|vaults|certificatesmanagement)\.{_OCI_REGION}\.oci\.oraclecloud\.com"
+    rf"|(?:kms|iaas|objectstorage)\.{_OCI_REGION}\.oraclecloud\.com"
+    rf"|[a-z0-9]{{1,64}}-management\.kms\.{_OCI_REGION}\.oraclecloud\.com)")
 MAX_BODY = 8 * 1024 * 1024
 MAX_PAGES = 200
 TIMEOUT = httpx.Timeout(15.0, connect=5.0)
 ATTEMPTS = 5  # one call and four retries on 429 / 503 / a timeout
 MAX_WAIT_S = 10.0
+
+
+# (method, full URL) -> the request's auth headers (OCI: date and authorization)
+Signer = Callable[[str, str], dict[str, str]]
 
 
 class CloudHttpError(Exception):
@@ -46,7 +58,7 @@ def host_allowed(url: str) -> bool:
     host = (parts.hostname or "").lower()
     if parts.scheme != "https" or parts.username or parts.password or (parts.port not in (None, 443)):
         return False
-    return host in FIXED_HOSTS or bool(_VAULT_HOST.fullmatch(host))
+    return host in FIXED_HOSTS or bool(_VAULT_HOST.fullmatch(host)) or bool(_OCI_HOST.fullmatch(host))
 
 
 def _backoff(retry_after: str | None, attempt: int) -> float:
@@ -74,6 +86,8 @@ def _error(status: int, raw: bytes) -> CloudHttpError:
         elif isinstance(err, str):  # OAuth token endpoints: {"error": "invalid_client", "error_description": ...}
             code = err
             message = str(body.get("error_description") or "").split("\r\n")[0].split(" Trace ID:")[0]
+        elif isinstance(body.get("code"), str):  # OCI: {"code": "NotAuthorizedOrNotFound", "message": ...}
+            code, message = str(body["code"]), str(body.get("message") or "")
     return CloudHttpError(status, code[:80], message)
 
 
@@ -97,11 +111,21 @@ class CloudHttp:
 
     def request(self, method: str, url: str, *, token: str | None = None, data: dict[str, str] | None = None,
                 params: dict[str, Any] | None = None, json_body: dict[str, Any] | None = None) -> dict[str, Any]:
+        return self._exchange(method, url, token=token, data=data, params=params, json_body=json_body)[0]
+
+    def _exchange(self, method: str, url: str, *, token: str | None = None, data: dict[str, str] | None = None,
+                  params: dict[str, Any] | None = None, json_body: dict[str, Any] | None = None,
+                  signer: Signer | None = None) -> tuple[dict[str, Any], dict[str, str]]:
+        """One call: (parsed JSON, response headers).  With ``signer`` (OCI) the query is put on the URL here, so the
+        signature covers exactly the path and query sent, and each attempt is signed afresh (its own Date)."""
+        if signer is not None and params:
+            url = f"{url}{'&' if '?' in url else '?'}{urlencode(params, quote_via=quote)}"
+            params = None
         if not host_allowed(url):
             raise CloudHttpError(0, "HostNotAllowed", urlsplit(url).hostname or "")
-        headers = {"Authorization": f"Bearer {token}"} if token else {}
         for attempt in range(ATTEMPTS):
             last = attempt == ATTEMPTS - 1
+            headers = signer(method, url) if signer is not None else ({"Authorization": f"Bearer {token}"} if token else {})
             try:
                 with self._client.stream(method, url, headers=headers, data=data, params=params,
                                          json=json_body) as response:
@@ -125,7 +149,7 @@ class CloudHttp:
                         parsed = json.loads(body or b"{}")
                     except ValueError as exc:
                         raise CloudHttpError(response.status_code, "NotJson") from exc
-                    return parsed if isinstance(parsed, dict) else {"value": parsed}
+                    return (parsed if isinstance(parsed, dict) else {"value": parsed}), dict(response.headers)
             except httpx.TimeoutException as exc:
                 if last:
                     raise CloudHttpError(0, "Timeout", urlsplit(url).hostname or "") from exc
@@ -191,3 +215,26 @@ class CloudHttp:
                 return items, False, unreachable
             query["pageToken"] = token_next
         return items, True, unreachable
+
+    def oci_get(self, url: str, signer: Signer, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        """One signed OCI GET.  A JSON array answer comes back as ``{"value": [...]}``, a JSON string as
+        ``{"value": "..."}`` (GetNamespace)."""
+        return self._exchange("GET", url, params=params, signer=signer)[0]
+
+    def oci_pages(self, url: str, signer: Signer, *, cap: int, params: dict[str, Any] | None = None
+                  ) -> tuple[list[dict[str, Any]], bool]:
+        """Follow OCI ``opc-next-page`` (``page`` query parameter).  A page is a JSON array, or a collection object with
+        ``items`` (Certificates).  Returns (items, truncated)."""
+        items: list[dict[str, Any]] = []
+        query = {"limit": 100, **(params or {})}
+        for _ in range(MAX_PAGES):
+            page, headers = self._exchange("GET", url, params=dict(query), signer=signer)
+            rows = page.get("value") if isinstance(page.get("value"), list) else page.get("items")
+            items.extend(v for v in rows or [] if isinstance(v, dict))
+            if len(items) >= cap:
+                return items[:cap], True
+            nxt = {k.lower(): v for k, v in headers.items()}.get("opc-next-page")
+            if not nxt:
+                return items, False
+            query["page"] = nxt
+        return items, True
