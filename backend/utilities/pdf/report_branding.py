@@ -12,6 +12,7 @@ Visual language (mirrors Enterprise_Security_Report_Sample.html):
 
 from __future__ import annotations
 
+import io
 import logging
 import os
 import re
@@ -28,6 +29,7 @@ from reportlab.lib.units import inch, mm
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 from reportlab.platypus import (
+    Image as PlatypusImage,
     Flowable,
     KeepTogether,
     Paragraph,
@@ -385,6 +387,63 @@ def _draw_logo(canvas_obj: canvas.Canvas, x: float, y: float, *, max_height: flo
     except Exception:
         logger.warning("Enterprise report logo failed to draw; continuing without it", exc_info=True)
         return 0.0
+
+
+def _fit(width: float, height: float, max_w: float, max_h: float) -> Tuple[float, float]:
+    scale = min(max_w / float(width), max_h / float(height))
+    return width * scale, height * scale
+
+
+def _client_logo(ctx: Any) -> Optional[Tuple[ImageReader, int, int, str]]:
+    """``(reader, width, height, tone)`` for the team logo in this build, or None.
+
+    One reader per build (cached on the context), so every page draws the same image object and
+    the PDF stores the image once.
+    """
+    branding = getattr(ctx, "branding", None)
+    if branding is None or not branding.applied:
+        return None
+    cached = getattr(ctx, "_logo_reader", None)
+    if cached is None:
+        try:
+            cached = (branding.reader(), branding.width, branding.height, branding.tone)
+        except Exception:  # noqa: BLE001 - a broken logo never breaks a report
+            logger.warning("report logo skipped while drawing")
+            cached = False
+        try:
+            ctx._logo_reader = cached
+        except AttributeError:
+            pass
+    return cached or None
+
+
+def _draw_client_logo_chip(
+    canvas_obj: canvas.Canvas,
+    logo: Tuple[ImageReader, int, int, str],
+    x: float,
+    center_y: float,
+    *,
+    max_w: float,
+    max_h: float,
+    chip: Optional[colors.Color],
+    pad: float = 3.0,
+) -> float:
+    """Draw the client logo (on a rounded chip when ``chip``); returns the width used."""
+    reader, iw, ih, _tone = logo
+    if max_w <= 2 * pad + 8 or max_h <= 2 * pad + 4:
+        return 0.0
+    w, h = _fit(iw, ih, max_w - 2 * pad, max_h - 2 * pad)
+    try:
+        if chip is not None:
+            canvas_obj.saveState()
+            canvas_obj.setFillColor(chip)
+            canvas_obj.roundRect(x, center_y - h / 2 - pad, w + 2 * pad, h + 2 * pad, 4, fill=1, stroke=0)
+            canvas_obj.restoreState()
+        canvas_obj.drawImage(reader, x + pad, center_y - h / 2, width=w, height=h, mask="auto")
+    except Exception:  # noqa: BLE001
+        logger.warning("report logo failed to draw on a page; continuing without it")
+        return 0.0
+    return w + 2 * pad
 
 
 def severity_color(severity: str) -> colors.Color:
@@ -907,8 +966,13 @@ def draw_page_header(
     doc: SimpleDocTemplate,
     *,
     report_key: str = "sast",
+    ctx: Any = None,
 ) -> None:
-    """Navy brand bar with Zero Shield logo + zeroshield.ai on every page."""
+    """Navy brand bar with Zero Shield logo + zeroshield.ai on every page.
+
+    With a team logo (``ctx.branding``), the client logo sits after the Zero Shield text block,
+    on a white chip unless the logo is light (then straight on navy), never reaching the label.
+    """
     meta = REPORT_META.get(report_key, REPORT_META["sast"])
     page_width, page_height = doc.pagesize
     margin = 36
@@ -931,12 +995,33 @@ def draw_page_header(
     canvas_obj.setFillColor(colors.HexColor("#99F6E4"))
     canvas_obj.drawString(text_x, y0 + 10, BRAND_URL)
 
+    label_text = "CONFIDENTIAL" if ctx is None else ctx.label_text.upper()
     canvas_obj.setFillColor(COLOR_WHITE)
     canvas_obj.setFont("Helvetica-Bold", 8)
     canvas_obj.drawRightString(page_width - margin, y0 + 22, meta["footer_label"])
-    canvas_obj.setFont("Helvetica", 7)
-    canvas_obj.setFillColor(colors.HexColor("#94A3B8"))
-    canvas_obj.drawRightString(page_width - margin, y0 + 10, "CONFIDENTIAL")
+    if label_text:
+        canvas_obj.setFont("Helvetica", 7)
+        canvas_obj.setFillColor(colors.HexColor("#94A3B8"))
+        canvas_obj.drawRightString(page_width - margin, y0 + 10, label_text)
+
+    logo = _client_logo(ctx)
+    if logo is not None:
+        text_end = text_x + max(
+            canvas_obj.stringWidth(BRAND_NAME.upper(), "Helvetica-Bold", 10),
+            canvas_obj.stringWidth(BRAND_URL, "Helvetica", 7.5),
+        )
+        right_start = page_width - margin - max(
+            canvas_obj.stringWidth(meta["footer_label"], "Helvetica-Bold", 8),
+            canvas_obj.stringWidth(label_text, "Helvetica", 7) if label_text else 0.0,
+        )
+        x = text_end + 16
+        landscape = page_width > page_height
+        max_w = min(160.0 if landscape else 120.0, right_start - 12 - x)
+        canvas_obj.setStrokeColor(colors.HexColor("#334E68"))
+        canvas_obj.setLineWidth(0.6)
+        canvas_obj.line(text_end + 8, y0 + 9, text_end + 8, y0 + bar_h - 9)
+        chip = None if logo[3] == "light" else COLOR_WHITE
+        _draw_client_logo_chip(canvas_obj, logo, x, y0 + bar_h / 2, max_w=max_w, max_h=28, chip=chip)
     canvas_obj.restoreState()
 
 
@@ -945,6 +1030,7 @@ def draw_standard_footer(
     doc: SimpleDocTemplate,
     *,
     report_key: str = "sast",
+    ctx: Any = None,
 ) -> None:
     """Footer with logo, zeroshield.ai, report label, page number."""
     meta = REPORT_META.get(report_key, REPORT_META["sast"])
@@ -970,7 +1056,13 @@ def draw_standard_footer(
 
     canvas_obj.setFillColor(COLOR_SLATE)
     canvas_obj.setFont("Helvetica", 7)
-    canvas_obj.drawCentredString(page_width / 2.0, 14, f"{meta['footer_label']}  ·  Confidential")
+    if ctx is None:
+        centre = f"{meta['footer_label']}  ·  Confidential"
+    else:
+        centre = meta["footer_label"] + ctx.footer_suffix()
+        if ctx.label_text:
+            centre += f"  ·  {ctx.label_text}"
+    canvas_obj.drawCentredString(page_width / 2.0, 14, centre)
 
     canvas_obj.setFillColor(BRAND_NAVY)
     canvas_obj.setFont("Helvetica-Bold", 8)
@@ -984,24 +1076,25 @@ def draw_enterprise_cover_page(
     *,
     report_key: str,
     generated_at: Optional[datetime] = None,
+    ctx: Any = None,
 ) -> None:
     draw_page_background(canvas_obj, doc)
-    draw_page_header(canvas_obj, doc, report_key=report_key)
-    draw_standard_footer(canvas_obj, doc, report_key=report_key)
+    draw_page_header(canvas_obj, doc, report_key=report_key, ctx=ctx)
+    draw_standard_footer(canvas_obj, doc, report_key=report_key, ctx=ctx)
 
 
-def make_cover_callback(report_key: str):
+def make_cover_callback(report_key: str, ctx: Any = None):
     def _on_first_page(canvas_obj: canvas.Canvas, doc: SimpleDocTemplate) -> None:
-        draw_enterprise_cover_page(canvas_obj, doc, report_key=report_key)
+        draw_enterprise_cover_page(canvas_obj, doc, report_key=report_key, ctx=ctx)
 
     return _on_first_page
 
 
-def make_footer_callback(report_key: str):
+def make_footer_callback(report_key: str, ctx: Any = None):
     def _on_later_pages(canvas_obj: canvas.Canvas, doc: SimpleDocTemplate) -> None:
         draw_page_background(canvas_obj, doc)
-        draw_page_header(canvas_obj, doc, report_key=report_key)
-        draw_standard_footer(canvas_obj, doc, report_key=report_key)
+        draw_page_header(canvas_obj, doc, report_key=report_key, ctx=ctx)
+        draw_standard_footer(canvas_obj, doc, report_key=report_key, ctx=ctx)
 
     return _on_later_pages
 
@@ -1548,10 +1641,18 @@ def append_report_masthead(
     project_name: str = "Security Scan",
     org_label: str = "Zero Shield",
     styles: Optional[Dict[str, ParagraphStyle]] = None,
+    ctx: Any = None,
 ) -> None:
-    """Dense title block under the canvas header (logo lives in header/footer)."""
+    """Dense title block under the canvas header (logo lives in header/footer).
+
+    With a team logo or a "prepared for" name, the right column shows them (the cover of the
+    report); with options that shape the content, a "Report scope" block follows.
+    """
     styles = styles or get_report_styles()
     meta = REPORT_META.get(report_key, REPORT_META["sast"])
+    options = getattr(ctx, "options", None)
+    if options is not None and options.title:
+        project_name = options.title
     brand_style = ParagraphStyle(
         "BrandUrl",
         parent=styles["muted"],
@@ -1579,11 +1680,15 @@ def append_report_masthead(
             ]
         )
     )
+    right_rows: List[List[Any]] = [
+        [Paragraph(BRAND_URL, brand_style)],
+        [Paragraph(escape_html(meta["footer_label"]), styles["panel_meta"])],
+    ]
+    cover = masthead_cover_rows(ctx, width=CONTENT_WIDTH * 0.32, styles=styles)
+    if cover:
+        right_rows = cover + right_rows
     right = Table(
-        [
-            [Paragraph(BRAND_URL, brand_style)],
-            [Paragraph(escape_html(meta["footer_label"]), styles["panel_meta"])],
-        ],
+        right_rows,
         colWidths=[CONTENT_WIDTH * 0.32],
     )
     right.setStyle(
@@ -1609,6 +1714,72 @@ def append_report_masthead(
         )
     )
     story.append(row)
+    story.append(Spacer(1, 0.06 * inch))
+    append_scope_block(story, ctx, styles=styles)
+
+
+def masthead_cover_rows(ctx: Any, *, width: float, styles: Dict[str, ParagraphStyle],
+                        align: str = "RIGHT", max_h: float = 44.0) -> List[List[Any]]:
+    """Rows for the cover's client block: the team logo and "Prepared for <name>".
+
+    Empty without a logo and without a name, so the default cover is unchanged. A light logo
+    gets a navy chip so it stays visible on the white page.
+    """
+    options = getattr(ctx, "options", None)
+    logo = _client_logo(ctx)
+    prepared = options.prepared_for if options is not None else None
+    if logo is None and not prepared:
+        return []
+    rows: List[List[Any]] = []
+    if logo is not None:
+        _reader, iw, ih, tone = logo
+        w, h = _fit(iw, ih, min(150.0, width), max_h)
+        image = PlatypusImage(io.BytesIO(ctx.branding.png), width=w, height=h, mask="auto")
+        image.hAlign = align
+        if tone == "light":
+            chip = Table([[image]], colWidths=[w + 10], rowHeights=[h + 10])
+            chip.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, -1), BRAND_NAVY),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("ROUNDEDCORNERS", [4, 4, 4, 4]),
+            ]))
+            chip.hAlign = align
+            rows.append([chip])
+        else:
+            rows.append([image])
+    if prepared:
+        style = ParagraphStyle(
+            "PreparedFor",
+            parent=styles["muted"],
+            fontSize=8,
+            leading=10,
+            alignment=TA_RIGHT if align == "RIGHT" else TA_LEFT,
+        )
+        rows.append([Paragraph(f"Prepared for <b>{escape_html(prepared)}</b>", style)])
+    return rows
+
+
+def append_scope_block(story: List[Any], ctx: Any, *, styles: Optional[Dict[str, ParagraphStyle]] = None) -> None:
+    """The 'Report scope' panel: printed only when options change what the report contains."""
+    if ctx is None or not hasattr(ctx, "scope_lines"):
+        return
+    lines = ctx.scope_lines()
+    if not lines:
+        return
+    styles = styles or get_report_styles()
+    bits: List[Any] = [Paragraph("REPORT SCOPE", styles["section_kicker"])]
+    bits.extend(Paragraph(escape_html(line), styles["muted"]) for line in lines)
+    bits.append(Paragraph(
+        "This is not the full report: findings or sections were left out on purpose. "
+        "Export the Full report to see everything.",
+        styles["muted"],
+    ))
+    story.append(card_shell(padded_block(bits, pad=8, width=CONTENT_WIDTH - 14), severity="Medium"))
     story.append(Spacer(1, 0.06 * inch))
 
 
@@ -1671,9 +1842,11 @@ def append_executive_summary(
     scan_time: Optional[str] = None,
     meta_chips: Optional[Sequence[Tuple[str, str]]] = None,
     scan_time_hint: str = "Completed successfully",
+    ctx: Any = None,
 ) -> None:
     styles = styles or get_report_styles()
     meta = REPORT_META.get(report_key, REPORT_META["sast"])
+    shaped = ctx is not None and ctx.options.shapes_content
 
     # Derive project name from overview if not provided
     proj = project_name or "Security Scan"
@@ -1688,6 +1861,7 @@ def append_executive_summary(
         report_key=report_key,
         project_name=proj if project_name else meta["title"],
         styles=styles,
+        ctx=ctx,
     )
 
     # Meta chips — denser: up to 4 + always surface platform URL when space
@@ -1757,9 +1931,17 @@ def append_executive_summary(
     story.append(Spacer(1, 0.05 * inch))
 
     # Dense guidance block: intro + how-to-read + severity meanings for present severities
+    if shaped:
+        intro = ("Summary of this scan. The counts above cover the whole scan; the Report scope "
+                 "panel lists what the sections below leave out.")
+        how_to_read = ("Use the counts for the whole picture, then the sections this report "
+                       "includes for detail.")
+    else:
+        intro = meta["intro"]
+        how_to_read = meta.get("how_to_read", "")
     guide_bits: List[Any] = [
-        Paragraph(meta["intro"], styles["body"]),
-        Paragraph(f"<b>How to read:</b> {escape_html(meta.get('how_to_read', ''))}", styles["muted"]),
+        Paragraph(intro, styles["body"]),
+        Paragraph(f"<b>How to read:</b> {escape_html(how_to_read)}", styles["muted"]),
         Paragraph(
             f"<b>Platform:</b> {BRAND_NAME} · <font color='#0F766E'><b>{BRAND_URL}</b></font>",
             styles["muted"],
@@ -1787,17 +1969,26 @@ def append_executive_summary(
     story.append(card_shell(padded_block(guide_bits, pad=8, width=CONTENT_WIDTH - 14)))
     story.append(Spacer(1, 0.06 * inch))
 
-    if critical or high:
+    p_critical, p_high = critical, high
+    if ctx is not None and ctx.filtered:
+        p_critical = ctx.shown_by_bucket.get("critical", 0)
+        p_high = ctx.shown_by_bucket.get("high", 0)
+    if p_critical or p_high:
         parts = []
-        if critical:
-            parts.append(f"{critical} Critical")
-        if high:
-            parts.append(f"{high} High")
+        if p_critical:
+            parts.append(f"{p_critical} Critical")
+        if p_high:
+            parts.append(f"{p_high} High")
+        follow = "Full findings catalog and evidence follow."
+        if shaped:
+            follow = ("The findings this report includes follow."
+                      if ctx.has("catalog") or ctx.has("details")
+                      else "Export the Technical or Full report for the findings.")
         note = padded_block(
             [
                 Paragraph(
                     f"<b>Priority action:</b>  {' · '.join(parts)}  — remediate these items first. "
-                    f"Full findings catalog and evidence follow. More at {BRAND_URL}.",
+                    f"{follow} More at {BRAND_URL}.",
                     styles["body"],
                 )
             ],
@@ -1823,14 +2014,17 @@ def append_findings_catalog(
     col_widths: Optional[List[float]] = None,
     panel_title: str = "Findings Catalog",
     chunk_size: int = 18,
+    ctx: Any = None,
+    empty_text: str = "No security findings were identified in this scan.",
 ) -> None:
     styles = styles or get_report_styles()
+    filtered = ctx is not None and ctx.filtered and ctx.total
     if not catalog_rows:
         story.append(
             panel_wrap(
                 panel_title,
-                "0 issues",
-                padded_block([Paragraph("No security findings were identified in this scan.", styles["body"])], pad=14, width=CONTENT_WIDTH - 8),
+                f"0 of {ctx.total} issues (filtered)" if filtered else "0 issues",
+                padded_block([Paragraph(escape_html(ctx.empty_text(empty_text)) if ctx is not None else empty_text, styles["body"])], pad=14, width=CONTENT_WIDTH - 8),
                 styles=styles,
             )
         )
@@ -1854,7 +2048,7 @@ def append_findings_catalog(
         end = offset + len(chunk)
         if offset == 0:
             title = panel_title
-            meta = f"{len(normalized)} issues"
+            meta = f"{len(normalized)} of {ctx.total} issues (filtered)" if filtered else f"{len(normalized)} issues"
         else:
             title = f"{panel_title} (cont.)"
             meta = f"{offset + 1}–{end} of {len(normalized)}"
@@ -1889,9 +2083,17 @@ def build_finding_section(
     recommended_fix: str = "",
     standards_rows: Optional[Sequence[Sequence[str]]] = None,
     styles: Optional[Dict[str, ParagraphStyle]] = None,
+    ctx: Any = None,
 ) -> KeepTogether:
     styles = styles or get_report_styles()
     blocks: List[Any] = []
+    if ctx is not None:
+        if ctx.options.hide_evidence:
+            evidence = ""
+        if not ctx.has("remediation"):
+            recommended_fix = ""
+        if not ctx.has("mappings"):
+            standards_rows = None
 
     heading = f"#{index}  {title}" if index >= 1 else title
     header = Table(

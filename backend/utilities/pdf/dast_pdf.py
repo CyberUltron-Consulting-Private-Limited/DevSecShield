@@ -14,7 +14,9 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer
 
+from backend.utilities.pdf.report_context import ReportContext, details_note, join_parts
 from backend.utilities.pdf.report_branding import (
+    append_report_masthead,
     append_executive_summary,
     append_findings_catalog,
     build_finding_section,
@@ -52,13 +54,20 @@ def get_impact_color(impact: str):
     return severity_color(impact)
 
 
-def generate_pdf(scan_data: Any, output_path: Optional[str] = None) -> str:
+def generate_pdf(scan_data: Any, output_path: Optional[str] = None, *, ctx: Optional[ReportContext] = None) -> str:
     if output_path is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = f"dast_scan_report_{timestamp}.pdf"
 
+    ctx = ctx or ReportContext()
     results, duration_of_scan, metadata = _normalize_scan_data(scan_data)
     total = len(results)
+    # Stored finding rows follow the raw results list (non-dict rows included).
+    inner_rows = split_scan_payload(scan_data)[0]
+    raw_positions = ([i for i, row in enumerate(inner_rows) if isinstance(row, dict)]
+                     if isinstance(inner_rows, list) else list(range(total)))
+    shown = ctx.select(results, lambda r: count_label(r.get("impact") or "Unknown"),
+                       lambda i, _r: raw_positions[i] if i < len(raw_positions) else None)
 
     by_impact: Dict[str, int] = {}
     by_confidence: Dict[str, int] = {}
@@ -132,8 +141,12 @@ def generate_pdf(scan_data: Any, output_path: Optional[str] = None) -> str:
         )
 
     duration_label = format_scan_duration(duration_of_scan)
-    append_executive_summary(
-        story,
+    summary: List[Any] = []
+    if not ctx.has("summary"):
+        append_report_masthead(summary, report_key="dast", project_name="DAST Findings", styles=styles, ctx=ctx)
+    else:
+      append_executive_summary(
+        summary,
         report_key="dast",
         overview_rows=overview,
         severity_counts=by_impact,
@@ -147,11 +160,12 @@ def generate_pdf(scan_data: Any, output_path: Optional[str] = None) -> str:
             ("Report generated", datetime.now().strftime("%b %d, %Y · %I:%M %p")),
             ("Scan duration", duration_label),
         ],
-    )
-    story.append(PageBreak())
+        ctx=ctx,
+      )
 
+    catalog_part: List[Any] = []
     catalog: List[List[Any]] = []
-    for idx, r in enumerate(results, 1):
+    for idx, r in shown if ctx.has("catalog") else ():
         title = (r.get("title") or "Finding").strip() or "Finding"
         impact = (r.get("impact") or "Unknown").strip() or "Unknown"
         url = (r.get("url") or "—").strip() or "—"
@@ -163,22 +177,26 @@ def generate_pdf(scan_data: Any, output_path: Optional[str] = None) -> str:
                 Paragraph(escape_html(url), styles["mono_cell"]),
             ]
         )
-    append_findings_catalog(story, catalog_rows=catalog, styles=styles)
-    story.append(PageBreak())
+    if ctx.has("catalog"):
+        append_findings_catalog(catalog_part, catalog_rows=catalog, styles=styles, ctx=ctx)
 
-    story.append(Paragraph("Detailed Findings", styles["title"]))
-    story.append(
-        Paragraph(
-            "Each card shows the affected URL, description, and remediation. URLs render in monospace.",
-            styles["muted"],
+    details: List[Any] = []
+    if ctx.has("details"):
+        details.append(Paragraph("Detailed Findings", styles["title"]))
+        details.append(
+            Paragraph(
+                details_note(ctx, "Each card shows the affected URL, description, and remediation. URLs render in monospace."),
+                styles["muted"],
+            )
         )
-    )
-    story.append(Spacer(1, 0.1 * inch))
+        details.append(Spacer(1, 0.1 * inch))
 
-    if total == 0:
-        story.append(Paragraph("No security findings were identified in this scan.", styles["body"]))
+    if not ctx.has("details"):
+        pass
+    elif not shown:
+        details.append(Paragraph(escape_html(ctx.empty_text("No security findings were identified in this scan.")), styles["body"]))
     else:
-        for idx, r in enumerate(results, 1):
+        for idx, r in shown:
             title = (r.get("title") or "Finding").strip() or "Finding"
             url = (r.get("url") or "").strip() or "—"
             impact = (r.get("impact") or "Unknown").strip() or "Unknown"
@@ -191,7 +209,7 @@ def generate_pdf(scan_data: Any, output_path: Optional[str] = None) -> str:
             standards.extend(mapping_rows(r.get("owasp_top_10"), label="OWASP Top 10"))
             standards.extend(mapping_rows(r.get("compliance_controls"), label="Compliance"))
 
-            story.append(
+            details.append(
                 build_finding_section(
                     index=idx,
                     title=title,
@@ -207,13 +225,15 @@ def generate_pdf(scan_data: Any, output_path: Optional[str] = None) -> str:
                     recommended_fix=suggested_fix,
                     standards_rows=standards or None,
                     styles=styles,
+                    ctx=ctx,
                 )
             )
 
+    join_parts(story, [summary, catalog_part, details], PageBreak)
     doc.build(
         story,
-        onFirstPage=make_cover_callback("dast"),
-        onLaterPages=make_footer_callback("dast"),
+        onFirstPage=make_cover_callback("dast", ctx),
+        onLaterPages=make_footer_callback("dast", ctx),
     )
     return output_path
 

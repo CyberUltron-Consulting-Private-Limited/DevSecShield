@@ -16,7 +16,9 @@ from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, 
 
 from backend.utilities.dashboard.risk_scale import average_risk_of
 from backend.utilities.dashboard.sbom_rows import is_inventory_row
+from backend.utilities.pdf.report_context import ReportContext, details_note, join_parts
 from backend.utilities.pdf.report_branding import (
+    append_report_masthead,
     COLOR_WHITE,
     append_bom_compliance_sections,
     append_executive_summary,
@@ -222,7 +224,7 @@ def _normalize_sbom_results(scan_results: Union[dict, list]) -> List[Dict[str, A
     if isinstance(scan_results, dict) and "results" in scan_results and "matches" not in scan_results:
         scan_results = scan_results.get("results") or []
     if isinstance(scan_results, list):
-        for item in scan_results:
+        for position, item in enumerate(scan_results):
             if not isinstance(item, dict):
                 continue
             dependency = _package_label(item)
@@ -248,6 +250,7 @@ def _normalize_sbom_results(scan_results: Union[dict, list]) -> List[Dict[str, A
                     "license": _license_label(item.get("license") or item.get("licenses")),
                     "inventory_only": bool(item.get("inventory_only")),
                     "_raw": item,
+                    "_pos": position,  # index of the stored finding row (finding_rows.mongo_rows)
                 }
             )
         return out
@@ -288,7 +291,7 @@ def _normalize_sbom_results(scan_results: Union[dict, list]) -> List[Dict[str, A
     return out
 
 
-def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = None) -> str:
+def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = None, *, ctx: Optional[ReportContext] = None) -> str:
     if output_path is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = f"sbom_sca_scan_report_{timestamp}.pdf"
@@ -299,6 +302,9 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     vulnerabilities = [v for v in rows if not is_inventory_row(v)]
     inventory = [v for v in rows if is_inventory_row(v)]
     total = len(vulnerabilities)
+    ctx = ctx or ReportContext()
+    shown = ctx.select(vulnerabilities, lambda v: count_label(v.get("impact") or "Unknown"),
+                       lambda _i, v: v.get("_pos"))
     by_severity: Dict[str, int] = {}
     unique_packages: set = set()
     fixable_count = 0
@@ -338,8 +344,12 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         ("Average risk score (0–10)", f"{avg_risk:.1f}" if avg_risk is not None else "N/A"),
         ("Report generated", datetime.now().strftime("%B %d, %Y at %I:%M %p")),
     ]
-    append_executive_summary(
-        story,
+    summary: List[Any] = []
+    if not ctx.has("summary"):
+        append_report_masthead(summary, report_key="sbom_sca", project_name="SBOM / SCA Dependencies", styles=styles, ctx=ctx)
+    else:
+      append_executive_summary(
+        summary,
         report_key="sbom_sca",
         overview_rows=overview,
         severity_counts=by_severity,
@@ -352,11 +362,12 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
             ("Report generated", datetime.now().strftime("%b %d, %Y · %I:%M %p")),
             ("Fixable", str(fixable_count)),
         ],
-    )
-    story.append(PageBreak())
+        ctx=ctx,
+      )
 
+    catalog_part: List[Any] = []
     catalog: List[List[Any]] = []
-    for idx, v in enumerate(vulnerabilities, 1):
+    for idx, v in shown if ctx.has("catalog") else ():
         title = v.get("title") or "Untitled"
         impact = (v.get("impact") or "Unknown").strip()
         location = finding_location(v)
@@ -368,23 +379,27 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                 Paragraph(escape_html(location), styles["mono_cell"]),
             ]
         )
-    append_findings_catalog(story, catalog_rows=catalog, styles=styles)
-    story.append(PageBreak())
+    if ctx.has("catalog"):
+        append_findings_catalog(catalog_part, catalog_rows=catalog, styles=styles, ctx=ctx)
 
-    story.append(Paragraph("Detailed Findings", styles["title"]))
-    story.append(
-        Paragraph(
-            "Each card shows where the package was found, description, and remediation. "
-            "Package and CVE values use monospace.",
-            styles["muted"],
+    details: List[Any] = []
+    if ctx.has("details"):
+        details.append(Paragraph("Detailed Findings", styles["title"]))
+        details.append(
+            Paragraph(
+                details_note(ctx, "Each card shows where the package was found, description, and remediation. "
+                             "Package and CVE values use monospace."),
+                styles["muted"],
+            )
         )
-    )
-    story.append(Spacer(1, 0.1 * inch))
+        details.append(Spacer(1, 0.1 * inch))
 
-    if total == 0:
-        story.append(Paragraph("No vulnerabilities were identified in this scan.", styles["body"]))
+    if not ctx.has("details"):
+        pass
+    elif not shown:
+        details.append(Paragraph(escape_html(ctx.empty_text("No vulnerabilities were identified in this scan.")), styles["body"]))
     else:
-        for idx, v in enumerate(vulnerabilities, 1):
+        for idx, v in shown:
             title = v.get("title") or "Untitled"
             impact = (v.get("impact") or "Unknown").strip()
             loc = finding_location(v)
@@ -409,7 +424,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
             standards.extend(mapping_rows(v.get("compliance_controls"), label="Compliance"))
             standards.extend(mapping_rows(cves, label="CVE detail", limit=5))
 
-            story.append(
+            details.append(
                 build_finding_section(
                     index=idx,
                     title=title,
@@ -420,18 +435,24 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                     recommended_fix=_sbom_remediation(v),
                     standards_rows=standards or None,
                     styles=styles,
+                    ctx=ctx,
                 )
             )
 
-    _append_inventory_sections(story, inventory, styles)
+    join_parts(story, [summary, catalog_part, details], PageBreak)
+    # Both appendices keep today's flow: the inventory opens with its own page break and the
+    # compliance appendix follows on the same page.
+    if ctx.has("inventory"):
+        _append_inventory_sections(story, inventory, styles)
 
-    appendix_payload = raw if raw else (scan_results if isinstance(scan_results, dict) else {})
-    append_bom_compliance_sections(story, appendix_payload, styles)
+    if ctx.has("compliance"):
+        appendix_payload = raw if raw else (scan_results if isinstance(scan_results, dict) else {})
+        append_bom_compliance_sections(story, appendix_payload, styles)
 
     doc.build(
         story,
-        onFirstPage=make_cover_callback("sbom_sca"),
-        onLaterPages=make_footer_callback("sbom_sca"),
+        onFirstPage=make_cover_callback("sbom_sca", ctx),
+        onLaterPages=make_footer_callback("sbom_sca", ctx),
     )
     return output_path
 

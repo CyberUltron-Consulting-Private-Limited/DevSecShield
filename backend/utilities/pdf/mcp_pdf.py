@@ -14,7 +14,9 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer
 
+from backend.utilities.pdf.report_context import ReportContext, details_note, join_parts
 from backend.utilities.pdf.report_branding import (
+    append_report_masthead,
     append_executive_summary,
     append_findings_catalog,
     build_finding_section,
@@ -73,7 +75,7 @@ def _flatten_agent_vulnerabilities(scan_results: dict) -> list:
     return out
 
 
-def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
+def generate_pdf(scan_results: dict, output_path: Optional[str] = None, *, ctx: Optional[ReportContext] = None) -> str:
     """
     Generate a PDF report from MCP scan results.
     Supports agent format { tools, prompts, resources } or legacy { final_issues, error_messages }.
@@ -135,6 +137,16 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
         num_prompts = 0
         num_resources = 0
 
+    ctx = ctx or ReportContext()
+    # Stored rows follow the writer's tools -> prompts -> resources walk (finding_rows.mongo_rows);
+    # payloads that walk cannot read have no stored rows, so no statuses are attached to them.
+    if use_agent_format:
+        shown_agent = ctx.select(flat_vulns, lambda t: count_label(t[2].get("impact") or "Unknown"))
+        shown_legacy: List[Any] = []
+    else:
+        shown_agent = []
+        shown_legacy = ctx.select(final_issues, lambda i: count_label(i.get("issue_severity", "unknown")))
+
     styles = get_report_styles()
     doc = SimpleDocTemplate(
         output_path,
@@ -186,8 +198,12 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
             )
         )
 
-    append_executive_summary(
-        story,
+    summary: List[Any] = []
+    if not ctx.has("summary"):
+        append_report_masthead(summary, report_key="mcp", project_name="MCP Findings", styles=styles, ctx=ctx)
+    else:
+      append_executive_summary(
+        summary,
         report_key="mcp",
         overview_rows=overview,
         severity_counts=by_severity,
@@ -201,12 +217,15 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
             ("Report generated", datetime.now().strftime("%b %d, %Y · %I:%M %p")),
             ("Platform", "zeroshield.ai"),
         ],
-    )
-    story.append(PageBreak())
+        ctx=ctx,
+      )
 
+    catalog_part: List[Any] = []
     catalog: List[List[Any]] = []
-    if use_agent_format:
-        for idx, (resource_type, resource_name, vuln) in enumerate(flat_vulns, 1):
+    if not ctx.has("catalog"):
+        pass
+    elif use_agent_format:
+        for idx, (resource_type, resource_name, vuln) in shown_agent:
             title = vuln.get("title") or "Untitled"
             impact = count_label(vuln.get("impact") or "Unknown")
             location = finding_location(vuln)
@@ -221,7 +240,7 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
                 ]
             )
     else:
-        for idx, issue in enumerate(final_issues, 1):
+        for idx, issue in shown_legacy:
             issue_code = issue.get("issue_code", "Unknown")
             severity = count_label(issue.get("issue_severity", "unknown"))
             server = issue.get("server", "Unknown")
@@ -233,22 +252,26 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
                     Paragraph(escape_html(str(server)), styles["mono_cell"]),
                 ]
             )
-    append_findings_catalog(story, catalog_rows=catalog, styles=styles)
-    story.append(PageBreak())
+    if ctx.has("catalog"):
+        append_findings_catalog(catalog_part, catalog_rows=catalog, styles=styles, ctx=ctx)
 
-    story.append(Paragraph("Detailed Findings", styles["title"]))
-    story.append(
-        Paragraph(
-            "Each card includes the affected MCP resource, description, and remediation.",
-            styles["muted"],
+    details: List[Any] = []
+    if ctx.has("details"):
+        details.append(Paragraph("Detailed Findings", styles["title"]))
+        details.append(
+            Paragraph(
+                details_note(ctx, "Each card includes the affected MCP resource, description, and remediation."),
+                styles["muted"],
+            )
         )
-    )
-    story.append(Spacer(1, 0.1 * inch))
+        details.append(Spacer(1, 0.1 * inch))
 
-    if total_issues == 0:
-        story.append(Paragraph("No security issues were identified in this scan.", styles["body"]))
+    if not ctx.has("details"):
+        pass
+    elif not (shown_agent or shown_legacy):
+        details.append(Paragraph(escape_html(ctx.empty_text("No security issues were identified in this scan.")), styles["body"]))
     elif use_agent_format:
-        for idx, (resource_type, resource_name, vuln) in enumerate(flat_vulns, 1):
+        for idx, (resource_type, resource_name, vuln) in shown_agent:
             title = vuln.get("title") or "Untitled"
             impact = count_label(vuln.get("impact") or "Unknown")
             suggested_fix = vuln.get("suggested_fix")
@@ -258,7 +281,7 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
             standards.extend(mapping_rows(vuln.get("owasp_top_10"), label="OWASP Top 10"))
             standards.extend(mapping_rows(vuln.get("owasp_top_10_llm"), label="OWASP Top 10 (LLM)"))
             standards.extend(mapping_rows(vuln.get("compliance_controls"), label="Compliance"))
-            story.append(
+            details.append(
                 build_finding_section(
                     index=idx,
                     title=str(title),
@@ -272,10 +295,11 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
                     recommended_fix=str(suggested_fix or ""),
                     standards_rows=standards or None,
                     styles=styles,
+                    ctx=ctx,
                 )
             )
     else:
-        for idx, issue in enumerate(final_issues, 1):
+        for idx, issue in shown_legacy:
             issue_code = issue.get("issue_code", "Unknown")
             issue_message = issue.get("issue_message", "No message available")
             issue_type = issue.get("issue_type", "unknown")
@@ -291,7 +315,7 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
             description = str(issue_message)
             if tool_description:
                 description = f"{description}\n\nTool details: {tool_description}"
-            story.append(
+            details.append(
                 build_finding_section(
                     index=idx,
                     title=str(issue_code),
@@ -306,14 +330,15 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
                     evidence="",
                     recommended_fix="",
                     styles=styles,
+                    ctx=ctx,
                 )
             )
 
-    if error_messages:
-        story.append(PageBreak())
-        story.append(Paragraph("Scan Errors", styles["title"]))
+    notes: List[Any] = []
+    if error_messages and ctx.has("notes"):
+        notes.append(Paragraph("Scan Errors", styles["title"]))
         for idx, error_msg in enumerate(error_messages, 1):
-            story.append(
+            notes.append(
                 build_finding_section(
                     index=idx,
                     title="Scan error",
@@ -324,10 +349,11 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
                 )
             )
 
+    join_parts(story, [summary, catalog_part, details, notes], PageBreak)
     doc.build(
         story,
-        onFirstPage=make_cover_callback("mcp"),
-        onLaterPages=make_footer_callback("mcp"),
+        onFirstPage=make_cover_callback("mcp", ctx),
+        onLaterPages=make_footer_callback("mcp", ctx),
     )
     return output_path
 
