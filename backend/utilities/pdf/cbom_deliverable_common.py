@@ -58,6 +58,7 @@ from backend.utilities.dashboard.cbom_team_rollup import (
 )
 from backend.utilities.pdf import cbom_deliverable_text as authored
 from backend.utilities.pdf.report_branding import (
+    masthead_cover_rows,
     BAR_LOW,
     BAR_MEDIUM,
     BAR_UNKNOWN,
@@ -741,7 +742,7 @@ def _box(
     return table
 
 
-def _masthead(title: str, meta: dict[str, str], styles: Styles, width: float) -> Table:
+def _masthead(title: str, meta: dict[str, str], styles: Styles, width: float, ctx: Any = None) -> Table:
     brand = ParagraphStyle(
         "DeliverableBrand",
         parent=styles["muted"],
@@ -760,13 +761,14 @@ def _masthead(title: str, meta: dict[str, str], styles: Styles, width: float) ->
         ],
         colWidths=[width * 0.68],
     )
-    right = Table(
-        [
-            [Paragraph(escape_html(BRAND_URL), brand)],
-            [Paragraph(pdf_text(meta["footer_label"]), styles["masthead_label"])],
-        ],
-        colWidths=[width * 0.32],
-    )
+    right_rows: list[list[Any]] = [
+        [Paragraph(escape_html(BRAND_URL), brand)],
+        [Paragraph(pdf_text(meta["footer_label"]), styles["masthead_label"])],
+    ]
+    cover = masthead_cover_rows(ctx, width=width * 0.32, styles=styles)
+    if cover:  # the team logo and "Prepared for": only when set, so the default cover is unchanged
+        right_rows = cover + right_rows
+    right = Table(right_rows, colWidths=[width * 0.32])
     flat = TableStyle(
         [
             ("LEFTPADDING", (0, 0), (-1, -1), 0),
@@ -806,7 +808,7 @@ def _window_text(view: TeamCbomView) -> str:
 
 
 def _control_table(
-    view: TeamCbomView, number: int, title: str, styles: Styles, width: float
+    view: TeamCbomView, number: int, title: str, styles: Styles, width: float, ctx: Any = None
 ) -> Table:
     labels = authored.CONTROL_LABELS
     value, mono = styles["table_cell"], styles["mono_cell"]
@@ -821,6 +823,15 @@ def _control_table(
         (labels["template"], pdf_text(f"{TEMPLATE_VERSION} \u00b7 {authored.TOOL_NAME}"), value),
         (labels["fingerprint"], pdf_text(view.fingerprint or "n/a", limit=40), mono),
     ]
+    presentation = presentation_text(ctx)
+    if presentation is not None:
+        # One more pair, only when the cover differs from the default. The Document ID and the
+        # fingerprint stay data-only: they identify the evidence, not how it was presented.
+        prepared = getattr(getattr(ctx, "options", None), "prepared_for", None)
+        cells += [
+            ("Prepared for", pdf_text(prepared or "\u2014", limit=120), value),
+            ("Presentation", pdf_text(presentation, limit=120), mono),
+        ]
     data = []
     for index in range(0, len(cells), 2):
         row: list[Any] = []
@@ -847,6 +858,19 @@ def _control_table(
         )
     )
     return table
+
+
+def presentation_text(ctx: Any) -> str | None:
+    """'logo <sha8> · <label>' when the cover differs from the default, else None."""
+    options = getattr(ctx, "options", None)
+    branding = getattr(ctx, "branding", None)
+    logo = branding.sha256[:8] if branding is not None and branding.applied and branding.sha256 else None
+    label = options.label if options is not None else "confidential"
+    prepared = options.prepared_for if options is not None else None
+    if logo is None and label == "confidential" and not prepared:
+        return None
+    parts = [f"logo {logo}" if logo else "no logo", f"label {label}"]
+    return " \u00b7 ".join(parts)
 
 
 def basis_scans_line(view: TeamCbomView) -> str:
@@ -925,9 +949,10 @@ def _front_matter(
     basis_extra: Sequence[str] | None = None,
     disclaimer_paragraphs: Sequence[str] | None = None,
     extra_banners: Sequence[tuple[str, str]] | None = None,
+    ctx: Any = None,
 ) -> list[Flowable]:
     gap = Spacer(1, 6)
-    story: list[Flowable] = [_masthead(title, meta, styles, width), Spacer(1, 8)]
+    story: list[Flowable] = [_masthead(title, meta, styles, width, ctx), Spacer(1, 8)]
     if view.is_empty:
         banner = _banner(authored.BANNER_EMPTY_TITLE, authored.BANNER_EMPTY_TEXT, styles, width)
         story += [banner, gap]
@@ -939,7 +964,7 @@ def _front_matter(
     for banner_title, banner_message in extra_banners or ():
         story += [_banner(banner_title, banner_message, styles, width), gap]
     story += [
-        _control_table(view, number, title, styles, width),
+        _control_table(view, number, title, styles, width, ctx),
         gap,
         _basis_box(view, styles, width, basis_extra),
         gap,
@@ -966,8 +991,13 @@ def build_document(
     basis_extra: Sequence[str] | None = None,
     disclaimer_paragraphs: Sequence[str] | None = None,
     extra_banners: Sequence[tuple[str, str]] | None = None,
+    ctx: Any = None,
 ) -> bytes:
     """Build one deliverable PDF in memory and return its bytes.
+
+    ``ctx`` (``report_context.ReportContext``) adds the team logo and the cover options
+    ("prepared for", the confidentiality label); omitted, the document is byte-identical to
+    what it was before.
 
     ``body(styles, width)`` returns the document-specific flowables; ``width`` is the usable
     frame width in points (540 portrait, 720 landscape).  The shell adds the page chrome of
@@ -1021,17 +1051,18 @@ def build_document(
         basis_extra,
         disclaimer_paragraphs,
         extra_banners,
+        ctx,
     )
     story.extend(body(styles, width))
 
     stamp = _pdf_date(view.generated_at)
-    cover = make_cover_callback(report_key)
+    cover = make_cover_callback(report_key, ctx)
 
     def on_first_page(canvas_obj: Any, doc_obj: Any) -> None:
         canvas_obj.setDateFormatter(lambda *_parts: stamp)
         cover(canvas_obj, doc_obj)
 
-    doc.build(story, onFirstPage=on_first_page, onLaterPages=make_footer_callback(report_key))
+    doc.build(story, onFirstPage=on_first_page, onLaterPages=make_footer_callback(report_key, ctx))
     return buffer.getvalue()
 
 

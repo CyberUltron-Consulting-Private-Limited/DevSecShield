@@ -1124,5 +1124,8 @@ def test_build_pdf_is_the_public_entry_point():
     import inspect
 
     signature = inspect.signature(build_pdf)
-    assert list(signature.parameters) == ["view"]
+    # ``ctx`` (report options + team logo) is keyword-only and optional: build_pdf(view) is unchanged
+    assert list(signature.parameters) == ["view", "ctx"]
+    ctx = signature.parameters["ctx"]
+    assert ctx.kind is inspect.Parameter.KEYWORD_ONLY and ctx.default is None
     assert signature.return_annotation in {"bytes", bytes}

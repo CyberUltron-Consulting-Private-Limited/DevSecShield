@@ -186,7 +186,7 @@ def build_body(view: TeamCbomView, styles: Styles, width: float) -> list[Flowabl
     return out
 
 
-def build_pdf(view: TeamCbomView) -> bytes:
+def build_pdf(view: TeamCbomView, *, ctx: Any = None) -> bytes:
     """Render the Quantum Risk Register of ``view`` as a landscape PDF (bytes)."""
     reg = view.register or {}
     model = (reg.get("summary") or {}).get("model_version")
@@ -194,7 +194,7 @@ def build_pdf(view: TeamCbomView) -> bytes:
     def body(styles: Styles, width: float) -> list[Flowable]:
         return build_body(view, styles, width)
 
-    return build_document(view=view, number=NUMBER, report_key=REPORT_KEY, title=TITLE, landscape=True, body=body,
+    return build_document(ctx=ctx, view=view, number=NUMBER, report_key=REPORT_KEY, title=TITLE, landscape=True, body=body,
                           basis_extra=[f"Grade model: {model}"] if model else None)
 
 
