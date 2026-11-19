@@ -48,7 +48,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { getCBOMExportResults, updateScan, toggleFindingState, createTicket, postCertInAttestation, postCertInSign, getCertInVex, getCertInEvidencePack, type CbomScanDashboardData, type CbomFinding, type CbomScanMetadata, type CbomGraph, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
+import { updateScan, toggleFindingState, createTicket, postCertInAttestation, postCertInSign, getCertInVex, getCertInEvidencePack, type CbomScanDashboardData, type CbomFinding, type CbomScanMetadata, type CbomGraph, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
 import { downloadCbomScanBom, INFORMATIONAL_LABEL, type CbomCoverageReport, type CbomImportReport } from "@/utils/api/cbom_outputs";
 import { downloadOscal } from "@/utils/api/integrations";
@@ -61,6 +61,8 @@ import { OWASP_KEY_TO_LABEL, COMPLIANCE_KEY_TO_LABEL } from "@/lib/owasp-complia
 
 import { BarChart3, Search } from "lucide-react";
 import { toast } from "@/utils/toast";
+import { saveBlob } from "@/utils/download";
+import { useExportPdf } from "@/components/reports/ExportPdfDialog";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
 import {
@@ -431,24 +433,12 @@ export default function CbomResults({
     onError: (err) => showErrorToast(err, "Error updating finding status"),
   });
 
-  const exportMutation = useMutation({
-    mutationFn: () => {
-      if (Number.isNaN(tid) || Number.isNaN(sid) || !tid || !sid) {
-        throw new Error("Missing or invalid team or scan id");
-      }
-      return getCBOMExportResults(tid, sid, { toast: false });
-    },
-    onSuccess: (result) => {
-      const blob = result instanceof Blob ? result : new Blob([result]);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `cbom-report-${scan_id}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success("Report downloaded");
-    },
-    onError: (err) => showErrorToast(err, "Error exporting PDF"),
+  // The PDF report: its options in a dialog that shows a refused build itself and says the outcome once
+  // (components/reports/ExportPdfDialog.tsx). The file keeps its name (e2e spec 17 pins it).
+  const pdf = useExportPdf({
+    teamId: Number.isNaN(tid) ? 0 : tid,
+    target: { family: "scan", type: "cbom", scanId: Number.isNaN(sid) ? 0 : sid },
+    fileName: `cbom-report-${scan_id}.pdf`,
   });
 
   // The server's CycloneDX document as stored: the file bom_signature signs and the XML is written from. A copy
@@ -457,15 +447,6 @@ export default function CbomResults({
     void downloadCbomScanBom(team_id as string, scan_id as string, "json")
       .then(() => toast.success("CycloneDX CBOM JSON downloaded"))
       .catch(() => undefined);
-  };
-
-  const downloadBlob = (blob: Blob, filename: string) => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
   };
 
   const handleCertInAttest = async (
@@ -484,7 +465,7 @@ export default function CbomResults({
     try {
       const cached = (scanMetadata as CbomScanMetadata | null)?.vex_json;
       const vex = cached ?? (await getCertInVex(tid, "cbom", sid));
-      downloadBlob(
+      saveBlob(
         new Blob([JSON.stringify(vex, null, 2)], { type: "application/json" }),
         `cbom-vex-${scan_id}.json`,
       );
@@ -503,7 +484,7 @@ export default function CbomResults({
         sig = res.bom_signature;
         queryClient.invalidateQueries({ queryKey: ["cbom-conversation-data"] });
       }
-      downloadBlob(
+      saveBlob(
         new Blob([JSON.stringify(sig, null, 2)], { type: "application/json" }),
         `cbom-signature-${scan_id}.json`,
       );
@@ -516,7 +497,7 @@ export default function CbomResults({
   const handleDownloadEvidencePack = async () => {
     try {
       const blob = await getCertInEvidencePack(tid, "cbom", sid);
-      downloadBlob(blob, `certin-evidence-pack-cbom-${scan_id}.zip`);
+      saveBlob(blob, `certin-evidence-pack-cbom-${scan_id}.zip`);
       toast.success("Evidence pack downloaded");
       queryClient.invalidateQueries({ queryKey: ["cbom-conversation-data"] });
     } catch (err) {
@@ -830,12 +811,13 @@ export default function CbomResults({
             <Button
               variant="outline"
               className="cursor-pointer bg-zinc-700 hover:bg-zinc-600 text-white border-zinc-600"
-              onClick={() => exportMutation.mutate()}
-              disabled={exportMutation.isPending}
+              onClick={pdf.open}
+              disabled={pdf.pending}
             >
-              {exportMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
-              {exportMutation.isPending ? "Downloading..." : "PDF Report"}
+              {pdf.pending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+              {pdf.pending ? "Downloading..." : "PDF Report"}
             </Button>
+            {pdf.dialog}
             <Button
               variant="default"
               className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white"

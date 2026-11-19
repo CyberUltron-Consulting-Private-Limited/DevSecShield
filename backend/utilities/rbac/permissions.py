@@ -10,7 +10,7 @@ fails when a route names none.  Roles are ordered: each role holds every permiss
 * member: runs the products (scans, DAST profiles, CBOM sources, CI/CD keys); the objects they create stay
   theirs (handlers keep the "creator or admin" rules).
 * admin: runs the team: name, Jira and outbound integrations, CBOM network scope, members and invitations
-  (member and viewer roles), the audit log.
+  (member and viewer roles), the audit log, the report logo.
 * owner: everything, including admins' and owners' roles, deleting the team, SSO and SCIM.
 
 Superusers (``User.is_superuser``, the platform operators of the admin console) hold no team role by being
@@ -47,6 +47,7 @@ _ALL = (
     Permission("team.ownership.claim", "admin", "claim ownership of this team", True),
     Permission("team.delete", "owner", "delete the team", True),
     Permission("team.audit.read", "admin", "read the team's audit log", False),
+    Permission("team.branding.manage", "admin", "change the team's report logo", True),
     Permission("team.sso.manage", "owner", "change single sign-on", True),
     Permission("team.scim.manage", "owner", "change SCIM provisioning", True),
     # scans of every product (SAST, IaC, SBOM/SCA, LLM, MCP, leakage, discovery, DAST, CBOM, AI-BOM)

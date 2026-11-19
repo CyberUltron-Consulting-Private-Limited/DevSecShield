@@ -4,6 +4,7 @@
 
 import api from "@/utils/interceptors"
 import { showErrorToast } from "@/utils/error-handler"
+import { saveBlob } from "@/utils/download"
 
 export type IntegrationKind = "servicenow" | "syslog" | "splunk_hec" | "webhook" | "oscal"
 export type IntegrationEventKind =
@@ -99,17 +100,6 @@ export async function listDeliveries(teamId: number, params: { kind?: string; st
 export async function retryDeliveries(teamId: number, body: { ids?: number[]; kind?: string; all_dead?: boolean }):
   Promise<{ requeued: number }> {
   return (await api.post(`/${teamId}/integrations/deliveries/retry`, body)).data
-}
-
-function saveBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement("a")
-  link.href = url
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 /** OSCAL 1.2.3 assessment results (schema-validated on the server) of a finished run or a CBOM code scan. */

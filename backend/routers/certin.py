@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 from typing import Annotated, Any
@@ -21,6 +22,7 @@ from fastapi import (
     Header,
     HTTPException,
     Query,
+    Request,
     UploadFile,
     status,
 )
@@ -42,6 +44,9 @@ from backend.utilities.compliance.certin_attest import (
     upsert_attestation,
 )
 from backend.utilities.pdf import generate_pdf_for_type
+from backend.utilities.pdf.report_context import ReportContext
+from backend.utilities.pdf.report_http import log_export, options_from_request
+from backend.utilities.team.branding import load_report_branding
 from backend.utilities.team import check_if_user_is_in_team
 from rich.console import Console
 
@@ -406,77 +411,119 @@ async def download_scan_bom(
         "X-ZS-Signature-Scope": cdx_xml.SIGNATURE_SCOPE})
 
 
-@router.get("/{team_id}/{type}/scan/{scan_id}/evidence-pack", dependencies=[Depends(write_limiter), access.team("scan.read")])
-async def download_evidence_pack(
-    team_id: int,
-    type: scan_types,
-    scan_id: int,
-    background_tasks: BackgroundTasks,
-    Authorization: Annotated[str | None, Header()] = None,
-):
-    _require_bom_type(type)
-    engine = get_db()
-    user = await get_user_from_header_or_raise_exception(engine, Authorization)
-    check_if_user_is_in_team(user.id, team_id, engine)
-    scan = _load_success_scan(engine, team_id, type, scan_id)
+def _pack_pdf(scan_type: str, data: dict, ctx: ReportContext) -> bytes | None:
+    """The pack's report.pdf (default options, the team logo when set); None when it cannot be built."""
+    pdf_tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+    pdf_path = pdf_tmp.name
+    pdf_tmp.close()
+    try:
+        generate_pdf_for_type(scan_type, data, pdf_path, ctx=ctx)
+        with open(pdf_path, "rb") as pf:
+            return pf.read()
+    except Exception as e:  # the pack's other members stand on their own
+        console.print(f"evidence-pack PDF skipped: {e.__class__.__name__}", style="yellow", markup=False)
+        return None
+    finally:
+        try:
+            os.unlink(pdf_path)
+        except OSError:
+            pass
+
+
+def _build_evidence_pack(engine, team_id: int, scan_type: str, scan_id: int) -> tuple[str, ReportContext]:
+    """Write the pack to a temp zip (removed here on any failure; the caller schedules its removal after sending)."""
+    scan = _load_success_scan(engine, team_id, scan_type, scan_id)
     data = scan.scan_data if isinstance(scan.scan_data, dict) else {}
 
     # Ensure vex + signature exist when possible
-    bom = bom_dict_from_scan_data(type, data)
+    bom = bom_dict_from_scan_data(scan_type, data)
     try:
         vex_mod = _load_certin_module("vex")
         sign_mod = _load_certin_module("sign")
 
-        if not isinstance(data.get("vex_json"), dict) or not _vex_is_current(type, data["vex_json"]):
-            findings = data.get("results") if type in ("sbom_sca", "cbom") else None
-            data["vex_json"] = _build_vex(engine, scan, type, bom,
+        if not isinstance(data.get("vex_json"), dict) or not _vex_is_current(scan_type, data["vex_json"]):
+            findings = data.get("results") if scan_type in ("sbom_sca", "cbom") else None
+            data["vex_json"] = _build_vex(engine, scan, scan_type, bom,
                                           findings if isinstance(findings, list) else None, vex_mod)
         if bom and not isinstance(data.get("bom_signature"), dict):
             try:
                 data["bom_signature"] = sign_mod.sign_bom(bom, secret=_hmac_secret())
             except HTTPException:
                 pass
-        _save_scan_data(engine, scan_id, team_id, type, data)
+        _save_scan_data(engine, scan_id, team_id, scan_type, data)
     except ImportError:
         pass
+
+    with Session(engine) as session:
+        ctx = ReportContext(branding=load_report_branding(session, team_id))
 
     tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
     tmp_path = tmp.name
     tmp.close()
-    with zipfile.ZipFile(tmp_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        if bom:
-            zf.writestr("bom.cdx.json", json.dumps(bom, indent=2))
-            if type == "cbom":  # the same document as CycloneDX XML; bom_signature.json signs the JSON form only
-                try:
-                    from backend.utilities.cbom_sources import cdx_xml
+    try:
+        with zipfile.ZipFile(tmp_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            if bom:
+                zf.writestr("bom.cdx.json", json.dumps(bom, indent=2))
+                if scan_type == "cbom":  # the same document as CycloneDX XML; bom_signature.json signs the JSON form only
+                    try:
+                        from backend.utilities.cbom_sources import cdx_xml
 
-                    zf.writestr("bom.cdx.xml", cdx_xml.to_xml(bom))
-                except Exception as e:  # the JSON is the signed original; never fail the pack over the XML copy
-                    console.print(f"evidence-pack XML skipped: {e.__class__.__name__}", style="yellow")
-        if isinstance(data.get("vex_json"), dict):
-            zf.writestr("vex.json", json.dumps(data["vex_json"], indent=2))
-        if isinstance(data.get("bom_signature"), dict):
-            zf.writestr("bom_signature.json", json.dumps(data["bom_signature"], indent=2))
-        ckey = compliance_key_for(type)
-        if isinstance(data.get(ckey), dict):
-            zf.writestr("compliance.json", json.dumps(data[ckey], indent=2))
-        if isinstance(data.get("attestations"), dict):
-            zf.writestr("attestations.json", json.dumps(data["attestations"], indent=2))
-        # PDF
+                        zf.writestr("bom.cdx.xml", cdx_xml.to_xml(bom))
+                    except Exception as e:  # the JSON is the signed original; never fail the pack over the XML copy
+                        console.print(f"evidence-pack XML skipped: {e.__class__.__name__}", style="yellow")
+            if isinstance(data.get("vex_json"), dict):
+                zf.writestr("vex.json", json.dumps(data["vex_json"], indent=2))
+            if isinstance(data.get("bom_signature"), dict):
+                zf.writestr("bom_signature.json", json.dumps(data["bom_signature"], indent=2))
+            ckey = compliance_key_for(scan_type)
+            if isinstance(data.get(ckey), dict):
+                zf.writestr("compliance.json", json.dumps(data[ckey], indent=2))
+            if isinstance(data.get("attestations"), dict):
+                zf.writestr("attestations.json", json.dumps(data["attestations"], indent=2))
+            pdf = _pack_pdf(scan_type, data, ctx)
+            if pdf is not None:
+                zf.writestr("report.pdf", pdf)
+    except BaseException:
         try:
-            pdf_tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
-            pdf_path = pdf_tmp.name
-            pdf_tmp.close()
-            generate_pdf_for_type(type, data, pdf_path)
-            with open(pdf_path, "rb") as pf:
-                zf.writestr("report.pdf", pf.read())
-            os.unlink(pdf_path)
-        except Exception as e:
-            console.print(f"evidence-pack PDF skipped: {e}", style="yellow")
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+    return tmp_path, ctx
 
+
+@router.get("/{team_id}/{type}/scan/{scan_id}/evidence-pack", dependencies=[Depends(write_limiter), access.team("scan.read")])
+async def download_evidence_pack(
+    team_id: int,
+    type: scan_types,
+    scan_id: int,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    Authorization: Annotated[str | None, Header()] = None,
+):
+    """Zip of the scan's BOM, VEX, signature, compliance, attestations and PDF report. The pack's PDF is always the
+    full report (report options are refused with 422); the team's report logo appears in it when set."""
+    started = time.monotonic()
+    _require_bom_type(type)
+    engine = get_db()
+    user = await get_user_from_header_or_raise_exception(engine, Authorization)
+    check_if_user_is_in_team(user.id, team_id, engine)
+    options_from_request(request.query_params, "pack")  # any report option: 422 (a pack is the full record)
+    try:
+        tmp_path, ctx = await run_in_threadpool(_build_evidence_pack, engine, team_id, type, scan_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        console.print(f"evidence-pack failed for scan {scan_id} team {team_id}: {e.__class__.__name__}",
+                      style="bold red", markup=False)
+        raise HTTPException(status_code=500, detail="Error building the evidence pack, please try again later") from None
     background_tasks.add_task(os.unlink, tmp_path)
+    filename = f"certin-evidence-pack-{type}-{scan_id}.zip"
+    log_export("pack", type=type, team=team_id, id=scan_id, user=user.id, ctx=ctx,
+               size=os.path.getsize(tmp_path), started=started)
     return FileResponse(
         tmp_path,
         media_type="application/zip",
-        filename=f"certin-evidence-pack-{type}-{scan_id}.zip",
+        filename=filename,
+        headers={"X-Report-Logo": ctx.branding.status},
     )

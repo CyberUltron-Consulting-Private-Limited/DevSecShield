@@ -4,7 +4,8 @@
  *   npx playwright test specs/17-style-parity.spec.ts
  *
  * Downloads the EXISTING single-scan "PDF Report" of scan #2 through the UI (results page, "PDF Report"
- * button) and the six new team-wide PDFs, then
+ * button, then Download in the export dialog with its options left as they are: today's report) and the six new
+ * team-wide PDFs, then
  *   - builds a contact sheet of their first pages (existing report first) and shows it in the recorded page;
  *   - requires the font set of every new PDF to be a subset of the existing report's (`pdffonts`): the new
  *     documents introduce no font the platform does not already ship;
@@ -33,13 +34,22 @@ test('17 style parity: new deliverables vs the existing single-scan CBOM report'
   const scanId = exp.style_parity.existing_scan as number;
 
   // --- the existing report, through the UI ---
-  const existingPath = await test.step('download the existing report: results page -> "PDF Report"', async () => {
+  const existingPath = await test.step('download the existing report: results page -> "PDF Report" -> Download', async () => {
     await page.goto(`/${teamId}/cbom/${scanId}/results`);
     const button = page.getByRole('button', { name: 'PDF Report' });
     await expect(button).toBeVisible({ timeout: 60_000 });
     await kit.shot(page, 'existing-results-page');
-    const [download] = await Promise.all([page.waitForEvent('download', { timeout: 90_000 }), button.click()]);
+    // the export dialog (report options): left as it is, it builds today's report and sends no option
+    await button.click();
+    const dialog = page.getByTestId('export-pdf-dialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('radio', { name: /^Full/ })).toBeChecked();
+    await kit.shot(page, 'export-dialog');
+    const request = page.waitForRequest((r) => new URL(r.url()).pathname === `/${teamId}/cbom/scan/${scanId}/export`, { timeout: 90_000 });
+    const [download] = await Promise.all([page.waitForEvent('download', { timeout: 90_000 }), dialog.getByTestId('export-download').click()]);
+    expect(new URL((await request).url()).search, 'default options: no query parameter').toBe('');
     await expect(page.getByText('Report downloaded').first()).toBeVisible();
+    await expect(dialog).toBeHidden();
     expect(download.suggestedFilename()).toBe(`cbom-report-${scanId}.pdf`);
     const saved = await saveDownload(download, `17-existing-cbom-report-scan${scanId}.pdf`);
     await kit.shot(page, 'existing-report-toast');

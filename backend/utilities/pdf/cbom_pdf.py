@@ -12,7 +12,9 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer
 
+from backend.utilities.pdf.report_context import ReportContext, details_note, join_parts
 from backend.utilities.pdf.report_branding import (
+    append_report_masthead,
     append_bom_compliance_sections,
     append_executive_summary,
     append_findings_catalog,
@@ -136,7 +138,7 @@ def advisory_text(raw: Any) -> str | None:
     return text
 
 
-def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = None) -> str:
+def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = None, *, ctx: Optional[ReportContext] = None) -> str:
     """
     Generate a CBOM scan results PDF.
 
@@ -159,7 +161,11 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     rows = _normalize_results(scan_results)
     # the same numbers as the results page (cbom_metrics): findings only; clean inventory is informational
     summary = summarize_code_rows(rows)
-    vulnerabilities = [display_row(v) for v in finding_rows(rows)]
+    kept_rows = finding_rows(rows)
+    vulnerabilities = [display_row(v) for v in kept_rows]
+    # Stored rows (and statuses) are every scan_data row in order; remember each finding's position.
+    raw_pos = {id(r): i for i, r in enumerate(rows)}
+    pos_of_display = {id(d): raw_pos.get(id(r)) for d, r in zip(vulnerabilities, kept_rows)}
     _inner, duration, raw = split_scan_payload(scan_results)
     total = len(vulnerabilities)
 
@@ -225,8 +231,24 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     advisory = advisory_text(raw)
     if advisory:  # CB-29: which crypto-library advisory data the scan matched, and how old it is
         overview.append(("Library advisory data", advisory))
-    append_executive_summary(
-        story,
+    ctx = ctx or ReportContext()
+    impact_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+    sorted_vulns = sorted(
+        vulnerabilities,
+        key=lambda v: (
+            impact_order.get((v.get("impact") or "low").strip().lower(), 4),
+            (v.get("algorithm_name") or "").lower(),
+        ),
+    )
+    shown = ctx.select(sorted_vulns, lambda v: count_label(finding_severity(v) or "low"),
+                       lambda _i, v: pos_of_display.get(id(v)))
+
+    summary_part: List[Any] = []
+    if not ctx.has("summary"):
+        append_report_masthead(summary_part, report_key="cbom", project_name="CBOM Findings", styles=styles, ctx=ctx)
+    else:
+      append_executive_summary(
+        summary_part,
         report_key="cbom",
         overview_rows=overview,
         severity_counts=by_impact,
@@ -240,28 +262,20 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
             ("Report generated", datetime.now().strftime("%b %d, %Y · %I:%M %p")),
             ("Quantum-vulnerable", str(quantum_vulnerable)),
         ],
-    )
+        ctx=ctx,
+      )
     notes = scan_notes(raw if raw else scan_results)
-    if notes:  # the import / coverage notes the results page shows above the table
+    if notes and ctx.has("notes"):  # the import / coverage notes the results page shows above the table
         title, summary_line, lines = notes
-        story.append(Spacer(1, 0.15 * inch))
-        story.append(Paragraph(escape_html(title), styles["heading"]))
-        story.append(Paragraph(escape_html(summary_line), styles["muted"]))
+        summary_part.append(Spacer(1, 0.15 * inch))
+        summary_part.append(Paragraph(escape_html(title), styles["heading"]))
+        summary_part.append(Paragraph(escape_html(summary_line), styles["muted"]))
         for line in lines:
-            story.append(Paragraph("- " + escape_html(line), styles["body"]))
-    story.append(PageBreak())
+            summary_part.append(Paragraph("- " + escape_html(line), styles["body"]))
 
-    impact_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
-    sorted_vulns = sorted(
-        vulnerabilities,
-        key=lambda v: (
-            impact_order.get((v.get("impact") or "low").strip().lower(), 4),
-            (v.get("algorithm_name") or "").lower(),
-        ),
-    )
-
+    catalog_part: List[Any] = []
     catalog: List[List[Any]] = []
-    for idx, v in enumerate(sorted_vulns, 1):
+    for idx, v in shown if ctx.has("catalog") else ():
         title = v.get("title") or v.get("algorithm_name") or f"Finding #{idx}"
         impact = count_label(finding_severity(v) or "low")  # the severity the counts use
         location = finding_location(v)
@@ -273,26 +287,30 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                 Paragraph(escape_html(location), styles["mono_cell"]),
             ]
         )
-    append_findings_catalog(story, catalog_rows=catalog, styles=styles)
-    story.append(PageBreak())
+    if ctx.has("catalog"):
+        append_findings_catalog(catalog_part, catalog_rows=catalog, styles=styles, ctx=ctx)
 
-    story.append(Paragraph("Detailed Findings", styles["title"]))
-    story.append(
-        Paragraph(
-            "Each card includes algorithm metadata, location, evidence, and remediation.",
-            styles["muted"],
+    details: List[Any] = []
+    if ctx.has("details"):
+        details.append(Paragraph("Detailed Findings", styles["title"]))
+        details.append(
+            Paragraph(
+                details_note(ctx, "Each card includes algorithm metadata, location, evidence, and remediation."),
+                styles["muted"],
+            )
         )
-    )
-    story.append(Spacer(1, 0.1 * inch))
+        details.append(Spacer(1, 0.1 * inch))
+        if informational:
+            details.append(Paragraph(
+                f"{informational} clean inventory item(s) with no finding are listed in the CycloneDX download, "
+                "not here.", styles["muted"]))
 
-    if informational:
-        story.append(Paragraph(
-            f"{informational} clean inventory item(s) with no finding are listed in the CycloneDX download, "
-            "not here.", styles["muted"]))
-    if total == 0:
-        story.append(Paragraph("No cryptographic findings were detected.", styles["body"]))
+    if not ctx.has("details"):
+        pass
+    elif not shown:
+        details.append(Paragraph(escape_html(ctx.empty_text("No cryptographic findings were detected.")), styles["body"]))
     else:
-        for idx, v in enumerate(sorted_vulns, 1):
+        for idx, v in shown:
             title = v.get("title") or v.get("algorithm_name") or f"Finding #{idx}"
             impact = count_label(finding_severity(v) or "low")  # the severity the counts use
             strength = (v.get("crypto_strength") or "unknown").strip()
@@ -304,7 +322,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
             standards: List[List[str]] = []
             standards.extend(mapping_rows(v.get("owasp_top_10"), label="OWASP Top 10"))
             standards.extend(mapping_rows(v.get("compliance_controls"), label="Compliance"))
-            story.append(
+            details.append(
                 build_finding_section(
                     index=idx,
                     title=str(title),
@@ -325,16 +343,19 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                     recommended_fix=str(v.get("suggested_fix") or ""),
                     standards_rows=standards or None,
                     styles=styles,
+                    ctx=ctx,
                 )
             )
 
-    appendix_payload = raw if raw else (scan_results if isinstance(scan_results, dict) else {})
-    append_bom_compliance_sections(story, appendix_payload, styles)
+    join_parts(story, [summary_part, catalog_part, details], PageBreak)
+    if ctx.has("compliance"):
+        appendix_payload = raw if raw else (scan_results if isinstance(scan_results, dict) else {})
+        append_bom_compliance_sections(story, appendix_payload, styles)
 
     doc.build(
         story,
-        onFirstPage=make_cover_callback("cbom"),
-        onLaterPages=make_footer_callback("cbom"),
+        onFirstPage=make_cover_callback("cbom", ctx),
+        onLaterPages=make_footer_callback("cbom", ctx),
     )
     return output_path
 

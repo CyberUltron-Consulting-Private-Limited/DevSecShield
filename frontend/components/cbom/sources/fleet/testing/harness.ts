@@ -16,10 +16,14 @@ export interface Sent {
   url: string;
   params: Record<string, unknown>;
   body: unknown;
+  /** the request's headers, names in lower case */
+  headers: Record<string, string>;
 }
 export interface Reply {
   status?: number;
   data: unknown;
+  /** response headers (names in lower case, as axios gives them) */
+  headers?: Record<string, string>;
 }
 type Handler = Reply | ((req: Sent) => Reply);
 
@@ -50,11 +54,16 @@ export class FakeApi {
           // not JSON: kept as sent
         }
       }
-      const req: Sent = { method, url, params: { ...(config.params ?? {}) }, body };
+      const headers: Record<string, string> = {};
+      const raw = (config.headers && typeof (config.headers as { toJSON?: () => unknown }).toJSON === "function"
+        ? (config.headers as { toJSON: () => Record<string, unknown> }).toJSON()
+        : (config.headers ?? {})) as Record<string, unknown>;
+      for (const [k, v] of Object.entries(raw)) if (v != null) headers[k.toLowerCase()] = String(v);
+      const req: Sent = { method, url, params: { ...(config.params ?? {}) }, body, headers };
       this.sent.push(req);
       const route = [...this.routes].reverse().find((r) => r.method === method && r.pattern.test(url));
       const reply: Reply = route ? (typeof route.handler === "function" ? route.handler(req) : route.handler) : { status: 404, data: { detail: "Not Found" } };
-      const response: AxiosResponse = { data: reply.data, status: reply.status ?? 200, statusText: "", headers: {}, config, request: {} };
+      const response: AxiosResponse = { data: reply.data, status: reply.status ?? 200, statusText: "", headers: { ...(reply.headers ?? {}) }, config, request: {} };
       if (response.status >= 400) {
         throw new AxiosError(`Request failed with status code ${response.status}`, "ERR_BAD_REQUEST", config, {}, response);
       }

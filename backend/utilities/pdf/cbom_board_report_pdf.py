@@ -34,6 +34,8 @@ clock (every date comes from the view); Python 3.10 syntax.
 
 from __future__ import annotations
 
+from typing import Any
+
 import re
 from collections import Counter
 from dataclasses import dataclass
@@ -1042,9 +1044,9 @@ def _body(view: TeamCbomView, styles: Styles, width: float) -> list[Flowable]:
     return story
 
 
-def build_pdf(view: TeamCbomView) -> bytes:
+def build_pdf(view: TeamCbomView, *, ctx: Any = None) -> bytes:
     """Render the Board / IT Strategy Committee report for ``view`` (portrait, in memory)."""
-    return build_document(
+    return build_document(ctx=ctx,
         view=view,
         number=DELIVERABLE_NUMBER,
         report_key=REPORT_KEY,

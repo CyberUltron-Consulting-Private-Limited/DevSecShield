@@ -14,6 +14,7 @@ from __future__ import annotations
 import contextlib
 import datetime as _dt
 import json
+import time
 from typing import IO, Annotated, Any, Iterator
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -42,6 +43,10 @@ from backend.utilities.cbom_sources.http import (
 )
 from backend.utilities.cbom_sources.settings import get_or_create_settings
 from backend.utilities.pdf.cbom_run_pdf import build_run_pdf
+from backend.utilities.pdf.report_context import ReportContext
+from backend.utilities.pdf.report_http import log_export, options_from_request, report_headers
+from backend.utilities.pdf.report_options import DEFAULT as DEFAULT_OPTIONS, ReportOptions
+from backend.utilities.team.branding import load_report_branding
 
 router = APIRouter(tags=["cbom-sources"], route_class=CbomRoute)
 access = Access(lambda: _cbom_http.get_db())  # route policies (utilities/rbac): the same database as authorize()
@@ -107,8 +112,13 @@ def _vex(session: Session, run: CbomCollectionRun, data: RD.Summary, at: _dt.dat
     return RD.run_vex(run, data, RD.asset_context(session, run), at)
 
 
+def _report_context(session: Session, team_id: int, options: ReportOptions = DEFAULT_OPTIONS) -> ReportContext:
+    """Report options plus the team's report logo (read in this session; a failure only skips the logo)."""
+    return ReportContext(options=options, branding=load_report_branding(session, team_id))
+
+
 def _pdf(session: Session, run: CbomCollectionRun, data: RD.Summary, vex: dict[str, Any], cbom_sha256: str,
-         at: _dt.datetime) -> bytes:
+         at: _dt.datetime, ctx: ReportContext | None = None) -> bytes:
     settings = get_or_create_settings(session, run.team_id)
     posture = POSTURE.run_posture(session, team_id=run.team_id, run_id=run.id, risk_model=settings.risk_model)
     heatmap = HEAT.run_heatmap(session, run.team_id, run.id, by="source")
@@ -117,7 +127,9 @@ def _pdf(session: Session, run: CbomCollectionRun, data: RD.Summary, vex: dict[s
     return build_run_pdf(run=run_info, sources=RD.run_sources(session, run), posture=posture, heatmap=heatmap,
                          head=data.head, findings=data.findings, vex_states=RD.vex_states(vex),
                          provenance=RD.provenance(session, run), at=at, as_of_note=RD.as_of_note(run, at),
-                         findings_cap=RD.PDF_FINDINGS_CAP, export_cap=RD.INV.EXPORT_CAP, cbom_sha256=cbom_sha256)
+                         findings_cap=RD.PDF_FINDINGS_CAP, export_cap=RD.INV.EXPORT_CAP, cbom_sha256=cbom_sha256,
+                         # default options and no logo: no context at all, so the bytes are today's exactly
+                         ctx=None if ctx is None or (ctx.options.is_default and not ctx.branding.applied) else ctx)
 
 
 def _vex_doc(engine, team_id: int, run_id: int) -> bytes:
@@ -155,14 +167,16 @@ def _verify(engine, team_id: int, run_id: int, upload: RD.Digests, sent_b64: str
     return out
 
 
-def _report(engine, team_id: int, run_id: int) -> bytes:
+def _report(engine, team_id: int, run_id: int, options: ReportOptions = DEFAULT_OPTIONS) -> tuple[bytes, ReportContext]:
     now = utcnow()
+    with Session(engine) as session:
+        ctx = _report_context(session, team_id, options)
     with Session(engine) as session:
         run = _get_owned(session, run_id, team_id)
         with _export_slot(session, run, "report"):
             at = RD.stamp(session, run, now)
             _out, data, tee = RD.written(session, run, now, "json", keep=False)  # one pass: sha256 and summary
-            return _pdf(session, run, data, _vex(session, run, data, at), tee.sha.hexdigest(), at)
+            return _pdf(session, run, data, _vex(session, run, data, at), tee.sha.hexdigest(), at, ctx), ctx
 
 
 def _oscal(session: Session, run: CbomCollectionRun, at: _dt.datetime) -> bytes | None:
@@ -182,10 +196,12 @@ def _oscal(session: Session, run: CbomCollectionRun, at: _dt.datetime) -> bytes 
     return json.dumps(doc, indent=1, ensure_ascii=False).encode("utf-8")
 
 
-def _evidence_pack(engine, team_id: int, run_id: int) -> IO[bytes]:
+def _evidence_pack(engine, team_id: int, run_id: int) -> tuple[IO[bytes], ReportContext]:
     now = utcnow()
     base = f"/{team_id}/cbom/sources/runs/{run_id}"
     temps: list[Any] = []
+    with Session(engine) as session:
+        ctx = _report_context(session, team_id)  # the pack's PDF is the full report; only the logo varies
     try:
         with Session(engine) as session:
             run = _get_owned(session, run_id, team_id)
@@ -197,7 +213,7 @@ def _evidence_pack(engine, team_id: int, run_id: int) -> IO[bytes]:
                 temps.append(xml_file)
                 signature = RD.run_signature(run, data.head, json_tee, at)
                 vex = _vex(session, run, data, at)
-                pdf = _pdf(session, run, data, vex, json_tee.sha.hexdigest(), at)
+                pdf = _pdf(session, run, data, vex, json_tee.sha.hexdigest(), at, ctx)
                 sources = RD.run_sources(session, run)
                 oscal = _oscal(session, run, at)
                 files: list[Any] = [
@@ -214,7 +230,8 @@ def _evidence_pack(engine, team_id: int, run_id: int) -> IO[bytes]:
                           ("bom_signature.json", RD.signature_bytes(signature), JSON_MEDIA, f"{base}/signature"),
                           ("report.pdf", pdf, "application/pdf", f"{base}/report.pdf")]
                 return RD.evidence_pack(run=run, sources=sources, at=at, files=files, omitted=omitted,
-                                        head=data.head, signature=signature)
+                                        head=data.head, signature=signature,
+                                        logo_sha256=ctx.branding.sha256 if ctx.branding.applied else None), ctx
     finally:
         for temp in temps:
             temp.close()
@@ -269,19 +286,30 @@ async def verify_run_signature(team_id: TeamId, run_id: ObjectId, request: Reque
 @router.get(RUN + "/report.pdf", dependencies=[*WRITE, access.team("cbom.read")],
             summary="PDF report of a run: posture, algorithm family x source, certificate expiry, top risks, "
                     "compliance, findings and provenance")
-async def run_report_pdf(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader = None) -> Response:
-    engine, _user = await authorize(team_id, Authorization)
-    body = await _run("report pdf", team_id, _report, engine, team_id, run_id)
-    return _attachment(body, "application/pdf", f"cbom-sources-run-{run_id}-report.pdf")
+async def run_report_pdf(team_id: TeamId, run_id: ObjectId, request: Request,
+                         Authorization: AuthHeader = None) -> Response:
+    """Optional query parameters shape the report: ``preset`` (executive | technical | full), ``sections``
+    (summary, posture, catalog, provenance), ``severities``, ``prepared_for``, ``title`` and ``label``. The team's
+    report logo, when set, appears on the cover and in every page header."""
+    started = time.monotonic()
+    engine, user = await authorize(team_id, Authorization)
+    options = options_from_request(request.query_params, "run")
+    body, ctx = await _run("report pdf", team_id, _report, engine, team_id, run_id, options)
+    filename = f"cbom-sources-run-{run_id}-report.pdf"
+    log_export("run", team=team_id, id=run_id, user=getattr(user, "id", None), ctx=ctx, size=len(body),
+               started=started)
+    return Response(body, media_type="application/pdf", headers={**PRIVATE, **report_headers(ctx, filename)})
 
 
 @router.get(RUN + "/evidence-pack", dependencies=[*WRITE, access.team("cbom.read")],
             summary="Zip of the run's CycloneDX JSON and XML, OSCAL, VEX, signature and PDF with a sha256 manifest")
-async def run_evidence_pack(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader = None) -> Response:
+async def run_evidence_pack(team_id: TeamId, run_id: ObjectId, request: Request,
+                            Authorization: AuthHeader = None) -> Response:
     engine, _user = await authorize(team_id, Authorization)
-    out = await _run("evidence pack", team_id, _evidence_pack, engine, team_id, run_id)
+    options_from_request(request.query_params, "pack")  # any report option: 422 (a pack is the full record)
+    out, ctx = await _run("evidence pack", team_id, _evidence_pack, engine, team_id, run_id)
     length = out.seek(0, 2)
     out.seek(0)
     return StreamingResponse(_chunks(out), media_type="application/zip", headers={
-        **PRIVATE, "Content-Length": str(length),
+        **PRIVATE, "Content-Length": str(length), "X-Report-Logo": ctx.branding.status,
         "Content-Disposition": f'attachment; filename="cbom-sources-run-{run_id}-evidence-pack.zip"'})

@@ -72,6 +72,11 @@ assert.ok(settings.includes("canManageMember(access, member.role)"), "remove che
 assert.ok(settings.includes('data-testid="invite-role"') && settings.includes("access.invitable_roles"), "invite with a role")
 assert.ok(settings.includes('can(access, "team.ownership.claim")'), "claim ownership of a legacy team")
 assert.ok(settings.includes("settings/audit"), "audit log link")
+// report branding: admins (team.branding.manage) change the logo; everyone else sees a read-only preview
+assert.ok(settings.includes("<ReportBrandingCard teamId={team_id} />"), "report branding card")
+const branding = read("components/settings/ReportBrandingCard.tsx")
+assert.ok(branding.includes('const canManage = can(access, "team.branding.manage");') && branding.includes("{canManage ? ("), "logo upload gated")
+assert.ok(!/queryKey: \["team-details"/.test(branding) && !/invalidateQueries\(\)/.test(branding), "the branding card never touches the team-details query")
 for (const product of ["sast", "sbom_sca", "cbom", "ai_bom", "mcp", "llm", "iac", "dast"]) {
   const list = read(`app/[team_id]/${product}/page.tsx`)
   assert.equal((list.match(/<IfAllowed permission="scan.create">/g) ?? []).length, 2, `${product}: New Scan buttons gated`)

@@ -1261,3 +1261,6 @@ from backend.utilities.scm.models import *  # noqa: E402,F401,F403
 
 # ========================================= F4 access management: its tables live in backend/access_models.py
 from backend.access_models import *  # noqa: E402,F401,F403  (registers them on SQLModel.metadata with the rest)
+
+# ========================================= PDF reports: the team's report logo lives in backend/branding_models.py
+from backend.branding_models import *  # noqa: E402,F401,F403  (registers it on SQLModel.metadata with the rest)

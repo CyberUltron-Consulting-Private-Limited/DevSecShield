@@ -14,7 +14,9 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer
 
+from backend.utilities.pdf.report_context import ReportContext, details_note, join_parts
 from backend.utilities.pdf.report_branding import (
+    append_report_masthead,
     append_executive_summary,
     append_findings_catalog,
     build_finding_section,
@@ -50,7 +52,7 @@ def get_severity_color(impact: str):
     return severity_color(impact)
 
 
-def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
+def generate_pdf(scan_results: Any, output_path: Optional[str] = None, *, ctx: Optional[ReportContext] = None) -> str:
     """
     Generate a PDF report from LLM benchmark scan results.
     scan_results: list of vulnerability dicts, or dict with "vulnerabilities" key.
@@ -58,9 +60,16 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
     if output_path is None:
         output_path = f"llm_scan_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
 
+    ctx = ctx or ReportContext()
     vulnerabilities = _normalize_vulnerabilities(scan_results)
     _inner, duration, _raw = split_scan_payload(scan_results)
     total = len(vulnerabilities)
+    # Stored rows are results["vulnerabilities"] in order (finding_rows.mongo_rows).
+    raw_list = _inner.get("vulnerabilities") if isinstance(_inner, dict) else _inner
+    raw_positions = ([i for i, row in enumerate(raw_list) if isinstance(row, dict)]
+                     if isinstance(raw_list, list) else list(range(total)))
+    shown = ctx.select(vulnerabilities, lambda v: count_label(v.get("impact") or "Unknown"),
+                       lambda i, _v: raw_positions[i] if i < len(raw_positions) else None)
 
     by_impact: Dict[str, int] = {}
     for v in vulnerabilities:
@@ -83,8 +92,12 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
         ("Total issues found", str(total)),
         ("Report generated", datetime.now().strftime("%B %d, %Y at %I:%M %p")),
     ]
-    append_executive_summary(
-        story,
+    summary: List[Any] = []
+    if not ctx.has("summary"):
+        append_report_masthead(summary, report_key="llm", project_name="LLM Findings", styles=styles, ctx=ctx)
+    else:
+      append_executive_summary(
+        summary,
         report_key="llm",
         overview_rows=overview,
         severity_counts=by_impact,
@@ -97,11 +110,12 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
             ("Report generated", datetime.now().strftime("%b %d, %Y · %I:%M %p")),
             ("Platform", "zeroshield.ai"),
         ],
-    )
-    story.append(PageBreak())
+        ctx=ctx,
+      )
 
+    catalog_part: List[Any] = []
     catalog: List[List[Any]] = []
-    for idx, vuln in enumerate(vulnerabilities, 1):
+    for idx, vuln in shown if ctx.has("catalog") else ():
         title = (vuln.get("title") or "Untitled finding").strip() or "Untitled finding"
         impact = count_label(vuln.get("impact") or "Unknown")
         catalog.append(
@@ -112,22 +126,26 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
                 Paragraph(escape_html(finding_location(vuln)), styles["mono_cell"]),
             ]
         )
-    append_findings_catalog(story, catalog_rows=catalog, styles=styles)
-    story.append(PageBreak())
+    if ctx.has("catalog"):
+        append_findings_catalog(catalog_part, catalog_rows=catalog, styles=styles, ctx=ctx)
 
-    story.append(Paragraph("Detailed Findings", styles["title"]))
-    story.append(
-        Paragraph(
-            "Each card includes description, OWASP LLM mappings, and remediation.",
-            styles["muted"],
+    details: List[Any] = []
+    if ctx.has("details"):
+        details.append(Paragraph("Detailed Findings", styles["title"]))
+        details.append(
+            Paragraph(
+                details_note(ctx, "Each card includes description, OWASP LLM mappings, and remediation."),
+                styles["muted"],
+            )
         )
-    )
-    story.append(Spacer(1, 0.1 * inch))
+        details.append(Spacer(1, 0.1 * inch))
 
-    if total == 0:
-        story.append(Paragraph("No vulnerability findings from this LLM benchmark scan.", styles["body"]))
+    if not ctx.has("details"):
+        pass
+    elif not shown:
+        details.append(Paragraph(escape_html(ctx.empty_text("No vulnerability findings from this LLM benchmark scan.")), styles["body"]))
     else:
-        for idx, vuln in enumerate(vulnerabilities, 1):
+        for idx, vuln in shown:
             title = (vuln.get("title") or "Untitled finding").strip() or "Untitled finding"
             impact = count_label(vuln.get("impact") or "Unknown")
             loc = finding_location(vuln)
@@ -135,7 +153,7 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
             standards.extend(mapping_rows(vuln.get("owasp_top_10_llm"), label="OWASP Top 10 for LLM"))
             standards.extend(mapping_rows(vuln.get("owasp_top_10"), label="OWASP Top 10"))
             standards.extend(mapping_rows(vuln.get("compliance_controls"), label="Compliance"))
-            story.append(
+            details.append(
                 build_finding_section(
                     index=idx,
                     title=title,
@@ -146,13 +164,15 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
                     recommended_fix=(vuln.get("suggested_fix") or "").strip(),
                     standards_rows=standards or None,
                     styles=styles,
+                    ctx=ctx,
                 )
             )
 
+    join_parts(story, [summary, catalog_part, details], PageBreak)
     doc.build(
         story,
-        onFirstPage=make_cover_callback("llm"),
-        onLaterPages=make_footer_callback("llm"),
+        onFirstPage=make_cover_callback("llm", ctx),
+        onLaterPages=make_footer_callback("llm", ctx),
     )
     return output_path
 

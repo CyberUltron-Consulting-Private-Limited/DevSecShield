@@ -14,7 +14,9 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer
 
+from backend.utilities.pdf.report_context import ReportContext, details_note, join_parts
 from backend.utilities.pdf.report_branding import (
+    append_report_masthead,
     append_executive_summary,
     append_findings_catalog,
     build_finding_section,
@@ -64,7 +66,7 @@ def get_relative_path(file_path: str) -> str:
         return file_path or ""
 
 
-def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
+def generate_pdf(scan_results: Any, output_path: Optional[str] = None, *, ctx: Optional[ReportContext] = None) -> str:
     """
     Generate a PDF report from IAC scan results.
 
@@ -76,9 +78,21 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = f"iac_scan_report_{timestamp}.pdf"
 
+    ctx = ctx or ReportContext()
     results = _normalize_results(scan_results)
     _inner, duration, _raw = split_scan_payload(scan_results)
     use_agent_format = len(results) > 0 and _is_agent_format(results[0])
+
+    def _sev(result: Dict[str, Any]) -> str:
+        if use_agent_format:
+            return count_label(result.get("impact") or "Unknown")
+        return count_label(result.get("severity", "UNKNOWN"))
+
+    # Stored finding rows (and their statuses) follow scan_data order, non-dict rows included.
+    raw_rows = _inner if isinstance(_inner, list) else (_inner.get("results") if isinstance(_inner, dict) else None)
+    raw_positions = ([i for i, row in enumerate(raw_rows) if isinstance(row, dict)]
+                     if isinstance(raw_rows, list) else list(range(len(results))))
+    shown = ctx.select(results, _sev, lambda i, _row: raw_positions[i] if i < len(raw_positions) else None)
 
     total_findings = len(results)
     by_impact: Dict[str, int] = {}
@@ -142,8 +156,12 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
             )
         )
 
-    append_executive_summary(
-        story,
+    summary: List[Any] = []
+    if not ctx.has("summary"):
+        append_report_masthead(summary, report_key="iac", project_name="IAC Findings", styles=styles, ctx=ctx)
+    else:
+      append_executive_summary(
+        summary,
         report_key="iac",
         overview_rows=overview,
         severity_counts=by_impact,
@@ -157,11 +175,12 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
             ("Locations", str(len(unique_locations))),
             ("Report generated", datetime.now().strftime("%b %d, %Y · %I:%M %p")),
         ],
-    )
-    story.append(PageBreak())
+        ctx=ctx,
+      )
 
+    catalog_part: List[Any] = []
     catalog: List[List[Any]] = []
-    for idx, result in enumerate(results, 1):
+    for idx, result in shown if ctx.has("catalog") else ():
         if use_agent_format:
             title = (result.get("title") or "Finding").strip() or "Finding"
             impact = count_label(result.get("impact") or "Unknown")
@@ -182,22 +201,26 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
                 Paragraph(escape_html(location), styles["mono_cell"]),
             ]
         )
-    append_findings_catalog(story, catalog_rows=catalog, styles=styles)
-    story.append(PageBreak())
+    if ctx.has("catalog"):
+        append_findings_catalog(catalog_part, catalog_rows=catalog, styles=styles, ctx=ctx)
 
-    story.append(Paragraph("Detailed Findings", styles["title"]))
-    story.append(
-        Paragraph(
-            "Each card includes location, description, evidence, and remediation. Technical values use monospace.",
-            styles["muted"],
+    details: List[Any] = []
+    if ctx.has("details"):
+        details.append(Paragraph("Detailed Findings", styles["title"]))
+        details.append(
+            Paragraph(
+                details_note(ctx, "Each card includes location, description, evidence, and remediation. Technical values use monospace."),
+                styles["muted"],
+            )
         )
-    )
-    story.append(Spacer(1, 0.1 * inch))
+        details.append(Spacer(1, 0.1 * inch))
 
-    if total_findings == 0:
-        story.append(Paragraph("No security findings were identified in this scan.", styles["body"]))
+    if not ctx.has("details"):
+        pass
+    elif not shown:
+        details.append(Paragraph(escape_html(ctx.empty_text("No security findings were identified in this scan.")), styles["body"]))
     else:
-        for idx, result in enumerate(results, 1):
+        for idx, result in shown:
             if use_agent_format:
                 title = (result.get("title") or "Finding").strip() or "Finding"
                 impact = count_label(result.get("impact") or "Unknown")
@@ -206,7 +229,7 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
                 standards.extend(mapping_rows(result.get("owasp_top_10"), label="OWASP Top 10"))
                 standards.extend(mapping_rows(result.get("compliance_controls"), label="Compliance"))
                 standards.extend(mapping_rows(result.get("cves"), label="CVE", limit=10))
-                story.append(
+                details.append(
                     build_finding_section(
                         index=idx,
                         title=title,
@@ -220,6 +243,7 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
                         recommended_fix=(result.get("suggested_fix") or "").strip(),
                         standards_rows=standards or None,
                         styles=styles,
+                        ctx=ctx,
                     )
                 )
             else:
@@ -241,7 +265,7 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
                 impact_text = result.get("impact") or ""
                 if impact_text:
                     description = f"{description}\n\nImpact: {impact_text}"
-                story.append(
+                details.append(
                     build_finding_section(
                         index=idx,
                         title=str(rule_description),
@@ -261,13 +285,15 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
                         recommended_fix=str(result.get("resolution") or ""),
                         standards_rows=standards or None,
                         styles=styles,
+                        ctx=ctx,
                     )
                 )
 
+    join_parts(story, [summary, catalog_part, details], PageBreak)
     doc.build(
         story,
-        onFirstPage=make_cover_callback("iac"),
-        onLaterPages=make_footer_callback("iac"),
+        onFirstPage=make_cover_callback("iac", ctx),
+        onLaterPages=make_footer_callback("iac", ctx),
     )
     return output_path
 

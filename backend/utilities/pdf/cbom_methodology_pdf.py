@@ -35,6 +35,8 @@ Courier only; Python 3.10 syntax.
 
 from __future__ import annotations
 
+from typing import Any
+
 from collections import Counter
 from collections.abc import Sequence
 
@@ -709,9 +711,9 @@ def build_body(view: TeamCbomView, styles: Styles, width: float) -> list[Flowabl
     return story
 
 
-def build_pdf(view: TeamCbomView) -> bytes:
+def build_pdf(view: TeamCbomView, *, ctx: Any = None) -> bytes:
     """Render deliverable #3 for ``view`` and return the PDF bytes (byte-stable for a view)."""
-    return build_document(
+    return build_document(ctx=ctx, 
         view=view,
         number=NUMBER,
         report_key=REPORT_KEY,

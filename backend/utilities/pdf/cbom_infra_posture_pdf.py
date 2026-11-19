@@ -477,9 +477,9 @@ def build_story(view: TeamCbomView, styles: Styles, width: float) -> list[Flowab
     ]
 
 
-def build_pdf(view: TeamCbomView) -> bytes:
+def build_pdf(view: TeamCbomView, *, ctx: Any = None) -> bytes:
     """Render deliverable #5. Returns PDF bytes."""
-    return build_document(
+    return build_document(ctx=ctx, 
         view=view,
         number=DOCUMENT_NUMBER,
         report_key=REPORT_KEY,

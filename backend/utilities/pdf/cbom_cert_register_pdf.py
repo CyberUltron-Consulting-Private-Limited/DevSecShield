@@ -49,7 +49,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from functools import lru_cache
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 from reportlab.lib.colors import Color
 from reportlab.lib.styles import ParagraphStyle
@@ -861,7 +861,7 @@ def _body(view: TeamCbomView, max_rows: int) -> Callable[[Styles, float], list[F
     return body
 
 
-def build_pdf(view: TeamCbomView, *, max_rows: int = MAX_REGISTER_ROWS) -> bytes:
+def build_pdf(view: TeamCbomView, *, max_rows: int = MAX_REGISTER_ROWS, ctx: Any = None) -> bytes:
     """Render the Certificate Estate Register for ``view`` and return the PDF bytes.
 
     ``max_rows`` caps the register (and the "previously seen" table) at that many rows; the rows
@@ -869,7 +869,7 @@ def build_pdf(view: TeamCbomView, *, max_rows: int = MAX_REGISTER_ROWS) -> bytes
     count every certificate.  An empty team still gets a complete document: the "NO COMPLETED
     CBOM SCANS" banner, zero counts and an empty register, never a failure.
     """
-    return build_document(
+    return build_document(ctx=ctx, 
         view=view,
         number=NUMBER,
         report_key=REPORT_KEY,
