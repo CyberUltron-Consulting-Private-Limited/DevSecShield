@@ -13,6 +13,7 @@ import { PathArraysInput } from "@/components/path-arrays-input";
 import { Button } from "@/components/ui/button";
 import { Filter, Code, Loader2, Save } from "lucide-react";
 import type { SastAppLang } from "@/utils/backend_api";
+import { everythingExcludeMessage } from "@/utils/pathPatterns";
 
 const LANGUAGES: SastAppLang[] = [
   "c",
@@ -44,6 +45,8 @@ export function SastScanSettingsForm({
   onSaveClick,
   isSaving = false,
 }: SastScanSettingsFormProps) {
+  // An exclude of only "*" / "**" would leave nothing to scan; the backend refuses it too (path_patterns.py)
+  const excludeError = everythingExcludeMessage(excludePathArrays);
   return (
     <div className="space-y-4">
       {/* Scan scope — exclude path arrays (same order as sast-options-sidebar) */}
@@ -66,6 +69,9 @@ export function SastScanSettingsForm({
             onChange={onExcludePathArraysChange}
             segmentPlaceholder="ex: directory or file_name.extension"
           />
+          {excludeError && (
+            <p role="alert" className="mt-2 text-sm text-amber-400">{excludeError}</p>
+          )}
         </CardContent>
       </Card>
 
@@ -109,7 +115,7 @@ export function SastScanSettingsForm({
 
       <Button
         onClick={onSaveClick}
-        disabled={isSaving}
+        disabled={isSaving || excludeError !== null}
         className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
       >
         {isSaving ? (

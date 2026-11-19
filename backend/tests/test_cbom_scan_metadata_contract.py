@@ -18,7 +18,6 @@ real branch. The live end-to-end variant is ``test_cbom_e2e.py``. Two cases:
     KeyError.
 """
 
-import datetime
 import os
 import sys
 import types
@@ -44,10 +43,8 @@ _ADDITIVE_KEYS = (
 
 def _scan(scan_metadata=None, scan_data=None):
     """A duck-typed Scan (get_scan_metadata reads only these two attrs)."""
-    # A real scan row always has created_at; SAST/IaC metadata reads it to tell legacy path patterns apart.
     return types.SimpleNamespace(
-        scan_metadata=scan_metadata or {}, scan_data=scan_data or {},
-        created_at=datetime.datetime.now(datetime.timezone.utc),
+        scan_metadata=scan_metadata or {}, scan_data=scan_data or {}
     )
 
 

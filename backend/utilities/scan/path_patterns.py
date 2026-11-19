@@ -4,31 +4,22 @@ RabbitMQ/worker/helpers/context/codebase_context.py file_path_matches_pattern).
 
 Since #443 (PATH_PATTERN_VERSION 2) a pattern's names match whole folder or file names; "*" is any characters within a
 name and a "**" name any number of folders. Before #443 a pattern's last name matched any name STARTING with it
-("k8s" also matched "k8s-prod", "test" also "tests"). Scans started before #443 store no version, so "Run again"
-translates their patterns to the glob that matches the same files ("k8s" -> "k8s*"), shown in the form, instead of
+("k8s" also matched "k8s-prod", "test" also "tests"). Patterns saved before store no version, so "Run again"
+(and the CI/CD settings page and run) translates their patterns to the glob that matches the same files ("k8s" -> "k8s*"), shown in the form, instead of
 silently narrowing an IaC include or loosening a SAST exclude.
 """
 
-import datetime
-
 PATH_PATTERN_VERSION = 2
 
-# When the glob meaning reached staging (#443 promoted by #442, Deploy staging run 44357285170 started 2026-11-18
-# 17:18 UTC). A scan with no "path_pattern_v" started before this used the prefix meaning; one started after it
-# (before the version marker existed) already used globs. Scans store the marker from now on.
-GLOB_MEANING_SINCE = datetime.datetime(2026, 11, 18, 17, 18, tzinfo=datetime.timezone.utc)
 
-
-def saved_with_prefix_meaning(meta: dict, started_at: datetime.datetime | None) -> bool:
-    """Whether a scan's stored path patterns have the pre-#443 prefix meaning (no version, started before the glob
-    meaning was deployed; a scan of unknown start time counts as old)."""
-    if (meta or {}).get("path_pattern_v") == PATH_PATTERN_VERSION:
-        return False
-    if started_at is None:
-        return True
-    if started_at.tzinfo is None:  # DateTime columns hold UTC without a zone
-        started_at = started_at.replace(tzinfo=datetime.timezone.utc)
-    return started_at < GLOB_MEANING_SINCE
+def saved_with_prefix_meaning(meta: dict | None) -> bool:
+    """
+    Whether stored path patterns have the pre-#443 prefix meaning: anything saved without "path_pattern_v". Scans,
+    and CI/CD settings, store the version from #468 on. No deploy-time cutoff: a deployment gets #443 and #468
+    together (production), and staging's scans of 18-19 Nov (#443 without the version, test data only) are read as
+    old, which at worst widens a pattern by a trailing "*".
+    """
+    return (meta or {}).get("path_pattern_v") != PATH_PATTERN_VERSION
 
 
 def pattern_names(pattern: list[str] | None) -> list[str]:
@@ -44,14 +35,27 @@ def matches_everything(pattern: list[str] | None) -> bool:
 
 def legacy_to_glob(pattern: list[str]) -> list[str]:
     """
-    A pattern saved before #443, written with the version-2 meaning of what it matched then: its last name becomes a
-    prefix ("infra" -> "infra*", ["deploy", "k8s"] -> ["deploy", "k8s*"]). Left as it is: a single ".ext" name (it
-    already means "names ending with"), a last name already ending with "*", and a pattern without a name.
+    A pattern saved before #443, written as the version-2 glob matching the files it matched then. The old matcher
+    (worker, before 1f81d634) built a regex from the boxes and searched the absolute path with it:
+    - one box ".x": the bare text, anywhere -> "*.x*" (names containing ".x", e.g. ".tf" also matched prod.tfvars);
+    - one box: "/" + box, so its last name was a prefix -> "infra" becomes "infra*", "deploy/k8s" ["deploy", "k8s*"];
+    - two boxes: box1 + "/" + box2, unanchored, so the first name was also a suffix -> ["*deploy", "k8s*"];
+    - three or more: the same over all boxes but the last, which the old code dropped -> [a, b, c] ["*a", "b*"].
+    A pattern without a name is left as it is.
     """
-    names = pattern_names(pattern)
-    if not names or (len(names) == 1 and names[0].startswith(".")) or names[-1].endswith("*"):
+    boxes = [box.strip() for box in (pattern or []) if isinstance(box, str) and box.strip()]
+    if not pattern_names(boxes):
         return list(pattern)
-    return [*names[:-1], names[-1] + "*"]
+    if len(boxes) == 1 and boxes[0].startswith("."):
+        name = boxes[0]
+        return [("" if name.startswith("*") else "*") + name + ("" if name.endswith("*") else "*")]
+    used = boxes if len(boxes) <= 2 else boxes[:-1]
+    names = pattern_names(used)
+    if len(boxes) >= 2 and not names[0].startswith("*"):
+        names[0] = "*" + names[0]
+    if not names[-1].endswith("*"):
+        names[-1] = names[-1] + "*"
+    return names
 
 
 def legacy_patterns_to_glob(patterns: list[list[str]] | None) -> list[list[str]] | None:
@@ -65,8 +69,9 @@ def check_excludes(patterns: list[list[str]] | None) -> None:
     """
     for pattern in patterns or []:
         if matches_everything(pattern):
+            shown = "/".join(pattern_names(pattern))
             raise ValueError(
-                f"The exclude pattern {'/'.join(pattern_names(pattern))!r} matches every file, so nothing would be "
+                f'The exclude pattern "{shown}" matches every file, so nothing would be '
                 "scanned. Remove it, or name the folders or files to skip (for example tests or *.min.js).")
 
 
@@ -77,7 +82,20 @@ def cicd_sast_excludes(sast_settings: dict) -> list[list[str]] | None:
     skipped then. Raises ValueError for an exclude matching every file (the run is refused with this message).
     """
     excludes = (sast_settings or {}).get("exclude_path_arrays")
-    if excludes and (sast_settings or {}).get("path_pattern_v") != PATH_PATTERN_VERSION:
+    if excludes and saved_with_prefix_meaning(sast_settings):
         excludes = legacy_patterns_to_glob(excludes)
     check_excludes(excludes)
     return excludes or None
+
+
+def cicd_settings_for_form(scan_settings: dict | None) -> dict:
+    """
+    An integration's saved scan settings as the settings page shows them: SAST excludes saved before #443 come back
+    as the globs they meant ("test" -> "test*"), so saving the page (which records the version) keeps what the
+    integration skipped instead of narrowing it. The stored row is not changed.
+    """
+    settings = dict(scan_settings or {})
+    sast = settings.get("sast")
+    if isinstance(sast, dict) and isinstance(sast.get("exclude_path_arrays"), list) and saved_with_prefix_meaning(sast):
+        settings["sast"] = {**sast, "exclude_path_arrays": legacy_patterns_to_glob(sast["exclude_path_arrays"])}
+    return settings

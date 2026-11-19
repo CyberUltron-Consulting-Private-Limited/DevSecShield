@@ -35,14 +35,14 @@ def _without_secrets(value):
     return value
 
 
-def _patterns_in_glob_meaning(scan_type: str, options: dict, meta: dict, started_at) -> dict:
+def _patterns_in_glob_meaning(scan_type: str, options: dict, meta: dict) -> dict:
     """
     A scan started before #443 stored its path patterns with the old prefix meaning ("k8s" also matched "k8s-prod",
     "test" also "tests"). Its "Run again" options carry the same patterns rewritten as the globs that match the same
     files ("k8s*", "test*"), so a rerun neither skips IaC files nor scans SAST files it skipped before, and the form
     shows the rewrite.
     """
-    if not saved_with_prefix_meaning(meta, started_at):
+    if not saved_with_prefix_meaning(meta):
         return options
     if scan_type == "sast" and isinstance(options.get("exclude_path_arrays"), list):
         options["exclude_path_arrays"] = legacy_patterns_to_glob(options["exclude_path_arrays"])
@@ -54,12 +54,11 @@ def _patterns_in_glob_meaning(scan_type: str, options: dict, meta: dict, started
     return options
 
 
-def rerun_options(scan_type: str, meta: dict, started_at=None) -> dict:
-    """The stored, non-secret start options of a code scan, for "Run again" (None when the scan never stored one).
-    started_at: when the scan started (Scan.created_at), to tell the path patterns' meaning."""
+def rerun_options(scan_type: str, meta: dict) -> dict:
+    """The stored, non-secret start options of a code scan, for "Run again" (None when the scan never stored one)."""
     options = {key: _without_secrets(meta.get(key)) for key in _RERUN_OPTIONS.get(scan_type, ())
                if not _secret_key(key)}
-    return _patterns_in_glob_meaning(scan_type, options, meta, started_at)
+    return _patterns_in_glob_meaning(scan_type, options, meta)
 
 _CBOM_INPUT_COUNTS = ("components_total", "crypto_assets", "imported", "skipped_not_crypto", "skipped_invalid",
                       "duplicates")
@@ -115,7 +114,7 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             "repo_url": repo_url,
             "branch": branch,
             "zip_file_used": zip_file_used,
-            **rerun_options("sast", _meta, scan.created_at),
+            **rerun_options("sast", _meta),
             "files_scanned": files_scanned,
             "total_files": total_files,
             "code_coverage": code_coverage,
@@ -135,7 +134,7 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             "repo_url": repo_url,
             "branch": branch,
             "zip_file_used": zip_file_used,
-            **rerun_options("iac", _meta, scan.created_at),
+            **rerun_options("iac", _meta),
             "dependency_diagram": dependency_diagram,
         }
 

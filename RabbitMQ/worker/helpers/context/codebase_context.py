@@ -171,8 +171,9 @@ def file_path_matches_pattern(file_path:str, path_array: list[str], root: str | 
 
 
 EXCLUDED_EVERY_FILE = (
-    "The exclude patterns removed every file of the repository, so there was nothing to scan. "
-    "Edit the excludes and run the scan again.")
+    "Every file of the repository was excluded, so there was nothing to scan: by your exclude patterns, or by the "
+    "folders a scan always skips (dependencies, builds and caches such as node_modules, dist and build). Check the "
+    "excludes and that the repository has source files outside those folders, then run the scan again.")
 
 
 class CodebaseContext(BaseContextManager):

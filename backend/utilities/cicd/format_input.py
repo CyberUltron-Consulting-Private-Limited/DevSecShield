@@ -86,6 +86,14 @@ async def format_cicd_input(
         
         validated_file_content = await validate_zip_file(uploaded_file)
         bytes_io_zip_file_object = BytesIO(validated_file_content)
+
+        # Refuse a SAST exclude matching every file before the zip is stored (pre-#443 excludes are translated first)
+        sast_excludes = None
+        if scan_type == "sast" and isinstance((scan_settings or {}).get("sast"), dict):
+            try:
+                sast_excludes = cicd_sast_excludes(scan_settings["sast"])
+            except ValueError as e:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
         
         s3_upload_response = upload_file(bytes_io_zip_file_object)
         if not s3_upload_response:
@@ -102,12 +110,8 @@ async def format_cicd_input(
                 if sast_scan_settings is None:
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Sast scan settings not found")
                 cicd_kwargs["app_lang"] = sast_scan_settings.get("app_lang")
-                try:
-                    # saved before #443: translated to what they skipped then; one matching every file is refused
-                    excludes = cicd_sast_excludes(sast_scan_settings)
-                except ValueError as e:
-                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-                cicd_kwargs["exclude_path_arrays"] = sanitize_path_patterns(excludes) if excludes else None
+                # saved before #443: translated to what they skipped then (checked above, before the upload)
+                cicd_kwargs["exclude_path_arrays"] = sanitize_path_patterns(sast_excludes) if sast_excludes else None
                 
                 console.print(f"Cicd kwargs assembled successfully: {safe_repr(cicd_kwargs)}", style="dim bold yellow",
                               markup=False)
@@ -131,6 +135,8 @@ async def format_cicd_input(
                 return cicd_kwargs
 
                 
+    except HTTPException:
+        raise  # a refusal (400) stays one, not a 500
     except Exception as e:
         console.print(f"Error in format_cicd_input: {e}",style="bold red")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error in format_cicd_input: {e}")

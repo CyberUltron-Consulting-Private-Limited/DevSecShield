@@ -23,6 +23,7 @@ class SastScanSettingsData(BaseModel):
     @model_validator(mode="after")
     def validate_exclude_path_arrays(self):
         check_excludes(self.exclude_path_arrays)  # an exclude matching every file leaves nothing to scan
+        self.path_pattern_v = PATH_PATTERN_VERSION  # set here, not by the client: what is saved now has this meaning
         return self
 
 class CbomScanSettingsData(BaseModel):

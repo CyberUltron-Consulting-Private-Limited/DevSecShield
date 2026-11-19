@@ -189,7 +189,12 @@ LEGACY = [
     (["k8s"], ["k8s*"], "k8s-prod/app.yaml", True),
     (["charts"], ["charts*"], "charts-v2/web/values.yaml", True),
     (["infra"], ["infra*"], "infrastructure/main.tf", True),
-    (["deploy", "k8s"], ["deploy", "k8s*"], "deploy/k8s-prod/app.yaml", True),
+    (["deploy", "k8s"], ["*deploy", "k8s*"], "deploy/k8s-prod/app.yaml", True),
+    (["deploy", "k8s"], ["*deploy", "k8s*"], "mydeploy/k8s/app.yaml", True),  # two boxes: the first was unanchored
+    (["deploy/k8s"], ["deploy", "k8s*"], "mydeploy/k8s/app.yaml", False),    # one box: "/" before deploy
+    (["deploy", "k8s", "base"], ["*deploy", "k8s*"], "deploy/k8s/other/a.yaml", True),  # last of 3+ was dropped
+    ([".tf"], ["*.tf*"], "env/prod.tfvars", True),     # the bare text anywhere
+    ([".min"], ["*.min*"], "web/app.min.js", True),
     (["test"], ["test*"], "tests/unit/test_a.py", True),
     (["build"], ["build*"], "buildSrc/x.py", True),
     (["k8s"], ["k8s*"], "apps/k8s/app.yaml", True),
