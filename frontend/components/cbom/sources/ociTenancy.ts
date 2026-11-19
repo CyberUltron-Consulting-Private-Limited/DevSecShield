@@ -77,6 +77,20 @@ export function ociKeyOriginOf(method: OciMethod): OciKeyOrigin {
   return method === "own" ? "uploaded" : "generated"
 }
 
+/**
+ * The generated key pair that steps 2 and 3 show is the one the user will hold. Not so before the first save, nor
+ * once the tenancy field differs from the saved one: saving a different tenancy makes a new key pair, so step 1
+ * (Save and create key) comes back and steps 2 and 3 wait for it.
+ */
+export function ociKeyReady(
+  method: OciMethod,
+  saved: Pick<OciSaved, "tenancy" | "keyOrigin"> | null,
+  fingerprint: string | null | undefined,
+  tenancy: string,
+): boolean {
+  return method !== "own" && saved?.keyOrigin === "generated" && !!fingerprint && tenancy.trim() === saved.tenancy
+}
+
 function lines(text: string): string[] {
   return Array.from(new Set(text.replace(/﻿/g, "").split(/\r?\n/).map((l) => l.split("#")[0].trim()).filter(Boolean)))
 }

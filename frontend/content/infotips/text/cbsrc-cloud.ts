@@ -189,7 +189,7 @@ const TEXT = {
   },
   // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1822-1835 — three ways: Resource Manager stack, generated key added in the Console, own API key
   "cbsrc.oci.method": {
-    what: "Deploy to Oracle Cloud: ZeroShield creates an API key pair and a Resource Manager stack that adds a read-only user, group and policy. Generate a key: the same key pair, added to a user in the Console, plus a Cloud Shell script for the group and policy. Use my own API key: upload the private key of an existing user.",
+    what: "Deploy to Oracle Cloud: ZeroShield creates an API key pair and a Resource Manager stack that adds a read-only user, group and policy. Generate a key, run a script: the same key pair, with a Cloud Shell script that creates the read-only user, group and policy and adds the key (or adds it to a user you name). Use my own API key: upload the private key of an existing user.",
     why: "With the first two the private key is created by ZeroShield and never downloaded, so no key file is left on a laptop.",
     example: "Deploy to Oracle Cloud, then paste the stack's user_ocid output.",
   },
@@ -207,8 +207,8 @@ const TEXT = {
   },
   // src: frontend/components/cbom/sources/ociTenancy.ts:14, frontend/components/cbom/sources/CloudIdentityTab.tsx:1956-1968 — a region identifier; the stack is created there
   "cbsrc.oci.home_region": {
-    what: "The identifier of the tenancy's home region, shown on the tenancy's page. Create the Resource Manager stack in this region.",
-    why: "Users, groups and policies can only be created in the home region, so a stack applied elsewhere fails.",
+    what: "The identifier of the tenancy's home region, shown on the tenancy's page. ZeroShield reads it when other regions cannot be listed.",
+    why: "Users, groups and policies live in the home region; the stack creates them there wherever it is applied, and the Cloud Shell script must run there.",
     example: "us-ashburn-1.",
   },
   // src: frontend/components/cbom/sources/ociTenancy.ts:15, frontend/components/cbom/sources/CloudIdentityTab.tsx:1994-2004 — one per line, up to 60; blank reads every subscribed region
@@ -255,7 +255,7 @@ const TEXT = {
   },
   // src: frontend/components/cbom/sources/ociTenancy.ts:22-33, frontend/components/cbom/sources/CloudIdentityTab.tsx:2236-2258 — inspect and read only; never use keys or read bundles
   "cbsrc.oci.policy": {
-    what: "The statements for the group ZeroShieldCBOMReaders: inspect and read only, on compartments, vaults, keys, secrets, certificate authorities, load balancers and Object Storage. Never use keys, read secret-bundles or read leaf-certificate-bundles.",
+    what: "The statements for the group ZeroShieldCBOMReaders: inspect and read only, on the tenancy (to list subscribed regions), compartments, vaults, keys, secrets, certificate authorities, load balancers and Object Storage. Never use keys, read secret-bundles or read leaf-certificate-bundles.",
     why: "Inspect and read return metadata, so ZeroShield cannot use a key or read a secret's value.",
     example: "Allow group ZeroShieldCBOMReaders to read keys in tenancy.",
   },

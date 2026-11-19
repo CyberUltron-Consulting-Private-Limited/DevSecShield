@@ -51,6 +51,7 @@ import {
   checkOciForm,
   fillOciPublicKey,
   fillOciTenancy,
+  ociKeyReady,
   ociMethodOf,
   ociPolicyStatement,
   ociResourceManagerUrl,
@@ -1829,8 +1830,8 @@ const OCI_METHODS: { value: OciMethod; title: string; description: string }[] = 
   },
   {
     value: "console",
-    title: "Generate a key, add it in the Console",
-    description: "ZeroShield creates the key pair; you add the public key to a user and run a Cloud Shell script.",
+    title: "Generate a key, run a script",
+    description: "ZeroShield creates the key pair; a Cloud Shell script creates the read-only user, group and policy, and adds the key.",
   },
   { value: "own", title: "Use my own API key", description: "Upload the private key of a user that already has the read-only policy." },
 ];
@@ -1871,8 +1872,8 @@ function OciForm({
   const publicKey = cfgString(source, "public_key_pem");
   const savedRegion = cfgString(source, "home_region");
   const savedTenancy = cfgString(source, "tenancy_ocid");
-  // The generated key pair exists (the server writes its fingerprint on every save): steps 2 and 3 can be shown.
-  const keyReady = method !== "own" && saved?.keyOrigin === "generated" && !!fingerprint;
+  // The generated key pair exists for the tenancy in the form (the server writes its fingerprint on every save).
+  const keyReady = ociKeyReady(method, saved, fingerprint, tenancy);
   const tenancyChanged = !!saved && tenancy.trim() !== saved.tenancy;
 
   const save = useMutation({
@@ -2133,7 +2134,9 @@ function OciForm({
                 <p className="text-xs text-zinc-500 mr-auto">
                   {saved?.keyOrigin === "uploaded"
                     ? "Replaces the uploaded key with a key pair ZeroShield creates. Nothing is read yet."
-                    : "Saves the tenancy and creates an API key pair; the private key never leaves ZeroShield. Nothing is read yet."}
+                    : saved?.keyOrigin === "generated" && tenancyChanged
+                      ? "Saves the new tenancy and creates a new key pair; the key on the old user stops working for ZeroShield. Nothing is read yet."
+                      : "Saves the tenancy and creates an API key pair; the private key never leaves ZeroShield. Nothing is read yet."}
                 </p>
                 <Button
                   className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
@@ -2149,7 +2152,7 @@ function OciForm({
           </li>
 
           <li>
-            <StepTitle n={2} title={method === "stack" ? "Deploy the stack" : "Add the key in the Console"} />
+            <StepTitle n={2} title={method === "stack" ? "Deploy the stack" : "Run the script"} />
             {!keyReady ? (
               <p className="text-sm text-zinc-500">Available after step 1 creates the key.</p>
             ) : method === "stack" ? (
@@ -2174,8 +2177,8 @@ function OciForm({
                 </div>
                 <ol className="list-decimal space-y-1 pl-5 text-sm text-zinc-600 dark:text-zinc-400">
                   <li>
-                    Create a stack from the downloaded .zip in the home region{" "}
-                    <span className="font-mono text-xs text-zinc-900 dark:text-white">{savedRegion}</span>.
+                    Create a stack from the downloaded .zip (any region; the identity resources go to the home region{" "}
+                    <span className="font-mono text-xs text-zinc-900 dark:text-white">{savedRegion}</span>).
                   </li>
                   <li>Enter an email your team reads for the new user (tenancies with identity domains require one).</li>
                   <li>Choose Apply and wait for the job to succeed.</li>

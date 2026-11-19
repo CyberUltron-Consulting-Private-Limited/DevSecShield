@@ -546,7 +546,7 @@ if [ -z "$USER_OCID" ]; then
 fi
 oci iam group add-user --group-id "$GROUP_ID" --user-id "$USER_OCID" >/dev/null 2>&1 || true
 
-cat > zs-cbom-policy.json <<JSON
+cat > zs-cbom-policy.json <<JSON   # unquoted: ${GROUP} below expands
 __STATEMENTS__
 JSON
 POLICY_ID=$(oci iam policy list --compartment-id "$TENANCY_OCID" --name "$POLICY_NAME" --query 'data[0].id' --raw-output 2>/dev/null || true)
@@ -574,8 +574,9 @@ echo "User OCID (enter it in ZeroShield): $USER_OCID"
 def oci_reader_text() -> str:
     import json
 
+    # the heredoc that writes the policy JSON is unquoted, so ${GROUP} follows an edited GROUP= line
     return (OCI_READER.replace("__GROUP__", OCI_GROUP).replace("__USER__", OCI_USER)
-            .replace("__STATEMENTS__", json.dumps(oci_policy_statements(), indent=2)))
+            .replace("__STATEMENTS__", json.dumps(oci_policy_statements("${GROUP}"), indent=2)))
 
 
 _OCI_STACK_MAIN = """# ZeroShield CBOM: a read-only Oracle Cloud user for crypto metadata (OCI Resource Manager stack).

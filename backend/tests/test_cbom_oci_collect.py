@@ -325,6 +325,17 @@ def test_regions_fall_back_when_the_policy_lacks_inspect_tenancies():
     assert {t["target"] for t in out["targets"]} == {f"oci:{HOME}", f"oci:{OTHER}"}
     gap = next(r for r in rows if r["location"] == "oci://tenancy#regions")
     assert "inspect tenancies in tenancy" in gap["facts"]["detail"]
+    # job-wide (R-oci1 re-review): an unlisted asset of ANY region is "not read", never "removed" by drift
+    assert gap["target"] == ""
+    from types import SimpleNamespace
+
+    from backend.utilities.cbom_sources.drift import job_gaps
+
+    stored = SimpleNamespace(asset_type="coverage", facts=gap["facts"], target=gap["target"] or None)  # add_assets: "" -> None
+    (jg,) = job_gaps([stored])
+    for region in (HOME, OTHER, "eu-frankfurt-1"):
+        view = SimpleNamespace(asset_type="kms_key", extra={"target": f"oci:{region}", "location": f"oci://{region}/kms/k"})
+        assert jg.covers(view, listed=False), region  # type: ignore[arg-type]
     checked = oci_collect.test_oci(CFG, SECRETS, transport=httpx.MockTransport(FakeOci(overrides=over)))
     assert checked["status"] == "passed" and checked["checks"][0]["status"] == "pass"
     assert any(c["status"] == "warning" and "inspect tenancies" in c["detail"] for c in checked["checks"])
@@ -398,11 +409,21 @@ def test_stack_zip_and_reader_script_are_read_only():
     # the statements name the group the stack creates, so a renamed group keeps its grants (R-oci2 M1)
     assert '"Allow group ${oci_identity_group.zs.name} to ${grant}"' in files["main.tf"]
     assert "name           = var.policy_name" in files["main.tf"] and "policy_name" in files["schema.yaml"]
-    statements = [f"Allow group ZeroShieldCBOMReaders to {g}" for g in grants]
+    statements = [f"Allow group ${{GROUP}} to {g}" for g in grants]
     assert all(s.split()[0] in ("inspect", "read") for s in oci_collect.POLICY_STATEMENTS)  # never use / manage
     assert not any(x in s for s in oci_collect.POLICY_STATEMENTS for x in ("bundle", "secret-family", " objects in"))
     script = oci_reader_text()
     assert json.dumps(statements, indent=2) in script  # the script grants exactly the stack's statements
+    # ...to the group named on its GROUP= line, through an unquoted heredoc (R-oci1 nit)
+    assert 'GROUP="ZeroShieldCBOMReaders"' in script and "<<JSON " in script and "<<'JSON'" not in script
+    import shutil
+    import subprocess
+
+    if shutil.which("bash"):
+        block = script[script.index("cat > zs-cbom-policy.json"):script.index("\nJSON\n") + 6]
+        out = subprocess.run(["bash", "-c", 'GROUP="OtherReaders"\n' + block.replace("zs-cbom-policy.json", "/dev/stdout")],
+                             capture_output=True, text=True, check=True).stdout
+        assert json.loads(out)[0] == f"Allow group OtherReaders to {grants[0]}"
     assert "inspect tenancies in tenancy" in grants  # ListRegionSubscriptions needs TENANCY_INSPECT (R-oci2 M2)
     # one model (R-oci2 M3): an existing user (USER_OCID) or a created one; the key is added only when missing
     assert 'USER_OCID=""' in script and "api-key list --user-id" in script and '${OCI_TENANCY:-' in script

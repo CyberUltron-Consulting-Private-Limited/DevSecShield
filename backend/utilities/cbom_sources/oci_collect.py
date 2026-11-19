@@ -607,7 +607,8 @@ def collect_oci(team_id: int, cfg: dict[str, Any], secrets: dict[str, str], emit
             targets.append({"target": f"oci:{region}", "status": "not_supported", "assets": 0,
                             "error": "the tenancy does not subscribe to this region"})
         if fell_back:
-            emit({"type": "coverage", "target": f"oci:{cfg['home_region']}", "location": "oci://tenancy#regions",
+            # no target: the gap covers every region of the job, not only the home region's assets (R-oci1 re-review)
+            emit({"type": "coverage", "target": "", "location": "oci://tenancy#regions",
                   "facts": {"check": "subscribed regions", "status": "denied", "scope": ["oci://"],
                             "detail": f"{POLICY['regions']} needed: only the home region and the source's regions were read"}})
         for region in regions:

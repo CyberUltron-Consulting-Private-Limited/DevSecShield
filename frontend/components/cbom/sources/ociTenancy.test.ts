@@ -22,6 +22,7 @@ import {
   checkOciForm,
   fillOciPublicKey,
   fillOciTenancy,
+  ociKeyReady,
   ociMethodOf,
   ociPolicyStatement,
   ociPrivateKeyError,
@@ -146,6 +147,21 @@ assert.match(ociPrivateKeyError("-----BEGIN PRIVATE KEY-----" + "A".repeat(70 * 
 assert.equal(ociMethodOf("uploaded"), "own")
 assert.equal(ociMethodOf("generated"), "stack")
 assert.equal(ociMethodOf(undefined), "stack")
+// steps 2 and 3 show the generated key only while it belongs to the tenancy in the form (R-oci2 R1): an edited
+// tenancy brings Save and create key back instead of a validate that can only fail
+{
+  const T = "ocid1.tenancy.oc1..aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  const T2 = "ocid1.tenancy.oc1..bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  const gen = { tenancy: T, keyOrigin: "generated" as const }
+  assert.equal(ociKeyReady("stack", gen, "aa:bb", T), true)
+  assert.equal(ociKeyReady("console", gen, "aa:bb", ` ${T} `), true, "whitespace is not a change")
+  assert.equal(ociKeyReady("stack", gen, "aa:bb", T2), false, "a changed tenancy needs a new key first")
+  assert.equal(ociKeyReady("stack", gen, "aa:bb", ""), false)
+  assert.equal(ociKeyReady("stack", gen, null, T), false, "no fingerprint, no key yet")
+  assert.equal(ociKeyReady("stack", null, null, T), false, "a new source")
+  assert.equal(ociKeyReady("own", gen, "aa:bb", T), false, "own key has no generated-key steps")
+  assert.equal(ociKeyReady("stack", { tenancy: T, keyOrigin: "uploaded" }, "aa:bb", T), false, "switching from an uploaded key")
+}
 assert.equal(ociResourceManagerUrl(" eu-frankfurt-1 "), "https://cloud.oracle.com/resourcemanager/stacks/create?region=eu-frankfurt-1")
 assert.equal(ociResourceManagerUrl("x&y=1"), "https://cloud.oracle.com/resourcemanager/stacks/create", "never a crafted query string")
 const script = `KEY='${OCI_PUBLIC_KEY_PLACEHOLDER}'\necho ok`
