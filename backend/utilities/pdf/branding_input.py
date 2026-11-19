@@ -23,6 +23,9 @@ class ReportBranding:
     height: int = 0
     tone: str = "dark"  # "dark" | "light": decides the chip the logo sits on
     status: str = "none"  # "applied" | "none" | "skipped"
+    # Has transparent pixels: only then does a dark mark need a white chip on the navy header. An opaque logo
+    # (a JPEG, a PNG with its own background) is drawn as it is everywhere, never framed.
+    has_alpha: bool = False
 
     @property
     def applied(self) -> bool:
@@ -55,4 +58,15 @@ def branding_from_png(png: bytes | None, *, tone: str = "dark") -> ReportBrandin
         return ReportBranding(status="skipped")
     return ReportBranding(png=png, sha256=hashlib.sha256(png).hexdigest(), width=int(width),
                           height=int(height), tone=tone if tone in ("dark", "light") else "dark",
-                          status="applied")
+                          status="applied", has_alpha=png_has_alpha(png))
+
+
+def png_has_alpha(png: bytes) -> bool:
+    """From the PNG header: colour type 4 or 6 carries alpha; a tRNS chunk makes another type transparent.
+    Logos are stored by ``logo_image`` as RGB (opaque) or RGBA, so this is exact for them."""
+    if len(png) < 26 or not png.startswith(b"\x89PNG\r\n\x1a\n"):
+        return True  # not a PNG we wrote: keep the chip, the safe choice on a navy bar
+    if png[25] in (4, 6):
+        return True
+    data = png.find(b"IDAT")
+    return b"tRNS" in png[: data if data > 0 else len(png)]

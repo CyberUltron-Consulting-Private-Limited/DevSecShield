@@ -28,6 +28,7 @@ from backend.utilities.db.metadata import get_scan_metadata_for_type
 from backend.utilities.db.findings import get_findings_for_scan_type, is_ticketable_finding
 from backend.utilities.pdf import UnsupportedPdfExport, prepare_pdf_export_payload, write_scan_pdf
 from backend.utilities.pdf.report_context import ReportContext
+from backend.utilities.pdf.report_options import TYPE_SECTIONS
 from backend.utilities.pdf.report_http import LARGE_PDF_ROWS, log_export, options_from_request, report_headers, status_join_error
 from backend.utilities.db.finding_rows import StatusesUnavailable, StatusStoreDown, read_statuses, row_count
 from backend.utilities.team.branding import load_report_branding
@@ -927,6 +928,8 @@ def _build_scan_report(engine, team_id: int, type: str, scan_id: int, options) -
         scan_data = prepare_pdf_export_payload(type, raw)
         started_at, completed_at = scan.created_at, scan.last_updated
 
+    if type not in TYPE_SECTIONS:  # leakage, agent discovery...: "not supported" (400) before any status read
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"PDF export is not supported for scan type {type!r}")
     row_statuses = None
     if options.statuses is not None:  # Mongo is read only when the report is filtered by status
         try:
@@ -951,7 +954,7 @@ def _build_scan_report(engine, team_id: int, type: str, scan_id: int, options) -
                 except EXPORT_SLOTS.Busy:
                     raise HTTPException(
                         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                        headers={"Retry-After": str(EXPORT_SLOTS.RETRY_AFTER_S)},
+                        headers={"Retry-After": str(EXPORT_SLOTS.RETRY_AFTER_S), "Cache-Control": "private, no-store"},
                         detail=f"The server is busy building other large reports; retry in {EXPORT_SLOTS.RETRY_AFTER_S} s.",
                     ) from None
                 slot_wait_ms = int((time.monotonic() - waited) * 1000)
@@ -960,6 +963,8 @@ def _build_scan_report(engine, team_id: int, type: str, scan_id: int, options) -
             except UnsupportedPdfExport as e:
                 # write_scan_pdf already unlinked the temp file.
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+            except StatusesUnavailable as exc:  # a row the status join could not place: never guessed
+                raise status_join_error(exc) from None
         with open(temp_pdf_path, "rb") as fh:
             return fh.read(), ctx, slot_wait_ms
     finally:

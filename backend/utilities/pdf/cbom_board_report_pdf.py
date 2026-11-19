@@ -1046,7 +1046,7 @@ def _body(view: TeamCbomView, styles: Styles, width: float) -> list[Flowable]:
 
 def build_pdf(view: TeamCbomView, *, ctx: Any = None) -> bytes:
     """Render the Board / IT Strategy Committee report for ``view`` (portrait, in memory)."""
-    return build_document(ctx=ctx, 
+    return build_document(ctx=ctx,
         view=view,
         number=DELIVERABLE_NUMBER,
         report_key=REPORT_KEY,

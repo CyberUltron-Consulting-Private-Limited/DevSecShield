@@ -280,7 +280,7 @@ export function ExportPdfDialog(props: ExportPdfDialogProps) {
           <DialogDescription className={EXPORT_DIALOG_LAYOUT.text}>
             {deliverable
               ? "Who the documents are prepared for and how they are labelled. Used by each deliverable you download from this menu; the label is remembered, the name only until you leave this page."
-              : "Choose what the report holds. Leaving everything as it is gives the full report."}
+              : "Choose what the report holds. The Full preset with every severity and status ticked gives the full report."}
           </DialogDescription>
         </DialogHeader>
         {/* mounted while open: each opening starts from the remembered options */}
@@ -528,6 +528,8 @@ function ErrorPanel({ error, waitS, statusFiltered, onRemoveStatusFilter }: {
   const panel = useRef<HTMLDivElement>(null);
   useEffect(() => {
     panel.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+    // Download is disabled while it waits, which drops keyboard focus to <body>: give it to the message instead
+    panel.current?.focus?.({ preventScroll: true });
   }, [error]);
   let title = "The report could not be built";
   let body = error.message;
@@ -540,8 +542,8 @@ function ErrorPanel({ error, waitS, statusFiltered, onRemoveStatusFilter }: {
   else if (error.status === 422) title = "The server refused an option";
   const offerRemove = (error.status === 409 || error.status === 503) && statusFiltered;
   return (
-    <div ref={panel} role="alert" data-testid="export-error" data-status={error.status ?? "network"}
-         className="flex scroll-mb-28 items-start gap-2 rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm">
+    <div ref={panel} tabIndex={-1} role="alert" data-testid="export-error" data-status={error.status ?? "network"}
+         className="flex scroll-mb-28 items-start outline-none focus-visible:ring-2 focus-visible:ring-red-500/50 gap-2 rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm">
       <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" aria-hidden />
       <div className={cn("space-y-1", EXPORT_DIALOG_LAYOUT.text)}>
         <p className="font-semibold">{title}</p>

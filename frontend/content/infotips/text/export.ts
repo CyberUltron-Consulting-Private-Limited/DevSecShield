@@ -10,7 +10,7 @@ const TEXT = {
   // ────────────────────────────────────────────────────────────── The dialog
   // src: backend/utilities/pdf/report_options.py:1-12, backend/utilities/pdf/report_options.py:53-58 — no option: today's report; a key the family does not take is refused (422)
   "export.dialog": {
-    what: "Chooses what this PDF report holds: a preset or your own sections, which severities and finding statuses, a client name and title for the cover, the classification label and whether code snippets are printed. Leaving everything as it is downloads the full report, exactly as before.",
+    what: "Chooses what this PDF report holds: a preset or your own sections, which severities and finding statuses, a client name and title for the cover, the classification label and whether code snippets are printed. The Full preset with every severity and status ticked downloads the full report, exactly as before; the preset, sections, label and snippet switch you used last are remembered in this browser.",
     why: "A client or a board often needs a shorter, filtered or labelled report; a filtered PDF says so on its first page and in its footer.",
     example: "Executive preset, Critical and High only, prepared for Acme Bank.",
   },

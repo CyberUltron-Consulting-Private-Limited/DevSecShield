@@ -244,3 +244,14 @@ def test_broken_logo_bytes_are_skipped_not_fatal(tmp_path):
     assert branding.status == "skipped"
     raw, _ = _build("sast", smoke._typical_payload("sast"), tmp_path, ReportContext(branding=branding))
     assert raw.startswith(b"%PDF-")
+
+
+def test_a_row_the_status_join_cannot_place_refuses_rather_than_guessing():
+    """PR #472 review: an unmapped row was treated as Not started; a filtered report never guesses a status."""
+    from backend.utilities.db.finding_rows import StatusesUnavailable
+    from backend.utilities.pdf.report_context import ReportContext
+
+    ctx = ReportContext(options=parse_report_options([("statuses", "fixed")], "scan", scan_type="cbom"),
+                        row_statuses=["fixed"])
+    with pytest.raises(StatusesUnavailable):
+        ctx.select(["a", "b"], lambda _i: "High", lambda position, _item: position if position == 0 else None)

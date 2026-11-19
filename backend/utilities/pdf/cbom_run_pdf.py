@@ -65,10 +65,11 @@ def build_run_pdf(*, run: dict[str, Any], sources: list[dict[str, Any]], posture
     """``ctx`` (``report_context.ReportContext``): export options and the team logo; omitted, the
     report is today's full report, byte for byte."""
     from backend.utilities.pdf.report_context import ReportContext, join_parts  # noqa: PLC0415
-    from backend.utilities.pdf.report_options import RUN_SECTIONS  # noqa: PLC0415
+    from backend.utilities.pdf.report_options import RUN_SECTIONS, severity_bucket  # noqa: PLC0415
     from backend.utilities.pdf.report_branding import append_report_masthead  # noqa: PLC0415
 
     ctx = ctx or ReportContext()
+    ctx.subject = "run"
     if not ctx.available_sections:
         ctx.available_sections = RUN_SECTIONS
     styles = get_report_styles()
@@ -82,6 +83,7 @@ def build_run_pdf(*, run: dict[str, Any], sources: list[dict[str, Any]], posture
     provenance_part: list[Any] = []
     # Findings are filtered before the cap, keeping their worst-first numbers.
     shown = ctx.select(findings, lambda f: count_label(f.get("impact") or "low"))
+    ctx.shown = min(ctx.shown, findings_cap)  # what the PDF draws (X-Report-Findings, the scope panel): the cap applies
     meta = {p.get("name"): p.get("value") for p in (head.get("metadata") or {}).get("properties") or []}
     impacts = {k: int(v or 0) for k, v in (posture.get("impacts") or {}).items()}
     findings_total = sum(impacts.values())
@@ -182,6 +184,10 @@ def build_run_pdf(*, run: dict[str, Any], sources: list[dict[str, Any]], posture
     # top risks
     story.append(Paragraph("Top risks", styles["heading"]))
     top = posture.get("top_risks") or []
+    hidden = 0
+    if ctx.options.severities is not None:  # a filtered report never names a finding its filter excludes
+        kept = [r for r in top if severity_bucket(count_label(r.get("impact") or "low")) in ctx.options.severities]
+        hidden, top = len(top) - len(kept), kept
     if top:
         story.append(styled_data_table(
             ["Score", "Severity", "Asset", "Where", "Exposure"],
@@ -190,6 +196,10 @@ def build_run_pdf(*, run: dict[str, Any], sources: list[dict[str, Any]], posture
              for r in top],
             styles=styles, severity_col=1, col_widths=[0.65 * inch, 0.85 * inch, 2.5 * inch, 1.9 * inch, 1.2 * inch]))
         story.append(_p("Score = impact weight x business criticality x internet exposure (posture).", styles, "muted"))
+        if hidden:
+            story.append(_p(f"{hidden} more top risk(s) are outside the selected severities.", styles, "muted"))
+    elif hidden:
+        story.append(_p(f"No top risk matches the selected severities ({hidden} outside them).", styles, "muted"))
     else:
         story.append(_p("No finding to rank.", styles, "muted"))
 
@@ -221,7 +231,7 @@ def build_run_pdf(*, run: dict[str, Any], sources: list[dict[str, Any]], posture
         story.append(_p(f"Findings cap: this report lists the first {findings_cap:,} of the {len(shown):,} matching "
                         f"findings (of {len(findings):,}, worst first); the CycloneDX JSON and the VEX list them all.",
                         styles, "body"))
-    elif len(findings) > findings_cap:
+    elif len(findings) > findings_cap and not ctx.filtered:
         story.append(_p(f"Findings cap: this report lists the first {findings_cap:,} of {len(findings):,} findings "
                         "(worst first); the CycloneDX JSON and the VEX list them all.", styles, "body"))
     if catalog:

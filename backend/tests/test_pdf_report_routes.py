@@ -116,6 +116,14 @@ def test_bad_options_are_422_naming_the_parameter(api, query, field):
     assert r.json()["detail"].startswith(f"{field}: ")
 
 
+def test_an_unsupported_type_is_400_even_with_a_status_filter(api, monkeypatch):
+    http, ids = api
+    called = []
+    monkeypatch.setattr("backend.routers.scans.read_statuses", lambda *a, **k: called.append(1) or [])
+    r = http.get(f"/{ids['team_id']}/leakage/scan/{ids['leakage_id']}/export?statuses=fixed", headers=AUTH)
+    assert r.status_code == 400 and "not supported" in r.json()["detail"] and called == []
+
+
 def test_unrelated_query_parameters_are_ignored(api):
     http, ids = api
     assert export(http, ids, query="utm_source=mail").status_code == 200
@@ -216,6 +224,7 @@ def test_a_large_build_takes_a_slot_and_a_busy_host_answers_429(api, monkeypatch
     monkeypatch.setattr(export_slots, "slot", busy)
     r = export(http, ids)
     assert r.status_code == 429 and r.headers["Retry-After"] == str(export_slots.RETRY_AFTER_S)
+    assert "no-store" in r.headers["Cache-Control"]
     monkeypatch.setattr("backend.routers.scans.LARGE_PDF_ROWS", 10**9)
     assert export(http, ids).status_code == 200  # a small build never waits
 

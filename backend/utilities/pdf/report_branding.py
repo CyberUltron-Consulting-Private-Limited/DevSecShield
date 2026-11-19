@@ -394,8 +394,8 @@ def _fit(width: float, height: float, max_w: float, max_h: float) -> Tuple[float
     return width * scale, height * scale
 
 
-def _client_logo(ctx: Any) -> Optional[Tuple[ImageReader, int, int, str]]:
-    """``(reader, width, height, tone)`` for the team logo in this build, or None.
+def _client_logo(ctx: Any) -> Optional[Tuple[ImageReader, int, int, str, bool]]:
+    """``(reader, width, height, tone, has_alpha)`` for the team logo in this build, or None.
 
     One reader per build (cached on the context), so every page draws the same image object and
     the PDF stores the image once.
@@ -406,7 +406,8 @@ def _client_logo(ctx: Any) -> Optional[Tuple[ImageReader, int, int, str]]:
     cached = getattr(ctx, "_logo_reader", None)
     if cached is None:
         try:
-            cached = (branding.reader(), branding.width, branding.height, branding.tone)
+            cached = (branding.reader(), branding.width, branding.height, branding.tone,
+                      getattr(branding, "has_alpha", True))
         except Exception:  # noqa: BLE001 - a broken logo never breaks a report
             logger.warning("report logo skipped while drawing")
             cached = False
@@ -419,7 +420,7 @@ def _client_logo(ctx: Any) -> Optional[Tuple[ImageReader, int, int, str]]:
 
 def _draw_client_logo_chip(
     canvas_obj: canvas.Canvas,
-    logo: Tuple[ImageReader, int, int, str],
+    logo: Tuple[ImageReader, int, int, str, bool],
     x: float,
     center_y: float,
     *,
@@ -429,7 +430,7 @@ def _draw_client_logo_chip(
     pad: float = 3.0,
 ) -> float:
     """Draw the client logo (on a rounded chip when ``chip``); returns the width used."""
-    reader, iw, ih, _tone = logo
+    reader, iw, ih, _tone, _alpha = logo
     if max_w <= 2 * pad + 8 or max_h <= 2 * pad + 4:
         return 0.0
     w, h = _fit(iw, ih, max_w - 2 * pad, max_h - 2 * pad)
@@ -1020,7 +1021,8 @@ def draw_page_header(
         canvas_obj.setStrokeColor(colors.HexColor("#334E68"))
         canvas_obj.setLineWidth(0.6)
         canvas_obj.line(text_end + 8, y0 + 9, text_end + 8, y0 + bar_h - 9)
-        chip = None if logo[3] == "light" else COLOR_WHITE
+        # a transparent dark mark needs white behind it on navy; an opaque logo brings its own background
+        chip = COLOR_WHITE if logo[4] and logo[3] != "light" else None
         _draw_client_logo_chip(canvas_obj, logo, x, y0 + bar_h / 2, max_w=max_w, max_h=28, chip=chip)
     canvas_obj.restoreState()
 
@@ -1732,7 +1734,7 @@ def masthead_cover_rows(ctx: Any, *, width: float, styles: Dict[str, ParagraphSt
         return []
     rows: List[List[Any]] = []
     if logo is not None:
-        _reader, iw, ih, tone = logo
+        _reader, iw, ih, tone, _alpha = logo
         w, h = _fit(iw, ih, min(150.0, width), max_h)
         image = PlatypusImage(io.BytesIO(ctx.branding.png), width=w, height=h, mask="auto")
         image.hAlign = align
@@ -1932,7 +1934,8 @@ def append_executive_summary(
 
     # Dense guidance block: intro + how-to-read + severity meanings for present severities
     if shaped:
-        intro = ("Summary of this scan. The counts above cover the whole scan; the Report scope "
+        subject = getattr(ctx, "subject", "scan")
+        intro = (f"Summary of this {subject}. The counts above cover the whole {subject}; the Report scope "
                  "panel lists what the sections below leave out.")
         how_to_read = ("Use the counts for the whole picture, then the sections this report "
                        "includes for detail.")

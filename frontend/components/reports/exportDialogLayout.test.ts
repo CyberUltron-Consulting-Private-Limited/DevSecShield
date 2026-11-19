@@ -52,7 +52,7 @@ function page(layout: Layout): string {
   return `<!doctype html><html class="dark"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>
 <body><div id="dialog" data-state="open" class="${cn(contentBase, layout.content)}">
 <div class="${cn("flex flex-col gap-2 text-center sm:text-left", layout.header)}"><h2 class="text-lg leading-none font-semibold">Download PDF report</h2>
-<p class="text-muted-foreground text-sm">Choose what the report holds. Leaving everything as it is gives the full report.</p></div>
+<p class="text-muted-foreground text-sm">Choose what the report holds. The Full preset with every severity and status ticked gives the full report.</p></div>
 ${html}<button id="close" class="absolute top-4 right-4">x</button></div></body></html>`;
 }
 

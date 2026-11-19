@@ -5,8 +5,8 @@ order, copying the row (plus a few fields: SAST ``logical_component_title``, MCP
 title/description normalisation). Nothing later edits ``finding_data``; triage edits only the
 status fields. So a PDF can attach each row's status by matching the stored copies exactly:
 
-* ``mongo_rows`` produces exactly what the writer stores, in the writer's order (the writer
-  uses it too);
+* ``mongo_rows`` produces exactly what the writer stores, in the writer's order (the writer keeps
+  its own walk; ``tests/test_finding_rows.py`` pins the two to the same rows for every type);
 * ``join_statuses`` pairs each expected row with a stored document by canonical-JSON
   fingerprint, in insertion order within equal fingerprints (exact duplicates pair by position);
 * anything short of a complete, exact pairing raises ``StatusesUnavailable``: a report never

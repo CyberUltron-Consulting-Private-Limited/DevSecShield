@@ -49,7 +49,7 @@ import type { CbomDeliverableSlug } from "@/utils/backend_api";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/utils/toast";
 import { saveBlob } from "@/utils/download";
-import { deliverableCover } from "@/utils/reportOptions";
+import { deliverableCover, setSessionPreparedFor } from "@/utils/reportOptions";
 import { useExportPdf } from "@/components/reports/ExportPdfDialog";
 import { showErrorToast } from "@/utils/error-handler";
 import { formatDateIst as formatDate } from "@/utils/datetime";
@@ -690,6 +690,10 @@ export default function CBOMPage() {
     enabled: !!team_id,
     retry: 1,
   });
+
+  // The client name typed in "Cover options…" lives only while this page is open: leaving it (client-side navigation
+  // included) forgets it, so a later batch never inherits it.
+  useEffect(() => () => setSessionPreparedFor(team_id, ""), [team_id]);
 
   // Each item stays one click (ten registers are downloaded in a row): it uses the cover options of "Cover options…"
   // (the remembered label, and the client name typed there during this page session; utils/reportOptions.ts).

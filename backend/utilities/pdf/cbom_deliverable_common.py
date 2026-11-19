@@ -780,6 +780,8 @@ def _masthead(title: str, meta: dict[str, str], styles: Styles, width: float, ct
     )
     left.setStyle(flat)
     right.setStyle(flat)
+    if cover:  # flush the logo right, under the right-aligned text (only with cover rows: default bytes unchanged)
+        right.setStyle(TableStyle([("ALIGN", (0, 0), (-1, len(cover) - 1), "RIGHT")]))
     row = Table([[left, right]], colWidths=[width * 0.68, width * 0.32], hAlign="LEFT")
     row.setStyle(flat)
     return row

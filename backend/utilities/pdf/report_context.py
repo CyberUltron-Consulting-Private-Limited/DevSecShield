@@ -31,7 +31,7 @@ SECTION_NAMES = {
     "compliance": "compliance appendix",
     "inventory": "package inventory",
     "notes": "scan notes",
-    "posture": "posture tables",
+    "posture": "posture breakdown (algorithm families, certificate expiry, top risks, compliance clauses)",
     "provenance": "provenance",
 }
 STATUS_NAMES = {"not_started": "Not started", "in_progress": "In progress", "fixed": "Fixed", "ignored": "Ignored"}
@@ -51,6 +51,8 @@ class ReportContext:
     excluded_severity: dict = field(default_factory=dict)
     excluded_status: dict = field(default_factory=dict)
     shown_by_bucket: dict = field(default_factory=dict)
+    # What the report covers, in its own copy ("in the full scan" / "in the full run").
+    subject: str = "scan"
     _selected: bool = False
 
     # -- sections -------------------------------------------------------------------------------
@@ -84,8 +86,12 @@ class ReportContext:
                     continue
             if status_filter is not None and self.row_statuses is not None:
                 index = status_index_of(position, item) if status_index_of else position
-                status = self.row_statuses[index] if index is not None and 0 <= index < len(self.row_statuses) else None
-                status = status or "not_started"
+                if index is None or not 0 <= index < len(self.row_statuses):
+                    # never guess a status: a row the join cannot place refuses the filtered report (409)
+                    from backend.utilities.db.finding_rows import StatusesUnavailable  # noqa: PLC0415
+
+                    raise StatusesUnavailable("a finding row has no stored status")
+                status = self.row_statuses[index]
                 if status not in status_filter:
                     self.excluded_status[status] = self.excluded_status.get(status, 0) + 1
                     continue
@@ -101,7 +107,7 @@ class ReportContext:
     def empty_text(self, default: str) -> str:
         """What an empty list says: never "no findings were identified" when a filter hid them."""
         if self.filtered and self.total:
-            return f"No findings match the selected filters ({self.total} in the full scan)."
+            return f"No findings match the selected filters ({self.total} in the full {self.subject})."
         return default
 
     def scope_lines(self) -> List[str]:
