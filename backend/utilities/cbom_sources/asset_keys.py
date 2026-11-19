@@ -341,11 +341,15 @@ def endpoint_host_port(value: Any) -> str | None:
 _AZURE_KV = re.compile(r"^https://[^/]+\.(?:vault|vaultcore|managedhsm)\.(?:azure\.net|azure\.cn|usgovcloudapi\.net|"
                        r"microsoftazure\.de)(?::443)?/(keys|secrets|certificates)/([^/?#]+)", re.IGNORECASE)
 _GCP = re.compile(r"^(?://[a-z0-9.-]+\.googleapis\.com/)?(projects/[^/]+/.+)$", re.IGNORECASE)
+# an OCI OCID, bare or as the collector's location (oci://<region>/<service>/<OCID>[/listener/...])
+# ocid1.<type>.<realm>.[region][.future use].<unique id>
+_OCI = re.compile(r"^(?:oci://[a-z0-9-]+/[a-z]+/)?(ocid1\.[a-z0-9]+\.[a-z0-9]+\.[a-z0-9-]*(?:\.[a-z0-9-]+)?\.[a-z0-9]+)(?:/.*)?$")
 
 
 def cloud_resource_id(value: Any) -> str:
-    """The ARN (exact), Azure resource id or Key Vault object id without its version (casefolded, any Azure cloud), or
-    the GCP resource name with any ``//service.googleapis.com/`` prefix dropped; "" otherwise."""
+    """The ARN (exact), Azure resource id or Key Vault object id without its version (casefolded, any Azure cloud), the
+    GCP resource name with any ``//service.googleapis.com/`` prefix dropped, or an OCI OCID (bare or inside the OCI
+    collector's ``oci://`` location); "" otherwise."""
     text = str(value or "").strip()
     if text.startswith("arn:") and text.count(":") >= 5:
         return text
@@ -358,6 +362,9 @@ def cloud_resource_id(value: Any) -> str:
     gcp = _GCP.match(text)
     if gcp:
         return gcp.group(1).rstrip("/")
+    oci = _OCI.match(text)
+    if oci:
+        return oci.group(1)
     return ""
 
 

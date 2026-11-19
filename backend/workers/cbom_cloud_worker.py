@@ -254,7 +254,7 @@ class _Job:
                 result = self._aws_slice()
             elif kind == "aws_account":
                 result = self._aws()
-            elif kind in ("azure_subscription", "gcp_project") and self.source.get("last_test_status") != "passed":
+            elif kind in ("azure_subscription", "gcp_project", "oci_tenancy") and self.source.get("last_test_status") != "passed":
                 from backend.utilities.cbom_sources.planning import CLOUD_NOT_CONNECTED
 
                 raise _Refused(CLOUD_NOT_CONNECTED[kind])
@@ -273,6 +273,14 @@ class _Job:
                     result = collect_gcp(team_id, self.source["config"], self.source.get("secrets") or {}, self.emit,
                                          self.should_stop)
                 except GcpCollectError as exc:
+                    raise _Refused(str(exc)) from exc
+            elif kind == "oci_tenancy":
+                from backend.utilities.cbom_sources.oci_collect import OciCollectError, collect_oci
+
+                try:
+                    result = collect_oci(team_id, self.source["config"], self.source.get("secrets") or {}, self.emit,
+                                         self.should_stop)
+                except OciCollectError as exc:
                     raise _Refused(str(exc)) from exc
             elif kind == "ct_logs":
                 from backend.utilities.cbom_sources.ct_collect import collect_ct

@@ -140,7 +140,7 @@ SCOPE_OF_METHOD = (
 DISCLAIMER_PARAGRAPHS = (CERTIN_DISCLAIMER, RBI_BOM_DISCLAIMER, SCOPE_OF_METHOD)
 
 # CBOM Sources collections in scope (M1x): the method statements may only deny what did not happen.
-_CLOUD_KINDS = frozenset({"aws_account", "azure_subscription", "gcp_project"})
+_CLOUD_KINDS = frozenset({"aws_account", "azure_subscription", "gcp_project", "oci_tenancy"})
 _KEY_CUSTODY_KINDS = _CLOUD_KINDS | {"key_manager"}
 
 

@@ -487,12 +487,214 @@ path "transit/keys" { capabilities = ["list"] }
 path "transit/keys/+" { capabilities = ["read"] }
 """
 
+# Oracle Cloud: one group, one user with the API key, and inspect/read-only policy statements (oci_collect.POLICY_STATEMENTS).
+# ``read keys`` is INSPECT + KEY_READ (ListKeys, ListKeyVersions, GetKey): no encrypt / decrypt / sign, which need ``use
+# keys``; ``inspect secrets`` lists secret metadata and never a secret bundle; ``inspect certificate-authority-family``
+# lists certificates and CAs "without access to any confidential information"
+# (https://docs.oracle.com/iaas/Content/Identity/Reference/keypolicyreference.htm, .../certificatespolicyreference.htm).
+OCI_GROUP = "ZeroShieldCBOMReaders"
+OCI_USER = "zeroshield-cbom-reader"
+
+
+def oci_policy_statements(group: str = OCI_GROUP) -> list[str]:
+    from backend.utilities.cbom_sources.oci_collect import POLICY_STATEMENTS
+
+    return [f"Allow group {group} to {statement}" for statement in POLICY_STATEMENTS]
+
+
+OCI_READER = r"""#!/usr/bin/env bash
+# zs-cbom-oci-reader.sh -- ZeroShield CBOM: a read-only user for Oracle Cloud crypto METADATA
+# Vault keys (shape, protection mode, rotation, versions), secret metadata, certificates and CAs, load balancer TLS
+# and Object Storage encryption. Never key use (no "use keys"), secret contents (no "read secret-bundles") or
+# certificate private keys. Run in OCI Cloud Shell as a tenancy administrator, in the HOME region.
+set -euo pipefail
+TENANCY_OCID="<tenancy OCID you enter in ZeroShield>"
+PUBLIC_KEY_PEM="$(cat <<'PEM'
+<public key PEM shown in ZeroShield>
+PEM
+)"
+GROUP="__GROUP__"
+USER_NAME="__USER__"
+
+GROUP_ID=$(oci iam group list --compartment-id "$TENANCY_OCID" --name "$GROUP" --query 'data[0].id' --raw-output 2>/dev/null || true)
+if [ -z "$GROUP_ID" ] || [ "$GROUP_ID" = "null" ]; then
+  GROUP_ID=$(oci iam group create --compartment-id "$TENANCY_OCID" --name "$GROUP" \
+    --description "ZeroShield CBOM read-only access to crypto metadata" --query 'data.id' --raw-output)
+fi
+USER_ID=$(oci iam user list --compartment-id "$TENANCY_OCID" --name "$USER_NAME" --query 'data[0].id' --raw-output 2>/dev/null || true)
+if [ -z "$USER_ID" ] || [ "$USER_ID" = "null" ]; then
+  USER_ID=$(oci iam user create --compartment-id "$TENANCY_OCID" --name "$USER_NAME" \
+    --description "ZeroShield CBOM collector (API key only, no console password)" --query 'data.id' --raw-output)
+fi
+oci iam group add-user --group-id "$GROUP_ID" --user-id "$USER_ID" >/dev/null 2>&1 || true
+
+cat > zs-cbom-policy.json <<JSON
+__STATEMENTS__
+JSON
+POLICY_ID=$(oci iam policy list --compartment-id "$TENANCY_OCID" --name zeroshield-cbom-reader --query 'data[0].id' --raw-output 2>/dev/null || true)
+if [ -z "$POLICY_ID" ] || [ "$POLICY_ID" = "null" ]; then
+  oci iam policy create --compartment-id "$TENANCY_OCID" --name zeroshield-cbom-reader \
+    --description "ZeroShield CBOM: inspect/read-only access to crypto metadata" --statements file://zs-cbom-policy.json >/dev/null
+else
+  oci iam policy update --policy-id "$POLICY_ID" --statements file://zs-cbom-policy.json --force >/dev/null
+fi
+
+printf '%s\n' "$PUBLIC_KEY_PEM" > zs-cbom-public.pem
+oci iam user api-key upload --user-id "$USER_ID" --key-file zs-cbom-public.pem --query 'data.fingerprint' --raw-output
+echo "User OCID (enter it in ZeroShield): $USER_ID"
+# The fingerprint printed above must match the one ZeroShield shows. A statement left out shows up in ZeroShield as a
+# coverage row naming it, never as a silent "nothing found".
+"""
+
+
+def oci_reader_text() -> str:
+    import json
+
+    return (OCI_READER.replace("__GROUP__", OCI_GROUP).replace("__USER__", OCI_USER)
+            .replace("__STATEMENTS__", json.dumps(oci_policy_statements(), indent=2)))
+
+
+_OCI_STACK_MAIN = """# ZeroShield CBOM: a read-only Oracle Cloud user for crypto metadata (OCI Resource Manager stack).
+# Creates one group, one user (API key only), the inspect/read-only policy below, and adds ZeroShield's PUBLIC key as
+# that user's API key. ZeroShield keeps the matching private key; nothing secret is in this stack.
+# Create the stack in your HOME region (IAM changes are made there). Output user_ocid goes into ZeroShield.
+terraform {
+  required_providers {
+    oci = { source = "oracle/oci" }
+  }
+}
+
+provider "oci" {
+  region = var.region
+}
+
+resource "oci_identity_group" "zs" {
+  compartment_id = var.tenancy_ocid
+  name           = var.group_name
+  description    = "ZeroShield CBOM read-only access to crypto metadata"
+}
+
+resource "oci_identity_user" "zs" {
+  compartment_id = var.tenancy_ocid
+  name           = var.user_name
+  description    = "ZeroShield CBOM collector (API key only, no console password)"
+  email          = var.user_email == "" ? null : var.user_email
+}
+
+resource "oci_identity_user_group_membership" "zs" {
+  group_id = oci_identity_group.zs.id
+  user_id  = oci_identity_user.zs.id
+}
+
+resource "oci_identity_policy" "zs" {
+  compartment_id = var.tenancy_ocid
+  name           = "zeroshield-cbom-reader"
+  description    = "ZeroShield CBOM: inspect/read-only access to crypto metadata"
+  statements     = __STATEMENTS__
+  depends_on     = [oci_identity_group.zs]
+}
+
+resource "oci_identity_api_key" "zs" {
+  user_id   = oci_identity_user.zs.id
+  key_value = var.zeroshield_public_key
+}
+
+output "user_ocid" {
+  value = oci_identity_user.zs.id
+}
+
+output "api_key_fingerprint" {
+  value = oci_identity_api_key.zs.fingerprint
+}
+"""
+
+_OCI_STACK_VARIABLES = """variable "tenancy_ocid" {}
+variable "region" {}
+
+variable "group_name" {
+  default = "__GROUP__"
+}
+
+variable "user_name" {
+  default = "__USER__"
+}
+
+# Tenancies with identity domains may require an email for a new user; leave empty otherwise.
+variable "user_email" {
+  default = ""
+}
+
+# ZeroShield's public key for this source (fingerprint __FINGERPRINT__)
+variable "zeroshield_public_key" {
+  default = <<-PEM
+__PEM__
+  PEM
+}
+"""
+
+_OCI_STACK_SCHEMA = """title: "ZeroShield CBOM read-only user"
+description: "A read-only user, group and policy for ZeroShield CBOM, with ZeroShield's public key as the user's API key."
+schemaVersion: 1.1.0
+version: "20190304"
+locale: "en"
+variableGroups:
+  - title: "Read-only user"
+    variables: [group_name, user_name, user_email]
+  - title: "Hidden"
+    visible: false
+    variables: [tenancy_ocid, region, zeroshield_public_key]
+variables:
+  group_name:
+    type: string
+    title: "Group name"
+    required: true
+  user_name:
+    type: string
+    title: "User name"
+    required: true
+  user_email:
+    type: string
+    title: "User email (only if your identity domain requires one)"
+    required: false
+outputs:
+  user_ocid:
+    type: copyableString
+    title: "User OCID (enter it in ZeroShield)"
+  api_key_fingerprint:
+    type: copyableString
+    title: "API key fingerprint (must match ZeroShield)"
+"""
+
+
+def oci_stack_zip(public_key_pem: str, fingerprint: str) -> bytes:
+    """The Resource Manager stack for one source: its public key is the API key's default value."""
+    import io
+    import json
+    import zipfile
+
+    pem = "\n".join("    " + line for line in public_key_pem.strip().splitlines())
+    files = {
+        "main.tf": _OCI_STACK_MAIN.replace("__STATEMENTS__", json.dumps(oci_policy_statements())),
+        "variables.tf": (_OCI_STACK_VARIABLES.replace("__GROUP__", OCI_GROUP).replace("__USER__", OCI_USER)
+                         .replace("__FINGERPRINT__", fingerprint).replace("__PEM__", pem)),
+        "schema.yaml": _OCI_STACK_SCHEMA,
+    }
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, text in files.items():
+            info = zipfile.ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0))  # stable bytes for one key
+            info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(info, text)
+    return buffer.getvalue()
+
+
 TEMPLATE_NAMES = {
     "vault-policy": ("text/plain", "zs-cbom-vault-policy.hcl"),
     "sudoers": ("text/plain", "zs-cbom"),
     "windows-setup": ("text/plain", "zs-cbom-windows-setup.ps1"),
     "azure-reader": ("text/plain", "zs-cbom-azure-reader.sh"),
     "gcp-reader": ("text/plain", "zs-cbom-gcp-reader.sh"),
+    "oci-reader": ("text/plain", "zs-cbom-oci-reader.sh"),
     "k8s-tier1": ("application/yaml", "zs-cbom-tier1.yaml"),
     "k8s-tier2": ("application/yaml", "zs-cbom-tier2.yaml"),
     "k8s-kubeconfig": ("text/plain", "zs-cbom-kubeconfig.sh"),
@@ -509,6 +711,8 @@ def template_text(name: str) -> str | None:
         return AZURE_READER
     if name == "gcp-reader":
         return GCP_READER
+    if name == "oci-reader":
+        return oci_reader_text()
     if name == "k8s-tier1":
         return K8S_TIER1
     if name == "k8s-tier2":

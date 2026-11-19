@@ -123,8 +123,9 @@ from backend.utilities.cbom_sources.serialize import (
     public_vendor,
 )
 from backend.utilities.cbom_sources.settings import ensure_evidence_areas, get_or_create_settings
+from backend.utilities.cbom_sources import oci_keys
 from backend.utilities.cbom_sources.templates import (
-    AWS_NOT_CONFIGURED, TEMPLATE_NAMES, aws_collection_configured, cloudformation_template, template_text)
+    AWS_NOT_CONFIGURED, TEMPLATE_NAMES, aws_collection_configured, cloudformation_template, oci_stack_zip, template_text)
 
 import os
 
@@ -622,7 +623,12 @@ def _create_source(engine, team_id: int, user_id: int, body: SourceCreate) -> di
             _refuse_unavailable_vault(cfg)
             require_admin(session, user_id, team_id, "sources that read their credential from a vault")
         SSHCA_SOURCES.check_create(session, team_id, user_id, cfg)  # F1.4: ssh_ca sources are written by admins
-        secrets_ = _merge_secrets(body.kind, cfg, {}, body.secrets, clear=[], reset=True, where_changed=False)
+        provided_new = body.secrets
+        if body.kind == "oci_tenancy":  # a generated key pair is made here; its public half goes into the config
+            provided_new = oci_keys.prepare_secrets(cfg.model_dump(mode="json"), {}, body.secrets, [], False)
+        secrets_ = _merge_secrets(body.kind, cfg, {}, provided_new, clear=[], reset=True, where_changed=False)
+        if body.kind == "oci_tenancy":
+            cfg = oci_keys.with_public_facts(cfg, secrets_)
         problem = credential_target_problem(body.kind, cfg, secrets_)
         if problem:
             raise HTTPException(status_code=400, detail=problem)
@@ -838,8 +844,13 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Sou
         current = decrypt_secrets(source.secret_encrypted)
         provided = {k: v for k, v in body.secrets.items() if v != ""}
         reset = credential_changed or (where_changed and bool(current))
+        if source.kind == "oci_tenancy":  # a generated key pair: kept, or made again when cleared / the tenancy changed
+            provided = oci_keys.prepare_secrets(new_dump, current, provided, body.clear_secrets, reset)
         merged = _merge_secrets(source.kind, cfg, current, provided, clear=body.clear_secrets, reset=reset,
                                 where_changed=where_changed)
+        if source.kind == "oci_tenancy":  # fingerprint / public key from the stored key, never from the client
+            cfg = oci_keys.with_public_facts(cfg, merged)
+            new_dump = cfg.model_dump(mode="json")
         # Renaming or disabling never needs these checks, so a source saved before the rules can still be turned off.
         relevant = new_dump != old_dump or bool(provided) or new_node_id != source.node_id
         if relevant and new_dump.get("credential_type") == "vault":
@@ -952,7 +963,7 @@ def _test_source(engine, team_id: int, user_id: int, source_id: int) -> dict:
             return {"aws": True}
         if source.kind == "idp":
             return {"idp": True}
-        if source.kind in ("azure_subscription", "gcp_project"):
+        if source.kind in ("azure_subscription", "gcp_project", "oci_tenancy"):
             return {"cloud_http": True}
         if not (spec.needs_node(cfg) and spec.collectable(cfg)):
             source.last_test_status = "not_available"
@@ -1051,20 +1062,23 @@ def _test_idp(engine, team_id: int, user_id: int, source_id: int) -> dict:
 
 
 def _test_cloud_http(engine, team_id: int, user_id: int, source_id: int) -> dict:
-    """Azure / Google Cloud: sign in and make one list call now (no job); the same calls collection starts with."""
+    """Azure / Google Cloud / Oracle Cloud: sign in and make the list calls now (no job); the same calls collection
+    starts with."""
     from backend.utilities.cbom_sources.azure_collect import test_azure
     from backend.utilities.cbom_sources.gcp_collect import test_gcp
+    from backend.utilities.cbom_sources.oci_collect import test_oci
 
+    tests = {"azure_subscription": test_azure, "gcp_project": test_gcp, "oci_tenancy": test_oci}
     with Session(engine) as session:
         source = _get_owned(session, CbomCollectionSource, source_id, team_id, "Source")
         require_owner_or_admin(session, user_id, team_id, source.owner_user_id, "source")
-        if source.kind not in ("azure_subscription", "gcp_project"):
-            raise HTTPException(status_code=400, detail="Not an Azure or Google Cloud source")
+        if source.kind not in tests:
+            raise HTTPException(status_code=400, detail="Not an Azure, Google Cloud or Oracle Cloud source")
         kind, cfg, version = source.kind, dict(source.config or {}), J.connection_version(source)
         secrets_ = decrypt_secrets(source.secret_encrypted)
     known = list(secrets_.values())
     try:
-        out = (test_azure if kind == "azure_subscription" else test_gcp)(cfg, secrets_)
+        out = tests[kind](cfg, secrets_)
     except Exception as exc:  # never a 500 for a provider answer we did not expect
         ref = new_ref()
         log("cloud test FAILED", ref=ref, team=team_id, source=source_id, error=type(exc).__name__)
@@ -1084,11 +1098,12 @@ def _test_cloud_http(engine, team_id: int, user_id: int, source_id: int) -> dict
 
 
 # Sources whose test runs live from the API (no scan node job).
-_LIVE_TESTS = {"aws_account": _test_aws, "azure_subscription": _test_cloud_http, "gcp_project": _test_cloud_http}
+_LIVE_TESTS = {"aws_account": _test_aws, "azure_subscription": _test_cloud_http, "gcp_project": _test_cloud_http,
+               "oci_tenancy": _test_cloud_http}
 
 
 @router.post(BASE + "/items/{source_id}/test", dependencies=[*WRITE, access.team("cbom.write")],
-             summary="Test a source: a job for its scan node, live AWS / Azure / Google Cloud checks, or a read of the IdP's public metadata")
+             summary="Test a source: a job for its scan node, live AWS / Azure / Google Cloud / Oracle Cloud checks, or a read of the IdP's public metadata")
 async def test_source(team_id: TeamId, source_id: ObjectId, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     result = await _run("test source", team_id, _test_source, engine, team_id, user.id, source_id)
@@ -1335,6 +1350,26 @@ async def aws_template(team_id: TeamId, scope: str = Query(default="account", pa
     text = await _run("aws template", team_id, _aws_template, engine, team_id, scope, lambda_cmk, glue)
     return Response(text, media_type="application/yaml", headers={
         **PRIVATE, "Content-Disposition": f'attachment; filename="zeroshield-cbom-reader-{scope}.yaml"'})
+
+
+def _oci_stack(engine, team_id: int, source_id: int) -> bytes:
+    with Session(engine) as session:
+        source = _get_owned(session, CbomCollectionSource, source_id, team_id, "Source")
+        if source.kind != "oci_tenancy":
+            raise HTTPException(status_code=400, detail="Not an Oracle Cloud source")
+        cfg = dict(source.config or {})
+    if not cfg.get("public_key_pem") or not cfg.get("fingerprint"):
+        raise HTTPException(status_code=409, detail="This source has no API key yet; save it first")
+    return oci_stack_zip(str(cfg["public_key_pem"]), str(cfg["fingerprint"]))
+
+
+@router.get(BASE + "/items/{source_id}/oci/stack", dependencies=[*READ, access.team("cbom.read")],
+            summary="OCI Resource Manager stack: a read-only user with this source's public key as its API key")
+async def oci_stack(team_id: TeamId, source_id: ObjectId, Authorization: AuthHeader = None):
+    engine, _user = await authorize(team_id, Authorization)
+    data = await _run("oci stack", team_id, _oci_stack, engine, team_id, source_id)
+    return Response(data, media_type="application/zip", headers={
+        **PRIVATE, "Content-Disposition": 'attachment; filename="zeroshield-cbom-oci-stack.zip"'})
 
 
 @router.get(BASE + "/templates/{name}", dependencies=[*READ, access.team("cbom.read")], summary="Sudoers file, ClusterRoles and database grants")

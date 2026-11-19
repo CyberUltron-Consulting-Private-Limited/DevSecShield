@@ -137,6 +137,8 @@ def _managing_system(row: CbomCollectedAsset) -> str | None:
         return "AD CS"
     if facts.get("provider") == "azure" and facts.get("vault"):
         return "Azure Key Vault"
+    if facts.get("provider") == "oci" and facts.get("service") == "certificates":
+        return "OCI Certificates"
     if facts.get("provider") == "gcp" or (location.startswith("projects/") and (
             "/certificateAuthorities/" in location or "/certificates/" in location)):
         return "GCP Certificate Manager"

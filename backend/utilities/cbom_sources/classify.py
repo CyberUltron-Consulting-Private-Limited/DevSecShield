@@ -294,6 +294,8 @@ def _kms_no_rotation_text(facts: dict[str, Any]) -> str:
         return gcp_no_rotation_text(facts)
     if facts.get("provider") == "azure":
         return azure_no_rotation_text(facts)
+    if facts.get("provider") == "oci":
+        return oci_no_rotation_text(facts)
     text = "Customer-managed KMS key has automatic rotation off"
     primary = facts.get("primary_key_arn")
     replica = facts.get("multi_region_type") == "REPLICA" and primary
@@ -323,6 +325,12 @@ def azure_no_rotation_text(facts: dict[str, Any]) -> str:
     return ("Key Vault key has no automatic rotation (its rotation policy has no Rotate action); set one with "
             f"az keyvault key rotation-policy update --id {_key_ref(facts, '<key-id>')} --value <policy.json with a "
             "Rotate lifetime action>")
+
+
+def oci_no_rotation_text(facts: dict[str, Any]) -> str:
+    return ("OCI Vault key has automatic rotation off; turn on auto-rotation for the key in the Console (Vault > Master "
+            "Encryption Keys > the key > Edit Auto-Rotation), or rotate it now with oci kms management key-version create "
+            f"--key-id {_key_ref(facts, '<key-ocid>')} --endpoint <the vault's management endpoint>")
 
 
 def vault_no_rotation_text(facts: dict[str, Any]) -> str:
