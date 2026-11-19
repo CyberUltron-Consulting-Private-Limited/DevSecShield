@@ -75,7 +75,7 @@ const TEXT = {
   },
   // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1136-1138 — link the cloud account that runs it
   "cbsrc.k8s.managed": {
-    what: "Tick for EKS, AKS or GKE clusters to link the cloud account source that runs the cluster.",
+    what: "Tick for EKS, AKS, GKE or OKE clusters to link the cloud account source that runs the cluster.",
     why: "The cloud account holds the encryption-at-rest settings of the cluster's Secrets.",
     example: "EKS cluster prod-payments, linked to the AWS account aws-prod.",
   },
