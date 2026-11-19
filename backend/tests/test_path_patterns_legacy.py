@@ -93,7 +93,11 @@ def test_which_saved_patterns_have_the_prefix_meaning():
 def test_run_again_on_an_older_sast_scan_shows_the_translated_excludes():
     meta = {"app_lang": "python", "exclude_path_arrays": [["test"], [".min.js"]]}
     assert rerun_options("sast", meta)["exclude_path_arrays"] == [["test*"], ["*.min.js*"]]
-    assert rerun_options("sast", {**meta, **NEW})["exclude_path_arrays"] == [["test"], [".min.js"]]
+    assert rerun_options("sast", meta)["path_patterns_rewritten"] is True  # the notice explains the rewrite
+    newer = rerun_options("sast", {**meta, **NEW})
+    assert newer["exclude_path_arrays"] == [["test"], [".min.js"]] and "path_patterns_rewritten" not in newer
+    unchanged = rerun_options("sast", {"app_lang": "python", "exclude_path_arrays": [["tests*"]]})
+    assert "path_patterns_rewritten" not in unchanged  # nothing to explain
 
 
 def test_run_again_on_an_older_iac_scan_shows_the_translated_includes():

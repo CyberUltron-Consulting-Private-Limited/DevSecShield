@@ -18,6 +18,8 @@ export interface RerunPrefill {
   /** The failed scan read an uploaded file: which kind, to choose again (null: a repository). */
   upload: "archive" | "cbom_file" | "sbom_file" | "ai_bom_file" | null;
   options: Record<string, unknown>;
+  /** The server rewrote path patterns saved before #443 as the globs matching the same files ("k8s" -> "k8s*"). */
+  patterns_rewritten?: boolean;
 }
 
 const MODES = new Set(["github", "gitlab", "bitbucket"]);
@@ -66,17 +68,23 @@ export function rerunPrefill(type: CodeScanType, scan: unknown): RerunPrefill | 
     branch: upload ? null : text(meta.branch),
     upload,
     options,
+    ...(meta.path_patterns_rewritten === true ? { patterns_rewritten: true } : {}),
   };
 }
 
 /** What the customer must give again on the new scan. */
+export const PATTERNS_REWRITTEN_NOTE = "Path patterns were rewritten to cover the same files as before: a name now " +
+  "matches a whole folder or file name, so names that used to match as a prefix end with * (k8s became k8s*).";
+
 export function rerunNotes(p: RerunPrefill): string[] {
+  const rewritten = p.patterns_rewritten ? [PATTERNS_REWRITTEN_NOTE] : [];
   if (p.upload) {
     const what = { archive: "archive", cbom_file: "CBOM file", sbom_file: "SBOM file", ai_bom_file: "AI BOM file" }[p.upload];
-    return [`Settings copied from the earlier scan. Choose the ${what} again: uploaded files are deleted after every scan.`];
+    return [`Settings copied from the earlier scan. Choose the ${what} again: uploaded files are deleted after every scan.`,
+      ...rewritten];
   }
   return ["Settings copied from the earlier scan. If the repository is private, enter its access token again: tokens " +
-    "are not stored."];
+    "are not stored.", ...rewritten];
 }
 
 export function rerunTitle(title: unknown): string {
