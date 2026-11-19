@@ -440,9 +440,9 @@ class _Region:
         for name, suite in (lb.get("sslCipherSuites") or {}).items() if isinstance(lb.get("sslCipherSuites"), dict) else []:
             if isinstance(suite, dict):
                 suites[str(name)] = [str(c) for c in suite.get("ciphers") or [] if isinstance(c, str)]
-        tls = {n: l for n, l in listeners.items() if isinstance(l, dict) and isinstance(l.get("sslConfiguration"), dict)}
+        tls = {n: lsn for n, lsn in listeners.items() if isinstance(lsn, dict) and isinstance(lsn.get("sslConfiguration"), dict)}
         read_ok = True
-        wanted = {str(l["sslConfiguration"].get("cipherSuiteName") or "") for l in tls.values()} - set(suites) - {""}
+        wanted = {str(lsn["sslConfiguration"].get("cipherSuiteName") or "") for lsn in tls.values()} - set(suites) - {""}
         if wanted:
             try:
                 answer = self.http.oci_get(f"{LB.format(r=self.region)}/loadBalancers/{quote(ocid, safe='')}/sslCipherSuites", self.sign)
