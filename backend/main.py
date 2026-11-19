@@ -36,6 +36,7 @@ from backend.routers.guardrails_public import router as guardrails_public_router
 from backend.routers.admin import router as admin_router
 from backend.routers.team import router as team_router
 from backend.routers.invitations import router as invitations_router
+from backend.routers.team_branding import router as team_branding_router
 from backend.utilities.rbac.audit import AuditMiddleware
 from backend.utilities.rbac.policy import PermissionMarker, public
 from fastapi.exceptions import RequestValidationError
@@ -187,6 +188,7 @@ app.include_router(guardrails_public_router)
 app.include_router(admin_router)
 app.include_router(team_router)
 app.include_router(invitations_router)  # /invite/<token>: the invitee accepts or declines
+app.include_router(team_branding_router)  # the team's report logo (PDF exports)
 
 # Health check endpoint for container orchestration
 @app.get("/health", tags=["health"], dependencies=[public("container and load-balancer health probe")])

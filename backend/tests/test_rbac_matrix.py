@@ -45,6 +45,9 @@ def test_key_rows_of_the_matrix():
     assert not P.role_has("admin", "team.delete") and P.role_has("owner", "team.delete")
     assert not P.role_has("admin", "team.sso.manage") and P.role_has("owner", "team.scim.manage")
     assert P.role_has("admin", "team.audit.read") and not P.role_has("member", "team.audit.read")
+    # the report logo (PDF exports): admins change it, everyone in the team sees it
+    assert P.role_has("admin", "team.branding.manage") and not P.role_has("member", "team.branding.manage")
+    assert P.PERMISSIONS["team.branding.manage"].audited
 
 
 @pytest.mark.parametrize("role", [None, "", "superuser", "Admin", "OWNER", 1, "member "])
