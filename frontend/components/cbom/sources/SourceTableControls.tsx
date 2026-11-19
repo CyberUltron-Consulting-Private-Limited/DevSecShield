@@ -155,6 +155,7 @@ const ALL_KINDS = [
   { value: "aws_account", label: "AWS accounts" },
   { value: "azure_subscription", label: "Azure" },
   { value: "gcp_project", label: "Google Cloud" },
+  { value: "oci_tenancy", label: "Oracle Cloud" },
   { value: "ca_connector", label: "Certificate authorities" },
   { value: "idp", label: "Identity providers" },
 ];

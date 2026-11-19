@@ -4138,7 +4138,7 @@ export {
 
 export type CbomSourceKind =
     | "linux_servers" | "windows_servers" | "active_directory" | "kubernetes" | "database"
-    | "aws_account" | "azure_subscription" | "gcp_project" | "ca_connector" | "idp" | "network_range"
+    | "aws_account" | "azure_subscription" | "gcp_project" | "oci_tenancy" | "ca_connector" | "idp" | "network_range"
     | "appliance" | "key_manager" | "host_agent" | "container_images" | "ct_logs"
 export type CbomSourceGroup = "servers" | "kubernetes" | "databases" | "cloud" | "identity" | "network"
 export type CbomNodeStatus = "pending_registration" | "registration_expired" | "online" | "offline"
@@ -5329,6 +5329,13 @@ const getCbomJobAssets = async (team_id: number, job_id: number, page = 1): Prom
     return response.data as CbomAssetPage
 }
 
+/** The Oracle Cloud Resource Manager stack of an oci_tenancy source (a Terraform zip that creates the read-only user,
+ * group and policy and adds the source's public key to that user). The caller saves the blob; errors are not toasted. */
+const downloadCbomOciStack = async (team_id: number, source_id: number): Promise<Blob> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/items/${source_id}/oci/stack`, { responseType: "blob" })
+    return response.data as Blob
+}
+
 /** Saves the run's CycloneDX 1.6 CBOM through the authenticated client (a plain link would carry no token). */
 const downloadCbomRunCbom = async (team_id: number, run_id: number): Promise<void> => {
     try {
@@ -5579,6 +5586,7 @@ export {
     getCbomAssetDetail,
     getCbomJobAssets,
     downloadCbomRunCbom,
+    downloadCbomOciStack,
     cbomRunDeliverablePath,
     cbomRunDeliverableFilename,
     getCbomRunVex,
