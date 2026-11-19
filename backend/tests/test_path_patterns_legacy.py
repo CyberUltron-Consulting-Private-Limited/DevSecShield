@@ -115,6 +115,10 @@ def test_run_again_on_an_older_iac_scan_shows_the_translated_includes():
     assert out[1] == {"mode": "terraform", "include_path_arrays": []}
     assert meta["iac_contexts"][0]["include_path_arrays"] == [["k8s"], ["deploy/charts"]]  # stored row untouched
     assert rerun_options("iac", {**meta, **NEW})["iac_contexts"][0]["include_path_arrays"] == [["k8s"], ["deploy/charts"]]
+    # a context without includes is left as it is: no rewrite, no "rewritten" flag (R-pp2 second pass)
+    bare = rerun_options("iac", {"iac_contexts": [{"mode": "k8s"}, {"mode": "helm", "include_path_arrays": None}]})
+    assert bare["iac_contexts"] == [{"mode": "k8s"}, {"mode": "helm", "include_path_arrays": None}]
+    assert "path_patterns_rewritten" not in bare
 
 
 def test_the_cicd_settings_page_shows_older_excludes_translated():

@@ -49,8 +49,8 @@ def _patterns_in_glob_meaning(scan_type: str, options: dict, meta: dict) -> dict
         options["exclude_path_arrays"] = legacy_patterns_to_glob(options["exclude_path_arrays"])
     if scan_type == "iac" and isinstance(options.get("iac_contexts"), list):
         options["iac_contexts"] = [
-            {**ctx, "include_path_arrays": legacy_patterns_to_glob(ctx.get("include_path_arrays") or [])}
-            if isinstance(ctx, dict) else ctx
+            {**ctx, "include_path_arrays": legacy_patterns_to_glob(ctx["include_path_arrays"])}
+            if isinstance(ctx, dict) and isinstance(ctx.get("include_path_arrays"), list) else ctx
             for ctx in options["iac_contexts"]]
     if any(options.get(key) != value for key, value in before.items()):
         options["path_patterns_rewritten"] = True
