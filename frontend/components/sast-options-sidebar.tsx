@@ -46,6 +46,7 @@ import { scanFailureMessage } from "@/utils/scanFailure";
 import { refreshCredits } from "@/utils/creditRefresh";
 import { RerunNotice, RunAgainButton, useRerunPrefill } from "@/components/scan-run-again";
 import { CancelledScanPanel, CancelScanButton } from "@/components/scan-cancel";
+import { everythingExcludeMessage } from "@/utils/pathPatterns";
 
 
 
@@ -119,6 +120,10 @@ export function SASTOptionsSidebar({
   const validateScanInputs = (): { valid: true } | { valid: false; message: string } => {
     if (app_lang === "unknown") {
       return { valid: false, message: "Please select an application language." };
+    }
+    const everything = everythingExcludeMessage(exclude_path_arrays);  // "**" alone would scan nothing
+    if (everything) {
+      return { valid: false, message: everything };
     }
     if (uploaded_file) {
       return { valid: true };

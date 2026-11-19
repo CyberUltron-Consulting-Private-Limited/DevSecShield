@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
-import { OPTION_KEYS, readRerun, rerunNotes, rerunPrefill, rerunTitle, saveRerun } from "./scanRerun";
+import { OPTION_KEYS, PATTERNS_REWRITTEN_NOTE, readRerun, rerunNotes, rerunPrefill, rerunTitle, saveRerun } from "./scanRerun";
 
 // what GET /{team}/{type}/scan/{id} returns for a failed scan (scan_metadata from backend utilities/db/metadata.py)
 const sast = {
@@ -21,6 +21,13 @@ assert.deepEqual(rerunPrefill("sast", sast), {
   options: { app_lang: "python", exclude_path_arrays: [["vendor"], ["tests", "fixtures"]] },
 });
 assert.match(rerunNotes(rerunPrefill("sast", sast)!)[0], /enter its access token again: tokens are not stored/);
+assert.equal(rerunNotes(rerunPrefill("sast", sast)!).length, 1);
+// patterns saved before #443 come back rewritten ("test" -> "test*"): the notice says why (R-pp2 review of #468)
+const older = rerunPrefill("sast", { scan_metadata: { ...sast.scan_metadata, exclude_path_arrays: [["test*"]], path_patterns_rewritten: true } })!;
+assert.equal(older.patterns_rewritten, true);
+assert.ok(!("path_patterns_rewritten" in older.options));
+assert.deepEqual(rerunNotes(older).slice(1), [PATTERNS_REWRITTEN_NOTE]);
+assert.deepEqual(rerunNotes({ ...older, upload: "archive" }).slice(1), [PATTERNS_REWRITTEN_NOTE]);
 
 const iac = { scan_metadata: JSON.stringify({ zip_file_used: false, repo_url: "https://gitlab.com/acme/infra", repo_type: "gitlab",
   branch: "main", environment: "production", iac_contexts: [{ mode: "terraform", include_path_arrays: [["envs", "prod"]] }] }) };

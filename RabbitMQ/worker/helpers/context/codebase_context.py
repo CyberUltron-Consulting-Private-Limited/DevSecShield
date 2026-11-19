@@ -170,6 +170,12 @@ def file_path_matches_pattern(file_path:str, path_array: list[str], root: str | 
             raise ValueError(f"Error in file_path_matches_pattern: {e}")
 
 
+EXCLUDED_EVERY_FILE = (
+    "Every file of the repository was excluded, so there was nothing to scan: by your exclude patterns, or by the "
+    "folders a scan always skips (dependencies, builds and caches such as node_modules, dist and build). Check the "
+    "excludes and that the repository has source files outside those folders, then run the scan again.")
+
+
 class CodebaseContext(BaseContextManager):
     """
     This class is responsible for preparing the codebase for ingestion by the AI Agent 
@@ -401,6 +407,12 @@ class CodebaseContext(BaseContextManager):
             return False
     
 
+    def excludes_removed_every_file(self) -> bool:
+        """True when SAST excludes were given, files were found, and every one of them was excluded: the scan must fail
+        with EXCLUDED_EVERY_FILE, not analyse nothing (path_patterns.py also refuses "*" / "**"-only excludes)."""
+        return bool(self.exclude_path_arrays) and bool(self.metadata.get("excluded_documents")) \
+            and not self.metadata.get("included_documents")
+
     def save_documents_to_vector_store_and_return_context_id(self)->str:
         """
         Main function responsible for loading the split documents into a vector store
@@ -412,6 +424,8 @@ class CodebaseContext(BaseContextManager):
                  
             split_documents = self.load_and_split_codebase_into_documents()
             if not split_documents:
+                if self.excludes_removed_every_file():
+                    raise ValueError(EXCLUDED_EVERY_FILE)
                 raise ValueError(f"No split documents found")
 
             # Normalize document source paths to relative (strip temp directory) for determinism

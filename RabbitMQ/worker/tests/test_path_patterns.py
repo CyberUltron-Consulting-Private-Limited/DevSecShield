@@ -179,3 +179,54 @@ def test_iac_terraform_and_k8s_patterns_with_the_clone_under_tmp(clone, monkeypa
                               include_path_arrays=agent.include_path_arrays)
     assert analysed(context, agent.include_files_extensions) == {
         "infra/main.tf", "infra/prod.tfvars", "deploy/k8s/prod/app.yaml"}
+
+
+# #443 follow-up (R-promo3 review of #442): a pattern saved before #443 matched names STARTING with its last name.
+# "Run again" and CI/CD turn it into that name + "*" (backend/utilities/scan/path_patterns.py legacy_to_glob); the
+# glob matches the same folders the old pattern did, so a rerun neither skips IaC files nor scans excluded SAST files.
+LEGACY = [
+    # (pattern saved before #443, its translation, path, matched before #443)
+    (["k8s"], ["k8s*"], "k8s-prod/app.yaml", True),
+    (["charts"], ["charts*"], "charts-v2/web/values.yaml", True),
+    (["infra"], ["infra*"], "infrastructure/main.tf", True),
+    (["deploy", "k8s"], ["*deploy", "k8s*"], "deploy/k8s-prod/app.yaml", True),
+    (["deploy", "k8s"], ["*deploy", "k8s*"], "mydeploy/k8s/app.yaml", True),  # two boxes: the first was unanchored
+    (["deploy/k8s"], ["deploy", "k8s*"], "mydeploy/k8s/app.yaml", False),    # one box: "/" before deploy
+    (["deploy", "k8s", "base"], ["*deploy", "k8s*"], "deploy/k8s/other/a.yaml", True),  # last of 3+ was dropped
+    ([".tf"], ["*.tf*"], "env/prod.tfvars", True),     # the bare text anywhere
+    ([".min"], ["*.min*"], "web/app.min.js", True),
+    (["src/"], ["src", "*"], "src/app.py", True),     # a trailing slash: a whole folder name
+    (["src/"], ["src", "*"], "srcx/app.py", False),
+    (["test"], ["test*"], "tests/unit/test_a.py", True),
+    (["build"], ["build*"], "buildSrc/x.py", True),
+    (["k8s"], ["k8s*"], "apps/k8s/app.yaml", True),
+    (["k8s"], ["k8s*"], "mk8s/app.yaml", False),  # the old regex needed "/" before the name
+]
+
+
+@pytest.mark.parametrize("legacy, glob, path, matched_before", LEGACY)
+def test_a_translated_legacy_pattern_matches_what_it_matched_before_443(clone, legacy, glob, path, matched_before):
+    repo = clone([path])
+    assert file_path_matches_pattern(str(repo / path), glob, root=repo) is matched_before
+    assert (path in analysed_with(repo, path, include=[glob])) is matched_before
+
+
+def test_excludes_that_remove_every_file_fail_the_scan_with_a_clear_message(clone, monkeypatch):
+    """#443 review finding 4: an exclude matching every file left nothing to analyse; the scan must fail and say why,
+    not report a clean result (the backend also refuses "*" / "**"-only excludes)."""
+    from helpers.context.codebase_context import EXCLUDED_EVERY_FILE
+
+    repo = clone(["src/a.py", "tests/test_a.py"])
+    context = CodebaseContext(directory=str(repo), include_files_extensions=[".py"], exclude_path_arrays=[["**"]])
+    monkeypatch.setattr(context, "get_vector_store", lambda **kwargs: None)  # the failure comes before any store call
+    with pytest.raises(ValueError) as failed:
+        context.save_documents_to_vector_store_and_return_context_id()  # the step a SAST scan runs first
+    assert EXCLUDED_EVERY_FILE in str(failed.value)
+    assert context.excludes_removed_every_file()
+
+    kept = CodebaseContext(directory=str(repo), include_files_extensions=[".py"], exclude_path_arrays=[["tests"]])
+    kept.load_and_split_codebase_into_documents()
+    assert not kept.excludes_removed_every_file()
+    nothing = CodebaseContext(directory=str(repo), include_files_extensions=[".rb"], exclude_path_arrays=[["tests"]])
+    nothing.load_and_split_codebase_into_documents()
+    assert not nothing.excludes_removed_every_file()  # no file of the language at all is not "excluded every file"
