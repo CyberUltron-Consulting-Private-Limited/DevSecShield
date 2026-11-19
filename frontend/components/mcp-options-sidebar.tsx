@@ -25,11 +25,11 @@ import {
 } from "lucide-react";
 import { useMutation, useQueryClient, UseQueryResult } from "@tanstack/react-query";
 import { toast } from "@/utils/toast";
+import { useExportPdf } from "@/components/reports/ExportPdfDialog";
 import { useRouter } from "next/navigation";
 import {
   estimateCreditsForScan,
   startScan,
-  getMCPExportResults,
   reinitializeMCPScan,
   type MCPConversationResponse,
 } from "@/utils/backend_api";
@@ -276,21 +276,13 @@ export function MCPOptionsSidebar({
     },
   });
 
-  const exportMutation = useMutation({
-    mutationFn: () => getMCPExportResults(team_id, scan_id),
-    onSuccess: (data) => {
-      const blob = new Blob([data], { type: "application/pdf" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${query.data?.title ?? "mcp"}_scan_report.pdf`;
-      a.click();
-      setOptionsSidebarState("done");
-    },
-    onError: (err) => {
-      setErrorMessage(handleApiError(err).message);
-      setOptionsSidebarState("error");
-    },
+  // The PDF report: its options in a dialog that shows a refused build itself (never this sidebar's error view) and
+  // says the outcome once (components/reports/ExportPdfDialog.tsx). The file keeps its name.
+  const pdf = useExportPdf({
+    teamId: team_id,
+    target: { family: "scan", type: "mcp", scanId: scan_id },
+    fileName: () => `${query.data?.title ?? "mcp"}_scan_report.pdf`,
+    successText: "MCP report downloaded",
   });
 
   return (
@@ -512,12 +504,15 @@ export function MCPOptionsSidebar({
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => exportMutation.mutate()}
+              onClick={pdf.open}
+              disabled={pdf.pending}
+              data-testid="sidebar-download-report"
               className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white"
             >
-              <Download className="size-4" />
-              <span className="ml-1">Download Scan Report</span>
+              {pdf.pending ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+              <span className="ml-1">{pdf.pending ? "Building report..." : "Download Scan Report"}</span>
             </Button>
+            {pdf.dialog}
           </div>
         </div>
       )}

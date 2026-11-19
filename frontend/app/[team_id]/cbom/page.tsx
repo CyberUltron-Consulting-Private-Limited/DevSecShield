@@ -30,7 +30,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
-import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, CheckCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, MinusCircle, Shield, AlertTriangle, Activity, ChevronDown, ArrowUpDown, Check, Filter, DollarSign, TrendingUp, TrendingDown, Lock, ShieldAlert, ShieldCheck, Key, Download, FileText, Network } from "lucide-react";
+import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, CheckCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, MinusCircle, Shield, AlertTriangle, Activity, ChevronDown, ArrowUpDown, Check, Filter, DollarSign, TrendingUp, TrendingDown, Lock, ShieldAlert, ShieldCheck, Key, Download, FileText, Network, SlidersHorizontal } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { singleFlight } from "@/utils/single_flight";
 import {
@@ -48,6 +48,9 @@ import type { CBOMDashboardData } from "@/utils/backend_api";
 import type { CbomDeliverableSlug } from "@/utils/backend_api";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/utils/toast";
+import { saveBlob } from "@/utils/download";
+import { deliverableCover } from "@/utils/reportOptions";
+import { useExportPdf } from "@/components/reports/ExportPdfDialog";
 import { showErrorToast } from "@/utils/error-handler";
 import { formatDateIst as formatDate } from "@/utils/datetime";
 import { readinessText, readinessTone, type ReadinessTone } from "@/utils/cbomReadiness";
@@ -688,24 +691,22 @@ export default function CBOMPage() {
     retry: 1,
   });
 
+  // Each item stays one click (ten registers are downloaded in a row): it uses the cover options of "Cover options…"
+  // (the remembered label, and the client name typed there during this page session; utils/reportOptions.ts).
   const downloadDeliverableMutation = useMutation({
     mutationFn: (slug: CbomDeliverableSlug) => {
       const tid = parseInt(team_id);
       if (Number.isNaN(tid)) throw new Error("Missing or invalid team id");
-      return downloadCbomDeliverable(tid, slug);
+      return downloadCbomDeliverable(tid, slug, deliverableCover(tid));
     },
-    onSuccess: (blob, slug) => {
-      const url = URL.createObjectURL(new Blob([blob], { type: "application/pdf" }));
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = deliverableFileName(slug, parseInt(team_id), new Date());
-      a.click();
-      URL.revokeObjectURL(url);
+    onSuccess: ({ blob, meta }, slug) => {
+      saveBlob(blob, deliverableFileName(slug, parseInt(team_id), new Date()));
       const title = CBOM_DELIVERABLES.find((d) => d.slug === slug)?.title ?? slug;
-      toast.success(`Downloaded ${title}`);
+      toast.success(meta.logo === "skipped" ? `Downloaded ${title} (team logo skipped: it could not be read)` : `Downloaded ${title}`);
     },
     onError: (error) => { showErrorToast(error, "Error downloading deliverable"); },
   });
+  const cover = useExportPdf({ teamId: parseInt(team_id) || 0, target: { family: "deliverable" } });
 
   const pendingSlug = downloadDeliverableMutation.isPending ? (downloadDeliverableMutation.variables ?? null) : null;
   const manifestItems = deliverablesQuery.data?.deliverables;
@@ -793,6 +794,17 @@ export default function CBOMPage() {
                 <DropdownMenuContent align="end" className="w-[30rem] max-w-[calc(100vw-2rem)]">
                   <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Team-wide regulatory deliverables (PDF)</DropdownMenuLabel>
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    data-testid="cbom-deliverables-cover-options"
+                    className="cursor-pointer"
+                    disabled={pendingSlug !== null}
+                    // opened once the menu has closed and handed the focus back, so the dialog keeps it
+                    onSelect={() => window.setTimeout(cover.open, 0)}
+                  >
+                    <SlidersHorizontal />
+                    <span>Cover options…</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
                   {CBOM_DELIVERABLES.map((d) => {
                     const hint = deliverableHints.get(d.slug);
                     const unavailable = hint?.available === false;
@@ -812,6 +824,7 @@ export default function CBOMPage() {
                   })}
                 </DropdownMenuContent>
               </DropdownMenu>
+              {cover.dialog}
               <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => queryClient.invalidateQueries({ queryKey: listKey })}>
                 <RefreshCcw className="h-4 w-4 mr-2" />Refresh
               </Button>

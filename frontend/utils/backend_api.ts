@@ -2,9 +2,11 @@ import api from "@/utils/interceptors"
 import type { CbomResultOrigin, CbomSourcesRun } from "@/components/cbom/resultOrigin"
 import type { InstallLinks, NodeArtifacts } from "@/components/cbom/sources/logic"
 import type { CbomSourceUsage } from "@/components/cbom/sources/sourceLimit"
-import { showErrorToast } from "./error-handler"
+import { handleApiError, showErrorToast } from "./error-handler"
 import { toast } from "@/utils/toast";
-import type { HelperToastOptions } from "@/utils/toastPolicy";
+import { readBlobErrorDetail, saveBlob } from "@/utils/download";
+import { toQuery, type ReportOptions, type ReportScanType } from "@/utils/reportOptions";
+import { checkLogoFile } from "@/utils/teamBranding";
 
 
 // -------------------------------------------------------------- Start scan payload types (matches backend schemas) --------------------------------------------------------------
@@ -445,17 +447,6 @@ const startSastScan = async (params: {
 
 
 
-/** The scan's PDF report. Toasts its outcome unless the caller shows its own (opts.toast false: utils/toastPolicy.ts). */
-const getExportResults = async (team_id: number, scan_id: number, opts: HelperToastOptions = {}): Promise<any> => {
-    try {
-        const response = await api.get(`/${team_id}/sast/scan/${scan_id}/export`, { responseType: "blob" })
-        if (opts.toast !== false) toast.success("SAST report downloaded")
-        return response.data
-    } catch (error) {
-        if (opts.toast !== false) showErrorToast(error,"Error fetching sast export results")
-        throw error
-    }
-}
 
 const reinitializeSastScan = async (params: {
     team_id: number
@@ -576,7 +567,6 @@ export {
     createSastConversation,
     getSastConversationMessages,
     startSastScan,
-    getExportResults,
     reinitializeSastScan,
     estimateCreditsForScan,
     startScan,
@@ -783,17 +773,6 @@ const startLLMScan = async (
     }
 }
 
-/** The scan's PDF report. Toasts its outcome unless the caller shows its own (opts.toast false: utils/toastPolicy.ts). */
-const getLLMExportResults = async (team_id: number, scan_id: number, opts: HelperToastOptions = {}): Promise<Blob> => {
-    try {
-        const response = await api.get(`/${team_id}/llm/scan/${scan_id}/export`, { responseType: "blob" })
-        if (opts.toast !== false) toast.success("LLM report downloaded")
-        return response.data
-    } catch (error) {
-        if (opts.toast !== false) showErrorToast(error, "Error fetching LLM export results")
-        throw error
-    }
-}
 
 const reinitializeLLMScan = async (
     { team_id, scan_id, start_scan_payload_string }: { team_id: number; scan_id: number; start_scan_payload_string: string }
@@ -817,7 +796,6 @@ export {
     createLLMConversation, 
     getLLMConversationMessages, 
     startLLMScan, 
-    getLLMExportResults,
     reinitializeLLMScan }
 
 // -------------------------------------------------------------- MCP API Routes --------------------------------------------------------------
@@ -1089,17 +1067,6 @@ const startMCPScan = async (
     }
 }
 
-/** The scan's PDF report. Toasts its outcome unless the caller shows its own (opts.toast false: utils/toastPolicy.ts). */
-const getMCPExportResults = async (team_id: number, scan_id: number, opts: HelperToastOptions = {}): Promise<Blob> => {
-    try {
-        const response = await api.get(`/${team_id}/mcp/scan/${scan_id}/export`, { responseType: "blob" })
-        if (opts.toast !== false) toast.success("MCP report downloaded")
-        return response.data
-    } catch (error) {
-        if (opts.toast !== false) showErrorToast(error, "Error fetching MCP export results")
-        throw error
-    }
-}
 
 const reinitializeMCPScan = async (
     { team_id, scan_id, start_scan_payload_string }: { team_id: number; scan_id: number; start_scan_payload_string: string }
@@ -1122,7 +1089,6 @@ export {
     deleteMCPConversation,
     renameMCPConversation,
     createMCPConversation,
-    getMCPExportResults,
     startMCPScan,
     reinitializeMCPScan
 }
@@ -1705,18 +1671,6 @@ const startIACScan = async (
     }
 };
 
-/** Team-scoped: GET /{team_id}/iac/scan/{scan_id}/export */
-/** The scan's PDF report. Toasts its outcome unless the caller shows its own (opts.toast false: utils/toastPolicy.ts). */
-const getIACExportResults = async (team_id: number, scan_id: number, opts: HelperToastOptions = {}): Promise<Blob | ArrayBuffer> => {
-    try {
-        const response = await api.get(`/${team_id}/iac/scan/${scan_id}/export`, { responseType: "blob" });
-        if (opts.toast !== false) toast.success("IAC report downloaded");
-        return response.data;
-    } catch (error) {
-        if (opts.toast !== false) showErrorToast(error, "Error fetching iac export results");
-        throw error;
-    }
-};
 
 const reinitializeIACScan = async (
     {
@@ -1763,7 +1717,6 @@ export {
     createIACConversation,
     getIACConversationMessages,
     startIACScan,
-    getIACExportResults,
     reinitializeIACScan,
     reinitializeIACScanWithPayload
 }
@@ -2061,29 +2014,7 @@ const startSCASBOMScan = async (
     }
 }
 
-const getSCASBOMExportResults = async (conversation_id: number): Promise<any> => {
-    try {   
-        const response = await api.get(`/sbom_sca/conversation/${conversation_id}/export`)
-        toast.success("SCA + SBOM report downloaded")
-        return response.data
-    } catch (error) {
-        showErrorToast(error,"Error fetching sbom_sca export results")
-        throw error
-    }
-}
 
-/** Team-scoped: GET /{team_id}/sbom_sca/scan/{scan_id}/export */
-/** The scan's PDF report. Toasts its outcome unless the caller shows its own (opts.toast false: utils/toastPolicy.ts). */
-const getSBOMExportResults = async (team_id: number, scan_id: number, opts: HelperToastOptions = {}): Promise<Blob | ArrayBuffer> => {
-    try {
-        const response = await api.get(`/${team_id}/sbom_sca/scan/${scan_id}/export`, { responseType: "blob" });
-        if (opts.toast !== false) toast.success("SCA + SBOM report downloaded");
-        return response.data;
-    } catch (error) {
-        if (opts.toast !== false) showErrorToast(error, "Error fetching sbom_sca export results");
-        throw error;
-    }
-};
 
 /** Team-scoped: POST /{team_id}/sbom_sca/scan/{scan_id}/reinitialize with FormData (start_scan_payload_string, optional uploaded_file) */
 const reinitializeSBOMScanWithPayload = async (
@@ -2135,8 +2066,6 @@ export {
     getSCASBOMConversationMessages,
     getSBOMSCAScanData,
     startSCASBOMScan,
-    getSCASBOMExportResults,
-    getSBOMExportResults,
     reinitializeSCASBOMScan,
     reinitializeSBOMScanWithPayload,
     updateScan,
@@ -2499,23 +2428,6 @@ const renameCBOMScan = async ({
   }
 };
 
-/** Team-scoped: GET /{team_id}/cbom/scan/{scan_id}/export.
- *  `toast: false` leaves the success and error toasts to the caller. CbomResults toasts once;
- *  the options sidebar does not, so it keeps these. */
-const getCBOMExportResults = async (
-  team_id: number,
-  scan_id: number,
-  opts: { toast?: boolean } = {},
-): Promise<Blob | ArrayBuffer> => {
-  try {
-    const response = await api.get(`/${team_id}/cbom/scan/${scan_id}/export`, { responseType: "blob" });
-    if (opts.toast !== false) toast.success("CBOM report downloaded");
-    return response.data;
-  } catch (error) {
-    if (opts.toast !== false) showErrorToast(error, "Error fetching CBOM export results");
-    throw error;
-  }
-};
 
 /** CERT-In Phase 4 — attestation / sign / VEX / evidence-pack (BOM types). */
 export type CertInBomScanType = "ai_bom" | "cbom" | "sbom_sca";
@@ -2650,17 +2562,13 @@ const getCbomDeliverables = async (team_id: number): Promise<CbomDeliverablesMan
   return response.data as CbomDeliverablesManifest;
 };
 
-/** Team-scoped: GET /{team_id}/cbom/deliverables/{slug} (PDF). No toast here: the caller owns success/error UX. */
-const downloadCbomDeliverable = async (
+/** Team-scoped: GET /{team_id}/cbom/deliverables/{slug} (PDF) with the cover options (prepared_for, label). No toast
+ * here: the deliverables menu owns success/error UX. Kept under this name for the menu; the same as downloadDeliverable. */
+const downloadCbomDeliverable = (
   team_id: number,
   slug: CbomDeliverableSlug,
-): Promise<Blob> => {
-  const response = await api.get(
-    `/${team_id}/cbom/deliverables/${slug}`,
-    { responseType: "blob" },
-  );
-  return response.data as Blob;
-};
+  options: ReportOptions,
+): Promise<ReportDownload> => downloadDeliverable(team_id, slug, options);
 
 export {
   getCBOMScans,
@@ -2668,7 +2576,6 @@ export {
   createCBOMScan,
   deleteCBOMScan,
   renameCBOMScan,
-  getCBOMExportResults,
   reinitializeCBOMScanWithPayload,
   postCertInAttestation,
   postCertInSign,
@@ -2880,18 +2787,6 @@ const renameAIBOMScan = async ({
   }
 };
 
-/** Team-scoped: GET /{team_id}/ai_bom/scan/{scan_id}/export */
-/** The scan's PDF report. Toasts its outcome unless the caller shows its own (opts.toast false: utils/toastPolicy.ts). */
-const getAIBOMExportResults = async (team_id: number, scan_id: number, opts: HelperToastOptions = {}): Promise<Blob | ArrayBuffer> => {
-  try {
-    const response = await api.get(`/${team_id}/ai_bom/scan/${scan_id}/export`, { responseType: "blob" });
-    if (opts.toast !== false) toast.success("AI BOM report downloaded");
-    return response.data;
-  } catch (error) {
-    if (opts.toast !== false) showErrorToast(error, "Error fetching AI BOM export results");
-    throw error;
-  }
-};
 
 /** Team-scoped: POST /{team_id}/ai_bom/scan/{scan_id}/reinitialize with FormData */
 const reinitializeAIBOMScanWithPayload = async (
@@ -2916,7 +2811,6 @@ export {
   createAIBOMScan,
   deleteAIBOMScan,
   renameAIBOMScan,
-  getAIBOMExportResults,
   reinitializeAIBOMScanWithPayload,
 }
 
@@ -3741,20 +3635,6 @@ const startDASTScan = async (
     return startScan(team_id, "dast", scan_id, payloadString, null)
 }
 
-/** Export DAST scan results via GET /{team_id}/dast/scan/{scan_id}/export */
-/** The scan's PDF report. Toasts its outcome unless the caller shows its own (opts.toast false: utils/toastPolicy.ts). */
-const getDASTExportResults = async (team_id: number, scan_id: number, opts: HelperToastOptions = {}): Promise<Blob> => {
-    try {
-        const response = await api.get(`/${team_id}/dast/scan/${scan_id}/export`, {
-            responseType: "blob",
-        })
-        if (opts.toast !== false) toast.success("DAST report downloaded")
-        return response.data
-    } catch (error) {
-        if (opts.toast !== false) showErrorToast(error, "Error fetching DAST export results")
-        throw error
-    }
-}
 
 /** Reinitialize DAST scan via POST /{team_id}/dast/scan/{scan_id}/reinitialize */
 const reinitializeDASTScan = async (
@@ -3920,7 +3800,6 @@ export {
     createDASTConversation,
     getDASTConversationMessages,
     startDASTScan,
-    getDASTExportResults,
     reinitializeDASTScan,
     listDASTProfiles,
     createDASTProfile,
@@ -5502,31 +5381,11 @@ const getCbomRunSignature = async (team_id: number, run_id: number): Promise<Cbo
 const downloadCbomRunDeliverable = async (team_id: number, run_id: number, kind: CbomRunDeliverable): Promise<void> => {
     try {
         const response = await api.get(cbomRunDeliverablePath(team_id, run_id, kind), { responseType: "blob" })
-        const url = URL.createObjectURL(response.data as Blob)
-        const link = document.createElement("a")
-        link.href = url
-        link.download = cbomRunDeliverableFilename(run_id, kind)
-        document.body.appendChild(link)
-        link.click()
-        link.remove()
-        setTimeout(() => URL.revokeObjectURL(url), 1000)
+        saveBlob(response.data as Blob, cbomRunDeliverableFilename(run_id, kind))
     } catch (error) {
         await readBlobErrorDetail(error)
         showErrorToast(error, `Error downloading the run ${kind === "report.pdf" ? "PDF report" : kind.replace("-", " ")}`)
         throw error
-    }
-}
-
-/** A blob request's error body arrives as a Blob, so the server's ``detail`` ("retry in 30 s") would be lost: read it
- * back into ``error.response.data`` before the toast. */
-const readBlobErrorDetail = async (error: unknown): Promise<void> => {
-    const response = (error as { response?: { data?: unknown } } | null)?.response
-    const data = response?.data
-    if (!response || typeof Blob === "undefined" || !(data instanceof Blob)) return
-    try {
-        response.data = JSON.parse(await data.text())
-    } catch {
-        // not JSON: keep the generic message
     }
 }
 
@@ -5709,4 +5568,162 @@ export const askCbomAi = async ({ team_id, subject, mode, question }: {
         { timeout: CBOM_AI_UI_TIMEOUT_MS },
     )
     return response.data
+}
+
+// -------------------------------------------------------------- PDF reports (report options, plan §1, §6, §7) --------------------------------------------------------------
+
+/** What the server says about a built PDF (CORS-exposed headers): findings shown / in the full report (X-Report-Findings,
+ * code lane and run only) and whether the team logo was drawn (X-Report-Logo). */
+export interface ReportMeta {
+    shown: number | null
+    total: number | null
+    logo: "applied" | "none" | "skipped" | null
+}
+
+export interface ReportDownload {
+    blob: Blob
+    meta: ReportMeta
+}
+
+/** A PDF build the server refused, with its own words: 422 (an option), 409 (statuses not available for this scan),
+ * 429 (busy: retry after `retryAfter` seconds), 503 (statuses unavailable right now), 400 (scan not finished). */
+export class ReportDownloadError extends Error {
+    readonly status: number | null
+    readonly detail: string | null
+    /** seconds, from Retry-After (429) */
+    readonly retryAfter: number | null
+    /** the option the server named in a 422 ("statuses: is not available for this report") */
+    readonly field: string | null
+    /** 429: when a new build may start (ms since the epoch; 30 s when the server gave no Retry-After) */
+    readonly retryAt: number | null
+
+    constructor(message: string, init: { status: number | null; detail: string | null; retryAfter: number | null; field: string | null; cause?: unknown }) {
+        super(message)
+        this.name = "ReportDownloadError"
+        this.status = init.status
+        this.detail = init.detail
+        this.retryAfter = init.retryAfter
+        this.field = init.field
+        this.retryAt = init.status === 429 ? Date.now() + (init.retryAfter ?? 30) * 1000 : null
+        if (init.cause !== undefined) (this as { cause?: unknown }).cause = init.cause
+    }
+}
+
+type HeaderBag = Record<string, unknown> & { get?: (name: string) => unknown }
+
+function header(headers: unknown, name: string): string | null {
+    if (!headers || typeof headers !== "object") return null
+    const h = headers as HeaderBag
+    const value = typeof h.get === "function" ? h.get(name) : (h[name.toLowerCase()] ?? h[name])
+    return value == null || value === false ? null : String(value)
+}
+
+export function reportMetaFrom(headers: unknown): ReportMeta {
+    const findings = /^\s*(\d+)\s*\/\s*(\d+)\s*$/.exec(header(headers, "x-report-findings") ?? "")
+    const logo = (header(headers, "x-report-logo") ?? "").trim().toLowerCase()
+    return {
+        shown: findings ? Number(findings[1]) : null,
+        total: findings ? Number(findings[2]) : null,
+        logo: logo === "applied" || logo === "none" || logo === "skipped" ? logo : null,
+    }
+}
+
+/** Retry-After in seconds (delta-seconds or an HTTP date), else null. */
+export function retryAfterHeaderSeconds(value: string | null, now = Date.now()): number | null {
+    if (!value) return null
+    if (/^\s*\d+\s*$/.test(value)) return Number(value)
+    const at = Date.parse(value)
+    return Number.isNaN(at) ? null : Math.max(0, Math.ceil((at - now) / 1000))
+}
+
+const REPORT_FIELDS = ["preset", "sections", "severities", "statuses", "prepared_for", "title", "label", "hide_evidence"]
+
+/** The server's answer to a refused PDF request, as a ReportDownloadError (the blob body read back first). */
+async function reportError(error: unknown): Promise<ReportDownloadError> {
+    const data = await readBlobErrorDetail(error)
+    const response = (error as { response?: { status?: number; headers?: unknown } } | null)?.response
+    const status = typeof response?.status === "number" ? response.status : null
+    const raw = (data as { detail?: unknown } | null | undefined)?.detail
+    let detail: string | null = null
+    if (typeof raw === "string") detail = raw
+    else if (Array.isArray(raw)) {
+        // FastAPI's own validation errors: [{loc, msg}, …]
+        detail = raw.map((d) => (d && typeof d === "object" && "msg" in d ? String((d as { msg: unknown }).msg) : String(d))).join("; ") || null
+    }
+    const field = detail ? (/^([a-z_]+):\s/.exec(detail)?.[1] ?? null) : null
+    // the app's handling of every failed request: one safe log line, sign-out on 401 or a closed session
+    const handled = handleApiError(error)
+    const message = detail
+        ?? (status == null ? "Could not reach the server. Check your connection and try again." : handled.message || `The report could not be built (HTTP ${status}).`)
+    return new ReportDownloadError(message, {
+        status,
+        detail,
+        retryAfter: retryAfterHeaderSeconds(header(response?.headers, "retry-after")),
+        field: field && REPORT_FIELDS.includes(field) ? field : null,
+        cause: error,
+    })
+}
+
+async function getReport(path: string, params: Record<string, string>): Promise<ReportDownload> {
+    try {
+        const response = await api.get(path, { params, responseType: "blob" })
+        const data = response.data as unknown
+        const blob = data instanceof Blob ? data : new Blob([data as BlobPart], { type: "application/pdf" })
+        return { blob, meta: reportMetaFrom(response.headers) }
+    } catch (error) {
+        throw await reportError(error)
+    }
+}
+
+/** A scan's PDF report: GET /{team_id}/{type}/scan/{scan_id}/export with the options that differ from the default.
+ * No toast: the export dialog shows the outcome (components/reports/ExportPdfDialog.tsx). */
+export const downloadScanReport = (team_id: number, type: ReportScanType, scan_id: number, options: ReportOptions): Promise<ReportDownload> =>
+    getReport(`/${team_id}/${type}/scan/${scan_id}/export`, toQuery(options, "scan", type))
+
+/** A CBOM Sources run's PDF report: GET /{team_id}/cbom/sources/runs/{run_id}/report.pdf. No toast (the dialog's). */
+export const downloadRunReport = (team_id: number, run_id: number, options: ReportOptions): Promise<ReportDownload> =>
+    getReport(cbomRunDeliverablePath(team_id, run_id, "report.pdf"), toQuery(options, "run"))
+
+/** A team-wide CBOM deliverable: GET /{team_id}/cbom/deliverables/{slug} with its cover options. No toast. */
+export const downloadDeliverable = (team_id: number, slug: CbomDeliverableSlug, options: ReportOptions): Promise<ReportDownload> =>
+    getReport(`/${team_id}/cbom/deliverables/${slug}`, toQuery(options, "deliverable"))
+
+// -------------------------------------------------------------- Team report logo (plan §5) --------------------------------------------------------------
+
+/** GET /team/{team_id}/branding: the logo's metadata (never its bytes). */
+export interface TeamBranding {
+    logo_set: boolean
+    sha256: string | null
+    width: number | null
+    height: number | null
+    /** "light": a light logo (drawn without a chip on the navy header; needs a dark backdrop on white) */
+    tone: "dark" | "light" | null
+    bytes: number | null
+    updated_at: string | null
+}
+
+/** The logo's metadata. No toast: the settings card shows its own state. */
+export const getTeamBranding = async (team_id: number | string): Promise<TeamBranding> => {
+    const response = await api.get(`/team/${team_id}/branding`)
+    return response.data as TeamBranding
+}
+
+/** The stored logo (PNG, as the server re-encoded it). */
+export const getTeamLogo = async (team_id: number | string): Promise<Blob> => {
+    const response = await api.get(`/team/${team_id}/branding/logo`, { responseType: "blob" })
+    return response.data as Blob
+}
+
+/** Uploads a logo as the raw body, with the Content-Type its magic bytes say (PNG, JPEG or WebP, at most 2 MB; refused
+ * here before anything is sent otherwise). Throws; no toast. */
+export const putTeamLogo = async (team_id: number | string, file: Blob): Promise<TeamBranding> => {
+    const checked = await checkLogoFile(file)
+    if (checked.error !== null) throw new Error(checked.error)
+    const response = await api.put(`/team/${team_id}/branding/logo`, file, { headers: { "Content-Type": checked.type } })
+    return response.data as TeamBranding
+}
+
+/** Removes the logo (204; nothing to remove is fine too). Throws; no toast. */
+export const deleteTeamLogo = async (team_id: number | string): Promise<void> => {
+    await api.delete(`/team/${team_id}/branding/logo`)
 }

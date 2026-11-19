@@ -68,6 +68,8 @@ export const COVERED: string[] = [
   "components/ticketing-integrations-settings.tsx",
   "app/[team_id]/account/page.tsx",
   "app/admin/page.tsx",
+  // the PDF export dialog of every scan type, a Sources run and the deliverables' cover options
+  "components/reports",
   // CBOM Sources: every tab (Scan nodes, Servers, Kubernetes & Databases, Cloud & Identity, Network TLS, Evidence,
   // Fleet, Review & Run), their dialogs, the scan sidebar's Sources section and remediation waves (issue #43)
   "app/[team_id]/cbom/sources/page.tsx",
