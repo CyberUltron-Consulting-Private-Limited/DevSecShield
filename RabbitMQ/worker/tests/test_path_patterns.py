@@ -195,6 +195,8 @@ LEGACY = [
     (["deploy", "k8s", "base"], ["*deploy", "k8s*"], "deploy/k8s/other/a.yaml", True),  # last of 3+ was dropped
     ([".tf"], ["*.tf*"], "env/prod.tfvars", True),     # the bare text anywhere
     ([".min"], ["*.min*"], "web/app.min.js", True),
+    (["src/"], ["src", "*"], "src/app.py", True),     # a trailing slash: a whole folder name
+    (["src/"], ["src", "*"], "srcx/app.py", False),
     (["test"], ["test*"], "tests/unit/test_a.py", True),
     (["build"], ["build*"], "buildSrc/x.py", True),
     (["k8s"], ["k8s*"], "apps/k8s/app.yaml", True),

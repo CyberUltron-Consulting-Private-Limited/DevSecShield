@@ -55,6 +55,12 @@ def test_a_pattern_naming_something_does_not(pattern):
     ([".tf"], ["*.tf*"]),                   # the bare text anywhere: also prod.tfvars
     ([".min"], ["*.min*"]),                 # app.min.js
     (["charts*"], ["charts*"]),             # already a prefix
+    (["src/"], ["src", "*"]),               # a trailing slash: src was a whole folder name (R-pp second pass)
+    (["deploy", "k8s/"], ["*deploy", "k8s", "*"]),
+    ([".tf/"], ["*.tf", "*"]),              # a folder name ending with .tf
+    (["/deploy", "k8s"], ["deploy", "k8s*"]),  # a leading slash anchored the first name
+    (["a//b"], []),                         # "//" never occurs in a path: matched nothing
+    (["deploy", "/k8s"], []),
     ([], []),
 ])
 def test_a_legacy_pattern_becomes_the_glob_matching_the_same_names(legacy, glob):
@@ -150,3 +156,10 @@ def test_a_refused_cicd_run_is_a_400_before_the_zip_is_stored(monkeypatch):
 def test_check_excludes_accepts_none_and_empty():
     check_excludes(None)
     check_excludes([])
+
+
+def test_the_cicd_integration_route_returns_the_settings_as_the_form_shows_them():
+    """The GET the settings page reads goes through cicd_settings_for_form (R-pp second pass, nit 4)."""
+    route = (_REPO_ROOT / "backend" / "routers" / "cicd.py").read_text(encoding="utf-8")
+    assert '"scan_settings": cicd_settings_for_form(integration.scan_settings)' in route
+    assert '"scan_settings": integration.scan_settings' not in route

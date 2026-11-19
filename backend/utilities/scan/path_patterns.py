@@ -41,20 +41,29 @@ def legacy_to_glob(pattern: list[str]) -> list[str]:
     - one box: "/" + box, so its last name was a prefix -> "infra" becomes "infra*", "deploy/k8s" ["deploy", "k8s*"];
     - two boxes: box1 + "/" + box2, unanchored, so the first name was also a suffix -> ["*deploy", "k8s*"];
     - three or more: the same over all boxes but the last, which the old code dropped -> [a, b, c] ["*a", "b*"].
-    A pattern without a name is left as it is.
+    A slash at a box's edge counted too: a trailing one ended the last name, which had to be a folder ("src/" ->
+    ["src", "*"]); a leading one anchored the first name; one that made "//" ("a//b", or a leading slash after the
+    joining one) matched nothing -> [] (a pattern without a name).
+    Regex meaning is not reproduced ("." is taken literally). A pattern without a name is left as it is.
     """
     boxes = [box.strip() for box in (pattern or []) if isinstance(box, str) and box.strip()]
     if not pattern_names(boxes):
         return list(pattern)
     if len(boxes) == 1 and boxes[0].startswith("."):
-        name = boxes[0]
-        return [("" if name.startswith("*") else "*") + name + ("" if name.endswith("*") else "*")]
-    used = boxes if len(boxes) <= 2 else boxes[:-1]
-    names = pattern_names(used)
-    if len(boxes) >= 2 and not names[0].startswith("*"):
-        names[0] = "*" + names[0]
-    if not names[-1].endswith("*"):
-        names[-1] = names[-1] + "*"
+        text, anchored = boxes[0], False  # the bare text, anywhere
+    else:
+        used = boxes if len(boxes) <= 2 else boxes[:-1]
+        # one box: a separator before it; two or more: joined by separators, unanchored
+        text, anchored = ("/" + used[0], True) if len(boxes) == 1 else ("/".join(used), False)
+    if "//" in text:
+        return []  # the path never holds an empty name: the old pattern matched nothing
+    names = pattern_names([text])
+    if not anchored and not text.startswith("/") and not names[0].startswith("*"):
+        names[0] = "*" + names[0]  # the first name's start was free: it also matched as a suffix
+    if text.endswith("/"):
+        names.append("*")  # the last name was whole and followed by at least one more name
+    elif not names[-1].endswith("*"):
+        names[-1] = names[-1] + "*"  # the last name was a prefix
     return names
 
 

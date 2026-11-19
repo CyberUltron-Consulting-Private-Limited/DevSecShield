@@ -74,7 +74,8 @@ export function rerunPrefill(type: CodeScanType, scan: unknown): RerunPrefill | 
 
 /** What the customer must give again on the new scan. */
 export const PATTERNS_REWRITTEN_NOTE = "Path patterns were rewritten to cover the same files as before: a name now " +
-  "matches a whole folder or file name, so names that used to match as a prefix end with * (k8s became k8s*).";
+  "matches a whole folder or file name, so * marks where a name used to match only its start (k8s became k8s*) " +
+  "or only its end (deploy, k8s became *deploy, k8s*).";
 
 export function rerunNotes(p: RerunPrefill): string[] {
   const rewritten = p.patterns_rewritten ? [PATTERNS_REWRITTEN_NOTE] : [];
