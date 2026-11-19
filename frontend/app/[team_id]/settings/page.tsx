@@ -46,6 +46,7 @@ import { formatDateIst } from "@/utils/datetime";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ROLE_HELP, ROLE_LABELS, accessFrom, can, canManageMember, lastOwnerProblem, roleChoices, roleLabel, type TeamRole } from "@/utils/rbac";
 import { changeMemberRole, claimTeamOwnership, inviteMembers } from "@/utils/api/rbac";
+import { ReportBrandingCard } from "@/components/settings/ReportBrandingCard";
 
 
 export default function TeamSettingsPage() {
@@ -547,6 +548,9 @@ export default function TeamSettingsPage() {
             )}
           </div>
         </section>
+
+        {/* Report branding: the team's client logo on its PDF reports (its own queries; never ["team-details"]) */}
+        {team_id && <ReportBrandingCard teamId={team_id} />}
 
         {/* Integrations (ServiceNow, SIEM, webhooks, OSCAL): their own page */}
         <section className="pb-6 mb-6 border-b border-border">

@@ -68,6 +68,7 @@ export const COVERED: string[] = [
   "components/ticketing-integrations-settings.tsx",
   "app/[team_id]/account/page.tsx",
   "app/admin/page.tsx",
+  "components/settings/ReportBrandingCard.tsx", // Settings > Report branding (the team's report logo)
   // the PDF export dialog of every scan type, a Sources run and the deliverables' cover options
   "components/reports",
   // CBOM Sources: every tab (Scan nodes, Servers, Kubernetes & Databases, Cloud & Identity, Network TLS, Evidence,
