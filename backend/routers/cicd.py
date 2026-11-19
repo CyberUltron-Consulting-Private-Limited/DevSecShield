@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Header, Uploa
 from backend.utilities.ratelimit import RateLimiter
 from backend.utilities.rbac.policy import Access, machine
 from backend.utilities.cicd.auth import ci_key
+from backend.utilities.scan.path_patterns import cicd_settings_for_form
 from rich.console import Console
 from sqlmodel import Session, select
 from starlette.concurrency import run_in_threadpool
@@ -895,7 +896,7 @@ async def get_cicd_integration(
             "last_updated": integration.last_updated,
             "scan_type":  integration.scan_type.upper() if integration.scan_type not in ["leakage" , "sbom_sca" , "agent_discovery"] else integration.scan_type,
             "integration_settings": public_settings(integration.integration_settings),
-            "scan_settings": integration.scan_settings or {},
+            "scan_settings": cicd_settings_for_form(integration.scan_settings),  # pre-#443 excludes as globs
             "logs": logs_data,
             "dashboard_data": dashboard_data,
         }

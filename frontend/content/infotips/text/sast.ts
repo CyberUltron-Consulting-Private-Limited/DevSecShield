@@ -17,7 +17,7 @@ const TEXT = {
   "sast.cfg.exclude": {
     what: "Each pattern is one or more folder or file names, one per box. A file is skipped when its path inside the repository has these whole names one after the other, at any depth. * stands for any characters within a name and a box holding ** for any number of folders; other characters are literal. One name starting with a dot matches the names ending with it. Skipped files are not analysed and not charged.",
     why: "Leaving out vendored or generated code cuts noise and credits; leaving out real code hides findings.",
-    example: "\"vendor\" skips every vendor folder but not vendors; \"src\" / \"legacy\" skips src/legacy; \".min.js\" skips minified files.",
+    example: "\"vendor\" skips every vendor folder but not vendors; \"test*\" also skips tests; \"src\" / \"legacy\" skips src/legacy; \".min.js\" skips minified files. A pattern of only * or ** would skip every file and is refused.",
   },
   // src: RabbitMQ/worker/helpers/tools/sast_agent/main.py:51-83 — one file extension per language
   "sast.cfg.language": {
