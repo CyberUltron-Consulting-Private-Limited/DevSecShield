@@ -4,6 +4,7 @@ from backend.utilities.db.s3_utils import upload_file
 from io import BytesIO
 from rich.console import Console
 from backend.utilities.scan.sanitize_path_patterns import sanitize_path_patterns
+from backend.utilities.scan.path_patterns import cicd_sast_excludes
 from backend.utilities.log_redaction import safe_repr
 console = Console()
 
@@ -101,7 +102,12 @@ async def format_cicd_input(
                 if sast_scan_settings is None:
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Sast scan settings not found")
                 cicd_kwargs["app_lang"] = sast_scan_settings.get("app_lang")
-                cicd_kwargs["exclude_path_arrays"] = sanitize_path_patterns(sast_scan_settings.get("exclude_path_arrays")) if sast_scan_settings.get("exclude_path_arrays") else None
+                try:
+                    # saved before #443: translated to what they skipped then; one matching every file is refused
+                    excludes = cicd_sast_excludes(sast_scan_settings)
+                except ValueError as e:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+                cicd_kwargs["exclude_path_arrays"] = sanitize_path_patterns(excludes) if excludes else None
                 
                 console.print(f"Cicd kwargs assembled successfully: {safe_repr(cicd_kwargs)}", style="dim bold yellow",
                               markup=False)

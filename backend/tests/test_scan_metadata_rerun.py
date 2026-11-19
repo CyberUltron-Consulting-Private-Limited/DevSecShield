@@ -8,6 +8,7 @@ Browser check after a rebuild: r1 bin/run scan_meta.js (scan_metadata of the fai
 (the new scan's language shows Python)."""
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import re
@@ -31,7 +32,9 @@ CODE_TYPES = ("sast", "iac", "sbom_sca", "cbom", "ai_bom")
 
 
 def _scan(meta, data=None):
-    return types.SimpleNamespace(scan_metadata=meta, scan_data=data or {})
+    # a scan started now (Scan.created_at is always set); path patterns of older scans: test_path_patterns_legacy.py
+    return types.SimpleNamespace(scan_metadata=meta, scan_data=data or {},
+                                 created_at=datetime.datetime.now(datetime.timezone.utc))
 
 
 def _payload(scan_type: str) -> StartScanPayload:

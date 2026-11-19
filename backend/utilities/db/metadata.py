@@ -2,6 +2,7 @@ from backend.new_models import scan_types
 from backend.utilities.db.mcp_headers import seal_headers
 from backend.utilities.db.schemas import StartScanPayload
 from fastapi import HTTPException, status
+from backend.utilities.scan.path_patterns import PATH_PATTERN_VERSION
 
 def get_scan_metadata_for_type(scan_type: scan_types , start_scan_payload: StartScanPayload) -> dict:
     """
@@ -22,6 +23,7 @@ def get_scan_metadata_for_type(scan_type: scan_types , start_scan_payload: Start
                 "branch": start_scan_payload.sast.repo_context.branch if start_scan_payload.sast.repo_context else None,
                 "app_lang": start_scan_payload.sast.app_lang,
                 "exclude_path_arrays": start_scan_payload.sast.exclude_path_arrays,
+                "path_pattern_v": PATH_PATTERN_VERSION,  # glob meaning (#443); "Run again" translates older scans
             }
         case "iac":
             return {
@@ -31,6 +33,7 @@ def get_scan_metadata_for_type(scan_type: scan_types , start_scan_payload: Start
                 "branch": start_scan_payload.iac.repo_context.branch if start_scan_payload.iac.repo_context else None,
                 "environment": start_scan_payload.iac.environment if start_scan_payload.iac.environment else "development",
                 "iac_contexts": [iac_context.model_dump() for iac_context in start_scan_payload.iac.iac_contexts],
+                "path_pattern_v": PATH_PATTERN_VERSION,
             }
         case "sbom_sca":
             return {

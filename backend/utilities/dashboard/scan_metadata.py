@@ -1,6 +1,7 @@
 import re
 
 from backend.new_models import scan_types , Scan
+from backend.utilities.scan.path_patterns import legacy_patterns_to_glob, saved_with_prefix_meaning
 
 # The settings a failed code scan is run again with ("Run again", frontend utils/scanRerun.ts OPTION_KEYS): the
 # options utilities/db/metadata.py stores when the scan starts.  Before, only repo_url / branch / zip_file_used came
@@ -34,10 +35,31 @@ def _without_secrets(value):
     return value
 
 
-def rerun_options(scan_type: str, meta: dict) -> dict:
-    """The stored, non-secret start options of a code scan, for "Run again" (None when the scan never stored one)."""
-    return {key: _without_secrets(meta.get(key)) for key in _RERUN_OPTIONS.get(scan_type, ())
-            if not _secret_key(key)}
+def _patterns_in_glob_meaning(scan_type: str, options: dict, meta: dict, started_at) -> dict:
+    """
+    A scan started before #443 stored its path patterns with the old prefix meaning ("k8s" also matched "k8s-prod",
+    "test" also "tests"). Its "Run again" options carry the same patterns rewritten as the globs that match the same
+    files ("k8s*", "test*"), so a rerun neither skips IaC files nor scans SAST files it skipped before, and the form
+    shows the rewrite.
+    """
+    if not saved_with_prefix_meaning(meta, started_at):
+        return options
+    if scan_type == "sast" and isinstance(options.get("exclude_path_arrays"), list):
+        options["exclude_path_arrays"] = legacy_patterns_to_glob(options["exclude_path_arrays"])
+    if scan_type == "iac" and isinstance(options.get("iac_contexts"), list):
+        options["iac_contexts"] = [
+            {**ctx, "include_path_arrays": legacy_patterns_to_glob(ctx.get("include_path_arrays") or [])}
+            if isinstance(ctx, dict) else ctx
+            for ctx in options["iac_contexts"]]
+    return options
+
+
+def rerun_options(scan_type: str, meta: dict, started_at=None) -> dict:
+    """The stored, non-secret start options of a code scan, for "Run again" (None when the scan never stored one).
+    started_at: when the scan started (Scan.created_at), to tell the path patterns' meaning."""
+    options = {key: _without_secrets(meta.get(key)) for key in _RERUN_OPTIONS.get(scan_type, ())
+               if not _secret_key(key)}
+    return _patterns_in_glob_meaning(scan_type, options, meta, started_at)
 
 _CBOM_INPUT_COUNTS = ("components_total", "crypto_assets", "imported", "skipped_not_crypto", "skipped_invalid",
                       "duplicates")
@@ -93,7 +115,7 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             "repo_url": repo_url,
             "branch": branch,
             "zip_file_used": zip_file_used,
-            **rerun_options("sast", _meta),
+            **rerun_options("sast", _meta, scan.created_at),
             "files_scanned": files_scanned,
             "total_files": total_files,
             "code_coverage": code_coverage,
@@ -113,7 +135,7 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             "repo_url": repo_url,
             "branch": branch,
             "zip_file_used": zip_file_used,
-            **rerun_options("iac", _meta),
+            **rerun_options("iac", _meta, scan.created_at),
             "dependency_diagram": dependency_diagram,
         }
 

@@ -3,6 +3,8 @@ from typing import Literal
 from fastapi import HTTPException, status
 from pydantic import model_validator
 
+from backend.utilities.scan.path_patterns import check_excludes
+
 from backend.utilities.git_hosts import check_repo_url
 
 class CreateScanData(BaseModel):
@@ -120,6 +122,12 @@ class BaseStartRepositoryScanData(BaseModel):
 class StartSastScanData(BaseStartRepositoryScanData):
     exclude_path_arrays: list[list[str]] | None = None
     app_lang: Literal["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"]
+
+    @model_validator(mode="after")
+    def validate_exclude_path_arrays(self):
+        # an exclude made only of "*" / "**" would leave nothing to scan and report clean (path_patterns.py)
+        check_excludes(self.exclude_path_arrays)
+        return self
 
     @model_validator(mode="after")
     def validate_data(self):
