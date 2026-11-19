@@ -523,6 +523,12 @@ function TextInput({ id, field, label, infoId, placeholder, value, error, onChan
 function ErrorPanel({ error, waitS, statusFiltered, onRemoveStatusFilter }: {
   error: ReportDownloadError; waitS: number; statusFiltered: boolean; onRemoveStatusFilter: () => void;
 }) {
+  // The panel sits at the end of a scrolling body, under the sticky footer: bring it into view when an error arrives,
+  // or a refused build looks like a Download click that did nothing.
+  const panel = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    panel.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+  }, [error]);
   let title = "The report could not be built";
   let body = error.message;
   if (error.status === 409) title = "Finding statuses aren't available for this scan yet";
@@ -534,8 +540,8 @@ function ErrorPanel({ error, waitS, statusFiltered, onRemoveStatusFilter }: {
   else if (error.status === 422) title = "The server refused an option";
   const offerRemove = (error.status === 409 || error.status === 503) && statusFiltered;
   return (
-    <div role="alert" data-testid="export-error" data-status={error.status ?? "network"}
-         className="flex items-start gap-2 rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm">
+    <div ref={panel} role="alert" data-testid="export-error" data-status={error.status ?? "network"}
+         className="flex scroll-mb-28 items-start gap-2 rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm">
       <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" aria-hidden />
       <div className={cn("space-y-1", EXPORT_DIALOG_LAYOUT.text)}>
         <p className="font-semibold">{title}</p>
