@@ -106,6 +106,13 @@ def logo(size=(120, 40), color=NAVY, mode="RGB") -> Image.Image:
     return Image.new(mode, size, color if mode == "RGB" else (*color, 255))
 
 
+def light_mark(size) -> Image.Image:
+    """A near-white mark with a transparent corner (so the stored logo keeps alpha): a "light" logo."""
+    image = Image.new("RGBA", size, (250, 250, 250, 255))
+    image.putpixel((0, size[1] // 2), (0, 0, 0, 0))
+    return image
+
+
 def put(client, team_id, who, raw: bytes, content_type: str | None = "image/png"):
     ratelimit.reset_all()
     headers = dict(bearer(who))
@@ -411,7 +418,18 @@ def test_opaque_logos_are_stored_as_rgb_and_transparent_ones_keep_alpha(world, c
 def test_tone_is_the_mean_luminance_of_the_visible_pixels(color, tone):
     canvas = Image.new("RGBA", (200, 60), (0, 0, 0, 0))  # transparent background never counts
     canvas.paste((*color, 255), (20, 10, 180, 50))
+    canvas.putpixel((100, 30), (0, 0, 0, 0))  # one transparent pixel inside the crop: the logo has alpha
     assert normalise(enc(canvas, "PNG")).tone == tone
+
+
+@pytest.mark.parametrize("fmt", ["PNG", "JPEG"])
+def test_an_opaque_logo_on_a_white_background_is_drawn_as_is(fmt):
+    """The usual client logo: a coloured mark on its own white background. It is not "light" (no navy frame)."""
+    canvas = Image.new("RGB", (300, 80), (255, 255, 255))
+    canvas.paste(NAVY, (10, 20, 50, 60))
+    result = normalise(enc(canvas, fmt))
+    assert result.has_alpha is False and result.tone == "dark"
+    assert normalise(enc(Image.new("RGB", (120, 40), (250, 250, 250)), fmt)).tone == "dark"
 
 
 # ------------------------------------------------------------------------------------------------ RBAC and audit
@@ -476,7 +494,7 @@ def test_a_second_upload_replaces_the_first(world, client):
     engine, ids = world
     team = ids["team"]
     first = put(client, team, ADMIN, enc(logo(color=(0, 0, 0)), "PNG")).json()
-    second = put(client, team, OWNER, enc(logo(size=(200, 50), color=(250, 250, 250)), "PNG")).json()
+    second = put(client, team, OWNER, enc(light_mark((200, 50)), "PNG")).json()
     assert first["sha256"] != second["sha256"] and second["tone"] == "light"
     row = stored(engine, team)
     assert (row.logo_sha256, row.logo_width, row.updated_by_user_id) == (second["sha256"], 200, ids[OWNER])
@@ -589,7 +607,7 @@ def test_teams_never_see_or_change_each_others_logo(world, client):
 
 def test_load_report_branding_applies_a_stored_logo(world, client):
     engine, ids = world
-    meta = put(client, ids["team"], ADMIN, enc(logo(color=(250, 250, 250)), "PNG")).json()
+    meta = put(client, ids["team"], ADMIN, enc(light_mark((120, 40)), "PNG")).json()
     with Session(engine) as s:
         loaded = branding.load_report_branding(s, ids["team"])
         assert branding.load_report_branding(s, ids["other"]).status == "none"

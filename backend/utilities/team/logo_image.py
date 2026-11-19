@@ -36,7 +36,10 @@ BOX = (800, 240)
 RETRY_BOX = (400, 120)
 MIN_SIDE = 16  # after scaling into BOX
 MAX_STORED_BYTES = 300 * 1024
-LIGHT_LUMINANCE = 0.8  # mean luminance of the visible pixels above this: a light logo (drawn on navy)
+# A logo with transparency whose visible pixels average above this luminance is "light": it would vanish on the
+# light cover, so the cover draws it on a navy chip. An opaque logo (any JPEG, a PNG exported with its background)
+# carries its own background and is always "dark": drawn as it is, never framed.
+LIGHT_LUMINANCE = 0.8
 
 _MAGIC_FORMAT = {"image/png": "PNG", "image/jpeg": "JPEG", "image/webp": "WEBP"}
 # warnings.catch_warnings swaps the process-wide filter list and is not thread-safe: two decodes entering and
@@ -228,5 +231,5 @@ def _normalise(rgba: Image.Image, format_in: str) -> NormalizedLogo:
                           "use fewer colours")
     luminance = ImageStat.Stat(scaled.convert("L"), mask=visible).mean[0] / 255  # 14
     return NormalizedLogo(png=png, sha256=hashlib.sha256(png).hexdigest(), width=stored.width, height=stored.height,
-                          size_bytes=len(png), tone="light" if luminance > LIGHT_LUMINANCE else "dark",
+                          size_bytes=len(png), tone="light" if has_alpha and luminance > LIGHT_LUMINANCE else "dark",
                           has_alpha=has_alpha, format_in=format_in)
