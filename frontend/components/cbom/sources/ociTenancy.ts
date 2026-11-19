@@ -7,11 +7,12 @@ export type OciMethod = "stack" | "console" | "own"
 export type OciKeyOrigin = "generated" | "uploaded"
 
 // Client-side shapes only; the server's rules (backend kinds.OciConfig) are the ones that decide.
-export const OCI_TENANCY_RE = /^ocid1\.tenancy\.oc1\.\.[a-z0-9]+$/
-export const OCI_USER_RE = /^ocid1\.user\.oc1\.\.[a-z0-9]+$/
-export const OCI_COMPARTMENT_RE = /^ocid1\.(compartment|tenancy)\.oc1\.\.[a-z0-9]+$/
+// the same patterns as the backend (kinds.py OciConfig), so the form refuses what the server refuses
+export const OCI_TENANCY_RE = /^ocid1\.tenancy\.oc1\.\.[a-z0-9]{20,80}$/
+export const OCI_USER_RE = /^ocid1\.user\.oc1\.\.[a-z0-9]{20,80}$/
+export const OCI_COMPARTMENT_RE = /^ocid1\.(compartment|tenancy)\.oc1\.\.[a-z0-9]{20,80}$/
 /** Region identifiers such as us-ashburn-1, eu-frankfurt-1, ap-mumbai-1, me-dubai-1, sa-saopaulo-1. */
-export const OCI_REGION_RE = /^[a-z]{2,}-[a-z]+-\d$/
+export const OCI_REGION_RE = /^[a-z]{2,4}-[a-z]{3,16}-[1-9]$/
 export const OCI_MAX_REGIONS = 60
 export const OCI_MAX_COMPARTMENTS = 200
 const MAX_KEY_BYTES = 64 * 1024

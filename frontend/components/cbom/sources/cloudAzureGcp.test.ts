@@ -24,6 +24,7 @@ const list = (name: string): string[] => {
 for (const words of [
   "Not available until the Azure tenant is connected: Save and validate must pass first",
   "Not available until the Google Cloud project is connected: Save and validate must pass first",
+  "Not available until the Oracle Cloud tenancy is connected: Save and validate must pass first",
 ]) {
   assert.ok(tab.includes(`"${words}"`), `the tab says: ${words}`)
   assert.ok(planning.includes(`"${words}"`), `the planner says: ${words}`)

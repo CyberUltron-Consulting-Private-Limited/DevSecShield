@@ -536,7 +536,7 @@ def _check_refs(session: Session, team_id: int, kind: str, cfg: Any) -> None:
     if ref is None:
         return
     target = session.get(CbomCollectionSource, ref)
-    wanted = ("aws_account", "azure_subscription", "gcp_project") if kind == "kubernetes" else ("aws_account",)
+    wanted = ("aws_account", "azure_subscription", "gcp_project", "oci_tenancy") if kind == "kubernetes" else ("aws_account",)
     if target is None or target.team_id != team_id or target.kind not in wanted:
         raise HTTPException(status_code=400, detail="The linked cloud account was not found in this team")
 
