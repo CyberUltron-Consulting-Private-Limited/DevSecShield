@@ -33,6 +33,8 @@ Rules this module keeps (enforced by the T-1 tests and the T-NOLLM guards):
 
 from __future__ import annotations
 
+from typing import Any
+
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import date, datetime, timezone
@@ -723,9 +725,9 @@ def build_body(view: TeamCbomView, styles: Styles, width: float) -> list[Flowabl
     return story
 
 
-def build_pdf(view: TeamCbomView) -> bytes:
+def build_pdf(view: TeamCbomView, *, ctx: Any = None) -> bytes:
     """Render deliverable #1 for ``view`` and return the PDF bytes (pure, deterministic)."""
-    return build_document(
+    return build_document(ctx=ctx, 
         view=view,
         number=DELIVERABLE_NUMBER,
         report_key=REPORT_KEY,

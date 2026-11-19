@@ -17,7 +17,9 @@ from backend.utilities.dashboard.aibom_license import (
     resolve_aibom_license,
 )
 from backend.utilities.dashboard.aibom_provider import resolve_aibom_provider
+from backend.utilities.pdf.report_context import ReportContext, details_note, join_parts
 from backend.utilities.pdf.report_branding import (
+    append_report_masthead,
     append_bom_compliance_sections,
     append_executive_summary,
     append_findings_catalog,
@@ -76,7 +78,7 @@ def _normalize_results(scan_results: Union[list, dict]) -> List[dict]:
     return []
 
 
-def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = None) -> str:
+def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = None, *, ctx: Optional[ReportContext] = None) -> str:
     """
     Generate an AI-BOM scan results PDF.
 
@@ -153,8 +155,26 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         ("Average risk score (0–10)", f"{avg_risk:.1f}"),
         ("Report generated", datetime.now().strftime("%B %d, %Y at %I:%M %p")),
     ]
-    append_executive_summary(
-        story,
+    ctx = ctx or ReportContext()
+    impact_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+    sorted_assets = sorted(
+        assets,
+        key=lambda v: (
+            impact_order.get((v.get("impact") or "low").strip().lower(), 4),
+            (_asset_name(v) or "").lower(),
+        ),
+    )
+    # Stored rows (and statuses) follow the unsorted results list.
+    raw_pos = {id(row): i for i, row in enumerate(assets)}
+    shown = ctx.select(sorted_assets, lambda v: count_label(v.get("impact") or "Unknown"),
+                       lambda _i, v: raw_pos.get(id(v)))
+
+    summary: List[Any] = []
+    if not ctx.has("summary"):
+        append_report_masthead(summary, report_key="ai_bom", project_name="AI BOM Findings", styles=styles, ctx=ctx)
+    else:
+      append_executive_summary(
+        summary,
         report_key="ai_bom",
         overview_rows=overview,
         severity_counts=by_impact,
@@ -168,20 +188,12 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
             ("Report generated", datetime.now().strftime("%b %d, %Y · %I:%M %p")),
             ("Unlicensed", str(unlicensed)),
         ],
-    )
-    story.append(PageBreak())
+        ctx=ctx,
+      )
 
-    impact_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
-    sorted_assets = sorted(
-        assets,
-        key=lambda v: (
-            impact_order.get((v.get("impact") or "low").strip().lower(), 4),
-            (_asset_name(v) or "").lower(),
-        ),
-    )
-
+    catalog_part: List[Any] = []
     catalog: List[List[Any]] = []
-    for idx, v in enumerate(sorted_assets, 1):
+    for idx, v in shown if ctx.has("catalog") else ():
         title = v.get("title") or _asset_name(v) or f"Finding #{idx}"
         impact = count_label(v.get("impact") or "Unknown")
         location = finding_location(v)
@@ -193,29 +205,33 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                 Paragraph(escape_html(location), styles["mono_cell"]),
             ]
         )
-    append_findings_catalog(story, catalog_rows=catalog, styles=styles)
-    story.append(PageBreak())
+    if ctx.has("catalog"):
+        append_findings_catalog(catalog_part, catalog_rows=catalog, styles=styles, ctx=ctx)
 
-    story.append(Paragraph("Detailed Findings", styles["title"]))
-    story.append(
-        Paragraph(
-            "Each card includes asset metadata, location, evidence, and remediation.",
-            styles["muted"],
+    details: List[Any] = []
+    if ctx.has("details"):
+        details.append(Paragraph("Detailed Findings", styles["title"]))
+        details.append(
+            Paragraph(
+                details_note(ctx, "Each card includes asset metadata, location, evidence, and remediation."),
+                styles["muted"],
+            )
         )
-    )
-    story.append(Spacer(1, 0.1 * inch))
+        details.append(Spacer(1, 0.1 * inch))
 
-    if total == 0:
-        story.append(Paragraph("No AI assets were detected.", styles["body"]))
+    if not ctx.has("details"):
+        pass
+    elif not shown:
+        details.append(Paragraph(escape_html(ctx.empty_text("No AI assets were detected.")), styles["body"]))
     else:
-        for idx, v in enumerate(sorted_assets, 1):
+        for idx, v in shown:
             title = v.get("title") or _asset_name(v) or f"Finding #{idx}"
             impact = count_label(v.get("impact") or "Unknown")
             standards: List[List[str]] = []
             standards.extend(mapping_rows(v.get("owasp_top_10"), label="OWASP Top 10"))
             standards.extend(mapping_rows(v.get("owasp_top_10_llm"), label="OWASP Top 10 LLM"))
             standards.extend(mapping_rows(v.get("compliance_controls"), label="Compliance"))
-            story.append(
+            details.append(
                 build_finding_section(
                     index=idx,
                     title=str(title),
@@ -236,16 +252,19 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                     recommended_fix=str(v.get("suggested_fix") or ""),
                     standards_rows=standards or None,
                     styles=styles,
+                    ctx=ctx,
                 )
             )
 
-    appendix_payload = raw if raw else (scan_results if isinstance(scan_results, dict) else {})
-    append_bom_compliance_sections(story, appendix_payload, styles)
+    join_parts(story, [summary, catalog_part, details], PageBreak)
+    if ctx.has("compliance"):
+        appendix_payload = raw if raw else (scan_results if isinstance(scan_results, dict) else {})
+        append_bom_compliance_sections(story, appendix_payload, styles)
 
     doc.build(
         story,
-        onFirstPage=make_cover_callback("ai_bom"),
-        onLaterPages=make_footer_callback("ai_bom"),
+        onFirstPage=make_cover_callback("ai_bom", ctx),
+        onLaterPages=make_footer_callback("ai_bom", ctx),
     )
     return output_path
 

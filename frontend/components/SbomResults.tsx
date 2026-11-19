@@ -56,7 +56,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { getSBOMExportResults, updateScan, createTicket, toggleFindingState, postCertInAttestation, postCertInSign, getCertInVex, getCertInEvidencePack, type SbomScanDashboardData, type SbomFinding, type SbomScanMetadata, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
+import { updateScan, createTicket, toggleFindingState, postCertInAttestation, postCertInSign, getCertInVex, getCertInEvidencePack, type SbomScanDashboardData, type SbomFinding, type SbomScanMetadata, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
 import { filterFindingsByRelatedRefs } from "@/utils/relatedFindingMatch";
 import { overlayBomCompliance } from "@/utils/overlayBomCompliance";
@@ -83,6 +83,7 @@ import {
 } from "recharts";
 import { BarChart3, TrendingUp, Search, Filter, Check, X, ChevronDown } from "lucide-react";
 import { toast } from "@/utils/toast";
+import { useExportPdf } from "@/components/reports/ExportPdfDialog";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
 import { ComplianceCoverage, type Compliance } from "@/components/ai-bom/AiBomVisualizations";
@@ -1680,29 +1681,16 @@ export default function SbomResults({ data, conversationId, teamId, dashboard, f
   const searchParams = useSearchParams();
   const origin = searchParams.get("origin");
 
-  const exportMutation = useMutation({
-    mutationFn: () => {
-      const tid = teamId ? parseInt(teamId, 10) : NaN;
-      if (conversationId == null || Number.isNaN(tid)) throw new Error("Missing team or scan");
-      // this page says the outcome, once (#27): the helper's own toasts are off
-      return getSBOMExportResults(tid, conversationId, { toast: false });
-    },
-    onSuccess: (blob) => {
-      const url = URL.createObjectURL(new Blob([blob], { type: "application/pdf" }));
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `sbom_sca_scan_${conversationId}_report.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success("SCA + SBOM report downloaded");
-    },
-    onError: (err) => {
-      showErrorToast(err, "Failed to download scan report");
-    },
+  // The PDF report: its options in a dialog that shows a refused build itself and says the outcome once
+  // (components/reports/ExportPdfDialog.tsx). The file keeps its name.
+  const pdf = useExportPdf({
+    teamId: teamId ? parseInt(teamId, 10) : 0,
+    target: { family: "scan", type: "sbom_sca", scanId: conversationId ?? 0 },
+    fileName: `sbom_sca_scan_${conversationId}_report.pdf`,
+    successText: "SCA + SBOM report downloaded",
   });
-
-  const handleDownloadReport = () => exportMutation.mutate();
-  const isExporting = exportMutation.isPending;
+  const handleDownloadReport = pdf.open;
+  const isExporting = pdf.pending;
 
   const hasFindings = findings && findings.length > 0;
   const hasData = data != null && (!Array.isArray(data) || data.length > 0);
@@ -1757,20 +1745,23 @@ export default function SbomResults({ data, conversationId, teamId, dashboard, f
   const vulnerabilities = (Array.isArray(data) ? data : []).filter((row) => !(row as { inventory_only?: unknown } | null)?.inventory_only) as SbomAgentVulnerability[]; // packages with no known vulnerability are the bill of materials, not findings (#46)
 
   return (
-    <SbomResultsView
-      vulnerabilities={vulnerabilities}
-      findings={findings}
-      conversationId={conversationId}
-      teamId={teamId}
-      origin={origin}
-      router={router}
-      onDownloadReport={teamId && conversationId != null ? handleDownloadReport : undefined}
-      isExporting={isExporting}
-      dashboard={dashboard}
-      scanMetadata={scanMetadata}
-      integrationSettings={integrationSettings}
-      onIntegrationSettingsUpdated={onIntegrationSettingsUpdated}
-      onFindingsUpdated={onFindingsUpdated}
-    />
+    <>
+      <SbomResultsView
+        vulnerabilities={vulnerabilities}
+        findings={findings}
+        conversationId={conversationId}
+        teamId={teamId}
+        origin={origin}
+        router={router}
+        onDownloadReport={teamId && conversationId != null ? handleDownloadReport : undefined}
+        isExporting={isExporting}
+        dashboard={dashboard}
+        scanMetadata={scanMetadata}
+        integrationSettings={integrationSettings}
+        onIntegrationSettingsUpdated={onIntegrationSettingsUpdated}
+        onFindingsUpdated={onFindingsUpdated}
+      />
+      {pdf.dialog}
+    </>
   );
 }

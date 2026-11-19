@@ -218,6 +218,8 @@ def _policy(path: Path) -> tuple[set[str], tuple[str, ...]]:
             "backend.utilities.ratelimit",
             "backend.utilities.team",
             "backend.utilities.rbac",  # F4: the route's access policy (token, membership, role; no AI)
+            # the team's report logo (PDF reports plan v2, section 5): one SELECT, no network (guarded below)
+            "backend.utilities.team.branding",
         )
     return roots, backend
 
@@ -397,6 +399,36 @@ def test_router_with_the_real_auth_chain_only_adds_the_known_exception_set():
     assert not (set(result["forbidden"]) & _LLM_ONLY)
     assert result["ai_modules"] == []
     assert result["scans_router"] is False
+
+
+# The team report logo loader (utilities/team/branding.py): the deliverables router loads the logo through it, so it
+# is held to the same promise.  SQL only: the standard library, SQLAlchemy / SQLModel, its table and the branding type.
+_BRANDING = _BACKEND / "utilities" / "team" / "branding.py"
+_BRANDING_ROOTS = {*_STDLIB, "sqlalchemy", "sqlmodel", "backend"}
+_BRANDING_BACKEND = ("backend.branding_models", "backend.utilities.pdf.branding_input")
+
+
+def test_the_team_branding_module_passes_the_static_no_llm_guard():
+    source = _BRANDING.read_text(encoding="utf-8")
+    problems = static_violations(source, package=_package_of(_BRANDING), allowed_roots=_BRANDING_ROOTS,
+                                 allowed_backend=_BRANDING_BACKEND)
+    assert problems == [], problems
+    imported = {name.split(".")[0] for node in ast.walk(ast.parse(source)) for name, _ in _import_names(node, "")}
+    assert not imported & {"boto3", "botocore", "requests", "httpx", "socket", "subprocess", "importlib"}, imported
+
+
+def test_the_team_branding_module_pulls_in_nothing_forbidden():
+    result = _probe("import importlib\n" + _import_statements([_BRANDING]))
+    assert result["forbidden"] == []
+    assert result["ai_modules"] == []
+    assert result["scans_router"] is False
+
+
+def test_the_deliverables_router_may_import_the_team_branding_loader():
+    """The PDF routes (R3 among them) load the logo with ``load_report_branding``; the router's allow-list takes it."""
+    roots, backend = _policy(_ROUTERS / "cbom_deliverables.py")
+    snippet = "from backend.utilities.team.branding import load_report_branding\n"
+    assert static_violations(snippet, package="backend.routers", allowed_roots=roots, allowed_backend=backend) == []
 
 
 def test_closure_probe_control_sees_a_forbidden_import():

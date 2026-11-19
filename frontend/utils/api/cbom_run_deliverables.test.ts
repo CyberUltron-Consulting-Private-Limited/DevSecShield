@@ -2,6 +2,8 @@
  * CB-38 PR-8: a Sources run's VEX, signature, PDF report and evidence pack downloads hit the run routes and save the
  * server's bytes unchanged (the signature covers the exact bytes of the run CBOM JSON, so nothing may be re-serialised
  * on the way). A local HTTP server stands in for the API.
+ * Plan §7: VEX, Signature and Evidence pack stay one click; PDF Report opens the export dialog (family run), which builds
+ * it through downloadRunReport with the options that differ from the default and reads the report headers.
  * Run: npx --yes tsx utils/api/cbom_run_deliverables.test.ts
  */
 import assert from "node:assert/strict";
@@ -32,10 +34,26 @@ async function main() {
       });
       return;
     }
-    const kind = (req.url ?? "").split("/").pop() ?? "";
+    const kind = new URL(req.url ?? "", "http://x").pathname.split("/").pop() ?? "";
     if (!(kind in BODIES)) {
       res.writeHead(404, { "content-type": "application/json" });
       res.end('{"detail":"Run not found"}');
+      return;
+    }
+    if (kind === "report.pdf" && (req.url ?? "").includes("?")) {
+      const q = new URL(req.url ?? "", "http://x").searchParams;
+      if (q.get("label") === "restricted") {
+        res.writeHead(429, { "content-type": "application/json", "retry-after": "17" });
+        res.end(JSON.stringify({ detail: "Too many large reports are being built; try again shortly" }));
+        return;
+      }
+      if (q.has("statuses") || q.has("hide_evidence")) {
+        res.writeHead(422, { "content-type": "application/json" });
+        res.end(JSON.stringify({ detail: `${q.has("statuses") ? "statuses" : "hide_evidence"}: is not available for this report` }));
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/pdf", "x-report-findings": "12/40", "x-report-logo": "skipped" });
+      res.end(BODIES[kind]);
       return;
     }
     res.writeHead(200, { "content-type": "application/octet-stream" });
@@ -85,7 +103,8 @@ async function main() {
   };
 
   const { downloadCbomRunDeliverable, cbomRunDeliverablePath, cbomRunDeliverableFilename, getCbomRunSignature,
-          verifyCbomRunSignature } = await import("../backend_api");
+          verifyCbomRunSignature, downloadRunReport, ReportDownloadError } = await import("../backend_api");
+  const { DEFAULT_OPTIONS } = await import("../reportOptions");
   try {
     assert.equal(cbomRunDeliverablePath(7, 12, "vex"), "/7/cbom/sources/runs/12/vex");
     const expected = {
@@ -114,13 +133,40 @@ async function main() {
     assert.equal(posted[0].sig, "c2lnbmF0dXJl");
     assert.equal(posted[0].body, file, "the file is sent byte for byte");
 
+    // the run's PDF report with options: the run route's keys only, the server's bytes and its report headers
+    const report = await downloadRunReport(7, 12, { ...DEFAULT_OPTIONS, preset: "executive", sections: ["summary", "posture"], severities: ["critical", "high"], label: "internal" });
+    const reportUrl = new URL(seen.at(-1)!, "http://x");
+    assert.equal(reportUrl.pathname, "/7/cbom/sources/runs/12/report.pdf");
+    assert.deepEqual(Object.fromEntries(reportUrl.searchParams), { preset: "executive", severities: "critical,high", label: "internal" });
+    assert.equal(Buffer.from(await report.blob.arrayBuffer()).toString("utf8"), BODIES["report.pdf"]);
+    assert.deepEqual(report.meta, { shown: 12, total: 40, logo: "skipped" });
+    // defaults send no parameter: today's report
+    await downloadRunReport(7, 12, { ...DEFAULT_OPTIONS });
+    assert.equal(new URL(seen.at(-1)!, "http://x").search, "");
+    // a run never sends a key its route refuses (statuses, hide_evidence)
+    const kept = await downloadRunReport(7, 12, { ...DEFAULT_OPTIONS, statuses: ["fixed"], hide_evidence: true }).then(() => null, (e: unknown) => e);
+    assert.equal(kept, null);
+    assert.equal(new URL(seen.at(-1)!, "http://x").search, "", "no statuses or hide_evidence on a run");
+    // a refusal arrives with the server's words (read back from the blob body), its status and Retry-After
+    const refused = await downloadRunReport(7, 12, { ...DEFAULT_OPTIONS, label: "restricted" }).then(() => null, (e: unknown) => e);
+    assert.ok(refused instanceof ReportDownloadError, "a ReportDownloadError");
+    assert.equal(refused.status, 429);
+    assert.equal(refused.detail, "Too many large reports are being built; try again shortly");
+    assert.equal(refused.message, refused.detail);
+    assert.equal(refused.retryAfter, 17);
+    assert.ok(refused.retryAt! > Date.now() + 15_000, "Download waits until then");
+
     // the menu offers the code page's four buttons, in its order, through this client
     const menu = readFileSync(path.join(process.cwd(), "components", "cbom", "results", "RunDeliverablesMenu.tsx"), "utf8");
     const labels = [...menu.matchAll(/label: "([^"]+)"/g)].map((m) => m[1]);
     assert.deepEqual(labels, ["VEX", "Signature", "Evidence pack", "PDF Report"]);
     const codePage = readFileSync(path.join(process.cwd(), "components", "CbomResults.tsx"), "utf8");
     for (const label of labels) assert.ok(codePage.includes(label), `code page has a ${label} button`);
+    // VEX, Signature and Evidence pack: one click through this client; PDF Report: the export dialog (family run)
     assert.match(menu, /downloadCbomRunDeliverable\(teamId, runId, kind\)/);
+    assert.match(menu, /onClick=\{\(\) => \(report \? pdf\.open\(\) : void download\(kind, done\)\)\}/);
+    assert.match(menu, /target: \{ family: "run", runId \},\n\s*fileName: cbomRunDeliverableFilename\(runId, "report\.pdf"\),/);
+    assert.ok(menu.includes("{pdf.dialog}"));
   } finally {
     server.close();
   }

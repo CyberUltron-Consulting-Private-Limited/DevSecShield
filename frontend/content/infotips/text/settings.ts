@@ -74,6 +74,26 @@ const TEXT = {
     example: "Delete a team created for a finished project.",
   },
 
+  // ────────────────────────────────────────────────────────────── Report branding (components/settings/ReportBrandingCard.tsx)
+  // src: backend/utilities/pdf/branding_input.py:1-6, backend/utilities/pdf/branding_input.py:18-25, frontend/components/settings/ReportBrandingCard.tsx:48-53 — one logo per team; every PDF route draws it; admins manage it
+  "settings.branding": {
+    what: "Your client's logo, drawn next to the ZeroShield logo on the cover and in every page header of this team's PDF reports (scan reports, CBOM Sources run reports and the team-wide deliverables). One logo per team; only admins can change it.",
+    why: "A report that carries the client's own logo is ready to hand over without editing the PDF.",
+    example: "Acme Bank's logo on every report of the Acme team.",
+  },
+  // src: frontend/utils/teamBranding.ts:7-11, frontend/utils/teamBranding.ts:36-42, backend/utilities/pdf/branding_input.py:43-58 — PNG, JPEG or WebP by its bytes, 2 MB; a logo that cannot be read is skipped
+  "settings.branding.logo": {
+    what: "Uploads the logo: PNG, JPEG or WebP (recognised from the file's contents, not its name), up to 2 MB. Replace swaps it for a new one; Remove takes it off future reports. If a stored logo cannot be read, reports are still built, without it.",
+    why: "A clear, wide logo on a transparent background stays sharp at header size.",
+    example: "acme-logo.png, 800 x 240 px with a transparent background.",
+  },
+  // src: backend/utilities/pdf/branding_input.py:24, frontend/components/settings/ReportBrandingCard.tsx:150-154 — tone decides the chip the logo sits on
+  "settings.branding.preview": {
+    what: "How the logo sits in a page header (navy bar) and on the cover (white masthead, with Prepared for under it). A dark logo gets a white chip on the navy bar; a light logo is drawn straight on navy and gets a navy chip on the white cover.",
+    why: "A logo that disappears against its background makes the report look broken; check it before sending reports.",
+    example: "A white logo shows the light-logo hint below the preview.",
+  },
+
   // ────────────────────────────────────────────────────────────── Per-scan ticketing (components/ticketing-integrations-settings.tsx)
   // src: backend/utilities/db/schemas.py:39-45, backend/utilities/integrations/jira.py:196 — project used for issues created from this scan
   "ticketing.jira_project": {

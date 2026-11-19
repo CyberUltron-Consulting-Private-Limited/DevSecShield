@@ -53,7 +53,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useRouter, useSearchParams, usePathname, useParams } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { getExportResults, updateScan, createTicket, toggleFindingState, type SastDashboardData, type SastScanMetadata, type SastFinding, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
+import { updateScan, createTicket, toggleFindingState, type SastDashboardData, type SastScanMetadata, type SastFinding, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
 import { OWASP_KEY_TO_LABEL, COMPLIANCE_KEY_TO_LABEL, OWASP_COLORS } from "@/lib/owasp-compliance-labels";
 import {
@@ -79,6 +79,7 @@ import {
 } from "recharts";
 import { PieChart, BarChart3, TrendingUp, ChevronDown, MoreVertical, Search, Filter, Check, X, Shield } from "lucide-react";
 import { toast } from "@/utils/toast";
+import { useExportPdf } from "@/components/reports/ExportPdfDialog";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
 import { Progress } from "@/components/ui/progress";
@@ -1470,30 +1471,16 @@ export default function SASTResults({ conversationId, dashboard, findings, teamI
   const params = useParams();
   const teamId = teamIdProp ?? (params?.team_id as string | undefined);
 
-  const exportMutation = useMutation({
-    mutationFn: () => {
-      const tid = teamId ? parseInt(teamId, 10) : NaN;
-      if (conversationId == null || Number.isNaN(tid)) throw new Error("Missing team or scan");
-      // this page says the outcome, once (#27): the helper's own toasts are off
-      return getExportResults(tid, conversationId, { toast: false });
-    },
-    onSuccess: (data) => {
-      const blob = new Blob([data], { type: "application/pdf" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `sast_scan_${conversationId}_report.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success("SAST report downloaded");
-    },
-    onError: (err) => {
-      showErrorToast(err, "Failed to download scan report");
-    },
+  // The PDF report: its options in a dialog that shows a refused build itself and says the outcome once
+  // (components/reports/ExportPdfDialog.tsx). The file keeps its name.
+  const pdf = useExportPdf({
+    teamId: teamId ? parseInt(teamId, 10) : 0,
+    target: { family: "scan", type: "sast", scanId: conversationId ?? 0 },
+    fileName: `sast_scan_${conversationId}_report.pdf`,
+    successText: "SAST report downloaded",
   });
-
-  const handleDownloadReport = () => exportMutation.mutate();
-  const isExporting = exportMutation.isPending;
+  const handleDownloadReport = pdf.open;
+  const isExporting = pdf.pending;
 
   const hasFindings = Array.isArray(findings) && findings.length > 0;
   const hasDashboard = dashboard != null;
@@ -1543,21 +1530,24 @@ export default function SASTResults({ conversationId, dashboard, findings, teamI
   }
 
   return (
-    <SASTResultsAgentView
-      conversationId={conversationId}
-      teamId={teamId}
-      isCicdContext={isCicdContext}
-      integrationId={integrationId}
-      origin={origin}
-      router={router}
-      onDownloadReport={teamId && conversationId != null ? handleDownloadReport : undefined}
-      isExporting={isExporting}
-      dashboard={dashboard}
-      scanMetadata={scanMetadata}
-      findings={findings}
-      integrationSettings={integrationSettings}
-      onIntegrationSettingsUpdated={onIntegrationSettingsUpdated}
-      onFindingsUpdated={onFindingsUpdated}
-    />
+    <>
+      <SASTResultsAgentView
+        conversationId={conversationId}
+        teamId={teamId}
+        isCicdContext={isCicdContext}
+        integrationId={integrationId}
+        origin={origin}
+        router={router}
+        onDownloadReport={teamId && conversationId != null ? handleDownloadReport : undefined}
+        isExporting={isExporting}
+        dashboard={dashboard}
+        scanMetadata={scanMetadata}
+        findings={findings}
+        integrationSettings={integrationSettings}
+        onIntegrationSettingsUpdated={onIntegrationSettingsUpdated}
+        onFindingsUpdated={onFindingsUpdated}
+      />
+      {pdf.dialog}
+    </>
   );
 }

@@ -1,12 +1,12 @@
 "use client";
 
 import { useParams, usePathname } from "next/navigation";
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { toast } from "@/utils/toast";
+import { useExportPdf } from "@/components/reports/ExportPdfDialog";
 import LLMResults from "@/components/LLMResults";
-import { getLLMConversationMessages, getLLMExportResults, type LLMDashboardData } from "@/utils/backend_api";
-import { showErrorToast } from "@/utils/error-handler";
+import { getLLMConversationMessages, type LLMDashboardData } from "@/utils/backend_api";
 
 export default function LLMResultsPage() {
   const params = useParams();
@@ -14,6 +14,15 @@ export default function LLMResultsPage() {
   const queryClient = useQueryClient();
   const team_id = parseInt((params?.team_id as string) ?? "0", 10);
   const conversation_id = parseInt((params?.conversation_id as string) ?? pathname?.split("/").filter(Boolean)[2] ?? "0", 10);
+
+  // The PDF report: its options in a dialog that shows a refused build itself and says the outcome once
+  // (components/reports/ExportPdfDialog.tsx). The file keeps its name.
+  const pdf = useExportPdf({
+    teamId: team_id,
+    target: { family: "scan", type: "llm", scanId: conversation_id },
+    fileName: `llm_scan_${conversation_id}_report.pdf`,
+    successText: "LLM report downloaded",
+  });
 
   if (!team_id || !conversation_id) {
     toast.error("Scan id not found");
@@ -30,21 +39,6 @@ export default function LLMResultsPage() {
     queryKey: ['llm-conversation-data', team_id, conversation_id],
     queryFn: getLLMConversationMessages,
     enabled: team_id > 0 && conversation_id > 0,
-  });
-
-  const exportMutation = useMutation({
-    // this page says the outcome, once (#27): the helper's own toasts are off
-    mutationFn: () => getLLMExportResults(team_id, conversation_id, { toast: false }),
-    onSuccess: (blob) => {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `llm_scan_${conversation_id}_report.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success("LLM report downloaded");
-    },
-    onError: (err) => showErrorToast(err, "Failed to download scan report"),
   });
 
   if (query.isError) {
@@ -94,9 +88,10 @@ export default function LLMResultsPage() {
         onIntegrationSettingsUpdated={() => queryClient.invalidateQueries({ queryKey: ['llm-conversation-data', team_id, conversation_id] })}
         onFindingsUpdated={() => queryClient.invalidateQueries({ queryKey: ['llm-conversation-data', team_id, conversation_id] })}
         onRefresh={() => queryClient.invalidateQueries({ queryKey: ['llm-conversation-data', team_id, conversation_id] })}
-        onDownloadReport={() => exportMutation.mutate()}
-        isExporting={exportMutation.isPending}
+        onDownloadReport={pdf.open}
+        isExporting={pdf.pending}
       />
+      {pdf.dialog}
     </div>
   );
 }

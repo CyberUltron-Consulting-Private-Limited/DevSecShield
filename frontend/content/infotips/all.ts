@@ -21,6 +21,7 @@ import cbsrcServers from "./text/cbsrc-servers";
 import cbsrcSshCa from "./text/cbsrc-ssh-ca";
 import cbsrcWorkloads from "./text/cbsrc-workloads";
 import dast from "./text/dast";
+import exportTips from "./text/export";
 import fleet from "./text/fleet";
 import iac from "./text/iac";
 import integrations from "./text/integrations";
@@ -63,6 +64,7 @@ export const AREA_TEXT: Record<TipArea, TipAreaText> = {
   "cbsrc-ssh-ca": cbsrcSshCa,
   fleet,
   repos,
+  export: exportTips,
 };
 
 /** Every tip, label and text, in the order of labels.ts. An id whose text is missing has empty fields (the test fails it). */

@@ -26,11 +26,12 @@ bytes, so there is no temporary file to clean up.
 """
 from __future__ import annotations
 
+import functools
 import time
 from datetime import datetime, timezone
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Path
+from fastapi import APIRouter, Depends, Header, HTTPException, Path, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 from rich.console import Console
@@ -49,6 +50,10 @@ from backend.utilities.pdf.cbom_deliverables import (
     summarize_heads,
 )
 from backend.utilities.team import check_if_user_is_in_team
+from backend.utilities.pdf.branding_input import ReportBranding
+from backend.utilities.pdf.report_context import ReportContext
+from backend.utilities.pdf.report_http import options_from_request
+from backend.utilities.team.branding import load_report_branding
 
 router = APIRouter(tags=["cbom-deliverables"])
 access = Access(lambda: get_db())  # route policies (utilities/rbac), bound to this module's get_db (tests replace it)
@@ -192,6 +197,11 @@ async def list_cbom_deliverables(
     return JSONResponse(manifest, headers=_PRIVATE)
 
 
+def _branding(engine: Any, team_id: int) -> ReportBranding:
+    with Session(engine) as session:  # a session of its own: a failed read never touches another transaction
+        return load_report_branding(session, team_id)
+
+
 def _posture_header(view: Any) -> str:
     """``assessed``, ``mixed``, ``not_assessed`` or ``none``."""
     state = getattr(getattr(view, "posture", None), "state", "none")
@@ -224,6 +234,7 @@ def _posture_header(view: Any) -> str:
 async def download_cbom_deliverable(
     team_id: TeamId,
     slug: str,
+    request: Request,
     Authorization: Annotated[str | None, Header()] = None,
 ) -> Response:
     started = time.perf_counter()
@@ -232,8 +243,13 @@ async def download_cbom_deliverable(
         spec = DELIVERABLES.get(slug)
         if spec is None:
             raise HTTPException(status_code=404, detail=UNKNOWN_DELIVERABLE_DETAIL)
+        options = options_from_request(request.query_params, "deliverable")
         view = await run_in_threadpool(load_team_cbom_view, engine, team_id, now=_utcnow())
-        pdf = await run_in_threadpool(spec.build, view)
+        ctx = ReportContext(options=options, branding=await run_in_threadpool(_branding, engine, team_id))
+        if options.is_default and not ctx.branding.applied:
+            pdf = await run_in_threadpool(spec.build, view)  # today's document, byte for byte
+        else:
+            pdf = await run_in_threadpool(functools.partial(spec.build, view, ctx=ctx))
         if not isinstance(pdf, bytes) or not pdf.startswith(b"%PDF-"):
             raise ValueError("the renderer did not return a PDF")
     except HTTPException:
@@ -250,11 +266,15 @@ async def download_cbom_deliverable(
         "X-Cbom-Fidelity": view.fidelity_summary,
         "X-Cbom-Fingerprint": view.fingerprint,
         "X-Cbom-Posture": _posture_header(view),
+        "X-Report-Logo": ctx.branding.status,
     }
+    if ctx.branding.applied:
+        headers["X-Cbom-Logo-Sha256"] = ctx.branding.sha256
     elapsed_ms = int((time.perf_counter() - started) * 1000)
     console.print(
         f"cbom deliverable team={team_id} slug={spec.slug} scans={view.included} "
-        f"sources={len(view.sources)} bytes={len(pdf)} ms={elapsed_ms}",
+        f"sources={len(view.sources)} bytes={len(pdf)} ms={elapsed_ms} logo={ctx.branding.status} "
+        f"label={options.label} prepared_for_set={int(options.prepared_for is not None)}",
         markup=False,
         highlight=False,
         soft_wrap=True,  # one log line per request, never wrapped, so it stays greppable

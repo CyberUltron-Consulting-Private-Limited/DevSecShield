@@ -87,8 +87,15 @@ try {
   // the scan page's JSON button goes through this download, never a client-side rebuild of cbom_json
   const page = readFileSync(path.join(process.cwd(), "components", "CbomResults.tsx"), "utf8");
   assert.ok(!page.includes("overlayBomCompliance"), "CbomResults must not rebuild the CycloneDX JSON in the browser");
-  const handler = page.slice(page.indexOf("const handleDownloadCBOMJson"), page.indexOf("const downloadBlob"));
+  // the handler alone: from its declaration to the end of its body (the page no longer has a local downloadBlob after
+  // it, which was the old end anchor: a missing anchor would have sliced to the end of the file)
+  const start = page.indexOf("const handleDownloadCBOMJson");
+  assert.ok(start > 0, "CbomResults has handleDownloadCBOMJson");
+  const end = page.indexOf("\n  };\n", start);
+  assert.ok(end > start && end - start < 600, "the handler's body is found");
+  const handler = page.slice(start, end);
   assert.match(handler, /downloadCbomScanBom\([^)]*"json"\)/);
+  assert.ok(!/JSON\.stringify|new Blob/.test(handler), "the handler saves the server's file, it builds none");
 } finally {
   server.close();
 }

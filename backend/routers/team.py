@@ -14,7 +14,8 @@ from backend.utilities.team.membership import add_emails_to_team
 from backend.utilities.team import invitations
 from backend.utilities.team import roles as team_roles
 from backend.new_models import TeamInvitation
-from sqlalchemy import func, or_
+from backend.branding_models import TeamBranding
+from sqlalchemy import delete as sa_delete, func, or_
 from backend.utilities.dashboard.team import generate_team_dashboard_data , generate_team_list_dashboard_data
 from backend.utilities.db.encryption import prepare_secret_for_storage, is_secret_placeholder
 from backend.utilities.rbac import audit
@@ -476,6 +477,8 @@ async def delete_team(
             team = session.exec(select(Team).where(Team.id == team_id)).first()
             if team == None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+            # the report logo goes with the team in this transaction (the foreign key cascades too, where enforced)
+            session.exec(sa_delete(TeamBranding).where(TeamBranding.team_id == team_id))
             audit.record(session, action="team.delete", team_id=team_id, object_type="team", object_id=team_id,
                          ip=meta["ip"], user_agent=meta["user_agent"],
                          details={"name": (team.name or "")[:100], "scans_deleted": len(scan_ids_list)},

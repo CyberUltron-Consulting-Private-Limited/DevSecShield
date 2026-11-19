@@ -39,6 +39,8 @@ language-model calls, no wall clock (every date comes from the view); Python 3.1
 
 from __future__ import annotations
 
+from typing import Any
+
 import itertools
 import re
 from collections import Counter
@@ -631,13 +633,13 @@ def build_body(
     return story
 
 
-def build_pdf(view: TeamCbomView, *, max_rows: int = MAX_ROWS) -> bytes:
+def build_pdf(view: TeamCbomView, *, max_rows: int = MAX_ROWS, ctx: Any = None) -> bytes:
     """Render the PQC Migration Roadmap of ``view`` as a landscape PDF (bytes)."""
 
     def body(styles: Styles, width: float) -> list[Flowable]:
         return build_body(view, styles, width, max_rows=max_rows)
 
-    return build_document(
+    return build_document(ctx=ctx, 
         view=view,
         number=NUMBER,
         report_key=REPORT_KEY,

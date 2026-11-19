@@ -3,6 +3,7 @@
 
 import api from "@/utils/interceptors"
 import { showErrorToast } from "@/utils/error-handler"
+import { saveBlob } from "@/utils/download"
 import type { CbomAssetDetail, CbomRunPosture } from "@/utils/backend_api"
 import type { AgilityDetail, AgilityPosture, QExplain, QGradeFields, QPosture } from "@/components/cbom/grade/model"
 import type { StandardRow } from "@/components/cbom/standards/model"
@@ -61,17 +62,6 @@ export type CbomAssetDetailWithExposure = Omit<CbomAssetDetail, "library"> & {
   agility?: AgilityDetail | null  // CB-24
   standards?: StandardRow[]  // CB-16
 } & QGradeFields
-
-function saveBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement("a")
-  link.href = url
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
-}
 
 /** The code scan's CycloneDX document. XML is the same document written as CycloneDX 1.6 XML; the BOM signature
  * covers the JSON form. */

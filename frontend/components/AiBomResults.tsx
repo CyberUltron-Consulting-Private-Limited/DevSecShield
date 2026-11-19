@@ -58,7 +58,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { getAIBOMExportResults, updateScan, toggleFindingState, createTicket, postCertInAttestation, postCertInSign, getCertInVex, getCertInEvidencePack, type AiBomScanDashboardData, type AiBomFinding, type AiBomScanMetadata, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
+import { updateScan, toggleFindingState, createTicket, postCertInAttestation, postCertInSign, getCertInVex, getCertInEvidencePack, type AiBomScanDashboardData, type AiBomFinding, type AiBomScanMetadata, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
 import { overlayBomCompliance } from "@/utils/overlayBomCompliance";
 import {
@@ -106,6 +106,7 @@ import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRoll
 import { CertInLanePosture } from "@/components/certin/CertInLanePosture";
 import { type CertInRollupData } from "@/components/certin/certinShared";
 import { toast } from "@/utils/toast";
+import { useExportPdf } from "@/components/reports/ExportPdfDialog";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
 import { criticalFixedPct } from "@/components/cbom/remediationKpis";
@@ -410,25 +411,12 @@ export default function AiBomResults({
     onError: (err) => showErrorToast(err, "Error updating finding status"),
   });
 
-  const exportMutation = useMutation({
-    mutationFn: () => {
-      if (Number.isNaN(tid) || Number.isNaN(sid) || !tid || !sid) {
-        throw new Error("Missing or invalid team or scan id");
-      }
-      // this page says the outcome, once (#27): the helper's own toasts are off
-      return getAIBOMExportResults(tid, sid, { toast: false });
-    },
-    onSuccess: (result) => {
-      const blob = result instanceof Blob ? result : new Blob([result]);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `ai-bom-report-${scan_id}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success("Report downloaded");
-    },
-    onError: (err) => showErrorToast(err, "Error exporting PDF"),
+  // The PDF report: its options in a dialog that shows a refused build itself and says the outcome once
+  // (components/reports/ExportPdfDialog.tsx). The file keeps its name.
+  const pdf = useExportPdf({
+    teamId: Number.isNaN(tid) ? 0 : tid,
+    target: { family: "scan", type: "ai_bom", scanId: Number.isNaN(sid) ? 0 : sid },
+    fileName: `ai-bom-report-${scan_id}.pdf`,
   });
 
   const handleDownloadAiBomJson = () => {
@@ -732,16 +720,17 @@ export default function AiBomResults({
           <Button
             variant="outline"
             className="cursor-pointer"
-            onClick={() => exportMutation.mutate()}
-            disabled={exportMutation.isPending}
+            onClick={pdf.open}
+            disabled={pdf.pending}
           >
-            {exportMutation.isPending ? (
+            {pdf.pending ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : (
               <Download className="h-4 w-4 mr-2" />
             )}
-            {exportMutation.isPending ? "Downloading..." : "PDF Report"}
+            {pdf.pending ? "Downloading..." : "PDF Report"}
           </Button>
+          {pdf.dialog}
           <Button
             variant="default"
             className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white"

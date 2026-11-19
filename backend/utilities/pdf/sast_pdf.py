@@ -28,7 +28,9 @@ from backend.utilities.pdf.report_branding import (
     mapping_rows,
     relative_scan_path,
     split_scan_payload,
+    append_report_masthead,
 )
+from backend.utilities.pdf.report_context import ReportContext, details_note, join_parts
 
 
 def get_relative_path(file_path: str) -> str:
@@ -61,7 +63,9 @@ def _build_agent_pdf_story(
     story: List[Any],
     components: List[Dict[str, Any]],
     duration_seconds: Optional[float] = None,
+    ctx: Optional[ReportContext] = None,
 ) -> None:
+    ctx = ctx or ReportContext()
     styles = get_report_styles()
     flat_vulns: List[Tuple[str, Dict[str, Any]]] = []
     for comp in components:
@@ -74,6 +78,8 @@ def _build_agent_pdf_story(
     for _, v in flat_vulns:
         imp = count_label(v.get("impact") or "Unknown")
         by_impact[imp] = by_impact.get(imp, 0) + 1
+    # Status rows are stored in this same flattened order (finding_rows.mongo_rows).
+    shown = ctx.select(flat_vulns, lambda cv: count_label(cv[1].get("impact") or "Unknown"))
 
     overview = [
         ("Scan type", "Static Application Security Testing (SAST)"),
@@ -92,85 +98,94 @@ def _build_agent_pdf_story(
                 scan_time = str(comp["scan_duration"])
                 break
 
-    append_executive_summary(
-        story,
-        report_key="sast",
-        overview_rows=overview,
-        severity_counts=by_impact,
-        styles=styles,
-        project_name=(
-            (components[0].get("logical_component_title") or "SAST Findings")
-            if components
-            else "SAST Findings"
-        ),
-        scan_time=scan_time,
-        meta_chips=[
-            ("Project", str(components[0].get("logical_component_title") or "Application") if components else "Application"),
-            ("Scan type", "SAST"),
-            ("Report generated", datetime.now().strftime("%b %d, %Y · %I:%M %p")),
-            ("Platform", "zeroshield.ai"),
-        ],
+    project = (
+        (components[0].get("logical_component_title") or "SAST Findings")
+        if components
+        else "SAST Findings"
     )
-    story.append(PageBreak())
-
-    catalog: List[List[Any]] = []
-    for idx, (comp_title, vuln) in enumerate(flat_vulns, 1):
-        title = vuln.get("title") or "Untitled issue"
-        impact = (vuln.get("impact") or "").strip() or "—"
-        location = finding_location(vuln)
-        if location == "—":
-            location = (comp_title or "—").strip() or "—"
-        catalog.append(
-            [
-                str(idx),
-                impact,
-                Paragraph(escape_html(title), styles["table_cell"]),
-                Paragraph(escape_html(location), styles["mono_cell"]),
-            ]
+    summary: List[Any] = []
+    if ctx.has("summary"):
+        append_executive_summary(
+            summary,
+            report_key="sast",
+            overview_rows=overview,
+            severity_counts=by_impact,
+            styles=styles,
+            project_name=project,
+            scan_time=scan_time,
+            meta_chips=[
+                ("Project", str(components[0].get("logical_component_title") or "Application") if components else "Application"),
+                ("Scan type", "SAST"),
+                ("Report generated", datetime.now().strftime("%b %d, %Y · %I:%M %p")),
+                ("Platform", "zeroshield.ai"),
+            ],
+            ctx=ctx,
         )
-    append_findings_catalog(story, catalog_rows=catalog, styles=styles)
-    story.append(PageBreak())
+    else:
+        append_report_masthead(summary, report_key="sast", project_name=project, styles=styles, ctx=ctx)
 
-    story.append(Paragraph("Detailed Findings", styles["title"]))
-    story.append(
-        Paragraph(
-            "Each card includes location, description, evidence, and remediation. Technical values use monospace.",
-            styles["muted"],
-        )
-    )
-    story.append(Spacer(1, 0.1 * inch))
+    catalog_part: List[Any] = []
+    if ctx.has("catalog"):
+        catalog: List[List[Any]] = []
+        for idx, (comp_title, vuln) in shown:
+            title = vuln.get("title") or "Untitled issue"
+            impact = (vuln.get("impact") or "").strip() or "—"
+            location = finding_location(vuln)
+            if location == "—":
+                location = (comp_title or "—").strip() or "—"
+            catalog.append(
+                [
+                    str(idx),
+                    impact,
+                    Paragraph(escape_html(title), styles["table_cell"]),
+                    Paragraph(escape_html(location), styles["mono_cell"]),
+                ]
+            )
+        append_findings_catalog(catalog_part, catalog_rows=catalog, styles=styles, ctx=ctx)
 
-    if total == 0:
-        story.append(Paragraph("No security findings were identified in this scan.", styles["body"]))
-        return
-
-    for idx, (comp_title, vuln) in enumerate(flat_vulns, 1):
-        title = vuln.get("title") or "Untitled issue"
-        impact = (vuln.get("impact") or "").strip() or "—"
-        story.append(
-            build_finding_section(
-                index=idx,
-                title=title,
-                severity=impact,
-                detail_rows=[
-                    ("Severity", impact),
-                    ("Where it was found", finding_location(vuln)),
-                    ("Application area", comp_title),
-                ],
-                description=(vuln.get("description") or "").strip(),
-                evidence=(vuln.get("snippet") or "").strip(),
-                recommended_fix=(vuln.get("suggested_fix") or "").strip(),
-                standards_rows=_standards_rows(vuln) or None,
-                styles=styles,
+    details: List[Any] = []
+    if ctx.has("details"):
+        details.append(Paragraph("Detailed Findings", styles["title"]))
+        details.append(
+            Paragraph(
+                details_note(ctx, "Each card includes location, description, evidence, and remediation. Technical values use monospace."),
+                styles["muted"],
             )
         )
+        details.append(Spacer(1, 0.1 * inch))
+        if not shown:
+            details.append(Paragraph(escape_html(ctx.empty_text("No security findings were identified in this scan.")), styles["body"]))
+        for idx, (comp_title, vuln) in shown:
+            title = vuln.get("title") or "Untitled issue"
+            impact = (vuln.get("impact") or "").strip() or "—"
+            details.append(
+                build_finding_section(
+                    index=idx,
+                    title=title,
+                    severity=impact,
+                    detail_rows=[
+                        ("Severity", impact),
+                        ("Where it was found", finding_location(vuln)),
+                        ("Application area", comp_title),
+                    ],
+                    description=(vuln.get("description") or "").strip(),
+                    evidence=(vuln.get("snippet") or "").strip(),
+                    recommended_fix=(vuln.get("suggested_fix") or "").strip(),
+                    standards_rows=_standards_rows(vuln) or None,
+                    styles=styles,
+                    ctx=ctx,
+                )
+            )
+    join_parts(story, [summary, catalog_part, details], PageBreak)
 
 
 def _build_semgrep_pdf_story(
     story: List[Any],
     scan_results: Dict[str, Any],
     duration_seconds: Optional[float] = None,
+    ctx: Optional[ReportContext] = None,
 ) -> None:
+    ctx = ctx or ReportContext()
     styles = get_report_styles()
     version = scan_results.get("version", "Unknown")
     results = scan_results.get("results", []) or []
@@ -196,6 +211,11 @@ def _build_semgrep_pdf_story(
         if file_path:
             unique_files.add(get_relative_path(file_path))
 
+    def _sev(result: Dict[str, Any]) -> str:
+        return count_label(result.get("severity") or (result.get("extra", {}) or {}).get("severity", "UNKNOWN"))
+
+    shown = ctx.select(results, _sev)
+
     overview = [
         ("Scan type", "Static Application Security Testing (SAST)"),
         ("Total issues found", str(total)),
@@ -206,18 +226,23 @@ def _build_semgrep_pdf_story(
         ("Engine version", str(version)),
         ("Report generated", datetime.now().strftime("%B %d, %Y at %I:%M %p")),
     ]
-    append_executive_summary(
-        story,
-        report_key="sast",
-        overview_rows=overview,
-        severity_counts=by_severity,
-        styles=styles,
-        scan_time=format_scan_duration(duration_seconds),
-    )
-    story.append(PageBreak())
+    summary: List[Any] = []
+    if ctx.has("summary"):
+        append_executive_summary(
+            summary,
+            report_key="sast",
+            overview_rows=overview,
+            severity_counts=by_severity,
+            styles=styles,
+            scan_time=format_scan_duration(duration_seconds),
+            ctx=ctx,
+        )
+    else:
+        append_report_masthead(summary, report_key="sast", project_name="SAST Findings", styles=styles, ctx=ctx)
 
+    catalog_part: List[Any] = []
     catalog: List[List[Any]] = []
-    for idx, result in enumerate(results, 1):
+    for idx, result in shown if ctx.has("catalog") else ():
         extra = result.get("extra", {}) or {}
         metadata = extra.get("metadata", {}) or {}
         check_id = result.get("check_id", "Unknown")
@@ -235,22 +260,26 @@ def _build_semgrep_pdf_story(
                 Paragraph(escape_html(loc), styles["mono_cell"]),
             ]
         )
-    append_findings_catalog(story, catalog_rows=catalog, styles=styles)
-    story.append(PageBreak())
+    if ctx.has("catalog"):
+        append_findings_catalog(catalog_part, catalog_rows=catalog, styles=styles, ctx=ctx)
 
-    story.append(Paragraph("Detailed Findings", styles["title"]))
-    story.append(
-        Paragraph(
-            "Each card includes location, explanation, code evidence, and related mappings.",
-            styles["muted"],
+    details: List[Any] = []
+    if ctx.has("details"):
+        details.append(Paragraph("Detailed Findings", styles["title"]))
+        details.append(
+            Paragraph(
+                details_note(ctx, "Each card includes location, explanation, code evidence, and related mappings."),
+                styles["muted"],
+            )
         )
-    )
-    story.append(Spacer(1, 0.1 * inch))
+        details.append(Spacer(1, 0.1 * inch))
 
-    if total == 0:
-        story.append(Paragraph("No security findings were identified in this scan.", styles["body"]))
+    if not ctx.has("details"):
+        pass
+    elif not shown:
+        details.append(Paragraph(escape_html(ctx.empty_text("No security findings were identified in this scan.")), styles["body"]))
     else:
-        for idx, result in enumerate(results, 1):
+        for idx, result in shown:
             check_id = result.get("check_id", "Unknown")
             check_name = check_id.split(".")[-1] if "." in check_id else check_id
             file_path = get_relative_path(result.get("path", "Unknown"))
@@ -282,7 +311,7 @@ def _build_semgrep_pdf_story(
             for ref in (metadata.get("references") or [])[:4]:
                 standards.append(["Reference", str(ref)[:120]])
 
-            story.append(
+            details.append(
                 build_finding_section(
                     index=idx,
                     title=str(display_name),
@@ -293,17 +322,18 @@ def _build_semgrep_pdf_story(
                     recommended_fix="",
                     standards_rows=standards or None,
                     styles=styles,
+                    ctx=ctx,
                 )
             )
 
-    if errors:
-        story.append(PageBreak())
-        story.append(Paragraph("Scan Notes", styles["title"]))
+    notes: List[Any] = []
+    if errors and ctx.has("notes"):
+        notes.append(Paragraph("Scan Notes", styles["title"]))
         for error in errors:
             error_type = error.get("type", "Unknown")
             if isinstance(error_type, list):
                 error_type = error_type[0] if error_type else "Unknown"
-            story.append(
+            notes.append(
                 build_finding_section(
                     index=0,
                     title=str(error_type),
@@ -315,9 +345,10 @@ def _build_semgrep_pdf_story(
                     styles=styles,
                 )
             )
+    join_parts(story, [summary, catalog_part, details, notes], PageBreak)
 
 
-def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
+def generate_pdf(scan_results: Any, output_path: Optional[str] = None, *, ctx: Optional[ReportContext] = None) -> str:
     if output_path is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = f"sast_scan_report_{timestamp}.pdf"
@@ -333,24 +364,25 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
     # Dashboard-first layout (HTML sample style) — no classic title cover page
     story: List[Any] = []
 
+    ctx = ctx or ReportContext()
     inner, duration, _raw = split_scan_payload(scan_results)
     if _is_agent_format(inner):
-        _build_agent_pdf_story(story, inner, duration)
+        _build_agent_pdf_story(story, inner, duration, ctx)
     elif isinstance(scan_results, dict) and any(
         key in scan_results for key in ("version", "paths", "errors")
     ):
-        _build_semgrep_pdf_story(story, scan_results, duration)
+        _build_semgrep_pdf_story(story, scan_results, duration, ctx)
     elif isinstance(inner, list):
-        _build_semgrep_pdf_story(story, {"results": inner}, duration)
+        _build_semgrep_pdf_story(story, {"results": inner}, duration, ctx)
     elif isinstance(inner, dict):
-        _build_semgrep_pdf_story(story, inner, duration)
+        _build_semgrep_pdf_story(story, inner, duration, ctx)
     else:
-        _build_semgrep_pdf_story(story, {}, duration)
+        _build_semgrep_pdf_story(story, {}, duration, ctx)
 
     doc.build(
         story,
-        onFirstPage=make_cover_callback("sast"),
-        onLaterPages=make_footer_callback("sast"),
+        onFirstPage=make_cover_callback("sast", ctx),
+        onLaterPages=make_footer_callback("sast", ctx),
     )
     return output_path
 

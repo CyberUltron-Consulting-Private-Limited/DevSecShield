@@ -61,12 +61,29 @@ def build_run_pdf(*, run: dict[str, Any], sources: list[dict[str, Any]], posture
                   heatmap: dict[str, Any], head: dict[str, Any], findings: list[dict[str, Any]],
                   vex_states: dict[str, int],
                   provenance: list[dict[str, Any]], at: _dt.datetime, as_of_note: str | None,
-                  findings_cap: int, export_cap: int, cbom_sha256: str) -> bytes:
+                  findings_cap: int, export_cap: int, cbom_sha256: str, ctx: Any = None) -> bytes:
+    """``ctx`` (``report_context.ReportContext``): export options and the team logo; omitted, the
+    report is today's full report, byte for byte."""
+    from backend.utilities.pdf.report_context import ReportContext, join_parts  # noqa: PLC0415
+    from backend.utilities.pdf.report_options import RUN_SECTIONS, severity_bucket  # noqa: PLC0415
+    from backend.utilities.pdf.report_branding import append_report_masthead  # noqa: PLC0415
+
+    ctx = ctx or ReportContext()
+    ctx.subject = "run"
+    if not ctx.available_sections:
+        ctx.available_sections = RUN_SECTIONS
     styles = get_report_styles()
     buf = io.BytesIO()
     pdf = SimpleDocTemplate(buf, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=56, bottomMargin=52,
                             title=f"CBOM Sources run #{run['id']}", author="ZeroShield", invariant=1)
     story: list[Any] = []
+    summary_part: list[Any] = []
+    posture_part: list[Any] = []
+    catalog_part: list[Any] = []
+    provenance_part: list[Any] = []
+    # Findings are filtered before the cap, keeping their worst-first numbers.
+    shown = ctx.select(findings, lambda f: count_label(f.get("impact") or "low"))
+    ctx.shown = min(ctx.shown, findings_cap)  # what the PDF draws (X-Report-Findings, the scope panel): the cap applies
     meta = {p.get("name"): p.get("value") for p in (head.get("metadata") or {}).get("properties") or []}
     impacts = {k: int(v or 0) for k, v in (posture.get("impacts") or {}).items()}
     findings_total = sum(impacts.values())
@@ -95,13 +112,20 @@ def build_run_pdf(*, run: dict[str, Any], sources: list[dict[str, Any]], posture
          ["Mosca (X + Y > Z)", str(mosca.get("verdict") or mosca.get("note") or "—")]],
         [3.2 * inch, 3.9 * inch],
     )]
-    append_executive_summary(
-        story, report_key="cbom", overview_rows=overview, severity_counts={count_label(k): v for k, v in impacts.items() if v},
-        styles=styles, extra_tables=extra_tables, project_name=f"Sources run #{run['id']}",
-        scan_time=_duration(run), scan_time_hint="Still collecting" if as_of_note else f"Run {run['status']}",
-        meta_chips=[("Run", f"#{run['id']} {run['status']}"), ("PQC readiness", readiness),
-                    ("Findings", str(findings_total)), ("Report as of", generated)],
-    )
+    if not ctx.has("summary"):
+        append_report_masthead(summary_part, report_key="cbom", project_name=f"Sources run #{run['id']}",
+                               styles=styles, ctx=ctx)
+    else:
+        append_executive_summary(
+            summary_part, report_key="cbom", overview_rows=overview,
+            severity_counts={count_label(k): v for k, v in impacts.items() if v},
+            styles=styles, extra_tables=extra_tables, project_name=f"Sources run #{run['id']}",
+            scan_time=_duration(run), scan_time_hint="Still collecting" if as_of_note else f"Run {run['status']}",
+            meta_chips=[("Run", f"#{run['id']} {run['status']}"), ("PQC readiness", readiness),
+                        ("Findings", str(findings_total)), ("Report as of", generated)],
+            ctx=ctx,
+        )
+    story = summary_part
     if as_of_note:
         story.append(_p(as_of_note, styles, "body"))
     story.append(Paragraph("Run identity", styles["heading"]))
@@ -116,8 +140,8 @@ def build_run_pdf(*, run: dict[str, Any], sources: list[dict[str, Any]], posture
     if truncated:
         story.append(_p(f"Export cap: the CBOM and this report hold the first {export_cap:,} assets of this run "
                         f"(the posture numbers above cover every asset).", styles, "body"))
-    story.append(PageBreak())
 
+    story = posture_part
     # algorithm family x source
     story.append(Paragraph("Algorithm family by source", styles["heading"]))
     cols = list(heatmap.get("columns") or [])
@@ -160,6 +184,10 @@ def build_run_pdf(*, run: dict[str, Any], sources: list[dict[str, Any]], posture
     # top risks
     story.append(Paragraph("Top risks", styles["heading"]))
     top = posture.get("top_risks") or []
+    hidden = 0
+    if ctx.options.severities is not None:  # a filtered report never names a finding its filter excludes
+        kept = [r for r in top if severity_bucket(count_label(r.get("impact") or "low")) in ctx.options.severities]
+        hidden, top = len(top) - len(kept), kept
     if top:
         story.append(styled_data_table(
             ["Score", "Severity", "Asset", "Where", "Exposure"],
@@ -168,6 +196,10 @@ def build_run_pdf(*, run: dict[str, Any], sources: list[dict[str, Any]], posture
              for r in top],
             styles=styles, severity_col=1, col_widths=[0.65 * inch, 0.85 * inch, 2.5 * inch, 1.9 * inch, 1.2 * inch]))
         story.append(_p("Score = impact weight x business criticality x internet exposure (posture).", styles, "muted"))
+        if hidden:
+            story.append(_p(f"{hidden} more top risk(s) are outside the selected severities.", styles, "muted"))
+    elif hidden:
+        story.append(_p(f"No top risk matches the selected severities ({hidden} outside them).", styles, "muted"))
     else:
         story.append(_p("No finding to rank.", styles, "muted"))
 
@@ -188,24 +220,29 @@ def build_run_pdf(*, run: dict[str, Any], sources: list[dict[str, Any]], posture
         story.append(Paragraph("VEX analysis (finding x asset pairs)", styles["heading"]))
         story.append(styled_data_table(["State", "Pairs"], [[k, str(v)] for k, v in sorted(vex_states.items())],
                                        styles=styles, col_widths=[3.2 * inch, 1.2 * inch]))
-    story.append(PageBreak())
 
+    story = catalog_part
     # findings
     catalog = [[str(i), count_label(f["impact"]),
                 _p(f"{short(f['finding'] or f['name'], FINDING_CHARS)} ({f['type']})", styles),
                 _p(short(f["location"], LOCATION_CHARS), styles, "mono_cell")]
-               for i, f in enumerate(findings[:findings_cap], 1)]
-    if len(findings) > findings_cap:
+               for i, f in shown[:findings_cap]]
+    if len(shown) > findings_cap and ctx.filtered:
+        story.append(_p(f"Findings cap: this report lists the first {findings_cap:,} of the {len(shown):,} matching "
+                        f"findings (of {len(findings):,}, worst first); the CycloneDX JSON and the VEX list them all.",
+                        styles, "body"))
+    elif len(findings) > findings_cap and not ctx.filtered:
         story.append(_p(f"Findings cap: this report lists the first {findings_cap:,} of {len(findings):,} findings "
                         "(worst first); the CycloneDX JSON and the VEX list them all.", styles, "body"))
     if catalog:
         story.append(_p(f"Finding text is cut to {FINDING_CHARS} characters and locations to {LOCATION_CHARS}; the "
                         "CycloneDX JSON holds the full sentences.", styles, "muted"))
     append_findings_catalog(story, catalog_rows=catalog, styles=styles, panel_title="Findings",
-                            chunk_size=CATALOG_CHUNK)
+                            chunk_size=CATALOG_CHUNK, ctx=ctx,
+                            empty_text="No security findings were identified in this scan.")
 
+    story = provenance_part
     # provenance
-    story.append(PageBreak())
     story.append(Paragraph("Provenance", styles["heading"]))
     if provenance:
         story.append(styled_data_table(
@@ -220,7 +257,12 @@ def build_run_pdf(*, run: dict[str, Any], sources: list[dict[str, Any]], posture
     story.append(_p("Every number on the posture panel comes from the run posture API (the same values the results "
                     "page shows); listings come from the run's CycloneDX export.", styles, "muted"))
 
-    pdf.build(story, onFirstPage=make_cover_callback("cbom"), onLaterPages=make_footer_callback("cbom"))
+    story = []
+    join_parts(story, [summary_part,
+                       posture_part if ctx.has("posture") else [],
+                       catalog_part if ctx.has("catalog") else [],
+                       provenance_part if ctx.has("provenance") else []], PageBreak)
+    pdf.build(story, onFirstPage=make_cover_callback("cbom", ctx), onLaterPages=make_footer_callback("cbom", ctx))
     return buf.getvalue()
 
 

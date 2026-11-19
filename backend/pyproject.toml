@@ -38,4 +38,5 @@ dependencies = [
     "tree-sitter-go>=0.23.4",
     "tree-sitter-c-sharp>=0.23.1",
     "tree-sitter-kotlin>=1.1.0",
+    "pillow>=12.0",  # team report logo: decode, normalise and re-encode uploads (already locked via reportlab)
 ]

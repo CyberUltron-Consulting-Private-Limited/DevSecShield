@@ -51,6 +51,8 @@ def write_scan_pdf(
     output_path: str,
     started_at=None,
     completed_at=None,
+    *,
+    ctx=None,
 ):
     """Build a PDF and delete the temp file if the renderer fails."""
     try:
@@ -60,6 +62,7 @@ def write_scan_pdf(
             output_path,
             started_at=started_at,
             completed_at=completed_at,
+            ctx=ctx,
         )
     except Exception:
         _safe_unlink(output_path)
@@ -72,14 +75,24 @@ def generate_pdf_for_type(
     output_path: str,
     started_at=None,
     completed_at=None,
+    *,
+    ctx=None,
 ):
     """
     This function generates a pdf for a given scan type.
 
     started_at / completed_at are the scan-row timestamps used as a
     duration fallback when the payload has no duration_of_scan.
+    ``ctx`` (``report_context.ReportContext``) carries the export options, the team logo and
+    finding statuses; omitted, the report is today's full report.
     """
     scan_data = with_scan_duration(scan_data, started_at, completed_at)
+    if ctx is not None and type in _GENERATORS:
+        if not ctx.available_sections:
+            from backend.utilities.pdf.report_options import TYPE_SECTIONS  # noqa: PLC0415
+
+            ctx.available_sections = TYPE_SECTIONS[type]
+        return _GENERATORS[type](scan_data, output_path, ctx=ctx)
     match type:
         case "sast":
             return generate_pdf_for_sast(scan_data, output_path)
@@ -102,3 +115,15 @@ def generate_pdf_for_type(
             raise UnsupportedPdfExport(
                 f"PDF export is not supported for scan type {type!r}"
             )
+
+
+_GENERATORS = {
+    "sast": generate_pdf_for_sast,
+    "iac": generate_pdf_for_iac,
+    "sbom_sca": generate_pdf_for_sbom_sca,
+    "mcp": generate_pdf_for_mcp,
+    "llm": generate_pdf_for_llm,
+    "dast": generate_pdf_for_dast,
+    "cbom": generate_pdf_for_cbom,
+    "ai_bom": generate_pdf_for_ai_bom,
+}
