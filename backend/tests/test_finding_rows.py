@@ -196,3 +196,25 @@ def test_status_filter_in_the_pdf(tmp_path):
     assert "Showing 1 of 3 findings" in text
     # the priority note names only what the report shows
     assert "Priority action: 1 High" in text
+
+
+def test_the_status_read_has_a_client_side_deadline(monkeypatch):
+    """max_time_ms only bounds work on the server: an unresponsive server held an export ~55 s before the 503.
+    The read runs inside pymongo.timeout(STATUS_READ_MS), which bounds selection, connection and the query."""
+    import contextlib
+
+    import pymongo
+
+    seen = []
+
+    @contextlib.contextmanager
+    def deadline(seconds):
+        seen.append(seconds)
+        yield
+
+    monkeypatch.setattr(pymongo, "timeout", deadline)
+    payload = _payload("sast")
+    db = FakeDb()
+    create_findings_in_mongo_db(9, copy.deepcopy(payload), "sast", db)
+    assert fr.read_statuses(9, "sast", payload, mongo_db=db)
+    assert seen == [fr.STATUS_READ_MS / 1000]

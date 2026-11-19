@@ -124,12 +124,15 @@ def read_statuses(scan_id: int, scan_type: str, scan_results: dict, *, mongo_db=
             from backend.get_db import get_mongo_client_db  # noqa: PLC0415
 
             mongo_db = get_mongo_client_db()
-        cursor = (mongo_db["scan_findings"]
-                  .find({"scan_id": scan_id}, {"finding_data": 1, "finding_status": 1})
-                  .sort("_id", 1))
-        if hasattr(cursor, "max_time_ms"):
-            cursor = cursor.max_time_ms(STATUS_READ_MS)
-        documents = list(cursor)
+        # A client-side deadline (server selection, connection and the query): max_time_ms alone only bounds work
+        # on the server, so an unresponsive server would hold the export for pymongo's own timeouts (~55 s seen).
+        import pymongo  # noqa: PLC0415
+
+        with pymongo.timeout(STATUS_READ_MS / 1000):
+            cursor = (mongo_db["scan_findings"]
+                      .find({"scan_id": scan_id}, {"finding_data": 1, "finding_status": 1})
+                      .sort("_id", 1))
+            documents = list(cursor)
     except StatusesUnavailable:
         raise
     except Exception as exc:  # noqa: BLE001 - any Mongo failure is "statuses unavailable right now"
