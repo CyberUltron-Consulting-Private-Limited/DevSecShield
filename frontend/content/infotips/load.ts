@@ -40,6 +40,7 @@ const LOADERS: Record<TipArea, Loader> = {
   "cbsrc-ssh-ca": () => import("./text/cbsrc-ssh-ca"),
   fleet: () => import("./text/fleet"),
   repos: () => import("./text/repos"),
+  export: () => import("./text/export"),
 };
 
 export type TipAreaState = { status: "loading" } | { status: "ready"; text: TipAreaText } | { status: "error" };

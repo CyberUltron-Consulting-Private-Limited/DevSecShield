@@ -8,6 +8,9 @@
  * Browser: round5/ui/l1/pw/dast.mjs step estimate-disabled-why; explore.mjs on /3/leakage.
  * 3. #29: the agent discovery and data leakage scan sidebars were imported nowhere, and the API helpers only they used
  *    posted to routes the backend does not have. Both sidebars and those helpers are gone.
+ * 4. Plan §7 (PDF report options): the eight per-type export helpers moved to one downloadScanReport behind the export
+ *    dialog, and getSCASBOMExportResults called a route the backend does not have (/sbom_sca/conversation/{id}/export).
+ *    None of them may come back; every "Download Scan Report" / "PDF Report" button opens the dialog instead.
  * Run: npx --yes tsx utils/ui_dead_ends.test.ts
  */
 import assert from "node:assert/strict";
@@ -40,8 +43,16 @@ for (const sidebar of ["components/discovery-options-sidebar.tsx", "components/l
 }
 const api = read("utils/backend_api.ts");
 for (const helper of ["startDiscoveryScan", "reinitializeDiscoveryScan", "getDiscoveryExportResults",
-  "startLeakageScan", "reinitializeLeakageScan", "getLeakageExportResults"]) {
+  "startLeakageScan", "reinitializeLeakageScan", "getLeakageExportResults",
+  "getExportResults", "getLLMExportResults", "getMCPExportResults", "getIACExportResults", "getSBOMExportResults",
+  "getCBOMExportResults", "getAIBOMExportResults", "getDASTExportResults", "getSCASBOMExportResults"]) {
   assert.doesNotMatch(api, new RegExp(String.raw`\b${helper}\b`), `utils/backend_api.ts: ${helper} is still there`);
+}
+for (const sidebar of ["sast", "llm", "mcp", "iac", "dast", "sca-sbom", "ai-bom", "cbom"].map((t) => `components/${t}-options-sidebar.tsx`)) {
+  const src = read(sidebar);
+  const button = src.indexOf("Download Scan Report");
+  assert.ok(button > 0 && src.lastIndexOf("onClick={pdf.open}", button) > src.lastIndexOf("<Button", button), `${sidebar}: the button opens the export dialog`);
+  assert.ok(src.includes("{pdf.dialog}"), `${sidebar}: the dialog is mounted`);
 }
 // ... and the backend still has none of their routes (if one comes back, so may a sidebar)
 const routers = path.join(root, "..", "backend", "routers");

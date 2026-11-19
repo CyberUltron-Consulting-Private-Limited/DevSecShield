@@ -4,9 +4,10 @@
  * members, delete the team), Create team (the /home dialog and page), CI/CD integrations (create, delete, rename,
  * edit) and the report download of the SAST, IaC, SCA + SBOM, AI BOM, LLM, MCP and DAST results pages. Some successes
  * were said twice as well (CI/CD delete, rename and edit; the AI BOM and DAST report downloads).
- * Now each outcome is said in one place (utils/toastPolicy.ts): a helper whose callers all show the error only throws;
- * an export helper, whose options-sidebar caller shows no toast of its own, toasts unless its caller passes
- * { toast: false }. Every caller of these helpers is listed below, so a new one is checked too.
+ * Now each outcome is said in one place (utils/toastPolicy.ts): a helper whose callers all show the error only throws.
+ * PDF reports (plan §7): the export dialog (components/reports/ExportPdfDialog.tsx, useExportPdf) is the one owner of
+ * an export's toasts; the report helpers never toast, and every opener (options sidebars, results pages, the run
+ * menu) only opens the dialog. Every caller of these helpers is listed below, so a new one is checked too.
  * Failing-first on origin/dev 1884f564: 17 of the 26 caller sites below showed two toasts for one outcome.
  * Browser check: Team settings > Integrations > change the Jira URL without re-entering the token > Save: one error
  * toast; CI/CD > delete an integration: one "CI/CD integration deleted"; a results page > Download report: one toast.
@@ -20,6 +21,7 @@ import { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from 
 import { toast as sonner } from "sonner";
 
 import { mutationOptions, usersOf } from "./sourceChecks";
+import { DEFAULT_OPTIONS } from "./reportOptions";
 
 // every toast of the app goes through sonner (utils/toast.ts): count them
 const toasts: string[] = [];
@@ -58,14 +60,42 @@ const CALL: Record<string, (api: Api, opts: Opts) => Promise<unknown>> = {
   deleteCicdIntegration: (a) => a.deleteCicdIntegration(13, 5),
   renameCicdIntegration: (a) => a.renameCicdIntegration({ team_id: 13, integration_id: 5, title: "ci" }),
   updateCicdIntegration: (a) => a.updateCicdIntegration({ team_id: 13, integration_id: 5, data: { title: "ci" } }),
-  getExportResults: (a, o) => a.getExportResults(13, 7, o),
-  getIACExportResults: (a, o) => a.getIACExportResults(13, 7, o),
-  getSBOMExportResults: (a, o) => a.getSBOMExportResults(13, 7, o),
-  getAIBOMExportResults: (a, o) => a.getAIBOMExportResults(13, 7, o),
-  getLLMExportResults: (a, o) => a.getLLMExportResults(13, 7, o),
-  getMCPExportResults: (a, o) => a.getMCPExportResults(13, 7, o),
-  getDASTExportResults: (a, o) => a.getDASTExportResults(13, 7, o),
 };
+/** The PDF report helpers: none of them may toast (the export dialog, or the deliverables menu, says the outcome). */
+const REPORT_CALL: Record<string, (api: Api) => Promise<unknown>> = {
+  downloadScanReport: (a) => a.downloadScanReport(13, "sast", 7, { ...DEFAULT_OPTIONS }),
+  downloadRunReport: (a) => a.downloadRunReport(13, 7, { ...DEFAULT_OPTIONS }),
+  downloadDeliverable: (a) => a.downloadDeliverable(13, "board-executive-report", { ...DEFAULT_OPTIONS }),
+  downloadCbomDeliverable: (a) => a.downloadCbomDeliverable(13, "board-executive-report", { ...DEFAULT_OPTIONS }),
+};
+/** Who builds PDF reports: the dialog's hook alone; the deliverables menu's one-click items say their own outcome. */
+const REPORT_USERS: Record<string, string[]> = {
+  downloadScanReport: ["components/reports/ExportPdfDialog.tsx"],
+  downloadRunReport: ["components/reports/ExportPdfDialog.tsx"],
+  downloadDeliverable: [],
+  downloadCbomDeliverable: ["app/[team_id]/cbom/page.tsx"],
+};
+/** Every opener of the export dialog: each "Download Scan Report" / "PDF Report" button only opens it. */
+const OPENERS = [
+  "app/[team_id]/cbom/page.tsx", // "Cover options…" of the deliverables menu
+  "app/[team_id]/dast/[scan_id]/results/page.tsx",
+  "app/[team_id]/llm/[conversation_id]/results/page.tsx",
+  "app/[team_id]/mcp/[conversation_id]/results/page.tsx",
+  "components/AiBomResults.tsx",
+  "components/CbomResults.tsx",
+  "components/IACResults.tsx",
+  "components/SASTResults.tsx",
+  "components/SbomResults.tsx",
+  "components/ai-bom-options-sidebar.tsx",
+  "components/cbom-options-sidebar.tsx",
+  "components/cbom/results/RunDeliverablesMenu.tsx",
+  "components/dast-options-sidebar.tsx",
+  "components/iac-options-sidebar.tsx",
+  "components/llm-options-sidebar.tsx",
+  "components/mcp-options-sidebar.tsx",
+  "components/sast-options-sidebar.tsx",
+  "components/sca-sbom-options-sidebar.tsx",
+];
 const HELPER: Record<string, string> = { removeMembers: "removeOrAddTeamMembers", inviteMembers: "removeOrAddTeamMembers" };
 
 /** Every caller of the helpers above: [file, its useMutation, the call (CALL key), whether it opts out of the helper's
@@ -83,20 +113,6 @@ const SITES: [string, string, string, boolean][] = [
   ["app/[team_id]/ci_cd/page.tsx", "deleteCicdIntegrationMutation", "deleteCicdIntegration", false],
   ["app/[team_id]/ci_cd/page.tsx", "renameCicdIntegrationMutation", "renameCicdIntegration", false],
   ["app/[team_id]/ci_cd/[integration_id]/page.tsx", "updateCicdMutation", "updateCicdIntegration", false],
-  ["components/SASTResults.tsx", "exportMutation", "getExportResults", true],
-  ["components/sast-options-sidebar.tsx", "exportMutation", "getExportResults", false],
-  ["components/IACResults.tsx", "exportMutation", "getIACExportResults", true],
-  ["components/iac-options-sidebar.tsx", "exportMutation", "getIACExportResults", false],
-  ["components/SbomResults.tsx", "exportMutation", "getSBOMExportResults", true],
-  ["components/sca-sbom-options-sidebar.tsx", "exportMutation", "getSBOMExportResults", false],
-  ["components/AiBomResults.tsx", "exportMutation", "getAIBOMExportResults", true],
-  ["components/ai-bom-options-sidebar.tsx", "exportMutation", "getAIBOMExportResults", false],
-  ["app/[team_id]/llm/[conversation_id]/results/page.tsx", "exportMutation", "getLLMExportResults", true],
-  ["components/llm-options-sidebar.tsx", "exportMutation", "getLLMExportResults", false],
-  ["app/[team_id]/mcp/[conversation_id]/results/page.tsx", "exportMutation", "getMCPExportResults", true],
-  ["components/mcp-options-sidebar.tsx", "exportMutation", "getMCPExportResults", false],
-  ["app/[team_id]/dast/[scan_id]/results/page.tsx", "exportMutation", "getDASTExportResults", true],
-  ["components/dast-options-sidebar.tsx", "exportMutation", "getDASTExportResults", false],
 ];
 
 async function main() {
@@ -150,6 +166,38 @@ async function main() {
   for (const helper of new Set(SITES.map(([, , call]) => HELPER[call] ?? call))) {
     const listed = [...new Set(SITES.filter(([, , call]) => (HELPER[call] ?? call) === helper).map(([file]) => file))].sort();
     assert.deepEqual(usersOf(root, helper), listed, `${helper}: a caller that is not listed in SITES`);
+  }
+
+  // PDF reports: the helpers never toast, on success or on a refusal ...
+  for (const [name, call] of Object.entries(REPORT_CALL)) {
+    for (const refused of [false, true]) {
+      refuse = refused;
+      toasts.length = 0;
+      const error = await call(backend).then(() => null, (e: unknown) => e);
+      assert.equal(error === null, !refused, `${name}: ${refused ? "the refusal reaches the caller" : "succeeds"}`);
+      assert.deepEqual(toasts, [], `${name}: no toast of its own (${refused ? "refused" : "success"})`);
+    }
+    assert.deepEqual(usersOf(root, name), REPORT_USERS[name], `${name}: a caller other than the export dialog`);
+  }
+  // ... the dialog's hook says an export's outcome once: one success toast, and one error toast for a build that ends
+  // after its dialog was closed (an open dialog shows the error inline; components/reports/exportPdfDialog.dom.test.ts)
+  const dialog = read("components/reports/ExportPdfDialog.tsx");
+  const hook = dialog.slice(dialog.indexOf("export function useExportPdf("), dialog.indexOf("// ---", dialog.indexOf("export function useExportPdf(")));
+  assert.equal(count(hook, SUCCESS), 1, "useExportPdf: one success toast");
+  assert.equal(count(hook, ERROR), 1, "useExportPdf: one error toast (dialog closed)");
+  assert.equal(count(dialog, SUCCESS) + count(dialog, ERROR), 2, "no other toast in the dialog");
+  // ... the deliverables menu's one-click items say theirs once (they keep their mutation)
+  const menu = mutationOptions(read("app/[team_id]/cbom/page.tsx"), "downloadDeliverableMutation");
+  assert.ok(menu && /\bdownloadCbomDeliverable\(/.test(menu.get("mutationFn") ?? ""), "the deliverables menu downloads through downloadCbomDeliverable");
+  assert.equal(count(menu?.get("onSuccess"), SUCCESS), 1, "a deliverable: one success toast");
+  assert.equal(count(menu?.get("onError"), ERROR), 1, "a deliverable: one error toast");
+  // ... and every opener only opens the dialog: no export mutation, no download helper, no export toast of its own
+  assert.deepEqual(usersOf(root, "useExportPdf").filter((f) => f !== "components/reports/ExportPdfDialog.tsx"), OPENERS, "useExportPdf: an opener that is not listed in OPENERS");
+  for (const file of OPENERS) {
+    const src = read(file);
+    assert.ok(!mutationOptions(src, "exportMutation"), `${file}: still has its own export mutation`);
+    assert.ok(!/\b(?:getExportResults|get[A-Z]+ExportResults|downloadScanReport|downloadRunReport)\b/.test(src), `${file}: builds a report itself`);
+    assert.ok(!/toast\.(?:success|error)\([^)]*report downloaded/i.test(src), `${file}: says a report download itself`);
   }
 
   // the rule's home: the root layout's numbers and the helpers' option

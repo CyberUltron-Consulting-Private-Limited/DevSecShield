@@ -34,7 +34,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useRouter, useSearchParams, usePathname, useParams } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { getIACExportResults, updateScan, createTicket, toggleFindingState, type SastDashboardData, type IACScanDashboardData, type IACFinding, type IACScanMetadata, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
+import { updateScan, createTicket, toggleFindingState, type SastDashboardData, type IACScanDashboardData, type IACFinding, type IACScanMetadata, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
 import { OWASP_KEY_TO_LABEL, COMPLIANCE_KEY_TO_LABEL, OWASP_COLORS } from "@/lib/owasp-compliance-labels";
 import {
@@ -63,6 +63,7 @@ import {
 } from "recharts";
 import { PieChart, BarChart3, TrendingUp, GitBranch, FileArchive, ImageIcon, Github, Search, Filter, Check, X, ChevronDown } from "lucide-react";
 import { toast } from "@/utils/toast";
+import { useExportPdf } from "@/components/reports/ExportPdfDialog";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
 
@@ -1520,29 +1521,16 @@ export default function IACResults({ data, conversationId, dashboard, findings, 
   const params = useParams();
   const teamId = params?.team_id as string | undefined;
 
-  const exportMutation = useMutation({
-    mutationFn: () => {
-      const tid = teamId ? parseInt(teamId, 10) : NaN;
-      if (conversationId == null || Number.isNaN(tid)) throw new Error("Missing team or scan");
-      // this page says the outcome, once (#27): the helper's own toasts are off
-      return getIACExportResults(tid, conversationId, { toast: false });
-    },
-    onSuccess: (blob) => {
-      const url = URL.createObjectURL(new Blob([blob], { type: "application/pdf" }));
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `iac_scan_${conversationId}_report.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success("IAC report downloaded");
-    },
-    onError: (err) => {
-      showErrorToast(err, "Failed to download scan report");
-    },
+  // The PDF report: its options in a dialog that shows a refused build itself and says the outcome once
+  // (components/reports/ExportPdfDialog.tsx). The file keeps its name.
+  const pdf = useExportPdf({
+    teamId: teamId ? parseInt(teamId, 10) : 0,
+    target: { family: "scan", type: "iac", scanId: conversationId ?? 0 },
+    fileName: `iac_scan_${conversationId}_report.pdf`,
+    successText: "IAC report downloaded",
   });
-
-  const handleDownloadReport = () => exportMutation.mutate();
-  const isExporting = exportMutation.isPending;
+  const handleDownloadReport = pdf.open;
+  const isExporting = pdf.pending;
 
   const hasData = data != null && Array.isArray(data) && data.length > 0;
   const hasFindings = findings != null && findings.length > 0;
@@ -1593,22 +1581,25 @@ export default function IACResults({ data, conversationId, dashboard, findings, 
   }
 
   return (
-    <IACResultsAgentView
-      vulnerabilities={data ?? []}
-      conversationId={conversationId}
-      teamId={teamId}
-      isCicdContext={isCicdContext}
-      integrationId={integrationId}
-      origin={origin}
-      router={router}
-      onDownloadReport={teamId && conversationId != null ? handleDownloadReport : undefined}
-      isExporting={isExporting}
-      dashboard={dashboard}
-      findings={findings}
-      scanMetadata={scanMetadata}
-      onFindingsUpdated={onFindingsUpdated}
-      integrationSettings={integrationSettings}
-      onIntegrationSettingsUpdated={onIntegrationSettingsUpdated}
-    />
+    <>
+      <IACResultsAgentView
+        vulnerabilities={data ?? []}
+        conversationId={conversationId}
+        teamId={teamId}
+        isCicdContext={isCicdContext}
+        integrationId={integrationId}
+        origin={origin}
+        router={router}
+        onDownloadReport={teamId && conversationId != null ? handleDownloadReport : undefined}
+        isExporting={isExporting}
+        dashboard={dashboard}
+        findings={findings}
+        scanMetadata={scanMetadata}
+        onFindingsUpdated={onFindingsUpdated}
+        integrationSettings={integrationSettings}
+        onIntegrationSettingsUpdated={onIntegrationSettingsUpdated}
+      />
+      {pdf.dialog}
+    </>
   );
 }

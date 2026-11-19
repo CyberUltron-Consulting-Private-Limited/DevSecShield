@@ -1,12 +1,12 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { toast } from "@/utils/toast";
+import { useExportPdf } from "@/components/reports/ExportPdfDialog";
 import DASTResults from "@/components/DASTResults";
-import { getDASTScan, getDASTExportResults } from "@/utils/backend_api";
-import { showErrorToast } from "@/utils/error-handler";
+import { getDASTScan } from "@/utils/backend_api";
 
 export default function DASTResultsPage() {
   const params = useParams();
@@ -14,20 +14,12 @@ export default function DASTResultsPage() {
   const team_id = parseInt((params?.team_id as string) ?? "0", 10);
   const scan_id = parseInt((params?.scan_id as string) ?? "0", 10);
 
-  const exportMutation = useMutation({
-    // this page says the outcome, once (#27): the helper's own toasts are off
-    mutationFn: () => getDASTExportResults(team_id, scan_id, { toast: false }),
-    onSuccess: (data) => {
-      const blob = new Blob([data], { type: "application/pdf" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `dast_scan_${scan_id}_report.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success("Report downloaded");
-    },
-    onError: (err) => showErrorToast(err, "Failed to download report"),
+  // The PDF report: its options in a dialog that shows a refused build itself and says the outcome once
+  // (components/reports/ExportPdfDialog.tsx). The file keeps its name.
+  const pdf = useExportPdf({
+    teamId: team_id,
+    target: { family: "scan", type: "dast", scanId: scan_id },
+    fileName: `dast_scan_${scan_id}_report.pdf`,
   });
 
   if (!team_id || !scan_id) {
@@ -73,18 +65,21 @@ export default function DASTResultsPage() {
   }
 
   return (
-    <DASTResults
-      teamId={String(team_id)}
-      scanId={scan_id}
-      title={query.data?.title}
-      scanStatus={query.data?.scan_status}
-      dashboard={dashboard}
-      findings={findings}
-      scanMetadata={query.data?.scan_metadata ?? null}
-      integrationSettings={query.data?.integration_settings ?? null}
-      onIntegrationSettingsUpdated={() => queryClient.invalidateQueries({ queryKey: ["dast-scan", team_id, scan_id] })}
-      onDownloadReport={() => exportMutation.mutate()}
-      isExporting={exportMutation.isPending}
-    />
+    <>
+      <DASTResults
+        teamId={String(team_id)}
+        scanId={scan_id}
+        title={query.data?.title}
+        scanStatus={query.data?.scan_status}
+        dashboard={dashboard}
+        findings={findings}
+        scanMetadata={query.data?.scan_metadata ?? null}
+        integrationSettings={query.data?.integration_settings ?? null}
+        onIntegrationSettingsUpdated={() => queryClient.invalidateQueries({ queryKey: ["dast-scan", team_id, scan_id] })}
+        onDownloadReport={pdf.open}
+        isExporting={pdf.pending}
+      />
+      {pdf.dialog}
+    </>
   );
 }
