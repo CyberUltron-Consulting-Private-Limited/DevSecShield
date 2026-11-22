@@ -27,3 +27,24 @@ command): the text each glyph that no character maps to (a conjunct, a matra wit
 Where a cluster's glyphs do not spell what was typed (a reordered ि, a reph folded into an i-matra), `report_fonts`
 maps that cluster to its typed text at build time, so a shaped word copies and searches exactly as typed. Regenerate
 the table whenever a font file changes.
+
+## How shaped text copies, by PDF reader (known limits)
+
+Each shaped run is drawn twice over for text extraction: the glyph codes carry a ToUnicode text (what pypdf,
+pdfminer and pdf.js read) and the whole run is wrapped in `/ActualText` with the typed text (what poppler, PDFium and
+MuPDF read). Checked with poppler (`pdftotext`), PDFium (`pypdfium2`), pypdf, MuPDF (PyMuPDF `get_text`), pdfminer
+and pdf.js on 79 Hindi, Marathi, Vietnamese, Greek and Cyrillic test strings, each as a name and a title:
+
+- poppler, PDFium: every string copies exactly as typed.
+- pdf.js: exact, except for a space it inserts by glyph position inside a few words with a half form or a conjunct
+  (`स्टेट` as `स् टेट`, `प्रदेश` as `प्र देश`).
+- pypdf: exact once U+200D is dropped. A syllable drawn with more glyphs than it has letters (the font draws ई as इ
+  plus a reph-like mark and ऐ as ए plus a vowel sign) gives its typed text to the first glyph and U+200D (zero width
+  joiner, invisible) to each extra glyph, so a copied ई can carry a trailing or inner U+200D.
+- pdfminer: same U+200D as pypdf, plus spaces it inserts by glyph position (`कृष्ण` as `कृ ष्ण`, `Thị` as `Thi ̣`).
+- MuPDF: a run that holds such a syllable can repeat its tail: `ईमेल` copies as `ईमेलमेल`, `ऐप ऐसा` as `ऐप ऐसासा`.
+  MuPDF matches the `/ActualText` against the glyph text from both ends and, when the two differ in the middle, keeps
+  some glyph text as well. Spans that cover only the rewritten syllables avoid that in MuPDF but put spaces inside
+  words in poppler and PDFium, and nested spans duplicate text in poppler, PDFium and MuPDF, so the whole-run span,
+  which is exact in poppler and PDFium, is kept and this MuPDF repeat is a known limit. MuPDF also splits `क़िला`
+  as `क़ि ला` in one of the two layouts.

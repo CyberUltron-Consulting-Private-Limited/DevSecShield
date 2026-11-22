@@ -25,7 +25,8 @@ What this module adds to ReportLab's shaping, each for a reason found by testing
   - ToUnicode (pypdf, pdfminer, pdf.js read only this). Each glyph's own text comes from ``fonts/glyph_text.json``
     (derived from the fonts' GSUB tables by ``scripts/pdf_font_glyph_text.py``). Where a cluster's glyphs, read in
     drawing order, do not spell the typed cluster, ``_copy_as_typed`` draws the same glyphs through extra codes
-    whose entries do (``_pieces``: one typed character per glyph, the rest on the last). No entry is ever empty:
+    whose entries do (``_pieces``: one typed character per glyph, the rest on the last; a cluster with more glyphs
+    than characters, ई or ऐ, has all its text on the first glyph and U+200D on each other). No entry is ever empty:
     PDFium, pdf.js and MuPDF copy the raw byte of a code without text, a control character in the middle of a word.
   - ``/ActualText`` (poppler, PDFium, MuPDF read this first). ``_format_shaped`` wraps each shaped run in marked
     content carrying its typed text, so a mark raised or moved back over its consonant cannot be placed by its
@@ -35,13 +36,18 @@ What this module adds to ReportLab's shaping, each for a reason found by testing
 
   The glyphs drawn are the same (pixel for pixel). The extra codes depend only on (glyph, text), are capped per
   process (``EXTRA_CODES_MAX``) and never appear in the PDF themselves, so the bytes of a PDF do not depend on what
-  was built before it. Measured on 35 strings x 2 weights in six extractors and on 11,000+ forms in poppler, pypdf
-  and PDFium (``tests/test_report_fonts.py``).
+  was built before it. Measured on 79 strings x 2 layouts in six extractors and on 11,000+ forms in poppler, pypdf
+  and PDFium (``tests/test_report_fonts.py``); what each extractor still gets wrong (U+200D in pypdf and pdfminer,
+  a repeated tail in MuPDF) is listed in ``fonts/README.md``.
+* **One subset at a time per font.** ReportLab writes a font's subset by reading the font file through one shared
+  read position, so two PDFs embedding the same font at once could read each other's offsets; ``_ReportFont`` holds a
+  lock around it.
 """
 from __future__ import annotations
 
 import json
 import threading
+import unicodedata
 from itertools import groupby
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -104,6 +110,10 @@ class _ReportFont(TTFont):
             if text:
                 self._code_text[code] = text
         self._extra: Dict[Tuple[int, str], int] = {}  # (glyph id, text) -> code (_copy_as_typed)
+        # ReportLab subsets a TrueType font through a read position shared on the font file object (makeSubset seeks,
+        # then reads composite glyphs' components), so two documents subsetting this font at once can read each
+        # other's bytes (KeyError/IndexError). One document's subsetting at a time; it happens once per font per PDF.
+        self._subset_lock = threading.Lock()
 
     def text_of(self, code: int) -> str:
         """What the ToUnicode map says ``code`` stands for."""
@@ -131,7 +141,8 @@ class _ReportFont(TTFont):
 
     def addObjects(self, doc) -> None:
         state = self.state.get(doc)  # ReportLab drops the document's state at the end of addObjects
-        super().addObjects(doc)
+        with self._subset_lock:
+            super().addObjects(doc)
         for index, subset in enumerate(state.subsets if state is not None else ()):
             if not any(code in self._code_text for code in subset):
                 continue
@@ -201,20 +212,22 @@ def _shape_by_font(original):
     return shape
 
 
+ZWJ = "\u200d"
+
+
 def _pieces(typed: str, defaults: List[str]) -> List[str]:
     """``typed`` cut into one piece per glyph, in drawing order: one character for each glyph but the last, the rest to
     the last; joined, the pieces are ``typed``. No piece is empty: a viewer that finds no text for a code copies the
-    raw byte (PDFium, pdf.js, MuPDF). A cluster with more glyphs than characters (HarfBuzz decomposed a letter or
-    added a dotted circle to a sequence that cannot be written) keeps what each glyph shows, U+25CC for a glyph
-    without printable text of its own."""
+    raw byte (PDFium, pdf.js, MuPDF).
+
+    A cluster with more glyphs than characters (the font draws ई as इ plus a reph-like mark, ऐ as ए plus a vowel sign):
+    the whole typed cluster goes on the first glyph and each further glyph gets U+200D ZERO WIDTH JOINER, so pdf.js
+    copies मुंबई as typed (pypdf keeps the joiner: मुंबई + U+200D). A cluster whose glyphs already spell a canonical
+    equivalent of what was typed (HarfBuzz decomposed ऴ into ळ + nukta) is never rewritten (``_copy_as_typed``)."""
     count = len(defaults)
     if len(typed) >= count:
         return [typed[i:i + 1] for i in range(count - 1)] + [typed[count - 1:]]
-    return [d if d and all(ord(ch) >= 0x20 and not _private(ch) for ch in d) else "\u25cc" for d in defaults]
-
-
-def _private(ch: str) -> bool:
-    return 0xE000 <= ord(ch) <= 0xF8FF or ord(ch) >= 0xF0000
+    return [typed] + [ZWJ] * (count - 1)
 
 
 def _copy_as_typed(word, shaped):
@@ -249,8 +262,8 @@ def _copy_as_typed(word, shaped):
             continue
         want = typed[start:end]
         shown = [fonts[k].text_of(ord(chars[k][j])) for k, j, _c in members]
-        if "".join(shown) == want:
-            continue
+        if unicodedata.normalize("NFD", "".join(shown)) == unicodedata.normalize("NFD", want):
+            continue  # the glyphs already spell it, or its canonical equivalent (HarfBuzz decomposed ऴ, ị)
         pieces = _pieces(want, shown)
         for n, ((k, j, _c), piece) in enumerate(zip(members, pieces)):
             font = fonts[k]

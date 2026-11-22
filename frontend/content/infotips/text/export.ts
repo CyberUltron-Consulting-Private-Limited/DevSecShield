@@ -140,7 +140,7 @@ const TEXT = {
   },
 
   // ────────────────────────────────────────────────────────────── Cover and privacy
-  // src: backend/utilities/pdf/report_options.py:63,68-106,220-236, frontend/utils/reportOptions.ts:195-206, backend/utilities/pdf/report_http.py:93-172 — 120 characters, one line, cp1252 or TEXT_RANGES (Noto fonts); sent as a POST body
+  // src: backend/utilities/pdf/report_options.py:63,68-106,220-236, frontend/utils/reportOptions.ts:195-206, backend/utilities/pdf/report_http.py:94-173 — 120 characters, one line, cp1252 or TEXT_RANGES (Noto fonts); sent as a POST body
   "export.prepared_for": {
     what: "The client named on the cover as Prepared for. Up to 120 characters on one line, in Latin (accents included), Greek, Cyrillic or Devanagari (Hindi, Marathi) script; other scripts are refused. Sent in the request body, never in a URL, and never remembered in this browser.",
     why: "A named report is ready to send; the name is not stored so it cannot leak into another client's report.",

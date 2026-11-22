@@ -86,7 +86,8 @@ def _refuse(field: str, message: str) -> HTTPException:
     return HTTPException(status_code=422, detail=f"{field}: {message}")
 
 
-# Report options are one object holding strings, lists of strings and booleans: two levels. Deeper is refused.
+# Report options are one object holding strings, lists of strings and booleans, so they need two levels; up to
+# BODY_MAX_DEPTH levels are accepted (room for a little growth) and anything deeper is refused before parsing.
 BODY_MAX_DEPTH = 4
 
 

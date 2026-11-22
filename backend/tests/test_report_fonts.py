@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import unicodedata
@@ -39,6 +40,9 @@ from backend.utilities.pdf.report_options import (  # noqa: E402
 )
 
 SCRIPTS = "can only use Latin, Greek, Cyrillic or Devanagari characters"
+_REPO = _TESTS.parents[1]
+# A child interpreter imports ``backend`` from the repository root, whatever PYTHONPATH the run has (CI's is empty).
+_CHILD_ENV = {**os.environ, "PYTHONPATH": str(_REPO)}
 needs_poppler = pytest.mark.skipif(shutil.which("pdftotext") is None, reason="pdftotext (poppler-utils) not installed")
 
 HINDI = "प्रबंधन क्षेत्र"  # conjuncts प्र and क्ष, a reordered e-matra, an anusvara
@@ -317,6 +321,9 @@ def _sweep_words() -> list[str]:
     for c1 in consonants:
         for c2 in consonants:
             words += [c1 + "्" + c2, c1 + "्" + c2 + "ि", c1 + "्" + c2 + "े"]
+    vowels = [chr(c) for c in range(0x0905, 0x0915)] + ["ॲ", "ॠ"]
+    words += vowels + [v + "ं" for v in vowels] + ["क" + v + "क" for v in vowels]
+    words += ["भाई", "मुंबई", "ऐसा", "ईमेल", "नई", "कई", "ईश्वर", "ऐतिहासिक", "मुंबई भाई"]
     return [unicodedata.normalize("NFC", w) for w in words] + ["वार्षिक", "आर्थिक", "कार्तिक", "धार्मिक", "लिमिटेड", "महाराष्ट्र", "मऱ्याद", "र्\u200dय", "क्\u200cष",
                     "ॲप", "श्री", "स्त्री", "त्र्य", "कृष्ण", "हृदय", "ज्ञान", "क्षत्रिय", "कीर्ति", "सिंह", "हिंदी", "किं"]
 
@@ -347,6 +354,12 @@ def extracted(raw: bytes, tmp_path: Path) -> dict[str, str]:
     return out
 
 
+def _pypdf_word(text: str) -> str:
+    """pypdf reads ToUnicode only: a glyph past a syllable's characters (ई is drawn as two) copies as U+200D, and a
+    letter HarfBuzz decomposed (ऴ) as its canonical equivalent; compared up to both (see fonts/README.md)."""
+    return unicodedata.normalize("NFC", text.replace("\u200d", ""))
+
+
 def assert_clean(engine: str, text: str) -> None:
     """No control character (a raw byte copied for a glyph without text; a form feed between pages is fine) and no
     private-use code point."""
@@ -367,8 +380,9 @@ def _sweep_pdf(tmp_path: Path, words: list[str], bold: bool, per_paragraph: int)
 
 @pytest.mark.parametrize("bold", [False, True], ids=["regular", "bold"])
 def test_thousands_of_devanagari_forms_extract_exactly_in_every_engine(tmp_path, bold):
-    """Running text (40 forms a paragraph): poppler, PDFium and pypdf give back every form exactly (pypdf up to
-    canonical equivalence: it reads ToUnicode only, where a letter HarfBuzz decomposes, ऴ, comes out as ळ + nukta).
+    """Running text (40 forms a paragraph): poppler, PDFium and pypdf give back every form, up to canonical
+    equivalence (a letter HarfBuzz decomposes, ऴ, comes out as ळ + nukta) and, in pypdf, a U+200D after ई/ऐ
+    (``_pypdf_word``).
     No engine sees a control character or a private-use code point; no ToUnicode entry is empty."""
     words = _sweep_words()
     assert len(words) > 10_000
@@ -380,33 +394,36 @@ def test_thousands_of_devanagari_forms_extract_exactly_in_every_engine(tmp_path,
         pytest.skip("no PDF text extractor installed")
     for engine, text in texts.items():
         assert_clean(engine, text)
-        got = text.split()
+        got = [unicodedata.normalize("NFC", w) for w in text.split()]  # canonical equivalence (ऴ as ळ + nukta)
+        expected = " ".join(words).split()
         if engine == "pypdf":
-            got = [unicodedata.normalize("NFC", w) for w in got]
-        wrong = [(want, have) for want, have in zip(words, got) if want != have]
-        assert len(got) == len(words) and wrong == [], (engine, len(got), wrong[:10])
+            got, expected = [_pypdf_word(w) for w in got], [_pypdf_word(w) for w in expected]
+        wrong = [(want, have) for want, have in zip(expected, got) if want != have]
+        assert len(got) == len(expected) and wrong == [], (engine, len(got), wrong[:10])
 
 
 @pytest.mark.parametrize("bold", [False, True], ids=["regular", "bold"])
-def test_one_form_a_line_keeps_its_line_in_poppler_and_pypdf(tmp_path, bold):
-    """One form a paragraph: poppler and pypdf give back each line exactly. PDFium gives back every character in
-    order, but on 7 of these 11,000 lines (regular weight only: a stacked conjunct with a raised e-matra) it does not
-    start a new line, so the check for it ignores line breaks."""
+def test_one_form_a_line_extracts_every_form_in_every_engine(tmp_path, bold):
+    """One form a paragraph (lines close together, the layout where PDFium misjudged line ends): every engine gives
+    back every form in order (up to canonical equivalence; pypdf also up to U+200D). PDFium joins 7 of these lines
+    without a break (regular weight only: a stacked conjunct with a raised e-matra), so it is checked without breaks."""
     words = _sweep_words()
     raw = _sweep_pdf(tmp_path, words, bold, 1)
     for engine, text in extracted(raw, tmp_path).items():
         assert_clean(engine, text)
         if engine == "pdfium":
-            assert "".join(text.split()) == "".join(words), engine
+            assert unicodedata.normalize("NFC", "".join(text.split())) == "".join("".join(w.split()) for w in words)
             continue
-        got = [line.strip() for line in text.split("\n") if line.strip()]
+        tokens = " ".join(words).split()
+        got = [unicodedata.normalize("NFC", w) for w in text.split()]
         if engine == "pypdf":
-            got = [unicodedata.normalize("NFC", w) for w in got]
-        wrong = [(want, have) for want, have in zip(words, got) if want != have]
-        assert len(got) == len(words) and wrong == [], (engine, len(got), wrong[:10])
+            got, tokens = [_pypdf_word(w) for w in got], [_pypdf_word(w) for w in tokens]
+        wrong = [(want, have) for want, have in zip(tokens, got) if want != have]
+        assert len(got) == len(tokens) and wrong == [], (engine, len(got), wrong[:10])
 
 
-REVIEW_WORDS = ["शुद्ध", "राष्ट्रीय", "बँक", "लिमिटेड", "त्रिवेणी", "वार्षिक", "कीर्ति", "किं", "क़िला"]
+REVIEW_WORDS = ["शुद्ध", "राष्ट्रीय", "बँक", "लिमिटेड", "त्रिवेणी", "वार्षिक", "कीर्ति", "किं", "क़िला", "मुंबई", "ईमेल",
+                "ऐसा", "भाई"]
 
 
 def _run_pdf(ctx) -> bytes:
@@ -435,8 +452,8 @@ def test_the_words_the_review_found_broken_copy_exactly_everywhere(tmp_path, whe
     from backend.tests.test_cbom_deliverable_common import make_view
     from backend.utilities.pdf.cbom_deliverables import DELIVERABLES
 
-    name = " ".join(REVIEW_WORDS[:5])
-    title = " ".join(REVIEW_WORDS[5:])
+    name = " ".join(REVIEW_WORDS[:7])
+    title = " ".join(REVIEW_WORDS[7:])
     if where == "scan cover":
         raw = scan_pdf(tmp_path, "review", prepared_for=name, title=title)
     elif where == "deliverable control table":
@@ -451,6 +468,8 @@ def test_the_words_the_review_found_broken_copy_exactly_everywhere(tmp_path, whe
     for engine, text in texts.items():
         assert_clean(engine, text)
         flat = " ".join(text.split())
+        if engine == "pypdf":
+            flat = _pypdf_word(flat)
         if where == "deliverable control table":
             assert flat.count(" ".join(REVIEW_WORDS)) >= 2, (engine, flat[:600])  # masthead and control table
         else:
@@ -475,7 +494,7 @@ def test_a_pdf_does_not_depend_on_what_the_process_built_before():
 
     def digest(*before: str) -> str:
         done = subprocess.run([sys.executable, "-c", script, *before, target], capture_output=True, text=True,
-                              timeout=300, cwd=str(_TESTS.parent))
+                              timeout=300, cwd=str(_REPO), env=_CHILD_ENV)
         assert done.returncode == 0, done.stderr[-2000:]
         return done.stdout.strip().splitlines()[-1]
 
@@ -485,8 +504,8 @@ def test_a_pdf_does_not_depend_on_what_the_process_built_before():
 def test_pieces_never_leave_a_glyph_without_text():
     assert RF._pieces("कि", ["ि", "क"]) == ["क", "ि"]  # one typed character per glyph, in drawing order
     assert RF._pieces("र्षि", ["ि", "ष", "\ue231"]) == ["र", "्", "षि"]  # the rest on the last glyph
-    assert RF._pieces("ि", ["\u25cc", "ि"]) == ["\u25cc", "ि"]  # more glyphs than characters: what each one shows
-    assert RF._pieces("x", ["\ue000", "y"]) == ["\u25cc", "y"]
+    assert RF._pieces("ि", ["\u25cc", "ि"]) == ["ि", RF.ZWJ]  # more glyphs than characters: typed first, then U+200D
+    assert RF._pieces("x", ["\ue000", "y"]) == ["x", RF.ZWJ]
     for typed, defaults in (("क", ["a"]), ("कखग", ["a", "b"]), ("क", ["a", "b", "c"])):
         assert all(RF._pieces(typed, defaults)), (typed, defaults)
 
@@ -513,6 +532,64 @@ def test_the_extra_code_table_is_capped_and_a_full_table_never_fails_a_build(tmp
     assert len(font._extra) == RF.EXTRA_CODES_MAX
 
 
+def test_a_syllable_drawn_with_more_glyphs_than_letters_copies_as_typed():
+    """Review 6014242728: ई is drawn as इ plus a reph-like mark and ऐ as ए plus a vowel sign; their glyphs' own text
+    spelled इर् / एे in pdf.js, pypdf and pdfminer. The typed syllable goes on the first glyph, U+200D on the others."""
+    assert RF._pieces("ई", ["इ", "र्"]) == ["ई", RF.ZWJ]
+    assert RF._pieces("ऐ", ["ए", "े"]) == ["ऐ", RF.ZWJ]
+    assert RF._pieces("ि", ["\u25cc", "ि"]) == ["ि", RF.ZWJ]
+
+
+def _forced_switch_builds(monkeypatch, *, locked: bool) -> int:
+    """Concurrent builds with a thread switch forced inside every 16-bit font read (where the reviewer saw ReportLab's
+    shared read position race); returns how many failed or differed from a serial build."""
+    import contextlib
+    import io
+    import time
+
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.pdfbase import pdfmetrics, ttfonts
+    from reportlab.platypus import SimpleDocTemplate
+
+    RF.ensure_registered()
+    style = ParagraphStyle("t", fontName="Helvetica", fontSize=12, leading=14)
+
+    def build(text: str) -> bytes:
+        out = io.BytesIO()
+        SimpleDocTemplate(out, invariant=1).build([RF.unicode_paragraph(text, style, bold=True)])
+        return out.getvalue()
+
+    texts = ["मुंबई भाई नई", "क़ ख़ ग़ ज़ ड़ ढ़ फ़ य़ ई ऐ"]  # composite glyphs: subsetting reads their components
+    serial = {t: build(t) for t in texts}
+    if not locked:
+        for name in RF.FACES.values():
+            monkeypatch.setattr(pdfmetrics.getFont(name), "_subset_lock", contextlib.nullcontext())
+    read = ttfonts.TTFontParser.read_ushort
+
+    def switching(self):
+        time.sleep(0)  # give the GIL away here, as a preemption at this point would
+        return read(self)
+
+    monkeypatch.setattr(ttfonts.TTFontParser, "read_ushort", switching)
+    failed = 0
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for _round in range(25):
+            for text, future in [(t, pool.submit(build, t)) for t in texts * 4]:
+                try:
+                    failed += future.result() != serial[text]
+                except (KeyError, IndexError, ValueError):
+                    failed += 1
+    return failed
+
+
+def test_concurrent_builds_subset_a_font_one_at_a_time(monkeypatch):
+    """Review 6014242728: ReportLab subsets a TrueType font through a read position shared on the font object, so
+    concurrent PDFs could raise KeyError/IndexError. _ReportFont.addObjects holds a per-font lock around it: 200 builds
+    with forced thread switches all succeed; the same run without the lock fails (about 70 of 200 here)."""
+    assert _forced_switch_builds(monkeypatch, locked=True) == 0
+    assert _forced_switch_builds(monkeypatch, locked=False) > 0  # the race is real: the lock is what prevents it
+
+
 def test_a_foreign_font_under_a_report_font_name_fails_loudly():
     script = (
         "from reportlab.pdfbase import pdfmetrics\n"
@@ -525,7 +602,7 @@ def test_a_foreign_font_under_a_report_font_name_fails_loudly():
         "    print('refused', exc)\n"
     )
     done = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=120,
-                          cwd=str(_TESTS.parent))
+                          cwd=str(_REPO), env=_CHILD_ENV)
     assert done.returncode == 0, done.stderr[-2000:]
     assert done.stdout.startswith("refused") and "'NotoSans'" in done.stdout
 
