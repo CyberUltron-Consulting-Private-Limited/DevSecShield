@@ -131,13 +131,10 @@ jobs:
           # first-parent promotions since scan_node/release.json's anchor): full history, commits and trees only
           fetch-depth: 0
           filter: blob:none
-          # non-cone patterns: cone mode refuses a file path ("is not a directory") whenever the workspace's index
-          # already holds it, which a persistent self-hosted workspace does
-          sparse-checkout-cone-mode: false
           sparse-checkout: |
-            /.github/ci/
-            /scan_node/zs_scan_node/
-            /scan_node/release.json
+            .github/ci
+            scan_node/zs_scan_node
+            scan_node/release.json
       - name: Tags
         id: tags
         if: steps.decide.outputs.publish == 'true'
@@ -705,11 +702,11 @@ jobs:
           ref: ${{ needs.meta.outputs.sha }}
           fetch-depth: 0
           filter: blob:none
-          # cone mode fails here on the self-hosted runner: "fatal: 'scan_node/release.json' is not a directory"
-          # (every staging push since 2026-11-18), so no scan-node release tag was published and each staging
-          # deploy waited out its 45-minute wait-node-release; a non-cone pattern names the single file
-          sparse-checkout-cone-mode: false
-          sparse-checkout: /scan_node/release.json
+          # cone mode takes directories only: naming the file failed on the self-hosted runners ("'scan_node/release.json'
+          # is not a directory" once a reused workspace's index holds it), so no scan-node release was published and
+          # every staging deploy waited out wait-node-release. A cone of the node package also brings the files
+          # directly in scan_node/, release.json included; the step itself reads git history only
+          sparse-checkout: scan_node/zs_scan_node
 
       - name: Download the chart
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2

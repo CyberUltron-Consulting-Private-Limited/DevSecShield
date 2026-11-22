@@ -1262,6 +1262,31 @@ class ChartJob(unittest.TestCase):
         self.assertIn(f"NODE_PATHS: {' '.join(node_version.NODE_PATHS)}\n", JOBS["release"])
         self.assertIn("          fetch-depth: 0\n          filter: blob:none\n", JOBS["release"])
 
+    def test_sparse_checkouts_into_the_shared_workspace_name_directories_in_cone_mode(self):
+        """The self-hosted runners reuse one workspace for every job. A cone-mode sparse checkout of a FILE fails there
+        once the index holds it ("'scan_node/release.json' is not a directory": the release job, every staging push
+        2026-11-18..22), and turning cone mode off leaves core.sparseCheckout=true behind, so the next full checkout
+        on that runner gets a handful of files. Checkouts into the shared root therefore stay in cone mode and name
+        directories only (a checkout with its own `path:` is a fresh clone and may differ)."""
+        self.assertNotIn("sparse-checkout-cone-mode: false", WF)
+        steps = re.split(r"\n      - (?=name:|uses:)", WF)
+        checked = 0
+        for step in steps:
+            if "actions/checkout@" not in step or "sparse-checkout:" not in step or "\n          path:" in step:
+                continue
+            block = step.split("sparse-checkout:", 1)[1]
+            first, _, rest = block.partition("\n")
+            entries = [first.strip()] if first.strip() not in ("", "|") else []
+            for line in rest.splitlines():
+                if not line.startswith("            "):
+                    break
+                entries.append(line.strip())
+            for entry in entries:
+                checked += 1
+                self.assertTrue((ROOT / entry).is_dir(), f"sparse-checkout names {entry!r}, not a directory")
+        self.assertGreaterEqual(checked, 3)
+        self.assertIn("          sparse-checkout: scan_node/zs_scan_node\n", JOBS["release"])
+
     def test_the_downloaded_chart_and_the_published_chart_are_the_same_bytes(self):
         """The staging deploy's download (staging.sh node-artifacts: node_artifacts.py with the GHCR image) and the
         chart job's file, for one version, are byte-identical."""
