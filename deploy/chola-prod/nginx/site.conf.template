@@ -2,8 +2,11 @@
 # The ALB ends TLS for both host names and forwards plain HTTP here (port 80 only); its health check asks for
 # GET /nginx-health with the instance address as Host, which the default server answers 200 "ok".
 
+# The Server header stays "nginx" without a version (removing it needs a module the stock image lacks); the backend's
+# own "server: uvicorn" is not passed on (proxy_pass drops the upstream Server header by default).
 server_tokens off;
-client_max_body_size 64m;          # uploads are capped at 50 MB by the API; it answers 413 itself
+# Uploads are capped at 50 MB by the API (it answers 413 itself); the one larger route has its own location below.
+client_max_body_size 64m;
 proxy_read_timeout 600s;           # CI/CD scans hold the request while the worker runs (the ALB idle timeout applies too)
 proxy_send_timeout 600s;
 # keepalive_timeout stays the image's 65 s (nginx.conf; a second one here is refused as a duplicate): longer than the
@@ -25,10 +28,17 @@ map "$dss_from_alb:$http_x_forwarded_proto" $dss_forwarded_proto {
     "1:https" https;
     "1:http" http;
 }
-# HSTS only on responses to HTTPS requests (an empty value sends no header).
+# HSTS only on responses to HTTPS requests (an empty value sends no header). No includeSubDomains / preload: other
+# zeroshield.ai hosts are not ours to pin to HTTPS from here.
 map $dss_forwarded_proto $dss_hsts {
     default "";
     https "max-age=31536000";
+}
+# X-Forwarded-For for the upstream. From the ALB it is the ALB's header as it came (the ALB already appended the
+# client, which real_ip made $remote_addr), so the client appears once, last; from anyone else only the TCP peer.
+map "$dss_from_alb:$http_x_forwarded_for" $dss_xff {
+    default $remote_addr;
+    "~^1:(?<alb_xff>.+)$" $alb_xff;
 }
 # WebSocket upgrades pass through; every other request keeps an empty Connection header.
 map $http_upgrade $connection_upgrade {
@@ -60,7 +70,7 @@ server {
         proxy_set_header Connection $connection_upgrade;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-For $dss_xff;
         proxy_set_header X-Forwarded-Proto $dss_forwarded_proto;
         proxy_hide_header X-Powered-By;
     }
@@ -74,6 +84,29 @@ server {
     add_header X-Frame-Options "DENY" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
     location = /nginx-health { access_log off; default_type text/plain; return 200 "ok\n"; }
+    # CBOM export signature check: POST /{team}/cbom/sources/runs/{run}/signature/verify takes an export of up to
+    # 512 MB (backend/routers/cbom_run_deliverables.py VERIFY_MAX_BYTES); every other route keeps 64 MB.
+    location ~ ^/[0-9]+/cbom/sources/runs/[0-9]+/signature/verify$ {
+        client_max_body_size 512m;
+        set $backend http://backend:8080;
+        proxy_pass $backend;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        # The backend trusts this header only from this proxy's address (FORWARDED_ALLOW_IPS) and takes the
+        # right-most address it does not trust; nginx already rewrote $remote_addr to the client (real_ip above).
+        proxy_set_header X-Forwarded-For $dss_xff;
+        proxy_set_header X-Forwarded-Proto $dss_forwarded_proto;
+        # No client certificates through the ALB: an empty value drops whatever a client sent in these headers.
+        proxy_set_header X-ZS-Client-Verify "";
+        proxy_set_header X-ZS-Client-Cert "";
+        # The API sets nosniff on some answers itself; one header, not two. No framework banner either.
+        proxy_hide_header X-Content-Type-Options;
+        proxy_hide_header X-Powered-By;
+        proxy_buffering off;       # streamed responses (chat, server-sent events) reach the browser as they come
+    }
     location / {
         set $backend http://backend:8080;
         proxy_pass $backend;
@@ -84,13 +117,14 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         # The backend trusts this header only from this proxy's address (FORWARDED_ALLOW_IPS) and takes the
         # right-most address it does not trust; nginx already rewrote $remote_addr to the client (real_ip above).
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-For $dss_xff;
         proxy_set_header X-Forwarded-Proto $dss_forwarded_proto;
         # No client certificates through the ALB: an empty value drops whatever a client sent in these headers.
         proxy_set_header X-ZS-Client-Verify "";
         proxy_set_header X-ZS-Client-Cert "";
-        # The API sets nosniff on some answers itself; one header, not two.
+        # The API sets nosniff on some answers itself; one header, not two. No framework banner either.
         proxy_hide_header X-Content-Type-Options;
+        proxy_hide_header X-Powered-By;
         proxy_buffering off;       # streamed responses (chat, server-sent events) reach the browser as they come
     }
 }

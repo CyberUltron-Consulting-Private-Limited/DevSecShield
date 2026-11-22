@@ -3,11 +3,13 @@
 #
 #   scripts/deploy/chola-prod.sh deploy --sha <commit>     (from the owner's machine; never run compose by hand there)
 #
-# On the instance the files live in /opt/devsecshield-chola/deploy/chola-prod/ next to two env files that the kit
-# renders from AWS Secrets Manager with the instance role (mode 600, owner ubuntu, never in git):
-#   .env         shared values (images, hosts, infrastructure credentials, AWS app-user keys); read by compose for
-#                ${...} and by every application container
-#   backend.env  API-only secrets (JWT, encryption key, mail, CBOM collector, AI); backend-image containers only
+# On the instance the files live in /opt/devsecshield-chola/deploy/chola-prod/ next to four env files that the kit
+# renders from AWS Secrets Manager with the instance role (mode 600, owner ubuntu, never in git), one per reader:
+#   .env               Compose interpolation only (images, hosts, the datastore containers' own credentials);
+#                      no application container gets it
+#   backend.env        backend-image services: database, queue, S3/Bedrock keys, JWT, encryption key, mail, CBOM
+#   scan-worker.env    scan-worker, cicd-worker: queue, results store, S3/Bedrock keys, Qdrant, model
+#   dast-worker.env    dast-worker: queue, results store, Bedrock keys
 #
 # Exposure: only nginx publishes a port (80). frontend:3000 and backend:8080 sit on the `edge` network; postgres,
 # mongo, rabbitmq and qdrant sit only on `data`, an internal network with no route out of the host. Every named volume
@@ -27,7 +29,6 @@ x-logging: &logging
     max-size: "20m"
     max-file: "5"
 x-backend-env-files: &backend-env-files
-  - path: .env
   - path: backend.env
 # remote.sh sets DSS_FILES_HASH to the sha256 of nginx/ and compose/aibom-config-overlay/. They are bind mounts, which
 # Compose does not compare: the label makes a changed file recreate the containers that read it.
@@ -220,7 +221,7 @@ services:
     pull_policy: never
     restart: unless-stopped
     logging: *logging
-    env_file: [.env]
+    env_file: [scan-worker.env]
     environment:
       IS_DOCKER_CONTAINER: "True"
       GRYPE_DB_CACHE_DIR: /var/cache/grype
@@ -243,7 +244,7 @@ services:
     pull_policy: never
     restart: unless-stopped
     logging: *logging
-    env_file: [.env]
+    env_file: [scan-worker.env]
     environment:
       IS_DOCKER_CONTAINER: "True"
       GRYPE_DB_CACHE_DIR: /var/cache/grype
@@ -271,7 +272,7 @@ services:
     memswap_limit: 4g
     cpus: 2
     pids_limit: 2048
-    env_file: [.env]
+    env_file: [dast-worker.env]
     environment:
       IS_DOCKER_CONTAINER: "True"
       DAST_REAP_BROWSERS: "1"

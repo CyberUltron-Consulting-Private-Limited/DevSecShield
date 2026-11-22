@@ -1,13 +1,16 @@
 """The Chola production deploy kit (deploy/chola-prod/, scripts/deploy/chola-prod.sh; README there).
 
-* kit.py merge-app-secrets: the first run generates every secret with the CSPRNG, a re-run KEEPS every existing value
-  (put-secret-value replaces the whole JSON), unusable stored values are refused instead of replaced, the mail login
-  comes from the ansh branch's .env format (quotes, trailing comments), and nothing prints a value;
-* kit.py render-env: which keys land in .env / backend.env, quoting, no dev switches, app-user field aliases;
-* docker-compose.yml: only nginx publishes a port (80), databases only on the internal network, every image the kit
-  ships in the release archive is the one compose runs, backend on 8080, no dev settings;
-* nginx: /nginx-health, real_ip from the ALB subnets only, X-Forwarded-Proto believed only from them;
-* `chola-prod.sh --dry-run` runs no AWS / SSH / Docker / registry command.
+Covers, among others, the PR #475 review findings:
+* secrets: CSPRNG on first run, every existing value kept on re-runs, --data-exists never generates a key existing data
+  depends on (database/queue passwords, ENCRYPTION_KEY, CERTIN_HMAC_SECRET) and refuses empty ones;
+* mail: origin/ansh is read only on first setup or with --refresh-mail, with an explicit refspec, distinguishing a
+  missing branch from missing keys; --mail-prompt; a normal deploy never touches origin/ansh;
+* fail-closed volume check (yes/no or die), retried polls, ip target groups, IMDS failing preflight, PassRole check,
+  the throwaway Docker config, detached jobs with STARTED records, rollback from an interrupted deploy;
+* least-privilege env files per container, no password on any command line, sudo-safe Compose environment;
+* nginx: real-IP sources (no /0 in any spelling, no prefix shorter than /8), the client once in X-Forwarded-For,
+  hidden X-Powered-By, the 512 MB route, no includeSubDomains;
+* --dry-run is read-only (no AWS/SSH/Docker/registry/git-fetch, no mailbox read), --help and flag order.
 
 Run: cd backend && python -m pytest tests/test_chola_prod_kit.py -q -p no:cacheprovider
 """
@@ -17,8 +20,10 @@ import json
 import os
 import re
 import shutil
+import signal
 import stat
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -31,16 +36,17 @@ OWNER = REPO / "scripts" / "deploy" / "chola-prod.sh"
 REMOTE = KIT_DIR / "remote.sh"
 TEMPLATE = KIT_DIR / "nginx" / "site.conf.template"
 SITE_SH = KIT_DIR / "nginx" / "40-chola-site.sh"
+README = KIT_DIR / "README.md"
 
 
-def _load_kit():
-    spec = importlib.util.spec_from_file_location("chola_kit", KIT_DIR / "kit.py")
+def _load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
 
 
-kit = _load_kit()
+kit = _load("chola_kit", KIT_DIR / "kit.py")
 
 ANSH_ENV = (
     'JWT_SECRET_KEY=whatever\n'
@@ -48,6 +54,10 @@ ANSH_ENV = (
     'OUTLOOK_PASSWORD="p@ss#word 1" #not in use \n'
     'TENANT_ID =abc\n'
 )
+
+
+def run(cmd, **kw):
+    return subprocess.run(cmd, capture_output=True, text=True, check=False, **kw)
 
 
 # ------------------------------------------------------------------------------------------------ dotenv
@@ -84,12 +94,12 @@ def test_two_runs_generate_different_values():
     assert all(a[k] != b[k] for k in kit.GENERATED)
 
 
-def test_rerun_preserves_every_existing_value_and_reports_unchanged():
+def test_rerun_preserves_every_existing_value_and_needs_no_mail_source():
     first, _, _ = kit.merge_app_secrets({}, kit.parse_dotenv(ANSH_ENV))
     first["SOMETHING_ELSE"] = "kept-as-is"
-    again, report, changed = kit.merge_app_secrets(dict(first), kit.parse_dotenv(ANSH_ENV))
+    again, report, changed = kit.merge_app_secrets(dict(first), {})  # no origin/ansh at all
     assert again == first and not changed
-    assert "SOMETHING_ELSE: kept (not managed by the kit)" in report
+    assert "SOMETHING_ELSE: kept (not managed by the kit)" in report and "SMTP_PASSWORD: kept" in report
 
 
 def test_partial_secret_keeps_existing_and_fills_only_missing():
@@ -126,38 +136,86 @@ def test_missing_mail_source_is_refused():
         kit.merge_app_secrets({}, {})
 
 
-def test_merge_cli_writes_mode_600_and_prints_no_value(tmp_path):
+# QA F1: with data on the instance nothing that data depends on is ever generated, and empty values do not count.
+@pytest.mark.parametrize("existing, missing", [
+    ({}, set(kit.DATA_KEYS)),
+    ({"PG_USER_PASS": ""}, set(kit.DATA_KEYS)),
+    ({"PG_USER_PASS": "a" * 48}, set(kit.DATA_KEYS) - {"PG_USER_PASS"}),
+])
+def test_data_exists_refuses_to_generate_data_keys(existing, missing):
+    with pytest.raises(kit.Refused) as err:
+        kit.merge_app_secrets(dict(existing), kit.parse_dotenv(ANSH_ENV), data_exists=True)
+    for key in missing:
+        assert key in str(err.value)
+    assert set(kit.DATA_KEYS) >= {"PG_USER_PASS", "MONGO_INITDB_ROOT_PASSWORD", "RABBIT_ADMIN_PASSWORD",
+                                  "ENCRYPTION_KEY", "CERTIN_HMAC_SECRET"}
+
+
+def test_data_exists_still_fills_keys_no_data_depends_on():
+    existing = {k: v for k, v in kit.merge_app_secrets({}, kit.parse_dotenv(ANSH_ENV))[0].items()
+                if k in kit.DATA_KEYS}
+    merged, report, changed = kit.merge_app_secrets(dict(existing), kit.parse_dotenv(ANSH_ENV), data_exists=True)
+    assert changed and "JWT_SECRET_KEY: generated" in report and "QDRANT_API_KEY: generated" in report
+    assert all(merged[k] == existing[k] for k in kit.DATA_KEYS)
+
+
+def _merge_cli(tmp_path, existing_text, *extra):
     cur = tmp_path / "cur.json"
-    cur.write_text("")  # an empty secret (no value yet)
+    cur.write_text(existing_text)
+    out = tmp_path / "out.json"
+    return run(["python3", "-I", str(KIT_DIR / "kit.py"), "merge-app-secrets", "--existing", str(cur),
+                "--out", str(out), *extra]), out
+
+
+def test_merge_cli_writes_mode_600_and_prints_no_value(tmp_path):
     mail = tmp_path / "mail.env"
     mail.write_text(ANSH_ENV)
-    out = tmp_path / "out.json"
-    run = subprocess.run(["python3", "-I", str(KIT_DIR / "kit.py"), "merge-app-secrets", "--existing", str(cur),
-                          "--mail-env", str(mail), "--out", str(out)], capture_output=True, check=False, text=True)
-    assert run.returncode == 0, run.stderr
+    proc, out = _merge_cli(tmp_path, "", "--mail-env", str(mail))  # an empty secret (no value yet)
+    assert proc.returncode == 0, proc.stderr
     assert stat.S_IMODE(out.stat().st_mode) == 0o600
     merged = json.loads(out.read_text())
     for value in merged.values():
-        assert value not in run.stdout and value not in run.stderr
-    # re-run on its own output: unchanged (exit 3), nothing new
-    cur.write_text(out.read_text())
-    again = subprocess.run(["python3", "-I", str(KIT_DIR / "kit.py"), "merge-app-secrets", "--existing", str(cur),
-                            "--mail-env", str(mail), "--out", str(out)], capture_output=True, check=False, text=True)
-    assert again.returncode == 3 and json.loads(out.read_text()) == merged
+        assert value not in proc.stdout and value not in proc.stderr
+    again, out2 = _merge_cli(tmp_path, out.read_text())  # re-run, no mail source given
+    assert again.returncode == 3 and json.loads(out2.read_text()) == merged
+    refused, _ = _merge_cli(tmp_path, "{}", "--mail-env", str(mail), "--data-exists")
+    assert refused.returncode == 1 and "lock the application out" in refused.stderr
+
+
+def test_merge_cli_mail_lines_from_the_prompt(tmp_path):
+    lines = tmp_path / "mail.lines"
+    lines.write_text("typed@example.com\nTyped-Pass word#1\n")
+    proc, out = _merge_cli(tmp_path, "{}", "--mail-lines", str(lines), "--refresh-mail")
+    assert proc.returncode == 0, proc.stderr
+    merged = json.loads(out.read_text())
+    assert merged["SMTP_USERNAME"] == "typed@example.com" and merged["SMTP_PASSWORD"] == "Typed-Pass word#1"
+    assert "Typed-Pass" not in proc.stdout + proc.stderr
+    lines.write_text("only-an-address@example.com\n")
+    proc, _ = _merge_cli(tmp_path, "{}", "--mail-lines", str(lines))
+    assert proc.returncode == 1 and "no password" in proc.stderr
+
+
+def test_mail_state_names_only():
+    full = json.dumps({"SMTP_USERNAME": "a@b.c", "SMTP_PASSWORD": "SECRETVALUE", "MAIL_FROM": "a@b.c"})
+    for text, want in ((full, "present"), ("{}", "missing"), ("", "missing"),
+                       (json.dumps({"SMTP_USERNAME": "a@b.c", "SMTP_PASSWORD": "", "MAIL_FROM": "a@b.c"}), "missing")):
+        proc = run(["python3", "-I", str(KIT_DIR / "kit.py"), "mail-state"], input=text)
+        assert proc.returncode == 0 and proc.stdout.strip() == want and "SECRETVALUE" not in proc.stdout
 
 
 def test_json_field_aliases_and_names_only_error():
     assert kit.json_field({"AccessKeyId": "AKIA1"}, kit.ACCESS_KEY_NAMES) == "AKIA1"
     assert kit.json_field({"aws_secret_access_key": "s"}, kit.SECRET_KEY_NAMES) == "s"
-    run = subprocess.run(["python3", "-I", str(KIT_DIR / "kit.py"), "json-field", "private_key_pem"],
-                         input=json.dumps({"other": "TOPSECRET"}), capture_output=True, check=False, text=True)
-    assert run.returncode == 1 and "other" in run.stderr and "TOPSECRET" not in run.stderr + run.stdout
+    proc = run(["python3", "-I", str(KIT_DIR / "kit.py"), "json-field", "private_key_pem"],
+               input=json.dumps({"other": "TOPSECRET"}))
+    assert proc.returncode == 1 and "other" in proc.stderr and "TOPSECRET" not in proc.stderr + proc.stdout
 
 
 # ------------------------------------------------------------------------------------------------ render
 CFG = {"image_prefix": "935951870001.dkr.ecr.ap-south-1.amazonaws.com/devsec-chola", "frontend_host": "chola.zeroshield.ai",
        "api_host": "chola-api.zeroshield.ai", "real_ip_from": "10.60.1.0/24,10.60.2.0/24", "region": "ap-south-1",
        "llm_model": "openai.gpt-oss-120b-1:0", "smtp_host": "smtp.office365.com", "smtp_port": "587"}
+APP_USER = {"access_key_id": "AKIAAPP", "secret_access_key": "appsecret"}
 
 
 def _app():
@@ -165,57 +223,71 @@ def _app():
     return merged
 
 
+def _render(app=None, app_user=None, collector=None, tag="b669fa3c467f"):
+    files, warnings = kit.render_env(app or _app(), APP_USER if app_user is None else app_user, collector or {}, CFG, tag)
+    return {k: kit.parse_dotenv(v) for k, v in files.items()}, files, warnings
+
+
 def test_render_env_files():
-    app = _app()
-    shared, backend, warnings = kit.render_env(app, {"access_key_id": "AKIAAPP", "secret_access_key": "appsecret"},
-                                               {"AWS_ACCESS_KEY_ID": "AKIACOL", "AWS_SECRET_ACCESS_KEY": "colsecret",
-                                                "principal_arn": "arn:aws:iam::935951870001:user/collector"},
-                                               CFG, "b669fa3c467f")
-    s = kit.parse_dotenv(shared)
-    b = kit.parse_dotenv(backend)
+    env, files, warnings = _render(collector={"AWS_ACCESS_KEY_ID": "AKIACOL", "AWS_SECRET_ACCESS_KEY": "colsecret",
+                                              "principal_arn": "arn:aws:iam::935951870001:user/collector"})
+    i, b = env[".env"], env["backend.env"]
     assert not warnings
-    assert s["DSS_TAG"] == "b669fa3c467f" and s["DSS_IMAGE_PREFIX"].endswith("/devsec-chola")
-    assert s["AWS_ACCESS_KEY_ID"] == "AKIAAPP" and s["AWS_DEFAULT_REGION"] == "ap-south-1"
-    assert "AWS_ENDPOINT_URL_S3" not in s  # real S3, never an empty endpoint
-    assert s["LLM_MODEL"] == "openai.gpt-oss-120b-1:0" and s["DSS_SBOM_REGISTRY"] == "0"
-    assert s["DSS_REAL_IP_FROM"] == "10.60.1.0/24,10.60.2.0/24"
-    assert "DSS_HTTP_PORT" not in s  # production publishes 80, the ALB's target port
+    assert i["DSS_TAG"] == "b669fa3c467f" and i["DSS_IMAGE_PREFIX"].endswith("/devsec-chola")
+    assert i["DSS_REAL_IP_FROM"] == "10.60.1.0/24,10.60.2.0/24"
+    assert "DSS_HTTP_PORT" not in i  # production publishes 80, the ALB's target port
+    assert b["AWS_ACCESS_KEY_ID"] == "AKIAAPP" and b["AWS_DEFAULT_REGION"] == "ap-south-1"
+    assert "AWS_ENDPOINT_URL_S3" not in b  # real S3, never an empty endpoint
+    assert b["DSS_SBOM_REGISTRY"] == "0"
     assert b["CORS_ORIGINS"] == b["CBOM_PUBLIC_APP_URL"] == "https://chola.zeroshield.ai"
     assert (b["SMTP_HOST"], b["SMTP_PORT"], b["SMTP_SECURITY"]) == ("smtp.office365.com", "587", "starttls")
     assert b["SMTP_PASSWORD"] == "p@ss#word 1" and b["MAIL_FROM"] == "support@example.com"
     assert b["CBOM_AWS_ACCESS_KEY_ID"] == "AKIACOL" and b["CBOM_AWS_PRINCIPAL_ARN"].endswith(":user/collector")
     assert (b["CBOM_AI_PROVIDER"], b["CBOM_AI_AWS_CREDENTIALS"], b["CBOM_AI_MODEL"]) == \
         ("bedrock", "env", "openai.gpt-oss-120b-1:0")
-    # API-only secrets never reach the shared file the workers read, and the reverse
-    assert "JWT_SECRET_KEY" not in s and "SMTP_PASSWORD" not in s and "PG_USER_PASS" not in b
-    for text in (shared, backend):
+    assert env["scan-worker.env"]["LLM_MODEL"] == "openai.gpt-oss-120b-1:0"
+    for text in files.values():
         assert not re.search(r"^(DSS_DEV_MODE|LOCAL_DEV_VERIFICATION_)", text, re.MULTILINE)
         assert not re.search(r"^(TENANT_ID|CLIENT_ID|CLIENT_SECRET)=", text, re.MULTILINE)  # Graph is unreachable
         assert all(re.fullmatch(r"[A-Z0-9_]+='[^'\n]*'", line) for line in text.splitlines())
+
+
+# Review item 5: each container gets only what its code reads.
+def test_render_least_privilege_per_reader():
+    env, _, _ = _render()
+    interp, backend, scan, dast = env[".env"], env["backend.env"], env["scan-worker.env"], env["dast-worker.env"]
+    api_only = {"JWT_SECRET_KEY", "JWT_REFRESH_SECRET_KEY", "ENCRYPTION_KEY", "CERTIN_HMAC_SECRET", "SMTP_PASSWORD",
+                "SMTP_USERNAME", "PG_USER_PASS", "CORS_ORIGINS"}
+    assert not api_only & set(scan) and not api_only & set(dast)
+    assert {"QDRANT_API_KEY", "LLM_MODEL"} <= set(scan) and not {"QDRANT_API_KEY", "LLM_MODEL"} & set(dast)
+    assert "QDRANT_API_KEY" not in backend
+    for name in ("RABBIT_ADMIN_PASSWORD", "MONGO_INITDB_ROOT_PASSWORD", "AWS_SECRET_ACCESS_KEY"):
+        assert name in scan and name in dast and name in backend
+    # the interpolation file feeds no application container and holds no application secret
+    assert not {"AWS_SECRET_ACCESS_KEY", "JWT_SECRET_KEY", "SMTP_PASSWORD", "ENCRYPTION_KEY"} & set(interp)
 
 
 def test_render_refuses_a_quote_and_requires_app_user_and_tag():
     app = _app()
     app["SMTP_PASSWORD"] = "it's"
     with pytest.raises(kit.Refused):
-        kit.render_env(app, {"access_key_id": "a", "secret_access_key": "b"}, {}, CFG, "b669fa3c467f")
+        kit.render_env(app, APP_USER, {}, CFG, "b669fa3c467f")
     with pytest.raises(kit.Refused, match="app-user"):
         kit.render_env(_app(), {}, {}, CFG, "b669fa3c467f")
     with pytest.raises(kit.Refused, match="12-character"):
-        kit.render_env(_app(), {"access_key_id": "a", "secret_access_key": "b"}, {}, CFG, "latest")
+        kit.render_env(_app(), APP_USER, {}, CFG, "latest")
     with pytest.raises(kit.Refused, match="app-secrets lacks"):
-        kit.render_env({}, {"access_key_id": "a", "secret_access_key": "b"}, {}, CFG, "b669fa3c467f")
+        kit.render_env({}, APP_USER, {}, CFG, "b669fa3c467f")
 
 
 def test_render_without_collector_keys_warns_and_omits_cbom_aws():
-    _, backend, warnings = kit.render_env(_app(), {"access_key_id": "a", "secret_access_key": "b"}, {}, CFG,
-                                          "b669fa3c467f")
-    assert "CBOM_AWS_ACCESS_KEY_ID" not in backend and any("cbom-collector" in w for w in warnings)
+    env, _, warnings = _render()
+    assert "CBOM_AWS_ACCESS_KEY_ID" not in env["backend.env"] and any("cbom-collector" in w for w in warnings)
 
 
 def test_render_env_cli_with_a_fake_aws(tmp_path):
-    """render-env end to end: secrets come from `aws secretsmanager get-secret-value` (here a fake on PATH); the files
-    are mode 600; DSS_TAG of an existing .env is kept."""
+    """render-env end to end: secrets come from `aws secretsmanager get-secret-value` (here a fake on PATH); the four
+    files are mode 600; DSS_TAG of an existing .env is kept."""
     secrets_by_id = {
         "devsec-chola/prod/app-secrets": json.dumps(_app()),
         "devsec-chola/prod/app-user": json.dumps({"AccessKeyId": "AKIAAPP", "SecretAccessKey": "s3cr3t"}),
@@ -232,14 +304,14 @@ def test_render_env_cli_with_a_fake_aws(tmp_path):
     out.mkdir()
     env = dict(os.environ, PATH=f"{fake.parent}:{os.environ['PATH']}")
     cmd = ["python3", "-I", str(KIT_DIR / "kit.py"), "render-env", "--dir", str(out), "--tag", "aaaaaaaaaaaa"]
-    run = subprocess.run(cmd, capture_output=True, check=False, text=True, env=env)
-    assert run.returncode == 0, run.stderr
-    for name in (".env", "backend.env"):
-        assert stat.S_IMODE((out / name).stat().st_mode) == 0o600
-    assert "s3cr3t" not in run.stdout + run.stderr and "cbom-collector" in run.stdout
+    proc = run(cmd, env=env)
+    assert proc.returncode == 0, proc.stderr
+    for name in kit.ENV_FILES:
+        assert stat.S_IMODE((out / name).stat().st_mode) == 0o600, name
+    assert "s3cr3t" not in proc.stdout + proc.stderr and "cbom-collector" in proc.stdout
     cmd[-1] = ""  # no --tag value: keep the .env's
-    run = subprocess.run(cmd, capture_output=True, check=False, text=True, env=env)
-    assert run.returncode == 0, run.stderr
+    proc = run(cmd, env=env)
+    assert proc.returncode == 0, proc.stderr
     assert kit.parse_dotenv((out / ".env").read_text())["DSS_TAG"] == "aaaaaaaaaaaa"
 
 
@@ -270,6 +342,19 @@ def test_datastores_only_on_the_internal_network(compose):
         assert compose["services"][name]["networks"] == ["data"], name
 
 
+def test_env_files_per_reader(compose):
+    def files(svc):
+        return [e if isinstance(e, str) else e["path"] for e in svc.get("env_file", [])]
+    s = compose["services"]
+    for name in ("backend", "migrate", "cbom-cloud-worker", "dast-scheduler"):
+        assert files(s[name]) == ["backend.env"], name
+    assert files(s["scan-worker"]) == files(s["cicd-worker"]) == ["scan-worker.env"]
+    assert files(s["dast-worker"]) == ["dast-worker.env"]
+    for name, svc in s.items():
+        assert ".env" not in files(svc), name  # the interpolation file reaches no container
+    assert files(s["frontend"]) == [] and files(s["nginx"]) == []
+
+
 def test_backend_listens_on_8080_behind_nginx(compose):
     cmd = compose["services"]["backend"]["command"]
     assert cmd[cmd.index("--bind") + 1] == "0.0.0.0:8080"
@@ -279,30 +364,30 @@ def test_backend_listens_on_8080_behind_nginx(compose):
     assert compose["services"]["nginx"]["networks"]["edge"]["ipv4_address"] == "${DSS_PROXY_IP:-172.30.251.10}"
 
 
-def test_release_archive_holds_exactly_the_infrastructure_images(compose):
+def test_release_archive_holds_the_infrastructure_images_pinned_by_digest(compose):
     infra = {svc["image"] for svc in compose["services"].values() if "${" not in svc["image"]}
-    assert infra == set(_bash_array(OWNER, "INFRA_IMAGES")) == set(_bash_array(REMOTE, "INFRA_IMAGES"))
+    owner = _bash_array(OWNER, "INFRA_IMAGES")
+    assert all(re.fullmatch(r"[a-z0-9./-]+:[a-z0-9.-]+@sha256:[0-9a-f]{64}", i) for i in owner), owner
+    assert infra == {i.split("@")[0] for i in owner} == set(_bash_array(REMOTE, "INFRA_IMAGES"))
 
 
 def test_every_service_has_restart_limits_and_never_pulls(compose):
+    total = 0
     for name, svc in compose["services"].items():
         assert svc.get("pull_policy") == "never", name  # ECR pulls / the archive load are explicit steps
         assert svc.get("restart") in ("unless-stopped", "no"), name
-        if name != "migrate":
-            assert svc.get("mem_limit"), name
-    total = 0
-    for name, svc in compose["services"].items():
         if name == "migrate":
             continue
         v = str(svc["mem_limit"])
-        total += float(v[:-1]) * (1024 if v.endswith("g") else 1) if v[-1] in "gm" else 0
+        total += float(v[:-1]) * (1024 if v.endswith("g") else 1)
     assert total <= 30 * 1024  # m7i.2xlarge: 32 GB, leave room for the OS
 
 
 def test_bind_mounted_config_changes_recreate_their_containers(compose):
     for name in ("nginx", "backend", "migrate", "cbom-cloud-worker", "dast-scheduler"):
         assert compose["services"][name]["labels"]["com.zeroshield.dss.files-hash"] == "${DSS_FILES_HASH:-unset}", name
-    assert 'DSS_FILES_HASH="${DSS_FILES_HASH:-$(files_hash)}"' in REMOTE.read_text()
+    # Review item 5: through sudo the variable must survive sudo's environment reset (`sudo env VAR=...`)
+    assert '"${SUDO[@]}" env "DSS_FILES_HASH=${DSS_FILES_HASH:-$(files_hash)}" docker compose' in REMOTE.read_text()
 
 
 def test_volumes_are_named_volumes(compose):
@@ -326,23 +411,21 @@ def test_no_dev_settings_and_production_env(compose):
 
 @pytest.mark.skipif(shutil.which("docker") is None, reason="docker CLI not installed")
 def test_compose_config_renders_with_a_dummy_env(tmp_path):
-    for name in ("docker-compose.yml",):
-        shutil.copy(COMPOSE, tmp_path / name)
+    shutil.copy(COMPOSE, tmp_path / "docker-compose.yml")
     shutil.copytree(KIT_DIR / "nginx", tmp_path / "nginx")
-    env = tmp_path / ".env"
-    shared, backend, _ = kit.render_env(_app(), {"access_key_id": "a", "secret_access_key": "b"}, {}, CFG,
-                                        "b669fa3c467f")
-    env.write_text(shared)
-    (tmp_path / "backend.env").write_text(backend)
-    run = subprocess.run(["docker", "compose", "--project-directory", str(tmp_path), "-f", str(tmp_path / "docker-compose.yml"),
-                          "--env-file", str(env), "config", "--format", "json"], capture_output=True, check=False, text=True)
-    if run.returncode != 0 and "is not a docker command" in run.stderr:
+    _, files, _ = _render()
+    for name, text in files.items():
+        (tmp_path / name).write_text(text)
+    proc = run(["docker", "compose", "--project-directory", str(tmp_path), "-f", str(tmp_path / "docker-compose.yml"),
+                "--env-file", str(tmp_path / ".env"), "config", "--format", "json"])
+    if proc.returncode != 0 and "is not a docker command" in proc.stderr:
         pytest.skip("docker compose plugin not installed")
-    assert run.returncode == 0, run.stderr
-    cfg = json.loads(run.stdout)
+    assert proc.returncode == 0, proc.stderr
+    cfg = json.loads(proc.stdout)
     assert cfg["services"]["backend"]["image"].endswith("/devsec-chola/devsecshield-backend:b669fa3c467f")
     # single-quoted values are literal: '#' and '@' survive into the container environment
     assert cfg["services"]["backend"]["environment"]["SMTP_PASSWORD"] == "p@ss#word 1"
+    assert "JWT_SECRET_KEY" not in cfg["services"]["scan-worker"]["environment"]
     published = [(n, p) for n, s in cfg["services"].items() for p in s.get("ports", [])]
     assert [(n, str(p["published"]), p["target"]) for n, p in published] == [("nginx", "80", 80)]
 
@@ -359,14 +442,348 @@ def test_nginx_template_contract():
     assert "client_max_body_size 64m;" in t
 
 
-@pytest.mark.parametrize("value", ["0.0.0.0/0", "::/0", "alb.example.com", "10.0.0.0/8;evil", ""])
-def test_site_script_refuses_unsafe_real_ip_sources(tmp_path, value):
+def test_nginx_review_fixes():
+    t = TEMPLATE.read_text()
+    # QA F8: the client once in X-Forwarded-For (the ALB already appended it)
+    assert "$proxy_add_x_forwarded_for" not in t and t.count("proxy_set_header X-Forwarded-For $dss_xff;") == 3
+    assert '"~^1:(?<alb_xff>.+)$" $alb_xff;' in t
+    # QA F8: no framework banner on the API host (nginx itself says "nginx" without a version)
+    assert t.count("proxy_hide_header X-Powered-By;") >= 2 and "server_tokens off;" in t
+    # item 6: the 512 MB export-verify route, everything else 64 MB
+    assert re.search(r"location ~ \^/\[0-9\]\+/cbom/sources/runs/\[0-9\]\+/signature/verify\$ \{\n\s+client_max_body_size 512m;", t)
+    # item 6: no includeSubDomains / preload (other zeroshield.ai hosts are not ours to pin)
+    assert "includeSubDomains" not in t.replace("No includeSubDomains", "") and "preload" not in t.replace("/ preload", "")
+
+
+@pytest.mark.parametrize("value", ["0.0.0.0/0", "0.0.0.0/00", "::/0", "::", "0.0.0.0", "0::0", "10.0.0.0/7",
+                                   "10.0.0.0/007", "10.0.0.0/33", "fd00::/8", "alb.example.com", "10.0.0.0/8;evil",
+                                   "10.0.0/24", "1.2.3.4/", "10.0.0.0/8/1", "dead.beef.cafe.face", ""])
+def test_site_script_refuses_unsafe_real_ip_sources(value):
     env = dict(os.environ, FRONTEND_HOST="a", API_HOST="b", DSS_REAL_IP_FROM=value)
-    run = subprocess.run(["sh", str(SITE_SH)], capture_output=True, check=False, text=True, env=env)
-    assert run.returncode != 0
+    assert run(["sh", str(SITE_SH)], env=env).returncode != 0, value
+
+
+@pytest.mark.skipif(shutil.which("docker") is None, reason="docker CLI not installed")
+def test_site_script_accepts_the_alb_subnets_and_nginx_t_passes():
+    if run(["docker", "image", "inspect", "nginx:1.27-alpine"]).returncode != 0:
+        pytest.skip("nginx:1.27-alpine not available locally")
+    proc = run(["docker", "run", "--rm", "-e", "FRONTEND_HOST=chola.zeroshield.ai", "-e", "API_HOST=chola-api.zeroshield.ai",
+                "-e", "DSS_REAL_IP_FROM=10.60.1.0/24,10.60.2.0/24,fd00::/64",
+                "-v", f"{SITE_SH}:/docker-entrypoint.d/40-chola-site.sh:ro",
+                "-v", f"{TEMPLATE}:/etc/dss-nginx/site.conf.template:ro", "--entrypoint", "sh", "nginx:1.27-alpine",
+                "-c", "sh /docker-entrypoint.d/40-chola-site.sh && nginx -t"])
+    assert proc.returncode == 0, proc.stderr
+
+
+# ------------------------------------------------------------------------------------------------ remote.sh units
+def _source(tmp_path, script, env=None):
+    return run(["bash", "-c", f"source {REMOTE}; {script}"],
+               env=dict(os.environ, CHOLA_BASE_DIR=str(tmp_path), **(env or {})))
+
+
+def test_previous_comes_from_the_started_record_of_an_interrupted_deploy(tmp_path):
+    (tmp_path / "state").mkdir()
+    (tmp_path / "state" / "deploy-history").write_text(
+        "2026-11-22T18:38:19Z started cccccccccccc previous none alembic-before none\n"
+        "2026-11-22T18:39:00Z deploy cccccccccccc previous none alembic r1\n"
+        "2026-11-22T18:41:09Z started dddddddddddd previous cccccccccccc alembic-before r1\n")
+    proc = _source(tmp_path, "previous_of dddddddddddd; previous_of cccccccccccc; interrupted && echo interrupted")
+    assert proc.stdout.split() == ["cccccccccccc", "none", "interrupted"], proc.stderr
+    with open(tmp_path / "state" / "deploy-history", "a") as fh:
+        fh.write("2026-11-22T18:42:10Z rollback cccccccccccc previous dddddddddddd alembic r1\n")
+    assert _source(tmp_path, "interrupted || echo clean").stdout.strip() == "clean"
+
+
+def test_deploy_writes_started_before_switching_the_tag():
+    body = REMOTE.read_text().split("cmd_deploy() {", 1)[1].split("\n}\n", 1)[0]
+    assert body.index("started %s previous %s alembic-before %s") < body.index('set_tag "${tag}"') < body.index("up \"${recover}\"")
+    assert body.index("frontend_url_ok") < body.index("up \"${recover}\"")  # item 5: URL checked before up
+    assert "frontend_url_ok" in REMOTE.read_text().split("cmd_pull() {", 1)[1].split("\n}\n", 1)[0]
+
+
+def _fake_docker(tmp_path, volumes=None, fail=False, slow=0):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    script = "#!/bin/sh\n"
+    if slow:
+        script += f"sleep {slow}\n"
+    if fail:
+        script += 'case "$1" in info) exit 0;; esac\necho "Cannot connect to the Docker daemon" >&2\nexit 1\n'
+    else:
+        script += 'case "$1 $2" in "volume ls") printf "%s\\n" ' + " ".join(volumes or []) + ";; esac\nexit 0\n"
+    (bin_dir / "docker").write_text(script)
+    (bin_dir / "docker").chmod(0o755)
+    return dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}")
+
+
+@pytest.mark.parametrize("volumes, want", [([], "no"), (["dss-chola_pgdata"], "yes"), (["dss-chola_rabbitmq", "x"], "yes"),
+                                           (["other_pgdata"], "no")])
+def test_volume_exists_answers_yes_or_no(tmp_path, volumes, want):
+    proc = run(["bash", str(REMOTE), "volume-exists"], env=_fake_docker(tmp_path, volumes))
+    assert proc.returncode == 0 and proc.stdout.strip() == want, proc.stderr
+
+
+def test_volume_exists_fails_closed_when_docker_cannot_answer(tmp_path):
+    proc = run(["bash", str(REMOTE), "volume-exists"], env=_fake_docker(tmp_path, fail=True))
+    assert proc.returncode != 0 and proc.stdout.strip() not in ("yes", "no")
+
+
+@pytest.mark.skipif(shutil.which("setsid") is None or shutil.which("flock") is None, reason="util-linux missing")
+def test_detached_job_survives_its_caller_and_records_its_exit(tmp_path):
+    kit_copy = tmp_path / "kit" / "deploy" / "chola-prod"
+    kit_copy.mkdir(parents=True)
+    shutil.copy(REMOTE, kit_copy / "remote.sh")
+    base = tmp_path / "base"
+    env = _fake_docker(tmp_path, slow=3)
+    env["CHOLA_BASE_DIR"] = str(base)
+    # the job (a deploy without env files) fails after docker answers (3 s): long enough to kill its caller first
+    caller = subprocess.Popen(["bash", str(kit_copy / "remote.sh"), "job-start", "deploy", "aaaaaaaaaaaa"], env=env,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+    out, err = caller.communicate(timeout=30)
+    job = out.strip()
+    assert caller.returncode == 0 and re.fullmatch(r"[0-9TZ]+-deploy-[0-9]+", job), err
+    os.killpg(caller.pid, signal.SIGHUP) if _alive_group(caller.pid) else None  # what a dropped tunnel would send
+    rc_file = base / "state" / "jobs" / job / "rc"
+    for _ in range(100):
+        if rc_file.exists():
+            break
+        time.sleep(0.1)
+    assert rc_file.read_text().strip() == "1"
+    follow = run(["bash", str(kit_copy / "remote.sh"), "job-follow", job, "0", "1"], env=env)
+    assert "missing" in follow.stdout and re.search(r"^chola-job: done 1 \d+$", follow.stderr, re.MULTILINE)
+    assert "chola-prod.sh renders it" in follow.stdout  # the job's own message, from its log
+
+
+def _alive_group(pgid):
+    try:
+        os.killpg(pgid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+
+
+def test_no_password_on_any_command_line():
+    text = REMOTE.read_text()
+    assert "--config" in text and 'printf "password: ' in text  # mongodump reads a 0600 config file
+    assert not re.search(r"mongo(dump|sh|restore)[^\n]*(-p |--password)", text)
+    assert not re.search(r"PGPASSWORD=|psql[^\n]*password=", text)
+    assert "-p \"$MONGO" not in text and not re.search(r"--password(?!-stdin)", text)
+
+
+@pytest.mark.skipif(shutil.which("flock") is None, reason="flock not installed")
+def test_remote_changing_commands_take_one_lock(tmp_path):
+    kit_copy = tmp_path / "deploy" / "chola-prod"
+    kit_copy.mkdir(parents=True)
+    shutil.copy(REMOTE, kit_copy / "remote.sh")
+    state = tmp_path / "state"
+    state.mkdir()
+    holder = subprocess.Popen(["flock", str(state / ".lock"), "sleep", "30"])
+    try:
+        for _ in range(50):  # until the holder has the lock
+            if run(["flock", "-n", str(state / ".lock"), "true"]).returncode != 0:
+                break
+            time.sleep(0.1)
+        for cmd in (["render"], ["deploy", "aaaaaaaaaaaa"], ["rollback"], ["job-start", "deploy", "aaaaaaaaaaaa"]):
+            proc = run(["bash", str(kit_copy / "remote.sh"), *cmd])
+            assert proc.returncode == 1 and "another chola-prod command is running" in proc.stderr, cmd
+    finally:
+        holder.kill()
+        holder.wait()
+
+
+def test_remote_refuses_dev_switches(tmp_path):
+    kit_copy = tmp_path / "deploy" / "chola-prod"
+    kit_copy.mkdir(parents=True)
+    shutil.copy(REMOTE, kit_copy / "remote.sh")
+    for name in kit.ENV_FILES:
+        (kit_copy / name).write_text("DSS_TAG='aaaaaaaaaaaa'\n" if name == ".env" else "")
+        (kit_copy / name).chmod(0o600)
+    (kit_copy / "backend.env").write_text("LOCAL_DEV_VERIFICATION_CODE='123456'\n")
+    proc = run(["bash", str(kit_copy / "remote.sh"), "smtp-test"], env=_fake_docker(tmp_path))
+    assert proc.returncode == 1 and "must never be set in production" in proc.stderr
+
+
+def test_remote_help_and_preflight_checks_listed():
+    proc = run(["bash", str(REMOTE), "--help"])
+    assert proc.returncode == 0 and "job-follow" in proc.stdout and "set -" not in proc.stdout
+    text = REMOTE.read_text()
+    for needle in ('MIN_COMPOSE=2.24.0', "--expected-bucket-owner", "image_store", "CHOLA_ALLOW_IMDS"):
+        assert needle in text
 
 
 # ------------------------------------------------------------------------------------------------ owner script
+FAKE_AWS = r'''#!/usr/bin/env python3
+import json, os, sys
+F = os.environ["FAKE_DIR"]; a = sys.argv[1:]
+open(F + "/calls.log", "a").write("aws " + " ".join(a) + "\n")
+if "--region" in a: i = a.index("--region"); del a[i:i + 2]
+def arg(n): return a[a.index(n) + 1]
+def count(name):
+    p = F + "/" + name; k = int(open(p).read()) if os.path.exists(p) else 0; open(p, "w").write(str(k + 1)); return k
+st = F + "/app-secrets.json"; c = a[:2]
+if a[:1] == ["--version"]: print("aws-cli/2.31.0"); sys.exit(0)
+if c == ["sts", "get-caller-identity"]: print("935951870001\tarn:aws:iam::935951870001:user/Owner"); sys.exit(0)
+if c == ["secretsmanager", "get-secret-value"]:
+    sid = arg("--secret-id")
+    if sid.endswith("ssh-admin"): print(json.dumps({"private_key_pem": "-----BEGIN OPENSSH PRIVATE KEY-----\nX\n"})); sys.exit(0)
+    if not os.path.exists(st):
+        print("An error occurred (ResourceNotFoundException): can't find the specified secret value for staging label: AWSCURRENT", file=sys.stderr); sys.exit(254)
+    print(open(st).read()); sys.exit(0)
+if c == ["secretsmanager", "put-secret-value"]: open(st, "w").write(open(arg("--secret-string")[7:]).read()); print("v"); sys.exit(0)
+if c == ["secretsmanager", "describe-secret"]: print("x"); sys.exit(0)
+if c == ["ec2", "describe-instances"]:
+    if arg("--query").endswith("PrivateIpAddress"): print("10.60.10.108"); sys.exit(0)
+    print("running\tm7i.2xlarge\t10.60.10.108\t" + os.environ.get("FAKE_TOKENS", "required") + "\t" + os.environ.get("FAKE_HOP", "1") + "\tenabled"); sys.exit(0)
+if c == ["elbv2", "describe-target-groups"]: print("ip\tHTTP\t80\t/nginx-health"); sys.exit(0)
+if c == ["elbv2", "describe-target-health"]:
+    if count("th") == 0: print("An error occurred (Throttling): Rate exceeded", file=sys.stderr); sys.exit(254)
+    print("10.60.10.108\t80\thealthy\tNone"); sys.exit(0)
+if c == ["ecr", "describe-repositories"]: print("IMMUTABLE"); sys.exit(0)
+if c == ["s3api", "head-bucket"]: sys.exit(0 if arg("--expected-bucket-owner") == "935951870001" else 1)
+if c == ["iam", "simulate-principal-policy"]: print(os.environ.get("FAKE_SIM", "allowed")); sys.exit(0)
+if c == ["backup", "describe-backup-vault"]: print("v"); sys.exit(0)
+if c == ["backup", "start-backup-job"]: print("job-42"); sys.exit(0)
+if c == ["backup", "describe-backup-job"]:
+    k = count("bj")
+    if k == 0: print("An error occurred (ThrottlingException): Rate exceeded", file=sys.stderr); sys.exit(254)
+    print("COMPLETED\t100.0" if k >= 2 else "RUNNING\t40.0"); sys.exit(0)
+print("fake aws: unhandled " + " ".join(a), file=sys.stderr); sys.exit(1)
+'''
+FAKE_SSH = r'''#!/bin/bash
+for last; do :; done
+case "$*" in *" -O exit "*) exit 0;; esac
+echo "ssh $last" >> "$FAKE_DIR/calls.log"
+case "$last" in
+  true) exit 0;;
+  *"tar -xzf -"*) cat >/dev/null; exit 0;;
+  *"remote.sh volume-exists"*) case "${FAKE_VOL:-no}" in fail) echo "Connection closed" >&2; exit 255;; *) echo "${FAKE_VOL:-no}";; esac;;
+  *"remote.sh job-start"*) echo "20261122T120000Z-dump-4242";;
+  *"remote.sh job-follow"*) n=$(cat "$FAKE_DIR/jf" 2>/dev/null || echo 0); echo $((n+1)) > "$FAKE_DIR/jf"
+     if [ "$n" = 0 ]; then echo "Connection closed by remote host" >&2; exit 255; fi
+     echo "job output"; echo "chola-job: done ${FAKE_JOB_RC:-0} 11" >&2;;
+  *) exit 0;;
+esac
+'''
+FAKE_GIT_TMPL = r'''#!/bin/bash
+case "$*" in
+  *fetch*ansh*) echo "git $*" >> "$FAKE_DIR/calls.log"; [ "${FAKE_ANSH:-ok}" = missing ] && exit 128; exit 0;;
+  *ls-remote*ansh*) echo "git $*" >> "$FAKE_DIR/calls.log"; [ "${FAKE_ANSH:-ok}" = missing ] && exit 2; exit 0;;
+  *"cat-file -e refs/remotes/origin/ansh:backend/.env"*) echo "git $*" >> "$FAKE_DIR/calls.log"; [ "${FAKE_ANSH:-ok}" = nofile ] && exit 128; exit 0;;
+  *"show refs/remotes/origin/ansh:backend/.env"*) echo "git $*" >> "$FAKE_DIR/calls.log"
+     if [ "${FAKE_ANSH:-ok}" = nokeys ]; then echo 'OTHER=1'; else printf 'OUTLOOK_EMAIL="dummy@example.com"\nOUTLOOK_PASSWORD="dummy-pass-1"\n'; fi; exit 0;;
+  *"rev-parse --short=12 refs/remotes/origin/ansh"*) echo 0123456789ab; exit 0;;
+esac
+exec REALGIT "$@"
+'''
+FAKE_OTHER = '#!/bin/sh\necho "$(basename "$0") $*" >> "$FAKE_DIR/calls.log"\nexit 0\n'
+
+
+@pytest.fixture
+def fake_world(tmp_path):
+    """aws, ssh, docker, gh, curl and a git wrapper (origin/ansh only) on PATH; nothing reaches a real service."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for name, body in (("aws", FAKE_AWS), ("ssh", FAKE_SSH),
+                       ("git", FAKE_GIT_TMPL.replace("REALGIT", shutil.which("git") or "/usr/bin/git")),
+                       ("docker", FAKE_OTHER), ("gh", FAKE_OTHER), ("curl", FAKE_OTHER)):
+        (bin_dir / name).write_text(body)
+        (bin_dir / name).chmod(0o755)
+    (tmp_path / "home").mkdir()
+
+    def call(*args, **env):
+        e = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", HOME=str(tmp_path / "home"), TMPDIR=str(tmp_path),
+                 FAKE_DIR=str(tmp_path), CHOLA_POLL_S="0", **env)
+        return run(["bash", str(OWNER), *args], env=e, stdin=subprocess.DEVNULL)
+    call.dir = tmp_path
+    call.log = lambda: (tmp_path / "calls.log").read_text() if (tmp_path / "calls.log").exists() else ""
+    return call
+
+
+def test_secrets_first_setup_reads_ansh_with_an_explicit_refspec(fake_world):
+    proc = fake_world("secrets")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "fetch -q origin +refs/heads/ansh:refs/remotes/origin/ansh" in fake_world.log()
+    stored = json.loads((fake_world.dir / "app-secrets.json").read_text())
+    assert stored["SMTP_USERNAME"] == "dummy@example.com"
+    assert "dummy-pass-1" not in proc.stdout + proc.stderr
+    assert not list(fake_world.dir.glob("chola-prod.*"))  # scratch (key, mail copy) removed
+
+
+def test_secrets_rerun_and_deploy_never_touch_ansh(fake_world):
+    assert fake_world("secrets").returncode == 0
+    (fake_world.dir / "calls.log").unlink()
+    proc = fake_world("secrets")
+    assert proc.returncode == 0 and "origin/ansh not read" in proc.stdout
+    assert "ansh" not in fake_world.log()
+
+
+@pytest.mark.parametrize("mode, message", [("missing", "origin has no branch 'ansh'"),
+                                           ("nofile", "has no backend/.env"),
+                                           ("nokeys", "lacks OUTLOOK_EMAIL / OUTLOOK_PASSWORD")])
+def test_mail_source_errors_are_distinct(fake_world, mode, message):
+    proc = fake_world("secrets", FAKE_ANSH=mode)
+    assert proc.returncode == 1 and message in proc.stderr and "--mail-prompt" in proc.stderr
+    assert not (fake_world.dir / "app-secrets.json").exists()
+
+
+def test_mail_prompt_needs_a_terminal(fake_world):
+    proc = fake_world("secrets", "--mail-prompt")
+    assert proc.returncode == 1 and "needs a terminal" in proc.stderr
+
+
+def test_secrets_fail_closed_when_the_volume_check_fails(fake_world):
+    proc = fake_world("secrets", FAKE_VOL="fail")
+    assert proc.returncode == 1 and "cannot tell whether the instance already has database volumes" in proc.stderr
+    assert "put-secret-value" not in fake_world.log()
+
+
+def test_secrets_refuse_new_data_keys_when_data_exists(fake_world):
+    (fake_world.dir / "app-secrets.json").write_text(json.dumps({"PG_USER_PASS": ""}))
+    proc = fake_world("secrets", FAKE_VOL="yes")
+    assert proc.returncode == 1 and "lock the application out" in proc.stderr
+    assert "put-secret-value" not in fake_world.log()
+
+
+def test_backup_retries_a_throttled_poll_and_follows_a_dropped_job(fake_world):
+    proc = fake_world("backup")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "describe-backup-job failed (1/10" in proc.stderr and "COMPLETED" in proc.stdout
+    assert "no answer from the instance while following" in proc.stderr and "job output" in proc.stdout
+
+
+def test_verify_accepts_an_ip_target_after_a_throttled_poll(fake_world):
+    proc = fake_world("verify")
+    assert "describe-target-health failed (1/10" in proc.stderr
+    assert "ALB target: 10.60.10.108 80 healthy" in proc.stdout
+
+
+@pytest.mark.parametrize("env, allow, ok", [({"FAKE_HOP": "2"}, False, False), ({"FAKE_TOKENS": "optional"}, False, False),
+                                            ({"FAKE_HOP": "2"}, True, True)])
+def test_imds_options_fail_preflight_unless_allowed(fake_world, env, allow, ok):
+    args = ["preflight"] + (["--allow-imds"] if allow else [])
+    proc = fake_world(*args, **env)
+    assert ("HttpPutResponseHopLimit" in proc.stderr) and ((proc.returncode == 0) == ok), proc.stderr
+
+
+def test_preflight_refuses_a_denied_passrole(fake_world):
+    proc = fake_world("preflight", FAKE_SIM="implicitDeny")
+    assert proc.returncode == 1 and "iam:PassRole" in proc.stderr and "implicitDeny" in proc.stderr
+
+
+def test_preflight_runs_remote_from_a_run_copy_not_the_live_kit(fake_world):
+    assert fake_world("preflight").returncode == 0
+    log = fake_world.log()
+    assert "/opt/devsecshield-chola/.kit/" in log and "CHOLA_BASE_DIR=/opt/devsecshield-chola" in log
+    assert "tar -xzf - -C /opt/devsecshield-chola " not in log + " "  # never extracted over the live tree
+
+
+def test_logins_use_a_throwaway_docker_config():
+    text = OWNER.read_text()
+    body = text.split("cmd_images() {", 1)[1].split("\n}\n", 1)[0]
+    assert body.index("docker_isolate") < body.index("ghcr_login") < body.index("ecr_login_local")
+    assert 'export DOCKER_CONFIG="${cfg}"' in text and '"${WORK}/docker-config"' in text
+
+
 def _shims(tmp_path):
     shim_dir = tmp_path / "shims"
     shim_dir.mkdir()
@@ -375,56 +792,74 @@ def _shims(tmp_path):
         p = shim_dir / tool
         p.write_text(f"#!/bin/sh\necho \"{tool} $*\" >> {log}\nexit 97\n")
         p.chmod(0o755)
+    real = shutil.which("git") or "/usr/bin/git"
+    (shim_dir / "git").write_text(f"#!/bin/sh\ncase \"$*\" in *fetch*|*ls-remote*|*ansh*) echo \"git $*\" >> {log};; esac\n"
+                                  f"exec {real} \"$@\"\n")
+    (shim_dir / "git").chmod(0o755)
     return shim_dir, log
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
-@pytest.mark.parametrize("args", [["secrets"], ["backup"], ["verify"], ["rollback", "--allow-downgrade"], ["status"],
-                                  ["logs", "--service", "backend"], ["smtp-test"], ["admin", "--email", "a@b.co"],
-                                  ["host-setup"], ["infra"]])
-def test_dry_run_touches_no_aws_ssh_docker_or_registry(tmp_path, args):
+@pytest.mark.parametrize("args", [["secrets"], ["secrets", "--refresh-mail"], ["backup"], ["verify"],
+                                  ["rollback", "--allow-downgrade"], ["status"], ["logs", "--service", "backend"],
+                                  ["smtp-test"], ["admin", "--email", "a@b.co"], ["host-setup"], ["infra"],
+                                  ["attach", "--job", "20261122T120000Z-deploy-1"], ["--dry-run", "status"]])
+def test_dry_run_touches_nothing(tmp_path, args):
     shim_dir, log = _shims(tmp_path)
     env = dict(os.environ, PATH=f"{shim_dir}:{os.environ['PATH']}", HOME=str(tmp_path), TMPDIR=str(tmp_path))
-    run = subprocess.run(["bash", str(OWNER), *args, "--dry-run"], capture_output=True, check=False, text=True, env=env,
-                         stdin=subprocess.DEVNULL)
-    assert run.returncode == 0, run.stdout + run.stderr
-    assert "[dry-run]" in run.stdout
-    assert not log.exists(), log.read_text()
-    assert not list(tmp_path.glob("chola-prod.*"))  # the scratch directory (SSH key, archive) is removed
+    proc = run(["bash", str(OWNER), *args, "--dry-run"] if "--dry-run" not in args else ["bash", str(OWNER), *args],
+               env=env, stdin=subprocess.DEVNULL)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "[dry-run]" in proc.stdout
+    assert not log.exists(), log.read_text()  # no AWS/SSH/Docker/registry call, no git fetch, no origin/ansh read
+    assert not list(tmp_path.glob("chola-prod.*"))  # the scratch directory is removed
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
+def test_dry_run_deploy_summary_says_skipped(tmp_path):
+    head = run(["git", "-C", str(REPO), "rev-parse", "HEAD"]).stdout.strip()
+    shim_dir, log = _shims(tmp_path)
+    env = dict(os.environ, PATH=f"{shim_dir}:{os.environ['PATH']}", HOME=str(tmp_path), TMPDIR=str(tmp_path))
+    proc = run(["bash", str(OWNER), "--dry-run", "deploy", "--sha", head], env=env, stdin=subprocess.DEVNULL)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    summary = proc.stdout.split("==== summary", 1)[1]
+    assert "OK" not in summary and "COMPLETED" not in summary and summary.count("skipped (dry-run)") >= 6
+    assert not log.exists()
 
 
 def test_owner_script_refuses_production_without_confirmation(tmp_path):
     shim_dir, log = _shims(tmp_path)
     env = dict(os.environ, PATH=f"{shim_dir}:{os.environ['PATH']}", HOME=str(tmp_path), TMPDIR=str(tmp_path))
-    run = subprocess.run(["bash", str(OWNER), "rollback"], capture_output=True, check=False, text=True, env=env,
-                         stdin=subprocess.DEVNULL)
-    assert run.returncode == 1 and "confirmation" in run.stderr
+    proc = run(["bash", str(OWNER), "rollback"], env=env, stdin=subprocess.DEVNULL)
+    assert proc.returncode == 1 and "confirmation" in proc.stderr
     assert not log.exists()
 
 
-def test_remote_refuses_dev_switches(tmp_path):
-    """remote.sh's require_env_files: DSS_DEV_MODE / LOCAL_DEV_VERIFICATION_* in either env file stop everything."""
-    kit_copy = tmp_path / "deploy" / "chola-prod"
-    kit_copy.mkdir(parents=True)
-    shutil.copy(REMOTE, kit_copy / "remote.sh")
-    (kit_copy / ".env").write_text("DSS_TAG='aaaaaaaaaaaa'\n")
-    (kit_copy / "backend.env").write_text("LOCAL_DEV_VERIFICATION_CODE='123456'\n")
-    for f in (".env", "backend.env"):
-        (kit_copy / f).chmod(0o600)
-    shim_dir, _ = _shims(tmp_path)
-    fake_docker = shim_dir / "docker"
-    fake_docker.write_text("#!/bin/sh\nexit 0\n")  # docker info works; nothing else is reached
-    env = dict(os.environ, PATH=f"{shim_dir}:{os.environ['PATH']}")
-    run = subprocess.run(["bash", str(kit_copy / "remote.sh"), "smtp-test"], capture_output=True, check=False, text=True, env=env)
-    assert run.returncode == 1 and "must never be set in production" in run.stderr
+@pytest.mark.parametrize("args", [["--help"], ["-h"], ["deploy", "--help"], ["--help", "rollback"], []])
+def test_help_documents_commands_flags_and_environment(args):
+    proc = run(["bash", str(OWNER), *args])
+    assert proc.returncode == 0
+    for word in ("attach --job", "--mail-prompt", "--refresh-mail", "--allow-imds", "--allow-downgrade", "--dry-run",
+                 "CHOLA_POLL_RETRIES", "CHOLA_KNOWN_HOSTS", "AWS_PROFILE"):
+        assert word in proc.stdout, word
+    assert "set -" not in proc.stdout and "REPO_ROOT" not in proc.stdout  # usage text, not script lines
+
+
+# ------------------------------------------------------------------------------------------------ README
+def test_readme_never_asks_to_commit_a_password_and_lists_rotations():
+    text = README.read_text()
+    assert not re.search(r"update[^.\n]*(password|mailbox)[^.\n]*origin/ansh", text, re.IGNORECASE)
+    section0 = text.split("## 0.", 1)[1].split("\n## 1.", 1)[0]
+    assert "mailbox password" in section0.lower() and "backend/.env" in section0
+    assert "-N ''" not in text and "ssh-keygen" in text  # no unencrypted key written into the cwd
+    assert "off the instance" in text.lower() or "off-host" in text.lower()  # copy the dumps elsewhere
+    for host_kind in ("DAST", "IdP metadata", "Integrations", "Certificate Transparency"):
+        assert host_kind in text.split("## 9.", 1)[1]
 
 
 # ------------------------------------------------------------------------------------------------ SMTP login check
 def _load_smtp_check():
-    spec = importlib.util.spec_from_file_location("chola_smtp_check", KIT_DIR / "smtp_check.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    return _load("chola_smtp_check", KIT_DIR / "smtp_check.py")
 
 
 class _FakeSMTP:
@@ -488,7 +923,7 @@ def test_smtp_check_classifies_office365_answers_and_never_prints_the_password(m
     assert _FakeSMTP.sent == []
 
 
-def test_smtp_check_refuses_to_send_a_password_without_starttls_or_auth(monkeypatch, capsys):
+def test_smtp_check_refuses_to_send_a_password_without_starttls_or_auth(monkeypatch):
     sc = _load_smtp_check()
 
     class NoTLS(_FakeSMTP):
@@ -506,25 +941,3 @@ def test_smtp_check_refuses_to_send_a_password_without_starttls_or_auth(monkeypa
         assert sc.main() == code
     monkeypatch.delenv("SMTP_PASSWORD")
     assert sc.main() == 5
-
-
-@pytest.mark.skipif(shutil.which("flock") is None, reason="flock not installed")
-def test_remote_changing_commands_take_one_lock(tmp_path):
-    kit_copy = tmp_path / "deploy" / "chola-prod"
-    kit_copy.mkdir(parents=True)
-    shutil.copy(REMOTE, kit_copy / "remote.sh")
-    state = tmp_path / "state"
-    state.mkdir()
-    holder = subprocess.Popen(["flock", str(state / ".lock"), "sleep", "30"])
-    try:
-        for _ in range(50):  # until the holder has the lock
-            if subprocess.run(["flock", "-n", str(state / ".lock"), "true"], check=False).returncode != 0:
-                break
-            import time
-            time.sleep(0.1)
-        for cmd in (["render"], ["deploy", "aaaaaaaaaaaa"], ["rollback"]):
-            run = subprocess.run(["bash", str(kit_copy / "remote.sh"), *cmd], capture_output=True, check=False, text=True)
-            assert run.returncode == 1 and "another chola-prod command is running" in run.stderr, cmd
-    finally:
-        holder.kill()
-        holder.wait()

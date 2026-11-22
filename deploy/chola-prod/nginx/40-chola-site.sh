@@ -17,11 +17,36 @@ DSS_REAL_IP=""
 DSS_ALB_GEO=""
 sources=""
 set -f # no globbing of the list
+refuse() {
+  echo "40-chola-site.sh: DSS_REAL_IP_FROM entry '$1' $2" >&2
+  exit 1
+}
 for source in $(printf '%s' "${DSS_REAL_IP_FROM}" | tr ',' ' '); do
   case "${source}" in
-  */0 | *[!0-9A-Fa-f:./]* | "")
-    echo "40-chola-site.sh: DSS_REAL_IP_FROM entry '${source}' is not a specific IP address or network" >&2
-    exit 1
+  *[!0-9A-Fa-f:./]* | "" | */*/*) refuse "${source}" "is not an IP address or network" ;;
+  esac
+  addr=${source%%/*}
+  case "${addr}" in
+  *:*) family=6 min=16 max=128 ;;
+  *.*.*.*) family=4 min=8 max=32 ;;
+  *) refuse "${source}" "is not an IP address or network" ;;
+  esac
+  # the unspecified address in any spelling (0.0.0.0, 0.00.0.0, ::, 0::0) is "every client"
+  case "$(printf '%s' "${addr}" | tr -d '0.:')" in
+  "") refuse "${source}" "is the unspecified address" ;;
+  esac
+  if [ "${family}" = 4 ]; then
+    printf '%s' "${addr}" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || refuse "${source}" "is not an IPv4 address"
+  fi
+  case "${source}" in
+  */*)
+    prefix=${source#*/}
+    case "${prefix}" in "" | *[!0-9]*) refuse "${source}" "has no numeric prefix length" ;; esac
+    # 0, 00, 7 ...: anything shorter than /8 (IPv4) or /16 (IPv6) trusts most of the Internet
+    prefix=$(printf '%s' "${prefix}" | sed 's/^0*//')
+    prefix=${prefix:-0}
+    { [ "${#prefix}" -le 3 ] && [ "${prefix}" -ge "${min}" ] && [ "${prefix}" -le "${max}" ]; } ||
+      refuse "${source}" "has a prefix length outside /${min}../${max} (IPv${family})"
     ;;
   esac
   DSS_REAL_IP="${DSS_REAL_IP}set_real_ip_from ${source};${nl}"

@@ -1,55 +1,76 @@
 #!/usr/bin/env bash
 # remote.sh - the instance side of the Chola production kit (deploy/chola-prod/README.md). scripts/deploy/chola-prod.sh
-# copies it to /opt/devsecshield-chola/deploy/chola-prod/ and runs it over the EC2 Instance Connect tunnel as ubuntu;
-# nobody needs to run it by hand (it can be, for troubleshooting: same commands).
+# copies the kit to /opt/devsecshield-chola/.kit-next/ and runs this script from there over the EC2 Instance Connect
+# tunnel as ubuntu, with CHOLA_BASE_DIR=/opt/devsecshield-chola: the LIVE files (compose file, nginx, env files) are
+# in $CHOLA_BASE_DIR/deploy/chola-prod and only `install` (deploy) replaces them. Read-only commands never do.
 #
-#   remote.sh preflight                     Docker, Compose, AWS CLI + instance role, the data volume, disk, IMDS view
+#   remote.sh preflight                     Docker, Compose >= 2.24, AWS CLI + instance role (STS, S3 read of the
+#                                           release prefix), the data volume, free disk where images AND volumes live,
+#                                           IMDS from a container (fails when reachable unless CHOLA_ALLOW_IMDS=1)
+#   remote.sh install                       copy this kit (.kit-next) over the live kit files (deploy only)
 #   remote.sh infra-missing                 the infrastructure images that are not loaded (one per line)
-#   remote.sh infra-load <s3 uri> <sha256>  download the release archive to /var/lib/docker/releases, check, load, delete
-#   remote.sh render [<tag>]                .env + backend.env from Secrets Manager with the instance role (kit.py)
+#   remote.sh infra-load <s3 key> <sha256>  download the release archive to /var/lib/docker/releases, check, load, delete
+#   remote.sh render [<tag>]                the env files from Secrets Manager with the instance role (kit.py)
 #   remote.sh ecr-login                     docker login to the ECR registry with the instance role
-#   remote.sh pull <tag>                    pull the four application images of <tag> from ECR (linux/amd64 checked)
-#   remote.sh volume-exists                 exit 0 when the PostgreSQL volume exists (a database was initialised)
-#   remote.sh dump                          logical dumps of PostgreSQL and MongoDB onto the data volume (before the
-#                                           backup job), the last CHOLA_DUMPS_KEEP (default 3) of each kept
-#   remote.sh deploy <tag>                  refuse a tag older than the database; record; switch DSS_TAG; migrate + up;
-#                                           check; estate backfill + agility heal; keep images of this, previous, last-passed
-#   remote.sh rollback [--allow-downgrade]  back to the previously deployed tag (alembic downgrade only when allowed)
+#   remote.sh pull <tag>                    pull the four application images (linux/amd64; frontend API URL checked)
+#   remote.sh volume-exists                 "yes" or "no" (exit 0) whether any database / queue volume exists; any
+#                                           other outcome is an error (exit != 0)
+#   remote.sh dump                          pg_dump + mongodump onto the data volume (last CHOLA_DUMPS_KEEP=3 kept)
+#   remote.sh deploy <tag>                  refuse a tag older than the database; record STARTED; switch DSS_TAG;
+#                                           migrate + up; check; estate backfill + agility heal; image retention
+#   remote.sh rollback [--allow-downgrade]  back to the previous tag (from the last deploy or STARTED record)
+#   remote.sh rollback --plan               what a rollback would do; exit 3 when it needs a database downgrade
 #   remote.sh check                         every service on DSS_TAG and up; health + frontend through nginx on :80
-#   remote.sh smtp-test                     SMTP login only, from the backend container with backend.env (sends nothing)
+#   remote.sh smtp-test                     SMTP login only, from a backend container with backend.env (sends nothing)
 #   remote.sh admin <email>                 make an existing account the platform administrator (is_superuser)
 #   remote.sh status | logs [service|all] [N]
+#   remote.sh job-start <deploy|rollback|dump|infra-load> [args]
+#                                           run that command DETACHED (setsid nohup; survives a dropped tunnel or
+#                                           Ctrl-C), output in state/jobs/<id>/log, exit status in .../rc; prints <id>
+#   remote.sh job-follow <id> <offset> [wait-s]
+#                                           print the job's output from byte <offset>; last stderr line:
+#                                           "chola-job: running <offset>" or "chola-job: done <rc> <offset>"
 #
-# Settings come from the caller (chola-prod.sh passes them): CHOLA_REGION, CHOLA_REGISTRY, CHOLA_IMAGE_PREFIX,
-# CHOLA_SECRET_PREFIX, CHOLA_FRONTEND_HOST, CHOLA_API_HOST, CHOLA_REAL_IP_FROM; defaults are the Chola values.
-set -euo pipefail
+# Settings come from the caller (chola-prod.sh passes them): CHOLA_BASE_DIR, CHOLA_REGION, CHOLA_ACCOUNT,
+# CHOLA_REGISTRY, CHOLA_IMAGE_PREFIX, CHOLA_SECRET_PREFIX, CHOLA_BUCKET, CHOLA_FRONTEND_HOST, CHOLA_API_HOST,
+# CHOLA_REAL_IP_FROM, CHOLA_ALLOW_IMDS, CHOLA_MIN_FREE_GB (15), CHOLA_WAIT_S (900), CHOLA_DUMPS_KEEP (3).
+set -Eeuo pipefail
 export LC_ALL=C
+# No silent exit: a failing command that no check handles names itself.
+trap 'rc=$?; printf "[chola-remote] ERROR: line %s: %s (exit %s)\n" "${LINENO}" "${BASH_COMMAND}" "${rc}" >&2' ERR
 
-KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BASE_DIR="$(cd "${KIT_DIR}/../.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT="${SCRIPT_DIR}/$(basename "${BASH_SOURCE[0]}")"
+BASE_DIR="${CHOLA_BASE_DIR:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
+KIT_DIR="${BASE_DIR}/deploy/chola-prod" # the live kit: compose file, nginx, env files
 COMPOSE_FILE="${KIT_DIR}/docker-compose.yml"
 ENV_FILE="${KIT_DIR}/.env"
-BACKEND_ENV="${KIT_DIR}/backend.env"
+ENV_FILES=(.env backend.env scan-worker.env dast-worker.env)
 STATE_DIR="${BASE_DIR}/state"
 HISTORY_FILE="${STATE_DIR}/deploy-history"
 RELEASES_DIR="${STATE_DIR}/releases"
 PASSED_FILE="${STATE_DIR}/passed"
+JOBS_DIR="${STATE_DIR}/jobs"
 RELEASE_FILES=(deploy/chola-prod compose/aibom-config-overlay)
-RELEASE_EXCLUDES=(--exclude=deploy/chola-prod/.env --exclude=deploy/chola-prod/backend.env)
+RELEASE_EXCLUDES=(--exclude=deploy/chola-prod/.env --exclude='deploy/chola-prod/*.env')
 ARCHIVE_DIR=/var/lib/docker/releases
 DUMP_DIR=/var/lib/docker/dss-backups
 ALEMBIC_INI=/prod_database_migrations/alembic.ini
 PROJECT=dss-chola
+DATA_VOLUMES=("${PROJECT}_pgdata" "${PROJECT}_mongodata" "${PROJECT}_rabbitmq")
+MIN_COMPOSE=2.24.0 # env_file entries with path:, --wait with one-shot dependencies
 
 REGION="${CHOLA_REGION:-ap-south-1}"
-REGISTRY="${CHOLA_REGISTRY:-935951870001.dkr.ecr.ap-south-1.amazonaws.com}"
+ACCOUNT="${CHOLA_ACCOUNT:-935951870001}"
+REGISTRY="${CHOLA_REGISTRY:-${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com}"
 IMAGE_PREFIX="${CHOLA_IMAGE_PREFIX:-${REGISTRY}/devsec-chola}"
 SECRET_PREFIX="${CHOLA_SECRET_PREFIX:-devsec-chola/prod}"
+BUCKET="${CHOLA_BUCKET:-devsecshield-storage}"
 FRONTEND_HOST="${CHOLA_FRONTEND_HOST:-chola.zeroshield.ai}"
 API_HOST="${CHOLA_API_HOST:-chola-api.zeroshield.ai}"
 REAL_IP_FROM="${CHOLA_REAL_IP_FROM:-10.60.1.0/24,10.60.2.0/24}"
-# Must match the images in docker-compose.yml (backend/tests/test_chola_prod_kit.py checks) and INFRA_IMAGES in
-# scripts/deploy/chola-prod.sh, which puts them in the release archive.
+# The tags docker-compose.yml runs (backend/tests/test_chola_prod_kit.py checks). chola-prod.sh pulls them by digest
+# (its INFRA_IMAGES) and ships them under these tags in the release archive.
 INFRA_IMAGES=(postgres:15-alpine mongo:8.0.6 rabbitmq:4.1-management-alpine nginx:1.27-alpine qdrant/qdrant:v1.13.5)
 APP_REPOS=(devsecshield-backend devsecshield-frontend scan-worker dast-worker)
 INFRA_SERVICES=" postgres mongo rabbitmq qdrant "
@@ -59,23 +80,25 @@ DEV_MARKERS=('hmr-client' '_browser_dev_' 'webpack-hmr' 'react-refresh' '\"b\":\
 log() { printf '[chola-remote %s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 die() { printf '[chola-remote] ERROR: %s\n' "$*" >&2; exit 1; }
 
-DOCKER=(docker)
+SUDO=()
 docker_setup() { # plain docker when ubuntu is in the docker group, else sudo -n docker
   if docker info >/dev/null 2>&1; then
-    DOCKER=(docker)
+    SUDO=()
   elif sudo -n docker info >/dev/null 2>&1; then
-    DOCKER=(sudo -n docker)
+    SUDO=(sudo -n)
   else
     die "cannot talk to Docker as $(id -un) (not in the docker group, no passwordless sudo)"
   fi
 }
+d() { "${SUDO[@]}" docker "$@"; }
 files_hash() { # sha256 over the bind-mounted files (nginx config, aibom overlay): docker-compose.yml's files-hash label
   (cd "${BASE_DIR}" && find deploy/chola-prod/nginx compose/aibom-config-overlay -type f 2>/dev/null | LC_ALL=C sort |
     xargs -r sha256sum | sha256sum | cut -c1-16)
 }
+# `env` after sudo: sudo resets the environment, so a plain VAR=... prefix would never reach Compose.
 compose() {
-  DSS_FILES_HASH="${DSS_FILES_HASH:-$(files_hash)}" "${DOCKER[@]}" compose --project-name "${PROJECT}" --project-directory "${KIT_DIR}" -f "${COMPOSE_FILE}" \
-    --env-file "${ENV_FILE}" "$@"
+  "${SUDO[@]}" env "DSS_FILES_HASH=${DSS_FILES_HASH:-$(files_hash)}" docker compose --project-name "${PROJECT}" \
+    --project-directory "${KIT_DIR}" -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" "$@"
 }
 
 env_get() { # <KEY> [default] from .env without sourcing it
@@ -83,7 +106,7 @@ env_get() { # <KEY> [default] from .env without sourcing it
   [[ -f "${ENV_FILE}" ]] && v="$(sed -n -E "s/^$1=[\"']?([^\"']*)[\"']?[[:space:]]*$/\1/p" "${ENV_FILE}" | tail -n 1)"
   printf '%s\n' "${v:-${2:-}}"
 }
-set_tag() { # rewrite only the DSS_TAG line of .env
+set_tag() { # rewrite only the DSS_TAG line of .env (GNU sed -i keeps the file's mode)
   [[ "$1" =~ ^[0-9a-f]{12}$ ]] || die "tag $1 is not a 12-character commit"
   if grep -q '^DSS_TAG=' "${ENV_FILE}"; then
     sed -i -E "s|^DSS_TAG=.*|DSS_TAG='$1'|" "${ENV_FILE}"
@@ -94,24 +117,60 @@ set_tag() { # rewrite only the DSS_TAG line of .env
 image_of() { printf '%s/%s:%s\n' "${IMAGE_PREFIX}" "$1" "$2"; }
 
 require_env_files() {
-  [[ -f "${ENV_FILE}" && -f "${BACKEND_ENV}" ]] || die "missing ${ENV_FILE} or ${BACKEND_ENV} (chola-prod.sh renders them)"
   local f mode
-  for f in "${ENV_FILE}" "${BACKEND_ENV}"; do
-    mode="$(stat -c %a "${f}")"
-    [[ "${mode}" == 600 ]] || die "${f} has mode ${mode}, expected 600"
+  for f in "${ENV_FILES[@]}"; do
+    [[ -f "${KIT_DIR}/${f}" ]] || die "missing ${KIT_DIR}/${f} (chola-prod.sh renders it)"
+    mode="$(stat -c %a "${KIT_DIR}/${f}")"
+    [[ "${mode}" == 600 ]] || die "${KIT_DIR}/${f} has mode ${mode}, expected 600"
+    if grep -Eq "^[[:space:]]*(export[[:space:]]+)?(DSS_DEV_MODE|LOCAL_DEV_VERIFICATION_(EMAIL|CODE))[[:space:]]*=" \
+      "${KIT_DIR}/${f}"; then
+      die "DSS_DEV_MODE / LOCAL_DEV_VERIFICATION_* must never be set in production (${f})"
+    fi
   done
-  if grep -Eq "^[[:space:]]*(export[[:space:]]+)?(DSS_DEV_MODE|LOCAL_DEV_VERIFICATION_(EMAIL|CODE))[[:space:]]*=" \
-    "${ENV_FILE}" "${BACKEND_ENV}"; then
-    die "DSS_DEV_MODE / LOCAL_DEV_VERIFICATION_* must never be set in production"
+}
+
+version_ge() { [[ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n 1)" == "$2" ]]; }
+
+# ------------------------------------------------------------------------------------------------ disk
+toml_root() { if [[ -r "$1" ]]; then awk -F'"' '/^root[[:space:]]*=/ { print $2; exit }' "$1"; fi; }
+image_store() { # the directory `docker pull` / `docker load` fill: containerd's root with the containerd image store
+  # (Docker 29's default for new installs), else Docker's root dir (deploy/staging's staging.sh does the same)
+  local root r own=/var/run/docker/containerd/containerd.toml
+  root="$(d info --format '{{.DockerRootDir}}')"
+  if d info --format '{{json .DriverStatus}}' | grep -q io.containerd.snapshotter; then
+    r="$(toml_root "${own}")"
+    if [[ -z "${r}" && -e "${own}" ]]; then r="${root}/containerd/daemon"; fi
+    [[ -n "${r}" ]] || r="$(toml_root /etc/containerd/config.toml)"
+    printf '%s\n' "${r:-/var/lib/containerd}"
+  else
+    printf '%s\n' "${root}"
   fi
+}
+disk_check() { # CHOLA_MIN_FREE_GB (default 15) free where images are stored AND where volumes are
+  local min=${CHOLA_MIN_FREE_GB:-15} p avail bad=0
+  for p in "$(image_store)" "$(d info --format '{{.DockerRootDir}}')"; do
+    while [[ ! -e "${p}" && "${p}" == /?* ]]; do p="$(dirname "${p}")"; done
+    avail="$(df -P -BG "${p}" | awk 'NR == 2 { sub("G", "", $4); print $4 }')"
+    if ((avail >= min)); then
+      log "disk: ${avail} GB free on $(findmnt -n -o TARGET -T "${p}") (for ${p}; need ${min})"
+    else
+      log "FAIL disk: only ${avail} GB free on $(findmnt -n -o TARGET -T "${p}") (for ${p}; need ${min} GB)"
+      bad=1
+    fi
+  done
+  return "${bad}"
 }
 
 # ------------------------------------------------------------------------------------------------ preflight
 cmd_preflight() {
-  local bad=0 root croot dev_root dev_slash
+  local bad=0 root dev_root dev_slash cv arn
   docker_setup
-  log "docker: $("${DOCKER[@]}" version --format 'engine {{.Server.Version}}') ($(printf '%s' "${DOCKER[*]}")); compose: $("${DOCKER[@]}" compose version --short)"
+  cv="$(d compose version --short 2>/dev/null || echo 0)"
+  log "docker: $(d version --format 'engine {{.Server.Version}}')${SUDO[*]:+ (through sudo)}; compose: ${cv}"
+  version_ge "${cv#v}" "${MIN_COMPOSE}" || { log "FAIL Docker Compose ${cv} is older than ${MIN_COMPOSE}"; bad=1; }
   command -v python3 >/dev/null || { log "FAIL python3 is missing"; bad=1; }
+  command -v flock >/dev/null || { log "FAIL flock is missing (util-linux)"; bad=1; }
+  command -v setsid >/dev/null || { log "FAIL setsid is missing (util-linux)"; bad=1; }
   if command -v aws >/dev/null; then
     log "aws: $(aws --version 2>&1 | cut -d' ' -f1)"
     if arn="$(aws sts get-caller-identity --region "${REGION}" --query Arn --output text 2>/dev/null)"; then
@@ -120,11 +179,22 @@ cmd_preflight() {
       log "FAIL the instance role answers no STS call (aws sts get-caller-identity)"
       bad=1
     fi
+    # The release archive path: the instance role must read s3://BUCKET/releases/ in the expected account.
+    local err
+    err="$(mktemp)"
+    if aws s3api list-objects-v2 --region "${REGION}" --bucket "${BUCKET}" --prefix releases/ --max-keys 1 \
+      --expected-bucket-owner "${ACCOUNT}" --query KeyCount --output text >/dev/null 2>"${err}"; then
+      log "instance role: S3 read of s3://${BUCKET}/releases/ (bucket owner ${ACCOUNT}) OK"
+    else
+      log "FAIL instance role cannot list s3://${BUCKET}/releases/ as owner ${ACCOUNT}: $(tail -n 1 "${err}")"
+      bad=1
+    fi
+    rm -f "${err}"
   else
     log "FAIL the AWS CLI is not installed on the instance (chola-prod.sh host-setup installs it)"
     bad=1
   fi
-  root="$("${DOCKER[@]}" info --format '{{.DockerRootDir}}')"
+  root="$(d info --format '{{.DockerRootDir}}')"
   dev_root="$(stat -c %d "${root}" 2>/dev/null || sudo -n stat -c %d "${root}")"
   dev_slash="$(stat -c %d /)"
   if [[ "${dev_root}" == "${dev_slash}" ]]; then
@@ -133,16 +203,11 @@ cmd_preflight() {
   else
     log "data volume: ${root} is $(findmnt -n -o SOURCE,FSTYPE,SIZE,AVAIL -T "${root}" | tr -s ' ')"
   fi
-  if "${DOCKER[@]}" info --format '{{json .DriverStatus}}' | grep -q io.containerd.snapshotter && [[ -d /var/lib/containerd ]]; then
-    croot=/var/lib/containerd
-    log "image store: containerd snapshotter, images in ${croot}: $(findmnt -n -o SOURCE,AVAIL -T "${croot}" | tr -s ' ') free (volumes stay in ${root}/volumes)"
-  fi
-  log "free: / $(df -h --output=avail / | tail -1 | tr -d ' '), ${root} $(df -h --output=avail "${root}" | tail -1 | tr -d ' ')"
+  log "image store: $(image_store)"
+  disk_check || bad=1
   if [[ -f "${ENV_FILE}" ]]; then log "deployed tag: $(env_get DSS_TAG none)"; else log "not deployed yet (no ${ENV_FILE})"; fi
-  if "${DOCKER[@]}" volume inspect "${PROJECT}_pgdata" >/dev/null 2>&1; then log "database volume ${PROJECT}_pgdata exists"; fi
-  local missing
-  missing="$(infra_missing | paste -sd' ' -)"
-  log "infrastructure images missing: ${missing:-none}"
+  log "data volumes present: $(volume_state)"
+  log "infrastructure images missing: $(infra_missing | paste -sd' ' -)"
   # IMDS from containers: Docker's bridge adds a hop; with HttpPutResponseHopLimit 1 and IMDSv2 required, containers
   # cannot get the instance role's credentials (which read every devsec-chola/prod secret). The app does not need it.
   local tok probe
@@ -150,15 +215,22 @@ cmd_preflight() {
     http://169.254.169.254/latest/api/token || true)"
   if [[ "${tok}" == 200 ]]; then log "IMDSv2 answers on the host (the AWS CLI here uses the instance role)"; else
     log "FAIL IMDSv2 does not answer on the host (HTTP ${tok:-none}): the instance role is unusable here"; bad=1; fi
-  if "${DOCKER[@]}" image inspect qdrant/qdrant:v1.13.5 >/dev/null 2>&1; then
+  if d image inspect qdrant/qdrant:v1.13.5 >/dev/null 2>&1; then
     # A raw IMDSv2 token PUT from a bridge-network container (the qdrant image has bash and timeout).
-    probe="$("${DOCKER[@]}" run --rm --network bridge --entrypoint bash qdrant/qdrant:v1.13.5 -c \
+    probe="$(d run --rm --network bridge --entrypoint bash qdrant/qdrant:v1.13.5 -c \
       'exec 3<>/dev/tcp/169.254.169.254/80 || exit 2; printf "PUT /latest/api/token HTTP/1.1\r\nHost: 169.254.169.254\r\nX-aws-ec2-metadata-token-ttl-seconds: 60\r\nConnection: close\r\n\r\n" >&3; timeout 4 head -n 1 <&3 | grep -q " 200 " && echo reachable || echo blocked' 2>/dev/null || echo blocked)"
     if [[ "${probe}" == reachable ]]; then
-      log "WARNING containers CAN get an IMDSv2 token (hop limit > 1): a compromised container could read the instance role's secrets; ask for HttpPutResponseHopLimit=1"
+      if [[ "${CHOLA_ALLOW_IMDS:-0}" == 1 ]]; then
+        log "WARNING containers CAN get an IMDSv2 token (allowed by --allow-imds)"
+      else
+        log "FAIL containers can get an IMDSv2 token (hop limit > 1): a compromised container could read the instance role's secrets. Ask for HttpPutResponseHopLimit=1, or pass --allow-imds"
+        bad=1
+      fi
     else
       log "IMDS token from a container: blocked (good: containers cannot use the instance role)"
     fi
+  else
+    log "IMDS from a container: not probed yet (needs the infrastructure images; the AWS-side options were checked)"
   fi
   [[ "${bad}" == 0 ]] || die "instance preflight failed (above)"
   log "instance preflight OK"
@@ -166,15 +238,48 @@ cmd_preflight() {
 
 infra_missing() {
   local i
-  for i in "${INFRA_IMAGES[@]}"; do
-    "${DOCKER[@]}" image inspect "${i}" >/dev/null 2>&1 || printf '%s\n' "${i}"
-  done
+  for i in "${INFRA_IMAGES[@]}"; do d image inspect "${i}" >/dev/null 2>&1 || printf '%s\n' "${i}"; done
 }
 
-# ------------------------------------------------------------------------------------------------ infrastructure images
+volume_state() { # the data volumes that exist (none: none); dies when Docker cannot be asked
+  local names v out=""
+  names="$(d volume ls --format '{{.Name}}')" || die "docker volume ls failed"
+  for v in "${DATA_VOLUMES[@]}"; do
+    if grep -qxF -- "${v}" <<<"${names}"; then out+="${out:+ }${v}"; fi
+  done
+  printf '%s\n' "${out:-none}"
+}
+
+cmd_volume_exists() { # yes / no, exit 0; anything else is an error
+  docker_setup
+  local s
+  s="$(volume_state)"
+  if [[ "${s}" == none ]]; then echo no; else echo yes; fi
+}
+
+# ------------------------------------------------------------------------------------------------ install / infra
+cmd_install() { # this run's kit (and the commit's aibom overlay uploaded with it) becomes the live kit; env files,
+  # volumes and state stay. A deploy does it once its checks have passed (deploy files are recorded per tag).
+  [[ "${SCRIPT_DIR}" != "${KIT_DIR}" ]] || { log "already running from the live kit"; return 0; }
+  local overlay="${SCRIPT_DIR}/../../compose/aibom-config-overlay"
+  mkdir -p "${KIT_DIR}"
+  tar -C "${SCRIPT_DIR}" --exclude='*.env' --exclude=.env -cf - . | tar -C "${KIT_DIR}" -xf -
+  chmod 700 "${KIT_DIR}"
+  if [[ -d "${overlay}" ]]; then
+    rm -rf "${BASE_DIR}/compose/aibom-config-overlay.new"
+    mkdir -p "${BASE_DIR}/compose"
+    cp -R "${overlay}" "${BASE_DIR}/compose/aibom-config-overlay.new"
+    rm -rf "${BASE_DIR}/compose/aibom-config-overlay"
+    mv "${BASE_DIR}/compose/aibom-config-overlay.new" "${BASE_DIR}/compose/aibom-config-overlay"
+  elif [[ ! -d "${BASE_DIR}/compose/aibom-config-overlay" ]]; then
+    die "no compose/aibom-config-overlay in this kit copy nor live (chola-prod.sh deploy uploads it)"
+  fi
+  log "kit installed in ${KIT_DIR}"
+}
+
 cmd_infra_load() {
-  local uri=${1:?usage: remote.sh infra-load <s3 uri> <sha256>} want=${2:?sha256} file got missing arch i
-  [[ "${uri}" =~ ^s3://[a-z0-9.-]+/[A-Za-z0-9._/-]+$ ]] || die "not an s3:// URI: ${uri}"
+  local key=${1:?usage: remote.sh infra-load <s3 key> <sha256>} want=${2:?sha256} file got missing arch i
+  [[ "${key}" =~ ^[A-Za-z0-9._/-]+$ ]] || die "not an S3 key: ${key}"
   [[ "${want}" =~ ^[0-9a-f]{64}$ ]] || die "not a sha256: ${want}"
   sudo -n mkdir -p "${ARCHIVE_DIR}"
   sudo -n chown "$(id -u):$(id -g)" "${ARCHIVE_DIR}"
@@ -183,18 +288,19 @@ cmd_infra_load() {
   rm -f "${file}"
   # shellcheck disable=SC2064 # expand now
   trap "rm -f '${file}'" EXIT
-  log "downloading ${uri} to ${file} (data volume)"
-  aws s3 cp --only-show-errors --region "${REGION}" "${uri}" "${file}"
+  log "downloading s3://${BUCKET}/${key} (bucket owner ${ACCOUNT}) to ${file} (data volume)"
+  aws s3api get-object --region "${REGION}" --bucket "${BUCKET}" --key "${key}" --expected-bucket-owner "${ACCOUNT}" \
+    "${file}" >/dev/null
   got="$(sha256sum "${file}" | cut -d' ' -f1)"
   [[ "${got}" == "${want}" ]] || die "release archive sha256 ${got} is not ${want} (damaged or replaced)"
   log "sha256 ok; docker load"
-  "${DOCKER[@]}" load -i "${file}"
+  d load -i "${file}"
   rm -f "${file}"
   trap - EXIT
   missing="$(infra_missing | paste -sd' ' -)"
   [[ -z "${missing}" ]] || die "still missing after the load: ${missing}"
   for i in "${INFRA_IMAGES[@]}"; do
-    arch="$("${DOCKER[@]}" image inspect -f '{{.Os}}/{{.Architecture}}' "${i}")"
+    arch="$(d image inspect -f '{{.Os}}/{{.Architecture}}' "${i}")"
     [[ "${arch}" == linux/amd64 ]] || die "${i} is ${arch}, not linux/amd64"
   done
   log "infrastructure images loaded (linux/amd64): ${INFRA_IMAGES[*]}; archive deleted"
@@ -207,8 +313,9 @@ cmd_render() { # [<tag>]: the tag is written only when .env has none yet (first 
   tag="${tag:-${1:-}}"
   command -v python3 >/dev/null || die "python3 is missing"
   command -v aws >/dev/null || die "the AWS CLI is missing (chola-prod.sh host-setup)"
+  mkdir -p "${KIT_DIR}"
   umask 077
-  python3 -I "${KIT_DIR}/kit.py" render-env --dir "${KIT_DIR}" --tag "${tag}" --secret-prefix "${SECRET_PREFIX}" \
+  python3 -I "${SCRIPT_DIR}/kit.py" render-env --dir "${KIT_DIR}" --tag "${tag}" --secret-prefix "${SECRET_PREFIX}" \
     --region "${REGION}" --image-prefix "${IMAGE_PREFIX}" --frontend-host "${FRONTEND_HOST}" --api-host "${API_HOST}" \
     --real-ip-from "${REAL_IP_FROM}"
   require_env_files
@@ -216,44 +323,43 @@ cmd_render() { # [<tag>]: the tag is written only when .env has none yet (first 
 
 cmd_ecr_login() {
   docker_setup
-  aws ecr get-login-password --region "${REGION}" | "${DOCKER[@]}" login --username AWS --password-stdin "${REGISTRY}" >/dev/null
+  aws ecr get-login-password --region "${REGION}" | d login --username AWS --password-stdin "${REGISTRY}" >/dev/null
   log "logged in to ${REGISTRY} (instance role)"
 }
 
-disk_check() { # refuse to pull with less than CHOLA_MIN_FREE_GB (default 15) free where images and volumes live
-  local min=${CHOLA_MIN_FREE_GB:-15} p avail
-  for p in "$("${DOCKER[@]}" info --format '{{.DockerRootDir}}')" /var/lib/containerd /; do
-    [[ -e "${p}" ]] || continue
-    avail="$(df -P -BG "${p}" | awk 'NR == 2 { sub("G", "", $4); print $4 }')"
-    ((avail >= min)) || die "only ${avail} GB free on $(findmnt -n -o TARGET -T "${p}") (need ${min} GB): remove old images (remote.sh status lists them)"
-  done
+frontend_url_ok() { # <image>: the browser bundle carries https://API_HOST (read out of the image; nothing runs)
+  local cid hit
+  cid="$(d create "$1")" || die "docker create $1 failed"
+  # grep -c reads the whole stream (grep -q would stop early and docker cp die of SIGPIPE under pipefail)
+  hit="$(d cp "${cid}:/frontend/.next/static" - 2>/dev/null | grep -acF "https://${API_HOST}" || true)"
+  d rm -f "${cid}" >/dev/null 2>&1 || true
+  [[ "${hit:-0}" =~ ^[1-9] ]] || die "$1 was built for another API URL (no https://${API_HOST} in its bundle); not starting it"
 }
 
 cmd_pull() {
   local tag=${1:?usage: remote.sh pull <tag>} r ref arch
   [[ "${tag}" =~ ^[0-9a-f]{12}$ ]] || die "tag ${tag} is not a 12-character commit"
   docker_setup
-  disk_check
+  disk_check || die "not enough disk to pull (above)"
   for r in "${APP_REPOS[@]}"; do
     ref="$(image_of "${r}" "${tag}")"
-    if "${DOCKER[@]}" image inspect "${ref}" >/dev/null 2>&1; then
+    if d image inspect "${ref}" >/dev/null 2>&1; then
       log "${ref} already here"
     else
       log "pulling ${ref}"
-      "${DOCKER[@]}" pull -q --platform linux/amd64 "${ref}" >/dev/null || die "pull of ${ref} failed (ecr-login? pushed?)"
+      d pull -q --platform linux/amd64 "${ref}" >/dev/null || die "pull of ${ref} failed (ecr-login? pushed?)"
     fi
-    arch="$("${DOCKER[@]}" image inspect -f '{{.Os}}/{{.Architecture}}' "${ref}")"
+    arch="$(d image inspect -f '{{.Os}}/{{.Architecture}}' "${ref}")"
     [[ "${arch}" == linux/amd64 ]] || die "${ref} is ${arch}, not linux/amd64"
   done
-  log "images of ${tag} present (linux/amd64)"
-}
-
-cmd_volume_exists() {
-  docker_setup
-  "${DOCKER[@]}" volume inspect "${PROJECT}_pgdata" >/dev/null 2>&1
+  frontend_url_ok "$(image_of devsecshield-frontend "${tag}")"
+  log "images of ${tag} present (linux/amd64); the frontend carries https://${API_HOST}"
 }
 
 # ------------------------------------------------------------------------------------------------ logical dumps
+# No password on any command line (ps shows them): pg_dump uses the container's local socket (trust for local
+# connections in the official image); mongodump reads its password from a 0600 --config file written by the shell's
+# printf builtin inside the container and removed right after.
 cmd_dump() {
   docker_setup
   require_env_files
@@ -274,7 +380,7 @@ cmd_dump() {
   if [[ -n "$(compose ps -q --status running mongo 2>/dev/null)" ]]; then
     log "mongodump -> ${DUMP_DIR}/mongo-${ts}.archive.gz"
     # shellcheck disable=SC2016
-    compose exec -T mongo sh -c 'exec mongodump --quiet --archive --gzip -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin' \
+    compose exec -T mongo sh -c 'umask 077; f=$(mktemp); printf "password: \"%s\"\n" "$MONGO_INITDB_ROOT_PASSWORD" >"$f"; mongodump --quiet --archive --gzip --config "$f" -u "$MONGO_INITDB_ROOT_USERNAME" --authenticationDatabase admin; rc=$?; rm -f "$f"; exit $rc' \
       >"${DUMP_DIR}/mongo-${ts}.archive.gz.part"
     mv "${DUMP_DIR}/mongo-${ts}.archive.gz.part" "${DUMP_DIR}/mongo-${ts}.archive.gz"
   fi
@@ -282,14 +388,14 @@ cmd_dump() {
     find "${DUMP_DIR}" -maxdepth 1 -name "${f}-*" ! -name '*.part' -printf '%T@ %p\n' | sort -rn | awk -v k="${keep}" 'NR > k { print $2 }' |
       while IFS= read -r old; do rm -f -- "${old}"; log "removed old dump ${old}"; done
   done
-  log "dumps: $(find "${DUMP_DIR}" -maxdepth 1 -type f ! -name '*.part' -name "*${ts}*" -printf '%f (%s bytes) ' )"
+  log "dumps: $(find "${DUMP_DIR}" -maxdepth 1 -type f ! -name '*.part' -name "*${ts}*" -printf '%f (%s bytes) ')"
 }
 
 # ------------------------------------------------------------------------------------------------ alembic helpers
 alembic_offline() { # <image> <alembic args...>: commands that read only the migration scripts
   local image=$1
   shift
-  "${DOCKER[@]}" run --rm --network none --entrypoint /backend/.venv/bin/python "${image}" -m alembic --config "${ALEMBIC_INI}" "$@"
+  d run --rm --network none --entrypoint /backend/.venv/bin/python "${image}" -m alembic --config "${ALEMBIC_INI}" "$@"
 }
 image_head() { # <tag>
   local out
@@ -319,7 +425,12 @@ app_services() {
   all="$(compose config --services)" || return 1
   for s in ${all}; do [[ "${INFRA_SERVICES}" == *" ${s} "* ]] || printf '%s\n' "${s}"; done
 }
-previous_of() { [[ -f "${HISTORY_FILE}" ]] || return 0; awk -v t="$1" '$2 == "deploy" && $3 == t && $4 == "previous" { p = $5 } END { print p }' "${HISTORY_FILE}"; }
+# The tag that was running when <tag> was deployed: from its deploy line, or from its STARTED line when the deploy was
+# interrupted (tunnel dropped, Ctrl-C, instance reboot) before it recorded an outcome.
+previous_of() {
+  [[ -f "${HISTORY_FILE}" ]] || return 0
+  awk -v t="$1" '($2 == "deploy" || $2 == "started") && $3 == t && $4 == "previous" { p = $5 } END { print p }' "${HISTORY_FILE}"
+}
 last_passed() { [[ -s "${PASSED_FILE}" ]] || return 0; awk -v x="${1:-}" 'NF && $1 != x { t = $1 } END { print t }' "${PASSED_FILE}"; }
 record_files() { # <tag>: the deploy files this tag is started with (for a rollback to it)
   mkdir -p "${RELEASES_DIR}/$1"
@@ -327,14 +438,51 @@ record_files() { # <tag>: the deploy files this tag is started with (for a rollb
   mv "${RELEASES_DIR}/$1/files.tar.gz.part" "${RELEASES_DIR}/$1/files.tar.gz"
 }
 restore_files() { tar -C "${BASE_DIR}" -xzf "${RELEASES_DIR}/$1/files.tar.gz"; }
+running_tag() { # the tag of the backend container (none before the first deploy, or without a live compose file)
+  [[ -f "${COMPOSE_FILE}" ]] || return 0
+  { compose ps -a --format '{{.Image}}' backend 2>/dev/null || true; } | sed -n -E 's/.*:([0-9a-f]{12})$/\1/p' | head -n 1
+}
 
-up() {
-  local rc=0
-  log "docker compose up (migrate runs first; everything else waits for it)"
-  compose up -d --remove-orphans --wait --wait-timeout "${CHOLA_WAIT_S:-900}" || rc=$?
+interrupted() { # 0 when the last recorded step is a STARTED deploy without an outcome (tunnel loss, kill, reboot)
+  [[ -f "${HISTORY_FILE}" ]] && [[ "$(tail -n 1 "${HISTORY_FILE}" | awk '{ print $2 }')" == started ]]
+}
+
+clear_app_containers() { # remove the application containers (stateless; datastores and named volumes stay) and the
+  # <id>_dss-chola-* containers a killed `compose up` leaves renamed half way through a recreate
+  local services c
+  services="$(app_services)" || die "docker compose config failed"
+  # shellcheck disable=SC2086 # one argument per service
+  compose rm -s -f ${services} >/dev/null 2>&1 || true
+  while IFS= read -r c; do
+    [[ -n "${c}" ]] || continue
+    d rm -f "${c}" >/dev/null 2>&1 && log "removed the leftover container ${c}"
+  done < <(d ps -a --filter "label=com.docker.compose.project=${PROJECT}" --format '{{.Names}}' | grep -E "^[0-9a-f]{12}_${PROJECT}-" || true)
+}
+
+up() { # [recover]: after an interrupted run (or for a rollback), start the application containers from scratch and try
+  # once more on failure: a killed `compose up` leaves containers stopped, renamed or only created, and the daemon may
+  # still be finishing that run's stops when the next one starts
+  local rc=0 recover=${1:-} tries=1
+  local -a extra=()
+  if [[ "${recover}" == recover ]]; then
+    tries=2
+    log "recovering: removing the application containers (data stays) before starting them"
+    clear_app_containers
+  fi
+  log "docker compose up${extra[*]:+ ${extra[*]}} (migrate runs first; everything else waits for it)"
+  while :; do
+    rc=0
+    compose up -d --remove-orphans "${extra[@]}" --wait --wait-timeout "${CHOLA_WAIT_S:-900}" || rc=$?
+    tries=$((tries - 1))
+    if [[ "${rc}" == 0 || "${tries}" == 0 ]]; then break; fi
+    log "compose up failed after an interrupted run; waiting 20 s and trying once more"
+    sleep 20
+    clear_app_containers
+  done
   compose ps -a --format 'table {{.Service}}\t{{.Image}}\t{{.Status}}' || true
   if [[ "${rc}" != 0 ]]; then
-    log "last migrate / backend log lines:"
+    log "last migrate / backend log lines (more: chola-prod.sh logs --service backend, or on the instance from any"
+    log "directory: ${SUDO[*]:+sudo }docker compose -p ${PROJECT} logs backend):"
     compose logs --no-color --tail 40 migrate backend 2>&1 | sed 's/^/    /' || true
   fi
   return "${rc}"
@@ -345,8 +493,8 @@ retain() { # <tag> <previous> <last passed>: remove this deployment's other appl
   while IFS= read -r ref; do
     t="${ref##*:}"
     [[ "${keep}" == *" ${t} "* ]] && continue
-    if "${DOCKER[@]}" image rm "${ref}" >/dev/null 2>&1; then log "retention: removed ${ref}"; fi
-  done < <("${DOCKER[@]}" image ls --format '{{.Repository}}:{{.Tag}}' | grep -E "^${IMAGE_PREFIX//./\\.}/(devsecshield-backend|devsecshield-frontend|scan-worker|dast-worker):[0-9a-f]{12}$" || true)
+    if d image rm "${ref}" >/dev/null 2>&1; then log "retention: removed ${ref}"; fi
+  done < <(d image ls --format '{{.Repository}}:{{.Tag}}' | grep -E "^${IMAGE_PREFIX//./\\.}/(devsecshield-backend|devsecshield-frontend|scan-worker|dast-worker):[0-9a-f]{12}$" || true)
 }
 
 # ------------------------------------------------------------------------------------------------ deploy / rollback
@@ -356,15 +504,16 @@ cmd_deploy() {
   docker_setup
   require_env_files
   mkdir -p "${STATE_DIR}"
+  # first deploy: there is no live kit yet, and the checks below need its compose file
+  [[ -f "${COMPOSE_FILE}" ]] || cmd_install
   for r in "${APP_REPOS[@]}"; do
-    "${DOCKER[@]}" image inspect "$(image_of "${r}" "${tag}")" >/dev/null 2>&1 || die "$(image_of "${r}" "${tag}") is not pulled"
+    d image inspect "$(image_of "${r}" "${tag}")" >/dev/null 2>&1 || die "$(image_of "${r}" "${tag}") is not pulled"
   done
+  frontend_url_ok "$(image_of devsecshield-frontend "${tag}")"
   local missing
   missing="$(infra_missing | paste -sd' ' -)"
   [[ -z "${missing}" ]] || die "infrastructure images missing: ${missing} (chola-prod.sh loads the release archive)"
-  # What runs now: the tag of the backend container (none before the first deploy). Not .env's DSS_TAG: render may
-  # have written the new tag there for a first deploy.
-  running="$(compose ps -a --format '{{.Image}}' backend 2>/dev/null | sed -n -E 's/.*:([0-9a-f]{12})$/\1/p' | head -n 1)"
+  running="$(running_tag)"
   previous="${running}"
   [[ "${previous}" != "${tag}" ]] || previous="$(previous_of "${tag}")"
   head="$(image_head "${tag}")" || die "cannot read the Alembic head of $(image_of devsecshield-backend "${tag}")"
@@ -376,10 +525,17 @@ cmd_deploy() {
       "cannot start on it. Nothing was changed. To go back a release: chola-prod.sh rollback"
   fi
   log "deploying ${tag} (running: ${running:-nothing}; database at ${db:-no revision}; ${tag}'s head ${head})"
+  cmd_install # this run's kit (compose file, nginx, the commit's aibom overlay) becomes the live kit
   record_files "${tag}"
   printf '%s\n' "${head}" >"${RELEASES_DIR}/${tag}/alembic-head"
+  local recover=""
+  if interrupted; then recover=recover; log "the last deploy was interrupted: recreating every container"; fi
+  # Recorded BEFORE anything switches: an interrupted deploy still names its rollback target and the database revision
+  # it started from (rollback reads it).
+  printf '%s started %s previous %s alembic-before %s\n' "$(date -u +%FT%TZ)" "${tag}" "${previous:-none}" \
+    "${db:-none}" >>"${HISTORY_FILE}"
   set_tag "${tag}"
-  if ! up; then
+  if ! up "${recover}"; then
     printf '%s deploy %s previous %s alembic %s FAILED\n' "$(date -u +%FT%TZ)" "${tag}" "${previous:-none}" "${head}" >>"${HISTORY_FILE}"
     die "compose up failed for ${tag}${previous:+; to go back: chola-prod.sh rollback}"
   fi
@@ -397,40 +553,54 @@ cmd_deploy() {
   log "deployed ${tag}; rollback target: ${previous:-none}"
 }
 
+ROLLBACK_CURRENT="" ROLLBACK_PREVIOUS="" ROLLBACK_HEAD="" ROLLBACK_DB="" ROLLBACK_DOWNGRADE=0
+rollback_plan() {
+  local r
+  ROLLBACK_CURRENT="$(env_get DSS_TAG)"
+  ROLLBACK_PREVIOUS="$(previous_of "${ROLLBACK_CURRENT}")"
+  [[ -n "${ROLLBACK_PREVIOUS}" && "${ROLLBACK_PREVIOUS}" != none ]] ||
+    die "no previous tag recorded for ${ROLLBACK_CURRENT} in ${HISTORY_FILE}"
+  for r in "${APP_REPOS[@]}"; do
+    d image inspect "$(image_of "${r}" "${ROLLBACK_PREVIOUS}")" >/dev/null 2>&1 || cmd_pull "${ROLLBACK_PREVIOUS}"
+  done
+  ROLLBACK_HEAD="$(tag_head "${ROLLBACK_PREVIOUS}")" || die "cannot read the Alembic head of ${ROLLBACK_PREVIOUS}"
+  [[ -n "${ROLLBACK_HEAD}" ]] || die "no Alembic head known for ${ROLLBACK_PREVIOUS}"
+  ROLLBACK_DB="$(db_revision)" || die "cannot read the database's Alembic revision"
+  ROLLBACK_DOWNGRADE=0
+  # shellcheck disable=SC2086
+  if [[ -n "${ROLLBACK_DB}" ]] && ! knows_revisions "${ROLLBACK_PREVIOUS}" ${ROLLBACK_DB}; then ROLLBACK_DOWNGRADE=1; fi
+  log "rollback ${ROLLBACK_CURRENT} -> ${ROLLBACK_PREVIOUS}: database at ${ROLLBACK_DB:-no revision}, ${ROLLBACK_PREVIOUS}'s migrations end at ${ROLLBACK_HEAD}"
+  if ((ROLLBACK_DOWNGRADE)); then
+    [[ "${ROLLBACK_HEAD}" != *" "* && "${ROLLBACK_DB}" != *" "* ]] ||
+      die "several Alembic heads (${ROLLBACK_HEAD} / ${ROLLBACK_DB}): downgrade by hand"
+    knows_revisions "${ROLLBACK_CURRENT}" "${ROLLBACK_HEAD}" || die "no downgrade path: ${ROLLBACK_CURRENT}'s migrations" \
+      "do not contain ${ROLLBACK_HEAD}. Nothing was changed. Restore the pre-deployment backup instead (README 'Restore')."
+    printf '[chola-remote] It needs alembic downgrade %s with the image of %s, which DROPS what these migrations added, with their data:\n' \
+      "${ROLLBACK_HEAD}" "${ROLLBACK_CURRENT}" >&2
+    alembic_offline "$(image_of devsecshield-backend "${ROLLBACK_CURRENT}")" history -r "${ROLLBACK_HEAD}:${ROLLBACK_DB}" >&2 || true
+  fi
+}
+
 cmd_rollback() {
-  local allowed=0 arg current previous head db services answer r
+  local allowed=0 plan=0 arg services
   for arg in "$@"; do
     case "${arg}" in
       --allow-downgrade) allowed=1 ;;
+      --plan) plan=1 ;;
       *) die "unknown rollback option ${arg}" ;;
     esac
   done
   docker_setup
   require_env_files
-  current="$(env_get DSS_TAG)"
-  previous="$(previous_of "${current}")"
-  [[ -n "${previous}" && "${previous}" != none ]] || die "no previous tag recorded for ${current} in ${HISTORY_FILE}"
-  for r in "${APP_REPOS[@]}"; do
-    "${DOCKER[@]}" image inspect "$(image_of "${r}" "${previous}")" >/dev/null 2>&1 || cmd_pull "${previous}"
-  done
-  head="$(tag_head "${previous}")" || die "cannot read the Alembic head of ${previous}"
-  [[ -n "${head}" ]] || die "no Alembic head known for ${previous}"
-  db="$(db_revision)" || die "cannot read the database's Alembic revision"
-  log "rolling back ${current} -> ${previous}: database at ${db:-no revision}, ${previous}'s migrations end at ${head}"
-  # shellcheck disable=SC2086
-  if [[ -n "${db}" ]] && ! knows_revisions "${previous}" ${db}; then
-    [[ "${head}" != *" "* && "${db}" != *" "* ]] || die "several Alembic heads (${head} / ${db}): downgrade by hand"
-    knows_revisions "${current}" "${head}" || die "no downgrade path: ${current}'s migrations do not contain ${head}." \
-      "Nothing was changed. Restore the pre-deployment backup instead (README 'Restore')."
-    printf '[chola-remote] The database is at %s; %s ends at %s. The rollback first runs alembic downgrade %s with the image of %s;\n' \
-      "${db}" "${previous}" "${head}" "${head}" "${current}" >&2
-    printf '[chola-remote] that DROPS what these migrations added, with their data:\n' >&2
-    alembic_offline "$(image_of devsecshield-backend "${current}")" history -r "${head}:${db}" >&2 || true
-    if [[ "${allowed}" != 1 ]]; then
-      [[ -t 0 ]] || die "the rollback needs that database downgrade; nothing was changed. Re-run with --allow-downgrade"
-      read -r -p "[chola-remote] Type 'downgrade' to continue: " answer || answer=""
-      [[ "${answer}" == downgrade ]] || die "aborted; nothing was changed"
-    fi
+  rollback_plan
+  if ((plan)); then
+    if ((ROLLBACK_DOWNGRADE)); then exit 3; fi
+    return 0
+  fi
+  local current=${ROLLBACK_CURRENT} previous=${ROLLBACK_PREVIOUS} head=${ROLLBACK_HEAD}
+  if ((ROLLBACK_DOWNGRADE)); then
+    # Detached jobs have no terminal: the confirmation is asked on the owner's machine (rollback --plan exit 3).
+    [[ "${allowed}" == 1 ]] || die "the rollback needs that database downgrade; nothing was changed. Re-run with --allow-downgrade"
     services="$(app_services)" || die "docker compose config failed; nothing was changed"
     log "stopping the application services, then alembic downgrade ${head} with ${current}'s image"
     # shellcheck disable=SC2086
@@ -446,7 +616,8 @@ cmd_rollback() {
     restore_files "${previous}"
   fi
   set_tag "${previous}"
-  if ! up; then
+  # a rollback recreates every container: it often follows a failed or interrupted run
+  if ! up recover; then
     printf '%s rollback %s previous %s alembic %s FAILED\n' "$(date -u +%FT%TZ)" "${previous}" "${current}" "${head}" >>"${HISTORY_FILE}"
     die "compose up failed for ${previous}"
   fi
@@ -454,6 +625,60 @@ cmd_rollback() {
   cmd_check
   printf '%s\n' "${previous}" >>"${PASSED_FILE}"
   log "rolled back to ${previous} (users rehashed to Argon2id by ${current} may need a password reset on an older image)"
+}
+
+# ------------------------------------------------------------------------------------------------ detached jobs
+DETACHABLE=" deploy rollback dump infra-load "
+cmd_job_start() {
+  local cmd=${1:?usage: remote.sh job-start <command> [args]} id dir
+  [[ "${DETACHABLE}" == *" ${cmd} "* ]] || die "${cmd} cannot run detached"
+  mkdir -p "${JOBS_DIR}"
+  # refuse now, not inside the job, when another changing command holds the lock
+  exec 8>"${STATE_DIR}/.lock"
+  flock -n 8 || die "another chola-prod command is running on this instance (${STATE_DIR}/.lock); wait for it"
+  exec 8>&-
+  id="$(date -u +%Y%m%dT%H%M%SZ)-${cmd}-$$"
+  dir="${JOBS_DIR}/${id}"
+  mkdir -p "${dir}"
+  printf '%s\n' "$*" >"${dir}/cmd"
+  : >"${dir}/log"
+  # setsid: a new session without a controlling terminal, so neither a dropped tunnel nor Ctrl-C on the owner's
+  # machine (SIGHUP / SIGINT) reaches it; its exit status lands in rc when it ends.
+  # shellcheck disable=SC2016 # expanded by the detached bash, not here
+  JOB_DIR="${dir}" nohup setsid bash -c 'trap "" HUP INT; echo $$ >"$JOB_DIR/pid"; bash "$0" "$@"; echo $? >"$JOB_DIR/rc.part" && mv "$JOB_DIR/rc.part" "$JOB_DIR/rc"' \
+    "${SCRIPT}" "$@" </dev/null >>"${dir}/log" 2>&1 &
+  disown || true
+  # Return only once the job runs in its own session, ignoring hang-ups: before that, the end of the SSH session could
+  # still take it down.
+  local i
+  for i in $(seq 1 100); do
+    [[ -s "${dir}/pid" ]] && break
+    sleep 0.1
+  done
+  [[ -s "${dir}/pid" ]] || die "job ${id} did not start (see ${dir}/log)"
+  printf '%s\n' "${id}"
+  find "${JOBS_DIR}" -mindepth 1 -maxdepth 1 -type d -mtime +30 -exec rm -rf {} + 2>/dev/null || true
+}
+
+cmd_job_follow() {
+  local id=${1:?usage: remote.sh job-follow <id> <offset> [wait-s]} off=${2:-0} wait=${3:-20} dir size waited=0
+  [[ "${id}" =~ ^[0-9TZ]+-[a-z-]+-[0-9]+$ ]] || die "not a job id: ${id}"
+  [[ "${off}" =~ ^[0-9]+$ && "${wait}" =~ ^[0-9]{1,4}$ ]] || die "offset and wait must be numbers"
+  dir="${JOBS_DIR}/${id}"
+  [[ -d "${dir}" ]] || die "no job ${id} on this instance"
+  while :; do
+    size="$(stat -c %s "${dir}/log")"
+    if ((size > off)) || [[ -f "${dir}/rc" ]] || ((waited >= wait)); then break; fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  size="$(stat -c %s "${dir}/log")"
+  if ((size > off)); then tail -c +"$((off + 1))" "${dir}/log" | head -c "$((size - off))"; fi
+  if [[ -f "${dir}/rc" && "$(stat -c %s "${dir}/log")" == "${size}" ]]; then
+    printf 'chola-job: done %s %s\n' "$(cat "${dir}/rc")" "${size}" >&2
+  else
+    printf 'chola-job: running %s\n' "${size}" >&2
+  fi
 }
 
 # ------------------------------------------------------------------------------------------------ checks
@@ -516,7 +741,7 @@ cmd_smtp_test() {
   require_env_files
   local rc=0
   log "SMTP login test from a backend container (backend.env settings; authenticates only, sends nothing)"
-  compose run --rm --no-deps -T --entrypoint /backend/.venv/bin/python backend - <"${KIT_DIR}/smtp_check.py" || rc=$?
+  compose run --rm --no-deps -T --entrypoint /backend/.venv/bin/python backend - <"${SCRIPT_DIR}/smtp_check.py" || rc=$?
   return "${rc}"
 }
 
@@ -540,11 +765,20 @@ SQL
 
 cmd_status() {
   docker_setup
-  log "deployed tag: $(env_get DSS_TAG none); previous: $(previous_of "$(env_get DSS_TAG)")"
-  compose ps -a --format 'table {{.Service}}\t{{.Image}}\t{{.Status}}' || true
-  [[ -f "${HISTORY_FILE}" ]] && { log "deploy history (last 10):"; tail -n 10 "${HISTORY_FILE}" | sed 's/^/    /'; }
+  log "deployed tag: $(env_get DSS_TAG none); rollback target: $(previous_of "$(env_get DSS_TAG)")"
+  if [[ -f "${COMPOSE_FILE}" && -f "${ENV_FILE}" ]]; then
+    compose ps -a --format 'table {{.Service}}\t{{.Image}}\t{{.Status}}' || true
+  fi
+  if [[ -f "${HISTORY_FILE}" ]]; then log "deploy history (last 10):"; tail -n 10 "${HISTORY_FILE}" | sed 's/^/    /'; fi
+  if [[ -d "${JOBS_DIR}" ]]; then
+    log "last jobs (chola-prod.sh attach --job <id>):"
+    find "${JOBS_DIR}" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort | tail -n 5 | while IFS= read -r j; do
+      if [[ -f "${JOBS_DIR}/${j}/rc" ]]; then printf '    %s exit %s\n' "${j}" "$(cat "${JOBS_DIR}/${j}/rc")"; else
+        printf '    %s running (or killed with the instance)\n' "${j}"; fi
+    done
+  fi
   log "application images here:"
-  "${DOCKER[@]}" image ls --format '    {{.Repository}}:{{.Tag}} {{.Size}}' | grep -F "${IMAGE_PREFIX}/" || true
+  d image ls --format '    {{.Repository}}:{{.Tag}} {{.Size}}' | grep -F "${IMAGE_PREFIX}/" || true
   log "disk: $(df -h --output=target,avail / /var/lib/docker 2>/dev/null | tail -n +2 | tr -s ' ' | paste -sd',' -)"
 }
 
@@ -561,14 +795,18 @@ lock() { # one changing command at a time on this instance (two owners, or a ret
   flock -n 9 || die "another chola-prod command is running on this instance (${STATE_DIR}/.lock); wait for it"
 }
 
+usage() { awk 'NR > 1 && /^set -/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "${SCRIPT}"; }
+
 main() {
   local cmd=${1:-}
   shift || true
   case "${cmd}" in
-    infra-load | render | pull | dump | deploy | rollback | admin) lock ;;
+    install | infra-load | render | pull | dump | deploy | admin) lock ;;
+    rollback) [[ " $* " == *" --plan "* ]] || lock ;;
   esac
   case "${cmd}" in
     preflight) cmd_preflight ;;
+    install) cmd_install ;;
     infra-missing) docker_setup; infra_missing ;;
     infra-load) docker_setup; cmd_infra_load "$@" ;;
     render) cmd_render "$@" ;;
@@ -583,9 +821,12 @@ main() {
     admin) cmd_admin "$@" ;;
     status) cmd_status ;;
     logs) cmd_logs "$@" ;;
-    -h | --help | help | "") sed -n '2,27p' "${BASH_SOURCE[0]}" ;;
+    job-start) cmd_job_start "$@" ;;
+    job-follow) cmd_job_follow "$@" ;;
+    -h | --help | help | "") usage ;;
     *) die "unknown command ${cmd}" ;;
   esac
 }
 
-main "$@"
+# Sourced by backend/tests/test_chola_prod_kit.py to test single functions; run as a script otherwise.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi
