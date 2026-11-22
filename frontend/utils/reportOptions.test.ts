@@ -31,6 +31,7 @@ function parseConstants(src: string): Record<string, unknown> {
   for (const { name, text } of chunks) {
     let json = text
       .replace(/\(/g, "[").replace(/\)/g, "]")
+      .replace(/\b0x([0-9A-Fa-f]+)\b/g, (_m, hex: string) => String(parseInt(hex, 16)))
       .replace(/,(\s*[\]}])/g, "$1");
     for (const known of Object.keys(out)) json = json.replace(new RegExp(String.raw`(?<![A-Z_"])${known}(?![A-Z_"])`, "g"), JSON.stringify(out[known]));
     out[name] = JSON.parse(json);
@@ -39,7 +40,7 @@ function parseConstants(src: string): Record<string, unknown> {
 }
 const backend = parseConstants(block);
 const NAMES = ["FAMILIES", "PRESETS", "SEVERITIES", "STATUSES", "LABELS", "LABEL_TEXT", "SCAN_SECTIONS", "RUN_SECTIONS",
-  "PRESET_SECTIONS", "TYPE_SECTIONS", "FAMILY_KEYS", "PREPARED_FOR_MAX", "TITLE_MAX"] as const;
+  "PRESET_SECTIONS", "TYPE_SECTIONS", "FAMILY_KEYS", "PREPARED_FOR_MAX", "TITLE_MAX", "TEXT_RANGES"] as const;
 assert.deepEqual(Object.keys(backend).sort(), [...NAMES].sort(), "every backend constant is mirrored (a new one needs a copy here)");
 for (const name of NAMES) {
   assert.deepEqual(JSON.parse(JSON.stringify(RO[name])), backend[name], `${name} differs from report_options.py`);
@@ -89,8 +90,23 @@ assert.equal(v("prepared_for", "é".repeat(120)).error, null, "NFC first: é is
 assert.equal(v("prepared_for", "two\nlines").error, "must be one line of plain text");
 assert.equal(v("prepared_for", "zero​width").error, "must be one line of plain text", "Cf");
 assert.equal(v("prepared_for", "para graph").error, "must be one line of plain text", "Zp");
-assert.equal(v("prepared_for", "東京銀行").error, "can only use Latin characters for now");
-assert.equal(v("prepared_for", "Łódź").error, "can only use Latin characters for now", "Latin Extended-A is not cp1252");
+const SCRIPTS = "can only use Latin, Greek, Cyrillic or Devanagari characters";
+assert.equal(v("prepared_for", "東京銀行").error, SCRIPTS, "CJK: no font for it");
+assert.equal(v("prepared_for", "بنك").error, SCRIPTS, "Arabic");
+assert.equal(v("prepared_for", "Acme 🏦").error, SCRIPTS, "emoji");
+assert.equal(v("prepared_for", "Ϣ").error, SCRIPTS, "Coptic letters in the Greek block: no glyph");
+// other scripts the report fonts draw (the server's TEXT_RANGES)
+for (const ok of ["Łódź Bank", "Tiếng Việt", "Ελληνική Τράπεζα", "ПАО Сбербанк", "Қазақстан", "प्रबंधन क्षेत्र", "Acme बैंक",
+  "महाराष्ट्र राज्य सहकारी बँक", "मऱ्याद", "₹ 500 crore", "x̃"]) {
+  assert.equal(v("title", ok).error, null, ok);
+}
+assert.equal(v("prepared_for", "र्‍य").error, null, "ZWJ (Cf) is Devanagari spelling: allowed");
+assert.equal(v("prepared_for", "क्‌ष").error, null, "ZWNJ too");
+assert.equal(v("prepared_for", "a​b").error, "must be one line of plain text", "zero-width space is still refused");
+assert.equal(v("prepared_for", "a⁠b").error, "must be one line of plain text", "word joiner (Cf) too");
+assert.equal(v("prepared_for", "कि").value, "कि", "NFC");
+assert.equal(RO.textSupported("Acme बैंक"), true);
+assert.equal(RO.textSupported("東"), false);
 assert.equal(v("prepared_for", "x".repeat(121) + "\n").error, "must be 120 characters or fewer", "trimmed, then length first");
 assert.equal(RO.textLength("  ab  "), 2);
 
@@ -100,7 +116,8 @@ assert.deepEqual(RO.optionProblems(opts({ statuses: [] }), "scan", "sast"), { st
 assert.deepEqual(RO.optionProblems(opts({ statuses: [] }), "run"), {}, "a run takes no status filter");
 assert.deepEqual(RO.optionProblems(opts({ sections: ["inventory"] }), "scan", "sast"), { sections: "Choose at least one section" }, "SAST has no inventory");
 assert.deepEqual(RO.optionProblems(opts({ title: "東" }), "deliverable"), {}, "a deliverable takes no title");
-assert.deepEqual(RO.optionProblems(opts({ prepared_for: "東" }), "deliverable"), { prepared_for: "can only use Latin characters for now" });
+assert.deepEqual(RO.optionProblems(opts({ prepared_for: "東" }), "deliverable"), { prepared_for: SCRIPTS });
+assert.deepEqual(RO.optionProblems(opts({ prepared_for: "भारतीय स्टेट बैंक" }), "deliverable"), {});
 
 // ---------------------------------------------------------------- remembered options
 const store = new Map<string, string>();

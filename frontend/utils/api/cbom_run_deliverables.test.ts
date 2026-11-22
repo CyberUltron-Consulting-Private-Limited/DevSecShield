@@ -21,8 +21,34 @@ const BODIES: Record<string, string> = {
 async function main() {
   const seen: string[] = [];
   const posted: { url: string; sig: string | undefined; body: string }[] = [];
+  // the PDF report requests: method, URL and the JSON body of a POST (its report options)
+  const reports: { method: string; url: string; options: Record<string, unknown> | null }[] = [];
+  const reportReply = (res: http.ServerResponse, q: Record<string, unknown>) => {
+    if (q.label === "restricted") {
+      res.writeHead(429, { "content-type": "application/json", "retry-after": "17" });
+      res.end(JSON.stringify({ detail: "Too many large reports are being built; try again shortly" }));
+      return;
+    }
+    if ("statuses" in q || "hide_evidence" in q) {
+      res.writeHead(422, { "content-type": "application/json" });
+      res.end(JSON.stringify({ detail: `${"statuses" in q ? "statuses" : "hide_evidence"}: is not available for this report` }));
+      return;
+    }
+    res.writeHead(200, { "content-type": "application/pdf", "x-report-findings": "12/40", "x-report-logo": "skipped" });
+    res.end(BODIES["report.pdf"]);
+  };
   const server = http.createServer((req, res) => {
     seen.push(req.url ?? "");
+    if (req.method === "POST" && new URL(req.url ?? "", "http://x").pathname.endsWith("/report.pdf")) {
+      const parts: Buffer[] = [];
+      req.on("data", (c: Buffer) => parts.push(c));
+      req.on("end", () => {
+        const options = JSON.parse(Buffer.concat(parts).toString("utf8") || "{}") as Record<string, unknown>;
+        reports.push({ method: "POST", url: req.url ?? "", options });
+        reportReply(res, options);
+      });
+      return;
+    }
     if (req.method === "POST") {
       const parts: Buffer[] = [];
       req.on("data", (c: Buffer) => parts.push(c));
@@ -40,20 +66,9 @@ async function main() {
       res.end('{"detail":"Run not found"}');
       return;
     }
-    if (kind === "report.pdf" && (req.url ?? "").includes("?")) {
-      const q = new URL(req.url ?? "", "http://x").searchParams;
-      if (q.get("label") === "restricted") {
-        res.writeHead(429, { "content-type": "application/json", "retry-after": "17" });
-        res.end(JSON.stringify({ detail: "Too many large reports are being built; try again shortly" }));
-        return;
-      }
-      if (q.has("statuses") || q.has("hide_evidence")) {
-        res.writeHead(422, { "content-type": "application/json" });
-        res.end(JSON.stringify({ detail: `${q.has("statuses") ? "statuses" : "hide_evidence"}: is not available for this report` }));
-        return;
-      }
-      res.writeHead(200, { "content-type": "application/pdf", "x-report-findings": "12/40", "x-report-logo": "skipped" });
-      res.end(BODIES[kind]);
+    if (kind === "report.pdf") {
+      reports.push({ method: req.method ?? "", url: req.url ?? "", options: null });
+      reportReply(res, Object.fromEntries(new URL(req.url ?? "", "http://x").searchParams));
       return;
     }
     res.writeHead(200, { "content-type": "application/octet-stream" });
@@ -134,19 +149,21 @@ async function main() {
     assert.equal(posted[0].body, file, "the file is sent byte for byte");
 
     // the run's PDF report with options: the run route's keys only, the server's bytes and its report headers
-    const report = await downloadRunReport(7, 12, { ...DEFAULT_OPTIONS, preset: "executive", sections: ["summary", "posture"], severities: ["critical", "high"], label: "internal" });
-    const reportUrl = new URL(seen.at(-1)!, "http://x");
-    assert.equal(reportUrl.pathname, "/7/cbom/sources/runs/12/report.pdf");
-    assert.deepEqual(Object.fromEntries(reportUrl.searchParams), { preset: "executive", severities: "critical,high", label: "internal" });
+    const report = await downloadRunReport(7, 12, { ...DEFAULT_OPTIONS, preset: "executive", sections: ["summary", "posture"], severities: ["critical", "high"], label: "internal", prepared_for: "ПАО Сбербанк" });
+    assert.deepEqual(reports.at(-1), {
+      method: "POST", url: "/7/cbom/sources/runs/12/report.pdf",
+      options: { preset: "executive", severities: "critical,high", label: "internal", prepared_for: "ПАО Сбербанк" },
+    }, "options in a POST's JSON body, never in the URL (the client name stays out of access logs)");
     assert.equal(Buffer.from(await report.blob.arrayBuffer()).toString("utf8"), BODIES["report.pdf"]);
     assert.deepEqual(report.meta, { shown: 12, total: 40, logo: "skipped" });
-    // defaults send no parameter: today's report
+    // defaults send no option: a plain GET, today's report
     await downloadRunReport(7, 12, { ...DEFAULT_OPTIONS });
-    assert.equal(new URL(seen.at(-1)!, "http://x").search, "");
-    // a run never sends a key its route refuses (statuses, hide_evidence)
+    assert.deepEqual(reports.at(-1), { method: "GET", url: "/7/cbom/sources/runs/12/report.pdf", options: null });
+    // a run never sends a key its route refuses (statuses, hide_evidence): nothing left, so a plain GET
     const kept = await downloadRunReport(7, 12, { ...DEFAULT_OPTIONS, statuses: ["fixed"], hide_evidence: true }).then(() => null, (e: unknown) => e);
     assert.equal(kept, null);
-    assert.equal(new URL(seen.at(-1)!, "http://x").search, "", "no statuses or hide_evidence on a run");
+    assert.deepEqual(reports.at(-1), { method: "GET", url: "/7/cbom/sources/runs/12/report.pdf", options: null },
+      "no statuses or hide_evidence on a run");
     // a refusal arrives with the server's words (read back from the blob body), its status and Retry-After
     const refused = await downloadRunReport(7, 12, { ...DEFAULT_OPTIONS, label: "restricted" }).then(() => null, (e: unknown) => e);
     assert.ok(refused instanceof ReportDownloadError, "a ReportDownloadError");

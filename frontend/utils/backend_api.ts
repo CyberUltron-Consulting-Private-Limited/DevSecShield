@@ -2562,7 +2562,7 @@ const getCbomDeliverables = async (team_id: number): Promise<CbomDeliverablesMan
   return response.data as CbomDeliverablesManifest;
 };
 
-/** Team-scoped: GET /{team_id}/cbom/deliverables/{slug} (PDF) with the cover options (prepared_for, label). No toast
+/** Team-scoped: /{team_id}/cbom/deliverables/{slug} (PDF) with the cover options (prepared_for, label). No toast
  * here: the deliverables menu owns success/error UX. Kept under this name for the menu; the same as downloadDeliverable. */
 const downloadCbomDeliverable = (
   team_id: number,
@@ -5664,9 +5664,13 @@ async function reportError(error: unknown): Promise<ReportDownloadError> {
     })
 }
 
-async function getReport(path: string, params: Record<string, string>): Promise<ReportDownload> {
+/** Downloads a PDF report. With options: POST them as a JSON body (the server takes the same options as the GET query,
+ * and a client name or title never lands in a URL, an access log or the browser history); without: a plain GET. */
+async function getReport(path: string, options: Record<string, string>): Promise<ReportDownload> {
     try {
-        const response = await api.get(path, { params, responseType: "blob" })
+        const response = Object.keys(options).length > 0
+            ? await api.post(path, options, { responseType: "blob" })
+            : await api.get(path, { responseType: "blob" })
         const data = response.data as unknown
         const blob = data instanceof Blob ? data : new Blob([data as BlobPart], { type: "application/pdf" })
         return { blob, meta: reportMetaFrom(response.headers) }
@@ -5675,16 +5679,18 @@ async function getReport(path: string, params: Record<string, string>): Promise<
     }
 }
 
-/** A scan's PDF report: GET /{team_id}/{type}/scan/{scan_id}/export with the options that differ from the default.
- * No toast: the export dialog shows the outcome (components/reports/ExportPdfDialog.tsx). */
+/** A scan's PDF report: /{team_id}/{type}/scan/{scan_id}/export (POST with the options that differ from the default, GET
+ * without any). No toast: the export dialog shows the outcome (components/reports/ExportPdfDialog.tsx). */
 export const downloadScanReport = (team_id: number, type: ReportScanType, scan_id: number, options: ReportOptions): Promise<ReportDownload> =>
     getReport(`/${team_id}/${type}/scan/${scan_id}/export`, toQuery(options, "scan", type))
 
-/** A CBOM Sources run's PDF report: GET /{team_id}/cbom/sources/runs/{run_id}/report.pdf. No toast (the dialog's). */
+/** A CBOM Sources run's PDF report: /{team_id}/cbom/sources/runs/{run_id}/report.pdf (POST with options, else GET). No
+ * toast (the dialog's). */
 export const downloadRunReport = (team_id: number, run_id: number, options: ReportOptions): Promise<ReportDownload> =>
     getReport(cbomRunDeliverablePath(team_id, run_id, "report.pdf"), toQuery(options, "run"))
 
-/** A team-wide CBOM deliverable: GET /{team_id}/cbom/deliverables/{slug} with its cover options. No toast. */
+/** A team-wide CBOM deliverable: /{team_id}/cbom/deliverables/{slug}, its cover options in a POST body (a plain GET
+ * when none is set). No toast. */
 export const downloadDeliverable = (team_id: number, slug: CbomDeliverableSlug, options: ReportOptions): Promise<ReportDownload> =>
     getReport(`/${team_id}/cbom/deliverables/${slug}`, toQuery(options, "deliverable"))
 

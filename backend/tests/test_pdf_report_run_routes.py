@@ -37,6 +37,51 @@ def test_run_report_takes_run_options_and_refuses_code_lane_ones(run_env):
     assert bad.status_code == 422 and bad.json()["detail"].startswith("statuses: ")
 
 
+def test_run_report_post_takes_the_options_as_json(run_env, monkeypatch):
+    call, engine, rid = run_env
+    _finish(engine, rid)
+    _freeze(monkeypatch)
+    url = f"/1/cbom/sources/runs/{rid}/report.pdf"
+    get = call("GET", url + "?preset=executive&prepared_for=Acme&label=internal")
+    post = call("POST", url, json={"preset": "executive", "prepared_for": "Acme", "label": "internal"})
+    assert post.status_code == 200, post.text
+    assert post.content == get.content  # a finished run's report is byte-stable: the same PDF either way
+    for name in ("Content-Disposition", "X-Report-Findings", "X-Report-Logo", "Cache-Control"):
+        assert post.headers[name] == get.headers[name], name
+    assert call("POST", url).content == call("GET", url).content  # no body: today's report
+    bad = call("POST", url, json={"statuses": "fixed"})
+    assert bad.status_code == 422 and bad.json()["detail"].startswith("statuses: ")
+    assert call("POST", url, json={"hide_evidence": True}).json()["detail"].startswith("hide_evidence: ")
+    assert call("POST", url + "?title=x", json={}).json()["detail"].startswith("title: send report options")
+    hindi = call("POST", url, json={"title": "प्रबंधन क्षेत्र", "prepared_for": "ПАО Сбербанк"})
+    assert hindi.status_code == 200 and b"NotoSansDevanagari-Bold" in hindi.content
+    assert call("POST", "/1/cbom/sources/runs/999999/report.pdf", json={}).status_code == 404
+    assert call("POST", url, who=None, json={}).status_code == 401
+
+
+def test_a_large_run_report_uses_the_cbom_pool_not_the_scan_pdf_pool(run_env, monkeypatch, tmp_path):
+    """Scan PDFs filling their own slots never make a run report wait; CBOM exports filling theirs do, with the CBOM
+    words."""
+    call, _engine_, rid = run_env
+    from backend.utilities.cbom_sources import export_slots as ES
+
+    monkeypatch.setattr(ES, "LOCK_DIR", str(tmp_path))
+    monkeypatch.setattr(ES, "SLOTS", 1)
+    monkeypatch.setattr(ES, "PDF_SLOTS", 1)
+    monkeypatch.setattr(ES, "LARGE_ASSETS", 1)  # this run counts as large
+    url = f"/1/cbom/sources/runs/{rid}/report.pdf"
+    with ES.pdf_slot():  # every scan PDF slot taken
+        assert call("POST", url, json={"label": "internal"}).status_code == 200
+        assert call("GET", f"/1/cbom/sources/runs/{rid}/cbom").status_code == 200
+    with ES.slot():  # every CBOM slot taken
+        for method in ("GET", "POST"):
+            busy = call(method, url)
+            assert busy.status_code == 429, busy.text
+            assert busy.json()["detail"] == ES.CBOM_BUSY and "scan PDF" not in busy.json()["detail"]
+            assert busy.headers["Retry-After"] == str(ES.RETRY_AFTER_S)
+        assert call("GET", f"/1/cbom/sources/runs/{rid}/cbom").json()["detail"] == ES.CBOM_BUSY
+
+
 def test_default_run_report_is_unchanged_without_a_logo(run_env, monkeypatch):
     call, engine, rid = run_env
     _finish(engine, rid)

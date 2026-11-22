@@ -1,6 +1,6 @@
 /**
  * PDF report options in the browser: what the export dialog (components/reports/ExportPdfDialog.tsx) may leave out,
- * filter or add, and how it says so in the query of the PDF routes.
+ * filter or add, and how it says so to the PDF routes (`toQuery`: the JSON body of a POST, or nothing at all).
  *
  * The constants block mirrors backend/utilities/pdf/report_options.py (the single source; utils/reportOptions.test.ts
  * reads that file and fails when the two differ). Leaving every option at its default sends no parameter at all, so
@@ -47,6 +47,25 @@ export const FAMILY_KEYS = {
 } as const;
 export const PREPARED_FOR_MAX = 120;
 export const TITLE_MAX = 140;
+/** Beyond Windows-1252, the code points free text may use (inclusive ranges): Latin Extended, combining marks, Greek,
+ * Cyrillic, Devanagari, the zero-width (non-)joiner, the rupee sign. The server draws them with Noto fonts. */
+export const TEXT_RANGES = [
+  [0x0100, 0x024f],
+  [0x0300, 0x036f],
+  [0x0370, 0x0377],
+  [0x037a, 0x037f],
+  [0x0384, 0x038a],
+  [0x038c, 0x038c],
+  [0x038e, 0x03a1],
+  [0x03a3, 0x03e1],
+  [0x03f0, 0x03ff],
+  [0x0400, 0x052f],
+  [0x0900, 0x097f],
+  [0x1e00, 0x1eff],
+  [0x200c, 0x200d],
+  [0x20b9, 0x20b9],
+  [0xa8e0, 0xa8ff],
+] as const;
 // --- end constants -------------------------------------------------------------------------------------------------
 
 export type ReportFamily = (typeof FAMILIES)[number];
@@ -131,8 +150,15 @@ const isCp1252 = (ch: string) => {
   const code = ch.codePointAt(0) ?? 0;
   return code <= 0x7f || (code >= 0xa0 && code <= 0xff) || CP1252_EXTRA.has(ch);
 };
-// Python's unicodedata categories Cc (controls), Cf (format), Zl and Zp (line and paragraph separators)
-const NOT_ONE_LINE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+const inTextRanges = (ch: string) => {
+  const code = ch.codePointAt(0) ?? 0;
+  return TEXT_RANGES.some(([low, high]) => code >= low && code <= high);
+};
+/** Every character is Windows-1252 or in TEXT_RANGES (the server's `text_supported`). */
+export const textSupported = (text: string) => [...text].every((ch) => isCp1252(ch) || inTextRanges(ch));
+// Python's unicodedata categories Cc (controls), Cf (format), Zl and Zp (line and paragraph separators), except the
+// zero-width non-joiner and joiner (U+200C, U+200D), which are part of Devanagari spelling
+const NOT_ONE_LINE = /(?![\u200C\u200D])[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
 
 /** The text the server will print (NFC, trimmed; "" for nothing) and the problem with it, if any: the same checks, in
  * the same order and words, as `_text` in backend/utilities/pdf/report_options.py. */
@@ -142,7 +168,7 @@ export function validateText(field: TextField, raw: string): { value: string; er
   const limit = TEXT_MAX[field];
   if ([...value].length > limit) return { value, error: `must be ${limit} characters or fewer` };
   if (NOT_ONE_LINE.test(value)) return { value, error: "must be one line of plain text" };
-  if (![...value].every(isCp1252)) return { value, error: "can only use Latin characters for now" };
+  if (!textSupported(value)) return { value, error: "can only use Latin, Greek, Cyrillic or Devanagari characters" };
   return { value, error: null };
 }
 
@@ -176,8 +202,10 @@ export function optionProblems(options: ReportOptions, family: DialogFamily, sca
   return out;
 }
 
-/** The query parameters for these options on a route of `family`: only the keys the family takes, and only those that
- * differ from the default (all defaults: no parameter at all, so today's report). */
+/** The report options to send to a route of `family`: only the keys the family takes, and only those that differ from
+ * the default (all defaults: nothing, so a plain GET and today's report). Sent as the JSON body of a POST, never in the
+ * URL, so a client name stays out of access logs (backend/utilities/pdf/report_http.py). The values are the ones the
+ * GET query string takes. */
 export function toQuery(options: ReportOptions, family: DialogFamily, scanType?: ReportScanType | null): Record<string, string> {
   const keys = FAMILY_KEYS[family] as readonly string[];
   const q: Record<string, string> = {};

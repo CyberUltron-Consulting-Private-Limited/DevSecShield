@@ -301,6 +301,13 @@ class Api:
             merged.setdefault("Authorization", f"Bearer {self.token(who)}")
         return self.client.get(url, headers=merged)
 
+    def post(self, url: str, json: Any = None, who: str | None = "alice", headers: dict[str, str] | None = None):
+        """The download's POST form (cover options as a JSON body); authenticates like ``get``."""
+        merged = dict(headers or {})
+        if who is not None:
+            merged.setdefault("Authorization", f"Bearer {self.token(who)}")
+        return self.client.post(url, json=json, headers=merged)
+
     def forged(self, **claims: Any) -> str:
         secret = claims.pop("secret", auth_utils.JWT_SECRET_KEY)
         return jose_jwt.encode(claims, secret, auth_utils.ALGORITHM)
@@ -674,13 +681,17 @@ def test_a_malformed_team_id_is_a_422_not_a_500(api, team):
     assert api.get(f"/{team}/cbom/deliverables/{SLUGS[0]}").status_code == 422
 
 
-@pytest.mark.parametrize("method", ["post", "put", "patch", "delete"])
-def test_only_get_is_allowed(api, method):
-    response = getattr(api.client, method)(
-        pdf_url(TEAM_ONE, SLUGS[0]), headers={"Authorization": f"Bearer {api.token('alice')}"}
-    )
+@pytest.mark.parametrize("method", ["put", "patch", "delete"])
+def test_only_get_and_post_are_allowed(api, method):
+    """The PDF answers GET (cover options in the query) and POST (the same options as a JSON body, so a client name
+    stays out of URLs and access logs); the manifest answers GET only."""
+    headers = {"Authorization": f"Bearer {api.token('alice')}"}
+    response = getattr(api.client, method)(pdf_url(TEAM_ONE, SLUGS[0]), headers=headers)
     assert response.status_code == 405
-    assert response.headers["allow"] == "GET"
+    assert {m.strip() for m in response.headers["allow"].split(",")} <= {"GET", "POST"}
+    manifest = getattr(api.client, method)(f"/{TEAM_ONE}/cbom/deliverables", headers=headers)
+    assert manifest.status_code == 405 and manifest.headers["allow"] == "GET"
+    assert api.client.post(f"/{TEAM_ONE}/cbom/deliverables", headers=headers).status_code == 405
 
 
 # ---------------------------------------------------------------------------------------------
@@ -805,7 +816,10 @@ def test_the_router_alone_generates_a_warning_free_openapi_schema():
         warnings.simplefilter("error", UserWarning)  # PydanticJsonSchemaWarning is a UserWarning
         spec = mini.openapi()
     assert set(spec["paths"]) == {MANIFEST_PATH, PDF_PATH}
-    assert all(set(item) == {"get"} for item in spec["paths"].values())
+    assert set(spec["paths"][MANIFEST_PATH]) == {"get"}
+    assert set(spec["paths"][PDF_PATH]) == {"get", "post"}
+    body = spec["paths"][PDF_PATH]["post"]["requestBody"]["content"]["application/json"]["schema"]
+    assert set(body["properties"]) == {"prepared_for", "label"} and body["additionalProperties"] is False
 
 
 def test_both_paths_resolve_to_this_router_and_no_earlier_route_shadows_them():

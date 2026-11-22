@@ -1,8 +1,9 @@
 """HTTP contract of the PDF report options and the team report logo on every report route.
 
-R1 ``GET /{team}/{type}/scan/{id}/export``      options (scan family), logo, status join, export slot, headers, log
+R1 ``GET|POST /{team}/{type}/scan/{id}/export``  options (scan family; POST: a JSON body), logo, status join, export
+                                                 slot (the scan PDF pool), headers, log
 R2 ``GET /{team}/{type}/scan/{id}/evidence-pack`` options refused (422), logo in report.pdf, no temp file left
-R3 ``GET /{team}/cbom/deliverables/{slug}``       prepared_for + label only, logo, X-Cbom-Logo-Sha256 when applied
+R3 ``GET|POST /{team}/cbom/deliverables/{slug}``  prepared_for + label only, logo, X-Cbom-Logo-Sha256 when applied
 R4 ``GET /{team}/cbom/sources/runs/{id}/report.pdf`` run options, logo
 R5 ``GET /{team}/cbom/sources/runs/{id}/evidence-pack`` options refused, manifest ``inputs.logo_sha256`` only when set
 and the CORS ``expose_headers`` list the browser needs to read these headers.
@@ -207,7 +208,7 @@ def test_a_large_build_takes_a_slot_and_a_busy_host_answers_429(api, monkeypatch
     from backend.utilities.cbom_sources import export_slots
 
     taken = []
-    real = export_slots.slot
+    real = export_slots.pdf_slot
 
     def counting():
         taken.append(1)
@@ -215,18 +216,39 @@ def test_a_large_build_takes_a_slot_and_a_busy_host_answers_429(api, monkeypatch
 
     monkeypatch.setattr("backend.routers.scans.LARGE_PDF_ROWS", 1)
     monkeypatch.setattr(export_slots, "LOCK_DIR", tempfile.mkdtemp())
-    monkeypatch.setattr(export_slots, "slot", counting)
+    monkeypatch.setattr(export_slots, "pdf_slot", counting)
     assert export(http, ids).status_code == 200 and taken == [1]
 
     def busy():
         raise export_slots.Busy()
 
-    monkeypatch.setattr(export_slots, "slot", busy)
+    monkeypatch.setattr(export_slots, "pdf_slot", busy)
     r = export(http, ids)
     assert r.status_code == 429 and r.headers["Retry-After"] == str(export_slots.RETRY_AFTER_S)
     assert "no-store" in r.headers["Cache-Control"]
+    assert r.json()["detail"] == export_slots.PDF_BUSY
+    assert r.json()["detail"] == "The server is busy building other large scan PDF reports; retry in 30 s."
     monkeypatch.setattr("backend.routers.scans.LARGE_PDF_ROWS", 10**9)
     assert export(http, ids).status_code == 200  # a small build never waits
+
+
+def test_scan_pdfs_have_their_own_slots(api, monkeypatch, tmp_path):
+    """Every CBOM export slot taken (another worker builds big CBOM exports): a big scan PDF still builds; every scan
+    PDF slot taken: the next big scan PDF is 429 with the scan PDF words, never the CBOM ones."""
+    http, ids = api
+    from backend.utilities.cbom_sources import export_slots as ES
+
+    monkeypatch.setattr(ES, "LOCK_DIR", str(tmp_path))
+    monkeypatch.setattr(ES, "SLOTS", 1)
+    monkeypatch.setattr(ES, "PDF_SLOTS", 1)
+    monkeypatch.setattr("backend.routers.scans.LARGE_PDF_ROWS", 1)
+    with ES.slot():  # the CBOM pool is full
+        assert export(http, ids).status_code == 200
+    with ES.pdf_slot():  # the scan PDF pool is full
+        r = export(http, ids)
+        assert r.status_code == 429 and r.json()["detail"] == ES.PDF_BUSY and "CBOM" not in r.json()["detail"]
+        assert post_export(http, ids, {"label": "internal"}).status_code == 429  # the POST takes the same slot
+    assert export(http, ids).status_code == 200  # released
 
 
 def test_no_temp_file_is_left_after_success_or_failure(api, monkeypatch, tmp_path):
@@ -257,6 +279,136 @@ def test_one_log_line_per_export_without_free_text(api, capsys):
                  "label=internal", "severities=high", "prepared_for_set=1", "title_set=1", "logo=none", "outcome=ok"):
         assert part in line, (part, line)
     assert "Acme" not in out and "Board pack" not in out
+
+
+def post_export(http, ids, body=None, scan_type="sast", query: str = "", headers=None, **kwargs):
+    url = f"/{ids['team_id']}/{scan_type}/scan/{ids['scan_ids'][scan_type]}/export"
+    if body is not None:
+        kwargs["json"] = body
+    return http.post(url + (f"?{query}" if query else ""), headers={**AUTH, **(headers or {})}, **kwargs)
+
+
+def test_post_takes_the_options_as_a_json_body_and_answers_like_the_get(api):
+    http, ids = api
+    total = three_findings(ids)
+    get = export(http, ids, query="severities=critical,high&label=internal&prepared_for=Acme%20Bank&title=Q4")
+    post = post_export(http, ids, {"severities": "critical,high", "label": "internal", "prepared_for": "Acme Bank",
+                                   "title": "Q4"})
+    assert get.status_code == post.status_code == 200, post.text
+    for name in ("Content-Disposition", "X-Report-Findings", "X-Report-Logo", "Content-Type"):
+        assert post.headers[name] == get.headers[name], name
+    assert post.headers["X-Report-Findings"] == f"2/{total}"
+    from backend.tests.support.pdf_text import pdf_text
+
+    assert pdf_text(post.content).count("Acme Bank") == pdf_text(get.content).count("Acme Bank") == 1
+    # JSON's own types: lists for the comma lists, a boolean for the snippet switch, null for "not set"
+    typed = post_export(http, ids, {"severities": ["critical", "high"], "hide_evidence": True, "title": None,
+                                    "label": "internal", "prepared_for": "Acme Bank"})
+    assert typed.status_code == 200 and typed.headers["X-Report-Findings"] == f"2/{total}"
+    # no body, an empty body or an empty object: the full report, like a GET without a query
+    for kwargs in ({}, {"content": b""}, {"json": {}}):
+        r = post_export(http, ids, **kwargs)
+        assert r.status_code == 200 and r.headers["X-Report-Findings"] == f"{total}/{total}", kwargs
+
+
+def test_post_keeps_the_client_name_out_of_the_url_and_the_log(api, capsys):
+    http, ids = api
+    r = post_export(http, ids, {"prepared_for": "Acme Bank Ltd", "title": "Board pack", "label": "internal"})
+    assert r.status_code == 200, r.text
+    assert "Acme" not in str(r.request.url) and "?" not in str(r.request.url)
+    out = capsys.readouterr().out
+    lines = [line for line in out.splitlines() if "pdf report export" in line]
+    assert len(lines) == 1 and "prepared_for_set=1" in lines[0] and "title_set=1" in lines[0], out
+    assert "Acme" not in out and "Board pack" not in out
+
+
+@pytest.mark.parametrize("body, field", [
+    ({"preset": "board"}, "preset"),
+    ({"label": "secret"}, "label"),
+    ({"severities": "urgent"}, "severities"),
+    ({"severities": []}, "severities"),
+    ({"statuses": "open"}, "statuses"),
+    ({"sections": ""}, "sections"),
+    ({"hide_evidence": "yes"}, "hide_evidence"),
+    ({"hide_evidence": 1}, "hide_evidence"),
+    ({"prepared_for": "A" * 121}, "prepared_for"),
+    ({"prepared_for": "東京銀行"}, "prepared_for"),
+    ({"title": 7}, "title"),
+    ({"severities": ["high", 3]}, "severities"),
+    ({"prepard_for": "Acme"}, "prepard_for"),  # a typo is refused, never a silent full report
+    ({"x" * 50: "1"}, "body"),
+    ([{"label": "internal"}], "body"),
+    ("label=internal", "body"),
+])
+def test_post_refuses_what_the_get_refuses_with_the_same_words(api, body, field):
+    http, ids = api
+    r = post_export(http, ids, body)
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"].startswith(f"{field}: ")
+
+
+def test_post_words_match_the_get_words(api):
+    http, ids = api
+    for query, body in (("label=secret", {"label": "secret"}), ("prepared_for=" + "A" * 121, {"prepared_for": "A" * 121}),
+                        ("prepared_for=%E6%9D%B1", {"prepared_for": "東"}), ("sections=", {"sections": ""})):
+        assert export(http, ids, query=query).json() == post_export(http, ids, body).json(), query
+
+
+def test_post_refuses_options_in_its_query_string_and_oversized_or_malformed_bodies(api):
+    http, ids = api
+    r = post_export(http, ids, {}, query="prepared_for=Acme")
+    assert r.status_code == 422 and r.json()["detail"].startswith("prepared_for: send report options in the JSON body")
+    assert post_export(http, ids, {}, query="utm_source=mail").status_code == 200  # unrelated keys: left alone
+    big = post_export(http, ids, content=b'{"title": "' + b"x" * 20_000 + b'"}',
+                      headers={**AUTH, "Content-Type": "application/json"})
+    assert big.status_code == 413
+    bad = post_export(http, ids, content=b"{not json", headers={**AUTH, "Content-Type": "application/json"})
+    assert bad.status_code == 422 and bad.json()["detail"] == "body: must be a JSON object of report options"
+    twice = post_export(http, ids, content=b'{"label": "internal", "label": "public"}')
+    assert twice.status_code == 422 and twice.json()["detail"] == "label: was given more than once"  # as in a query
+    nested = post_export(http, ids, {"title": {"text": "x"}})
+    assert nested.status_code == 422 and nested.json()["detail"] == "title: must be a string"
+    for raw in (b"null", b"[]", b'"label"', b"3"):  # JSON, but not an object of options
+        assert post_export(http, ids, content=raw).json()["detail"] == "body: must be a JSON object of report options"
+
+
+def test_post_and_get_share_every_route_dependency():
+    """Same permission, same rate limiter (one budget for both methods), on R1, R3 and R4."""
+    from fastapi.routing import APIRoute
+
+    from backend.main import app
+
+    paths = ("/{team_id}/{type}/scan/{scan_id}/export", "/{team_id}/cbom/deliverables/{slug}",
+             "/{team_id}/cbom/sources/runs/{run_id}/report.pdf")
+    for path in paths:
+        routes = {m: r for r in app.routes if isinstance(r, APIRoute) and r.path == path for m in r.methods}
+        assert set(routes) == {"GET", "POST"}, path
+        get, post = routes["GET"], routes["POST"]
+        assert get.endpoint is post.endpoint, path  # one handler: nothing forked
+        def deps(route):  # a policy object per decorator: compared by kind and permission; limiters by identity
+            out = []
+            for dep in (d.dependency for d in route.dependencies):
+                permission = getattr(dep, "permission", None)
+                out.append((type(dep), permission.name) if permission is not None else dep)
+            return out
+
+        assert deps(get) == deps(post), path
+        assert any(isinstance(d, tuple) and d[1] in ("scan.read", "cbom.read") for d in deps(post)), path
+        assert type(get) is type(post), path  # route class (CbomRoute on R4)
+
+
+def test_cors_lets_a_browser_post_json_with_a_bearer_token():
+    from fastapi.testclient import TestClient
+
+    from backend.main import app
+
+    r = TestClient(app).options("/1/sast/scan/1/export", headers={
+        "Origin": "http://localhost:3000", "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "authorization,content-type"})
+    assert r.status_code == 200, r.text
+    assert "POST" in r.headers["access-control-allow-methods"]
+    allowed = r.headers["access-control-allow-headers"].lower()
+    assert "authorization" in allowed and "content-type" in allowed
 
 
 def test_every_scan_type_still_exports_with_every_preset(api):
@@ -371,6 +523,26 @@ def test_deliverable_cover_options_and_logo(deliverable_api):
     assert branded.headers["X-Report-Logo"] == "applied" and branded.headers["X-Cbom-Logo-Sha256"] == sha
     assert images(branded.content) > images(plain.content)
     assert sha[:8] in DROUTE.full_text(branded.content)  # the control table records the presentation
+
+
+def test_deliverable_post_takes_the_cover_options_as_json(deliverable_api):
+    client, _world = deliverable_api
+    url = DROUTE.pdf_url(DROUTE.TEAM_ONE, "board-executive-report")
+    get = client.get(url + "?prepared_for=Acme%20Bank&label=restricted")
+    post = client.post(url, json={"prepared_for": "Acme Bank", "label": "restricted"})
+    assert post.status_code == 200, post.text
+    assert post.content == get.content  # deliverables are byte-stable: the same document either way
+    for name in ("Content-Disposition", "X-Report-Logo", "X-Cbom-Scans-Included", "X-Cbom-Fingerprint",
+                 "X-Cbom-Posture", "Cache-Control"):
+        assert post.headers[name] == get.headers[name], name
+    assert client.post(url).content == client.get(url).content  # no body: today's document
+    marathi = client.post(url, json={"prepared_for": "महाराष्ट्र राज्य सहकारी बँक"})
+    assert marathi.status_code == 200 and b"NotoSansDevanagari" in marathi.content
+    for body, field in (({"severities": "high"}, "severities"), ({"title": "T"}, "title"),
+                        ({"prepared_for": "東"}, "prepared_for"), ({"label": 3}, "label")):
+        r = client.post(url, json=body)
+        assert r.status_code == 422 and r.json()["detail"].startswith(f"{field}: "), (body, r.text)
+    assert client.post(DROUTE.pdf_url(DROUTE.TEAM_ONE, "no-such-slug"), json={}).status_code == 404
 
 
 def test_deliverable_default_bytes_do_not_change_without_a_logo(deliverable_api):

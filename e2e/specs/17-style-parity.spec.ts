@@ -45,8 +45,10 @@ test('17 style parity: new deliverables vs the existing single-scan CBOM report'
     await expect(dialog).toBeVisible();
     await expect(dialog.getByRole('radio', { name: /^Full/ })).toBeChecked();
     await kit.shot(page, 'export-dialog');
-    const request = page.waitForRequest((r) => new URL(r.url()).pathname === `/${teamId}/cbom/scan/${scanId}/export`, { timeout: 90_000 });
+    const request = page.waitForRequest((r) => r.method() !== 'OPTIONS' && new URL(r.url()).pathname === `/${teamId}/cbom/scan/${scanId}/export`, { timeout: 90_000 });
     const [download] = await Promise.all([page.waitForEvent('download', { timeout: 90_000 }), dialog.getByTestId('export-download').click()]);
+    // options go in a POST's JSON body (never the URL); with none set the download is a plain GET
+    expect((await request).method(), 'default options: a plain GET').toBe('GET');
     expect(new URL((await request).url()).search, 'default options: no query parameter').toBe('');
     await expect(page.getByText('Report downloaded').first()).toBeVisible();
     await expect(dialog).toBeHidden();
