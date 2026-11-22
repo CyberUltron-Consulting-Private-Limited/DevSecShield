@@ -325,10 +325,13 @@ jobs:
       # PG_*: get_db() reads these names (os.environ[...]) before any route can refuse a request; the tests swap in
       # their own SQLite / PG_URL_* engines, so these only have to exist. They came from the tracked backend/.env
       # until #392 untracked it, which turned test_cbom_api_keys and test_cbom_fleet_scaffold red.
+      # pypdf and pypdfium2 (PDFium, Chrome's PDF engine; wheels for amd64 and arm64) are test-only: test_report_fonts
+      # checks that non-Latin report text copies exactly in them, besides pdftotext (poppler-utils, installed above).
       test-command: >-
         CANCEL_RACE_PG_URL="$PG_URL_C1" AUTH_TEST_PG_URL="$PG_URL_AUTH" CBOM_TEST_PG_URL="$PG_URL_CBOM"
         P1_PG_URL="$PG_URL_P1"
-        uv run --frozen --with pytest==9.2.0 --with moto==5.2.5 python -m pytest tests -q -p no:cacheprovider
+        uv run --frozen --with pytest==9.2.0 --with moto==5.2.5 --with pypdf==7.1.1 --with pypdfium2==5.15.2
+        python -m pytest tests -q -p no:cacheprovider
         -o addopts="" --durations=15 --junitxml="$GITHUB_WORKSPACE/test-reports/backend-junit.xml"
       artifact-paths: test-reports/
       timeout-minutes: 35

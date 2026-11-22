@@ -52,7 +52,7 @@ from backend.utilities.pdf.cbom_deliverables import (
 from backend.utilities.team import check_if_user_is_in_team
 from backend.utilities.pdf.branding_input import ReportBranding
 from backend.utilities.pdf.report_context import ReportContext
-from backend.utilities.pdf.report_http import options_from_request
+from backend.utilities.pdf.report_http import OPTIONS_BODY_RESPONSES, options_body_openapi, request_options
 from backend.utilities.team.branding import load_report_branding
 
 router = APIRouter(tags=["cbom-deliverables"])
@@ -210,26 +210,42 @@ def _posture_header(view: Any) -> str:
     return "none"
 
 
+_PDF_DESCRIPTION = (
+    "Builds the document in memory from every completed CBOM scan of the team. Always 200 "
+    "for a member and a known slug: a team without completed scans gets a PDF with a "
+    "'NO COMPLETED CBOM SCANS' banner. Response headers X-Cbom-Scans-Included, "
+    "X-Cbom-Sources, X-Cbom-Fidelity (full, mixed, reduced or none), X-Cbom-Fingerprint "
+    "and X-Cbom-Posture (assessed, mixed, not_assessed or none) are informational. "
+    "Cover options (prepared_for, label): query parameters of a GET, or the JSON body of a POST, which keeps a "
+    "client name out of URLs and access logs."
+)
+_PDF_RESPONSES: dict[int | str, dict[str, Any]] = {
+    200: {
+        "description": "The PDF.",
+        "content": {"application/pdf": {"schema": {"type": "string", "format": "binary"}}},
+    },
+    404: {"description": "Unknown deliverable slug."},
+    422: {"description": "A cover option is not valid; the detail names it (`<field>: message`)."},
+    **_ERRORS,
+}
+
+
 @router.get(
     "/{team_id}/cbom/deliverables/{slug}",
     summary="Download one team-wide CBOM regulatory deliverable (PDF)",
-    description=(
-        "Builds the document in memory from every completed CBOM scan of the team. Always 200 "
-        "for a member and a known slug: a team without completed scans gets a PDF with a "
-        "'NO COMPLETED CBOM SCANS' banner. Response headers X-Cbom-Scans-Included, "
-        "X-Cbom-Sources, X-Cbom-Fidelity (full, mixed, reduced or none), X-Cbom-Fingerprint "
-        "and X-Cbom-Posture (assessed, mixed, not_assessed or none) are informational."
-    ),
+    description=_PDF_DESCRIPTION,
     dependencies=[Depends(limiter), access.team("cbom.read")],
     response_model=None,
-    responses={
-        200: {
-            "description": "The PDF.",
-            "content": {"application/pdf": {"schema": {"type": "string", "format": "binary"}}},
-        },
-        404: {"description": "Unknown deliverable slug."},
-        **_ERRORS,
-    },
+    responses=_PDF_RESPONSES,
+)
+@router.post(
+    "/{team_id}/cbom/deliverables/{slug}",
+    summary="Download one team-wide CBOM regulatory deliverable (PDF), cover options in a JSON body",
+    description=_PDF_DESCRIPTION,
+    dependencies=[Depends(limiter), access.team("cbom.read")],
+    response_model=None,
+    responses={**_PDF_RESPONSES, **OPTIONS_BODY_RESPONSES},
+    openapi_extra=options_body_openapi("deliverable"),
 )
 async def download_cbom_deliverable(
     team_id: TeamId,
@@ -243,7 +259,7 @@ async def download_cbom_deliverable(
         spec = DELIVERABLES.get(slug)
         if spec is None:
             raise HTTPException(status_code=404, detail=UNKNOWN_DELIVERABLE_DETAIL)
-        options = options_from_request(request.query_params, "deliverable")
+        options = await request_options(request, "deliverable")
         view = await run_in_threadpool(load_team_cbom_view, engine, team_id, now=_utcnow())
         ctx = ReportContext(options=options, branding=await run_in_threadpool(_branding, engine, team_id))
         if options.is_default and not ctx.branding.applied:

@@ -61,9 +61,14 @@ async function openDialog() {
   assert.ok(dialog(), "the dialog opens");
 }
 
-function api(handler?: (url: string, params: Record<string, unknown>) => { status?: number; data: unknown; headers?: Record<string, string> }) {
+/** The export route, answered for both methods: options travel as a POST's JSON body, a GET carries none. The handler
+ * gets the options either way (the body of a POST, the query of a GET). */
+function api(handler?: (url: string, options: Record<string, unknown>) => { status?: number; data: unknown; headers?: Record<string, string> }) {
+  const reply = (req: { url: string; params: Record<string, unknown>; body: unknown }, options: Record<string, unknown>) =>
+    handler?.(req.url, options) ?? { data: PDF(), headers: { "x-report-findings": "40/40", "x-report-logo": "none" } };
   const fake = new FakeApi()
-    .on("get", EXPORT, (req) => handler?.(req.url, req.params) ?? { data: PDF(), headers: { "x-report-findings": "40/40", "x-report-logo": "none" } });
+    .on("get", EXPORT, (req) => reply(req, req.params))
+    .on("post", EXPORT, (req) => reply(req, (req.body ?? {}) as Record<string, unknown>));
   fake.install();
   return fake;
 }
@@ -107,9 +112,15 @@ run([
     await openDialog();
     const name = byTest<HTMLInputElement>("export-prepared_for")!;
     await type(name, "東京銀行");
-    assert.ok(text().includes("Prepared for can only use Latin characters for now."), text());
+    assert.ok(text().includes("Prepared for can only use Latin, Greek, Cyrillic or Devanagari characters."), text());
     assert.equal(name.getAttribute("aria-invalid"), "true");
     assert.equal(download().disabled, true);
+    await type(name, "महाराष्ट्र राज्य सहकारी बँक");
+    assert.equal(name.getAttribute("aria-invalid"), "false", "Devanagari (Hindi, Marathi) prints");
+    assert.equal(download().disabled, false);
+    assert.equal(byTest("export-prepared_for-count")!.textContent, "27/120", "code points, as the server counts");
+    await type(name, "ПАО Сбербанк");
+    assert.equal(download().disabled, false, "Cyrillic prints");
     await type(name, "  Société Générale  ");
     assert.equal(byTest("export-prepared_for-count")!.textContent, "16/120", "trimmed, NFC");
     assert.equal(download().disabled, false);
@@ -117,7 +128,7 @@ run([
     assert.ok(text().includes("Report title must be 140 characters or fewer."));
     assert.equal(download().disabled, true);
   }],
-  ["the query is the options that differ from the default; the file keeps its name; one toast with N of M", async () => {
+  ["the request body is the options that differ from the default; the file keeps its name; one toast with N of M", async () => {
     const fake = api(() => ({ data: PDF(), headers: { "x-report-findings": "9/40", "x-report-logo": "skipped" } }));
     const toasts = spyToasts();
     await render(scanOpener());
@@ -131,13 +142,16 @@ run([
     await click(byTest("export-hide-evidence")!);
     await click(download());
     await settle(60);
-    const sent = fake.calls("get", EXPORT);
+    assert.equal(fake.calls("get", EXPORT).length, 0, "options never go in a URL");
+    const sent = fake.calls("post", EXPORT);
     assert.equal(sent.length, 1);
-    assert.equal(sent[0].url, "/7/cbom/scan/12/export");
-    assert.deepEqual(sent[0].params, {
+    assert.equal(sent[0].url, "/7/cbom/scan/12/export", "no query string: the client name stays out of access logs");
+    assert.deepEqual(sent[0].params, {});
+    assert.match(sent[0].headers["content-type"] ?? "", /^application\/json\b/, "JSON, as the server requires (else 415)");
+    assert.deepEqual(sent[0].body, {
       preset: "executive", severities: "critical,high", statuses: "not_started,in_progress",
       prepared_for: "Acme Bank", title: "Q4 review", hide_evidence: "true",
-    });
+    }, "the JSON body: the same values the GET query takes");
     assert.deepEqual(saved.splice(0), ["cbom-report-12.pdf"], "the client-built file name");
     assert.deepEqual(toasts.map((t) => [t.kind, t.message]), [["success", "Report downloaded (9 of 40 findings; team logo skipped: it could not be read)"]]);
     assert.equal(dialog(), null, "the dialog closes on success");
@@ -156,7 +170,8 @@ run([
     await openDialog();
     await click(download());
     await settle(60);
-    assert.deepEqual(fake.calls("get", EXPORT)[0].params, {});
+    assert.deepEqual(fake.calls("get", EXPORT)[0].params, {}, "a plain GET");
+    assert.equal(fake.calls("post", EXPORT).length, 0);
     saved.length = 0;
     localStorage.clear();
   }],
@@ -181,9 +196,12 @@ run([
     assert.equal(choice("Fixed").checked, true, "every status again");
     await click(download());
     await settle(60);
-    const calls = fake.calls("get", EXPORT);
-    assert.equal(calls.length, 2);
-    assert.equal(calls[1].params.statuses, undefined, "the retry has no status filter");
+    const filtered = fake.calls("post", EXPORT);
+    assert.equal(filtered.length, 1);
+    assert.deepEqual(filtered[0].body, { statuses: "not_started,in_progress,ignored" }, "the first try: the status filter, in the body");
+    const retry = fake.calls("get", EXPORT);
+    assert.equal(retry.length, 1, "the retry has no option left: a plain GET");
+    assert.deepEqual(retry[0].params, {}, "the retry has no status filter");
     assert.deepEqual(toasts.map((t) => t.kind), ["success"]);
     assert.equal(dialog(), null);
     saved.length = 0;
@@ -244,7 +262,7 @@ run([
     assert.equal(byTest<HTMLButtonElement>("opener")!.disabled, false, "done");
     assert.deepEqual(toasts.map((t) => t.kind), ["success"]);
     assert.deepEqual(saved.splice(0), ["cbom-report-12.pdf"]);
-    assert.equal(fake.calls("get", EXPORT).length, 1);
+    assert.equal(fake.calls("get", EXPORT).length + fake.calls("post", EXPORT).length, 1);
     http.defaults.adapter = inner as typeof http.defaults.adapter;
     localStorage.clear();
   }],
@@ -265,8 +283,8 @@ run([
     http.defaults.adapter = inner as typeof http.defaults.adapter;
     localStorage.clear();
   }],
-  ["a run: no status filter, no snippet switch; its route and query", async () => {
-    const fake = new FakeApi().on("get", /\/runs\/5\/report\.pdf$/, { data: PDF(), headers: { "x-report-findings": "3/3" } });
+  ["a run: no status filter, no snippet switch; its route and options", async () => {
+    const fake = new FakeApi().on("post", /\/runs\/5\/report\.pdf$/, { data: PDF(), headers: { "x-report-findings": "3/3" } });
     fake.install();
     await render(wrap(createElement(Opener, { target: { family: "run", runId: 5 }, fileName: "cbom-sources-run-5-report.pdf" })));
     await openDialog();
@@ -276,7 +294,8 @@ run([
     await click(choice("Executive"));
     await click(download());
     await settle(60);
-    assert.deepEqual(fake.calls("get", /report\.pdf$/)[0].params, { preset: "executive" });
+    assert.deepEqual(fake.calls("post", /report\.pdf$/)[0].body, { preset: "executive" });
+    assert.deepEqual(fake.calls("post", /report\.pdf$/)[0].params, {});
     assert.deepEqual(saved.splice(0), ["cbom-sources-run-5-report.pdf"]);
     localStorage.clear();
   }],

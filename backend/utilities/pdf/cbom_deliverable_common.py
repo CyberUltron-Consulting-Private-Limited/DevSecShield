@@ -57,6 +57,7 @@ from backend.utilities.dashboard.cbom_team_rollup import (
     TeamCbomView,
 )
 from backend.utilities.pdf import cbom_deliverable_text as authored
+from backend.utilities.pdf.report_fonts import needs_unicode_font, unicode_paragraph
 from backend.utilities.pdf.report_branding import (
     masthead_cover_rows,
     BAR_LOW,
@@ -830,15 +831,19 @@ def _control_table(
         # One more pair, only when the cover differs from the default. The Document ID and the
         # fingerprint stay data-only: they identify the evidence, not how it was presented.
         prepared = getattr(getattr(ctx, "options", None), "prepared_for", None)
+        prepared_cell: Any = pdf_text(prepared or "\u2014", limit=120)
+        if needs_unicode_font(prepared):  # another script: the Noto fonts (pdf_text would fold it to "?")
+            prepared_cell = unicode_paragraph(prepared, value, bold=False)
         cells += [
-            ("Prepared for", pdf_text(prepared or "\u2014", limit=120), value),
+            ("Prepared for", prepared_cell, value),
             ("Presentation", pdf_text(presentation, limit=120), mono),
         ]
     data = []
     for index in range(0, len(cells), 2):
         row: list[Any] = []
         for label, text, style in cells[index : index + 2]:
-            row += [Paragraph(escape_html(label), styles["table_label"]), Paragraph(text, style)]
+            cell = text if isinstance(text, Paragraph) else Paragraph(text, style)
+            row += [Paragraph(escape_html(label), styles["table_label"]), cell]
         data.append(row)
     shares = [0.15, 0.35, 0.15, 0.35]
     table = Table(data, colWidths=[width * s for s in shares], hAlign="LEFT")

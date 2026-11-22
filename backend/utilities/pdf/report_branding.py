@@ -40,6 +40,8 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from backend.utilities.pdf.report_fonts import needs_unicode_font, unicode_paragraph  # noqa: E402 (as the imports above)
+
 BRAND_NAME = "Zero Shield"
 BRAND_URL = "zeroshield.ai"
 BRAND_URL_FULL = "https://zeroshield.ai"
@@ -1667,7 +1669,7 @@ def append_report_masthead(
     left = Table(
         [
             [Paragraph(escape_html(f"{org_label} · {meta.get('kicker', 'Security Assessment')}").upper(), styles["kicker"])],
-            [Paragraph(escape_html(project_name), styles["title"])],
+            [_title_paragraph(project_name, styles["title"])],
             [Paragraph(escape_html(meta["subtitle"]), styles["subtitle"])],
         ],
         colWidths=[CONTENT_WIDTH * 0.68],
@@ -1762,8 +1764,18 @@ def masthead_cover_rows(ctx: Any, *, width: float, styles: Dict[str, ParagraphSt
             leading=10,
             alignment=TA_RIGHT if align == "RIGHT" else TA_LEFT,
         )
-        rows.append([Paragraph(f"Prepared for <b>{escape_html(prepared)}</b>", style)])
+        if needs_unicode_font(prepared):  # other scripts: Noto, shaped (Windows-1252 keeps the line below, unchanged)
+            rows.append([unicode_paragraph(prepared, style, bold=True, before="Prepared for ")])
+        else:
+            rows.append([Paragraph(f"Prepared for <b>{escape_html(prepared)}</b>", style)])
     return rows
+
+
+def _title_paragraph(title: str, style: ParagraphStyle) -> Paragraph:
+    """The masthead title: Helvetica as before, or the Noto fonts for a title in another script."""
+    if needs_unicode_font(title):
+        return unicode_paragraph(title, style, bold=True)
+    return Paragraph(escape_html(title), style)
 
 
 def append_scope_block(story: List[Any], ctx: Any, *, styles: Optional[Dict[str, ParagraphStyle]] = None) -> None:

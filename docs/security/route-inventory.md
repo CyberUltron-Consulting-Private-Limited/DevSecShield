@@ -15,7 +15,7 @@ the matrix is `backend/utilities/rbac/permissions.py`). **authenticated**: any s
 a superuser. **public**: the reason is stated. **machine**: a non-person credential the handler checks.
 **Audited**: the middleware writes a successful request to the audit log; refused team writes are written too.
 
-272 routes (authenticated: 9, machine: 17, platform_admin: 10, public: 12, team: 224).
+275 routes (authenticated: 9, machine: 17, platform_admin: 10, public: 12, team: 227).
 
 | Method | Path | Handler | Checks before F4 (handler) | Policy | Lowest role | Audited |
 |---|---|---|---|---|---|---|
@@ -101,6 +101,7 @@ a superuser. **public**: the reason is stated. **machine**: a non-person credent
 | GET | `/{team_id}/cbom/code-scans/{scan_id}/sbom-links` | `cbom_ops.code_sbom` | team_member | cbom.read | viewer |  |
 | GET | `/{team_id}/cbom/deliverables` | `cbom_deliverables.list_cbom_deliverables` | team_member | cbom.read | viewer |  |
 | GET | `/{team_id}/cbom/deliverables/{slug}` | `cbom_deliverables.download_cbom_deliverable` | team_member | cbom.read | viewer |  |
+| POST | `/{team_id}/cbom/deliverables/{slug}` | `cbom_deliverables.download_cbom_deliverable` | new route (the GET's handler: cover options as a JSON body) | cbom.read | viewer |  |
 | GET | `/{team_id}/cbom/estate` | `cbom_estate.list_estate` | added on dev after 12 Nov (handler: authorize or its own check) | cbom.read | viewer |  |
 | GET | `/{team_id}/cbom/estate-export` | `cbom_estate_export.estate_export` | added on dev after 12 Nov (handler: authorize or its own check) | cbom.read | viewer |  |
 | GET | `/{team_id}/cbom/estate/{asset_key}` | `cbom_estate.get_estate_asset` | added on dev after 12 Nov (handler: authorize or its own check) | cbom.read | viewer |  |
@@ -210,6 +211,7 @@ a superuser. **public**: the reason is stated. **machine**: a non-person credent
 | GET | `/{team_id}/cbom/sources/runs/{run_id}/posture` | `cbom_sources.run_posture` | team_member | cbom.read | viewer |  |
 | GET | `/{team_id}/cbom/sources/runs/{run_id}/remediation` | `cbom_ops.run_remediation` | team_member | cbom.read | viewer |  |
 | GET | `/{team_id}/cbom/sources/runs/{run_id}/report.pdf` | `cbom_run_deliverables.run_report_pdf` | added on dev after 12 Nov (handler: authorize or its own check) | cbom.read | viewer |  |
+| POST | `/{team_id}/cbom/sources/runs/{run_id}/report.pdf` | `cbom_run_deliverables.run_report_pdf` | new route (the GET's handler: report options as a JSON body) | cbom.read | viewer |  |
 | GET | `/{team_id}/cbom/sources/runs/{run_id}/results` | `cbom_sources.run_results` | added on dev after 12 Nov (handler: authorize or its own check) | cbom.read | viewer |  |
 | GET | `/{team_id}/cbom/sources/runs/{run_id}/signature` | `cbom_run_deliverables.run_signature` | added on dev after 12 Nov (handler: authorize or its own check) | cbom.read | viewer |  |
 | POST | `/{team_id}/cbom/sources/runs/{run_id}/signature/verify` | `cbom_run_deliverables.verify_run_signature` | added on dev after 12 Nov (handler: authorize or its own check) | cbom.read | viewer |  |
@@ -283,6 +285,7 @@ a superuser. **public**: the reason is stated. **machine**: a non-person credent
 | POST | `/{team_id}/{type}/scan/{scan_id}/estimate_credits` | `scans.estimate_credits_for_scan` | bearer_user, team_member, scan_owner | scan.run | member | yes |
 | GET | `/{team_id}/{type}/scan/{scan_id}/evidence-pack` | `certin.download_evidence_pack` | bearer_user, team_member | scan.read | viewer |  |
 | GET | `/{team_id}/{type}/scan/{scan_id}/export` | `scans.export_scan` | bearer_user, team_member | scan.read | viewer |  |
+| POST | `/{team_id}/{type}/scan/{scan_id}/export` | `scans.export_scan` | new route (the GET's handler: report options as a JSON body) | scan.read | viewer |  |
 | POST | `/{team_id}/{type}/scan/{scan_id}/finding` | `scans.toggle_finding_state` | bearer_user, team_member | finding.triage | member | yes |
 | POST | `/{team_id}/{type}/scan/{scan_id}/finding/{finding_id}/remediate` | `scans.generate_finding_remediation` | bearer_user, team_member | finding.remediate | member | yes |
 | POST | `/{team_id}/{type}/scan/{scan_id}/message` | `scans.send_message_to_scan` | bearer_user, team_member, scan_owner | scan.update | member | yes |
