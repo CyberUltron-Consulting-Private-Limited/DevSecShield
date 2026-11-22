@@ -35,7 +35,7 @@ On the instance: `/opt/devsecshield-chola/deploy/chola-prod/` is the **live** ki
 files), `/opt/devsecshield-chola/compose/aibom-config-overlay/` the backend's rollup config,
 `/opt/devsecshield-chola/state/` the deploy history, per-release files and job logs, and
 `/opt/devsecshield-chola/.kit/<run>/` each run's copy of the kit. Every command runs `remote.sh` from its run copy;
-only a deploy installs that copy as the live kit, after its checks passed. Read-only commands (preflight, status,
+only a deploy installs that copy as the live kit, after its checks passed. The other commands (preflight, status,
 logs, verify) never change the live files.
 
 ## 0. Before the first deploy: rotate what was exposed
@@ -96,8 +96,11 @@ Treat these as exposed and rotate them:
 * the **EC2 Instance Connect tunnel** (it opens one; the AWS error is shown if `ec2-instance-connect:OpenTunnel` is
   missing);
 * on the instance: Docker, **Docker Compose 2.24+**, python3, flock, setsid, the AWS CLI and the instance role (STS,
-  a list of `s3://devsecshield-storage/releases/` **and a read**: preflight writes a tiny probe object there, the
-  instance must `get-object` it with the bucket owner pinned, and the probe is deleted on exit), `/var/lib/docker` on its own volume, **15 GB free where
+  a list of `s3://devsecshield-storage/releases/` **and a read**: preflight writes a tiny probe object,
+  `releases/preflight-probe.txt` (one fixed key, overwritten by every preflight), the instance must `get-object` it
+  with the bucket owner pinned, and the probe is deleted on exit; if your user may put but not delete objects there,
+  preflight says so in a WARNING and that one object stays until the next preflight overwrites it. Two preflights at
+  the same moment can delete each other's probe: run one at a time), `/var/lib/docker` on its own volume, **15 GB free where
   images are stored** (containerd's root with Docker 29's containerd image store, else Docker's root) **and** where
   the volumes are, and an IMDS token probe from a container;
 * that the mail login will be found (app-secrets, else origin/ansh, else `--mail-prompt`).
@@ -113,7 +116,7 @@ Also ask the infra team for:
 cd <your DevSecShield checkout> && git fetch origin
 export AWS_PROFILE=<profile of AnshSinghal-Cyberultron>
 
-scripts/deploy/chola-prod.sh preflight --sha <commit>        # read-only
+scripts/deploy/chola-prod.sh preflight --sha <commit>        # changes nothing that runs; writes + deletes one S3 probe object
 scripts/deploy/chola-prod.sh host-setup                       # ONLY if preflight says the instance has no AWS CLI
 scripts/deploy/chola-prod.sh --dry-run deploy --sha <commit>  # every step it will take; nothing is run or read
 scripts/deploy/chola-prod.sh deploy --sha <commit>            # asks you to type 'chola' (or --yes)
@@ -155,7 +158,11 @@ scripts/deploy/chola-prod.sh deploy --sha <commit>            # asks you to type
    database: use rollback); records a **STARTED** line (target tag, previous tag, database revision) in
    `state/deploy-history` before it switches anything; installs the kit and the commit's aibom overlay as the live
    kit (each directory replaced by a rename, never file by file; the replaced generation is deleted only after the
-   containers that read it were recreated); switches `DSS_TAG` and records a **SWITCHED** line; `docker compose up --wait` (the `migrate` one-shot runs `alembic upgrade head` under a
+   containers that read it were recreated, i.e. it stays as `deploy/chola-prod.old.*` / `compose/aibom-config-overlay.old.*`
+   until the next successful deploy or rollback; the env files are removed from a replaced kit generation at once, so
+   the only secret copies on disk are the live ones, and every changing command first removes the `.stage.*` /
+   `.restore.*` directories a killed run left; the overlay directory's identity is part of the files-hash label, so
+   every container that read a replaced overlay is recreated, even when the new one has the same content); switches `DSS_TAG` and records a **SWITCHED** line; `docker compose up --wait` (the `migrate` one-shot runs `alembic upgrade head` under a
    Postgres advisory lock first; everything that uses the database waits for it); checks every service runs the tag
    and is healthy, `/nginx-health`, `GET /health` and the login page through nginx; runs the idempotent CBOM estate
    backfill and agility heal; keeps the images of this tag, the rollback target and the last good one.
@@ -172,8 +179,9 @@ kit prints `chola-prod.sh attach --job <id>` to follow it again (`status` lists 
 (`state/.lock`) lets only one changing command run at a time.
 
 **Interrupted deploy** (the instance rebooted or the job was killed half way): the follower reports the job as
-**lost** (its process is gone and it recorded no exit status; the job's pid and start time are checked, so a reused
-pid after a reboot is not mistaken for it), and `status` lists it as LOST. Either `deploy --sha <the same commit>`
+**lost** (its processes are gone and it recorded no exit status; the pid and start time of the job's wrapper AND of
+its worker are checked, so a reused pid after a reboot is not mistaken for it, and a killed wrapper alone does not
+make a running job look lost: the worker writes the exit status itself), and `status` lists it as LOST. Either `deploy --sha <the same commit>`
 again or `rollback`: both see the interruption, remove the application containers (stateless; databases, queue and
 volumes stay) and start them fresh, and try once more if the first start fails. When the interruption came before the
 tag switch (STARTED without SWITCHED), nothing had changed: `rollback` then starts the release that was running again
@@ -224,7 +232,12 @@ scripts/deploy/chola-prod.sh rollback [--allow-downgrade]
 ```
 
 Takes a backup first, then goes back to the tag that was running before the current one (`state/deploy-history`: the
-deploy line, or the STARTED line of an interrupted deploy) with that release's own deploy files, and verifies. When the
+deploy line, or the STARTED line of an interrupted deploy) with that release's own deploy files, and verifies. A
+rollback records a **ROLLBACK-STARTED** line (target, current tag, database revision) before it changes anything.
+**Retrying a rollback that failed or was interrupted retries that same rollback, never one release further back**:
+after the tag switch (C -> B failed in `compose up`, or the job was killed) the retry starts B again; before it (or
+when the downgrade failed) it runs C -> B again. The plan line says which. Once B runs, a further `rollback` goes to
+the release before B. When the
 older release's migrations do not contain the database's revision, the current image first runs `alembic downgrade
 <older head>`, which **drops the tables and columns the newer migrations added, with their data**: `rollback` first
 plans it (read-only), lists those migrations and asks you to type `downgrade` (or takes `--allow-downgrade`; without a

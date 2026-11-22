@@ -531,13 +531,13 @@ def test_rollback_after_an_unswitched_interruption_restarts_the_current_release(
     _history(tmp_path, "t1 deploy aaaaaaaaaaaa previous zzzzzzzzzzzz alembic r1\n"
                        "t2 started bbbbbbbbbbbb previous aaaaaaaaaaaa alembic-before r1\n")
     assert _source(tmp_path, "rollback_pair aaaaaaaaaaaa; interrupted && echo yes").stdout.split() == \
-        ["aaaaaaaaaaaa", "1", "yes"]
+        ["aaaaaaaaaaaa", "1", "deploy-unswitched", "yes"]
     with open(tmp_path / "state" / "deploy-history", "a") as fh:
         fh.write("t2 switched bbbbbbbbbbbb previous aaaaaaaaaaaa\n")
     assert _source(tmp_path, "rollback_pair bbbbbbbbbbbb; interrupted && echo yes").stdout.split() == \
-        ["aaaaaaaaaaaa", "0", "yes"]
+        ["aaaaaaaaaaaa", "0", "normal", "yes"]
     _history(tmp_path, "t1 deploy aaaaaaaaaaaa previous none alembic r1\n")
-    assert _source(tmp_path, "rollback_pair aaaaaaaaaaaa").stdout.split() == ["none", "0"]
+    assert _source(tmp_path, "rollback_pair aaaaaaaaaaaa").stdout.split() == ["none", "0", "normal"]
 
 
 def test_deploy_records_the_switch_right_after_it():
@@ -762,6 +762,314 @@ def test_remote_help_and_preflight_checks_listed():
         assert needle in text
 
 
+# ------------------------------------------------------------------------------------------------ rollback retries (QA R1)
+A12, B12, C12 = "a" * 12, "b" * 12, "c" * 12
+
+
+# The pair a rollback takes from each last history line: a failed or interrupted rollback is retried, never extended.
+@pytest.mark.parametrize("last, current, want", [
+    (f"t9 rollback-started {B12} from {C12} alembic-before revC", B12, [B12, "1", "rollback-switched"]),
+    (f"t9 rollback-started {B12} from {C12} alembic-before revC", C12, [B12, "0", "rollback-retry"]),
+    (f"t9 rollback {B12} previous {C12} alembic revB FAILED", B12, [B12, "1", "rollback-failed"]),
+    (f"t9 rollback {B12} previous {C12} alembic revB1 revB2 FAILED", B12, [B12, "1", "rollback-failed"]),
+    (f"t9 rollback {B12} previous {C12} alembic revB FAILED", C12, [B12, "0", "rollback-retry"]),  # downgrade failed
+    (f"t9 rollback {B12} previous {C12} alembic revB", B12, [A12, "0", "normal"]),  # it succeeded: B's predecessor
+    (f"t9 rollback-started {A12} from {A12} alembic-before revA", A12, [A12, "1", "rollback-switched"]),
+])
+def test_rollback_pair_retries_a_failed_or_interrupted_rollback(tmp_path, last, current, want):
+    _history(tmp_path, f"t1 deploy {A12} previous none alembic revA\n"
+                       f"t2 deploy {B12} previous {A12} alembic revB\n"
+                       f"t3 deploy {C12} previous {B12} alembic revC\n{last}\n")
+    assert _source(tmp_path, f"rollback_pair {current}").stdout.split() == want
+    started = "rollback-started" in last
+    assert (_source(tmp_path, "interrupted && echo yes || echo no").stdout.strip() == "yes") == started
+
+
+FAKE_REMOTE_DOCKER = r'''#!/usr/bin/env python3
+"""docker for the real remote.sh: alembic heads/show per tag, the database revision, compose up (ok / fail / hang)."""
+import json, os, re, sys, time
+F = os.environ["FAKE_DIR"]; a = sys.argv[1:]; P = os.environ["CHOLA_IMAGE_PREFIX"]
+open(F + "/docker.log", "a").write("docker " + " ".join(a) + "\n")
+st = json.load(open(F + "/state.json"))
+def save(): json.dump(st, open(F + "/state.json", "w"))
+if a[0] in ("info", "ps", "rm") or a[:2] in (["image", "inspect"], ["image", "ls"]): sys.exit(0)
+if a[0] == "run":  # alembic_offline: run --rm --network none --entrypoint PY IMAGE -m alembic --config INI <cmd>
+    i = a.index("-m"); tag = a[i - 1].rsplit(":", 1)[1]; cmd = a[i + 4:]
+    if cmd[0] == "heads": print(st["heads"][tag] + " (head)")
+    if cmd[0] == "show": sys.exit(0 if cmd[1] in st["knows"][tag] else 1)
+    sys.exit(0)
+if a[0] != "compose": sys.exit(0)
+i = a.index("--env-file"); envf = a[i + 1]; sub = a[i + 2:]
+if sub[0] == "config": print("postgres\nmigrate\nbackend\nfrontend\nnginx"); sys.exit(0)
+if sub[0] == "exec": sys.stdin.read(); print(st["db"]); sys.exit(0)
+if sub[0] == "run" and "downgrade" in sub: st["db"] = sub[-1]; st["downgrades"].append(sub[-1]); save(); sys.exit(0)
+if sub[0] == "up" and sub[-1] == "postgres": sys.exit(0)
+if sub[0] == "up":
+    tag = re.search(r"^DSS_TAG='([0-9a-f]{12})'", open(envf).read(), re.M).group(1)
+    mode = st["up_modes"].pop(0) if st["up_modes"] else "ok"
+    st["ups"].append(tag + ":" + mode); save()
+    if mode == "fail": sys.exit(1)
+    if mode == "hang": open(F + "/hanging", "w").write(tag); time.sleep(300); sys.exit(1)
+    st["running"] = tag; save(); sys.exit(0)
+if sub[0] == "ps" and "{{.Service}}|{{.Image}}" in " ".join(sub):
+    t = st["running"]
+    print(f"postgres|postgres:15-alpine|running|healthy|0\nmigrate|{P}/devsecshield-backend:{t}|exited||0\n"
+          f"backend|{P}/devsecshield-backend:{t}|running|healthy|0\nfrontend|{P}/devsecshield-frontend:{t}|running||0\n"
+          "nginx|nginx:1.27-alpine|running|healthy|0")
+sys.exit(0)
+'''
+FAKE_REMOTE_CURL = r'''#!/usr/bin/env python3
+import sys
+a = sys.argv[1:]; url = a[-1]
+body = ("ok" if url.endswith("/nginx-health") else '{"status":"healthy"}' if url.endswith("/health") else
+        '<script src="/_next/static/chunks/main-1.js"></script>' if url.endswith("/login") else
+        "u='https://chola-api.zeroshield.ai'")
+open(a[a.index("-o") + 1], "w").write(body); sys.stdout.write("200")
+'''
+
+
+@pytest.fixture
+def instance(tmp_path):
+    """A stand-in for /opt/devsecshield-chola on which the REAL remote.sh runs (fake docker / curl): releases A (revA),
+    B (revB), C (revC) deployed in that order, C running, the database at revC."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for name, body in (("docker", FAKE_REMOTE_DOCKER), ("curl", FAKE_REMOTE_CURL),
+                       ("sleep", '#!/bin/sh\n[ "$1" = 20 ] && exit 0\nexec /bin/sleep "$@"\n')):  # up's retry pause
+        (bin_dir / name).write_text(body)
+        (bin_dir / name).chmod(0o755)
+    base = tmp_path / "base"
+    live = base / "deploy" / "chola-prod"
+    live.mkdir(parents=True)
+    (live / "docker-compose.yml").write_text("services: {}\n")
+    for name in kit.ENV_FILES:
+        (live / name).write_text(f"DSS_TAG='{C12}'\n" if name == ".env" else "")
+        (live / name).chmod(0o600)
+    (base / "state").mkdir()
+    (base / "state" / "deploy-history").write_text(
+        f"t1 started {A12} previous none alembic-before none\nt1 switched {A12} previous none\n"
+        f"t1 deploy {A12} previous none alembic revA\n"
+        f"t2 started {B12} previous {A12} alembic-before revA\nt2 switched {B12} previous {A12}\n"
+        f"t2 deploy {B12} previous {A12} alembic revB\n"
+        f"t3 started {C12} previous {B12} alembic-before revB\nt3 switched {C12} previous {B12}\n"
+        f"t3 deploy {C12} previous {B12} alembic revC\n")
+    state = {"heads": {A12: "revA", B12: "revB", C12: "revC"},
+             "knows": {A12: ["revA"], B12: ["revA", "revB"], C12: ["revA", "revB", "revC"]},
+             "db": "revC", "running": C12, "up_modes": [], "ups": [], "downgrades": []}
+    (tmp_path / "state.json").write_text(json.dumps(state))
+    env = {"PATH": f"{bin_dir}:/usr/local/bin:/usr/bin:/bin", "HOME": str(tmp_path), "LC_ALL": "C",
+           "FAKE_DIR": str(tmp_path), "CHOLA_BASE_DIR": str(base), "CHOLA_IMAGE_PREFIX": "reg.example/devsec-chola",
+           "CHOLA_WAIT_S": "5"}
+
+    class Instance:
+        dir = tmp_path
+
+        @staticmethod
+        def remote(*args, **kw):
+            return run(["bash", str(REMOTE), *args], env=env, stdin=subprocess.DEVNULL, **kw)
+
+        @staticmethod
+        def popen(*args):
+            return subprocess.Popen(["bash", str(REMOTE), *args], env=env, stdin=subprocess.DEVNULL,
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+
+        @staticmethod
+        def state():
+            return json.loads((tmp_path / "state.json").read_text())
+
+        @staticmethod
+        def set_up_modes(*modes):
+            st = Instance.state()
+            st["up_modes"] = list(modes)
+            (tmp_path / "state.json").write_text(json.dumps(st))
+
+        @staticmethod
+        def tag():
+            return kit.parse_dotenv((live / ".env").read_text())["DSS_TAG"]
+
+        @staticmethod
+        def history():
+            return (base / "state" / "deploy-history").read_text().splitlines()
+    return Instance
+
+
+# QA R1, repro 1: C -> B downgrades to revB and fails in `compose up` (DSS_TAG is B, nothing runs). The retry must
+# start B again (no second downgrade to revA), and only a rollback after that goes on to A.
+def test_retry_of_a_failed_rollback_restarts_its_target(instance):
+    instance.set_up_modes("fail", "fail")  # `up recover` tries twice
+    first = instance.remote("rollback", "--allow-downgrade")
+    assert first.returncode == 1 and "compose up failed for " + B12 in first.stderr, first.stderr
+    assert instance.tag() == B12 and instance.state()["downgrades"] == ["revB"]
+    assert instance.history()[-2].split()[1:4] == ["rollback-started", B12, "from"]
+    assert instance.history()[-2].split()[4:] == [C12, "alembic-before", "revC"]
+    assert instance.history()[-1].split()[1:] == ["rollback", B12, "previous", C12, "alembic", "revB", "FAILED"]
+    plan = instance.remote("rollback", "--plan")
+    assert plan.returncode == 0 and f"rollback {B12} -> {B12}" in plan.stdout and "NOT going back" in plan.stdout
+    retry = instance.remote("rollback", "--allow-downgrade")
+    assert retry.returncode == 0, retry.stdout + retry.stderr
+    st = instance.state()
+    assert instance.tag() == B12 and st["running"] == B12 and st["db"] == "revB"
+    assert st["downgrades"] == ["revB"]  # the retry downgraded nothing (the bug went on to revA)
+    assert f"{B12} is running again" not in retry.stdout and "rolled back to " + B12 in retry.stdout
+    assert instance.history()[-1].split()[1:3] == ["rollback", B12]
+    # B runs: a further rollback is a NEW step back, to A (and needs the downgrade to revA)
+    further = instance.remote("rollback", "--plan")
+    assert further.returncode == 3 and f"rollback {B12} -> {A12}" in further.stdout, further.stdout + further.stderr
+
+
+# QA R1, repro 2: the rollback job is killed while `compose up` hangs (after the switch to B; no outcome recorded).
+def test_retry_of_an_interrupted_rollback_restarts_its_target(instance):
+    instance.set_up_modes("hang")
+    p = instance.popen("rollback", "--allow-downgrade")
+    try:
+        for _ in range(300):
+            if (instance.dir / "hanging").exists():
+                break
+            time.sleep(0.1)
+        assert (instance.dir / "hanging").exists(), "compose up never started"
+    finally:
+        os.killpg(p.pid, signal.SIGKILL)  # the job's session: remote.sh and the hanging compose
+        p.communicate(timeout=30)
+    assert instance.tag() == B12 and instance.history()[-1].split()[1:3] == ["rollback-started", B12]
+    assert _source_base(instance, "interrupted && echo yes").stdout.strip() == "yes"
+    retry = instance.remote("rollback", "--allow-downgrade")
+    assert retry.returncode == 0, retry.stdout + retry.stderr
+    assert "switched the tag and then failed or was interrupted" in retry.stdout
+    st = instance.state()
+    assert instance.tag() == B12 and st["running"] == B12 and st["downgrades"] == ["revB"]
+    assert st["ups"][-1] == B12 + ":ok"
+
+
+# A rollback stopped before its switch (the downgrade failed: C was restarted) is run again, C -> B, not C -> B's
+# predecessor; and nothing about it touches A.
+def test_rollback_whose_downgrade_failed_is_run_again(instance):
+    (instance.dir / "bin" / "docker").write_text(FAKE_REMOTE_DOCKER.replace(
+        'if sub[0] == "run" and "downgrade" in sub:',
+        'if sub[0] == "run" and "downgrade" in sub and os.path.exists(F + "/deny"): sys.exit(1)\n'
+        'if sub[0] == "run" and "downgrade" in sub:'))
+    (instance.dir / "deny").write_text("")
+    first = instance.remote("rollback", "--allow-downgrade")
+    assert first.returncode == 1 and "alembic downgrade failed" in first.stderr
+    assert instance.tag() == C12 and instance.history()[-1].split()[-1] == "FAILED"
+    (instance.dir / "deny").unlink()
+    retry = instance.remote("rollback", "--allow-downgrade")
+    assert retry.returncode == 0, retry.stdout + retry.stderr
+    assert "stopped before it switched: running the same rollback again" in retry.stdout
+    assert instance.tag() == B12 and instance.state()["downgrades"] == ["revB"]
+
+
+def _source_base(instance, script):
+    return run(["bash", "-c", f"source {REMOTE}; {script}"],
+               env=dict(os.environ, CHOLA_BASE_DIR=str(instance.dir / "base")))
+
+
+# ------------------------------------------------------------------------------------------------ job liveness (QA R3)
+@pytest.mark.skipif(shutil.which("setsid") is None or shutil.which("flock") is None, reason="util-linux missing")
+def test_a_killed_wrapper_does_not_lose_a_running_job(tmp_path):
+    kit_copy = tmp_path / "kit" / "deploy" / "chola-prod"
+    kit_copy.mkdir(parents=True)
+    shutil.copy(REMOTE, kit_copy / "remote.sh")
+    base = tmp_path / "base"
+    live = base / "deploy" / "chola-prod"
+    live.mkdir(parents=True)
+    for name in kit.ENV_FILES:
+        (live / name).write_text("")
+        (live / name).chmod(0o600)
+    slow = _fake_docker(tmp_path, slow=3)  # dump: docker info, then compose ps (postgres not running: exit 0)
+    slow["CHOLA_BASE_DIR"] = str(base)
+    proc = run(["bash", str(kit_copy / "remote.sh"), "job-start", "dump"], env=slow)
+    job = proc.stdout.strip()
+    assert proc.returncode == 0 and re.fullmatch(r"[0-9TZ]+-dump-[0-9]+", job), proc.stderr
+    jdir = base / "state" / "jobs" / job
+    for _ in range(100):
+        if (jdir / "worker").exists():
+            break
+        time.sleep(0.1)
+    wrapper = int((jdir / "pid").read_text().split()[0])
+    os.kill(wrapper, signal.SIGKILL)  # only the wrapper: the worker (remote.sh dump) keeps going
+    for _ in range(50):
+        if not Path(f"/proc/{wrapper}").exists() or "Z" in Path(f"/proc/{wrapper}/stat").read_text().split()[2]:
+            break
+        time.sleep(0.1)
+    follow = run(["bash", str(kit_copy / "remote.sh"), "job-follow", job, "0", "1"], env=slow)
+    assert re.search(r"^chola-job: running \d+$", follow.stderr, re.MULTILINE), follow.stderr  # not "lost"
+    for _ in range(200):
+        if (jdir / "rc").exists():
+            break
+        time.sleep(0.1)
+    assert (jdir / "rc").read_text().strip() == "0"  # written by the worker itself
+    follow = run(["bash", str(kit_copy / "remote.sh"), "job-follow", job, "0", "1"], env=slow)
+    assert re.search(r"^chola-job: done 0 \d+$", follow.stderr, re.MULTILINE) and "no logical dump" in follow.stdout
+    (tmp_path / "fast").mkdir()
+    fast = _fake_docker(tmp_path / "fast")
+    fast["CHOLA_BASE_DIR"] = str(base)
+    status = run(["bash", str(kit_copy / "remote.sh"), "status"], env=fast)
+    assert f"{job} exit 0" in status.stdout and "LOST" not in status.stdout, status.stdout + status.stderr
+    assert status.returncode == 0 and "ERROR" not in status.stderr, status.stderr
+
+
+def test_job_alive_follows_the_worker_too(tmp_path):
+    d = tmp_path / "state" / "jobs" / "20261122T120000Z-deploy-1"
+    d.mkdir(parents=True)
+    p = subprocess.Popen(["sleep", "30"])
+    try:
+        start = Path(f"/proc/{p.pid}/stat").read_text().split()[21]
+        (d / "pid").write_text(f"{os.getpid()} 1\n")  # the wrapper: gone (its pid now someone else's)
+        (d / "worker").write_text(f"{p.pid} {start}\n")
+        assert _source(tmp_path, f'job_alive "{d}" && echo alive').stdout.strip() == "alive"
+    finally:
+        p.kill()
+        p.wait()
+    assert _source(tmp_path, f'job_alive "{d}" || echo gone').stdout.strip() == "gone"
+
+
+# ------------------------------------------------------------------------------------------------ files on the instance
+# Architecture nit: the files-hash label includes the overlay directory's inode, so a swapped overlay with the same
+# content still recreates its readers (a later prune of the old generation cannot empty a container's /aibom/config).
+def test_files_hash_follows_the_overlay_directory_not_only_its_content(tmp_path):
+    overlay = tmp_path / "compose" / "aibom-config-overlay"
+    overlay.mkdir(parents=True)
+    (overlay / "rollup.json").write_text("{}")
+    (tmp_path / "deploy" / "chola-prod" / "nginx").mkdir(parents=True)
+    (tmp_path / "deploy" / "chola-prod" / "nginx" / "site.conf.template").write_text("server {}")
+    first = _source(tmp_path, "files_hash").stdout.strip()
+    assert re.fullmatch(r"[0-9a-f]{16}", first) and _source(tmp_path, "files_hash").stdout.strip() == first
+    copy = tmp_path / "copy"
+    shutil.copytree(overlay, copy)
+    assert _source(tmp_path, f'swap_dir "{copy}" "{overlay}"').returncode == 0  # same content, new directory
+    second = _source(tmp_path, "files_hash").stdout.strip()
+    assert second != first
+    (tmp_path / "deploy" / "chola-prod" / "nginx" / "site.conf.template").write_text("server { }")
+    assert _source(tmp_path, "files_hash").stdout.strip() not in (first, second)  # content still counts
+
+
+# Architecture nit: no secret copies outside the live kit after a killed or failed run.
+def test_changing_commands_sweep_stale_stage_restore_and_old_env_files(tmp_path):
+    live = tmp_path / "deploy" / "chola-prod"
+    old = tmp_path / "deploy" / "chola-prod.old.20261122T000000000"
+    for d in (live, old / "nginx", tmp_path / ".stage.AbC123" / "kit", tmp_path / ".restore.XyZ789" / "deploy"):
+        d.mkdir(parents=True)
+    for d in (live, old, tmp_path / ".stage.AbC123" / "kit"):
+        for name in kit.ENV_FILES:
+            (d / name).write_text("SECRET='x'\n")
+    (old / "nginx" / "site.conf.template").write_text("server {}")
+    (old / "docker-compose.yml").write_text("services: {}\n")
+    assert _source(tmp_path, "lock && echo locked").stdout.strip() == "locked"
+    assert not list(tmp_path.glob(".stage.*")) and not list(tmp_path.glob(".restore.*"))
+    assert sorted(p.name for p in old.iterdir()) == ["docker-compose.yml", "nginx"]  # generation kept, secrets gone
+    assert all((live / name).exists() for name in kit.ENV_FILES)  # the live kit is untouched
+
+
+# QA R2: only an assignment from a failing $(...) is left to its inner command; every other failure names itself.
+def test_err_trap_reports_commands_with_a_substitution_argument(tmp_path):
+    proc = _source(tmp_path, 'ls "/nonexistent-$(echo dir)"')
+    assert re.search(r"^\[chola-remote\] ERROR: line \d+: ls .*\(exit 2\)$", proc.stderr, re.MULTILINE), proc.stderr
+    proc = _source(tmp_path, 'x="$(exit 4)"')
+    assert proc.returncode == 4 and "ERROR" not in proc.stderr
+    for script in (OWNER, REMOTE):
+        assert "ASSIGN_FROM_SUBST=" in script.read_text() and '== *"\\$("*' not in script.read_text()
+
+
 # ------------------------------------------------------------------------------------------------ owner script
 FAKE_AWS = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -793,6 +1101,8 @@ if c == ["ecr", "describe-repositories"]: print("IMMUTABLE"); sys.exit(0)
 if c == ["ecr", "describe-images"]: sys.exit(254)  # the tag is not in ECR yet
 if c == ["ecr", "get-login-password"]: print("fake-token"); sys.exit(0)
 if c == ["s3api", "head-bucket"]: sys.exit(0 if arg("--expected-bucket-owner") == "935951870001" else 1)
+if c == ["s3api", "delete-object"] and os.environ.get("FAKE_S3_DELETE") == "deny":
+    print("An error occurred (AccessDenied) when calling the DeleteObject operation: Access Denied", file=sys.stderr); sys.exit(254)
 if c[0] == "s3api" and c[1] in ("put-object", "delete-object"): sys.exit(0 if arg("--expected-bucket-owner") == "935951870001" else 1)
 if c == ["iam", "simulate-principal-policy"]: print(os.environ.get("FAKE_SIM", "allowed")); sys.exit(0)
 if c == ["backup", "describe-backup-vault"]: print("v"); sys.exit(0)
@@ -807,6 +1117,9 @@ FAKE_SSH = r'''#!/bin/bash
 for last; do :; done
 case "$*" in *" -O exit "*) exit 0;; esac
 echo "ssh $last" >> "$FAKE_DIR/calls.log"
+if [ -n "${FAKE_SSH_DROP:-}" ]; then  # the connection drops while remote.sh $FAKE_SSH_DROP runs
+  case "$last" in *"remote.sh $FAKE_SSH_DROP"*) echo "Connection to UNKNOWN closed by remote host." >&2; exit 255;; esac
+fi
 case "$last" in
   true) exit 0;;
   *"tar -xzf -"*) cat >/dev/null; exit 0;;
@@ -1150,8 +1463,8 @@ def test_instance_settings_and_the_s3_probe_reach_the_instance(fake_world):
     proc = fake_world("preflight", CHOLA_MIN_FREE_GB="20", CHOLA_WAIT_S="1200", CHOLA_DUMPS_KEEP="5")
     assert proc.returncode == 0, proc.stderr
     log = fake_world.log()
-    assert "CHOLA_MIN_FREE_GB=20 CHOLA_WAIT_S=1200 CHOLA_DUMPS_KEEP=5 CHOLA_S3_PROBE_KEY=releases/preflight-probe-" in log
-    put = re.search(r"s3api put-object --bucket devsecshield-storage --key (releases/preflight-probe-\S+) .*"
+    assert "CHOLA_MIN_FREE_GB=20 CHOLA_WAIT_S=1200 CHOLA_DUMPS_KEEP=5 CHOLA_S3_PROBE_KEY=releases/preflight-probe.txt " in log
+    put = re.search(r"s3api put-object --bucket devsecshield-storage --key (releases/preflight-probe\S+) .*"
                     r"--expected-bucket-owner 935951870001", log)
     assert put and f"s3api delete-object --bucket devsecshield-storage --key {put.group(1)}" in log
     assert fake_world("preflight", CHOLA_WAIT_S="9; rm -rf /").returncode == 1
@@ -1163,6 +1476,58 @@ def test_owner_reports_a_lost_job(fake_world):
     assert "chola-job: lost 11" in (fake_world.dir / "bin" / "ssh").read_text()
     proc = fake_world("attach", "--job", "20261122T120000Z-deploy-1")
     assert proc.returncode == 1 and "ended WITHOUT an exit status" in proc.stderr and "rollback" in proc.stderr
+
+
+# QA R2: an SSH drop during a plain remote step ends with ONE kit error line that names the step and says what to do.
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
+@pytest.mark.parametrize("step", ["render", "ecr-login", "pull"])
+def test_ssh_drop_during_a_remote_step_names_the_step(fake_world, step):
+    head = run(["git", "-C", str(REPO), "rev-parse", "HEAD"]).stdout.strip()
+    proc = fake_world("deploy", "--sha", head, "--yes", FAKE_SSH_DROP=step)
+    errors = [line for line in proc.stderr.splitlines() if "ERROR" in line]
+    assert proc.returncode == 1 and len(errors) == 1, proc.stderr[-3000:]
+    assert errors[0].startswith(f"[chola] ERROR: remote.sh {step}: the SSH connection to i-0b7fe756ebfd4d1e6 failed or "
+                                "dropped (exit 255") and "nothing was switched yet: re-run the deploy" in errors[0]
+    assert "Connection to UNKNOWN closed by remote host." in proc.stderr  # ssh's own message stays visible
+    assert "job-start deploy" not in fake_world.log() and f"remote.sh {step}" in fake_world.log()
+    assert not list(fake_world.dir.glob("chola-prod.*"))
+
+
+def test_remote_step_names_a_failure_of_remote_sh_itself(fake_world):
+    (fake_world.dir / "bin" / "ssh").write_text(FAKE_SSH.replace(
+        '  *"nginx-health"*) echo ok;;',
+        '  *"nginx-health"*) echo ok;;\n  *"remote.sh status"*) echo "[chola-remote] ERROR: boom" >&2; exit 1;;'))
+    proc = fake_world("status")
+    errors = [line for line in proc.stderr.splitlines() if "ERROR" in line]
+    assert proc.returncode == 1 and errors == ["[chola-remote] ERROR: boom",
+                                               "[chola] ERROR: remote.sh status failed on the instance (exit 1, above)"]
+
+
+# Architecture nit: one fixed probe key (never a pile of probes), and a loud warning when it cannot be deleted.
+def test_preflight_probe_uses_one_key_and_warns_when_it_cannot_delete_it(fake_world):
+    for _ in range(2):
+        proc = fake_world("preflight", FAKE_S3_DELETE="deny")
+        assert proc.returncode == 0, proc.stderr
+        assert "could NOT delete the preflight probe object s3://devsecshield-storage/releases/preflight-probe.txt" in proc.stderr
+        assert "AccessDenied" in proc.stderr and "overwrites" in proc.stderr
+    keys = set(re.findall(r"s3api put-object --bucket devsecshield-storage --key (\S+)", fake_world.log()))
+    assert keys == {"releases/preflight-probe.txt"}
+    assert not list(fake_world.dir.glob("chola-prod.*"))
+    proc = fake_world("preflight")
+    assert proc.returncode == 0 and "could NOT delete" not in proc.stderr
+
+
+# QA nit: preflight is not called read-only: it writes (and deletes) the S3 probe and copies the kit to the instance.
+def test_preflight_is_not_documented_as_read_only():
+    help_text = run(["bash", str(OWNER), "--help"]).stdout
+    block = help_text.split("  preflight [--sha S]", 1)[1].split("\n  host-setup", 1)[0]
+    assert "read-only" not in block and "WRITES" in block and "releases/preflight-probe.txt" in block.replace("\n", "").replace(" ", "")
+    text = README.read_text()
+    for line in text.splitlines():
+        if "chola-prod.sh preflight" in line or line.lstrip().startswith("preflight "):
+            assert "read-only" not in line, line
+    probe = " ".join(text.split("releases/preflight-probe.txt", 1)[1].split()[:60])
+    assert "overwritten by every preflight" in probe and "WARNING" in probe
 
 
 # ------------------------------------------------------------------------------------------------ README

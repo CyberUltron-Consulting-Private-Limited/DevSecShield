@@ -4,9 +4,12 @@
 # prints, stores or commits a secret value. `chola-prod.sh --help` lists commands, flags and environment variables.
 set -Eeuo pipefail
 export LC_ALL=C
-# No silent exit: a failing command that no check handles names itself.
-# A failing $(...) is skipped here: its inner command (or die) has already said why.
-trap 'rc=$?; [[ "${BASH_COMMAND}" == *"\$("* ]] || printf "[chola] ERROR: line %s: %s (exit %s)\n" "${LINENO}" "${BASH_COMMAND}" "${rc}" >&2' ERR
+# No silent exit: a failing command that no check handles names itself. Only an assignment from a failing $(...) is
+# skipped: its inner command (or die) has already said why. Any other command (the ssh line of remote() included) is
+# reported; remote_step also names the step that failed.
+ASSIGN_FROM_SUBST='^(local[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?\+?=.*\$\('
+err_report() { [[ "${BASH_COMMAND}" =~ ${ASSIGN_FROM_SUBST} ]] || printf '[chola] ERROR: line %s: %s (exit %s)\n' "$2" "${BASH_COMMAND}" "$1" >&2; }
+trap 'err_report "$?" "${LINENO}"' ERR
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 KIT_DIR="${REPO_ROOT}/deploy/chola-prod"
@@ -62,7 +65,10 @@ Commands
   preflight [--sha S]        prove the prerequisites: local tools, AWS identity and account, instance and IMDS options,
                              target group, secrets, ECR repositories, S3 bucket owner, iam:PassRole for the backup,
                              the EC2 Instance Connect tunnel, and on the instance Docker/Compose, the instance role
-                             (STS, S3), the data volume, free disk where images and volumes live; read-only
+                             (STS, S3), the data volume, free disk where images and volumes live. Changes nothing that
+                             runs, but WRITES and then deletes one S3 probe object (s3://devsecshield-storage/
+                             releases/preflight-probe.txt, for the instance to read) and copies the kit to the
+                             instance's /opt/devsecshield-chola/.kit/<run> (not the live kit)
   host-setup                 install AWS CLI v2 on the instance from an installer downloaded here (only if preflight
                              says it is missing)
   secrets                    fill devsec-chola/prod/app-secrets: generate what is missing, keep every existing value;
@@ -136,8 +142,12 @@ S3_PROBE_KEY=""
 cleanup() {
   trap - ERR # the exit status is already decided; nothing here may add an error line
   if [[ -n "${S3_PROBE_KEY}" ]] && ((!DRY)); then
-    aws --region "${REGION}" s3api delete-object --bucket "${BUCKET}" --key "${S3_PROBE_KEY}" \
-      --expected-bucket-owner "${ACCOUNT}" >/dev/null 2>&1 || true
+    if ! aws --region "${REGION}" s3api delete-object --bucket "${BUCKET}" --key "${S3_PROBE_KEY}" \
+      --expected-bucket-owner "${ACCOUNT}" >/dev/null 2>"${WORK:-/nonexistent}/probe-del.err"; then
+      warn "could NOT delete the preflight probe object s3://${BUCKET}/${S3_PROBE_KEY} ($(tail -n 1 "${WORK}/probe-del.err" 2>/dev/null || echo 'no error text'))." \
+        "Your user may lack s3:DeleteObject on it. It is one small object that every preflight overwrites (never more" \
+        "than one); delete it by hand when convenient: aws s3api delete-object --bucket ${BUCKET} --key ${S3_PROBE_KEY}"
+    fi
   fi
   if [[ -n "${WORK}" && -d "${WORK}" ]]; then
     if ((SSH_READY && !DRY)); then ssh "${SSH_OPTS[@]}" -O exit "${SSH_USER}@${INSTANCE_ID}" >/dev/null 2>&1 || true; fi
@@ -311,9 +321,26 @@ remote() {
       "${SECRET_PREFIX}" "${SSH_USER}" "${INSTANCE_ID}" "$(quote "$@")"
     return 0
   fi
+  local rc=0
   # shellcheck disable=SC2029 # the remote command line is built here on purpose (every word quoted with %q)
-  ssh "${SSH_OPTS[@]}" "${SSH_USER}@${INSTANCE_ID}" "$(remote_cmdline "$@")"
+  ssh "${SSH_OPTS[@]}" "${SSH_USER}@${INSTANCE_ID}" "$(remote_cmdline "$@")" || rc=$?
+  return "${rc}" # the caller decides: remote_step dies naming the step, `if remote ...` reads the status
 }
+
+# remote_step <what to do now> <remote.sh args...>: remote, and on failure ONE error line that names the step and says
+# what to do. Exit 255 is ssh's own (the EICE tunnel or the connection failed or dropped); any other status is
+# remote.sh's, whose own error line is above.
+remote_step() {
+  local hint=$1 rc=0
+  shift
+  remote "$@" || rc=$?
+  ((rc == 0)) && return 0
+  if ((rc == 255)); then
+    die "remote.sh $1: the SSH connection to ${INSTANCE_ID} failed or dropped (exit 255, ssh's message above)${hint:+; ${hint}}"
+  fi
+  die "remote.sh $1 failed on the instance (exit ${rc}, above)${hint:+; ${hint}}"
+}
+PRE_SWITCH="nothing was switched yet: re-run the deploy"
 
 # remote_job <deploy|rollback|dump|infra-load> [args]: started DETACHED on the instance (setsid nohup), so a dropped
 # tunnel or Ctrl-C here cannot kill it half way; its output is followed here until it ends; its exit status is ours.
@@ -486,9 +513,11 @@ aws_resources() {
   esac
 }
 
-# A small object the instance must READ in its preflight (a list proves no s3:GetObject); removed on exit.
+# A small object the instance must READ in its preflight (a list proves no s3:GetObject); deleted on exit. One fixed key,
+# overwritten by every preflight: if the owner may put but not delete, at most this one object stays (with a warning).
+S3_PROBE_FIXED_KEY=releases/preflight-probe.txt
 s3_probe() {
-  S3_PROBE_KEY="releases/preflight-probe-$(date -u +%Y%m%dT%H%M%SZ)-$$.txt"
+  S3_PROBE_KEY="${S3_PROBE_FIXED_KEY}"
   if ((DRY)); then
     printf '[dry-run] aws s3api put-object --bucket %s --key %s --expected-bucket-owner %s (the instance reads it; deleted on exit)\n' \
       "${BUCKET}" "${S3_PROBE_KEY}" "${ACCOUNT}"
@@ -518,7 +547,7 @@ cmd_preflight() {
     ghcr_tag >/dev/null
   fi
   s3_probe
-  remote preflight
+  remote_step "the instance preflight changes nothing there: fix what it reports, then re-run" preflight
   mail_source_check
   note "preflight" "OK"
 }
@@ -914,7 +943,7 @@ cmd_verify() {
     sleep "${CHOLA_POLL_S:-10}"
   done
   log "ALB target: ${out}"
-  remote check
+  remote_step "the release stays as deployed: '${0##*/} status' shows it; re-run '${0##*/} verify'" check
   out="$(ssh "${SSH_OPTS[@]}" "${SSH_USER}@${INSTANCE_ID}" 'curl -sS --noproxy "*" --max-time 10 http://localhost/nginx-health')" ||
     die "curl http://localhost/nginx-health on the instance failed"
   [[ "${out}" == ok ]] || die "curl http://localhost/nginx-health on the instance -> '${out}'"
@@ -950,13 +979,13 @@ cmd_deploy() {
   aws_resources
   kit_upload with-overlay
   s3_probe
-  remote preflight
+  remote_step "${PRE_SWITCH}" preflight
   cmd_secrets
   cmd_images
   step "environment and images on the instance"
-  remote render "${SHA12}"
-  remote ecr-login
-  remote pull "${SHA12}"
+  remote_step "${PRE_SWITCH}" render "${SHA12}"
+  remote_step "${PRE_SWITCH}" ecr-login
+  remote_step "${PRE_SWITCH}" pull "${SHA12}"
   note "instance" "env rendered from Secrets Manager (instance role), images of ${SHA12} pulled, frontend URL checked"
   cmd_infra
   cmd_backup
@@ -976,7 +1005,7 @@ cmd_rollback() {
   step "rollback"
   aws_identity
   cmd_backup
-  remote ecr-login
+  remote_step "nothing was rolled back yet: re-run the rollback" ecr-login
   local rc=0
   if ((DRY)); then
     remote rollback --plan
@@ -1044,13 +1073,13 @@ main() {
     verify) cmd_verify ;;
     rollback) cmd_rollback ;;
     attach) cmd_attach ;;
-    smtp-test) remote smtp-test ;;
-    admin) [[ -n "${EMAIL}" ]] || die "admin needs --email"; remote admin "${EMAIL}"; note "admin" "${EMAIL} is platform administrator" ;;
+    smtp-test) remote_step "" smtp-test ;;
+    admin) [[ -n "${EMAIL}" ]] || die "admin needs --email"; remote_step "" admin "${EMAIL}"; note "admin" "${EMAIL} is platform administrator" ;;
     status)
-      remote status
+      remote_step "" status
       if ((!DRY)); then log "ALB target: $(target_health_line || echo 'describe-target-health failed')"; fi
       ;;
-    logs) remote logs "${SERVICE:-all}" "${TAIL}" ;;
+    logs) remote_step "" logs "${SERVICE:-all}" "${TAIL}" ;;
     *) die "unknown command ${CMD} (see --help)" ;;
   esac
   summary
