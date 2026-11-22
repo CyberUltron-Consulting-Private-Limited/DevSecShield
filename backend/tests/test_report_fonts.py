@@ -363,7 +363,9 @@ _SYLLABLE_ZWJ = re.compile("([\u0908\u0910][\u0900-\u0903\u093c\u0951-\u0954]*)\
 def _pypdf_word(text: str) -> str:
     """pypdf reads ToUnicode only: a glyph past a syllable's characters (ई is drawn as two) copies as U+200D, and a
     letter the font draws as its canonical equivalent (क़, ऴ, ị) as that equivalent; compared up to both (see
-    fonts/README.md). A joiner the user typed is kept, so losing one fails."""
+    fonts/README.md). A joiner the user typed is kept, so losing one fails. Only one U+200D after the syllable is
+    taken as the extra glyph's: a word with two or more joiners typed after ई/ऐ (no real name has one) would need
+    a count per glyph, so the sweep has none."""
     return unicodedata.normalize("NFC", _SYLLABLE_ZWJ.sub(r"\1", text))
 
 

@@ -52,8 +52,9 @@ and pdf.js on 79 Hindi, Marathi, Vietnamese, Greek and Cyrillic test strings, ea
   MuPDF matches the `/ActualText` against the glyph text from both ends and, when the two differ in the middle, keeps
   some glyph text as well. Spans that cover only the rewritten syllables avoid that in MuPDF but put spaces inside
   words in poppler and PDFium, and nested spans duplicate text in poppler, PDFium and MuPDF, so the whole-run span,
-  which is exact in poppler and PDFium, is kept and this MuPDF repeat is a known limit. MuPDF also splits `क़िला`
-  as `क़ि ला` in one of the two layouts.
+  which is exact in poppler and PDFium, is kept and this MuPDF repeat is a known limit. The same happens around a
+  letter the font draws decomposed (ị ọ ụ ẹ, ṃ ṅ ṣ, ऴ: `Nguyễn Thị Minh` as `Nguyễn Th ị M Minh`), and MuPDF can
+  break a line inside such a word (`ज़रू` / `री`). MuPDF also splits `क़िला` as `क़ि ला` in one of the two layouts.
 
 Where readers disagree, exactness in poppler and PDFium wins (Chrome, Edge and most desktop viewers use PDFium or
 poppler; review 6014645102): the tests assert those two code point for code point, pypdf up to canonical equivalence
