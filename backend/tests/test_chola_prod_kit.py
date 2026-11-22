@@ -260,7 +260,7 @@ def test_render_least_privilege_per_reader():
                 "SMTP_USERNAME", "PG_USER_PASS", "CORS_ORIGINS"}
     assert not api_only & set(scan) and not api_only & set(dast)
     assert {"QDRANT_API_KEY", "LLM_MODEL"} <= set(scan) and not {"QDRANT_API_KEY", "LLM_MODEL"} & set(dast)
-    assert "QDRANT_API_KEY" not in backend
+    assert "QDRANT_API_KEY" not in backend and backend["BACKEND_WORKERS"] == "4"
     for name in ("RABBIT_ADMIN_PASSWORD", "MONGO_INITDB_ROOT_PASSWORD", "AWS_SECRET_ACCESS_KEY"):
         assert name in scan and name in dast and name in backend
     # the interpolation file feeds no application container and holds no application secret
@@ -488,10 +488,161 @@ def test_previous_comes_from_the_started_record_of_an_interrupted_deploy(tmp_pat
         "2026-11-22T18:39:00Z deploy cccccccccccc previous none alembic r1\n"
         "2026-11-22T18:41:09Z started dddddddddddd previous cccccccccccc alembic-before r1\n")
     proc = _source(tmp_path, "previous_of dddddddddddd; previous_of cccccccccccc; interrupted && echo interrupted")
-    assert proc.stdout.split() == ["cccccccccccc", "none", "interrupted"], proc.stderr
+    # "none" is never a rollback target: previous_of prints nothing for cccc
+    assert proc.stdout.split() == ["cccccccccccc", "interrupted"], proc.stderr
     with open(tmp_path / "state" / "deploy-history", "a") as fh:
         fh.write("2026-11-22T18:42:10Z rollback cccccccccccc previous dddddddddddd alembic r1\n")
     assert _source(tmp_path, "interrupted || echo clean").stdout.strip() == "clean"
+
+
+def _history(tmp_path, text, passed=""):
+    (tmp_path / "state").mkdir(exist_ok=True)
+    (tmp_path / "state" / "deploy-history").write_text(text)
+    (tmp_path / "state" / "passed").write_text(passed)
+
+
+# QA N1: deploy A, interrupt B, retry B with a failing `up recover` (no backend container left), deploy B: the rollback
+# target stays A.
+def test_rollback_target_survives_a_failed_recovery(tmp_path):
+    _history(tmp_path,
+             "t0 started aaaaaaaaaaaa previous none alembic-before none\n"
+             "t0 switched aaaaaaaaaaaa previous none\n"
+             "t1 deploy aaaaaaaaaaaa previous none alembic r1\n"
+             "t2 started bbbbbbbbbbbb previous aaaaaaaaaaaa alembic-before r1\n"
+             "t2 switched bbbbbbbbbbbb previous aaaaaaaaaaaa\n"
+             "t3 started bbbbbbbbbbbb previous aaaaaaaaaaaa alembic-before r1\n"
+             "t3 switched bbbbbbbbbbbb previous aaaaaaaaaaaa\n"
+             "t4 deploy bbbbbbbbbbbb previous aaaaaaaaaaaa alembic r2 FAILED\n",
+             passed="aaaaaaaaaaaa\n")
+    out = _source(tmp_path, 'target_for bbbbbbbbbbbb ""; target_for bbbbbbbbbbbb bbbbbbbbbbbb; '
+                            'target_for bbbbbbbbbbbb cccccccccccc').stdout.split()
+    assert out == ["aaaaaaaaaaaa", "aaaaaaaaaaaa", "cccccccccccc"]
+    # even when an older line recorded "none", previous_of skips it
+    with open(tmp_path / "state" / "deploy-history", "a") as fh:
+        fh.write("t5 deploy bbbbbbbbbbbb previous none alembic r2\n")
+    assert _source(tmp_path, "previous_of bbbbbbbbbbbb").stdout.strip() == "aaaaaaaaaaaa"
+    # no history at all: the last release that passed its checks
+    (tmp_path / "state" / "deploy-history").write_text("")
+    assert _source(tmp_path, 'target_for bbbbbbbbbbbb ""').stdout.strip() == "aaaaaaaaaaaa"
+
+
+# QA nit: an interruption between STARTED and the tag switch must not roll back one release too far.
+def test_rollback_after_an_unswitched_interruption_restarts_the_current_release(tmp_path):
+    _history(tmp_path, "t1 deploy aaaaaaaaaaaa previous zzzzzzzzzzzz alembic r1\n"
+                       "t2 started bbbbbbbbbbbb previous aaaaaaaaaaaa alembic-before r1\n")
+    assert _source(tmp_path, "rollback_pair aaaaaaaaaaaa; interrupted && echo yes").stdout.split() == \
+        ["aaaaaaaaaaaa", "1", "yes"]
+    with open(tmp_path / "state" / "deploy-history", "a") as fh:
+        fh.write("t2 switched bbbbbbbbbbbb previous aaaaaaaaaaaa\n")
+    assert _source(tmp_path, "rollback_pair bbbbbbbbbbbb; interrupted && echo yes").stdout.split() == \
+        ["aaaaaaaaaaaa", "0", "yes"]
+    _history(tmp_path, "t1 deploy aaaaaaaaaaaa previous none alembic r1\n")
+    assert _source(tmp_path, "rollback_pair aaaaaaaaaaaa").stdout.split() == ["none", "0"]
+
+
+def test_deploy_records_the_switch_right_after_it():
+    body = REMOTE.read_text().split("cmd_deploy() {", 1)[1].split("\n}\n", 1)[0]
+    assert body.index('set_tag "${tag}"') < body.index("switched %s previous %s") < body.index('up "${recover}"')
+    assert 'previous="$(target_for "${tag}" "${running}")"' in body
+
+
+# QA N2: a job whose process is gone without an rc is reported lost (also when its pid now belongs to another process).
+@pytest.mark.parametrize("case", ["dead", "reused"])
+def test_job_follow_reports_a_lost_job(tmp_path, case):
+    job = "20261122T120000Z-deploy-1"
+    d = tmp_path / "state" / "jobs" / job
+    d.mkdir(parents=True)
+    (d / "log").write_text("half a deploy\n")
+    if case == "dead":
+        p = subprocess.Popen(["sleep", "30"])
+        stat_fields = Path(f"/proc/{p.pid}/stat").read_text().split()
+        p.kill()
+        p.wait()
+        (d / "pid").write_text(f"{p.pid} {stat_fields[21]}\n")
+    else:  # a live pid whose start time differs: the job's pid was reused after a reboot
+        (d / "pid").write_text(f"{os.getpid()} 1\n")
+    proc = run(["bash", str(REMOTE), "job-follow", job, "0", "2"], env=dict(os.environ, CHOLA_BASE_DIR=str(tmp_path)))
+    assert "half a deploy" in proc.stdout and re.search(r"^chola-job: lost \d+$", proc.stderr, re.MULTILINE), proc.stderr
+    status = _source(tmp_path, 'JOBS_DIR="$JOBS_DIR"; job_alive "$JOBS_DIR/' + job + '" && echo alive || echo gone')
+    assert status.stdout.strip() == "gone"
+
+
+def test_status_says_lost_not_running():
+    body = REMOTE.read_text().split("cmd_status() {", 1)[1].split("\n}\n", 1)[0]
+    assert "LOST" in body and "job_alive" in body and "running (or killed" not in body
+
+
+# Architecture minors: the first render creates the live kit 700; restore and install replace directories by rename.
+def test_render_creates_the_live_kit_private(tmp_path):
+    secrets_by_id = {"devsec-chola/prod/app-secrets": json.dumps(_app()),
+                     "devsec-chola/prod/app-user": json.dumps(APP_USER), "devsec-chola/prod/cbom-collector": ""}
+    (tmp_path / "s.json").write_text(json.dumps(secrets_by_id))
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "aws").write_text("#!/usr/bin/env python3\nimport json,sys\na=sys.argv[1:]\n"
+                                 f"print(json.load(open({str(tmp_path / 's.json')!r}))[a[a.index('--secret-id')+1]] or 'None')\n")
+    (bin_dir / "aws").chmod(0o755)
+    base = tmp_path / "base"
+    run_dir = tmp_path / "run" / "deploy" / "chola-prod"
+    run_dir.mkdir(parents=True)
+    for f in ("remote.sh", "kit.py"):
+        shutil.copy(KIT_DIR / f, run_dir / f)
+    proc = run(["bash", str(run_dir / "remote.sh"), "render", "aaaaaaaaaaaa"],
+               env=dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", CHOLA_BASE_DIR=str(base)))
+    assert proc.returncode == 0, proc.stderr
+    live = base / "deploy" / "chola-prod"
+    assert stat.S_IMODE(live.stat().st_mode) == 0o700
+    assert kit.parse_dotenv((live / "backend.env").read_text())["BACKEND_WORKERS"] == "4"
+
+
+def test_restore_replaces_kit_and_overlay_atomically_and_keeps_env_files(tmp_path):
+    base = tmp_path
+    live = base / "deploy" / "chola-prod"
+    overlay = base / "compose" / "aibom-config-overlay"
+    live.mkdir(parents=True)
+    overlay.mkdir(parents=True)
+    (live / "docker-compose.yml").write_text("new\n")
+    (live / "stale-new-only.txt").write_text("x")
+    (live / "backend.env").write_text("SECRET='1'\n")
+    (live / "backend.env").chmod(0o600)
+    (overlay / "new-only.json").write_text("{}")
+    rel = base / "state" / "releases" / "aaaaaaaaaaaa"
+    rel.mkdir(parents=True)
+    src = tmp_path / "src"
+    (src / "deploy" / "chola-prod").mkdir(parents=True)
+    (src / "compose" / "aibom-config-overlay").mkdir(parents=True)
+    (src / "deploy" / "chola-prod" / "docker-compose.yml").write_text("old\n")
+    (src / "compose" / "aibom-config-overlay" / "old.json").write_text("{}")
+    subprocess.run(["tar", "-C", str(src), "-czf", str(rel / "files.tar.gz"), "deploy/chola-prod",
+                    "compose/aibom-config-overlay"], check=True)
+    proc = _source(tmp_path, "restore_files aaaaaaaaaaaa")
+    assert proc.returncode == 0, proc.stderr
+    assert (live / "docker-compose.yml").read_text() == "old\n" and not (live / "stale-new-only.txt").exists()
+    assert (live / "backend.env").read_text() == "SECRET='1'\n" and stat.S_IMODE((live / "backend.env").stat().st_mode) == 0o600
+    assert sorted(p.name for p in overlay.iterdir()) == ["old.json"]
+    assert not list(base.glob(".restore.*")) and not list(base.glob(".stage.*"))
+    # the replaced generations stay (a running container may still bind-mount them) until prune_old_dirs after up
+    old = list((base / "compose").glob("aibom-config-overlay.old.*"))
+    assert len(old) == 1 and (old[0] / "new-only.json").exists()
+    assert _source(tmp_path, "prune_old_dirs").returncode == 0
+    assert not list((base / "compose").glob("*.old.*")) and not list((base / "deploy").glob("*.old.*"))
+    # an identical overlay is not swapped: its readers keep using the same directory
+    inode = overlay.stat().st_ino
+    assert _source(tmp_path, "restore_files aaaaaaaaaaaa").returncode == 0
+    assert overlay.stat().st_ino == inode and not list((base / "compose").glob("*.old.*"))
+
+
+def test_old_generations_are_pruned_only_after_a_successful_up():
+    text = REMOTE.read_text()
+    for fn in ("cmd_deploy", "cmd_rollback"):
+        body = text.split(f"{fn}() {{", 1)[1].split("\n}\n", 1)[0]
+        assert body.index("FAILED") < body.index("prune_old_dirs"), fn
+    assert "rm -rf" not in text.split("swap_dir() {", 1)[1].split("\n}\n", 1)[0]
+
+
+def test_preflight_reads_an_s3_object_not_only_lists():
+    body = REMOTE.read_text().split("cmd_preflight() {", 1)[1].split("\n}\n", 1)[0]
+    assert "s3api get-object" in body and "CHOLA_S3_PROBE_KEY" in body and "--expected-bucket-owner" in body
 
 
 def test_deploy_writes_started_before_switching_the_tag():
@@ -639,7 +790,10 @@ if c == ["elbv2", "describe-target-health"]:
     if count("th") == 0: print("An error occurred (Throttling): Rate exceeded", file=sys.stderr); sys.exit(254)
     print("10.60.10.108\t80\thealthy\tNone"); sys.exit(0)
 if c == ["ecr", "describe-repositories"]: print("IMMUTABLE"); sys.exit(0)
+if c == ["ecr", "describe-images"]: sys.exit(254)  # the tag is not in ECR yet
+if c == ["ecr", "get-login-password"]: print("fake-token"); sys.exit(0)
 if c == ["s3api", "head-bucket"]: sys.exit(0 if arg("--expected-bucket-owner") == "935951870001" else 1)
+if c[0] == "s3api" and c[1] in ("put-object", "delete-object"): sys.exit(0 if arg("--expected-bucket-owner") == "935951870001" else 1)
 if c == ["iam", "simulate-principal-policy"]: print(os.environ.get("FAKE_SIM", "allowed")); sys.exit(0)
 if c == ["backup", "describe-backup-vault"]: print("v"); sys.exit(0)
 if c == ["backup", "start-backup-job"]: print("job-42"); sys.exit(0)
@@ -657,10 +811,12 @@ case "$last" in
   true) exit 0;;
   *"tar -xzf -"*) cat >/dev/null; exit 0;;
   *"remote.sh volume-exists"*) case "${FAKE_VOL:-no}" in fail) echo "Connection closed" >&2; exit 255;; *) echo "${FAKE_VOL:-no}";; esac;;
-  *"remote.sh job-start"*) echo "20261122T120000Z-dump-4242";;
+  *"remote.sh job-start"*) echo "20261122T120000Z-$(sed -E 's/.*job-start ([a-z-]+).*/\1/' <<<"$last")-4242";;
+  *"remote.sh infra-missing"*) echo "qdrant/qdrant:v1.13.5";;
+  *"nginx-health"*) echo ok;;
   *"remote.sh job-follow"*) n=$(cat "$FAKE_DIR/jf" 2>/dev/null || echo 0); echo $((n+1)) > "$FAKE_DIR/jf"
      if [ "$n" = 0 ]; then echo "Connection closed by remote host" >&2; exit 255; fi
-     echo "job output"; echo "chola-job: done ${FAKE_JOB_RC:-0} 11" >&2;;
+     echo "job output"; echo "chola-job: done ${FAKE_JOB_RC:-0} 11" >&2; echo 1 > "$FAKE_DIR/jf";;
   *) exit 0;;
 esac
 '''
@@ -676,23 +832,68 @@ esac
 exec REALGIT "$@"
 '''
 FAKE_OTHER = '#!/bin/sh\necho "$(basename "$0") $*" >> "$FAKE_DIR/calls.log"\nexit 0\n'
+FAKE_DOCKER = r'''#!/bin/sh
+echo "docker $* [DOCKER_CONFIG=${DOCKER_CONFIG:-default}]" >> "$FAKE_DIR/calls.log"
+case "$1" in
+  context) echo "unix:///var/run/docker.sock";;
+  info) [ "$2" = "--format" ] && echo '[["driver-type","io.containerd.snapshotter.v1"]]';;
+  login) cat >/dev/null;;
+  create) echo cid123;;
+  cp) echo "chunk https://chola-api.zeroshield.ai";;
+  push|save|image) case "$*" in *--help*) echo "  --platform string"; exit 0;; esac
+     case "$*" in *"image inspect"*) case "$*" in *revision*) echo "";; *) echo "linux/amd64";; esac; exit 0;; esac
+     [ "$1" = save ] && { o=""; while [ $# -gt 0 ]; do [ "$1" = -o ] && o=$2; shift; done; echo fake > "$o"; };;
+  buildx) case "$2" in build) cat >/dev/null;; imagetools) case "$*" in *dev-*) exit 0;; esac; exit 1;; esac;;
+esac
+exit 0
+'''
+FAKE_CURL = r'''#!/bin/sh
+echo "curl $*" >> "$FAKE_DIR/calls.log"
+case "$*" in
+  *"-I --max-time 30 https://chola.zeroshield.ai/login"*) printf 'HTTP/2 200\r\nstrict-transport-security: max-age=31536000\r\n\r\n';;
+  *"-w %{http_code} --max-time 30 -I https://chola.zeroshield.ai"*) printf '307';;
+  *"chola-api.zeroshield.ai/health"*) printf '{"status":"healthy"}\n200';;
+esac
+exit 0
+'''
+FAKE_GH = '#!/bin/sh\necho "gh $*" >> "$FAKE_DIR/calls.log"\ncase "$*" in "auth token") echo tok;; "api user --jq .login") echo owner;; esac\nexit 0\n'
+
+
+def hermetic_env(bin_dir, home, tmp, **extra):
+    """A process environment built from nothing (CI's own AWS_*, HOME, PATH or config can never leak in): the fakes
+    first, then only the directories of the real tools the scripts need."""
+    tools = ("bash", "python3", "git", "sort", "sed", "awk", "mktemp", "tar", "flock", "setsid", "stat", "date")
+    dirs = []
+    for tool in tools:
+        found = shutil.which(tool)
+        if found and os.path.dirname(found) not in dirs:
+            dirs.append(os.path.dirname(found))
+    env = {"PATH": ":".join([str(bin_dir), *dirs, "/usr/bin", "/bin"]), "HOME": str(home), "TMPDIR": str(tmp),
+           "LANG": "C.UTF-8", "LC_ALL": "C",
+           # junk credentials and no config: a real aws CLI, if one were reached, could not talk to any account
+           "AWS_ACCESS_KEY_ID": "AKIAJUNKJUNKJUNKJUNK", "AWS_SECRET_ACCESS_KEY": "junk", "AWS_DEFAULT_REGION": "us-east-1",
+           "AWS_CONFIG_FILE": "/nonexistent/aws-config", "AWS_SHARED_CREDENTIALS_FILE": "/nonexistent/aws-credentials",
+           "AWS_EC2_METADATA_DISABLED": "true", "GIT_CONFIG_NOSYSTEM": "1",
+           "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "safe.directory", "GIT_CONFIG_VALUE_0": "*"}
+    env.update(extra)
+    return env
 
 
 @pytest.fixture
 def fake_world(tmp_path):
-    """aws, ssh, docker, gh, curl and a git wrapper (origin/ansh only) on PATH; nothing reaches a real service."""
+    """aws, ssh, docker, gh, curl and a git wrapper (origin/ansh only) on PATH, in an environment built from scratch;
+    nothing reaches a real service."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     for name, body in (("aws", FAKE_AWS), ("ssh", FAKE_SSH),
                        ("git", FAKE_GIT_TMPL.replace("REALGIT", shutil.which("git") or "/usr/bin/git")),
-                       ("docker", FAKE_OTHER), ("gh", FAKE_OTHER), ("curl", FAKE_OTHER)):
+                       ("docker", FAKE_DOCKER), ("gh", FAKE_GH), ("curl", FAKE_CURL)):
         (bin_dir / name).write_text(body)
         (bin_dir / name).chmod(0o755)
     (tmp_path / "home").mkdir()
 
     def call(*args, **env):
-        e = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", HOME=str(tmp_path / "home"), TMPDIR=str(tmp_path),
-                 FAKE_DIR=str(tmp_path), CHOLA_POLL_S="0", **env)
+        e = hermetic_env(bin_dir, tmp_path / "home", tmp_path, FAKE_DIR=str(tmp_path), CHOLA_POLL_S="0", **env)
         return run(["bash", str(OWNER), *args], env=e, stdin=subprocess.DEVNULL)
     call.dir = tmp_path
     call.log = lambda: (tmp_path / "calls.log").read_text() if (tmp_path / "calls.log").exists() else ""
@@ -843,6 +1044,125 @@ def test_help_documents_commands_flags_and_environment(args):
                  "CHOLA_POLL_RETRIES", "CHOLA_KNOWN_HOSTS", "AWS_PROFILE"):
         assert word in proc.stdout, word
     assert "set -" not in proc.stdout and "REPO_ROOT" not in proc.stdout  # usage text, not script lines
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
+def test_full_deploy_twice_in_the_fake_world(fake_world):
+    """deploy --yes end to end against fakes: every step in order; the first run sets up app-secrets (reading the
+    dummy origin/ansh), the second reads origin/ansh not at all; no secret value is ever printed or logged."""
+    head = run(["git", "-C", str(REPO), "rev-parse", "HEAD"]).stdout.strip()
+    first = fake_world("deploy", "--sha", head, "--yes")
+    assert first.returncode == 0, first.stdout[-3000:] + first.stderr[-3000:]
+    log1 = fake_world.log()
+    steps = [m for m in re.findall(r"remote\.sh (?:job-start )?([a-z-]+)", log1) if m != "job-follow"]
+    order = ["preflight", "volume-exists", "render", "ecr-login", "pull", "infra-missing", "infra-load", "dump",
+             "deploy", "smtp-test", "check"]
+    assert [s for s in dict.fromkeys(steps) if s in order] == order, steps
+    assert "fetch -q origin +refs/heads/ansh:refs/remotes/origin/ansh" in log1
+    assert "preflight-probe" in log1 and "delete-object" in log1
+    assert "DOCKER_CONFIG=default] login" not in log1 and "[DOCKER_CONFIG=" in log1  # logins never in the real config
+    summary = first.stdout.split("==== summary", 1)[1]
+    for word in ("secrets: app-secrets updated", "deploy:", "verify: ALB target healthy"):
+        assert word in summary
+    (fake_world.dir / "calls.log").unlink()
+    second = fake_world("deploy", "--sha", head, "--yes")
+    assert second.returncode == 0 and "app-secrets unchanged" in second.stdout, second.stderr[-2000:]
+    assert "ansh" not in fake_world.log()
+    stored = json.loads((fake_world.dir / "app-secrets.json").read_text())
+    everything = log1 + fake_world.log() + first.stdout + first.stderr + second.stdout + second.stderr
+    assert [k for k, v in stored.items() if v in everything] == []
+    assert not list(fake_world.dir.glob("chola-prod.*"))
+
+
+def test_the_fake_aws_is_the_one_used(fake_world):
+    proc = fake_world("verify")
+    assert "aws --region ap-south-1 elbv2 describe-target-health" in fake_world.log(), proc.stderr
+
+
+# CI (5317b1fd, dss-vm, non-root): cmd_verify wrote "${WORK}/err" while WORK was still empty, i.e. to /err; as root that
+# silently worked (this sandbox), as a normal user every poll "failed". main now creates the scratch dir first.
+def test_scratch_directory_exists_before_any_step():
+    body = OWNER.read_text().split("main() {", 1)[1]
+    assert body.index("\n  work\n") < body.index('case "${CMD}" in')
+
+
+@pytest.mark.skipif(os.geteuid() != 0 or shutil.which("runuser") is None, reason="needs root to drop to nobody")
+def test_verify_as_a_non_root_user_like_the_ci_runner():
+    import tempfile
+    base = Path(tempfile.mkdtemp(prefix="chola-nonroot-"))
+    try:
+        base.chmod(0o777)
+        bin_dir = base / "bin"
+        bin_dir.mkdir()
+        for name, body in (("aws", FAKE_AWS), ("ssh", FAKE_SSH), ("docker", FAKE_OTHER), ("gh", FAKE_OTHER),
+                           ("curl", FAKE_OTHER)):
+            (bin_dir / name).write_text(body)
+            (bin_dir / name).chmod(0o755)
+        (base / "home").mkdir()
+        (base / "home").chmod(0o777)
+        env = hermetic_env(bin_dir, base / "home", base, FAKE_DIR=str(base), CHOLA_POLL_S="0")
+        proc = run(["runuser", "-u", "nobody", "--", "env", "-i", *[f"{k}={v}" for k, v in env.items()],
+                    "bash", str(OWNER), "verify"], stdin=subprocess.DEVNULL)
+        assert "ALB target: 10.60.10.108 80 healthy" in proc.stdout, proc.stdout + proc.stderr
+        assert "Permission denied" not in proc.stderr
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def test_one_error_line_per_failure(fake_world):
+    proc = fake_world("secrets", FAKE_VOL="fail")
+    errors = [line for line in proc.stderr.splitlines() if "ERROR" in line]
+    assert len(errors) == 1 and "cannot tell whether" in errors[0], proc.stderr
+    proc = fake_world("rollback")  # no terminal, no --yes
+    assert [line for line in proc.stderr.splitlines() if "ERROR" in line] == \
+        ["[chola] ERROR: Roll back needs confirmation: run it in a terminal or pass --yes"]
+
+
+def test_ctrl_c_message_is_the_last_word(fake_world):
+    e = hermetic_env(fake_world.dir / "bin", fake_world.dir / "home", fake_world.dir, FAKE_DIR=str(fake_world.dir),
+                     CHOLA_POLL_S="0", FAKE_SLOW="1")
+    (fake_world.dir / "bin" / "ssh").write_text(FAKE_SSH.replace('*"remote.sh job-follow"*)', '*"remote.sh job-follow"*) [ -n "$FAKE_SLOW" ] && sleep 20;'))
+    p = subprocess.Popen(["bash", str(OWNER), "attach", "--job", "20261122T120000Z-deploy-1"], env=e,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                         start_new_session=True)
+    time.sleep(3)
+    os.killpg(p.pid, signal.SIGINT)  # a terminal's Ctrl-C reaches the whole foreground group
+    _, err = p.communicate(timeout=60)
+    assert p.returncode == 130 and "KEEPS RUNNING" in err and "attach --job 20261122T120000Z-deploy-1" in err
+    assert "ERROR" not in err.split("KEEPS RUNNING", 1)[1]
+    assert not list(fake_world.dir.glob("chola-prod.*"))
+
+
+def test_mail_prompt_without_a_terminal_stops_before_any_call(fake_world):
+    proc = fake_world("secrets", "--mail-prompt")
+    assert proc.returncode == 1 and "needs a terminal" in proc.stderr
+    assert fake_world.log() == ""
+
+
+def test_data_check_comes_before_reading_ansh(fake_world):
+    (fake_world.dir / "app-secrets.json").write_text("{}")
+    proc = fake_world("secrets", FAKE_VOL="yes")
+    assert proc.returncode == 1 and "lock the application out" in proc.stderr
+    assert "ansh" not in fake_world.log() and "put-secret-value" not in fake_world.log()
+
+
+def test_instance_settings_and_the_s3_probe_reach_the_instance(fake_world):
+    proc = fake_world("preflight", CHOLA_MIN_FREE_GB="20", CHOLA_WAIT_S="1200", CHOLA_DUMPS_KEEP="5")
+    assert proc.returncode == 0, proc.stderr
+    log = fake_world.log()
+    assert "CHOLA_MIN_FREE_GB=20 CHOLA_WAIT_S=1200 CHOLA_DUMPS_KEEP=5 CHOLA_S3_PROBE_KEY=releases/preflight-probe-" in log
+    put = re.search(r"s3api put-object --bucket devsecshield-storage --key (releases/preflight-probe-\S+) .*"
+                    r"--expected-bucket-owner 935951870001", log)
+    assert put and f"s3api delete-object --bucket devsecshield-storage --key {put.group(1)}" in log
+    assert fake_world("preflight", CHOLA_WAIT_S="9; rm -rf /").returncode == 1
+
+
+def test_owner_reports_a_lost_job(fake_world):
+    (fake_world.dir / "bin" / "ssh").write_text(FAKE_SSH.replace(
+        'echo "chola-job: done ${FAKE_JOB_RC:-0} 11" >&2;', 'echo "chola-job: lost 11" >&2;'))
+    assert "chola-job: lost 11" in (fake_world.dir / "bin" / "ssh").read_text()
+    proc = fake_world("attach", "--job", "20261122T120000Z-deploy-1")
+    assert proc.returncode == 1 and "ended WITHOUT an exit status" in proc.stderr and "rollback" in proc.stderr
 
 
 # ------------------------------------------------------------------------------------------------ README

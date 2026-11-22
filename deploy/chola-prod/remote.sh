@@ -29,15 +29,18 @@
 #                                           Ctrl-C), output in state/jobs/<id>/log, exit status in .../rc; prints <id>
 #   remote.sh job-follow <id> <offset> [wait-s]
 #                                           print the job's output from byte <offset>; last stderr line:
-#                                           "chola-job: running <offset>" or "chola-job: done <rc> <offset>"
+#                                           "chola-job: running <offset>", "chola-job: done <rc> <offset>" or
+#                                           "chola-job: lost <offset>" (its process is gone and it wrote no exit status)
 #
 # Settings come from the caller (chola-prod.sh passes them): CHOLA_BASE_DIR, CHOLA_REGION, CHOLA_ACCOUNT,
 # CHOLA_REGISTRY, CHOLA_IMAGE_PREFIX, CHOLA_SECRET_PREFIX, CHOLA_BUCKET, CHOLA_FRONTEND_HOST, CHOLA_API_HOST,
-# CHOLA_REAL_IP_FROM, CHOLA_ALLOW_IMDS, CHOLA_MIN_FREE_GB (15), CHOLA_WAIT_S (900), CHOLA_DUMPS_KEEP (3).
+# CHOLA_REAL_IP_FROM, CHOLA_ALLOW_IMDS, CHOLA_MIN_FREE_GB (15), CHOLA_WAIT_S (900), CHOLA_DUMPS_KEEP (3),
+# CHOLA_S3_PROBE_KEY (preflight: a small object the owner just wrote, read here to prove s3:GetObject).
 set -Eeuo pipefail
 export LC_ALL=C
 # No silent exit: a failing command that no check handles names itself.
-trap 'rc=$?; printf "[chola-remote] ERROR: line %s: %s (exit %s)\n" "${LINENO}" "${BASH_COMMAND}" "${rc}" >&2' ERR
+# A failing $(...) is skipped here: its inner command (or die) has already said why.
+trap 'rc=$?; [[ "${BASH_COMMAND}" == *"\$("* ]] || printf "[chola-remote] ERROR: line %s: %s (exit %s)\n" "${LINENO}" "${BASH_COMMAND}" "${rc}" >&2' ERR
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT="${SCRIPT_DIR}/$(basename "${BASH_SOURCE[0]}")"
@@ -184,10 +187,24 @@ cmd_preflight() {
     err="$(mktemp)"
     if aws s3api list-objects-v2 --region "${REGION}" --bucket "${BUCKET}" --prefix releases/ --max-keys 1 \
       --expected-bucket-owner "${ACCOUNT}" --query KeyCount --output text >/dev/null 2>"${err}"; then
-      log "instance role: S3 read of s3://${BUCKET}/releases/ (bucket owner ${ACCOUNT}) OK"
+      log "instance role: S3 list of s3://${BUCKET}/releases/ (bucket owner ${ACCOUNT}) OK"
     else
       log "FAIL instance role cannot list s3://${BUCKET}/releases/ as owner ${ACCOUNT}: $(tail -n 1 "${err}")"
       bad=1
+    fi
+    # Listing is not reading: get the probe object the owner wrote for this preflight (infra-load needs GetObject).
+    if [[ -n "${CHOLA_S3_PROBE_KEY:-}" ]]; then
+      [[ "${CHOLA_S3_PROBE_KEY}" =~ ^releases/[A-Za-z0-9._-]+$ ]] || die "CHOLA_S3_PROBE_KEY is not a releases/ key"
+      if aws s3api get-object --region "${REGION}" --bucket "${BUCKET}" --key "${CHOLA_S3_PROBE_KEY}" \
+        --expected-bucket-owner "${ACCOUNT}" "${err}.obj" >/dev/null 2>"${err}"; then
+        log "instance role: S3 read (GetObject) of s3://${BUCKET}/${CHOLA_S3_PROBE_KEY} OK"
+      else
+        log "FAIL instance role cannot read s3://${BUCKET}/${CHOLA_S3_PROBE_KEY} as owner ${ACCOUNT}: $(tail -n 1 "${err}")"
+        bad=1
+      fi
+      rm -f "${err}.obj"
+    else
+      log "WARNING S3 read not proved (no probe object given); infra-load will tell"
     fi
     rm -f "${err}"
   else
@@ -258,22 +275,49 @@ cmd_volume_exists() { # yes / no, exit 0; anything else is an error
 }
 
 # ------------------------------------------------------------------------------------------------ install / infra
+# Old generations are renamed to <target>.old.<time>, never deleted here: a running container bind-mounts the overlay
+# directory, and deleting its files would empty /aibom/config under it (a rename keeps its view intact). They are
+# pruned once `compose up` has recreated every container whose files changed (prune_old_dirs).
+swap_dir() { # <new dir> <target>: put <new dir> in place of <target> by rename (no mix of old and new files)
+  local new=$1 target=$2
+  if [[ -e "${target}" ]]; then mv "${target}" "${target}.old.$(date -u +%Y%m%dT%H%M%S%N)"; fi
+  mv "${new}" "${target}"
+}
+prune_old_dirs() { # after a successful up: no container uses an old generation any more
+  find "${BASE_DIR}/deploy" "${BASE_DIR}/compose" -mindepth 1 -maxdepth 1 -type d -name '*.old.*' -exec rm -rf {} + 2>/dev/null || true
+}
+
+# <kit dir> <overlay dir or empty>: the live kit becomes these files (the live env files are kept, mode 600), the
+# live aibom overlay that directory; each by a rename, so an old file never lingers next to new ones.
+put_live() {
+  local src=$1 overlay=${2:-} stage f
+  stage="$(mktemp -d "${BASE_DIR}/.stage.XXXXXX")"
+  mkdir -p "${stage}/kit"
+  tar -C "${src}" --exclude='*.env' --exclude=.env --exclude=__pycache__ -cf - . | tar -C "${stage}/kit" -xf -
+  for f in "${ENV_FILES[@]}"; do
+    if [[ -f "${KIT_DIR}/${f}" ]]; then cp -p "${KIT_DIR}/${f}" "${stage}/kit/${f}"; fi
+  done
+  chmod 700 "${stage}/kit"
+  mkdir -p "$(dirname "${KIT_DIR}")" "${BASE_DIR}/compose"
+  swap_dir "${stage}/kit" "${KIT_DIR}"
+  # an identical overlay is left in place: its readers are not recreated (same files-hash), so it must stay theirs
+  if [[ -n "${overlay}" ]] && ! diff -rq "${overlay}" "${BASE_DIR}/compose/aibom-config-overlay" >/dev/null 2>&1; then
+    cp -R "${overlay}" "${stage}/overlay"
+    swap_dir "${stage}/overlay" "${BASE_DIR}/compose/aibom-config-overlay"
+  fi
+  rm -rf "${stage}"
+}
+
 cmd_install() { # this run's kit (and the commit's aibom overlay uploaded with it) becomes the live kit; env files,
   # volumes and state stay. A deploy does it once its checks have passed (deploy files are recorded per tag).
   [[ "${SCRIPT_DIR}" != "${KIT_DIR}" ]] || { log "already running from the live kit"; return 0; }
   local overlay="${SCRIPT_DIR}/../../compose/aibom-config-overlay"
-  mkdir -p "${KIT_DIR}"
-  tar -C "${SCRIPT_DIR}" --exclude='*.env' --exclude=.env -cf - . | tar -C "${KIT_DIR}" -xf -
-  chmod 700 "${KIT_DIR}"
-  if [[ -d "${overlay}" ]]; then
-    rm -rf "${BASE_DIR}/compose/aibom-config-overlay.new"
-    mkdir -p "${BASE_DIR}/compose"
-    cp -R "${overlay}" "${BASE_DIR}/compose/aibom-config-overlay.new"
-    rm -rf "${BASE_DIR}/compose/aibom-config-overlay"
-    mv "${BASE_DIR}/compose/aibom-config-overlay.new" "${BASE_DIR}/compose/aibom-config-overlay"
-  elif [[ ! -d "${BASE_DIR}/compose/aibom-config-overlay" ]]; then
-    die "no compose/aibom-config-overlay in this kit copy nor live (chola-prod.sh deploy uploads it)"
+  if [[ ! -d "${overlay}" ]]; then
+    [[ -d "${BASE_DIR}/compose/aibom-config-overlay" ]] ||
+      die "no compose/aibom-config-overlay in this kit copy nor live (chola-prod.sh deploy uploads it)"
+    overlay=""
   fi
+  put_live "${SCRIPT_DIR}" "${overlay}"
   log "kit installed in ${KIT_DIR}"
 }
 
@@ -314,6 +358,7 @@ cmd_render() { # [<tag>]: the tag is written only when .env has none yet (first 
   command -v python3 >/dev/null || die "python3 is missing"
   command -v aws >/dev/null || die "the AWS CLI is missing (chola-prod.sh host-setup)"
   mkdir -p "${KIT_DIR}"
+  chmod 700 "${KIT_DIR}"
   umask 077
   python3 -I "${SCRIPT_DIR}/kit.py" render-env --dir "${KIT_DIR}" --tag "${tag}" --secret-prefix "${SECRET_PREFIX}" \
     --region "${REGION}" --image-prefix "${IMAGE_PREFIX}" --frontend-host "${FRONTEND_HOST}" --api-host "${API_HOST}" \
@@ -427,9 +472,19 @@ app_services() {
 }
 # The tag that was running when <tag> was deployed: from its deploy line, or from its STARTED line when the deploy was
 # interrupted (tunnel dropped, Ctrl-C, instance reboot) before it recorded an outcome.
-previous_of() {
+previous_of() { # the last real (not "none") previous tag recorded for <tag>
   [[ -f "${HISTORY_FILE}" ]] || return 0
-  awk -v t="$1" '($2 == "deploy" || $2 == "started") && $3 == t && $4 == "previous" { p = $5 } END { print p }' "${HISTORY_FILE}"
+  awk -v t="$1" '($2 == "deploy" || $2 == "started" || $2 == "switched") && $3 == t && $4 == "previous" && $5 != "none" && $5 != t { p = $5 }
+    END { print p }' "${HISTORY_FILE}"
+}
+# The rollback target to record when <tag> is deployed while <running> runs (empty: nothing runs, e.g. after a failed
+# recovery removed the application containers): the running tag; else what <tag> replaced before; else the last
+# release that passed its checks.
+target_for() { # <tag> <running>
+  local tag=$1 p=${2:-}
+  if [[ -z "${p}" || "${p}" == "${tag}" ]]; then p="$(previous_of "${tag}")"; fi
+  if [[ -z "${p}" ]]; then p="$(last_passed "${tag}")"; fi
+  printf '%s\n' "${p}"
 }
 last_passed() { [[ -s "${PASSED_FILE}" ]] || return 0; awk -v x="${1:-}" 'NF && $1 != x { t = $1 } END { print t }' "${PASSED_FILE}"; }
 record_files() { # <tag>: the deploy files this tag is started with (for a rollback to it)
@@ -437,15 +492,25 @@ record_files() { # <tag>: the deploy files this tag is started with (for a rollb
   tar -C "${BASE_DIR}" "${RELEASE_EXCLUDES[@]}" -czf "${RELEASES_DIR}/$1/files.tar.gz.part" "${RELEASE_FILES[@]}"
   mv "${RELEASES_DIR}/$1/files.tar.gz.part" "${RELEASES_DIR}/$1/files.tar.gz"
 }
-restore_files() { tar -C "${BASE_DIR}" -xzf "${RELEASES_DIR}/$1/files.tar.gz"; }
+restore_files() { # <tag>: its recorded deploy files become the live ones (env files kept), each directory by a rename
+  local tmp
+  tmp="$(mktemp -d "${BASE_DIR}/.restore.XXXXXX")"
+  tar -C "${tmp}" -xzf "${RELEASES_DIR}/$1/files.tar.gz"
+  put_live "${tmp}/deploy/chola-prod" "$([[ -d "${tmp}/compose/aibom-config-overlay" ]] && echo "${tmp}/compose/aibom-config-overlay")"
+  rm -rf "${tmp}"
+}
 running_tag() { # the tag of the backend container (none before the first deploy, or without a live compose file)
   [[ -f "${COMPOSE_FILE}" ]] || return 0
   { compose ps -a --format '{{.Image}}' backend 2>/dev/null || true; } | sed -n -E 's/.*:([0-9a-f]{12})$/\1/p' | head -n 1
 }
 
-interrupted() { # 0 when the last recorded step is a STARTED deploy without an outcome (tunnel loss, kill, reboot)
-  [[ -f "${HISTORY_FILE}" ]] && [[ "$(tail -n 1 "${HISTORY_FILE}" | awk '{ print $2 }')" == started ]]
+interrupted() { # 0 when the last recorded step is a deploy without an outcome (tunnel loss, kill, reboot): STARTED (it
+  # never switched DSS_TAG) or SWITCHED (it did)
+  [[ -f "${HISTORY_FILE}" ]] || return 1
+  case "$(tail -n 1 "${HISTORY_FILE}" | awk '{ print $2 }')" in started | switched) return 0 ;; esac
+  return 1
 }
+last_step() { [[ -f "${HISTORY_FILE}" ]] && tail -n 1 "${HISTORY_FILE}" || true; }
 
 clear_app_containers() { # remove the application containers (stateless; datastores and named volumes stay) and the
   # <id>_dss-chola-* containers a killed `compose up` leaves renamed half way through a recreate
@@ -514,8 +579,7 @@ cmd_deploy() {
   missing="$(infra_missing | paste -sd' ' -)"
   [[ -z "${missing}" ]] || die "infrastructure images missing: ${missing} (chola-prod.sh loads the release archive)"
   running="$(running_tag)"
-  previous="${running}"
-  [[ "${previous}" != "${tag}" ]] || previous="$(previous_of "${tag}")"
+  previous="$(target_for "${tag}" "${running}")"
   head="$(image_head "${tag}")" || die "cannot read the Alembic head of $(image_of devsecshield-backend "${tag}")"
   [[ -n "${head}" ]] || die "$(image_of devsecshield-backend "${tag}") has no Alembic revisions"
   db="$(db_revision)" || die "cannot read the database's Alembic revision (postgres; output above)"
@@ -535,11 +599,13 @@ cmd_deploy() {
   printf '%s started %s previous %s alembic-before %s\n' "$(date -u +%FT%TZ)" "${tag}" "${previous:-none}" \
     "${db:-none}" >>"${HISTORY_FILE}"
   set_tag "${tag}"
+  printf '%s switched %s previous %s\n' "$(date -u +%FT%TZ)" "${tag}" "${previous:-none}" >>"${HISTORY_FILE}"
   if ! up "${recover}"; then
     printf '%s deploy %s previous %s alembic %s FAILED\n' "$(date -u +%FT%TZ)" "${tag}" "${previous:-none}" "${head}" >>"${HISTORY_FILE}"
     die "compose up failed for ${tag}${previous:+; to go back: chola-prod.sh rollback}"
   fi
   printf '%s deploy %s previous %s alembic %s\n' "$(date -u +%FT%TZ)" "${tag}" "${previous:-none}" "${head}" >>"${HISTORY_FILE}"
+  prune_old_dirs
   cmd_check
   log "estate backfill (idempotent)"
   compose run --rm --no-deps -T --entrypoint /backend/.venv/bin/python migrate -m backend.utilities.cbom_sources.estate backfill ||
@@ -554,10 +620,29 @@ cmd_deploy() {
 }
 
 ROLLBACK_CURRENT="" ROLLBACK_PREVIOUS="" ROLLBACK_HEAD="" ROLLBACK_DB="" ROLLBACK_DOWNGRADE=0
+# <current tag>: "<target> restart" for a rollback, from the history only. A deploy interrupted between its STARTED
+# record and the tag switch changed nothing (DSS_TAG still names the release that ran before it): the target is then
+# that release itself, started again (restart=1), not the one before it.
+rollback_pair() {
+  local current=$1 last
+  last="$(last_step)"
+  if [[ "$(awk '{ print $2 }' <<<"${last}")" == started && "$(awk '{ print $5 }' <<<"${last}")" == "${current}" ]]; then
+    printf '%s 1\n' "${current}"
+  else
+    local p
+    p="$(previous_of "${current}")"
+    printf '%s 0\n' "${p:-none}" # never an empty first word: read would shift "0" into it
+  fi
+}
+
+ROLLBACK_RESTART=0
 rollback_plan() {
   local r
   ROLLBACK_CURRENT="$(env_get DSS_TAG)"
-  ROLLBACK_PREVIOUS="$(previous_of "${ROLLBACK_CURRENT}")"
+  read -r ROLLBACK_PREVIOUS ROLLBACK_RESTART <<<"$(rollback_pair "${ROLLBACK_CURRENT}")"
+  if ((ROLLBACK_RESTART)); then
+    log "the last deploy was interrupted before it switched: ${ROLLBACK_CURRENT} is still the deployed release; starting it again"
+  fi
   [[ -n "${ROLLBACK_PREVIOUS}" && "${ROLLBACK_PREVIOUS}" != none ]] ||
     die "no previous tag recorded for ${ROLLBACK_CURRENT} in ${HISTORY_FILE}"
   for r in "${APP_REPOS[@]}"; do
@@ -622,9 +707,14 @@ cmd_rollback() {
     die "compose up failed for ${previous}"
   fi
   printf '%s rollback %s previous %s alembic %s\n' "$(date -u +%FT%TZ)" "${previous}" "${current}" "${head}" >>"${HISTORY_FILE}"
+  prune_old_dirs
   cmd_check
   printf '%s\n' "${previous}" >>"${PASSED_FILE}"
-  log "rolled back to ${previous} (users rehashed to Argon2id by ${current} may need a password reset on an older image)"
+  if ((ROLLBACK_RESTART)); then
+    log "${previous} is running again (the interrupted deploy had not switched to its release)"
+  else
+    log "rolled back to ${previous} (users rehashed to Argon2id by ${current} may need a password reset on an older image)"
+  fi
 }
 
 # ------------------------------------------------------------------------------------------------ detached jobs
@@ -645,7 +735,7 @@ cmd_job_start() {
   # setsid: a new session without a controlling terminal, so neither a dropped tunnel nor Ctrl-C on the owner's
   # machine (SIGHUP / SIGINT) reaches it; its exit status lands in rc when it ends.
   # shellcheck disable=SC2016 # expanded by the detached bash, not here
-  JOB_DIR="${dir}" nohup setsid bash -c 'trap "" HUP INT; echo $$ >"$JOB_DIR/pid"; bash "$0" "$@"; echo $? >"$JOB_DIR/rc.part" && mv "$JOB_DIR/rc.part" "$JOB_DIR/rc"' \
+  JOB_DIR="${dir}" nohup setsid bash -c 'trap "" HUP INT; read -r -a s </proc/$$/stat; echo "$$ ${s[21]}" >"$JOB_DIR/pid"; bash "$0" "$@"; echo $? >"$JOB_DIR/rc.part" && mv "$JOB_DIR/rc.part" "$JOB_DIR/rc"' \
     "${SCRIPT}" "$@" </dev/null >>"${dir}/log" 2>&1 &
   disown || true
   # Return only once the job runs in its own session, ignoring hang-ups: before that, the end of the SSH session could
@@ -660,6 +750,16 @@ cmd_job_start() {
   find "${JOBS_DIR}" -mindepth 1 -maxdepth 1 -type d -mtime +30 -exec rm -rf {} + 2>/dev/null || true
 }
 
+# <job dir>: 0 while the job's wrapper process lives. Its pid AND its start time (field 22 of /proc/<pid>/stat) must
+# match: after a reboot the pid may belong to another process.
+job_alive() {
+  local pid start s=()
+  read -r pid start <"$1/pid" 2>/dev/null || return 1
+  [[ "${pid}" =~ ^[0-9]+$ && -r "/proc/${pid}/stat" ]] || return 1
+  read -r -a s <"/proc/${pid}/stat" 2>/dev/null || return 1
+  [[ "${s[21]:-}" == "${start}" ]]
+}
+
 cmd_job_follow() {
   local id=${1:?usage: remote.sh job-follow <id> <offset> [wait-s]} off=${2:-0} wait=${3:-20} dir size waited=0
   [[ "${id}" =~ ^[0-9TZ]+-[a-z-]+-[0-9]+$ ]] || die "not a job id: ${id}"
@@ -668,7 +768,7 @@ cmd_job_follow() {
   [[ -d "${dir}" ]] || die "no job ${id} on this instance"
   while :; do
     size="$(stat -c %s "${dir}/log")"
-    if ((size > off)) || [[ -f "${dir}/rc" ]] || ((waited >= wait)); then break; fi
+    if ((size > off)) || [[ -f "${dir}/rc" ]] || ((waited >= wait)) || ! job_alive "${dir}"; then break; fi
     sleep 1
     waited=$((waited + 1))
   done
@@ -676,6 +776,9 @@ cmd_job_follow() {
   if ((size > off)); then tail -c +"$((off + 1))" "${dir}/log" | head -c "$((size - off))"; fi
   if [[ -f "${dir}/rc" && "$(stat -c %s "${dir}/log")" == "${size}" ]]; then
     printf 'chola-job: done %s %s\n' "$(cat "${dir}/rc")" "${size}" >&2
+  elif [[ ! -f "${dir}/rc" ]] && ! job_alive "${dir}" && [[ "$(stat -c %s "${dir}/log")" == "${size}" ]]; then
+    sleep 1 # the job may have written rc just now
+    if [[ -f "${dir}/rc" ]]; then printf 'chola-job: running %s\n' "${size}" >&2; else printf 'chola-job: lost %s\n' "${size}" >&2; fi
   else
     printf 'chola-job: running %s\n' "${size}" >&2
   fi
@@ -773,8 +876,9 @@ cmd_status() {
   if [[ -d "${JOBS_DIR}" ]]; then
     log "last jobs (chola-prod.sh attach --job <id>):"
     find "${JOBS_DIR}" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort | tail -n 5 | while IFS= read -r j; do
-      if [[ -f "${JOBS_DIR}/${j}/rc" ]]; then printf '    %s exit %s\n' "${j}" "$(cat "${JOBS_DIR}/${j}/rc")"; else
-        printf '    %s running (or killed with the instance)\n' "${j}"; fi
+      if [[ -f "${JOBS_DIR}/${j}/rc" ]]; then printf '    %s exit %s\n' "${j}" "$(cat "${JOBS_DIR}/${j}/rc")"
+      elif job_alive "${JOBS_DIR}/${j}"; then printf '    %s running\n' "${j}"
+      else printf '    %s LOST (ended without an exit status: reboot or kill; see its log, then deploy again or roll back)\n' "${j}"; fi
     done
   fi
   log "application images here:"

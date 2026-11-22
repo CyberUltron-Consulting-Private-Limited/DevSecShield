@@ -12,6 +12,9 @@ Never prints a secret value: only key names and what happened to them.
       database volumes): every key that existing data depends on (DATA_KEYS) must be present and non-empty; none of
       them is ever generated then. Writes the merged JSON to --out (mode 600). Exit 0 = changed (put it),
       3 = unchanged (nothing to put), 1 = refused.
+  kit.py data-check --existing F
+      Exit 1 (names only) when F lacks, or has empty, any key existing data depends on (DATA_KEYS): run before any
+      mail source is read when the instance already has data.
   kit.py mail-state < json
       "present" when the secret holds all three mail keys (non-empty), else "missing" (names only, never values).
   kit.py json-field NAME[,ALIAS...]  < json
@@ -130,6 +133,17 @@ def parse_dotenv(text):
     return out
 
 
+def data_problem(existing):
+    """None when every DATA_KEYS value is present and non-empty, else the refusal message (names only)."""
+    lacking = [k for k in DATA_KEYS if not (isinstance(existing, dict) and isinstance(existing.get(k), str)
+                                            and existing.get(k))]
+    if not lacking:
+        return None
+    return ("the instance already has data, but app-secrets lacks (or has empty) " + ", ".join(lacking)
+            + ": generating them would lock the application out of its data. Restore the earlier secret version"
+            " (AWSPREVIOUS) instead")
+
+
 def mail_present(existing):
     return isinstance(existing, dict) and all(isinstance(existing.get(k), str) and existing.get(k) for k in MAIL_SOURCE)
 
@@ -141,12 +155,8 @@ def merge_app_secrets(existing, mail_env, refresh_mail=False, gen=generate, data
         existing = {}
     if not isinstance(existing, dict):
         raise Refused("the secret is not a JSON object")
-    if data_exists:
-        lacking = [k for k in DATA_KEYS if not (isinstance(existing.get(k), str) and existing.get(k))]
-        if lacking:
-            raise Refused("the instance already has data, but app-secrets lacks (or has empty) " + ", ".join(lacking)
-                          + ": generating them would lock the application out of its data. Restore the earlier"
-                          " secret version (AWSPREVIOUS) instead")
+    if data_exists and data_problem(existing):
+        raise Refused(data_problem(existing))
     merged = dict(existing)
     report = []
     for key, kind in GENERATED.items():
@@ -319,6 +329,9 @@ def render_env(app, app_user, collector, cfg, tag, principal=None):
         ("QDRANT_API_KEY", app["QDRANT_API_KEY"]),
     ]
     backend = docker + [
+        # gunicorn's --workers comes from .env (Compose interpolation); the API also reads it at run time to size the
+        # CBOM dispatch (backend/utilities/cbom_sources/dispatch.py), so it is here too.
+        ("BACKEND_WORKERS", "4"),
         ("PG_HOST", "postgres"), ("PG_PORT", "5432"), ("PG_USER", "devsecshield"),
         ("PG_USER_PASS", app["PG_USER_PASS"]), ("PG_DB", "devsecshield"),
     ] + mongo + rabbit + aws + [
@@ -432,6 +445,22 @@ def cmd_render(args):
     return 0
 
 
+def _read_existing(path):
+    with open(path) as fh:
+        text = fh.read().strip()
+    try:
+        return json.loads(text) if text and text != "None" else {}
+    except ValueError:
+        raise Refused("the current app-secrets value is not JSON; fix it in Secrets Manager first") from None
+
+
+def cmd_data_check(args):
+    why = data_problem(_read_existing(args.existing))
+    if why:
+        raise Refused(why)
+    return 0
+
+
 def cmd_mail_state(args):
     text = sys.stdin.read().strip()
     try:
@@ -461,6 +490,8 @@ def main(argv=None):
     m.add_argument("--refresh-mail", action="store_true")
     m.add_argument("--data-exists", action="store_true")
     sub.add_parser("mail-state")
+    dc = sub.add_parser("data-check")
+    dc.add_argument("--existing", required=True)
     j = sub.add_parser("json-field")
     j.add_argument("names")
     r = sub.add_parser("render-env")
@@ -480,7 +511,8 @@ def main(argv=None):
     args = p.parse_args(argv)
     try:
         return {"merge-app-secrets": cmd_merge, "json-field": cmd_json_field, "render-env": cmd_render,
-                "dotenv-keys": cmd_dotenv_keys, "mail-state": cmd_mail_state}[args.cmd](args)
+                "dotenv-keys": cmd_dotenv_keys, "mail-state": cmd_mail_state,
+                "data-check": cmd_data_check}[args.cmd](args)
     except Refused as e:
         print(f"kit.py: {e}", file=sys.stderr)
         return 1

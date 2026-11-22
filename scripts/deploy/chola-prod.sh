@@ -5,7 +5,8 @@
 set -Eeuo pipefail
 export LC_ALL=C
 # No silent exit: a failing command that no check handles names itself.
-trap 'rc=$?; printf "[chola] ERROR: line %s: %s (exit %s)\n" "${LINENO}" "${BASH_COMMAND}" "${rc}" >&2' ERR
+# A failing $(...) is skipped here: its inner command (or die) has already said why.
+trap 'rc=$?; [[ "${BASH_COMMAND}" == *"\$("* ]] || printf "[chola] ERROR: line %s: %s (exit %s)\n" "${LINENO}" "${BASH_COMMAND}" "${rc}" >&2' ERR
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 KIT_DIR="${REPO_ROOT}/deploy/chola-prod"
@@ -104,6 +105,9 @@ Environment (defaults are the Chola values)
   CHOLA_BACKUP_TIMEOUT_S     wait for the backup job (default 7200)
   CHOLA_POLL_RETRIES         consecutive failed AWS polls tolerated (default 10)
   CHOLA_POLL_S               seconds between polls (default: 30 backup job, 10 target health and reconnects)
+  CHOLA_MIN_FREE_GB          passed to the instance: free disk required for pulls and loads (default 15)
+  CHOLA_WAIT_S               passed to the instance: compose up --wait timeout in seconds (default 900)
+  CHOLA_DUMPS_KEEP           passed to the instance: logical dumps kept per database (default 3)
   CHOLA_SSH_RETRIES          consecutive lost connections while following a job (default 30)
   CHOLA_AWSCLI_PGP_KEY       host-setup: file with the AWS CLI PGP key to verify the installer
 EOF
@@ -128,17 +132,23 @@ ecr_repo() { case "$1" in backend | frontend) printf 'devsecshield-%s\n' "$1" ;;
 ecr_ref() { printf '%s/%s:%s\n' "${IMAGE_PREFIX}" "$(ecr_repo "$1")" "$2"; }
 infra_tag() { printf '%s\n' "${1%%@*}"; } # postgres:15-alpine@sha256:... -> postgres:15-alpine
 
+S3_PROBE_KEY=""
 cleanup() {
-  local rc=$?
+  trap - ERR # the exit status is already decided; nothing here may add an error line
+  if [[ -n "${S3_PROBE_KEY}" ]] && ((!DRY)); then
+    aws --region "${REGION}" s3api delete-object --bucket "${BUCKET}" --key "${S3_PROBE_KEY}" \
+      --expected-bucket-owner "${ACCOUNT}" >/dev/null 2>&1 || true
+  fi
   if [[ -n "${WORK}" && -d "${WORK}" ]]; then
     if ((SSH_READY && !DRY)); then ssh "${SSH_OPTS[@]}" -O exit "${SSH_USER}@${INSTANCE_ID}" >/dev/null 2>&1 || true; fi
     # the SSH key, the mail source copy, the merged secret JSON, the release archive, the isolated Docker config
     rm -rf -- "${WORK}"
   fi
-  return "${rc}"
+  return 0
 }
 trap cleanup EXIT
 on_interrupt() {
+  trap - ERR
   if [[ -n "${CURRENT_JOB}" ]]; then
     printf '\n[chola] Ctrl-C: job %s KEEPS RUNNING on the instance. Follow it again: %s attach --job %s\n' \
       "${CURRENT_JOB}" "$0" "${CURRENT_JOB}" >&2
@@ -281,8 +291,13 @@ kit_upload() { # [with-overlay]
 }
 
 remote_cmdline() { # the shell command that runs remote.sh <args> on the instance
-  printf 'cd %s && CHOLA_BASE_DIR=%s CHOLA_REGION=%s CHOLA_ACCOUNT=%s CHOLA_REGISTRY=%s CHOLA_IMAGE_PREFIX=%s CHOLA_SECRET_PREFIX=%s CHOLA_BUCKET=%s CHOLA_FRONTEND_HOST=%s CHOLA_API_HOST=%s CHOLA_REAL_IP_FROM=%s CHOLA_ALLOW_IMDS=%s bash %s %s' \
-    "$(quote "${REMOTE_DIR}")" "$(quote "${REMOTE_DIR}")" "$(quote "${REGION}")" "$(quote "${ACCOUNT}")" \
+  local tuning=""
+  [[ -z "${CHOLA_MIN_FREE_GB:-}" ]] || tuning+=" CHOLA_MIN_FREE_GB=${CHOLA_MIN_FREE_GB}"
+  [[ -z "${CHOLA_WAIT_S:-}" ]] || tuning+=" CHOLA_WAIT_S=${CHOLA_WAIT_S}"
+  [[ -z "${CHOLA_DUMPS_KEEP:-}" ]] || tuning+=" CHOLA_DUMPS_KEEP=${CHOLA_DUMPS_KEEP}"
+  [[ -z "${S3_PROBE_KEY}" ]] || tuning+=" CHOLA_S3_PROBE_KEY=$(quote "${S3_PROBE_KEY}")"
+  printf 'cd %s &&%s CHOLA_BASE_DIR=%s CHOLA_REGION=%s CHOLA_ACCOUNT=%s CHOLA_REGISTRY=%s CHOLA_IMAGE_PREFIX=%s CHOLA_SECRET_PREFIX=%s CHOLA_BUCKET=%s CHOLA_FRONTEND_HOST=%s CHOLA_API_HOST=%s CHOLA_REAL_IP_FROM=%s CHOLA_ALLOW_IMDS=%s bash %s %s' \
+    "$(quote "${REMOTE_DIR}")" "${tuning}" "$(quote "${REMOTE_DIR}")" "$(quote "${REGION}")" "$(quote "${ACCOUNT}")" \
     "$(quote "${REGISTRY}")" "$(quote "${IMAGE_PREFIX}")" "$(quote "${SECRET_PREFIX}")" "$(quote "${BUCKET}")" \
     "$(quote "${FRONTEND_HOST}")" "$(quote "${API_HOST}")" "$(quote "${REAL_IP_FROM}")" "${ALLOW_IMDS}" \
     "$(quote "${KIT_RUN}/deploy/chola-prod/remote.sh")" "$(quote "$@")"
@@ -339,6 +354,11 @@ follow_job() { # <id>: print the job's output until it ends; returns its exit st
     fi
     fails=0
     read -r _ state a b <<<"${status}"
+    if [[ "${state}" == lost ]]; then
+      CURRENT_JOB=""
+      die "job ${id} ended WITHOUT an exit status (the instance rebooted or the job was killed); its output is above." \
+        "Check '${0##*/} status'. An interrupted deploy is finished by deploying the same commit again or by '${0##*/} rollback'."
+    fi
     if [[ "${state}" == "done" ]]; then
       rc=${a}
       CURRENT_JOB=""
@@ -466,6 +486,19 @@ aws_resources() {
   esac
 }
 
+# A small object the instance must READ in its preflight (a list proves no s3:GetObject); removed on exit.
+s3_probe() {
+  S3_PROBE_KEY="releases/preflight-probe-$(date -u +%Y%m%dT%H%M%SZ)-$$.txt"
+  if ((DRY)); then
+    printf '[dry-run] aws s3api put-object --bucket %s --key %s --expected-bucket-owner %s (the instance reads it; deleted on exit)\n' \
+      "${BUCKET}" "${S3_PROBE_KEY}" "${ACCOUNT}"
+    return 0
+  fi
+  printf 'chola preflight probe\n' >"${WORK}/probe.txt"
+  aws --region "${REGION}" s3api put-object --bucket "${BUCKET}" --key "${S3_PROBE_KEY}" --body "${WORK}/probe.txt" \
+    --expected-bucket-owner "${ACCOUNT}" >/dev/null || die "cannot write the probe object s3://${BUCKET}/${S3_PROBE_KEY}"
+}
+
 target_health_line() { # one line; fails (non-zero) when the call fails
   local out
   out="$(aws --region "${REGION}" elbv2 describe-target-health --target-group-arn "${TG_ARN}" --query \
@@ -484,6 +517,7 @@ cmd_preflight() {
     ghcr_login
     ghcr_tag >/dev/null
   fi
+  s3_probe
   remote preflight
   mail_source_check
   note "preflight" "OK"
@@ -600,9 +634,13 @@ cmd_secrets() {
   kit_upload # before $(remote ...) below: SSH and the kit copy are set up in this shell
   read_app_secrets
   data="$(data_on_instance)"
-  state="$(python3 -I "${KIT_PY}" mail-state <"${cur}")"
   local -a args=()
-  [[ "${data}" == yes ]] && args+=(--data-exists)
+  if [[ "${data}" == yes ]]; then
+    args+=(--data-exists)
+    # refuse before any mail source is read or asked for
+    python3 -I "${KIT_PY}" data-check --existing "${cur}" || die "app-secrets refused (above); nothing was read or written"
+  fi
+  state="$(python3 -I "${KIT_PY}" mail-state <"${cur}")"
   if ((MAIL_PROMPT)); then
     prompt_mail
     args+=(--mail-lines "${WORK}/mail.lines" --refresh-mail)
@@ -911,6 +949,7 @@ cmd_deploy() {
   aws_identity
   aws_resources
   kit_upload with-overlay
+  s3_probe
   remote preflight
   cmd_secrets
   cmd_images
@@ -982,6 +1021,17 @@ summary() {
 main() {
   parse_args "$@"
   if ((HELP)) || [[ -z "${CMD}" || "${CMD}" == help ]]; then usage; return 0; fi
+  local v
+  for v in CHOLA_MIN_FREE_GB CHOLA_WAIT_S CHOLA_DUMPS_KEEP CHOLA_POLL_S CHOLA_POLL_RETRIES CHOLA_SSH_RETRIES CHOLA_BACKUP_TIMEOUT_S; do
+    [[ -z "${!v:-}" || "${!v}" =~ ^[0-9]{1,6}$ ]] || die "${v} must be a whole number"
+  done
+  # --mail-prompt reads from a terminal: refuse before any AWS or SSH call when there is none
+  if ((MAIL_PROMPT)) && [[ "${CMD}" == secrets || "${CMD}" == deploy || "${CMD}" == preflight ]] && ((!DRY)) && [[ ! -t 0 ]]; then
+    die "--mail-prompt needs a terminal"
+  fi
+  # The scratch directory exists before any step: every step may write into it (CI found a step that wrote to
+  # "${WORK}/err" with WORK still empty, i.e. to /err).
+  work
   ((DRY)) && log "dry-run: printing the steps; no AWS, SSH, Docker, registry or git-fetch command is run, no secret read"
   case "${CMD}" in
     preflight) cmd_preflight ;;

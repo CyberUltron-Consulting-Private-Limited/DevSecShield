@@ -96,7 +96,8 @@ Treat these as exposed and rotate them:
 * the **EC2 Instance Connect tunnel** (it opens one; the AWS error is shown if `ec2-instance-connect:OpenTunnel` is
   missing);
 * on the instance: Docker, **Docker Compose 2.24+**, python3, flock, setsid, the AWS CLI and the instance role (STS,
-  and a list of `s3://devsecshield-storage/releases/`), `/var/lib/docker` on its own volume, **15 GB free where
+  a list of `s3://devsecshield-storage/releases/` **and a read**: preflight writes a tiny probe object there, the
+  instance must `get-object` it with the bucket owner pinned, and the probe is deleted on exit), `/var/lib/docker` on its own volume, **15 GB free where
   images are stored** (containerd's root with Docker 29's containerd image store, else Docker's root) **and** where
   the volumes are, and an IMDS token probe from a container;
 * that the mail login will be found (app-secrets, else origin/ansh, else `--mail-prompt`).
@@ -153,7 +154,8 @@ scripts/deploy/chola-prod.sh deploy --sha <commit>            # asks you to type
 7. **deploy**: refuses a commit whose migrations do not contain the database's Alembic revision (older than the
    database: use rollback); records a **STARTED** line (target tag, previous tag, database revision) in
    `state/deploy-history` before it switches anything; installs the kit and the commit's aibom overlay as the live
-   kit; switches `DSS_TAG`; `docker compose up --wait` (the `migrate` one-shot runs `alembic upgrade head` under a
+   kit (each directory replaced by a rename, never file by file; the replaced generation is deleted only after the
+   containers that read it were recreated); switches `DSS_TAG` and records a **SWITCHED** line; `docker compose up --wait` (the `migrate` one-shot runs `alembic upgrade head` under a
    Postgres advisory lock first; everything that uses the database waits for it); checks every service runs the tag
    and is healthy, `/nginx-health`, `GET /health` and the login page through nginx; runs the idempotent CBOM estate
    backfill and agility heal; keeps the images of this tag, the rollback target and the last good one.
@@ -169,10 +171,14 @@ before each and reconnecting when the EICE tunnel drops. **Ctrl-C or a lost conn
 kit prints `chola-prod.sh attach --job <id>` to follow it again (`status` lists recent jobs). One lock
 (`state/.lock`) lets only one changing command run at a time.
 
-**Interrupted deploy** (the instance rebooted or the job was killed half way): `status` shows the STARTED line without
-an outcome. Either `deploy --sha <the same commit>` again or `rollback`: both see the interruption, remove the
-application containers (stateless; databases, queue and volumes stay) and start them fresh, and try once more if the
-first start fails.
+**Interrupted deploy** (the instance rebooted or the job was killed half way): the follower reports the job as
+**lost** (its process is gone and it recorded no exit status; the job's pid and start time are checked, so a reused
+pid after a reboot is not mistaken for it), and `status` lists it as LOST. Either `deploy --sha <the same commit>`
+again or `rollback`: both see the interruption, remove the application containers (stateless; databases, queue and
+volumes stay) and start them fresh, and try once more if the first start fails. When the interruption came before the
+tag switch (STARTED without SWITCHED), nothing had changed: `rollback` then starts the release that was running again
+instead of going one release further back. The rollback target survives a failed recovery: with no backend container
+left, a deploy takes it from the history (never "none") or from the last release that passed its checks.
 
 **Downtime**: one instance, so the containers that change are recreated in place; expect a minute or two of 502/503
 from the ALB while the backend restarts. A change to `nginx/` or the aibom overlay alone also recreates nginx and the
@@ -264,6 +270,10 @@ Rotation (details: `docs/security/secret-rotation.md`): change the value in Secr
   refused: remove the line from `~/.ssh/known_hosts_devsec_chola` (the first connection records it). EICE connections
   are time-limited; the kit opens a fresh tunnel before each long step and reconnects while following a job.
 * **A job lost its terminal**: `chola-prod.sh status` lists the recent jobs; `chola-prod.sh attach --job <id>`.
+  A job listed as LOST ended without an exit status (reboot or kill): see its log (`state/jobs/<id>/log`), then
+  deploy the same commit again or roll back.
+* **Instance settings** go through from your shell: `CHOLA_MIN_FREE_GB`, `CHOLA_WAIT_S`, `CHOLA_DUMPS_KEEP`
+  (whole numbers; `--help`).
 * **"another chola-prod command is running"**: a deploy, rollback, dump, render or infra-load holds
   `/opt/devsecshield-chola/state/.lock` on the instance; follow it (`attach`) or wait. The lock is released when its
   process ends, also when it was killed.
@@ -301,7 +311,8 @@ Rotation (details: `docs/security/secret-rotation.md`): change the value in Secr
   then only matters for security (must be 1). The CBOM AI assistant uses the same keys (`CBOM_AI_AWS_CREDENTIALS=env`).
   No MinIO: real S3, bucket `devsecshield-storage` (the code's default bucket).
 * **Least privilege per container**: the backend-image services, the scan/CI-CD workers and the DAST worker each get
-  only the variables their code reads (one env file each); the frontend and nginx get none.
+  only the variables their code reads (one env file each); the frontend and nginx get none. `BACKEND_WORKERS` is in
+  `.env` (gunicorn's `--workers`) and in `backend.env` (the API sizes its CBOM dispatch from it).
 * **Bedrock models**: every AI feature in the code calls `openai.gpt-oss-120b-1:0` (`LLM_MODEL`, `CBOM_AI_MODEL`
   default); `global.anthropic.claude-haiku-4-5-20251001-v1:0` is used only by the nightly AIBOM benchmark workflow.
 * **Frontend built by the kit**: `NEXT_PUBLIC_BACKEND_URL` is inlined at `next build` (frontend/Dockerfile), and GHCR's
