@@ -716,9 +716,12 @@ passed_release() { # <tag>: 0 when <tag> was deployed (history) and passed its c
   [[ -s "${PASSED_FILE}" && -f "${HISTORY_FILE}" ]] || return 1
   grep -qxF -- "$1" "${PASSED_FILE}" && awk -v t="$1" '$2 == "deploy" && $3 == t { f = 1 } END { exit !f }' "${HISTORY_FILE}"
 }
-first_deployed() { # <tag>: the line number of its first deploy record in the history (0: never deployed)
+# <tag>: the line number of its first STARTED or deploy record in the history (0: never deployed). STARTED counts:
+# every deploy writes it first, and a deploy interrupted after its switch has no deploy line (yet D is the newest).
+first_deployed() {
   if [[ ! -f "${HISTORY_FILE}" ]]; then echo 0; return 0; fi
-  awk -v t="$1" '$2 == "deploy" && $3 == t { print NR; f = 1; exit } END { if (!f) print 0 }' "${HISTORY_FILE}"
+  awk -v t="$1" '($2 == "started" || $2 == "deploy") && $3 == t { print NR; f = 1; exit } END { if (!f) print 0 }' \
+    "${HISTORY_FILE}"
 }
 # <a> <b>: 0 when release <a> was first deployed after <b> (newer), or <b> was never deployed (unknown: not "older").
 # The order of first deploys is the order the releases came in; a later redeploy of an old commit does not make it new.
@@ -891,13 +894,14 @@ cmd_job_start() {
 }
 
 # <file with "pid start-time">: 0 while that process lives. Its pid AND its start time (field 22 of /proc/<pid>/stat)
-# must match: after a reboot the pid may belong to another process.
+# must match: after a reboot the pid may belong to another process. A zombie (state Z, field 3: it has exited and only
+# waits to be reaped) is dead. (comm, field 2, is "(bash)": no spaces, so the fields split as numbered.)
 proc_alive() {
   local pid start s=()
   read -r pid start <"$1" 2>/dev/null || return 1
   [[ "${pid}" =~ ^[0-9]+$ && -r "/proc/${pid}/stat" ]] || return 1
   read -r -a s <"/proc/${pid}/stat" 2>/dev/null || return 1
-  [[ "${s[21]:-}" == "${start}" ]]
+  [[ "${s[21]:-}" == "${start}" && "${s[2]:-}" != Z ]]
 }
 # <job dir>: 0 while the job's wrapper OR its worker lives (the worker keeps going when only the wrapper is killed; it
 # then writes rc itself, which every reader checks before liveness).

@@ -182,7 +182,8 @@ kit prints `chola-prod.sh attach --job <id>` to follow it again (`status` lists 
 
 **Interrupted deploy** (the instance rebooted or the job was killed half way): the follower reports the job either
 as **failed with a non-zero exit** (a graceful reboot or stop, or `kill <pid>`, sends SIGTERM: the job records exit
-143, never 0; any other fatal signal records 128 + its number) or as **lost** (a hard reset or SIGKILL: its processes
+143, never 0; any other fatal signal records 128 + its number while the job's wrapper process lives, and reads as
+LOST if the wrapper was killed too) or as **lost** (a hard reset or SIGKILL: its processes
 are gone and it recorded no exit status; the pid
 and start time of the job's wrapper AND of its worker are checked, so a reused pid after a reboot is not mistaken for
 it, and a killed wrapper alone does not make a running job look lost: the worker writes the exit status itself);
@@ -245,15 +246,19 @@ rollback records a **ROLLBACK-STARTED** line (target, current tag, database revi
 **Retrying a rollback that failed or was interrupted retries that same rollback, never one release further back**:
 after the tag switch (C -> B failed in `compose up`, or the job was killed) the retry starts B again; before it (or
 when the downgrade failed) it runs C -> B again. A rollback counts as finished only once B's checks passed: when
-they fail it records FAILED; when the job is killed during them it records nothing more, so ROLLBACK-STARTED stays the
-last line and the rollback is unfinished. Either way the retry starts B again. The plan line says
+they fail it records FAILED; when the job is killed during them it is left unfinished, with ROLLBACK-STARTED last
+(SIGKILL) or FAILED last (a whole-session SIGTERM: the check process dies first, then the job records FAILED before it
+stops). Either way the retry starts B again. The plan line says
 which. Once B runs, a further `rollback` goes to the release before B. A deploy started after an unfinished rollback
 to B records B (where you were heading) as its rollback target.
 
 **When B can never start**, every retry starts B again. The way past it is explicit: `rollback --to <tag>` goes to
 that release instead (for example A), with the same backup, downgrade plan and confirmation. It only accepts a release
 that was deployed and passed its checks on this instance (`state/deploy-history` and `state/passed`) and that is **not
-newer** than the running one (first deployed before it): rollback only goes back. Forward is `deploy --sha <commit>`,
+newer** than the running one (first deployed, i.e. first STARTED, before it; a deploy interrupted after its switch
+counts as the newest): rollback only goes back. A plain `rollback` is different: it goes to the release the current
+one replaced, so after redeploying an old commit A over C, a plain rollback goes "forward" to C (A's recorded
+predecessor) while `--to C` is refused as newer. Forward is `deploy --sha <commit>`,
 which also runs the estate backfill, agility heal and image retention. `status` lists the releases `--to` accepts,
 newest first; nothing has to be edited by hand. `--to` and `--allow-downgrade` are refused on any other command. When the
 older release's migrations do not contain the database's revision, the current image first runs `alembic downgrade

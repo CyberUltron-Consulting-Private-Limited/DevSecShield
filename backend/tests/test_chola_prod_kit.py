@@ -1243,6 +1243,45 @@ def test_rollback_to_refuses_a_newer_release_and_status_lists_the_accepted_ones(
     assert f"rollback --to accepts (deployed, passed, not newer; newest first): {A12}" in status.stdout
 
 
+# Round-6 L1: a deploy of D interrupted after its switch has STARTED/SWITCHED but no deploy line. D is still the newest
+# release: --to B is older (accepted, with its downgrade plan), and status lists C B A, not "none".
+def test_rollback_to_after_an_interrupted_deploy_orders_by_first_started(instance):
+    d12 = "d" * 12
+    with open(instance.dir / "base" / "state" / "deploy-history", "a") as fh:
+        fh.write(f"t4 started {d12} previous {C12} alembic-before revC\nt4 switched {d12} previous {C12}\n")
+    env_file = instance.dir / "base" / "deploy" / "chola-prod" / ".env"
+    env_file.write_text(f"DSS_TAG='{d12}'\n")
+    st = instance.state()
+    st["heads"][d12], st["knows"][d12] = "revD", ["revA", "revB", "revC", "revD"]
+    (instance.dir / "state.json").write_text(json.dumps(st))
+    status = instance.remote("status")
+    assert f"rollback --to accepts (deployed, passed, not newer; newest first): {C12} {B12} {A12}" in status.stdout, \
+        status.stdout + status.stderr
+    plan = instance.remote("rollback", "--plan", "--to", B12)
+    assert "is newer than" not in plan.stderr and "deploy --sha" not in plan.stderr, plan.stderr
+    assert plan.returncode == 3 and f"rollback {d12} -> {B12}" in plan.stdout, plan.stdout + plan.stderr
+    assert _source_base(instance, f"newer_release {B12} {d12} && echo newer || echo older").stdout.strip() == "older"
+    assert _source_base(instance, f"newer_release {d12} {C12} && echo newer || echo older").stdout.strip() == "newer"
+
+
+# Round-6 nit: a zombie (exited, not yet reaped) is dead, so a killed job reads as lost at once, not "running" for ~1 s.
+def test_job_alive_treats_a_zombie_as_dead(tmp_path):
+    d = tmp_path / "state" / "jobs" / "20261122T120000Z-deploy-1"
+    d.mkdir(parents=True)
+    p = subprocess.Popen(["true"])  # never waited for until the end: a zombie child of this test
+    try:
+        for _ in range(100):
+            fields = Path(f"/proc/{p.pid}/stat").read_text().split()
+            if fields[2] == "Z":
+                break
+            time.sleep(0.05)
+        assert fields[2] == "Z"
+        (d / "pid").write_text(f"{p.pid} {fields[21]}\n")
+        assert _source(tmp_path, f'job_alive "{d}" && echo alive || echo gone').stdout.strip() == "gone"
+    finally:
+        p.wait()
+
+
 # Round-5: --to and --allow-downgrade are refused on every other command, before any call.
 @pytest.mark.parametrize("args, flag", [(["status", "--to", A12], "--to"), (["deploy", "--sha", "HEAD", "--to", A12, "--yes"], "--to"),
                                         (["backup", "--allow-downgrade"], "--allow-downgrade"),
@@ -1850,12 +1889,22 @@ def test_help_and_readme_describe_retry_escape_and_probe_limits():
 # --to never goes forward and status lists its candidates.
 def test_readme_round5_wording():
     text = " ".join(README.read_text().split())
-    assert "when the job is killed during them it records nothing more, so ROLLBACK-STARTED stays the last line" in text
+    assert "when the job is killed during them it is left unfinished, with ROLLBACK-STARTED last" in text
     assert "they fail (or the job is killed during them) it records FAILED" not in text
     assert "is not immediate" in text and "CHOLA_WAIT_S" in text.split("is not immediate", 1)[1][:200]
     assert "kill -9" in text and "not newer" in text and "`status` lists the releases `--to` accepts" in text
     help_text = " ".join(run(["bash", str(OWNER), "--help"]).stdout.split())
     assert "Never forward: that is deploy --sha" in help_text and "--to TAG rollback only" in help_text
+
+
+# Round-6 doc nits: signal exits need the wrapper; a kill during the checks leaves ROLLBACK-STARTED or FAILED; a plain
+# rollback can go "forward" after a redeploy of an old commit while --to cannot.
+def test_readme_round6_wording():
+    text = " ".join(README.read_text().split())
+    assert "records 128 + its number while the job's wrapper process lives, and reads as LOST if the wrapper was killed" in text
+    assert "with ROLLBACK-STARTED last (SIGKILL) or FAILED last (a whole-session SIGTERM" in text
+    assert "a plain rollback goes \"forward\" to C (A's recorded predecessor) while `--to C` is refused as newer" in text
+    assert "a deploy interrupted after its switch counts as the newest" in text
 
 
 # ------------------------------------------------------------------------------------------------ README
