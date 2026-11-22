@@ -131,10 +131,13 @@ jobs:
           # first-parent promotions since scan_node/release.json's anchor): full history, commits and trees only
           fetch-depth: 0
           filter: blob:none
+          # non-cone patterns: cone mode refuses a file path ("is not a directory") whenever the workspace's index
+          # already holds it, which a persistent self-hosted workspace does
+          sparse-checkout-cone-mode: false
           sparse-checkout: |
-            .github/ci
-            scan_node/zs_scan_node
-            scan_node/release.json
+            /.github/ci/
+            /scan_node/zs_scan_node/
+            /scan_node/release.json
       - name: Tags
         id: tags
         if: steps.decide.outputs.publish == 'true'
@@ -702,7 +705,11 @@ jobs:
           ref: ${{ needs.meta.outputs.sha }}
           fetch-depth: 0
           filter: blob:none
-          sparse-checkout: scan_node/release.json
+          # cone mode fails here on the self-hosted runner: "fatal: 'scan_node/release.json' is not a directory"
+          # (every staging push since 2026-11-18), so no scan-node release tag was published and each staging
+          # deploy waited out its 45-minute wait-node-release; a non-cone pattern names the single file
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /scan_node/release.json
 
       - name: Download the chart
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
