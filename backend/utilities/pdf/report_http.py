@@ -86,6 +86,33 @@ def _refuse(field: str, message: str) -> HTTPException:
     return HTTPException(status_code=422, detail=f"{field}: {message}")
 
 
+# Report options are one object holding strings, lists of strings and booleans: two levels. Deeper is refused.
+BODY_MAX_DEPTH = 4
+
+
+def _too_deep(raw: bytes) -> bool:
+    """True when ``raw`` nests arrays or objects deeper than ``BODY_MAX_DEPTH`` (brackets inside strings ignored)."""
+    depth = 0
+    in_string = escaped = False
+    for byte in raw:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif byte == 0x5C:  # backslash
+                escaped = True
+            elif byte == 0x22:  # quote
+                in_string = False
+        elif byte == 0x22:
+            in_string = True
+        elif byte in (0x5B, 0x7B):  # [ {
+            depth += 1
+            if depth > BODY_MAX_DEPTH:
+                return True
+        elif byte in (0x5D, 0x7D):  # ] }
+            depth -= 1
+    return False
+
+
 class _Pairs(list):
     """A JSON object's (key, value) pairs in order, repeats kept."""
 
@@ -94,11 +121,13 @@ def options_from_body(raw: bytes, family: str, *, scan_type: str | None = None) 
     """Report options from a POST's JSON body (module docstring), validated exactly as the query string is."""
     if not raw.strip():
         return options_from_request((), family, scan_type=scan_type)
+    if _too_deep(raw):  # checked before parsing: the same answer on every Python (3.12 parses 5,000 levels)
+        raise _refuse("body", "is nested too deeply; send one JSON object of report options")
     try:
         data = json.loads(raw, object_pairs_hook=_Pairs)  # pairs, not a dict: a repeated key is refused, as in a query
     except (ValueError, UnicodeDecodeError):
         data = None
-    except RecursionError:  # thousands of nested arrays or objects in a few KiB: never a set of report options
+    except RecursionError:  # belt and braces: _too_deep already refused anything this deep
         raise _refuse("body", "is nested too deeply; send one JSON object of report options") from None
     if not isinstance(data, _Pairs):
         raise _refuse("body", "must be a JSON object of report options")
@@ -167,6 +196,15 @@ def options_body_openapi(family: str) -> dict[str, Any]:
         "type": "object", "additionalProperties": False, "properties": properties}}}}}
 
 
+# The answers only the POST form adds (``responses=`` of the POST routes, for their OpenAPI).
+OPTIONS_BODY_RESPONSES: dict[int | str, dict[str, Any]] = {
+    413: {"description": f"The JSON body of report options is larger than {BODY_MAX_BYTES // 1024} KiB."},
+    415: {"description": "The body is not sent as Content-Type: application/json."},
+    422: {"description": "A report option, or the body itself, is not valid; the detail names it "
+                         "(`<field>: message`, `body: ...` for the body)."},
+}
+
+
 def status_join_error(exc: BaseException) -> HTTPException:
     if isinstance(exc, StatusStoreDown):
         return HTTPException(status_code=503, headers={"Retry-After": "30"},
@@ -210,6 +248,6 @@ def log_export(family: str, *, team: int, id: int, user: int | None, ctx: Report
         pass
 
 
-__all__ = ["BODY_MAX_BYTES", "CBOM_EXPOSED_HEADERS", "LARGE_PDF_ROWS", "REPORT_EXPOSED_HEADERS", "log_export", "logo_state",
+__all__ = ["BODY_MAX_BYTES", "BODY_MAX_DEPTH", "OPTIONS_BODY_RESPONSES", "CBOM_EXPOSED_HEADERS", "LARGE_PDF_ROWS", "REPORT_EXPOSED_HEADERS", "log_export", "logo_state",
            "options_body_openapi", "options_from_body", "options_from_request", "report_headers", "request_options",
            "status_join_error"]

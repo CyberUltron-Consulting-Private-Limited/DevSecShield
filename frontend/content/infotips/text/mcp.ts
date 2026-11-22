@@ -75,7 +75,7 @@ const TEXT = {
     why: "Failures or stuck scans point to connection or setup problems.",
     example: "6 Success, 1 Started, 1 Failure.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:1348-1351, backend/routers/scans.py:88 — per server: average of weight/4*10; scans come newest first, so the earliest scan's value is kept
+  // src: backend/utilities/dashboard/scan_list.py:1348-1351, backend/routers/scans.py:96 — per server: average of weight/4*10; scans come newest first, so the earliest scan's value is kept
   "mcp.chart.risk_trend": {
     what: "For each MCP server, the average risk score (0 to 10: Critical 10, High 7.5, Medium 5, Low 2.5) of its scan's findings. A server scanned several times shows one value, from its earliest scan (the list is read newest first and later rows overwrite).",
     why: "Shows which servers are getting riskier.",

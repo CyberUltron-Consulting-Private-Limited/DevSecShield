@@ -7,13 +7,13 @@ import type { TipAreaText } from "../types";
 
 const TEXT = {
   // ────────────────────────────────────────────────────────────── shared by the scan list pages (routers/scans.py)
-  // src: backend/utilities/db/schemas.py:8-9, backend/routers/scans.py:156-161 — title 1-256 characters; creating stores a NOT_STARTED scan, no credits
+  // src: backend/utilities/db/schemas.py:8-9, backend/routers/scans.py:164-169 — title 1-256 characters; creating stores a NOT_STARTED scan, no credits
   "scan.new.title": {
     what: "A name for the new scan, 1 to 256 characters, shown in the scan list. Creating the scan uses no credits: you choose what to scan, see the credit estimate and start it on the next page.",
     why: "A clear title is how your team finds this scan again among dozens in the list and in reports.",
     example: "payments-api main, November release.",
   },
-  // src: backend/utilities/db/schemas.py:46-47, backend/routers/scans.py:815-845 — rename sets only the title (max 256)
+  // src: backend/utilities/db/schemas.py:46-47, backend/routers/scans.py:823-853 — rename sets only the title (max 256)
   "scan.rename.title": {
     what: "The new name of this scan, up to 256 characters. Only the label changes: results, findings and credits stay as they are.",
     why: "Renaming keeps lists and reports readable without rerunning or losing anything.",
@@ -25,7 +25,7 @@ const TEXT = {
     why: "Finds one scan quickly in a long list without scrolling.",
     example: "Typing \"api\" keeps \"payments-API main\" and \"api-gateway\".",
   },
-  // src: backend/new_models.py:131, backend/routers/scans.py:599-610, backend/utilities/celery/celery_connection.py:186-192, backend/utilities/scan/cancel_scan.py:1-8 — the scan states and the refunds
+  // src: backend/new_models.py:131, backend/routers/scans.py:607-618, backend/utilities/celery/celery_connection.py:186-192, backend/utilities/scan/cancel_scan.py:1-8 — the scan states and the refunds
   "scan.status": {
     what: "Not started: created, never run. Pending: queued for a scan worker. Started: running (the bar shows progress). Retry: the worker is retrying it. Success: finished, findings stored. Failure: stopped with an error; its credits were refunded. Cancelled: stopped by a user; its credits were refunded.",
     why: "The status tells you whether results exist yet and whether the credits were kept or refunded.",
@@ -43,19 +43,19 @@ const TEXT = {
     why: "Shows which scans are still moving and which have been quiet for a while.",
     example: "A scan queued since yesterday shows today's time once anyone opens the list today.",
   },
-  // src: backend/routers/scans.py:475-486, backend/new_models.py:123, backend/utilities/db/scan_list_item.py:72, backend/utilities/celery/celery_connection.py:186-192, backend/utilities/scan/cancel_scan.py:1-8 — credit_consumed is the estimate (set by /estimate before any charge; credit_charged is separate), charged at start, refunded on failure or cancel
+  // src: backend/routers/scans.py:483-494, backend/new_models.py:123, backend/utilities/db/scan_list_item.py:72, backend/utilities/celery/celery_connection.py:186-192, backend/utilities/scan/cancel_scan.py:1-8 — credit_consumed is the estimate (set by /estimate before any charge; credit_charged is separate), charged at start, refunded on failure or cancel
   "scan.table.credits": {
     what: "The scan's credit estimate. It is charged when the scan starts and refunded if the scan fails or is cancelled. A scan that was only estimated, and never started, has not been charged.",
     why: "Lets you see what each scan cost against the team balance.",
     example: "12.4 on a finished scan: 12.4 credits left the balance when it started.",
   },
-  // src: backend/routers/scans.py:156-159, backend/utilities/db/scan_list_item.py:73-74 — owner_user_id is the user who created the scan
+  // src: backend/routers/scans.py:164-167, backend/utilities/db/scan_list_item.py:73-74 — owner_user_id is the user who created the scan
   "scan.table.owner": {
     what: "The team member who created the scan.",
     why: "Tells you whom to ask about a scan's setup or results.",
     example: "Priya Shah, priya@acme.com.",
   },
-  // src: backend/routers/scans.py:634-651, backend/routers/scans.py:488-493, backend/utilities/celery/celery_connection.py:186-192, backend/utilities/scan/cancel_scan.py:1-8 — start re-estimates; a changed price answers 409 estimate_changed and charges nothing; failure and cancel refund
+  // src: backend/routers/scans.py:642-659, backend/routers/scans.py:496-501, backend/utilities/celery/celery_connection.py:186-192, backend/utilities/scan/cancel_scan.py:1-8 — start re-estimates; a changed price answers 409 estimate_changed and charges nothing; failure and cancel refund
   "scan.cfg.run": {
     what: "Starts the scan and charges the estimated credits. The start prices the scan again first: if the price changed (another file, repository, branch or option), nothing is charged and you see the new price; press Start scan again to accept it. Failed and cancelled scans are refunded.",
     why: "Credits leave the balance at this point, so the price is checked again first.",

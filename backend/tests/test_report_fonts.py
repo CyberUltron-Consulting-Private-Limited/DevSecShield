@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import unicodedata
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -277,9 +278,11 @@ def test_reph_with_i_matra_and_i_matra_before_its_consonant_copy_as_typed(tmp_pa
     """Review 6013762056: र्Xि was extracted as Xि without the reph (वािषक) or with U+E231; कि as िक."""
     title = "वार्षिक सुरक्षा रिपोर्ट"
     raw = scan_pdf(tmp_path, "reph", title=title, prepared_for="आर्थिक कार्तिक धार्मिक लिमिटेड")
-    text = pdftotext(raw, tmp_path)
-    assert title in text and "Prepared for आर्थिक कार्तिक धार्मिक लिमिटेड" in text
-    assert not _private_use(text) and not _private_use("".join(to_unicode_targets(raw)))
+    for engine, text in extracted(raw, tmp_path).items():
+        flat = " ".join(text.split())
+        assert title in flat and "Prepared for आर्थिक कार्तिक धार्मिक लिमिटेड" in flat, (engine, flat[:400])
+        assert_clean(engine, text)
+    assert not _private_use("".join(to_unicode_targets(raw)))
 
 
 def _private_use(text: str) -> list[str]:
@@ -301,7 +304,7 @@ def to_unicode_targets(raw: bytes) -> list[str]:
 
 
 def _sweep_words() -> list[str]:
-    """Hindi and Marathi forms: every consonant (with nukta forms, ळ, ऱ) with every vowel sign, anusvara, candrabindu,
+    """NFC (as report options store them) Hindi and Marathi forms: every consonant (with nukta forms, ळ, ऱ) with every vowel sign, anusvara, candrabindu,
     visarga and virama, with a reph, with a below-base ra, between consonants, and every two-consonant conjunct bare,
     with ि and with े; plus real words with stacked or reordered parts."""
     consonants = [chr(c) for c in range(0x0915, 0x093A)] + ["क़", "ख़", "ग़", "ज़", "ड़", "ढ़", "फ़", "य़", "ळ", "ऱ"]
@@ -314,29 +317,144 @@ def _sweep_words() -> list[str]:
     for c1 in consonants:
         for c2 in consonants:
             words += [c1 + "्" + c2, c1 + "्" + c2 + "ि", c1 + "्" + c2 + "े"]
-    return words + ["वार्षिक", "आर्थिक", "कार्तिक", "धार्मिक", "लिमिटेड", "महाराष्ट्र", "मऱ्याद", "र्\u200dय", "क्\u200cष",
+    return [unicodedata.normalize("NFC", w) for w in words] + ["वार्षिक", "आर्थिक", "कार्तिक", "धार्मिक", "लिमिटेड", "महाराष्ट्र", "मऱ्याद", "र्\u200dय", "क्\u200cष",
                     "ॲप", "श्री", "स्त्री", "त्र्य", "कृष्ण", "हृदय", "ज्ञान", "क्षत्रिय", "कीर्ति", "सिंह", "हिंदी", "किं"]
 
 
-@needs_poppler
-@pytest.mark.parametrize("bold", [False, True], ids=["regular", "bold"])
-def test_thousands_of_devanagari_forms_extract_exactly_and_never_as_private_use(tmp_path, bold):
+def extracted(raw: bytes, tmp_path: Path) -> dict[str, str]:
+    """The PDF's text in each extractor installed here: poppler (pdftotext, as CI installs it), pypdf and PDFium (the
+    engine of Chrome's viewer, through pypdfium2); CI installs pypdf and pypdfium2 as test-only packages (ci.yml)."""
+    out: dict[str, str] = {}
+    path = tmp_path / "extract-all.pdf"
+    path.write_bytes(raw)
+    if shutil.which("pdftotext"):
+        out["poppler"] = subprocess.run(["pdftotext", "-enc", "UTF-8", str(path), "-"], capture_output=True,
+                                        check=True, timeout=120).stdout.decode("utf-8")
+    try:
+        import pypdf
+    except ImportError:
+        pass
+    else:
+        out["pypdf"] = "\n".join(page.extract_text() for page in pypdf.PdfReader(str(path)).pages)
+    try:
+        import pypdfium2
+    except ImportError:
+        pass
+    else:
+        document = pypdfium2.PdfDocument(str(path))
+        out["pdfium"] = "\n".join(document[i].get_textpage().get_text_range() for i in range(len(document)))
+        document.close()
+    return out
+
+
+def assert_clean(engine: str, text: str) -> None:
+    """No control character (a raw byte copied for a glyph without text; a form feed between pages is fine) and no
+    private-use code point."""
+    stray = [f"U+{ord(ch):04X}" for ch in text if (ord(ch) < 0x20 and ch not in "\t\n\r\f") or _private_use(ch)]
+    assert stray == [], (engine, stray[:10])
+
+
+def _sweep_pdf(tmp_path: Path, words: list[str], bold: bool, per_paragraph: int) -> bytes:
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.platypus import SimpleDocTemplate
 
+    style = ParagraphStyle("t", fontName="Helvetica", fontSize=9, leading=14)
+    out = tmp_path / f"sweep-{int(bold)}-{per_paragraph}.pdf"
+    SimpleDocTemplate(str(out)).build([RF.unicode_paragraph(" ".join(words[i:i + per_paragraph]), style, bold=bold)
+                                       for i in range(0, len(words), per_paragraph)])
+    return out.read_bytes()
+
+
+@pytest.mark.parametrize("bold", [False, True], ids=["regular", "bold"])
+def test_thousands_of_devanagari_forms_extract_exactly_in_every_engine(tmp_path, bold):
+    """Running text (40 forms a paragraph): poppler, PDFium and pypdf give back every form exactly (pypdf up to
+    canonical equivalence: it reads ToUnicode only, where a letter HarfBuzz decomposes, ऴ, comes out as ळ + nukta).
+    No engine sees a control character or a private-use code point; no ToUnicode entry is empty."""
     words = _sweep_words()
     assert len(words) > 10_000
-    style = ParagraphStyle("t", fontName="Helvetica", fontSize=9, leading=14)
-    out = tmp_path / "sweep.pdf"
-    SimpleDocTemplate(str(out)).build([RF.unicode_paragraph(w, style, bold=bold) for w in words])
-    raw = out.read_bytes()
-    lines = subprocess.run(["pdftotext", "-enc", "UTF-8", str(out), "-"], capture_output=True, check=True,
-                           timeout=120).stdout.decode("utf-8").split("\n")
-    got = [line.strip() for line in lines if line.strip()]
+    raw = _sweep_pdf(tmp_path, words, bold, 40)
     targets = to_unicode_targets(raw)
-    assert len(targets) > 200 and not _private_use("".join(got)) and not _private_use("".join(targets))
-    wrong = [(want, have) for want, have in zip(words, got) if want != have]
-    assert len(got) == len(words) and wrong == [], wrong[:20]
+    assert len(targets) > 200 and "" not in targets and not _private_use("".join(targets))
+    texts = extracted(raw, tmp_path)
+    if not texts:
+        pytest.skip("no PDF text extractor installed")
+    for engine, text in texts.items():
+        assert_clean(engine, text)
+        got = text.split()
+        if engine == "pypdf":
+            got = [unicodedata.normalize("NFC", w) for w in got]
+        wrong = [(want, have) for want, have in zip(words, got) if want != have]
+        assert len(got) == len(words) and wrong == [], (engine, len(got), wrong[:10])
+
+
+@pytest.mark.parametrize("bold", [False, True], ids=["regular", "bold"])
+def test_one_form_a_line_keeps_its_line_in_poppler_and_pypdf(tmp_path, bold):
+    """One form a paragraph: poppler and pypdf give back each line exactly. PDFium gives back every character in
+    order, but on 7 of these 11,000 lines (regular weight only: a stacked conjunct with a raised e-matra) it does not
+    start a new line, so the check for it ignores line breaks."""
+    words = _sweep_words()
+    raw = _sweep_pdf(tmp_path, words, bold, 1)
+    for engine, text in extracted(raw, tmp_path).items():
+        assert_clean(engine, text)
+        if engine == "pdfium":
+            assert "".join(text.split()) == "".join(words), engine
+            continue
+        got = [line.strip() for line in text.split("\n") if line.strip()]
+        if engine == "pypdf":
+            got = [unicodedata.normalize("NFC", w) for w in got]
+        wrong = [(want, have) for want, have in zip(words, got) if want != have]
+        assert len(got) == len(words) and wrong == [], (engine, len(got), wrong[:10])
+
+
+REVIEW_WORDS = ["शुद्ध", "राष्ट्रीय", "बँक", "लिमिटेड", "त्रिवेणी", "वार्षिक", "कीर्ति", "किं", "क़िला"]
+
+
+def _run_pdf(ctx) -> bytes:
+    import datetime as dt
+
+    from backend.utilities.cbom_sources import inventory as INV
+    from backend.utilities.cbom_sources import run_deliverables as RD
+    from backend.utilities.pdf.cbom_run_pdf import build_run_pdf
+
+    return build_run_pdf(run={"id": 9, "status": "done", "created_at": "2026-11-14T09:00:00Z",
+                              "finished_at": "2026-11-14T09:30:00Z", "last_updated": "2026-11-14T09:30:00Z"},
+                         sources=[{"name": "linux-dc"}],
+                         posture={"assets": 0, "impacts": {}, "pqc_readiness_pct": 0.0, "pqc_classes": {},
+                                  "exposure": {}, "mosca": {}, "top_risks": [], "compliance": []},
+                         heatmap={"rows": [], "columns": [], "cells": [], "certificates": []},
+                         head={"serialNumber": "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79",
+                               "metadata": {"properties": []}},
+                         findings=[], vex_states={}, provenance=[], at=dt.datetime(2026, 11, 14, 9, 30),
+                         as_of_note=None, findings_cap=RD.PDF_FINDINGS_CAP, export_cap=INV.EXPORT_CAP,
+                         cbom_sha256="ab" * 32, ctx=ctx)
+
+
+@pytest.mark.parametrize("where", ["scan cover", "deliverable control table", "run report"])
+def test_the_words_the_review_found_broken_copy_exactly_everywhere(tmp_path, where):
+    """Review 6013906340: PDFium copied शुद्ध as शु\x12द्ध, राष्ट्रीय as राष्ट्र\x15ीय, ... (an empty ToUnicode entry)."""
+    from backend.tests.test_cbom_deliverable_common import make_view
+    from backend.utilities.pdf.cbom_deliverables import DELIVERABLES
+
+    name = " ".join(REVIEW_WORDS[:5])
+    title = " ".join(REVIEW_WORDS[5:])
+    if where == "scan cover":
+        raw = scan_pdf(tmp_path, "review", prepared_for=name, title=title)
+    elif where == "deliverable control table":
+        options = parse_report_options({"prepared_for": " ".join(REVIEW_WORDS)}, "deliverable")
+        raw = DELIVERABLES["scope-baseline-register"].build(make_view(), ctx=ReportContext(options=options))
+    else:
+        raw = _run_pdf(ReportContext(options=parse_report_options({"prepared_for": name, "title": title}, "run")))
+    assert "" not in to_unicode_targets(raw)
+    texts = extracted(raw, tmp_path)
+    if not texts:
+        pytest.skip("no PDF text extractor installed")
+    for engine, text in texts.items():
+        assert_clean(engine, text)
+        flat = " ".join(text.split())
+        if where == "deliverable control table":
+            assert flat.count(" ".join(REVIEW_WORDS)) >= 2, (engine, flat[:600])  # masthead and control table
+        else:
+            assert f"Prepared for {name}" in flat and title in flat, (engine, flat[:600])
 
 
 def test_a_pdf_does_not_depend_on_what_the_process_built_before():
@@ -362,6 +480,37 @@ def test_a_pdf_does_not_depend_on_what_the_process_built_before():
         return done.stdout.strip().splitlines()[-1]
 
     assert digest() == digest("कार्तिक धार्मिक सिंह हिंदी कीर्ति", "आर्थिक मऱ्याद") == digest("क्षत्रिय")
+
+
+def test_pieces_never_leave_a_glyph_without_text():
+    assert RF._pieces("कि", ["ि", "क"]) == ["क", "ि"]  # one typed character per glyph, in drawing order
+    assert RF._pieces("र्षि", ["ि", "ष", "\ue231"]) == ["र", "्", "षि"]  # the rest on the last glyph
+    assert RF._pieces("ि", ["\u25cc", "ि"]) == ["\u25cc", "ि"]  # more glyphs than characters: what each one shows
+    assert RF._pieces("x", ["\ue000", "y"]) == ["\u25cc", "y"]
+    for typed, defaults in (("क", ["a"]), ("कखग", ["a", "b"]), ("क", ["a", "b", "c"])):
+        assert all(RF._pieces(typed, defaults)), (typed, defaults)
+
+
+@needs_poppler
+def test_the_extra_code_table_is_capped_and_a_full_table_never_fails_a_build(tmp_path, monkeypatch):
+    """Review 6013961175: codes keyed by typed text grew without bound; past 131,072 chr() would raise in every build.
+    At EXTRA_CODES_MAX a cluster keeps its own codes; the run's /ActualText still carries the typed text."""
+    RF.ensure_registered()
+    from reportlab.pdfbase import pdfmetrics
+
+    font = pdfmetrics.getFont(RF.FACES[(RF.DEVANAGARI, True)])  # the face "Prepared for" names are drawn in
+    monkeypatch.setattr(RF, "EXTRA_CODES_MAX", max(len(pdfmetrics.getFont(f)._extra) for f in RF.FACES.values()) + 3)
+    names = [f"{c}्षि र्{c}ि" for c in "कखगघचछजझटठडढतथदधनपफबभमयलवशसह"]
+    for name in names[:10]:  # more distinct clusters than the 3 codes left
+        raw = scan_pdf(tmp_path, "capped", prepared_for=name)
+        assert f"Prepared for {name}" in " ".join(pdftotext(raw, tmp_path).split())
+    for n in range(5):  # whatever is left, filled
+        font.code_for(1, f"filler {n}")
+    assert len(font._extra) == RF.EXTRA_CODES_MAX and font.code_for(1, "never seen before") is None
+    for name in names[10:]:  # a full table: builds still succeed and still extract as typed (/ActualText)
+        raw = scan_pdf(tmp_path, "full", prepared_for=name)
+        assert f"Prepared for {name}" in " ".join(pdftotext(raw, tmp_path).split())
+    assert len(font._extra) == RF.EXTRA_CODES_MAX
 
 
 def test_a_foreign_font_under_a_report_font_name_fails_loudly():

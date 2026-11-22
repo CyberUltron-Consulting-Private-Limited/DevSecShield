@@ -392,6 +392,10 @@ def test_post_refuses_options_in_its_query_string_and_oversized_or_malformed_bod
         twice = post_export(http, ids, content=raw)
         field = raw.split(b'"')[1].decode()
         assert twice.status_code == 422 and twice.json()["detail"] == f"{field}: was given more than once", raw
+    five = post_export(http, ids, content=b'{"title": [[[["x"]]]]}')  # 5 levels: past BODY_MAX_DEPTH (4)
+    assert five.json()["detail"] == "body: is nested too deeply; send one JSON object of report options"
+    brackets = post_export(http, ids, {"title": "[[[[[[{{{{{ \\\" ]]]]"})  # brackets inside a string are text
+    assert brackets.status_code == 200, brackets.text
     deep = post_export(http, ids, content=DEEP)
     assert len(DEEP) < 16 * 1024 and deep.status_code == 422, deep.text
     assert deep.json()["detail"] == "body: is nested too deeply; send one JSON object of report options"
@@ -426,6 +430,16 @@ def test_post_and_get_share_every_route_dependency():
         assert type(get) is type(post), path  # route class (CbomRoute on R4)
 
 
+def test_the_depth_check_ignores_strings_and_holds_on_every_python():
+    from backend.utilities.pdf.report_http import BODY_MAX_DEPTH, _too_deep
+
+    assert BODY_MAX_DEPTH == 4
+    assert not _too_deep(b'{"sections": ["summary", "catalog"], "title": "a [[[[[ b"}')
+    assert not _too_deep(b'{"title": "\\"[[[[[[["}')  # an escaped quote does not end the string
+    assert not _too_deep(b'[[[["x"]]]]') and _too_deep(b'[[[[["x"]]]]]')
+    assert _too_deep(DEEP)
+
+
 def test_the_openapi_body_schema_says_what_the_server_accepts():
     from backend.main import app
 
@@ -446,6 +460,9 @@ def test_the_openapi_body_schema_says_what_the_server_accepts():
     assert run["schema"]["properties"]["sections"]["anyOf"][1]["items"]["enum"] == ["summary", "posture", "catalog",
                                                                                     "provenance"]
     assert "statuses" not in run["schema"]["properties"] and scan["additionalProperties"] is False
+    for path in ("/{team_id}/{type}/scan/{scan_id}/export", "/{team_id}/cbom/deliverables/{slug}",
+                 "/{team_id}/cbom/sources/runs/{run_id}/report.pdf"):
+        assert {"413", "415", "422"} <= set(spec[path]["post"]["responses"]), path
 
 
 def test_cors_lets_a_browser_post_json_with_a_bearer_token():

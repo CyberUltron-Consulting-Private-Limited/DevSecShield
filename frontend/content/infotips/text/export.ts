@@ -114,7 +114,7 @@ const TEXT = {
     why: "A short report of the urgent findings gets read; the scope block keeps it from passing for the full scan.",
     example: "Critical and High only for the board.",
   },
-  // src: backend/utilities/pdf/report_options.py:29, backend/utilities/pdf/report_options.py:299-302 — status filter; all four = no filter
+  // src: backend/utilities/pdf/report_options.py:29, backend/utilities/pdf/report_options.py:298-301 — status filter; all four = no filter
   "export.status.not_started": {
     what: "Prints findings nobody has started on. Untick it to leave them out. With a status filter the report says when the statuses were read; a scan whose statuses cannot be matched is refused rather than guessed.",
     why: "Open findings are what a remediation plan is about.",
@@ -140,7 +140,7 @@ const TEXT = {
   },
 
   // ────────────────────────────────────────────────────────────── Cover and privacy
-  // src: backend/utilities/pdf/report_options.py:63,68-106,220-236, frontend/utils/reportOptions.ts:195-206, backend/utilities/pdf/report_http.py:89-143 — 120 characters, one line, cp1252 or TEXT_RANGES (Noto fonts); sent as a POST body
+  // src: backend/utilities/pdf/report_options.py:63,68-106,220-236, frontend/utils/reportOptions.ts:195-206, backend/utilities/pdf/report_http.py:93-172 — 120 characters, one line, cp1252 or TEXT_RANGES (Noto fonts); sent as a POST body
   "export.prepared_for": {
     what: "The client named on the cover as Prepared for. Up to 120 characters on one line, in Latin (accents included), Greek, Cyrillic or Devanagari (Hindi, Marathi) script; other scripts are refused. Sent in the request body, never in a URL, and never remembered in this browser.",
     why: "A named report is ready to send; the name is not stored so it cannot leak into another client's report.",
@@ -164,7 +164,7 @@ const TEXT = {
     why: "The label tells readers how to handle the document under your information-classification policy.",
     example: "Restricted for a report that names production hosts.",
   },
-  // src: backend/utilities/pdf/report_options.py:310-315 — hide_evidence removes the EVIDENCE block and snippet lines only
+  // src: backend/utilities/pdf/report_options.py:309-314 — hide_evidence removes the EVIDENCE block and snippet lines only
   "export.hide_evidence": {
     what: "Leaves out each finding's evidence block and code snippet lines; everything else, including file paths and line numbers, is printed. It does not redact secrets elsewhere in the text.",
     why: "Snippets can contain source code or secrets the recipient should not get.",

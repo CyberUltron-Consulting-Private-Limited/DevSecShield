@@ -52,7 +52,7 @@ from backend.utilities.pdf.cbom_deliverables import (
 from backend.utilities.team import check_if_user_is_in_team
 from backend.utilities.pdf.branding_input import ReportBranding
 from backend.utilities.pdf.report_context import ReportContext
-from backend.utilities.pdf.report_http import options_body_openapi, request_options
+from backend.utilities.pdf.report_http import OPTIONS_BODY_RESPONSES, options_body_openapi, request_options
 from backend.utilities.team.branding import load_report_branding
 
 router = APIRouter(tags=["cbom-deliverables"])
@@ -244,7 +244,7 @@ _PDF_RESPONSES: dict[int | str, dict[str, Any]] = {
     description=_PDF_DESCRIPTION,
     dependencies=[Depends(limiter), access.team("cbom.read")],
     response_model=None,
-    responses=_PDF_RESPONSES,
+    responses={**_PDF_RESPONSES, **OPTIONS_BODY_RESPONSES},
     openapi_extra=options_body_openapi("deliverable"),
 )
 async def download_cbom_deliverable(

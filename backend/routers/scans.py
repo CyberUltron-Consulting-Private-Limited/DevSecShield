@@ -29,7 +29,15 @@ from backend.utilities.db.findings import get_findings_for_scan_type, is_ticketa
 from backend.utilities.pdf import UnsupportedPdfExport, prepare_pdf_export_payload, write_scan_pdf
 from backend.utilities.pdf.report_context import ReportContext
 from backend.utilities.pdf.report_options import TYPE_SECTIONS
-from backend.utilities.pdf.report_http import LARGE_PDF_ROWS, log_export, options_body_openapi, report_headers, request_options, status_join_error
+from backend.utilities.pdf.report_http import (
+    LARGE_PDF_ROWS,
+    OPTIONS_BODY_RESPONSES,
+    log_export,
+    options_body_openapi,
+    report_headers,
+    request_options,
+    status_join_error,
+)
 from backend.utilities.db.finding_rows import StatusesUnavailable, StatusStoreDown, read_statuses, row_count
 from backend.utilities.team.branding import load_report_branding
 from backend.utilities.cbom_sources import export_slots as EXPORT_SLOTS
@@ -976,7 +984,8 @@ def _build_scan_report(engine, team_id: int, type: str, scan_id: int, options) -
 
 @router.get("/{team_id}/{type}/scan/{scan_id}/export",summary="Export the results of a scan as a PDF report", dependencies=[Depends(write_limiter), access.team("scan.read")])
 @router.post("/{team_id}/{type}/scan/{scan_id}/export", summary="Export the results of a scan as a PDF report (report options in a JSON body)",
-             dependencies=[Depends(write_limiter), access.team("scan.read")], openapi_extra=options_body_openapi("scan"))
+             dependencies=[Depends(write_limiter), access.team("scan.read")], openapi_extra=options_body_openapi("scan"),
+             responses=OPTIONS_BODY_RESPONSES)
 async def export_scan(
     type: scan_types, 
     scan_id: int, 

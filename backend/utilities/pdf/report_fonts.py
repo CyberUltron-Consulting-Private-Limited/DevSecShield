@@ -17,19 +17,26 @@ What this module adds to ReportLab's shaping, each for a reason found by testing
   with its anusvara, a ligature); ReportLab numbers each the first time it meets it, mutating the shared font object.
   ``_ReportFont`` numbers every one of them when the font is registered (under a lock), so concurrent builds never
   race and the same text always gives the same bytes.
-* **A shaped word copies and searches as it was typed.** ReportLab's ToUnicode map gives a glyph no character maps to
-  its private-use number, and a cluster's glyphs come out in drawing order, which is not the typed order in
-  Devanagari (कि is drawn ि then क; र्षि is drawn as an i-matra-with-reph, ष and an empty mark). Each glyph's own text
-  comes from ``fonts/glyph_text.json`` (derived from the fonts' GSUB tables by ``scripts/pdf_font_glyph_text.py``).
-  Where a cluster's glyphs, read in drawing order, do not spell the typed cluster, ``_copy_as_typed`` draws the same
-  glyphs through extra codes whose ToUnicode entries, read in drawing order, spell the typed cluster (``_pieces``:
-  one piece per spacing glyph, so an extractor sees no gap inside the cluster). A cluster of marks only joins the one
-  before it and marks carry no text, because an extractor places a raised or shifted mark by its position (it split
-  कूँ into कू and a stray ँ, and wrote कुं as कंु). Tested on more than 11,000 Hindi and Marathi forms in both
-  weights: pdftotext gives back exactly what was typed. The glyphs drawn are the same; the text a viewer extracts, copies or searches is what was typed. (ReportLab
-  has no marked-content API for ``/ActualText``; this is the ToUnicode form of the same thing.) Those codes depend
-  only on (glyph, text) and never appear in the PDF themselves, so the bytes of a PDF do not depend on what was built
-  before it in the process.
+* **A shaped word copies and searches as it was typed, in every common viewer.** ReportLab's ToUnicode map gives a
+  glyph no character maps to its private-use number, and a cluster's glyphs come out in drawing order, which is not
+  the typed order in Devanagari (कि is drawn ि then क; र्षि as an i-matra-with-reph, ष and an empty mark). Viewers
+  differ in what they read, so the typed text is written two ways:
+
+  - ToUnicode (pypdf, pdfminer, pdf.js read only this). Each glyph's own text comes from ``fonts/glyph_text.json``
+    (derived from the fonts' GSUB tables by ``scripts/pdf_font_glyph_text.py``). Where a cluster's glyphs, read in
+    drawing order, do not spell the typed cluster, ``_copy_as_typed`` draws the same glyphs through extra codes
+    whose entries do (``_pieces``: one typed character per glyph, the rest on the last). No entry is ever empty:
+    PDFium, pdf.js and MuPDF copy the raw byte of a code without text, a control character in the middle of a word.
+  - ``/ActualText`` (poppler, PDFium, MuPDF read this first). ``_format_shaped`` wraps each shaped run in marked
+    content carrying its typed text, so a mark raised or moved back over its consonant cannot be placed by its
+    position (poppler split कूँ into कू and a stray ँ, and wrote कुं as कंु). ReportLab has no API for marked content;
+    the hook is ``PDFTextObject._formatText`` for shaped runs of these fonts only. It also writes a long rightward
+    move as several TJ numbers (pypdf reads one as a word gap).
+
+  The glyphs drawn are the same (pixel for pixel). The extra codes depend only on (glyph, text), are capped per
+  process (``EXTRA_CODES_MAX``) and never appear in the PDF themselves, so the bytes of a PDF do not depend on what
+  was built before it. Measured on 35 strings x 2 weights in six extractors and on 11,000+ forms in poppler, pypdf
+  and PDFium (``tests/test_report_fonts.py``).
 """
 from __future__ import annotations
 
@@ -41,7 +48,9 @@ from typing import Dict, List, Optional, Tuple
 
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import SUBSETN, ShapedFragWord, ShapedStr, TTFont, makeShapedFragWord
+from reportlab.lib.rl_accel import fp_str
+from reportlab.pdfbase.ttfonts import SUBSETN, ShapedFragWord, ShapedStr, TTFont, _sdGuardL, makeShapedFragWord
+from reportlab.pdfgen.textobject import PDFTextObject
 from reportlab.platypus import Paragraph
 
 from backend.utilities.pdf.report_options import is_cp1252, text_supported
@@ -69,6 +78,10 @@ DEVANAGARI_LEADING = 1.5
 _lock = threading.Lock()
 _codes_lock = threading.Lock()  # extra codes are added to a shared font while documents are built
 _EXTRA_CODES = 0xF0000  # Supplementary Private Use Area-A: never a character of the fonts or of typed text
+# Extra codes a font may make in one process (keyed by glyph and typed text, so adversarial titles could add more and
+# more). Past it a cluster keeps its own codes: the run's /ActualText (from the typed pieces, not from the codes)
+# still extracts as typed in viewers that read it; only viewers that read ToUnicode alone see the glyphs' own text.
+EXTRA_CODES_MAX = 32_768
 _shared: frozenset[str] = frozenset()  # characters both fonts draw: they follow their neighbours' font
 _ready = False
 
@@ -96,8 +109,9 @@ class _ReportFont(TTFont):
         """What the ToUnicode map says ``code`` stands for."""
         return self._code_text.get(code, chr(code))
 
-    def code_for(self, gid: int, text: str) -> int:
-        """A code that draws glyph ``gid`` and extracts as ``text`` ("" for nothing); made once per (glyph, text)."""
+    def code_for(self, gid: int, text: str) -> Optional[int]:
+        """A code that draws glyph ``gid`` and extracts as ``text``; made once per (glyph, text). None once the font has
+        ``EXTRA_CODES_MAX`` of them (the caller keeps the glyph's own code)."""
         key = (gid, text)
         code = self._extra.get(key)
         if code is not None:
@@ -105,6 +119,8 @@ class _ReportFont(TTFont):
         with _codes_lock:
             code = self._extra.get(key)
             if code is None:
+                if len(self._extra) >= EXTRA_CODES_MAX:
+                    return None
                 face = self.face
                 code = _EXTRA_CODES + len(self._extra)
                 face.charToGlyph[code] = gid
@@ -129,9 +145,10 @@ def _to_unicode_cmap(fontname: str, subset: List[int], code_text: Dict[int, str]
     """ReportLab's ``makeToUnicodeCMap`` with the shaped-only glyphs mapped to their text (UTF-16BE, any length)."""
 
     def target(code: int) -> str:
-        if code not in code_text:
+        text = code_text.get(code)
+        if not text:  # never an empty entry: viewers copy the raw byte for one (PDFium, pdf.js, MuPDF)
             return "%04X" % code
-        return code_text[code].encode("utf-16-be").hex().upper()  # "" (the rest of a cluster): extracts as nothing
+        return text.encode("utf-16-be").hex().upper()
 
     return "\n".join([
         "/CIDInit /ProcSet findresource begin", "12 dict begin", "begincmap", "/CIDSystemInfo",
@@ -141,6 +158,13 @@ def _to_unicode_cmap(fontname: str, subset: List[int], code_text: Dict[int, str]
         *["<%02X> <%s>" % (i, target(code)) for i, code in enumerate(subset)],
         "endbfchar", "endcmap", "CMapName currentdict /CMap defineresource pop", "end", "end",
     ])
+
+
+def _moved(data, offset: int):
+    """``data`` (a ShapeData) with its cluster moved by ``offset``, keeping the typed piece it may carry."""
+    moved = data._replace(cluster=data.cluster + offset)
+    moved.__dict__.update(data.__dict__)
+    return moved
 
 
 def _shape_by_font(original):
@@ -167,8 +191,7 @@ def _shape_by_font(original):
             part = _copy_as_typed([width, *pairs], original([width, *pairs], *args, **kwargs))
             for frag, text in part[1:]:
                 if isinstance(text, ShapedStr):  # clusters count characters from the start of the whole word
-                    text = ShapedStr(str(text), shapeData=[d._replace(cluster=d.cluster + offset)
-                                                           for d in text.__shapeData__])
+                    text = ShapedStr(str(text), shapeData=[_moved(d, offset) for d in text.__shapeData__])
                 joined.append((frag, text))
             joined[0] += part[0]
             offset += sum(len(text) for _frag, text in texts)
@@ -178,17 +201,20 @@ def _shape_by_font(original):
     return shape
 
 
-def _pieces(typed: str, spacing: List[bool]) -> List[str]:
-    """``typed`` cut into one piece per glyph, in order: a character for each spacing glyph but the last, the rest to the
-    last; marks (no advance) get nothing. Joined, the pieces are ``typed``; no spacing glyph is left without text, so
-    a text extractor sees no gap (and no word break) inside the cluster."""
-    slots = [i for i, wide in enumerate(spacing) if wide] or [0]
-    pieces = [""] * len(spacing)
-    rest = typed
-    for i in slots[:-1]:
-        pieces[i], rest = rest[:1], rest[1:]
-    pieces[slots[-1]] = rest
-    return pieces
+def _pieces(typed: str, defaults: List[str]) -> List[str]:
+    """``typed`` cut into one piece per glyph, in drawing order: one character for each glyph but the last, the rest to
+    the last; joined, the pieces are ``typed``. No piece is empty: a viewer that finds no text for a code copies the
+    raw byte (PDFium, pdf.js, MuPDF). A cluster with more glyphs than characters (HarfBuzz decomposed a letter or
+    added a dotted circle to a sequence that cannot be written) keeps what each glyph shows, U+25CC for a glyph
+    without printable text of its own."""
+    count = len(defaults)
+    if len(typed) >= count:
+        return [typed[i:i + 1] for i in range(count - 1)] + [typed[count - 1:]]
+    return [d if d and all(ord(ch) >= 0x20 and not _private(ch) for ch in d) else "\u25cc" for d in defaults]
+
+
+def _private(ch: str) -> bool:
+    return 0xE000 <= ord(ch) <= 0xF8FF or ord(ch) >= 0xF0000
 
 
 def _copy_as_typed(word, shaped):
@@ -207,8 +233,8 @@ def _copy_as_typed(word, shaped):
     def spacing(k: int, j: int) -> bool:
         return parts[k][1].__shapeData__[j].x_advance > 0
 
-    # a cluster of marks only (an anusvara, a u-matra, a reph HarfBuzz kept apart) joins the cluster before it, so the
-    # spacing glyph it sits on carries its text: a mark that carries none leaves an extractor nothing to misplace
+    # a cluster of marks only (an anusvara, a u-matra, a reph HarfBuzz kept apart) joins the cluster before it: what
+    # the glyphs of a rewritten cluster spell is decided for the syllable as a whole
     groups: list[list] = []
     for cluster, members in groupby(glyphs, key=lambda g: g[2]):
         members = list(members)
@@ -223,13 +249,17 @@ def _copy_as_typed(word, shaped):
             continue
         want = typed[start:end]
         shown = [fonts[k].text_of(ord(chars[k][j])) for k, j, _c in members]
-        if "".join(shown) == want and all(spacing(k, j) or not text for (k, j, _c), text in zip(members, shown)):
+        if "".join(shown) == want:
             continue
-        pieces = _pieces(want, [spacing(k, j) for k, j, _c in members])
-        for (k, j, _c), piece in zip(members, pieces):
+        pieces = _pieces(want, shown)
+        for n, ((k, j, _c), piece) in enumerate(zip(members, pieces)):
             font = fonts[k]
             gid = font.face.charToGlyph[ord(chars[k][j])]
-            chars[k][j] = chr(font.code_for(gid, piece))
+            code = font.code_for(gid, piece)
+            if code is not None:
+                chars[k][j] = chr(code)
+            # the run's /ActualText (_format_shaped): the typed cluster on its first glyph, exactly, whatever the codes
+            parts[k][1].__shapeData__[j].typed = want if n == 0 else ""
         changed = True
     if not changed:
         return shaped
@@ -237,6 +267,104 @@ def _copy_as_typed(word, shaped):
     for (frag, text), new in zip(parts, chars):
         out.append((frag, ShapedStr("".join(new), shapeData=text.__shapeData__) if isinstance(text, ShapedStr) else text))
     return out
+
+
+# The longest rightward move written as one number in a TJ array (thousandths of an em). Text extractors that read
+# a TJ number past about half a space as a word gap (pypdf) would otherwise put a space after a mark that HarfBuzz
+# moved back over its consonant (ककुक as "ककु क"); the same move as several smaller numbers draws the same.
+_TJ_STEP = 100
+
+
+def _tj_numbers(value: float) -> List[str]:
+    """``value`` as TJ numbers: itself, or for a rightward move past ``_TJ_STEP`` whole steps and the remainder (the
+    remainder is ``value`` plus integers, so it rounds exactly as ``value`` would)."""
+    if value >= -_TJ_STEP:
+        return [fp_str(value)]
+    steps = int(-value // _TJ_STEP)
+    rest = value + steps * _TJ_STEP
+    return [str(-_TJ_STEP)] * steps + ([fp_str(rest)] if fp_str(rest) not in ("0", "-0") else [])
+
+
+def _actual_text(op: str, typed: str) -> str:
+    return f"/Span <</ActualText <FEFF{typed.encode('utf-16-be').hex().upper()}>>> BDC {op} EMC"
+
+
+def _format_shaped(tx, text, font: "_ReportFont") -> str:
+    """ReportLab's ``PDFTextObject._formatText`` for a shaped run of a report font (its shaped branch, reportlab 4.4.7,
+    kept operator for operator), with two additions that change no pixel:
+
+    * the run is wrapped in marked content whose ``/ActualText`` is its typed text (``text_of`` each code: the pieces
+      ``_copy_as_typed`` gave a rewritten cluster spell it). Poppler and PDFium extract that instead of the glyphs, so
+      a mark drawn before or above its consonant, or raised with a text rise, can never be misplaced or split off;
+    * a rightward move longer than ``_TJ_STEP`` is written as several numbers (``_tj_numbers``), for pypdf, which reads
+      the glyphs' own ToUnicode text in drawing order.
+    """
+    canv = tx._canvas
+    state = (tx._code, tx._x, tx._y)
+    try:
+        tx._code = []
+        R = tx._code.append
+        canv_escape = canv._escape
+        tmpl = None
+        r0 = tx._rise
+        shape_data = text.__shapeData__
+        chars = str(text)
+        fontsize = tx._fontsize
+        parts: list = []  # the current text-showing operator's numbers and glyph bytes
+        sd0 = 0
+        for subset, t in font.splitString(text, canv._doc):
+            cluster = None
+            if subset != tx._curSubset:
+                if not tmpl:
+                    tmpl = f"{fp_str(fontsize)} Tf {fp_str(tx._leading)} TL"
+                R(f"{font.getSubsetInternalName(subset, canv._doc)} {tmpl}")
+                tx._curSubset = subset
+            sd1 = sd0 + len(t)
+            SD = shape_data[sd0:sd1] + _sdGuardL
+            sd0 = sd1
+            for i, sd in enumerate(SD):
+                r = r0 + fontsize * sd.y_offset / 1000
+                if cluster is None or sd.cluster < 0 or r != tx._rise:
+                    if cluster is not None:
+                        A = []
+                        for is_text, g in groupby(filter(None, parts), lambda x: isinstance(x, bytes)):
+                            A += [f"({canv_escape(b''.join(g))})"] if is_text else _tj_numbers(sum(g))
+                        A = [v for v in A if v != "0"]
+                        R(f"{A[0]} Tj" if len(A) == 1 and A[0].startswith("(") else f"[{' '.join(A)}] TJ")
+                        if tx._rise != r0:
+                            tx.setRise(r0)
+                        if sd.cluster < 0:
+                            break
+                    if r != tx._rise:
+                        tx.setRise(r)
+                    cluster = sd.cluster
+                    parts = []
+                parts.append(-sd.x_offset)  # as ReportLab: the HarfBuzz offset, the glyph, the move to the next pen
+                parts.append(bytes(chr(t[i]).encode("latin1")))
+                parts.append(sd.width - sd.x_advance + sd.x_offset)
+        if tx._rise != r0:
+            tx.setRise(r0)
+        ops = " ".join(R.__self__)
+    finally:
+        tx._code, tx._x, tx._y = state
+    typed = "".join(d.__dict__["typed"] if "typed" in d.__dict__ else font.text_of(ord(ch))
+                    for ch, d in zip(chars, shape_data))
+    return _actual_text(ops, typed) if typed.strip() else ops
+
+
+def _with_actual_text(original):
+    """``PDFTextObject._formatText``: a shaped run of a report font goes through ``_format_shaped``; anything else is
+    drawn by ReportLab exactly as before."""
+
+    def format_text(self, text):
+        if isinstance(text, ShapedStr):
+            font = pdfmetrics.getFont(self._fontname)
+            if isinstance(font, _ReportFont):
+                return _format_shaped(self, text, font)
+        return original(self, text)
+
+    format_text._zs_actual_text = True
+    return format_text
 
 
 def ensure_registered() -> None:
@@ -262,6 +390,8 @@ def ensure_registered() -> None:
         _shared = frozenset(chr(c) for c in latin & devanagari if _script_of(chr(c)) != DEVANAGARI)
         if not getattr(paragraph_module.shapeFragWord, "_zs_by_font", False):
             paragraph_module.shapeFragWord = _shape_by_font(paragraph_module.shapeFragWord)
+        if not getattr(PDFTextObject._formatText, "_zs_actual_text", False):
+            PDFTextObject._formatText = _with_actual_text(PDFTextObject._formatText)
         _ready = True
 
 

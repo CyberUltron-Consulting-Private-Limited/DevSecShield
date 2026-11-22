@@ -45,6 +45,7 @@ from backend.utilities.cbom_sources.settings import get_or_create_settings
 from backend.utilities.pdf.cbom_run_pdf import build_run_pdf
 from backend.utilities.pdf.report_context import ReportContext
 from backend.utilities.pdf.report_http import (
+    OPTIONS_BODY_RESPONSES,
     log_export,
     options_body_openapi,
     options_from_request,
@@ -293,7 +294,8 @@ async def verify_run_signature(team_id: TeamId, run_id: ObjectId, request: Reque
             summary="PDF report of a run: posture, algorithm family x source, certificate expiry, top risks, "
                     "compliance, findings and provenance")
 @router.post(RUN + "/report.pdf", dependencies=[*WRITE, access.team("cbom.read")],
-             summary="PDF report of a run, report options in a JSON body", openapi_extra=options_body_openapi("run"))
+             summary="PDF report of a run, report options in a JSON body", openapi_extra=options_body_openapi("run"),
+             responses=OPTIONS_BODY_RESPONSES)
 async def run_report_pdf(team_id: TeamId, run_id: ObjectId, request: Request,
                          Authorization: AuthHeader = None) -> Response:
     """Optional report options shape the report: ``preset`` (executive | technical | full), ``sections``

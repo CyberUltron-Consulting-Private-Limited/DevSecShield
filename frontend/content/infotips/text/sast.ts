@@ -39,7 +39,7 @@ const TEXT = {
     why: "These scans were set up but never run, so they hold no results yet.",
     example: "You created \"payments-api\" but closed the page before estimating: it counts here.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:664-665, backend/routers/scans.py:599-610 — status pending: claimed by start, waiting for a worker
+  // src: backend/utilities/dashboard/scan_list.py:664-665, backend/routers/scans.py:607-618 — status pending: claimed by start, waiting for a worker
   "sast.kpi.pending": {
     what: "SAST scans that were started and are queued, waiting for a scan worker to pick them up.",
     why: "A growing number here means scans are waiting for a free worker.",
