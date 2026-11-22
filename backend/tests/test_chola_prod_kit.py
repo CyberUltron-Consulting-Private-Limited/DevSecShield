@@ -19,6 +19,7 @@ import importlib.util
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import stat
@@ -809,7 +810,9 @@ if sub[0] == "up":
     mode = st["up_modes"].pop(0) if st["up_modes"] else "ok"
     st["ups"].append(tag + ":" + mode); save()
     if mode == "fail": sys.exit(1)
-    if mode == "hang": open(F + "/hanging", "w").write(tag); time.sleep(300); sys.exit(1)
+    if mode == "hang":
+        open(F + "/hanging.pid", "w").write(str(os.getpid())); open(F + "/hanging", "w").write(tag)
+        time.sleep(300); sys.exit(1)
     st["running"] = tag; save(); sys.exit(0)
 if sub[0] == "ps" and "{{.Service}}|{{.Image}}" in " ".join(sub):
     t = st["running"]
@@ -819,8 +822,10 @@ if sub[0] == "ps" and "{{.Service}}|{{.Image}}" in " ".join(sub):
 sys.exit(0)
 '''
 FAKE_REMOTE_CURL = r'''#!/usr/bin/env python3
-import sys
-a = sys.argv[1:]; url = a[-1]
+import os, sys, time
+a = sys.argv[1:]; url = a[-1]; F = os.environ["FAKE_DIR"]
+if os.path.exists(F + "/curl-fail"): sys.exit(7)  # connection refused
+if os.path.exists(F + "/curl-hang"): open(F + "/curl-hanging", "w").write(str(os.getpid())); time.sleep(300); sys.exit(28)
 body = ("ok" if url.endswith("/nginx-health") else '{"status":"healthy"}' if url.endswith("/health") else
         '<script src="/_next/static/chunks/main-1.js"></script>' if url.endswith("/login") else
         "u='https://chola-api.zeroshield.ai'")
@@ -853,6 +858,7 @@ def instance(tmp_path):
         f"t2 deploy {B12} previous {A12} alembic revB\n"
         f"t3 started {C12} previous {B12} alembic-before revB\nt3 switched {C12} previous {B12}\n"
         f"t3 deploy {C12} previous {B12} alembic revC\n")
+    (base / "state" / "passed").write_text(f"{A12}\n{B12}\n{C12}\n")
     state = {"heads": {A12: "revA", B12: "revB", C12: "revC"},
              "knows": {A12: ["revA"], B12: ["revA", "revB"], C12: ["revA", "revB", "revC"]},
              "db": "revC", "running": C12, "up_modes": [], "ups": [], "downgrades": []}
@@ -890,6 +896,21 @@ def instance(tmp_path):
         @staticmethod
         def history():
             return (base / "state" / "deploy-history").read_text().splitlines()
+
+        @staticmethod
+        def job(*args):
+            """remote.sh job-start <args>: (job id, job directory)."""
+            proc = run(["bash", str(REMOTE), "job-start", *args], env=env, stdin=subprocess.DEVNULL)
+            assert proc.returncode == 0, proc.stderr
+            return proc.stdout.strip(), base / "state" / "jobs" / proc.stdout.strip()
+
+        @staticmethod
+        def wait_for(path, seconds=30):
+            for _ in range(seconds * 10):
+                if path.exists() and path.stat().st_size:
+                    return path
+                time.sleep(0.1)
+            raise AssertionError(f"{path} never appeared")
     return Instance
 
 
@@ -1023,6 +1044,34 @@ def test_job_alive_follows_the_worker_too(tmp_path):
     assert _source(tmp_path, f'job_alive "{d}" || echo gone').stdout.strip() == "gone"
 
 
+# Backend CI on 33f416ff (runner without /var/lib/docker): `df` exits 1 for a path it cannot read, pipefail failed the
+# pipeline inside `status`'s $(...), and the ERR trap (inherited by set -E) printed an ERROR line from a working status.
+@pytest.mark.parametrize("df_mode", ["docker-root-unreadable", "df-broken"])
+def test_status_reports_disk_without_an_error_when_df_cannot_read_a_path(tmp_path, df_mode):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "docker").write_text('#!/bin/sh\ncase "$*" in "info --format {{.DockerRootDir}}") echo /var/lib/docker;; esac\n'
+                                    'exit 0\n')
+    real_df = shutil.which("df")
+    if df_mode == "docker-root-unreadable":  # what the runner's df did: the other rows, then exit 1
+        df = ('#!/bin/sh\nkeep=""\nfor a; do case "$a" in /var/lib/docker) echo "df: /var/lib/docker: No such file or '
+              'directory" >&2;; *) keep="$keep $a";; esac; done\n'
+              f'{real_df} $keep\ncase " $* " in *" /var/lib/docker "*) exit 1;; esac\n')
+    else:
+        df = '#!/bin/sh\necho "df: cannot read table of mounted file systems" >&2\nexit 1\n'
+    (bin_dir / "df").write_text(df)
+    for name in ("docker", "df"):
+        (bin_dir / name).chmod(0o755)
+    env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", CHOLA_BASE_DIR=str(tmp_path / "base"))
+    proc = run(["bash", str(REMOTE), "status"], env=env)
+    assert proc.returncode == 0 and "ERROR" not in proc.stderr, proc.stderr
+    disk = re.search(r"\] disk: (.*)$", proc.stdout, re.MULTILINE).group(1)
+    if df_mode == "df-broken":
+        assert disk == "unknown", proc.stdout
+    else:
+        assert disk.startswith("/ ") and "/var/lib/docker" not in disk, proc.stdout
+
+
 # ------------------------------------------------------------------------------------------------ files on the instance
 # Architecture nit: the files-hash label includes the overlay directory's inode, so a swapped overlay with the same
 # content still recreates its readers (a later prune of the old generation cannot empty a container's /aibom/config).
@@ -1070,6 +1119,134 @@ def test_err_trap_reports_commands_with_a_substitution_argument(tmp_path):
         assert "ASSIGN_FROM_SUBST=" in script.read_text() and '== *"\\$("*' not in script.read_text()
 
 
+# Round-4 nit: export / readonly / declare / typeset / local with options are assignments too; both scripts agree.
+def test_err_filter_knows_every_assignment_form(tmp_path):
+    forms = ['x="$(f)"', 'local x="$(f)"', 'export X="$(f)"', 'readonly X="$(f)"', 'declare -x X="$(f)"',
+             'typeset -r X="$(f)"', 'local -a xs=("$(f)")', 'a[1]="$(f)"', 'x+="$(f)"']
+    script = "; ".join(f"[[ {shlex.quote(f)} =~ $ASSIGN_FROM_SUBST ]] && echo yes || echo no" for f in forms)
+    assert _source(tmp_path, script).stdout.split() == ["yes"] * len(forms)
+    others = ['ssh -i k host "$(remote_cmdline x)"', 'docker run "$(image_of a b)"', 'echo x=$(f)']
+    script = "; ".join(f"[[ {shlex.quote(f)} =~ $ASSIGN_FROM_SUBST ]] && echo yes || echo no" for f in others)
+    assert _source(tmp_path, script).stdout.split() == ["no"] * len(others)
+    pattern = re.compile(r"^ASSIGN_FROM_SUBST=.*$", re.MULTILINE)
+    assert pattern.search(OWNER.read_text()).group(0) == pattern.search(REMOTE.read_text()).group(0)
+
+
+# Round-4 nit: a blank last line or trailing whitespace (a hand edit) does not change what a rollback does.
+@pytest.mark.parametrize("tail", ["\n\n", "\n\n  \n", "   \n", "\r\n", "\t \n\n"])
+def test_history_parsing_ignores_blank_lines_and_trailing_space(tmp_path, tail):
+    base = f"t1 deploy {A12} previous none alembic revA\nt2 deploy {B12} previous {A12} alembic revB\n" \
+           f"t3 deploy {C12} previous {B12} alembic revC\n"
+    _history(tmp_path, base + f"t9 rollback {B12} previous {C12} alembic revB FAILED" + tail)
+    assert _source(tmp_path, f"rollback_pair {B12}").stdout.split() == [B12, "1", "rollback-failed"]
+    _history(tmp_path, base + f"t9 rollback-started {B12} from {C12} alembic-before revC" + tail)
+    assert _source(tmp_path, f"rollback_pair {B12}; interrupted && echo yes").stdout.split() == \
+        [B12, "1", "rollback-switched", "yes"]
+
+
+# Round-4 F1 / A1: a job's worker killed by SIGTERM (a graceful reboot or stop, `kill <pid>`) never reads as success.
+@pytest.mark.skipif(shutil.which("setsid") is None or shutil.which("flock") is None, reason="util-linux missing")
+def test_sigterm_to_the_worker_never_reads_as_success(instance):
+    instance.set_up_modes("hang")
+    job, jdir = instance.job("rollback", "--allow-downgrade")
+    instance.wait_for(instance.dir / "hanging.pid")
+    worker = int(instance.wait_for(jdir / "worker").read_text().split()[0])
+    hung = int((instance.dir / "hanging.pid").read_text())
+    try:
+        os.kill(worker, signal.SIGTERM)  # the worker alone: bash waits for its foreground child
+        time.sleep(0.5)
+    finally:
+        os.kill(hung, signal.SIGTERM)  # the hanging `compose up` ends; the worker then acts on its TERM
+    assert instance.wait_for(jdir / "rc").read_text().strip() == "143"
+    follow = instance.remote("job-follow", job, "0", "1")
+    assert re.search(r"^chola-job: done 143 \d+$", follow.stderr, re.MULTILINE), follow.stderr
+    assert instance.history()[-1].split()[1:3] == ["rollback-started", B12]  # no outcome recorded: unfinished
+    assert "exit 143" in instance.remote("status").stdout
+
+
+@pytest.mark.skipif(shutil.which("setsid") is None or shutil.which("flock") is None, reason="util-linux missing")
+def test_sigterm_to_the_whole_session_never_reads_as_success(instance):
+    """What systemd does to the session scope at shutdown: TERM to every process of the job's session."""
+    instance.set_up_modes("hang")
+    job, jdir = instance.job("rollback", "--allow-downgrade")
+    instance.wait_for(instance.dir / "hanging.pid")
+    instance.wait_for(jdir / "worker")
+    sid = int((jdir / "pid").read_text().split()[0])  # the wrapper is the session leader (setsid)
+    assert Path(f"/proc/{sid}/stat").read_text().split()[5] == str(sid)
+    if shutil.which("pkill"):
+        subprocess.run(["pkill", "-TERM", "-s", str(sid)], check=False)
+    else:
+        os.killpg(sid, signal.SIGTERM)
+    rc = instance.wait_for(jdir / "rc").read_text().strip()
+    assert rc == "143", rc
+    follow = instance.remote("job-follow", job, "0", "1")
+    assert "chola-job: done 0" not in follow.stderr and "chola-job: done 143" in follow.stderr, follow.stderr
+
+
+# Round-4 F2: C -> B whose `up` succeeds but whose checks fail: the retry starts B again, never B -> A.
+def test_rollback_whose_checks_fail_is_retried_not_extended(instance):
+    (instance.dir / "curl-fail").write_text("")
+    first = instance.remote("rollback", "--allow-downgrade")
+    assert first.returncode == 1 and instance.tag() == B12 and instance.state()["running"] == B12
+    plan = instance.remote("rollback", "--plan")  # QA's repro: this said B -> A, with a downgrade to revA
+    assert plan.returncode == 0 and f"rollback {B12} -> {B12}" in plan.stdout, plan.stdout + plan.stderr
+    assert instance.history()[-1].split()[1:] == ["rollback", B12, "previous", C12, "alembic", "revB", "FAILED"]
+    assert (instance.dir / "base" / "state" / "passed").read_text().split()[-1] == C12  # B did not pass
+    assert "started but its checks failed" in first.stderr, first.stdout + first.stderr
+    (instance.dir / "curl-fail").unlink()
+    retry = instance.remote("rollback", "--allow-downgrade")
+    assert retry.returncode == 0, retry.stdout + retry.stderr
+    assert instance.tag() == B12 and instance.state()["downgrades"] == ["revB"]
+    assert instance.history()[-1].split()[1:3] == ["rollback", B12] and instance.history()[-1].split()[-1] != "FAILED"
+    assert (instance.dir / "base" / "state" / "passed").read_text().split()[-1] == B12
+
+
+def test_rollback_killed_during_its_checks_is_retried_not_extended(instance):
+    (instance.dir / "curl-hang").write_text("")
+    p = instance.popen("rollback", "--allow-downgrade")
+    try:
+        instance.wait_for(instance.dir / "curl-hanging")
+    finally:
+        os.killpg(p.pid, signal.SIGKILL)
+        p.communicate(timeout=30)
+    (instance.dir / "curl-hang").unlink()
+    assert instance.tag() == B12 and instance.history()[-1].split()[1:3] == ["rollback-started", B12]
+    plan = instance.remote("rollback", "--plan")
+    assert plan.returncode == 0 and f"rollback {B12} -> {B12}" in plan.stdout, plan.stdout + plan.stderr
+
+
+# Round-4 F4: a deploy after an unfinished rollback C -> B (nothing runs) records B, where the operator was heading.
+@pytest.mark.parametrize("last", [f"t9 rollback-started {B12} from {C12} alembic-before revC",
+                                  f"t9 rollback {B12} previous {C12} alembic revB FAILED"])
+def test_a_deploy_after_an_unfinished_rollback_targets_where_it_was_heading(tmp_path, last):
+    _history(tmp_path, f"t1 deploy {A12} previous none alembic revA\nt2 deploy {B12} previous {A12} alembic revB\n"
+                       f"t3 deploy {C12} previous {B12} alembic revC\n{last}\n", passed=f"{A12}\n{B12}\n{C12}\n")
+    (tmp_path / "deploy" / "chola-prod").mkdir(parents=True)
+    (tmp_path / "deploy" / "chola-prod" / ".env").write_text(f"DSS_TAG='{B12}'\n")
+    d12 = "d" * 12
+    out = _source(tmp_path, f'target_for {d12} ""; target_for {d12} {C12}; target_for {B12} ""').stdout.split()
+    assert out == [B12, C12, A12]  # nothing runs: B; C runs: C; redeploying B itself: B's own predecessor
+
+
+# Round-4 F5: B can never start; `rollback --to A` is the explicit, guarded way past it.
+def test_rollback_to_an_explicit_release_gets_past_a_target_that_cannot_start(instance):
+    instance.set_up_modes(*["fail"] * 4)
+    assert instance.remote("rollback", "--allow-downgrade").returncode == 1  # C -> B fails
+    again = instance.remote("rollback", "--allow-downgrade")  # B -> B fails too
+    assert again.returncode == 1 and "rollback --to" in again.stdout and instance.tag() == B12
+    for bad, why in (("d" * 12, "not a release that was deployed and passed"), ("latest", "not a 12-character commit")):
+        proc = instance.remote("rollback", "--plan", "--to", bad)
+        assert proc.returncode == 1 and why in proc.stderr, proc.stderr
+    plan = instance.remote("rollback", "--plan", "--to", A12)
+    assert plan.returncode == 3 and f"rollback {B12} -> {A12}" in plan.stdout and "--to" in plan.stdout
+    refused = instance.remote("rollback", "--to", A12)
+    assert refused.returncode == 1 and "--allow-downgrade" in refused.stderr and instance.tag() == B12
+    done = instance.remote("rollback", "--to", A12, "--allow-downgrade")
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert instance.tag() == A12 and instance.state()["downgrades"] == ["revB", "revA"]
+    assert instance.history()[-1].split()[1:5] == ["rollback", A12, "previous", B12]
+
+
 # ------------------------------------------------------------------------------------------------ owner script
 FAKE_AWS = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -1101,6 +1278,8 @@ if c == ["ecr", "describe-repositories"]: print("IMMUTABLE"); sys.exit(0)
 if c == ["ecr", "describe-images"]: sys.exit(254)  # the tag is not in ECR yet
 if c == ["ecr", "get-login-password"]: print("fake-token"); sys.exit(0)
 if c == ["s3api", "head-bucket"]: sys.exit(0 if arg("--expected-bucket-owner") == "935951870001" else 1)
+if c == ["s3api", "put-object"] and os.environ.get("FAKE_S3_PUT") == "deny":
+    print("An error occurred (AccessDenied) when calling the PutObject operation: Access Denied", file=sys.stderr); sys.exit(254)
 if c == ["s3api", "delete-object"] and os.environ.get("FAKE_S3_DELETE") == "deny":
     print("An error occurred (AccessDenied) when calling the DeleteObject operation: Access Denied", file=sys.stderr); sys.exit(254)
 if c[0] == "s3api" and c[1] in ("put-object", "delete-object"): sys.exit(0 if arg("--expected-bucket-owner") == "935951870001" else 1)
@@ -1517,6 +1696,42 @@ def test_preflight_probe_uses_one_key_and_warns_when_it_cannot_delete_it(fake_wo
     assert proc.returncode == 0 and "could NOT delete" not in proc.stderr
 
 
+# Round-4 F3: a failed LOCAL staging copy of the kit stops the run before anything runs on the instance.
+@pytest.mark.parametrize("args", [["status"], ["preflight"], ["logs", "--service", "backend"]])
+def test_a_failed_local_kit_copy_stops_the_run(fake_world, args):
+    real_tar = shutil.which("tar")
+    (fake_world.dir / "bin" / "tar").write_text(
+        '#!/bin/sh\ncase "$*" in *"-cf - deploy/chola-prod"*) echo "tar: write error: No space left on device" >&2; exit 2;; esac\n'
+        f'exec {real_tar} "$@"\n')
+    (fake_world.dir / "bin" / "tar").chmod(0o755)
+    proc = fake_world(*args)
+    assert proc.returncode != 0 and "No space left on device" in proc.stderr, proc.stdout + proc.stderr
+    assert re.search(r"^\[chola\] ERROR: line \d+: tar ", proc.stderr, re.MULTILINE), proc.stderr
+    assert "remote.sh" not in fake_world.log() and "tar -xzf -" not in fake_world.log()
+    assert not list(fake_world.dir.glob("chola-prod.*"))
+
+
+# Round-4 F5 (owner side): --to reaches both the plan and the job; anything but a commit id is refused before any call.
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
+def test_owner_rollback_to_passes_the_tag_through(fake_world):
+    full = "a" * 40
+    proc = fake_world("rollback", "--to", full, "--allow-downgrade", "--yes")
+    assert proc.returncode == 0, proc.stdout[-2000:] + proc.stderr[-2000:]
+    log = fake_world.log()
+    assert f"remote.sh rollback --plan --to {A12}" in log
+    assert f"remote.sh job-start rollback --allow-downgrade --to {A12}" in log
+    (fake_world.dir / "calls.log").unlink()
+    bad = fake_world("rollback", "--to", "main", "--yes")
+    assert bad.returncode == 1 and "--to needs a 12- or 40-character commit" in bad.stderr and fake_world.log() == ""
+
+
+# Round-4 nit: cleanup deletes the probe only when THIS run put it (a failed put never deletes another run's probe).
+def test_preflight_deletes_no_probe_it_did_not_put(fake_world):
+    proc = fake_world("preflight", FAKE_S3_PUT="deny")
+    assert proc.returncode == 1 and "cannot write the probe object" in proc.stderr
+    assert "put-object" in fake_world.log() and "delete-object" not in fake_world.log()
+
+
 # QA nit: preflight is not called read-only: it writes (and deletes) the S3 probe and copies the kit to the instance.
 def test_preflight_is_not_documented_as_read_only():
     help_text = run(["bash", str(OWNER), "--help"]).stdout
@@ -1528,6 +1743,19 @@ def test_preflight_is_not_documented_as_read_only():
             assert "read-only" not in line, line
     probe = " ".join(text.split("releases/preflight-probe.txt", 1)[1].split()[:60])
     assert "overwritten by every preflight" in probe and "WARNING" in probe
+
+
+# Round-4 nits: --help says a failed rollback is retried and offers --to; the probe wording names its limits; the
+# README no longer says an interrupted job is always LOST.
+def test_help_and_readme_describe_retry_escape_and_probe_limits():
+    help_text = run(["bash", str(OWNER), "--help"]).stdout
+    entry = help_text.split("\n  rollback ", 1)[1].split("\n  attach ", 1)[0]
+    assert "RETRIED" in entry and "never taken one release further back" in entry and "--to TAG" in entry
+    assert "--to TAG" in help_text.split("Flags", 1)[1]
+    text = " ".join(README.read_text().split())
+    assert "unversioned bucket" in text and "Any two owner commands that run a preflight at the same moment" in text
+    assert "exit 143" in text and "never 0" in text and "rollback --to <tag>" in text
+    assert "A job listed as LOST ended without an exit status (reboot or kill)" not in text
 
 
 # ------------------------------------------------------------------------------------------------ README

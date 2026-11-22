@@ -98,9 +98,11 @@ Treat these as exposed and rotate them:
 * on the instance: Docker, **Docker Compose 2.24+**, python3, flock, setsid, the AWS CLI and the instance role (STS,
   a list of `s3://devsecshield-storage/releases/` **and a read**: preflight writes a tiny probe object,
   `releases/preflight-probe.txt` (one fixed key, overwritten by every preflight), the instance must `get-object` it
-  with the bucket owner pinned, and the probe is deleted on exit; if your user may put but not delete objects there,
-  preflight says so in a WARNING and that one object stays until the next preflight overwrites it. Two preflights at
-  the same moment can delete each other's probe: run one at a time), `/var/lib/docker` on its own volume, **15 GB free where
+  with the bucket owner pinned, and the probe is deleted on exit (only when this run's put succeeded); if your user
+  may put but not delete objects there, preflight says so in a WARNING and that one object stays (in an unversioned
+  bucket; with versioning each run adds a version) until the next preflight overwrites it. Any two owner commands
+  that run a preflight at the same moment (`preflight`, `deploy`, also by two owners) can delete each other's probe,
+  and the instance then reports a failed S3 read that looks like a permission problem: run one at a time), `/var/lib/docker` on its own volume, **15 GB free where
   images are stored** (containerd's root with Docker 29's containerd image store, else Docker's root) **and** where
   the volumes are, and an IMDS token probe from a container;
 * that the mail login will be found (app-secrets, else origin/ansh, else `--mail-prompt`).
@@ -178,11 +180,13 @@ before each and reconnecting when the EICE tunnel drops. **Ctrl-C or a lost conn
 kit prints `chola-prod.sh attach --job <id>` to follow it again (`status` lists recent jobs). One lock
 (`state/.lock`) lets only one changing command run at a time.
 
-**Interrupted deploy** (the instance rebooted or the job was killed half way): the follower reports the job as
-**lost** (its processes are gone and it recorded no exit status; the pid and start time of the job's wrapper AND of
-its worker are checked, so a reused pid after a reboot is not mistaken for it, and a killed wrapper alone does not
-make a running job look lost: the worker writes the exit status itself), and `status` lists it as LOST. Either `deploy --sha <the same commit>`
-again or `rollback`: both see the interruption, remove the application containers (stateless; databases, queue and
+**Interrupted deploy** (the instance rebooted or the job was killed half way): the follower reports the job either
+as **failed with a non-zero exit** (a graceful reboot or stop, or `kill <pid>`, sends SIGTERM: the job records exit
+143, never 0) or as **lost** (a hard reset or SIGKILL: its processes are gone and it recorded no exit status; the pid
+and start time of the job's wrapper AND of its worker are checked, so a reused pid after a reboot is not mistaken for
+it, and a killed wrapper alone does not make a running job look lost: the worker writes the exit status itself);
+`status` lists it as `exit 143` or LOST. Both mean the same: the deploy did not finish. Either `deploy --sha <the same
+commit>` again or `rollback`: both see the interruption, remove the application containers (stateless; databases, queue and
 volumes stay) and start them fresh, and try once more if the first start fails. When the interruption came before the
 tag switch (STARTED without SWITCHED), nothing had changed: `rollback` then starts the release that was running again
 instead of going one release further back. The rollback target survives a failed recovery: with no backend container
@@ -228,7 +232,7 @@ users read the build from `GET /version`.
 ## 5. Rollback
 
 ```sh
-scripts/deploy/chola-prod.sh rollback [--allow-downgrade]
+scripts/deploy/chola-prod.sh rollback [--allow-downgrade] [--to <tag>]
 ```
 
 Takes a backup first, then goes back to the tag that was running before the current one (`state/deploy-history`: the
@@ -236,8 +240,15 @@ deploy line, or the STARTED line of an interrupted deploy) with that release's o
 rollback records a **ROLLBACK-STARTED** line (target, current tag, database revision) before it changes anything.
 **Retrying a rollback that failed or was interrupted retries that same rollback, never one release further back**:
 after the tag switch (C -> B failed in `compose up`, or the job was killed) the retry starts B again; before it (or
-when the downgrade failed) it runs C -> B again. The plan line says which. Once B runs, a further `rollback` goes to
-the release before B. When the
+when the downgrade failed) it runs C -> B again. A rollback counts as finished only once B's checks passed: when
+they fail (or the job is killed during them) it records FAILED, and the retry starts B again. The plan line says
+which. Once B runs, a further `rollback` goes to the release before B. A deploy started after an unfinished rollback
+to B records B (where you were heading) as its rollback target.
+
+**When B can never start**, every retry starts B again. The way past it is explicit: `rollback --to <tag>` goes to
+that release instead (for example A), with the same backup, downgrade plan and confirmation. It only accepts a release
+that was deployed and passed its checks on this instance (`state/deploy-history` and `state/passed`); nothing has to be
+edited by hand. When the
 older release's migrations do not contain the database's revision, the current image first runs `alembic downgrade
 <older head>`, which **drops the tables and columns the newer migrations added, with their data**: `rollback` first
 plans it (read-only), lists those migrations and asks you to type `downgrade` (or takes `--allow-downgrade`; without a
@@ -283,7 +294,8 @@ Rotation (details: `docs/security/secret-rotation.md`): change the value in Secr
   refused: remove the line from `~/.ssh/known_hosts_devsec_chola` (the first connection records it). EICE connections
   are time-limited; the kit opens a fresh tunnel before each long step and reconnects while following a job.
 * **A job lost its terminal**: `chola-prod.sh status` lists the recent jobs; `chola-prod.sh attach --job <id>`.
-  A job listed as LOST ended without an exit status (reboot or kill): see its log (`state/jobs/<id>/log`), then
+  A job listed as LOST ended without an exit status (hard reboot, SIGKILL), one with `exit 143` was stopped by
+  SIGTERM (graceful reboot or stop, `kill`): either way it did not finish. See its log (`state/jobs/<id>/log`), then
   deploy the same commit again or roll back.
 * **Instance settings** go through from your shell: `CHOLA_MIN_FREE_GB`, `CHOLA_WAIT_S`, `CHOLA_DUMPS_KEEP`
   (whole numbers; `--help`).

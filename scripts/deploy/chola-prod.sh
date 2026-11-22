@@ -7,7 +7,7 @@ export LC_ALL=C
 # No silent exit: a failing command that no check handles names itself. Only an assignment from a failing $(...) is
 # skipped: its inner command (or die) has already said why. Any other command (the ssh line of remote() included) is
 # reported; remote_step also names the step that failed.
-ASSIGN_FROM_SUBST='^(local[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?\+?=.*\$\('
+ASSIGN_FROM_SUBST='^((local|export|readonly|declare|typeset)([[:space:]]+-[A-Za-z]+)*[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?\+?=.*\$\('
 err_report() { [[ "${BASH_COMMAND}" =~ ${ASSIGN_FROM_SUBST} ]] || printf '[chola] ERROR: line %s: %s (exit %s)\n' "$2" "${BASH_COMMAND}" "$1" >&2; }
 trap 'err_report "$?" "${LINENO}"' ERR
 
@@ -49,7 +49,7 @@ INFRA_IMAGES=(
 COMPONENTS=(backend frontend scan-worker dast-worker)
 
 DRY=0 YES=0 HELP=0 SHA="" SHA12="" GHCR_TAG="" FRONTEND_IMAGE="" FORCE_INFRA=0 ALLOW_DOWNGRADE=0 REFRESH_MAIL=0
-MAIL_PROMPT=0 ALLOW_IMDS=0 EMAIL="" SERVICE="" TAIL=200 JOB=""
+MAIL_PROMPT=0 ALLOW_IMDS=0 EMAIL="" SERVICE="" TAIL=200 JOB="" ROLLBACK_TO=""
 WORK=""
 SSH_READY=0
 KIT_RUN="" # this run's kit copy on the instance: $REMOTE_DIR/.kit/<run>
@@ -80,8 +80,12 @@ Commands
   deploy --sha S [--yes]     all of the above in order, then migrate + start (detached on the instance), smtp-test,
                              verify
   verify                     ALB target health (instance or ip targets), nginx-health on the instance, public URLs
-  rollback [--allow-downgrade] [--yes]
-                             backup, then back to the previous tag (also after an interrupted deploy), then verify
+  rollback [--allow-downgrade] [--to TAG] [--yes]
+                             backup, then back to the previous tag (also after an interrupted deploy), then verify.
+                             A rollback that failed or was interrupted is RETRIED by the next rollback (its target is
+                             started again), never taken one release further back. --to TAG goes to that release
+                             instead (one that was deployed and passed its checks): the way past a target that cannot
+                             start
   attach --job ID            follow a detached deploy/rollback/dump/infra-load job again (after Ctrl-C or a dropped
                              tunnel; `status` lists recent jobs)
   smtp-test                  SMTP login from the instance with the deployed settings (sends nothing)
@@ -97,6 +101,7 @@ Flags
   --frontend-image REF       use this frontend image instead of building one (its API URL is checked)
   --force-infra              build and load the release archive even when the instance has every image
   --allow-downgrade          let rollback run alembic downgrade (drops what newer migrations added)
+  --to TAG                   rollback: to this release (12 or 40 hex characters) instead of the recorded target
   --refresh-mail             re-read the mail login from origin/ansh:backend/.env into app-secrets
   --mail-prompt              type the mailbox address and password at a hidden prompt instead of reading origin/ansh
   --allow-imds               accept IMDSv1 or a hop limit > 1 (containers could use the instance role); not advised
@@ -145,8 +150,9 @@ cleanup() {
     if ! aws --region "${REGION}" s3api delete-object --bucket "${BUCKET}" --key "${S3_PROBE_KEY}" \
       --expected-bucket-owner "${ACCOUNT}" >/dev/null 2>"${WORK:-/nonexistent}/probe-del.err"; then
       warn "could NOT delete the preflight probe object s3://${BUCKET}/${S3_PROBE_KEY} ($(tail -n 1 "${WORK}/probe-del.err" 2>/dev/null || echo 'no error text'))." \
-        "Your user may lack s3:DeleteObject on it. It is one small object that every preflight overwrites (never more" \
-        "than one); delete it by hand when convenient: aws s3api delete-object --bucket ${BUCKET} --key ${S3_PROBE_KEY}"
+        "Your user may lack s3:DeleteObject on it. It is one small object (in an unversioned bucket; with versioning," \
+        "each run adds a version) that every preflight overwrites; delete it by hand when convenient:" \
+        "aws s3api delete-object --bucket ${BUCKET} --key ${S3_PROBE_KEY}"
     fi
   fi
   if [[ -n "${WORK}" && -d "${WORK}" ]]; then
@@ -191,6 +197,8 @@ parse_args() { # flags may come before or after the command
       --frontend-image) [[ $# -ge 2 ]] || die "--frontend-image needs an image"; FRONTEND_IMAGE=$2; shift 2 ;;
       --force-infra) FORCE_INFRA=1; shift ;;
       --allow-downgrade) ALLOW_DOWNGRADE=1; shift ;;
+      --to) [[ $# -ge 2 && "$2" =~ ^([0-9a-f]{12}|[0-9a-f]{40})$ ]] || die "--to needs a 12- or 40-character commit"
+        ROLLBACK_TO=${2:0:12}; shift 2 ;;
       --refresh-mail) REFRESH_MAIL=1; shift ;;
       --mail-prompt) MAIL_PROMPT=1; shift ;;
       --allow-imds) ALLOW_IMDS=1; shift ;;
@@ -333,6 +341,9 @@ remote() {
 remote_step() {
   local hint=$1 rc=0
   shift
+  # SSH and the kit copy are set up HERE, outside the `||` below: bash runs everything on the left of `||` with
+  # errexit (and the ERR trap) off, and a failed local staging copy must stop the run, not upload a broken kit.
+  kit_upload
   remote "$@" || rc=$?
   ((rc == 0)) && return 0
   if ((rc == 255)); then
@@ -514,18 +525,21 @@ aws_resources() {
 }
 
 # A small object the instance must READ in its preflight (a list proves no s3:GetObject); deleted on exit. One fixed key,
-# overwritten by every preflight: if the owner may put but not delete, at most this one object stays (with a warning).
+# overwritten by every preflight: if the owner may put but not delete, one object stays (unversioned bucket; with a
+# warning). Any two owner commands that run a preflight at once (preflight, deploy) race on it: one may delete the
+# other's probe before the instance reads it (the instance then reports a failed read). Run one at a time.
 S3_PROBE_FIXED_KEY=releases/preflight-probe.txt
 s3_probe() {
-  S3_PROBE_KEY="${S3_PROBE_FIXED_KEY}"
   if ((DRY)); then
+    S3_PROBE_KEY="${S3_PROBE_FIXED_KEY}"
     printf '[dry-run] aws s3api put-object --bucket %s --key %s --expected-bucket-owner %s (the instance reads it; deleted on exit)\n' \
       "${BUCKET}" "${S3_PROBE_KEY}" "${ACCOUNT}"
     return 0
   fi
   printf 'chola preflight probe\n' >"${WORK}/probe.txt"
-  aws --region "${REGION}" s3api put-object --bucket "${BUCKET}" --key "${S3_PROBE_KEY}" --body "${WORK}/probe.txt" \
-    --expected-bucket-owner "${ACCOUNT}" >/dev/null || die "cannot write the probe object s3://${BUCKET}/${S3_PROBE_KEY}"
+  aws --region "${REGION}" s3api put-object --bucket "${BUCKET}" --key "${S3_PROBE_FIXED_KEY}" --body "${WORK}/probe.txt" \
+    --expected-bucket-owner "${ACCOUNT}" >/dev/null || die "cannot write the probe object s3://${BUCKET}/${S3_PROBE_FIXED_KEY}"
+  S3_PROBE_KEY="${S3_PROBE_FIXED_KEY}" # only now: cleanup deletes only a probe THIS run put
 }
 
 target_health_line() { # one line; fails (non-zero) when the call fails
@@ -1007,9 +1021,11 @@ cmd_rollback() {
   cmd_backup
   remote_step "nothing was rolled back yet: re-run the rollback" ecr-login
   local rc=0
+  local -a to=()
+  [[ -z "${ROLLBACK_TO}" ]] || to=(--to "${ROLLBACK_TO}")
   if ((DRY)); then
-    remote rollback --plan
-  elif remote rollback --plan; then
+    remote rollback --plan ${to[@]+"${to[@]}"}
+  elif remote rollback --plan ${to[@]+"${to[@]}"}; then
     rc=0
   else
     rc=$?
@@ -1025,7 +1041,7 @@ cmd_rollback() {
   fi
   local -a args=()
   ((ALLOW_DOWNGRADE)) && args=(--allow-downgrade)
-  remote_job rollback ${args[@]+"${args[@]}"} || die "the rollback failed on the instance (above)"
+  remote_job rollback ${args[@]+"${args[@]}"} ${to[@]+"${to[@]}"} || die "the rollback failed on the instance (above)"
   note "rollback" "done"
   cmd_verify
 }

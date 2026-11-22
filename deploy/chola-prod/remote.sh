@@ -21,7 +21,8 @@
 #   remote.sh rollback [--allow-downgrade]  back to the previous tag (from the last deploy or STARTED record); records
 #                                           ROLLBACK-STARTED first, and a retry of a failed or interrupted rollback
 #                                           retries it (never one release further back)
-#   remote.sh rollback --plan               what a rollback would do; exit 3 when it needs a database downgrade
+#   remote.sh rollback ... --to <tag>       to that release instead (it must have been deployed and passed its checks)
+#   remote.sh rollback --plan [--to <tag>]  what a rollback would do; exit 3 when it needs a database downgrade
 #   remote.sh check                         every service on DSS_TAG and up; health + frontend through nginx on :80
 #   remote.sh smtp-test                     SMTP login only, from a backend container with backend.env (sends nothing)
 #   remote.sh admin <email>                 make an existing account the platform administrator (is_superuser)
@@ -44,7 +45,7 @@ export LC_ALL=C
 # No silent exit: a failing command that no check handles names itself. Only an assignment from a failing $(...) is
 # skipped: its inner command (or die) has already said why. Any other command (an ssh or docker line with a $(...)
 # argument included) is reported.
-ASSIGN_FROM_SUBST='^(local[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?\+?=.*\$\('
+ASSIGN_FROM_SUBST='^((local|export|readonly|declare|typeset)([[:space:]]+-[A-Za-z]+)*[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?\+?=.*\$\('
 err_report() { [[ "${BASH_COMMAND}" =~ ${ASSIGN_FROM_SUBST} ]] || printf '[chola-remote] ERROR: line %s: %s (exit %s)\n' "$2" "${BASH_COMMAND}" "$1" >&2; }
 trap 'err_report "$?" "${LINENO}"' ERR
 
@@ -505,10 +506,20 @@ previous_of() { # the last real (not "none") previous tag recorded for <tag>
     END { print p }' "${HISTORY_FILE}"
 }
 # The rollback target to record when <tag> is deployed while <running> runs (empty: nothing runs, e.g. after a failed
-# recovery removed the application containers): the running tag; else what <tag> replaced before; else the last
-# release that passed its checks.
+# recovery removed the application containers): the running tag; else, when an unfinished rollback (ROLLBACK-STARTED
+# or a FAILED rollback line last) was heading to DSS_TAG, that release (the operator was moving TO it, away from the
+# one before); else what <tag> replaced before; else the last release that passed its checks.
 target_for() { # <tag> <running>
-  local tag=$1 p=${2:-}
+  local tag=$1 p=${2:-} line kind a cur
+  if [[ -z "${p}" ]]; then
+    line="$(last_step)"
+    read -r _ kind a _ <<<"${line}"
+    cur="$(env_get DSS_TAG)"
+    if [[ -n "${a}" && "${a}" == "${cur}" && "${a}" != "${tag}" ]] &&
+      [[ "${kind}" == rollback-started || ("${kind}" == rollback && "${line##* }" == FAILED) ]]; then
+      p=${a}
+    fi
+  fi
   if [[ -z "${p}" || "${p}" == "${tag}" ]]; then p="$(previous_of "${tag}")"; fi
   if [[ -z "${p}" ]]; then p="$(last_passed "${tag}")"; fi
   printf '%s\n' "${p}"
@@ -533,11 +544,16 @@ running_tag() { # the tag of the backend container (none before the first deploy
 
 interrupted() { # 0 when the last recorded step is a deploy or rollback without an outcome (tunnel loss, kill,
   # reboot): STARTED (it never switched DSS_TAG) or SWITCHED (it did), or ROLLBACK-STARTED (either)
-  [[ -f "${HISTORY_FILE}" ]] || return 1
-  case "$(tail -n 1 "${HISTORY_FILE}" | awk '{ print $2 }')" in started | switched | rollback-started) return 0 ;; esac
+  local kind
+  read -r _ kind _ <<<"$(last_step)"
+  case "${kind}" in started | switched | rollback-started) return 0 ;; esac
   return 1
 }
-last_step() { [[ -f "${HISTORY_FILE}" ]] && tail -n 1 "${HISTORY_FILE}" || true; }
+# The last non-blank history line, trailing whitespace (a hand edit, CRLF) removed.
+last_step() {
+  [[ -f "${HISTORY_FILE}" ]] || return 0
+  awk 'NF { l = $0 } END { sub(/[[:space:]]+$/, "", l); print l }' "${HISTORY_FILE}"
+}
 
 clear_app_containers() { # remove the application containers (stateless; datastores and named volumes stay) and the
   # <id>_dss-chola-* containers a killed `compose up` leaves renamed half way through a recreate
@@ -677,18 +693,32 @@ rollback_pair() {
   printf '%s 0 normal\n' "${p:-none}" # never an empty first word: read would shift "0" into it
 }
 
-ROLLBACK_WHY=normal
+ROLLBACK_WHY=normal ROLLBACK_TO=""
+passed_release() { # <tag>: 0 when <tag> was deployed (history) and passed its checks at least once (state/passed)
+  [[ -s "${PASSED_FILE}" && -f "${HISTORY_FILE}" ]] || return 1
+  grep -qxF -- "$1" "${PASSED_FILE}" && awk -v t="$1" '$2 == "deploy" && $3 == t { f = 1 } END { exit !f }' "${HISTORY_FILE}"
+}
 rollback_plan() {
   local r
   ROLLBACK_CURRENT="$(env_get DSS_TAG)"
-  read -r ROLLBACK_PREVIOUS _ ROLLBACK_WHY <<<"$(rollback_pair "${ROLLBACK_CURRENT}")"
+  if [[ -n "${ROLLBACK_TO}" ]]; then
+    # The escape from a rollback target that cannot start (every retry restarts it): an explicit release, only one
+    # that was deployed and passed its checks before. The same downgrade plan and confirmation apply.
+    [[ "${ROLLBACK_TO}" =~ ^[0-9a-f]{12}$ ]] || die "--to ${ROLLBACK_TO} is not a 12-character commit"
+    passed_release "${ROLLBACK_TO}" || die "--to ${ROLLBACK_TO}: not a release that was deployed and passed its" \
+      "checks here (${HISTORY_FILE}, ${PASSED_FILE}); nothing was changed"
+    ROLLBACK_PREVIOUS=${ROLLBACK_TO} ROLLBACK_WHY=explicit
+    log "rollback to ${ROLLBACK_TO} as asked (--to), not to the target the history names"
+  else
+    read -r ROLLBACK_PREVIOUS _ ROLLBACK_WHY <<<"$(rollback_pair "${ROLLBACK_CURRENT}")"
+  fi
   case "${ROLLBACK_WHY}" in
     deploy-unswitched)
       log "the last deploy was interrupted before it switched: ${ROLLBACK_CURRENT} is still the deployed release; starting it again" ;;
     rollback-switched | rollback-failed)
       log "the last rollback (to ${ROLLBACK_CURRENT}) switched the tag and then failed or was interrupted: retrying it," \
         "i.e. starting ${ROLLBACK_CURRENT} again (NOT going back to the release before it; for that, run rollback again" \
-        "once ${ROLLBACK_CURRENT} runs)" ;;
+        "once ${ROLLBACK_CURRENT} runs, or, if it can never start, rollback --to <an older release that passed>)" ;;
     rollback-retry)
       log "the last rollback ${ROLLBACK_CURRENT} -> ${ROLLBACK_PREVIOUS} stopped before it switched: running the same rollback again" ;;
   esac
@@ -716,12 +746,13 @@ rollback_plan() {
 }
 
 cmd_rollback() {
-  local allowed=0 plan=0 arg services
-  for arg in "$@"; do
-    case "${arg}" in
-      --allow-downgrade) allowed=1 ;;
-      --plan) plan=1 ;;
-      *) die "unknown rollback option ${arg}" ;;
+  local allowed=0 plan=0 services
+  while (($#)); do
+    case "$1" in
+      --allow-downgrade) allowed=1; shift ;;
+      --plan) plan=1; shift ;;
+      --to) [[ $# -ge 2 ]] || die "--to needs a tag"; ROLLBACK_TO=$2; shift 2 ;;
+      *) die "unknown rollback option $1" ;;
     esac
   done
   docker_setup
@@ -762,10 +793,16 @@ cmd_rollback() {
     printf '%s rollback %s previous %s alembic %s FAILED\n' "$(date -u +%FT%TZ)" "${previous}" "${current}" "${head}" >>"${HISTORY_FILE}"
     die "compose up failed for ${previous}"
   fi
-  printf '%s rollback %s previous %s alembic %s\n' "$(date -u +%FT%TZ)" "${previous}" "${current}" "${head}" >>"${HISTORY_FILE}"
-  prune_old_dirs
-  cmd_check
+  prune_old_dirs # up recreated every container: none uses an old generation
+  # The outcome is recorded only after the checks: a check that fails (or a job killed during it) leaves the rollback
+  # unfinished (FAILED / ROLLBACK-STARTED last), so its retry starts ${previous} again instead of going one release
+  # further back. The checks run as their own process: errexit stays on inside them (an `if !` would turn it off).
+  if ! bash "${SCRIPT}" check; then
+    printf '%s rollback %s previous %s alembic %s FAILED\n' "$(date -u +%FT%TZ)" "${previous}" "${current}" "${head}" >>"${HISTORY_FILE}"
+    die "${previous} started but its checks failed (above); a retry ('chola-prod.sh rollback') starts ${previous} again"
+  fi
   printf '%s\n' "${previous}" >>"${PASSED_FILE}"
+  printf '%s rollback %s previous %s alembic %s\n' "$(date -u +%FT%TZ)" "${previous}" "${current}" "${head}" >>"${HISTORY_FILE}"
   case "${ROLLBACK_WHY}" in
     deploy-unswitched) log "${previous} is running again (the interrupted deploy had not switched to its release)" ;;
     rollback-switched | rollback-failed) log "rolled back to ${previous}: the retried rollback finished" ;;
@@ -832,6 +869,11 @@ on_exit() { # the one EXIT trap: temporary files; in a detached job, the worker'
 }
 job_worker() { # run by a job's worker (job-start's wrapper set CHOLA_JOB_DIR): record it, and its exit status at the end
   local s=()
+  # A signal must never read as success: without a trap, bash runs the EXIT trap of a SIGTERM death with $? = the last
+  # command's status (often 0). SIGTERM is what a graceful reboot or stop sends (systemd TERMs the whole session) and
+  # what `kill <pid>` sends. HUP and INT are ignored by the wrapper (inherited, they cannot kill the worker).
+  trap 'exit 143' TERM
+  trap 'exit 131' QUIT
   [[ "${CHOLA_JOB_DIR}" == "${JOBS_DIR}/"* && -d "${CHOLA_JOB_DIR}" ]] || die "CHOLA_JOB_DIR ${CHOLA_JOB_DIR} is not a job of ${JOBS_DIR}"
   JOB_RC_DIR=${CHOLA_JOB_DIR}
   unset CHOLA_JOB_DIR
@@ -964,7 +1006,15 @@ cmd_status() {
   fi
   log "application images here:"
   d image ls --format '    {{.Repository}}:{{.Tag}} {{.Size}}' | grep -F "${IMAGE_PREFIX}/" || true
-  log "disk: $(df -h --output=target,avail / /var/lib/docker 2>/dev/null | tail -n +2 | tr -s ' ' | paste -sd',' -)"
+  # Free space on / and on Docker's root (the data volume), each only if it exists here. df exits 1 when it cannot read
+  # one of its paths (a host without /var/lib/docker, an unreadable Docker root): under pipefail that failed the
+  # pipeline inside $(...), and the ERR trap (inherited there by set -E) printed an ERROR line from a working status.
+  local root disk p
+  local -a paths=()
+  root="$(d info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
+  for p in / "${root}"; do if [[ -n "${p}" && -e "${p}" ]]; then paths+=("${p}"); fi; done
+  disk="$({ df -h --output=target,avail "${paths[@]}" 2>/dev/null || true; } | tail -n +2 | tr -s ' ' | paste -sd',' -)"
+  log "disk: ${disk:-unknown}"
 }
 
 cmd_logs() {
