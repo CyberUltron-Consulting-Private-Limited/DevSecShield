@@ -48,7 +48,14 @@ def test_run_report_post_takes_the_options_as_json(run_env, monkeypatch):
     assert post.content == get.content  # a finished run's report is byte-stable: the same PDF either way
     for name in ("Content-Disposition", "X-Report-Findings", "X-Report-Logo", "Cache-Control"):
         assert post.headers[name] == get.headers[name], name
-    assert call("POST", url).content == call("GET", url).content  # no body: today's report
+    assert call("POST", url, json={}).content == call("GET", url).content  # no option: today's report
+    json_type = {"Content-Type": "application/json"}
+    assert call("POST", url, content=b"{}").status_code == 415  # no Content-Type
+    assert call("POST", url, content=b"{}", headers={"Content-Type": "text/plain"}).status_code == 415
+    deep = call("POST", url, content=b'{"title": ' + b"[" * 5000 + b"]" * 5000 + b"}", headers=json_type)
+    assert deep.status_code == 422 and deep.json()["detail"].startswith("body: is nested too deeply"), deep.text
+    dup = call("POST", url, content=b'{"title": "x", "title": null}', headers=json_type)
+    assert dup.status_code == 422 and dup.json()["detail"] == "title: was given more than once"
     bad = call("POST", url, json={"statuses": "fixed"})
     assert bad.status_code == 422 and bad.json()["detail"].startswith("statuses: ")
     assert call("POST", url, json={"hide_evidence": True}).json()["detail"].startswith("hide_evidence: ")
@@ -74,8 +81,8 @@ def test_a_large_run_report_uses_the_cbom_pool_not_the_scan_pdf_pool(run_env, mo
         assert call("POST", url, json={"label": "internal"}).status_code == 200
         assert call("GET", f"/1/cbom/sources/runs/{rid}/cbom").status_code == 200
     with ES.slot():  # every CBOM slot taken
-        for method in ("GET", "POST"):
-            busy = call(method, url)
+        for method, body in (("GET", None), ("POST", {})):
+            busy = call(method, url, json=body)
             assert busy.status_code == 429, busy.text
             assert busy.json()["detail"] == ES.CBOM_BUSY and "scan PDF" not in busy.json()["detail"]
             assert busy.headers["Retry-After"] == str(ES.RETRY_AFTER_S)

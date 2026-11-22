@@ -40,7 +40,8 @@ function parseConstants(src: string): Record<string, unknown> {
 }
 const backend = parseConstants(block);
 const NAMES = ["FAMILIES", "PRESETS", "SEVERITIES", "STATUSES", "LABELS", "LABEL_TEXT", "SCAN_SECTIONS", "RUN_SECTIONS",
-  "PRESET_SECTIONS", "TYPE_SECTIONS", "FAMILY_KEYS", "PREPARED_FOR_MAX", "TITLE_MAX", "TEXT_RANGES"] as const;
+  "PRESET_SECTIONS", "TYPE_SECTIONS", "FAMILY_KEYS", "PREPARED_FOR_MAX", "TITLE_MAX", "TEXT_RANGES",
+  "STRIP_RANGES"] as const;
 assert.deepEqual(Object.keys(backend).sort(), [...NAMES].sort(), "every backend constant is mirrored (a new one needs a copy here)");
 for (const name of NAMES) {
   assert.deepEqual(JSON.parse(JSON.stringify(RO[name])), backend[name], `${name} differs from report_options.py`);
@@ -106,6 +107,20 @@ assert.equal(v("prepared_for", "a​b").error, "must be one line of plain text",
 assert.equal(v("prepared_for", "a⁠b").error, "must be one line of plain text", "word joiner (Cf) too");
 assert.equal(v("prepared_for", "कि").value, "कि", "NFC");
 assert.equal(RO.textSupported("Acme बैंक"), true);
+// trimming is Python's str.strip(), not String.prototype.trim()
+assert.deepEqual(v("prepared_for", "\u001cAcme\u0085\u001f"), { value: "Acme", error: null }, "U+001C-U+001F and U+0085 are stripped");
+assert.deepEqual(v("prepared_for", "\u3000\u2028Acme\u00a0\u202f"), { value: "Acme", error: null });
+assert.deepEqual(v("prepared_for", "\ufeffAcme"), { value: "\ufeffAcme", error: "must be one line of plain text" },
+  "U+FEFF is not stripped (trim() would): refused, as by the server");
+assert.equal(v("prepared_for", "Acme\ufeff").error, "must be one line of plain text");
+assert.equal(RO.textLength(" \u0085Acme\u001c "), 4);
+assert.equal(RO.pyStrip("\ufeff x \ufeff"), "\ufeff x \ufeff");
+// a vowel sign or accent that follows no letter would print on a dotted circle
+const STRAY = "has a vowel sign or accent that follows no letter";
+for (const bad of ["ि", "िकल", "\u0900क", "\ua8e0क", "\ua8f1क", "\u0301abc", "Acme ि", "Acme (ं)", "5\u0303"]) {
+  assert.equal(v("title", bad).error, STRAY, JSON.stringify(bad));
+}
+for (const ok of ["कि", "किं", "x\u0303", "Acme किं", "क\u093c\u093f", "e\u0301\u0302"]) assert.equal(v("title", ok).error, null, ok);
 assert.equal(RO.textSupported("東"), false);
 assert.equal(v("prepared_for", "x".repeat(121) + "\n").error, "must be 120 characters or fewer", "trimmed, then length first");
 assert.equal(RO.textLength("  ab  "), 2);

@@ -14,6 +14,12 @@ Scan PDF reports (``GET|POST /{team}/{type}/scan/{id}/export`` with ``report_htt
 slot of their own pool, ``pdf_slot``: the same mechanism with its own lock files and capacity ``PDF_SLOTS``
 (``ZS_PDF_EXPORT_SLOTS``, default 2), so a burst of big scan PDFs never makes a CBOM export answer 429, nor the other way
 round, and each 429 names the work that is actually busy (``CBOM_BUSY`` / ``PDF_BUSY``).
+
+For operators: the two pools add up. With the defaults a host now builds up to 2 large CBOM exports AND 2 large scan
+PDFs at the same time (4 large builds, where the one shared pool used to allow 2), so size the host's memory for that
+or lower ``ZS_CBOM_EXPORT_SLOTS`` / ``ZS_PDF_EXPORT_SLOTS``. Both pools keep their lock files
+(``zs-cbom-export-slot-N.lock``, ``zs-pdf-export-slot-N.lock``) in ``ZS_CBOM_EXPORT_LOCK_DIR``: every worker process
+of a host must see the same directory, as before.
 """
 from __future__ import annotations
 

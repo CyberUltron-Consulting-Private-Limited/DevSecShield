@@ -87,6 +87,37 @@ def test_other_text_is_refused_with_the_browsers_words(text, message):
     assert (err.value.field, err.value.message) == ("prepared_for", message)
 
 
+def test_free_text_is_stripped_exactly_like_the_browser_strips_it():
+    """STRIP_RANGES (mirrored in reportOptions.ts, which trims with it) is Python's str.strip() set, every isspace()."""
+    from backend.utilities.pdf.report_options import STRIP_RANGES
+
+    ranged = {c for low, high in STRIP_RANGES for c in range(low, high + 1)}
+    assert ranged == {c for c in range(sys.maxunicode + 1) if chr(c).isspace()}
+    assert 0xFEFF not in ranged
+    assert parse_report_options({"prepared_for": "\u001cAcme\u0085\u001f"}, "deliverable").prepared_for == "Acme"
+    assert parse_report_options({"prepared_for": "\u3000\u2028Acme\u00a0\u202f"}, "deliverable").prepared_for == "Acme"
+    for text in ("\ufeffAcme", "Acme\ufeff"):  # a BOM is not whitespace: refused, in the browser too
+        with pytest.raises(ReportOptionsError) as err:
+            parse_report_options({"prepared_for": text}, "deliverable")
+        assert err.value.message == "must be one line of plain text"
+
+
+STRAY = "has a vowel sign or accent that follows no letter"
+
+
+@pytest.mark.parametrize("text", ["ि", "िकल", "\u0900क", "\ua8e0क", "\ua8f1क", "\u0301abc", "Acme ि", "Acme (ं)",
+                                  "5\u0303"])
+def test_a_mark_that_follows_no_letter_is_refused(text):
+    with pytest.raises(ReportOptionsError) as err:
+        parse_report_options({"title": text}, "run")
+    assert err.value.message == STRAY
+
+
+@pytest.mark.parametrize("text", ["कि", "किं", "x\u0303", "Acme किं", "क\u093c\u093f", "e\u0301\u0302"])
+def test_marks_after_letters_are_fine(text):
+    assert parse_report_options({"title": text}, "run").title
+
+
 def test_text_is_nfc_composed_before_it_is_checked_and_counted():
     assert parse_report_options({"title": "कि"}, "run").title == "कि"
     assert parse_report_options({"title": "é" * 140}, "run").title == "é" * 140
@@ -222,19 +253,132 @@ def test_the_same_text_gives_the_same_bytes_from_parallel_builds():
             assert list(pool.map(build, names * 2)) == sequential * 2
 
 
-def test_shaped_only_glyphs_are_numbered_once_at_registration():
+def test_glyphs_are_numbered_at_registration_and_typed_order_codes_are_made_once():
     RF.ensure_registered()
+    from reportlab.lib.styles import ParagraphStyle
     from reportlab.pdfbase import pdfmetrics
 
     font = pdfmetrics.getFont(RF.FACES[(RF.DEVANAGARI, True)])
+    assert all(gid in font.face.glyphToChar for gid in range(font.face.numGlyphs))  # every glyph has a code up front
+    style = ParagraphStyle("t", fontName="Helvetica", fontSize=9)
+    RF.unicode_paragraph(MARATHI + " वार्षिक किं", style, bold=True).wrap(400, 100)
     before = dict(font.face.charToGlyph)
-    RF.unicode_markup(MARATHI)  # shaping happens at build time; nothing new is numbered then
-    from reportlab.lib.styles import ParagraphStyle
+    RF.unicode_paragraph(MARATHI + " वार्षिक किं", style, bold=True).wrap(400, 100)
+    assert dict(font.face.charToGlyph) == before  # the same words again: no new code
+    pre = {c: g for c, g in before.items() if c < RF._EXTRA_CODES}
+    RF.unicode_paragraph("कार्तिक धार्मिक लिमिटेड", style, bold=True).wrap(400, 100)
+    after = dict(font.face.charToGlyph)
+    assert {c: g for c, g in after.items() if c < RF._EXTRA_CODES} == pre  # the fonts' own codes never change
+    assert all(c >= RF._EXTRA_CODES for c in set(after) - set(before))  # new ones only in the supplementary PUA
 
-    para = RF.unicode_paragraph(MARATHI + " क्ष्म्य", ParagraphStyle("t", fontName="Helvetica", fontSize=9), bold=True)
-    para.wrap(400, 100)
-    assert dict(font.face.charToGlyph) == before
-    assert all(gid in font.face.glyphToChar for gid in range(font.face.numGlyphs))
+
+@needs_poppler
+def test_reph_with_i_matra_and_i_matra_before_its_consonant_copy_as_typed(tmp_path):
+    """Review 6013762056: र्Xि was extracted as Xि without the reph (वािषक) or with U+E231; कि as िक."""
+    title = "वार्षिक सुरक्षा रिपोर्ट"
+    raw = scan_pdf(tmp_path, "reph", title=title, prepared_for="आर्थिक कार्तिक धार्मिक लिमिटेड")
+    text = pdftotext(raw, tmp_path)
+    assert title in text and "Prepared for आर्थिक कार्तिक धार्मिक लिमिटेड" in text
+    assert not _private_use(text) and not _private_use("".join(to_unicode_targets(raw)))
+
+
+def _private_use(text: str) -> list[str]:
+    return [f"U+{ord(ch):04X}" for ch in text if 0xE000 <= ord(ch) <= 0xF8FF or ord(ch) >= 0xF0000]
+
+
+def to_unicode_targets(raw: bytes) -> list[str]:
+    """Every destination string of every ToUnicode CMap in the PDF."""
+    import re
+
+    from backend.tests.support.pdf_text import content_streams
+
+    out = []
+    for stream in content_streams(raw):
+        for block in re.findall(rb"beginbfchar(.*?)endbfchar", stream, re.S):
+            out += [bytes.fromhex(dst.decode()).decode("utf-16-be")
+                    for dst in re.findall(rb"<[0-9A-F]{2}> <([0-9A-F]*)>", block)]
+    return out
+
+
+def _sweep_words() -> list[str]:
+    """Hindi and Marathi forms: every consonant (with nukta forms, ळ, ऱ) with every vowel sign, anusvara, candrabindu,
+    visarga and virama, with a reph, with a below-base ra, between consonants, and every two-consonant conjunct bare,
+    with ि and with े; plus real words with stacked or reordered parts."""
+    consonants = [chr(c) for c in range(0x0915, 0x093A)] + ["क़", "ख़", "ग़", "ज़", "ड़", "ढ़", "फ़", "य़", "ळ", "ऱ"]
+    signs = ["", "ा", "ि", "ी", "ु", "ू", "ृ", "ॅ", "े", "ै", "ॉ", "ो", "ौ", "ं", "ँ", "ः", "िं", "ीं", "ें", "ैं",
+             "ों", "ुं", "ूँ", "्"]
+    words = []
+    for c in consonants:
+        for m in signs:
+            words += [c + m, "र्" + c + m, c + "्र" + m, "क" + c + m + "क"]
+    for c1 in consonants:
+        for c2 in consonants:
+            words += [c1 + "्" + c2, c1 + "्" + c2 + "ि", c1 + "्" + c2 + "े"]
+    return words + ["वार्षिक", "आर्थिक", "कार्तिक", "धार्मिक", "लिमिटेड", "महाराष्ट्र", "मऱ्याद", "र्\u200dय", "क्\u200cष",
+                    "ॲप", "श्री", "स्त्री", "त्र्य", "कृष्ण", "हृदय", "ज्ञान", "क्षत्रिय", "कीर्ति", "सिंह", "हिंदी", "किं"]
+
+
+@needs_poppler
+@pytest.mark.parametrize("bold", [False, True], ids=["regular", "bold"])
+def test_thousands_of_devanagari_forms_extract_exactly_and_never_as_private_use(tmp_path, bold):
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import SimpleDocTemplate
+
+    words = _sweep_words()
+    assert len(words) > 10_000
+    style = ParagraphStyle("t", fontName="Helvetica", fontSize=9, leading=14)
+    out = tmp_path / "sweep.pdf"
+    SimpleDocTemplate(str(out)).build([RF.unicode_paragraph(w, style, bold=bold) for w in words])
+    raw = out.read_bytes()
+    lines = subprocess.run(["pdftotext", "-enc", "UTF-8", str(out), "-"], capture_output=True, check=True,
+                           timeout=120).stdout.decode("utf-8").split("\n")
+    got = [line.strip() for line in lines if line.strip()]
+    targets = to_unicode_targets(raw)
+    assert len(targets) > 200 and not _private_use("".join(got)) and not _private_use("".join(targets))
+    wrong = [(want, have) for want, have in zip(words, got) if want != have]
+    assert len(got) == len(words) and wrong == [], wrong[:20]
+
+
+def test_a_pdf_does_not_depend_on_what_the_process_built_before():
+    """Typed-order codes are made on first use, so their numbers depend on history; they never reach the PDF."""
+    script = (
+        "import sys, hashlib\n"
+        "from backend.tests.test_cbom_deliverable_common import make_view\n"
+        "from backend.utilities.pdf.cbom_deliverables import DELIVERABLES\n"
+        "from backend.utilities.pdf.report_context import ReportContext\n"
+        "from backend.utilities.pdf.report_options import parse_report_options\n"
+        "spec, view = DELIVERABLES['scope-baseline-register'], make_view()\n"
+        "build = lambda n: spec.build(view, ctx=ReportContext(options=parse_report_options({'prepared_for': n}, "
+        "'deliverable')))\n"
+        "for name in sys.argv[1:-1]: build(name)\n"
+        "print(hashlib.sha256(build(sys.argv[-1])).hexdigest())\n"
+    )
+    target = "वार्षिक लिमिटेड किं"
+
+    def digest(*before: str) -> str:
+        done = subprocess.run([sys.executable, "-c", script, *before, target], capture_output=True, text=True,
+                              timeout=300, cwd=str(_TESTS.parent))
+        assert done.returncode == 0, done.stderr[-2000:]
+        return done.stdout.strip().splitlines()[-1]
+
+    assert digest() == digest("कार्तिक धार्मिक सिंह हिंदी कीर्ति", "आर्थिक मऱ्याद") == digest("क्षत्रिय")
+
+
+def test_a_foreign_font_under_a_report_font_name_fails_loudly():
+    script = (
+        "from reportlab.pdfbase import pdfmetrics\n"
+        "from reportlab.pdfbase.ttfonts import TTFont\n"
+        "from backend.utilities.pdf import report_fonts as RF\n"
+        "pdfmetrics.registerFont(TTFont('NotoSans', str(RF.FONT_DIR / 'NotoSans-Regular.ttf')))\n"
+        "try:\n"
+        "    RF.ensure_registered()\n"
+        "except RuntimeError as exc:\n"
+        "    print('refused', exc)\n"
+    )
+    done = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=120,
+                          cwd=str(_TESTS.parent))
+    assert done.returncode == 0, done.stderr[-2000:]
+    assert done.stdout.startswith("refused") and "'NotoSans'" in done.stdout
 
 
 def test_registration_is_idempotent_and_installs_the_per_font_shaper_once():

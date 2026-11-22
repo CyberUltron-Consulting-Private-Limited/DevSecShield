@@ -281,11 +281,18 @@ def test_one_log_line_per_export_without_free_text(api, capsys):
     assert "Acme" not in out and "Board pack" not in out
 
 
+JSON = {"Content-Type": "application/json"}
+# ~5,000 nested arrays in ~10 KB: under the body limit, past Python's JSON recursion limit (review 6013762056)
+DEEP = b'{"title": ' + b"[" * 5000 + b"]" * 5000 + b"}"
+
+
 def post_export(http, ids, body=None, scan_type="sast", query: str = "", headers=None, **kwargs):
+    """POST the export; ``body`` as JSON, or raw ``content`` sent as application/json unless ``headers`` say otherwise."""
     url = f"/{ids['team_id']}/{scan_type}/scan/{ids['scan_ids'][scan_type]}/export"
     if body is not None:
         kwargs["json"] = body
-    return http.post(url + (f"?{query}" if query else ""), headers={**AUTH, **(headers or {})}, **kwargs)
+    sent = {**AUTH, **(JSON if "content" in kwargs else {}), **(headers or {})}
+    return http.post(url + (f"?{query}" if query else ""), headers=sent, **kwargs)
 
 
 def test_post_takes_the_options_as_a_json_body_and_answers_like_the_get(api):
@@ -305,10 +312,26 @@ def test_post_takes_the_options_as_a_json_body_and_answers_like_the_get(api):
     typed = post_export(http, ids, {"severities": ["critical", "high"], "hide_evidence": True, "title": None,
                                     "label": "internal", "prepared_for": "Acme Bank"})
     assert typed.status_code == 200 and typed.headers["X-Report-Findings"] == f"2/{total}"
-    # no body, an empty body or an empty object: the full report, like a GET without a query
-    for kwargs in ({}, {"content": b""}, {"json": {}}):
+    # an empty JSON body or an empty object: the full report, like a GET without a query
+    for kwargs in ({"content": b""}, {"json": {}}):
         r = post_export(http, ids, **kwargs)
         assert r.status_code == 200 and r.headers["X-Report-Findings"] == f"{total}/{total}", kwargs
+
+
+@pytest.mark.parametrize("content_type, status", [
+    (None, 415), ("text/plain", 415), ("application/x-www-form-urlencoded", 415), ("multipart/form-data", 415),
+    ("application/jsonx", 415), ("application/json", 200), ("application/json; charset=utf-8", 200),
+    ("Application/JSON;charset=UTF-8", 200),
+])
+def test_post_needs_a_json_content_type(api, content_type, status):
+    http, ids = api
+    headers = {} if content_type is None else {"Content-Type": content_type}
+    url = f"/{ids['team_id']}/sast/scan/{ids['scan_ids']['sast']}/export"
+    r = http.post(url, headers={**AUTH, **headers}, content=b'{"label": "internal"}')
+    assert r.status_code == status, r.text
+    if status == 415:
+        assert r.json()["detail"] == "Send the report options as JSON (Content-Type: application/json)"
+    assert http.post(url, headers=headers, content=b"{}").status_code == 401  # authentication still comes first
 
 
 def test_post_keeps_the_client_name_out_of_the_url_and_the_log(api, capsys):
@@ -364,8 +387,14 @@ def test_post_refuses_options_in_its_query_string_and_oversized_or_malformed_bod
     assert big.status_code == 413
     bad = post_export(http, ids, content=b"{not json", headers={**AUTH, "Content-Type": "application/json"})
     assert bad.status_code == 422 and bad.json()["detail"] == "body: must be a JSON object of report options"
-    twice = post_export(http, ids, content=b'{"label": "internal", "label": "public"}')
-    assert twice.status_code == 422 and twice.json()["detail"] == "label: was given more than once"  # as in a query
+    for raw in (b'{"label": "internal", "label": "public"}', b'{"label": "internal", "label": null}',
+                b'{"label": null, "label": "internal"}', b'{"title": null, "title": null}'):
+        twice = post_export(http, ids, content=raw)
+        field = raw.split(b'"')[1].decode()
+        assert twice.status_code == 422 and twice.json()["detail"] == f"{field}: was given more than once", raw
+    deep = post_export(http, ids, content=DEEP)
+    assert len(DEEP) < 16 * 1024 and deep.status_code == 422, deep.text
+    assert deep.json()["detail"] == "body: is nested too deeply; send one JSON object of report options"
     nested = post_export(http, ids, {"title": {"text": "x"}})
     assert nested.status_code == 422 and nested.json()["detail"] == "title: must be a string"
     for raw in (b"null", b"[]", b'"label"', b"3"):  # JSON, but not an object of options
@@ -395,6 +424,28 @@ def test_post_and_get_share_every_route_dependency():
         assert deps(get) == deps(post), path
         assert any(isinstance(d, tuple) and d[1] in ("scan.read", "cbom.read") for d in deps(post)), path
         assert type(get) is type(post), path  # route class (CbomRoute on R4)
+
+
+def test_the_openapi_body_schema_says_what_the_server_accepts():
+    from backend.main import app
+
+    spec = app.openapi()["paths"]
+    scan = spec["/{team_id}/{type}/scan/{scan_id}/export"]["post"]["requestBody"]["content"]["application/json"]["schema"]
+    run = spec["/{team_id}/cbom/sources/runs/{run_id}/report.pdf"]["post"]["requestBody"]["content"]["application/json"]
+
+    def kinds(prop):
+        return sorted(option["type"] for option in prop["anyOf"])
+
+    props = scan["properties"]
+    for key in ("sections", "severities", "statuses"):
+        assert kinds(props[key]) == ["array", "null", "string"], key
+    assert kinds(props["hide_evidence"]) == ["boolean", "null", "string"]
+    assert kinds(props["prepared_for"]) == ["null", "string"] and props["prepared_for"]["anyOf"][0]["maxLength"] == 120
+    assert props["sections"]["anyOf"][1]["items"]["enum"] == ["summary", "catalog", "details", "remediation",
+                                                               "mappings", "compliance", "inventory", "notes"]
+    assert run["schema"]["properties"]["sections"]["anyOf"][1]["items"]["enum"] == ["summary", "posture", "catalog",
+                                                                                    "provenance"]
+    assert "statuses" not in run["schema"]["properties"] and scan["additionalProperties"] is False
 
 
 def test_cors_lets_a_browser_post_json_with_a_bearer_token():
@@ -535,7 +586,14 @@ def test_deliverable_post_takes_the_cover_options_as_json(deliverable_api):
     for name in ("Content-Disposition", "X-Report-Logo", "X-Cbom-Scans-Included", "X-Cbom-Fingerprint",
                  "X-Cbom-Posture", "Cache-Control"):
         assert post.headers[name] == get.headers[name], name
-    assert client.post(url).content == client.get(url).content  # no body: today's document
+    assert client.post(url, json={}).content == client.get(url).content  # no option: today's document
+    raw_post = client.client.post  # the TestClient itself, for bodies and headers the helper does not send
+    bearer = {"Authorization": f"Bearer {client.token('alice')}"}
+    assert raw_post(url, headers=bearer, content=b"{}").status_code == 415  # no Content-Type
+    deep = raw_post(url, headers={**bearer, **JSON}, content=DEEP)
+    assert deep.status_code == 422 and deep.json()["detail"].startswith("body: is nested too deeply"), deep.text
+    dup = raw_post(url, headers={**bearer, **JSON}, content=b'{"label": "internal", "label": null}')
+    assert dup.status_code == 422 and dup.json()["detail"] == "label: was given more than once"
     marathi = client.post(url, json={"prepared_for": "महाराष्ट्र राज्य सहकारी बँक"})
     assert marathi.status_code == 200 and b"NotoSansDevanagari" in marathi.content
     for body, field in (({"severities": "high"}, "severities"), ({"title": "T"}, "title"),

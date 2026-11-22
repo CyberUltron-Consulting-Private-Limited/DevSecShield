@@ -23,5 +23,7 @@ License: SIL Open Font License 1.1, copied verbatim from those two repositories 
 and keep their names.
 
 `glyph_text.json` is generated from the font files by `backend/scripts/pdf_font_glyph_text.py` (its docstring has the
-command): the text each glyph that no character maps to (a conjunct, a matra with its anusvara, a ligature) stands for,
-so a shaped word copies and searches as the text it shows. Regenerate it whenever a font file changes.
+command): the text each glyph that no character maps to (a conjunct, a matra with its anusvara, a ligature) stands for.
+Where a cluster's glyphs do not spell what was typed (a reordered ि, a reph folded into an i-matra), `report_fonts`
+maps that cluster to its typed text at build time, so a shaped word copies and searches exactly as typed. Regenerate
+the table whenever a font file changes.

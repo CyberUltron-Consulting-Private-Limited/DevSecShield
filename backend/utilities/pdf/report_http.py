@@ -8,9 +8,16 @@ R4 run report, R5 run evidence pack).
   line); the GET stays for old clients and option-less downloads. The body is an object of the query's keys with the
   query's string values (``{"sections": "summary,catalog", "hide_evidence": "true"}``); a list of strings is accepted
   for ``sections``, ``severities`` and ``statuses`` and a boolean for ``hide_evidence``; ``null`` means not set. A key
-  that is not a report option, a non-object body or a POST with report options in its query string is refused (422),
-  so a typo never silently builds the full report; a body over ``BODY_MAX_BYTES`` answers 413. An empty body is no
-  option (today's report).
+  that is not a report option, a key given twice (even as ``null``), a body that is not one JSON object (malformed,
+  nested too deeply to parse) or a POST with report options in its query string is refused (422), so a typo never
+  silently builds the full report; a body over ``BODY_MAX_BYTES`` answers 413, and a POST whose ``Content-Type`` is not
+  ``application/json`` (parameters such as ``charset`` allowed) answers 415. An empty JSON body is no option (today's
+  report).
+* Export slots: a large scan PDF (``LARGE_PDF_ROWS`` rows or more) takes a slot of the scan PDF pool and a large CBOM
+  export one of the CBOM pool (``cbom_sources/export_slots.py``). With the defaults a host builds at most 2 large
+  CBOM exports and 2 large scan PDFs at once (4 in all, where one shared pool of 2 allowed 2), each pool's lock files
+  in ``ZS_CBOM_EXPORT_LOCK_DIR``; size the memory of a host, or lower ``ZS_CBOM_EXPORT_SLOTS`` /
+  ``ZS_PDF_EXPORT_SLOTS``, accordingly.
 * ``report_headers``: ``X-Report-Findings`` (rows shown / rows the scan has), ``X-Report-Logo``
   (applied | none | skipped) and ``Content-Disposition``; ``main.py`` exposes them through CORS.
 * ``status_join_error``: the 409 / 503 a status filter answers when the stored statuses cannot be joined.
@@ -34,7 +41,13 @@ from backend.utilities.pdf.report_options import (
     ALL_KEYS,
     FAMILY_KEYS,
     LABELS,
+    PREPARED_FOR_MAX,
     PRESETS,
+    RUN_SECTIONS,
+    SCAN_SECTIONS,
+    SEVERITIES,
+    STATUSES,
+    TITLE_MAX,
     ReportOptions,
     ReportOptionsError,
     parse_report_options,
@@ -85,14 +98,20 @@ def options_from_body(raw: bytes, family: str, *, scan_type: str | None = None) 
         data = json.loads(raw, object_pairs_hook=_Pairs)  # pairs, not a dict: a repeated key is refused, as in a query
     except (ValueError, UnicodeDecodeError):
         data = None
+    except RecursionError:  # thousands of nested arrays or objects in a few KiB: never a set of report options
+        raise _refuse("body", "is nested too deeply; send one JSON object of report options") from None
     if not isinstance(data, _Pairs):
         raise _refuse("body", "must be a JSON object of report options")
     items: list[tuple[str, str]] = []
+    seen: set[str] = set()
     for key, value in data:
         if key not in ALL_KEYS:
             if key.isidentifier() and len(key) <= 40:
                 raise _refuse(key, "is not a report option")
             raise _refuse("body", "has a key that is not a report option")
+        if key in seen:  # checked before null is dropped: {"label": "internal", "label": null} is ambiguous too
+            raise _refuse(key, "was given more than once")
+        seen.add(key)
         if value is None:
             continue
         if key in _LIST_KEYS and isinstance(value, list) and all(isinstance(v, str) for v in value):
@@ -110,6 +129,9 @@ async def request_options(request: Request, family: str, *, scan_type: str | Non
     """The route's report options: from the query string of a GET, from the JSON body of a POST (module docstring)."""
     if request.method != "POST":
         return options_from_request(request.query_params, family, scan_type=scan_type)
+    media = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if media != "application/json":
+        raise HTTPException(status_code=415, detail="Send the report options as JSON (Content-Type: application/json)")
     in_query = [key for key in request.query_params.keys() if key in ALL_KEYS]
     if in_query:
         raise _refuse(in_query[0], "send report options in the JSON body of a POST, not in its address")
@@ -123,13 +145,22 @@ async def request_options(request: Request, family: str, *, scan_type: str | Non
 
 def options_body_openapi(family: str) -> dict[str, Any]:
     """``openapi_extra`` of a POST route: its optional JSON body, with the keys ``family`` takes."""
-    listed = {"type": "string", "description": "comma list (or an array of strings)"}
+    def listed(allowed: Iterable[str]) -> dict[str, Any]:
+        return {"anyOf": [{"type": "string", "description": "comma list"},
+                          {"type": "array", "items": {"type": "string", "enum": list(allowed)}},
+                          {"type": "null"}]}
+
+    def text(limit: int) -> dict[str, Any]:
+        return {"anyOf": [{"type": "string", "maxLength": limit}, {"type": "null"}]}
+
     schemas: dict[str, Any] = {
-        "preset": {"type": "string", "enum": list(PRESETS)},
-        "sections": listed, "severities": listed, "statuses": listed,
-        "prepared_for": {"type": "string", "maxLength": 120}, "title": {"type": "string", "maxLength": 140},
-        "label": {"type": "string", "enum": list(LABELS)},
-        "hide_evidence": {"type": "string", "enum": ["true", "false"], "description": "or a boolean"},
+        "preset": {"anyOf": [{"type": "string", "enum": list(PRESETS)}, {"type": "null"}]},
+        "sections": listed(RUN_SECTIONS if family == "run" else SCAN_SECTIONS),
+        "severities": listed(SEVERITIES), "statuses": listed(STATUSES),
+        "prepared_for": text(PREPARED_FOR_MAX), "title": text(TITLE_MAX),
+        "label": {"anyOf": [{"type": "string", "enum": list(LABELS)}, {"type": "null"}]},
+        "hide_evidence": {"anyOf": [{"type": "boolean"}, {"type": "string", "enum": ["true", "false"]},
+                                    {"type": "null"}]},
     }
     properties = {key: schemas[key] for key in FAMILY_KEYS[family]}
     return {"requestBody": {"required": False, "content": {"application/json": {"schema": {

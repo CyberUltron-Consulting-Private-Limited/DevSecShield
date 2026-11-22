@@ -43,6 +43,11 @@ async function main() {
       const parts: Buffer[] = [];
       req.on("data", (c: Buffer) => parts.push(c));
       req.on("end", () => {
+        if (!/^application\/json\b/i.test(String(req.headers["content-type"] ?? ""))) {  // as the server: 415
+          res.writeHead(415, { "content-type": "application/json" });
+          res.end(JSON.stringify({ detail: "Send the report options as JSON (Content-Type: application/json)" }));
+          return;
+        }
         const options = JSON.parse(Buffer.concat(parts).toString("utf8") || "{}") as Record<string, unknown>;
         reports.push({ method: "POST", url: req.url ?? "", options });
         reportReply(res, options);

@@ -25,7 +25,12 @@ from fontTools.ttLib import TTFont
 FONTS = Path(__file__).resolve().parents[1] / "utilities" / "pdf" / "fonts"
 FAMILIES = {"NotoSans": ("NotoSans-Regular.ttf", "NotoSans-Bold.ttf"),
             "NotoSansDevanagari": ("NotoSansDevanagari-Regular.ttf", "NotoSansDevanagari-Bold.ttf")}
-SKIP = ("NULL", "NullMark")  # empty marks: no text of their own
+# Empty marks: no text of their own. HarfBuzz uses NullMark where a reph, anusvara or candrabindu was folded into
+# another glyph (र्षि is drawn iMatra_reph, ष, NullMark), so what it stands for depends on the word: a per-glyph table
+# cannot say it. report_fonts._copy_as_typed gives such a cluster its typed text at build time, whatever this table
+# says, so no glyph ever extracts as a private-use code point; this table is each glyph's text where the glyph alone
+# decides it.
+SKIP = ("NULL", "NullMark")
 LEGACY = {"dev2": "deva"}  # a script tag HarfBuzz prefers -> the old tag it then ignores
 
 

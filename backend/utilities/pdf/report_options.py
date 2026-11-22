@@ -90,6 +90,20 @@ TEXT_RANGES = (
     # Devanagari Extended
     (0xA8E0, 0xA8FF),
 )
+# What Python's str.strip() removes from both ends of free text (every str.isspace() code point; U+FEFF is not one:
+# it is a format character, refused). The browser trims exactly this set, not String.prototype.trim()'s.
+STRIP_RANGES = (
+    (0x0009, 0x000D),
+    (0x001C, 0x0020),
+    (0x0085, 0x0085),
+    (0x00A0, 0x00A0),
+    (0x1680, 0x1680),
+    (0x2000, 0x200A),
+    (0x2028, 0x2029),
+    (0x202F, 0x202F),
+    (0x205F, 0x205F),
+    (0x3000, 0x3000),
+)
 # --- end constants ------------------------------------------------------------------------------
 
 ALL_KEYS = ("preset", "sections", "severities", "statuses", "prepared_for", "title", "label", "hide_evidence")
@@ -180,6 +194,8 @@ def _csv(field_name: str, raw: str, allowed: Sequence[str]) -> frozenset[str]:
 
 
 _JOINERS = frozenset("\u200c\u200d")  # format characters (Cf) that are part of Devanagari spelling
+# combining marks (a Devanagari vowel sign, an accent): after no letter they would print on a dotted circle
+_MARKS = ("Mn", "Mc", "Me")
 
 
 def is_cp1252(text: str) -> bool:
@@ -212,6 +228,11 @@ def _text(field_name: str, raw: str, limit: int) -> str | None:
             raise ReportOptionsError(field_name, "must be one line of plain text")
     if not text_supported(text):
         raise ReportOptionsError(field_name, "can only use Latin, Greek, Cyrillic or Devanagari characters")
+    previous = ""
+    for ch in text:
+        if unicodedata.category(ch) in _MARKS and not (previous and unicodedata.category(previous)[0] in "LM"):
+            raise ReportOptionsError(field_name, "has a vowel sign or accent that follows no letter")
+        previous = ch
     return text
 
 

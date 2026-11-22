@@ -108,13 +108,13 @@ const TEXT = {
   },
 
   // ────────────────────────────────────────────────────────────── Filters
-  // src: backend/utilities/pdf/report_options.py:28, backend/utilities/pdf/report_options.py:166-169 — the KPI buckets; all five = no filter
+  // src: backend/utilities/pdf/report_options.py:28, backend/utilities/pdf/report_options.py:180-183 — the KPI buckets; all five = no filter
   "export.severities": {
     what: "Only findings of the chosen severities are printed. The buckets are the dashboard's: Critical, High, Medium, Low, and Other for everything else. All five chosen means no filter; the PDF then says Showing N of M findings.",
     why: "A short report of the urgent findings gets read; the scope block keeps it from passing for the full scan.",
     example: "Critical and High only for the board.",
   },
-  // src: backend/utilities/pdf/report_options.py:29, backend/utilities/pdf/report_options.py:277-280 — status filter; all four = no filter
+  // src: backend/utilities/pdf/report_options.py:29, backend/utilities/pdf/report_options.py:299-302 — status filter; all four = no filter
   "export.status.not_started": {
     what: "Prints findings nobody has started on. Untick it to leave them out. With a status filter the report says when the statuses were read; a scan whose statuses cannot be matched is refused rather than guessed.",
     why: "Open findings are what a remediation plan is about.",
@@ -140,19 +140,19 @@ const TEXT = {
   },
 
   // ────────────────────────────────────────────────────────────── Cover and privacy
-  // src: backend/utilities/pdf/report_options.py:63,68-92,204-215, frontend/utils/reportOptions.ts:165-174, backend/utilities/pdf/report_http.py:76-121 — 120 characters, one line, cp1252 or TEXT_RANGES (Noto fonts); sent as a POST body
+  // src: backend/utilities/pdf/report_options.py:63,68-106,220-236, frontend/utils/reportOptions.ts:195-206, backend/utilities/pdf/report_http.py:89-143 — 120 characters, one line, cp1252 or TEXT_RANGES (Noto fonts); sent as a POST body
   "export.prepared_for": {
     what: "The client named on the cover as Prepared for. Up to 120 characters on one line, in Latin (accents included), Greek, Cyrillic or Devanagari (Hindi, Marathi) script; other scripts are refused. Sent in the request body, never in a URL, and never remembered in this browser.",
     why: "A named report is ready to send; the name is not stored so it cannot leak into another client's report.",
     example: "Acme Bank Ltd.",
   },
-  // src: backend/utilities/pdf/report_options.py:57-62, backend/utilities/pdf/report_options.py:204-215 — deliverables take prepared_for (masthead right column)
+  // src: backend/utilities/pdf/report_options.py:57-62, backend/utilities/pdf/report_options.py:220-236 — deliverables take prepared_for (masthead right column)
   "export.prepared_for.deliverable": {
     what: "The client named in each deliverable's masthead, under the team logo. Up to 120 characters on one line, in Latin, Greek, Cyrillic or Devanagari script. Kept only until you leave or reload this page.",
     why: "The deliverables go to one client in a batch; the name is not stored so a later batch does not inherit it.",
     example: "Acme Bank Ltd.",
   },
-  // src: backend/utilities/pdf/report_options.py:64, backend/utilities/pdf/report_options.py:204-215 — 140 characters, the same scripts as prepared_for
+  // src: backend/utilities/pdf/report_options.py:64, backend/utilities/pdf/report_options.py:220-236 — 140 characters, the same scripts as prepared_for
   "export.title": {
     what: "Replaces the report's usual title on the cover. Up to 140 characters on one line, in Latin, Greek, Cyrillic or Devanagari script. Empty keeps the usual title. Never remembered.",
     why: "A title that names the engagement makes the PDF easy to file.",
@@ -164,7 +164,7 @@ const TEXT = {
     why: "The label tells readers how to handle the document under your information-classification policy.",
     example: "Restricted for a report that names production hosts.",
   },
-  // src: backend/utilities/pdf/report_options.py:288-293 — hide_evidence removes the EVIDENCE block and snippet lines only
+  // src: backend/utilities/pdf/report_options.py:310-315 — hide_evidence removes the EVIDENCE block and snippet lines only
   "export.hide_evidence": {
     what: "Leaves out each finding's evidence block and code snippet lines; everything else, including file paths and line numbers, is printed. It does not redact secrets elsewhere in the text.",
     why: "Snippets can contain source code or secrets the recipient should not get.",

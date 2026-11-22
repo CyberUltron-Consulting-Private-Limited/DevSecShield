@@ -147,6 +147,7 @@ run([
     assert.equal(sent.length, 1);
     assert.equal(sent[0].url, "/7/cbom/scan/12/export", "no query string: the client name stays out of access logs");
     assert.deepEqual(sent[0].params, {});
+    assert.match(sent[0].headers["content-type"] ?? "", /^application\/json\b/, "JSON, as the server requires (else 415)");
     assert.deepEqual(sent[0].body, {
       preset: "executive", severities: "critical,high", statuses: "not_started,in_progress",
       prepared_for: "Acme Bank", title: "Q4 review", hide_evidence: "true",
