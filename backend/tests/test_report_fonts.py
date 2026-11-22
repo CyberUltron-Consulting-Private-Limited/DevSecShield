@@ -16,8 +16,9 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-import unicodedata
+import re
 import sys
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -323,7 +324,8 @@ def _sweep_words() -> list[str]:
             words += [c1 + "्" + c2, c1 + "्" + c2 + "ि", c1 + "्" + c2 + "े"]
     vowels = [chr(c) for c in range(0x0905, 0x0915)] + ["ॲ", "ॠ"]
     words += vowels + [v + "ं" for v in vowels] + ["क" + v + "क" for v in vowels]
-    words += ["भाई", "मुंबई", "ऐसा", "ईमेल", "नई", "कई", "ईश्वर", "ऐतिहासिक", "मुंबई भाई"]
+    words += ["भाई", "मुंबई", "ऐसा", "ईमेल", "नई", "कई", "ईश्वर", "ऐतिहासिक", "मुंबई भाई", "ई\u200dमेल", "भाई\u200d",
+              "बड़ा", "लड़का", "पढ़ाई", "फ़ोन", "ज़रूरी", "य़", "ऴ"]
     return [unicodedata.normalize("NFC", w) for w in words] + ["वार्षिक", "आर्थिक", "कार्तिक", "धार्मिक", "लिमिटेड", "महाराष्ट्र", "मऱ्याद", "र्\u200dय", "क्\u200cष",
                     "ॲप", "श्री", "स्त्री", "त्र्य", "कृष्ण", "हृदय", "ज्ञान", "क्षत्रिय", "कीर्ति", "सिंह", "हिंदी", "किं"]
 
@@ -354,10 +356,15 @@ def extracted(raw: bytes, tmp_path: Path) -> dict[str, str]:
     return out
 
 
+# U+200D on the extra glyph of ई/ऐ (drawn as two glyphs), after the syllable's marks; a joiner typed elsewhere stays
+_SYLLABLE_ZWJ = re.compile("([\u0908\u0910][\u0900-\u0903\u093c\u0951-\u0954]*)\u200d")
+
+
 def _pypdf_word(text: str) -> str:
     """pypdf reads ToUnicode only: a glyph past a syllable's characters (ई is drawn as two) copies as U+200D, and a
-    letter HarfBuzz decomposed (ऴ) as its canonical equivalent; compared up to both (see fonts/README.md)."""
-    return unicodedata.normalize("NFC", text.replace("\u200d", ""))
+    letter the font draws as its canonical equivalent (क़, ऴ, ị) as that equivalent; compared up to both (see
+    fonts/README.md). A joiner the user typed is kept, so losing one fails."""
+    return unicodedata.normalize("NFC", _SYLLABLE_ZWJ.sub(r"\1", text))
 
 
 def assert_clean(engine: str, text: str) -> None:
@@ -380,9 +387,9 @@ def _sweep_pdf(tmp_path: Path, words: list[str], bold: bool, per_paragraph: int)
 
 @pytest.mark.parametrize("bold", [False, True], ids=["regular", "bold"])
 def test_thousands_of_devanagari_forms_extract_exactly_in_every_engine(tmp_path, bold):
-    """Running text (40 forms a paragraph): poppler, PDFium and pypdf give back every form, up to canonical
-    equivalence (a letter HarfBuzz decomposes, ऴ, comes out as ळ + nukta) and, in pypdf, a U+200D after ई/ऐ
-    (``_pypdf_word``).
+    """Running text (40 forms a paragraph): poppler and PDFium give back every form exactly as typed (/ActualText);
+    pypdf up to canonical equivalence (a letter the font draws precomposed or decomposed, क़ or ऴ) and a U+200D after
+    ई/ऐ (``_pypdf_word``).
     No engine sees a control character or a private-use code point; no ToUnicode entry is empty."""
     words = _sweep_words()
     assert len(words) > 10_000
@@ -394,10 +401,10 @@ def test_thousands_of_devanagari_forms_extract_exactly_in_every_engine(tmp_path,
         pytest.skip("no PDF text extractor installed")
     for engine, text in texts.items():
         assert_clean(engine, text)
-        got = [unicodedata.normalize("NFC", w) for w in text.split()]  # canonical equivalence (ऴ as ळ + nukta)
+        got = text.split()  # exactly as typed (review 6014645102: NFC here hid 1,679 decomposed forms)
         expected = " ".join(words).split()
         if engine == "pypdf":
-            got, expected = [_pypdf_word(w) for w in got], [_pypdf_word(w) for w in expected]
+            got = [_pypdf_word(w) for w in got]  # the typed text is the reference: a typed joiner must survive
         wrong = [(want, have) for want, have in zip(expected, got) if want != have]
         assert len(got) == len(expected) and wrong == [], (engine, len(got), wrong[:10])
 
@@ -405,25 +412,25 @@ def test_thousands_of_devanagari_forms_extract_exactly_in_every_engine(tmp_path,
 @pytest.mark.parametrize("bold", [False, True], ids=["regular", "bold"])
 def test_one_form_a_line_extracts_every_form_in_every_engine(tmp_path, bold):
     """One form a paragraph (lines close together, the layout where PDFium misjudged line ends): every engine gives
-    back every form in order (up to canonical equivalence; pypdf also up to U+200D). PDFium joins 7 of these lines
+    back every form in order, exactly (pypdf up to canonical equivalence and U+200D). PDFium joins 7 of these lines
     without a break (regular weight only: a stacked conjunct with a raised e-matra), so it is checked without breaks."""
     words = _sweep_words()
     raw = _sweep_pdf(tmp_path, words, bold, 1)
     for engine, text in extracted(raw, tmp_path).items():
         assert_clean(engine, text)
         if engine == "pdfium":
-            assert unicodedata.normalize("NFC", "".join(text.split())) == "".join("".join(w.split()) for w in words)
+            assert "".join(text.split()) == "".join("".join(w.split()) for w in words)
             continue
         tokens = " ".join(words).split()
-        got = [unicodedata.normalize("NFC", w) for w in text.split()]
+        got = text.split()
         if engine == "pypdf":
-            got, tokens = [_pypdf_word(w) for w in got], [_pypdf_word(w) for w in tokens]
+            got = [_pypdf_word(w) for w in got]
         wrong = [(want, have) for want, have in zip(tokens, got) if want != have]
         assert len(got) == len(tokens) and wrong == [], (engine, len(got), wrong[:10])
 
 
 REVIEW_WORDS = ["शुद्ध", "राष्ट्रीय", "बँक", "लिमिटेड", "त्रिवेणी", "वार्षिक", "कीर्ति", "किं", "क़िला", "मुंबई", "ईमेल",
-                "ऐसा", "भाई"]
+                "ऐसा", "भाई", "बड़ा", "फ़ोन", "Thị"]
 
 
 def _run_pdf(ctx) -> bytes:
@@ -538,6 +545,11 @@ def test_a_syllable_drawn_with_more_glyphs_than_letters_copies_as_typed():
     assert RF._pieces("ई", ["इ", "र्"]) == ["ई", RF.ZWJ]
     assert RF._pieces("ऐ", ["ए", "े"]) == ["ऐ", RF.ZWJ]
     assert RF._pieces("ि", ["\u25cc", "ि"]) == ["ि", RF.ZWJ]
+    # review 6014645102: a joiner typed after the syllable stays last, so the first glyph's text never ends in one
+    # (pdf.js dropped such a text: ई + U+200D + मेल copied as मेल)
+    assert RF._pieces("ई\u200d", ["इ", "र्"]) == ["ई", "\u200d"]
+    assert RF._pieces("ई\u200c", ["इ", "र्"]) == ["ई", "\u200c"]
+    assert RF._pieces("ऐ\u200d", ["ए", "े", "x"]) == ["ऐ", RF.ZWJ, "\u200d"]
 
 
 def _forced_switch_builds(monkeypatch, *, locked: bool) -> int:

@@ -35,16 +35,26 @@ pdfminer and pdf.js read) and the whole run is wrapped in `/ActualText` with the
 MuPDF read). Checked with poppler (`pdftotext`), PDFium (`pypdfium2`), pypdf, MuPDF (PyMuPDF `get_text`), pdfminer
 and pdf.js on 79 Hindi, Marathi, Vietnamese, Greek and Cyrillic test strings, each as a name and a title:
 
-- poppler, PDFium: every string copies exactly as typed.
+- poppler, PDFium: every string copies exactly as typed, code point for code point. A letter the font draws as its
+  canonical equivalent (क़ ड़ फ़ … typed as consonant + nukta but drawn with the precomposed glyph, ऴ, ị ọ ụ ẹ drawn
+  as base + U+0323) keeps the glyph's own ToUnicode text but its run's `/ActualText` still carries the typed text, so
+  a byte-exact search (PDFium's own find, grep on copied text) matches `बड़ा`, `फ़ोन`, `Thị`.
 - pdf.js: exact, except for a space it inserts by glyph position inside a few words with a half form or a conjunct
   (`स्टेट` as `स् टेट`, `प्रदेश` as `प्र देश`).
-- pypdf: exact once U+200D is dropped. A syllable drawn with more glyphs than it has letters (the font draws ई as इ
-  plus a reph-like mark and ऐ as ए plus a vowel sign) gives its typed text to the first glyph and U+200D (zero width
-  joiner, invisible) to each extra glyph, so a copied ई can carry a trailing or inner U+200D.
+- pypdf: exact up to canonical equivalence (it reads ToUnicode only, so `फ़` can come out precomposed and `ị`
+  decomposed) and once the U+200D described next is dropped. A syllable drawn with more glyphs than it has letters
+  (the font draws ई as इ plus a reph-like mark and ऐ as ए plus a vowel sign) gives its typed text to the first glyph
+  and U+200D (zero width joiner, invisible) to each extra glyph, so a copied ई can carry a trailing or inner U+200D. A joiner the user typed
+  right after ई/ऐ goes on the last glyph, so no glyph's text ends in one (pdf.js drops such a text).
 - pdfminer: same U+200D as pypdf, plus spaces it inserts by glyph position (`कृष्ण` as `कृ ष्ण`, `Thị` as `Thi ̣`).
-- MuPDF: a run that holds such a syllable can repeat its tail: `ईमेल` copies as `ईमेलमेल`, `ऐप ऐसा` as `ऐप ऐसासा`.
+- MuPDF: a run that holds such a syllable, or a nukta letter drawn precomposed, can repeat its tail (`सड़क` as
+  `सड़कक`): `ईमेल` copies as `ईमेलमेल`, `ऐप ऐसा` as `ऐप ऐसासा`.
   MuPDF matches the `/ActualText` against the glyph text from both ends and, when the two differ in the middle, keeps
   some glyph text as well. Spans that cover only the rewritten syllables avoid that in MuPDF but put spaces inside
   words in poppler and PDFium, and nested spans duplicate text in poppler, PDFium and MuPDF, so the whole-run span,
   which is exact in poppler and PDFium, is kept and this MuPDF repeat is a known limit. MuPDF also splits `क़िला`
   as `क़ि ला` in one of the two layouts.
+
+Where readers disagree, exactness in poppler and PDFium wins (Chrome, Edge and most desktop viewers use PDFium or
+poppler; review 6014645102): the tests assert those two code point for code point, pypdf up to canonical equivalence
+and the U+200D above, and the others are measured, not asserted.

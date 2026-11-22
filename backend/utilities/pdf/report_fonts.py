@@ -26,7 +26,8 @@ What this module adds to ReportLab's shaping, each for a reason found by testing
     (derived from the fonts' GSUB tables by ``scripts/pdf_font_glyph_text.py``). Where a cluster's glyphs, read in
     drawing order, do not spell the typed cluster, ``_copy_as_typed`` draws the same glyphs through extra codes
     whose entries do (``_pieces``: one typed character per glyph, the rest on the last; a cluster with more glyphs
-    than characters, ई or ऐ, has all its text on the first glyph and U+200D on each other). No entry is ever empty:
+    than characters, ई or ऐ, has all its text on the first glyph and U+200D on each other; a cluster whose glyphs
+    spell a canonical equivalent, क़ or ị, keeps its codes and is exact in ``/ActualText``). No entry is ever empty:
     PDFium, pdf.js and MuPDF copy the raw byte of a code without text, a control character in the middle of a word.
   - ``/ActualText`` (poppler, PDFium, MuPDF read this first). ``_format_shaped`` wraps each shaped run in marked
     content carrying its typed text, so a mark raised or moved back over its consonant cannot be placed by its
@@ -213,6 +214,7 @@ def _shape_by_font(original):
 
 
 ZWJ = "\u200d"
+_JOINERS = "\u200c\u200d"  # ZERO WIDTH NON-JOINER, ZERO WIDTH JOINER
 
 
 def _pieces(typed: str, defaults: List[str]) -> List[str]:
@@ -223,11 +225,16 @@ def _pieces(typed: str, defaults: List[str]) -> List[str]:
     A cluster with more glyphs than characters (the font draws ई as इ plus a reph-like mark, ऐ as ए plus a vowel sign):
     the whole typed cluster goes on the first glyph and each further glyph gets U+200D ZERO WIDTH JOINER, so pdf.js
     copies मुंबई as typed (pypdf keeps the joiner: मुंबई + U+200D). A cluster whose glyphs already spell a canonical
-    equivalent of what was typed (HarfBuzz decomposed ऴ into ळ + nukta) is never rewritten (``_copy_as_typed``)."""
+    equivalent of what was typed (HarfBuzz decomposed ऴ into ळ + nukta) keeps its codes (``_copy_as_typed``); a joiner
+    typed after the syllable goes on its last glyph."""
     count = len(defaults)
     if len(typed) >= count:
         return [typed[i:i + 1] for i in range(count - 1)] + [typed[count - 1:]]
-    return [typed] + [ZWJ] * (count - 1)
+    core = typed.rstrip(_JOINERS) or typed
+    pieces = [core] + [ZWJ] * (count - 1)
+    if core != typed:
+        pieces[-1] = typed[len(core):]  # a joiner typed after the syllable stays last (pdf.js drops a text ending in one)
+    return pieces
 
 
 def _copy_as_typed(word, shaped):
@@ -262,8 +269,14 @@ def _copy_as_typed(word, shaped):
             continue
         want = typed[start:end]
         shown = [fonts[k].text_of(ord(chars[k][j])) for k, j, _c in members]
+        if "".join(shown) == want:
+            continue  # the glyphs already spell it
         if unicodedata.normalize("NFD", "".join(shown)) == unicodedata.normalize("NFD", want):
-            continue  # the glyphs already spell it, or its canonical equivalent (HarfBuzz decomposed ऴ, ị)
+            # a canonical equivalent (the font draws क़ U+0958, typed क + nukta, with one glyph; HarfBuzz decomposed
+            # ऴ, ị): ToUnicode keeps the glyphs' own text, the run's /ActualText still carries exactly what was typed
+            for n, (k, j, _c) in enumerate(members):
+                parts[k][1].__shapeData__[j].typed = want if n == 0 else ""
+            continue
         pieces = _pieces(want, shown)
         for n, ((k, j, _c), piece) in enumerate(zip(members, pieces)):
             font = fonts[k]
