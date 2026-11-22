@@ -1889,7 +1889,7 @@ def test_help_and_readme_describe_retry_escape_and_probe_limits():
 # --to never goes forward and status lists its candidates.
 def test_readme_round5_wording():
     text = " ".join(README.read_text().split())
-    assert "when the job is killed during them it is left unfinished, with ROLLBACK-STARTED last" in text
+    assert "when the job is killed during them it is left unfinished, usually with ROLLBACK-STARTED last" in text
     assert "they fail (or the job is killed during them) it records FAILED" not in text
     assert "is not immediate" in text and "CHOLA_WAIT_S" in text.split("is not immediate", 1)[1][:200]
     assert "kill -9" in text and "not newer" in text and "`status` lists the releases `--to` accepts" in text
@@ -1902,7 +1902,8 @@ def test_readme_round5_wording():
 def test_readme_round6_wording():
     text = " ".join(README.read_text().split())
     assert "records 128 + its number while the job's wrapper process lives, and reads as LOST if the wrapper was killed" in text
-    assert "with ROLLBACK-STARTED last (SIGKILL) or FAILED last (a whole-session SIGTERM" in text
+    assert "usually with ROLLBACK-STARTED last (SIGKILL, or a SIGTERM to the whole session" in text
+    assert "sometimes with FAILED last. Either way the retry starts B again." in text
     assert "a plain rollback goes \"forward\" to C (A's recorded predecessor) while `--to C` is refused as newer" in text
     assert "a deploy interrupted after its switch counts as the newest" in text
 

@@ -246,10 +246,9 @@ rollback records a **ROLLBACK-STARTED** line (target, current tag, database revi
 **Retrying a rollback that failed or was interrupted retries that same rollback, never one release further back**:
 after the tag switch (C -> B failed in `compose up`, or the job was killed) the retry starts B again; before it (or
 when the downgrade failed) it runs C -> B again. A rollback counts as finished only once B's checks passed: when
-they fail it records FAILED; when the job is killed during them it is left unfinished, with ROLLBACK-STARTED last
-(SIGKILL) or FAILED last (a whole-session SIGTERM: the check process dies first, then the job records FAILED before it
-stops). Either way the retry starts B again. The plan line says
-which. Once B runs, a further `rollback` goes to the release before B. A deploy started after an unfinished rollback
+they fail it records FAILED; when the job is killed during them it is left unfinished, usually with ROLLBACK-STARTED
+last (SIGKILL, or a SIGTERM to the whole session that ends the job before it can write FAILED), sometimes with FAILED
+last. Either way the retry starts B again. The plan line says which. Once B runs, a further `rollback` goes to the release before B. A deploy started after an unfinished rollback
 to B records B (where you were heading) as its rollback target.
 
 **When B can never start**, every retry starts B again. The way past it is explicit: `rollback --to <tag>` goes to
