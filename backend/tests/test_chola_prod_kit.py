@@ -1183,6 +1183,77 @@ def test_sigterm_to_the_whole_session_never_reads_as_success(instance):
     assert "chola-job: done 0" not in follow.stderr and "chola-job: done 143" in follow.stderr, follow.stderr
 
 
+# Round-5 L1: any other fatal signal to the worker never reads as success either: the worker writes rc only when it
+# ends on purpose, so the wrapper records the real 128 + n. (No core-dumping signals here: ABRT/XCPU/XFSZ would drop a
+# core file; the code path is the same.)
+@pytest.mark.skipif(shutil.which("setsid") is None or shutil.which("flock") is None, reason="util-linux missing")
+@pytest.mark.parametrize("sig", [signal.SIGUSR1, signal.SIGUSR2, signal.SIGALRM, signal.SIGPIPE])
+def test_other_fatal_signals_to_the_worker_never_read_as_success(instance, sig):
+    instance.set_up_modes("hang")
+    job, jdir = instance.job("rollback", "--allow-downgrade")
+    instance.wait_for(instance.dir / "hanging.pid")
+    worker = int(instance.wait_for(jdir / "worker").read_text().split()[0])
+    try:
+        os.kill(worker, sig)
+        rc = instance.wait_for(jdir / "rc").read_text().strip()
+    finally:
+        os.kill(int((instance.dir / "hanging.pid").read_text()), signal.SIGKILL)  # the orphaned `compose up`
+    assert rc == str(128 + sig), rc  # written by the wrapper, from the worker's real status
+    follow = instance.remote("job-follow", job, "0", "1")
+    assert f"chola-job: done {128 + sig} " in follow.stderr and "chola-job: done 0 " not in follow.stderr
+    assert instance.history()[-1].split()[1] == "rollback-started"
+    assert "exit 131" not in REMOTE.read_text()  # no QUIT trap: QUIT is ignored on entry and cannot be trapped
+
+
+# Regression guard for L1's completion flag (passes before and after): a worker that ends through `die` still writes
+# its own rc when its wrapper is gone.
+@pytest.mark.skipif(shutil.which("setsid") is None or shutil.which("flock") is None, reason="util-linux missing")
+def test_a_worker_ending_in_die_writes_its_rc_without_its_wrapper(tmp_path):
+    kit_copy = tmp_path / "kit" / "deploy" / "chola-prod"
+    kit_copy.mkdir(parents=True)
+    shutil.copy(REMOTE, kit_copy / "remote.sh")
+    env = _fake_docker(tmp_path, slow=3)  # dump without env files: docker info (3 s), then die
+    env["CHOLA_BASE_DIR"] = str(tmp_path / "base")
+    proc = run(["bash", str(kit_copy / "remote.sh"), "job-start", "dump"], env=env)
+    jdir = tmp_path / "base" / "state" / "jobs" / proc.stdout.strip()
+    for _ in range(100):
+        if (jdir / "worker").exists():
+            break
+        time.sleep(0.1)
+    os.kill(int((jdir / "pid").read_text().split()[0]), signal.SIGKILL)
+    for _ in range(200):
+        if (jdir / "rc").exists():
+            break
+        time.sleep(0.1)
+    assert (jdir / "rc").read_text().strip() == "1" and "chola-prod.sh renders it" in (jdir / "log").read_text()
+
+
+# Round-5: `rollback --to` only goes back (forward is deploy), and `status` lists what it accepts.
+def test_rollback_to_refuses_a_newer_release_and_status_lists_the_accepted_ones(instance):
+    status = instance.remote("status")
+    assert f"rollback --to accepts (deployed, passed, not newer; newest first): {C12} {B12} {A12}" in status.stdout
+    assert instance.remote("rollback", "--to", A12, "--allow-downgrade").returncode == 0 and instance.tag() == A12
+    for newer in (C12, B12):
+        proc = instance.remote("rollback", "--plan", "--to", newer)
+        assert proc.returncode == 1 and f"--to {newer} is newer than {A12}" in proc.stderr, proc.stderr
+        assert f"deploy --sha {newer}" in proc.stderr
+    assert instance.history()[-1].split()[1:3] == ["rollback", A12]  # the refusals changed nothing
+    assert instance.remote("rollback", "--plan", "--to", A12).returncode == 0  # the running release itself: a restart
+    status = instance.remote("status")
+    assert f"rollback --to accepts (deployed, passed, not newer; newest first): {A12}" in status.stdout
+
+
+# Round-5: --to and --allow-downgrade are refused on every other command, before any call.
+@pytest.mark.parametrize("args, flag", [(["status", "--to", A12], "--to"), (["deploy", "--sha", "HEAD", "--to", A12, "--yes"], "--to"),
+                                        (["backup", "--allow-downgrade"], "--allow-downgrade"),
+                                        (["verify", "--allow-downgrade"], "--allow-downgrade")])
+def test_rollback_only_flags_are_refused_elsewhere(fake_world, args, flag):
+    head = run(["git", "-C", str(REPO), "rev-parse", "HEAD"]).stdout.strip()
+    proc = fake_world(*[head if a == "HEAD" else a for a in args])
+    assert proc.returncode == 1 and f"[chola] ERROR: {flag} is only for rollback" in proc.stderr, proc.stderr
+    assert fake_world.log() == ""
+
+
 # Round-4 F2: C -> B whose `up` succeeds but whose checks fail: the retry starts B again, never B -> A.
 def test_rollback_whose_checks_fail_is_retried_not_extended(instance):
     (instance.dir / "curl-fail").write_text("")
@@ -1696,19 +1767,36 @@ def test_preflight_probe_uses_one_key_and_warns_when_it_cannot_delete_it(fake_wo
     assert proc.returncode == 0 and "could NOT delete" not in proc.stderr
 
 
-# Round-4 F3: a failed LOCAL staging copy of the kit stops the run before anything runs on the instance.
-@pytest.mark.parametrize("args", [["status"], ["preflight"], ["logs", "--service", "backend"]])
-def test_a_failed_local_kit_copy_stops_the_run(fake_world, args):
+def _failing_local_tar(fake_world):
     real_tar = shutil.which("tar")
     (fake_world.dir / "bin" / "tar").write_text(
         '#!/bin/sh\ncase "$*" in *"-cf - deploy/chola-prod"*) echo "tar: write error: No space left on device" >&2; exit 2;; esac\n'
         f'exec {real_tar} "$@"\n')
     (fake_world.dir / "bin" / "tar").chmod(0o755)
-    proc = fake_world(*args)
-    assert proc.returncode != 0 and "No space left on device" in proc.stderr, proc.stdout + proc.stderr
-    assert re.search(r"^\[chola\] ERROR: line \d+: tar ", proc.stderr, re.MULTILINE), proc.stderr
+
+
+def _stopped_before_any_remote_call(fake_world, proc):
+    errors = [line for line in proc.stderr.splitlines() if "ERROR" in line]
+    assert proc.returncode == 1 and "No space left on device" in proc.stderr, proc.stdout + proc.stderr
+    assert len(errors) == 1 and errors[0].startswith("[chola] ERROR: preparing the kit copy in ") and \
+        "nothing was sent to the instance" in errors[0], proc.stderr
     assert "remote.sh" not in fake_world.log() and "tar -xzf -" not in fake_world.log()
     assert not list(fake_world.dir.glob("chola-prod.*"))
+
+
+# Round-4 F3: a failed LOCAL staging copy of the kit stops the run before anything runs on the instance.
+@pytest.mark.parametrize("args", [["status"], ["preflight"], ["logs", "--service", "backend"]])
+def test_a_failed_local_kit_copy_stops_the_run(fake_world, args):
+    _failing_local_tar(fake_world)
+    _stopped_before_any_remote_call(fake_world, fake_world(*args))
+
+
+# Round-5 L2: the same where the first upload runs on the left of `||` (remote_job dump || die): errexit is off there,
+# so kit_upload's own `|| die` must stop it. At 2f234fb3, backup exited 0 and rollback made 8 remote calls.
+@pytest.mark.parametrize("args", [["backup"], ["rollback", "--yes"], ["rollback", "--yes", "--allow-downgrade"]])
+def test_a_failed_local_kit_copy_stops_backup_and_rollback(fake_world, args):
+    _failing_local_tar(fake_world)
+    _stopped_before_any_remote_call(fake_world, fake_world(*args))
 
 
 # Round-4 F5 (owner side): --to reaches both the plan and the job; anything but a commit id is refused before any call.
@@ -1756,6 +1844,18 @@ def test_help_and_readme_describe_retry_escape_and_probe_limits():
     assert "unversioned bucket" in text and "Any two owner commands that run a preflight at the same moment" in text
     assert "exit 143" in text and "never 0" in text and "rollback --to <tag>" in text
     assert "A job listed as LOST ended without an exit status (reboot or kill)" not in text
+
+
+# Round-5 doc nits: a SIGKILLed rollback leaves ROLLBACK-STARTED (not FAILED); `kill` waits for the current step;
+# --to never goes forward and status lists its candidates.
+def test_readme_round5_wording():
+    text = " ".join(README.read_text().split())
+    assert "when the job is killed during them it records nothing more, so ROLLBACK-STARTED stays the last line" in text
+    assert "they fail (or the job is killed during them) it records FAILED" not in text
+    assert "is not immediate" in text and "CHOLA_WAIT_S" in text.split("is not immediate", 1)[1][:200]
+    assert "kill -9" in text and "not newer" in text and "`status` lists the releases `--to` accepts" in text
+    help_text = " ".join(run(["bash", str(OWNER), "--help"]).stdout.split())
+    assert "Never forward: that is deploy --sha" in help_text and "--to TAG rollback only" in help_text
 
 
 # ------------------------------------------------------------------------------------------------ README

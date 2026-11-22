@@ -84,8 +84,9 @@ Commands
                              backup, then back to the previous tag (also after an interrupted deploy), then verify.
                              A rollback that failed or was interrupted is RETRIED by the next rollback (its target is
                              started again), never taken one release further back. --to TAG goes to that release
-                             instead (one that was deployed and passed its checks): the way past a target that cannot
-                             start
+                             instead (one that was deployed and passed its checks, and is not newer than the running
+                             one; `status` lists them): the way past a target that cannot start. Never forward: that
+                             is deploy --sha
   attach --job ID            follow a detached deploy/rollback/dump/infra-load job again (after Ctrl-C or a dropped
                              tunnel; `status` lists recent jobs)
   smtp-test                  SMTP login from the instance with the deployed settings (sends nothing)
@@ -100,8 +101,9 @@ Flags
   --ghcr-tag T               GHCR tag of the backend/worker images (default: dev-, staging- or manual-<sha12>)
   --frontend-image REF       use this frontend image instead of building one (its API URL is checked)
   --force-infra              build and load the release archive even when the instance has every image
-  --allow-downgrade          let rollback run alembic downgrade (drops what newer migrations added)
-  --to TAG                   rollback: to this release (12 or 40 hex characters) instead of the recorded target
+  --allow-downgrade          rollback only: let it run alembic downgrade (drops what newer migrations added)
+  --to TAG                   rollback only: to this older release (12 or 40 hex characters) instead of the recorded
+                             target
   --refresh-mail             re-read the mail login from origin/ansh:backend/.env into app-secrets
   --mail-prompt              type the mailbox address and password at a hidden prompt instead of reading origin/ansh
   --allow-imds               accept IMDSv1 or a hop limit > 1 (containers could use the instance role); not advised
@@ -179,8 +181,8 @@ work() {
   if [[ -z "${WORK}" && "${BASH_SUBSHELL}" -gt 0 ]]; then die "internal: scratch directory first created in a subshell"; fi
   if [[ -z "${WORK}" ]]; then
     umask 077
-    WORK="$(mktemp -d "${CHOLA_WORK_PARENT:-${TMPDIR:-/tmp}}/chola-prod.XXXXXX")"
-    chmod 700 "${WORK}"
+    WORK="$(mktemp -d "${CHOLA_WORK_PARENT:-${TMPDIR:-/tmp}}/chola-prod.XXXXXX")" || die "cannot create a scratch directory"
+    chmod 700 "${WORK}" || die "cannot make ${WORK} private"
   fi
 }
 
@@ -249,12 +251,12 @@ ssh_setup() {
     SSH_READY=1
     return 0
   fi
-  mkdir -p "$(dirname "${KNOWN_HOSTS}")"
+  mkdir -p "$(dirname "${KNOWN_HOSTS}")" || die "cannot create the directory of ${KNOWN_HOSTS}"
   # The key goes from the AWS CLI through kit.py straight into a 0600 file in the 0700 scratch directory; removed on exit.
   (umask 077 && aws --region "${REGION}" secretsmanager get-secret-value --secret-id "${SECRET_PREFIX}/ssh-admin" \
     --query SecretString --output text | python3 -I "${KIT_PY}" json-field private_key_pem >"${key}") ||
     die "cannot read ${SECRET_PREFIX}/ssh-admin (field private_key_pem)"
-  chmod 600 "${key}"
+  chmod 600 "${key}" || die "cannot make the SSH key file private"
   head -n 1 "${key}" | grep -q -- '-----BEGIN' || die "${SECRET_PREFIX}/ssh-admin private_key_pem is not a PEM key"
   # The EC2 Instance Connect tunnel (ec2-instance-connect:OpenTunnel) is proved here: its errors are shown as they come.
   if ! ssh "${SSH_OPTS[@]}" "${SSH_USER}@${INSTANCE_ID}" true 2>"${WORK}/ssh.err"; then
@@ -274,22 +276,26 @@ ssh_refresh() { # a fresh control connection before a long step (EICE connection
 # This run's copy of the kit on the instance ($REMOTE_DIR/.kit/<run>): remote.sh runs from it with
 # CHOLA_BASE_DIR=$REMOTE_DIR, so read-only commands never replace the live kit files; only remote.sh deploy installs
 # them (with the commit's aibom-config-overlay, uploaded here for a deploy).
+# Every local step below has its own `|| die`: kit_upload is often first reached on the left of a `||` (remote_job dump
+# || die ...), where bash turns errexit and the ERR trap off, and a broken staging copy must never be uploaded.
 kit_upload() { # [with-overlay]
   ssh_setup
   [[ -z "${KIT_RUN}" || "${1:-}" == with-overlay ]] || return 0
   local stage="${WORK}/bundle" with=${1:-} run
+  local fail="preparing the kit copy in ${WORK} failed (above; disk full?); nothing was sent to the instance"
   run="$(date -u +%Y%m%dT%H%M%SZ)-$$"
-  rm -rf "${stage}"
-  mkdir -p "${stage}/deploy"
+  rm -rf "${stage}" || die "${fail}"
+  mkdir -p "${stage}/deploy" || die "${fail}"
   tar -C "${REPO_ROOT}" --exclude='deploy/chola-prod/*.env' --exclude='deploy/chola-prod/.env' --exclude='__pycache__' \
-    -cf - deploy/chola-prod | tar -C "${stage}" -xf -
+    -cf - deploy/chola-prod | tar -C "${stage}" -xf - || die "${fail}"
   local -a dirs=(deploy)
   if [[ "${with}" == with-overlay ]]; then
     if git -C "${REPO_ROOT}" cat-file -e "${SHA}:compose/aibom-config-overlay" 2>/dev/null; then
-      git -C "${REPO_ROOT}" archive --format=tar "${SHA}" compose/aibom-config-overlay | tar -C "${stage}" -xf -
+      git -C "${REPO_ROOT}" archive --format=tar "${SHA}" compose/aibom-config-overlay | tar -C "${stage}" -xf - ||
+        die "${fail}"
     else
       warn "${SHA12} has no compose/aibom-config-overlay: using this checkout's"
-      tar -C "${REPO_ROOT}" -cf - compose/aibom-config-overlay | tar -C "${stage}" -xf -
+      tar -C "${REPO_ROOT}" -cf - compose/aibom-config-overlay | tar -C "${stage}" -xf - || die "${fail}"
     fi
     dirs+=(compose)
   fi
@@ -1066,6 +1072,11 @@ summary() {
 main() {
   parse_args "$@"
   if ((HELP)) || [[ -z "${CMD}" || "${CMD}" == help ]]; then usage; return 0; fi
+  # rollback-only flags are refused elsewhere, never silently ignored (`deploy --to X` must not look like it did something)
+  if [[ "${CMD}" != rollback ]]; then
+    [[ -z "${ROLLBACK_TO}" ]] || die "--to is only for rollback (to go forward: deploy --sha <commit>)"
+    ((!ALLOW_DOWNGRADE)) || die "--allow-downgrade is only for rollback"
+  fi
   local v
   for v in CHOLA_MIN_FREE_GB CHOLA_WAIT_S CHOLA_DUMPS_KEEP CHOLA_POLL_S CHOLA_POLL_RETRIES CHOLA_SSH_RETRIES CHOLA_BACKUP_TIMEOUT_S; do
     [[ -z "${!v:-}" || "${!v}" =~ ^[0-9]{1,6}$ ]] || die "${v} must be a whole number"

@@ -182,10 +182,14 @@ kit prints `chola-prod.sh attach --job <id>` to follow it again (`status` lists 
 
 **Interrupted deploy** (the instance rebooted or the job was killed half way): the follower reports the job either
 as **failed with a non-zero exit** (a graceful reboot or stop, or `kill <pid>`, sends SIGTERM: the job records exit
-143, never 0) or as **lost** (a hard reset or SIGKILL: its processes are gone and it recorded no exit status; the pid
+143, never 0; any other fatal signal records 128 + its number) or as **lost** (a hard reset or SIGKILL: its processes
+are gone and it recorded no exit status; the pid
 and start time of the job's wrapper AND of its worker are checked, so a reused pid after a reboot is not mistaken for
 it, and a killed wrapper alone does not make a running job look lost: the worker writes the exit status itself);
-`status` lists it as `exit 143` or LOST. Both mean the same: the deploy did not finish. Either `deploy --sha <the same
+`status` lists it as `exit 143` or LOST. Both mean the same: the deploy did not finish. **`kill <worker pid>` is not
+immediate**: the job ends with 143 only once its current step returns, and `docker compose up --wait` may take up to
+`CHOLA_WAIT_S` (900 s by default). Wait for it rather than reaching for `kill -9`, which leaves a half-finished step
+and a LOST job behind. Either `deploy --sha <the same
 commit>` again or `rollback`: both see the interruption, remove the application containers (stateless; databases, queue and
 volumes stay) and start them fresh, and try once more if the first start fails. When the interruption came before the
 tag switch (STARTED without SWITCHED), nothing had changed: `rollback` then starts the release that was running again
@@ -241,14 +245,17 @@ rollback records a **ROLLBACK-STARTED** line (target, current tag, database revi
 **Retrying a rollback that failed or was interrupted retries that same rollback, never one release further back**:
 after the tag switch (C -> B failed in `compose up`, or the job was killed) the retry starts B again; before it (or
 when the downgrade failed) it runs C -> B again. A rollback counts as finished only once B's checks passed: when
-they fail (or the job is killed during them) it records FAILED, and the retry starts B again. The plan line says
+they fail it records FAILED; when the job is killed during them it records nothing more, so ROLLBACK-STARTED stays the
+last line and the rollback is unfinished. Either way the retry starts B again. The plan line says
 which. Once B runs, a further `rollback` goes to the release before B. A deploy started after an unfinished rollback
 to B records B (where you were heading) as its rollback target.
 
 **When B can never start**, every retry starts B again. The way past it is explicit: `rollback --to <tag>` goes to
 that release instead (for example A), with the same backup, downgrade plan and confirmation. It only accepts a release
-that was deployed and passed its checks on this instance (`state/deploy-history` and `state/passed`); nothing has to be
-edited by hand. When the
+that was deployed and passed its checks on this instance (`state/deploy-history` and `state/passed`) and that is **not
+newer** than the running one (first deployed before it): rollback only goes back. Forward is `deploy --sha <commit>`,
+which also runs the estate backfill, agility heal and image retention. `status` lists the releases `--to` accepts,
+newest first; nothing has to be edited by hand. `--to` and `--allow-downgrade` are refused on any other command. When the
 older release's migrations do not contain the database's revision, the current image first runs `alembic downgrade
 <older head>`, which **drops the tables and columns the newer migrations added, with their data**: `rollback` first
 plans it (read-only), lists those migrations and asks you to type `downgrade` (or takes `--allow-downgrade`; without a
@@ -295,7 +302,8 @@ Rotation (details: `docs/security/secret-rotation.md`): change the value in Secr
   are time-limited; the kit opens a fresh tunnel before each long step and reconnects while following a job.
 * **A job lost its terminal**: `chola-prod.sh status` lists the recent jobs; `chola-prod.sh attach --job <id>`.
   A job listed as LOST ended without an exit status (hard reboot, SIGKILL), one with `exit 143` was stopped by
-  SIGTERM (graceful reboot or stop, `kill`): either way it did not finish. See its log (`state/jobs/<id>/log`), then
+  SIGTERM (graceful reboot or stop, `kill`; it ends only once its current step returns, up to `CHOLA_WAIT_S`): either
+  way it did not finish. See its log (`state/jobs/<id>/log`), then
   deploy the same commit again or roll back.
 * **Instance settings** go through from your shell: `CHOLA_MIN_FREE_GB`, `CHOLA_WAIT_S`, `CHOLA_DUMPS_KEEP`
   (whole numbers; `--help`).

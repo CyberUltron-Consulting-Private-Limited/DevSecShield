@@ -46,7 +46,15 @@ export LC_ALL=C
 # skipped: its inner command (or die) has already said why. Any other command (an ssh or docker line with a $(...)
 # argument included) is reported.
 ASSIGN_FROM_SUBST='^((local|export|readonly|declare|typeset)([[:space:]]+-[A-Za-z]+)*[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?\+?=.*\$\('
-err_report() { [[ "${BASH_COMMAND}" =~ ${ASSIGN_FROM_SUBST} ]] || printf '[chola-remote] ERROR: line %s: %s (exit %s)\n' "$2" "${BASH_COMMAND}" "$1" >&2; }
+# EXIT_EXPECTED: 1 once this shell is ending on purpose (main returned, die, an explicit exit, an errexit failure: the
+# ERR trap fires right before errexit ends the shell, and in exactly the same places). A detached job's worker writes
+# its exit status only then (on_exit): when a signal kills it, bash runs the EXIT trap with $? = the LAST COMMAND's
+# status (often 0), so the worker writes nothing and the wrapper records the real 128+n (or the job reads as lost).
+EXIT_EXPECTED=0
+err_report() {
+  EXIT_EXPECTED=1
+  [[ "${BASH_COMMAND}" =~ ${ASSIGN_FROM_SUBST} ]] || printf '[chola-remote] ERROR: line %s: %s (exit %s)\n' "$2" "${BASH_COMMAND}" "$1" >&2
+}
 trap 'err_report "$?" "${LINENO}"' ERR
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -88,7 +96,7 @@ ONESHOT_SERVICES=" migrate "
 DEV_MARKERS=('hmr-client' '_browser_dev_' 'webpack-hmr' 'react-refresh' '\"b\":\"development\"')
 
 log() { printf '[chola-remote %s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
-die() { printf '[chola-remote] ERROR: %s\n' "$*" >&2; exit 1; }
+die() { EXIT_EXPECTED=1; printf '[chola-remote] ERROR: %s\n' "$*" >&2; exit 1; }
 
 SUDO=()
 docker_setup() { # plain docker when ubuntu is in the docker group, else sudo -n docker
@@ -510,15 +518,10 @@ previous_of() { # the last real (not "none") previous tag recorded for <tag>
 # or a FAILED rollback line last) was heading to DSS_TAG, that release (the operator was moving TO it, away from the
 # one before); else what <tag> replaced before; else the last release that passed its checks.
 target_for() { # <tag> <running>
-  local tag=$1 p=${2:-} line kind a cur
+  local tag=$1 p=${2:-} t
   if [[ -z "${p}" ]]; then
-    line="$(last_step)"
-    read -r _ kind a _ <<<"${line}"
-    cur="$(env_get DSS_TAG)"
-    if [[ -n "${a}" && "${a}" == "${cur}" && "${a}" != "${tag}" ]] &&
-      [[ "${kind}" == rollback-started || ("${kind}" == rollback && "${line##* }" == FAILED) ]]; then
-      p=${a}
-    fi
+    t="$(unfinished_rollback_target)"
+    if [[ -n "${t}" && "${t}" == "$(env_get DSS_TAG)" && "${t}" != "${tag}" ]]; then p=${t}; fi
   fi
   if [[ -z "${p}" || "${p}" == "${tag}" ]]; then p="$(previous_of "${tag}")"; fi
   if [[ -z "${p}" ]]; then p="$(last_passed "${tag}")"; fi
@@ -674,20 +677,35 @@ ROLLBACK_CURRENT="" ROLLBACK_PREVIOUS="" ROLLBACK_HEAD="" ROLLBACK_DB="" ROLLBAC
 # * normal: the tag that was running before <current> was deployed (previous_of).
 # History lines (field 2 on): started X previous P alembic-before D | switched X previous P |
 # deploy X previous P alembic H [FAILED] | rollback-started T from F alembic-before D | rollback T previous F alembic H [FAILED]
-rollback_pair() {
-  local current=$1 line kind a b flag p
+# The last record, parsed in ONE place (the grammar above): LAST_KIND (field 2), LAST_A (field 3: the tag), LAST_B
+# (field 5: its previous / from tag), LAST_FAILED (1 when the line ends with FAILED; an Alembic head may be several words).
+LAST_KIND="" LAST_A="" LAST_B="" LAST_FAILED=0
+read_last_step() {
+  local line
   line="$(last_step)"
-  read -r _ kind a _ b _ <<<"${line}"
-  flag="${line##* }" # FAILED is the last word (an Alembic head may be several words)
-  case "${kind}" in
+  LAST_KIND="" LAST_A="" LAST_B="" LAST_FAILED=0
+  read -r _ LAST_KIND LAST_A _ LAST_B _ <<<"${line}" || true
+  if [[ "${line##* }" == FAILED ]]; then LAST_FAILED=1; fi
+}
+unfinished_rollback_target() { # the target of the last record when that is an unfinished rollback (ROLLBACK-STARTED, or
+  # a FAILED rollback line); else nothing
+  read_last_step
+  if [[ "${LAST_KIND}" == rollback-started || ("${LAST_KIND}" == rollback && "${LAST_FAILED}" == 1) ]]; then
+    printf '%s\n' "${LAST_A}"
+  fi
+}
+rollback_pair() {
+  local current=$1 p
+  read_last_step
+  case "${LAST_KIND}" in
     started)
-      if [[ "${b}" == "${current}" ]]; then printf '%s 1 deploy-unswitched\n' "${current}"; return 0; fi ;;
+      if [[ "${LAST_B}" == "${current}" ]]; then printf '%s 1 deploy-unswitched\n' "${current}"; return 0; fi ;;
     rollback-started)
-      if [[ "${a}" == "${current}" ]]; then printf '%s 1 rollback-switched\n' "${current}"; return 0; fi
-      if [[ "${b}" == "${current}" ]]; then printf '%s 0 rollback-retry\n' "${a}"; return 0; fi ;;
+      if [[ "${LAST_A}" == "${current}" ]]; then printf '%s 1 rollback-switched\n' "${current}"; return 0; fi
+      if [[ "${LAST_B}" == "${current}" ]]; then printf '%s 0 rollback-retry\n' "${LAST_A}"; return 0; fi ;;
     rollback)
-      if [[ "${flag}" == FAILED && "${a}" == "${current}" ]]; then printf '%s 1 rollback-failed\n' "${current}"; return 0; fi
-      if [[ "${flag}" == FAILED && "${b}" == "${current}" ]]; then printf '%s 0 rollback-retry\n' "${a}"; return 0; fi ;;
+      if ((LAST_FAILED)) && [[ "${LAST_A}" == "${current}" ]]; then printf '%s 1 rollback-failed\n' "${current}"; return 0; fi
+      if ((LAST_FAILED)) && [[ "${LAST_B}" == "${current}" ]]; then printf '%s 0 rollback-retry\n' "${LAST_A}"; return 0; fi ;;
   esac
   p="$(previous_of "${current}")"
   printf '%s 0 normal\n' "${p:-none}" # never an empty first word: read would shift "0" into it
@@ -698,6 +716,28 @@ passed_release() { # <tag>: 0 when <tag> was deployed (history) and passed its c
   [[ -s "${PASSED_FILE}" && -f "${HISTORY_FILE}" ]] || return 1
   grep -qxF -- "$1" "${PASSED_FILE}" && awk -v t="$1" '$2 == "deploy" && $3 == t { f = 1 } END { exit !f }' "${HISTORY_FILE}"
 }
+first_deployed() { # <tag>: the line number of its first deploy record in the history (0: never deployed)
+  if [[ ! -f "${HISTORY_FILE}" ]]; then echo 0; return 0; fi
+  awk -v t="$1" '$2 == "deploy" && $3 == t { print NR; f = 1; exit } END { if (!f) print 0 }' "${HISTORY_FILE}"
+}
+# <a> <b>: 0 when release <a> was first deployed after <b> (newer), or <b> was never deployed (unknown: not "older").
+# The order of first deploys is the order the releases came in; a later redeploy of an old commit does not make it new.
+newer_release() {
+  local a b
+  a="$(first_deployed "$1")"
+  b="$(first_deployed "$2")"
+  ((a > b || (b == 0 && a > 0)))
+}
+to_candidates() { # <current>: the releases `rollback --to` accepts (deployed, passed, not newer than <current>), newest
+  # pass first
+  local t out=""
+  [[ -s "${PASSED_FILE}" ]] || { echo none; return 0; }
+  while IFS= read -r t; do
+    [[ "${t}" =~ ^[0-9a-f]{12}$ ]] || continue
+    if passed_release "${t}" && ! newer_release "${t}" "$1"; then out+="${out:+ }${t}"; fi
+  done < <(awk 'NF { seen[$1] = NR } END { for (t in seen) print seen[t], t }' "${PASSED_FILE}" | sort -rn | awk '{ print $2 }')
+  printf '%s\n' "${out:-none}"
+}
 rollback_plan() {
   local r
   ROLLBACK_CURRENT="$(env_get DSS_TAG)"
@@ -706,7 +746,12 @@ rollback_plan() {
     # that was deployed and passed its checks before. The same downgrade plan and confirmation apply.
     [[ "${ROLLBACK_TO}" =~ ^[0-9a-f]{12}$ ]] || die "--to ${ROLLBACK_TO} is not a 12-character commit"
     passed_release "${ROLLBACK_TO}" || die "--to ${ROLLBACK_TO}: not a release that was deployed and passed its" \
-      "checks here (${HISTORY_FILE}, ${PASSED_FILE}); nothing was changed"
+      "checks here (${HISTORY_FILE}, ${PASSED_FILE}; 'chola-prod.sh status' lists the accepted ones); nothing was changed"
+    # Only back: forward is `deploy`, which also runs the estate backfill, agility heal and image retention.
+    if newer_release "${ROLLBACK_TO}" "${ROLLBACK_CURRENT}"; then
+      die "--to ${ROLLBACK_TO} is newer than ${ROLLBACK_CURRENT} (first deployed after it): rollback only goes back." \
+        "Go forward with: chola-prod.sh deploy --sha ${ROLLBACK_TO}. Nothing was changed"
+    fi
     ROLLBACK_PREVIOUS=${ROLLBACK_TO} ROLLBACK_WHY=explicit
     log "rollback to ${ROLLBACK_TO} as asked (--to), not to the target the history names"
   else
@@ -759,7 +804,7 @@ cmd_rollback() {
   require_env_files
   rollback_plan
   if ((plan)); then
-    if ((ROLLBACK_DOWNGRADE)); then exit 3; fi
+    if ((ROLLBACK_DOWNGRADE)); then EXIT_EXPECTED=1; exit 3; fi
     return 0
   fi
   local current=${ROLLBACK_CURRENT} previous=${ROLLBACK_PREVIOUS} head=${ROLLBACK_HEAD}
@@ -859,21 +904,23 @@ proc_alive() {
 job_alive() { proc_alive "$1/pid" || proc_alive "$1/worker"; }
 
 EXIT_RM=() JOB_RC_DIR=""
-on_exit() { # the one EXIT trap: temporary files; in a detached job, the worker's own exit status
+on_exit() { # the one EXIT trap: temporary files; in a detached job, the worker's own exit status (only when this shell
+  # ends on purpose: EXIT_EXPECTED, above; never a status read after a signal)
   local rc=$?
   if ((${#EXIT_RM[@]})); then rm -f -- "${EXIT_RM[@]}"; fi
-  if [[ -n "${JOB_RC_DIR}" && ! -f "${JOB_RC_DIR}/rc" ]]; then
+  if [[ -n "${JOB_RC_DIR}" && "${EXIT_EXPECTED}" == 1 && ! -f "${JOB_RC_DIR}/rc" ]]; then
     printf '%s\n' "${rc}" >"${JOB_RC_DIR}/rc.worker" && mv "${JOB_RC_DIR}/rc.worker" "${JOB_RC_DIR}/rc"
   fi
   return 0 # the script's exit status stays ${rc}
 }
 job_worker() { # run by a job's worker (job-start's wrapper set CHOLA_JOB_DIR): record it, and its exit status at the end
   local s=()
-  # A signal must never read as success: without a trap, bash runs the EXIT trap of a SIGTERM death with $? = the last
-  # command's status (often 0). SIGTERM is what a graceful reboot or stop sends (systemd TERMs the whole session) and
-  # what `kill <pid>` sends. HUP and INT are ignored by the wrapper (inherited, they cannot kill the worker).
-  trap 'exit 143' TERM
-  trap 'exit 131' QUIT
+  # SIGTERM (a graceful reboot or stop: systemd TERMs the whole session; `kill <pid>`) is recorded as 143. Bash runs a
+  # trap only once the current foreground command ends (`compose up --wait` can take CHOLA_WAIT_S). Every other fatal
+  # signal leaves rc to the wrapper (EXIT_EXPECTED stays 0). No trap for HUP, INT or QUIT: they are ignored on entry
+  # (the wrapper's `trap ""`, and bash ignores INT and QUIT for a `&` job without job control), so they cannot kill
+  # the worker, and bash does not let a script trap a signal that was ignored on entry.
+  trap 'EXIT_EXPECTED=1; exit 143' TERM
   [[ "${CHOLA_JOB_DIR}" == "${JOBS_DIR}/"* && -d "${CHOLA_JOB_DIR}" ]] || die "CHOLA_JOB_DIR ${CHOLA_JOB_DIR} is not a job of ${JOBS_DIR}"
   JOB_RC_DIR=${CHOLA_JOB_DIR}
   unset CHOLA_JOB_DIR
@@ -992,6 +1039,7 @@ cmd_status() {
   local target restart why
   read -r target restart why <<<"$(rollback_pair "$(env_get DSS_TAG)")"
   log "deployed tag: $(env_get DSS_TAG none); rollback target: ${target}$( ((restart)) && echo " (started again: ${why})")"
+  log "rollback --to accepts (deployed, passed, not newer; newest first): $(to_candidates "$(env_get DSS_TAG)")"
   if [[ -f "${COMPOSE_FILE}" && -f "${ENV_FILE}" ]]; then
     compose ps -a --format 'table {{.Service}}\t{{.Image}}\t{{.Status}}' || true
   fi
@@ -1064,6 +1112,7 @@ main() {
     -h | --help | help | "") usage ;;
     *) die "unknown command ${cmd}" ;;
   esac
+  EXIT_EXPECTED=1
 }
 
 # Sourced by backend/tests/test_chola_prod_kit.py to test single functions; run as a script otherwise.
