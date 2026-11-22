@@ -1,6 +1,6 @@
 /**
  * PDF report options in the browser: what the export dialog (components/reports/ExportPdfDialog.tsx) may leave out,
- * filter or add, and how it says so in the query of the PDF routes.
+ * filter or add, and how it says so to the PDF routes (`toQuery`: the JSON body of a POST, or nothing at all).
  *
  * The constants block mirrors backend/utilities/pdf/report_options.py (the single source; utils/reportOptions.test.ts
  * reads that file and fails when the two differ). Leaving every option at its default sends no parameter at all, so
@@ -47,6 +47,38 @@ export const FAMILY_KEYS = {
 } as const;
 export const PREPARED_FOR_MAX = 120;
 export const TITLE_MAX = 140;
+/** Beyond Windows-1252, the code points free text may use (inclusive ranges): Latin Extended, combining marks, Greek,
+ * Cyrillic, Devanagari, the zero-width (non-)joiner, the rupee sign. The server draws them with Noto fonts. */
+export const TEXT_RANGES = [
+  [0x0100, 0x024f],
+  [0x0300, 0x036f],
+  [0x0370, 0x0377],
+  [0x037a, 0x037f],
+  [0x0384, 0x038a],
+  [0x038c, 0x038c],
+  [0x038e, 0x03a1],
+  [0x03a3, 0x03e1],
+  [0x03f0, 0x03ff],
+  [0x0400, 0x052f],
+  [0x0900, 0x097f],
+  [0x1e00, 0x1eff],
+  [0x200c, 0x200d],
+  [0x20b9, 0x20b9],
+  [0xa8e0, 0xa8ff],
+] as const;
+/** What Python's str.strip() removes from both ends (every str.isspace() code point; not U+FEFF, which is refused). */
+export const STRIP_RANGES = [
+  [0x0009, 0x000d],
+  [0x001c, 0x0020],
+  [0x0085, 0x0085],
+  [0x00a0, 0x00a0],
+  [0x1680, 0x1680],
+  [0x2000, 0x200a],
+  [0x2028, 0x2029],
+  [0x202f, 0x202f],
+  [0x205f, 0x205f],
+  [0x3000, 0x3000],
+] as const;
 // --- end constants -------------------------------------------------------------------------------------------------
 
 export type ReportFamily = (typeof FAMILIES)[number];
@@ -131,24 +163,49 @@ const isCp1252 = (ch: string) => {
   const code = ch.codePointAt(0) ?? 0;
   return code <= 0x7f || (code >= 0xa0 && code <= 0xff) || CP1252_EXTRA.has(ch);
 };
-// Python's unicodedata categories Cc (controls), Cf (format), Zl and Zp (line and paragraph separators)
-const NOT_ONE_LINE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+const inTextRanges = (ch: string) => {
+  const code = ch.codePointAt(0) ?? 0;
+  return TEXT_RANGES.some(([low, high]) => code >= low && code <= high);
+};
+/** Every character is Windows-1252 or in TEXT_RANGES (the server's `text_supported`). */
+export const textSupported = (text: string) => [...text].every((ch) => isCp1252(ch) || inTextRanges(ch));
+// Python's unicodedata categories Cc (controls), Cf (format), Zl and Zp (line and paragraph separators), except the
+// zero-width non-joiner and joiner (U+200C, U+200D), which are part of Devanagari spelling
+const NOT_ONE_LINE = /(?![\u200C\u200D])[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+// a combining mark (Mn, Mc, Me: a Devanagari vowel sign, an accent) that follows no letter or mark prints on a dotted
+// circle: refused, as by the server
+const STRAY_MARK = /(?:^|[^\p{L}\p{M}])[\p{Mn}\p{Mc}\p{Me}]/u;
+const isStripped = (ch: string) => {
+  const code = ch.codePointAt(0) ?? 0;
+  return STRIP_RANGES.some(([low, high]) => code >= low && code <= high);
+};
+/** Python's str.strip(): the code points of STRIP_RANGES off both ends (String.prototype.trim() differs: it removes
+ * U+FEFF and keeps U+001C-U+001F and U+0085). */
+export function pyStrip(text: string): string {
+  const chars = [...text];
+  let start = 0;
+  let end = chars.length;
+  while (start < end && isStripped(chars[start])) start += 1;
+  while (end > start && isStripped(chars[end - 1])) end -= 1;
+  return chars.slice(start, end).join("");
+}
 
 /** The text the server will print (NFC, trimmed; "" for nothing) and the problem with it, if any: the same checks, in
  * the same order and words, as `_text` in backend/utilities/pdf/report_options.py. */
 export function validateText(field: TextField, raw: string): { value: string; error: string | null } {
-  const value = raw.normalize("NFC").trim();
+  const value = pyStrip(raw.normalize("NFC"));
   if (!value) return { value: "", error: null };
   const limit = TEXT_MAX[field];
   if ([...value].length > limit) return { value, error: `must be ${limit} characters or fewer` };
   if (NOT_ONE_LINE.test(value)) return { value, error: "must be one line of plain text" };
-  if (![...value].every(isCp1252)) return { value, error: "can only use Latin characters for now" };
+  if (!textSupported(value)) return { value, error: "can only use Latin, Greek, Cyrillic or Devanagari characters" };
+  if (STRAY_MARK.test(value)) return { value, error: "has a vowel sign or accent that follows no letter" };
   return { value, error: null };
 }
 
 /** Length as the server counts it (code points after NFC and trimming), for the live counter. */
 export function textLength(raw: string): number {
-  return [...raw.normalize("NFC").trim()].length;
+  return [...pyStrip(raw.normalize("NFC"))].length;
 }
 
 export interface OptionProblems {
@@ -176,8 +233,10 @@ export function optionProblems(options: ReportOptions, family: DialogFamily, sca
   return out;
 }
 
-/** The query parameters for these options on a route of `family`: only the keys the family takes, and only those that
- * differ from the default (all defaults: no parameter at all, so today's report). */
+/** The report options to send to a route of `family`: only the keys the family takes, and only those that differ from
+ * the default (all defaults: nothing, so a plain GET and today's report). Sent as the JSON body of a POST, never in the
+ * URL, so a client name stays out of access logs (backend/utilities/pdf/report_http.py). The values are the ones the
+ * GET query string takes. */
 export function toQuery(options: ReportOptions, family: DialogFamily, scanType?: ReportScanType | null): Record<string, string> {
   const keys = FAMILY_KEYS[family] as readonly string[];
   const q: Record<string, string> = {};
@@ -302,7 +361,7 @@ export const LABEL_CHOICE_TEXT: Record<ReportLabel, string> = { confidential: "C
 /** One line, in words (no counts), of what the PDF will hold. */
 export function summaryText(options: ReportOptions, family: DialogFamily, scanType?: ReportScanType | null): string {
   if (family === "deliverable") {
-    const parts = [options.prepared_for.trim() ? "A cover naming the client" : "The usual cover"];
+    const parts = [pyStrip(options.prepared_for) ? "A cover naming the client" : "The usual cover"];
     parts.push(options.label === "public" ? "no classification label" : `marked ${LABEL_TEXT[options.label]}`);
     return `${parts.join(", ")}, for each deliverable you download from this menu.`;
   }
@@ -321,7 +380,7 @@ export function summaryText(options: ReportOptions, family: DialogFamily, scanTy
     if (st && st.length < STATUSES.length) parts.push(st.length ? `status ${st.map((s) => STATUS_TEXT[s].toLowerCase()).join(" or ")}` : "no status chosen");
     if (options.hide_evidence) parts.push("without code snippets");
   }
-  if (options.prepared_for.trim()) parts.push("a cover naming the client");
+  if (pyStrip(options.prepared_for)) parts.push("a cover naming the client");
   if (options.label !== "confidential") parts.push(options.label === "public" ? "no classification label" : `marked ${LABEL_TEXT[options.label]}`);
   return parts.join(", ") + ".";
 }

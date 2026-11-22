@@ -269,7 +269,7 @@ const TEXT = {
     why: "Names the package to upgrade or replace.",
     example: "\"3 dependencies\" for a CVE found in three lodash copies.",
   },
-  // src: frontend/components/SbomResults.tsx:867-904,1411, backend/routers/scans.py:1179-1189 — rows without a stored finding id: one combined Jira issue from the summary
+  // src: frontend/components/SbomResults.tsx:867-904,1411, backend/routers/scans.py:1192-1202 — rows without a stored finding id: one combined Jira issue from the summary
   "sbom.res.vuln.select": {
     what: "Selects rows of this list for a Jira ticket. These rows are not stored findings, so all the selected rows go into one combined Jira issue.",
     why: "Lets you file these vulnerabilities as Jira work.",

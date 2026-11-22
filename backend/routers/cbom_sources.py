@@ -1772,7 +1772,7 @@ def _run_cbom(engine, team_id: int, run_id: int, fmt: str = "json") -> IO[bytes]
             log("run cbom export busy", team=team_id, run=run_id, rows=rows, slots=EXPORT_SLOTS.SLOTS)
             raise HTTPException(
                 status_code=429, headers={**PRIVATE, "Retry-After": str(EXPORT_SLOTS.RETRY_AFTER_S)},
-                detail=f"The server is busy building other large CBOM exports; retry in {EXPORT_SLOTS.RETRY_AFTER_S} s.",
+                detail=EXPORT_SLOTS.CBOM_BUSY,
             ) from None
 
 

@@ -9,6 +9,17 @@ A large export (``LARGE_ASSETS`` stored rows or more) first takes one of ``SLOTS
 when its holder ends, even when the process is killed. With every slot taken the route answers 429 with Retry-After
 (the UI's error handler then says when to retry); smaller exports never wait. Configuration (environment, read at import): ``ZS_CBOM_EXPORT_SLOTS`` (default 2),
 ``ZS_CBOM_EXPORT_LARGE_ASSETS`` (default 10,000), ``ZS_CBOM_EXPORT_LOCK_DIR`` (default the system temp directory).
+
+Scan PDF reports (``GET|POST /{team}/{type}/scan/{id}/export`` with ``report_http.LARGE_PDF_ROWS`` rows or more) take a
+slot of their own pool, ``pdf_slot``: the same mechanism with its own lock files and capacity ``PDF_SLOTS``
+(``ZS_PDF_EXPORT_SLOTS``, default 2), so a burst of big scan PDFs never makes a CBOM export answer 429, nor the other way
+round, and each 429 names the work that is actually busy (``CBOM_BUSY`` / ``PDF_BUSY``).
+
+For operators: the two pools add up. With the defaults a host now builds up to 2 large CBOM exports AND 2 large scan
+PDFs at the same time (4 large builds, where the one shared pool used to allow 2), so size the host's memory for that
+or lower ``ZS_CBOM_EXPORT_SLOTS`` / ``ZS_PDF_EXPORT_SLOTS``. Both pools keep their lock files
+(``zs-cbom-export-slot-N.lock``, ``zs-pdf-export-slot-N.lock``) in ``ZS_CBOM_EXPORT_LOCK_DIR``: every worker process
+of a host must see the same directory, as before.
 """
 from __future__ import annotations
 
@@ -27,9 +38,13 @@ def _int_env(name: str, default: int, low: int) -> int:
 
 
 SLOTS = _int_env("ZS_CBOM_EXPORT_SLOTS", 2, 1)
+PDF_SLOTS = _int_env("ZS_PDF_EXPORT_SLOTS", 2, 1)
 LARGE_ASSETS = _int_env("ZS_CBOM_EXPORT_LARGE_ASSETS", 10_000, 1)
 LOCK_DIR = os.environ.get("ZS_CBOM_EXPORT_LOCK_DIR") or tempfile.gettempdir()
 RETRY_AFTER_S = 30
+# The 429 detail of each pool: it names the exports that hold that pool's slots, and only those.
+CBOM_BUSY = f"The server is busy building other large CBOM exports; retry in {RETRY_AFTER_S} s."
+PDF_BUSY = f"The server is busy building other large scan PDF reports; retry in {RETRY_AFTER_S} s."
 
 
 class Busy(Exception):
@@ -41,11 +56,11 @@ def is_large(asset_rows: int) -> bool:
 
 
 @contextlib.contextmanager
-def slot() -> Iterator[int]:
-    """Hold one free export slot for the block (its index); raise ``Busy`` at once when every slot is taken."""
+def _take(prefix: str, count: int) -> Iterator[int]:
+    """Hold one free slot of the pool whose lock files start with ``prefix``; ``Busy`` at once when all are taken."""
     os.makedirs(LOCK_DIR, exist_ok=True)
-    for index in range(SLOTS):
-        fd = os.open(os.path.join(LOCK_DIR, f"zs-cbom-export-slot-{index}.lock"), os.O_RDWR | os.O_CREAT, 0o600)
+    for index in range(count):
+        fd = os.open(os.path.join(LOCK_DIR, f"{prefix}-{index}.lock"), os.O_RDWR | os.O_CREAT, 0o600)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
@@ -60,4 +75,15 @@ def slot() -> Iterator[int]:
     raise Busy()
 
 
-__all__ = ["Busy", "LARGE_ASSETS", "LOCK_DIR", "RETRY_AFTER_S", "SLOTS", "is_large", "slot"]
+def slot() -> contextlib.AbstractContextManager[int]:
+    """Hold one free CBOM export slot for the block (its index); raise ``Busy`` at once when every slot is taken."""
+    return _take("zs-cbom-export-slot", SLOTS)
+
+
+def pdf_slot() -> contextlib.AbstractContextManager[int]:
+    """Hold one free scan PDF slot (a pool of its own, ``PDF_SLOTS``); raise ``Busy`` at once when all are taken."""
+    return _take("zs-pdf-export-slot", PDF_SLOTS)
+
+
+__all__ = ["Busy", "CBOM_BUSY", "LARGE_ASSETS", "LOCK_DIR", "PDF_BUSY", "PDF_SLOTS", "RETRY_AFTER_S", "SLOTS",
+           "is_large", "pdf_slot", "slot"]

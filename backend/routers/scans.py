@@ -29,7 +29,15 @@ from backend.utilities.db.findings import get_findings_for_scan_type, is_ticketa
 from backend.utilities.pdf import UnsupportedPdfExport, prepare_pdf_export_payload, write_scan_pdf
 from backend.utilities.pdf.report_context import ReportContext
 from backend.utilities.pdf.report_options import TYPE_SECTIONS
-from backend.utilities.pdf.report_http import LARGE_PDF_ROWS, log_export, options_from_request, report_headers, status_join_error
+from backend.utilities.pdf.report_http import (
+    LARGE_PDF_ROWS,
+    OPTIONS_BODY_RESPONSES,
+    log_export,
+    options_body_openapi,
+    report_headers,
+    request_options,
+    status_join_error,
+)
 from backend.utilities.db.finding_rows import StatusesUnavailable, StatusStoreDown, read_statuses, row_count
 from backend.utilities.team.branding import load_report_branding
 from backend.utilities.cbom_sources import export_slots as EXPORT_SLOTS
@@ -950,12 +958,12 @@ def _build_scan_report(engine, team_id: int, type: str, scan_id: int, options) -
             if row_count(type, raw) >= LARGE_PDF_ROWS:
                 waited = time.monotonic()
                 try:
-                    stack.enter_context(EXPORT_SLOTS.slot())
+                    stack.enter_context(EXPORT_SLOTS.pdf_slot())  # the scan PDF pool: never a CBOM export's slot
                 except EXPORT_SLOTS.Busy:
                     raise HTTPException(
                         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                         headers={"Retry-After": str(EXPORT_SLOTS.RETRY_AFTER_S), "Cache-Control": "private, no-store"},
-                        detail=f"The server is busy building other large reports; retry in {EXPORT_SLOTS.RETRY_AFTER_S} s.",
+                        detail=EXPORT_SLOTS.PDF_BUSY,
                     ) from None
                 slot_wait_ms = int((time.monotonic() - waited) * 1000)
             try:
@@ -975,6 +983,9 @@ def _build_scan_report(engine, team_id: int, type: str, scan_id: int, options) -
 
 
 @router.get("/{team_id}/{type}/scan/{scan_id}/export",summary="Export the results of a scan as a PDF report", dependencies=[Depends(write_limiter), access.team("scan.read")])
+@router.post("/{team_id}/{type}/scan/{scan_id}/export", summary="Export the results of a scan as a PDF report (report options in a JSON body)",
+             dependencies=[Depends(write_limiter), access.team("scan.read")], openapi_extra=options_body_openapi("scan"),
+             responses=OPTIONS_BODY_RESPONSES)
 async def export_scan(
     type: scan_types, 
     scan_id: int, 
@@ -985,9 +996,11 @@ async def export_scan(
     """
     Export the results of a scan as a PDF report.
 
-    Optional query parameters shape the report (all optional; none gives the full report):
+    Optional report options shape the report (all optional; none gives the full report):
     ``preset`` (executive | technical | full), ``sections``, ``severities``, ``statuses`` (comma lists),
     ``prepared_for``, ``title``, ``label`` (confidential | internal | restricted | public) and ``hide_evidence``.
+    GET takes them as query parameters; POST takes the same options as a JSON body, which keeps a client name out of
+    URLs and access logs (``utilities/pdf/report_http.py``). Both answer alike in every other way.
     The team's report logo, when set, appears on the cover and in every page header.
     """
     started = time.monotonic()
@@ -1000,7 +1013,7 @@ async def export_scan(
         check_if_user_is_in_team(user.id, team_id, engine)
 
         # STEP [ 2 ] : =========== Report options (422 names the parameter) ======================
-        options = options_from_request(request.query_params, "scan", scan_type=type)
+        options = await request_options(request, "scan", scan_type=type)
 
         # STEP [ 3 ] : =========== Build off the event loop ======================
         body, ctx, slot_wait_ms = await run_in_threadpool(_build_scan_report, engine, team_id, type, scan_id, options)

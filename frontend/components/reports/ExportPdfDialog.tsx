@@ -510,7 +510,7 @@ function TextInput({ id, field, label, infoId, placeholder, value, error, onChan
              aria-describedby={`${id}-hint`} data-testid={`export-${field}`} />
       <div id={`${id}-hint`} className="flex justify-between gap-2 text-xs">
         <span className={cn("min-w-0", error ? "text-red-500" : "text-zinc-500")} role={error ? "alert" : undefined}>
-          {error ? `${label} ${error}.` : "Optional. Latin letters, one line."}
+          {error ? `${label} ${error}.` : "Optional, one line: Latin, Greek, Cyrillic or Devanagari."}
         </span>
         <span className={cn("shrink-0 tabular-nums", length > max ? "text-red-500" : "text-zinc-500")} data-testid={`export-${field}-count`}>
           {length}/{max}

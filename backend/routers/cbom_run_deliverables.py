@@ -44,7 +44,14 @@ from backend.utilities.cbom_sources.http import (
 from backend.utilities.cbom_sources.settings import get_or_create_settings
 from backend.utilities.pdf.cbom_run_pdf import build_run_pdf
 from backend.utilities.pdf.report_context import ReportContext
-from backend.utilities.pdf.report_http import log_export, options_from_request, report_headers
+from backend.utilities.pdf.report_http import (
+    OPTIONS_BODY_RESPONSES,
+    log_export,
+    options_body_openapi,
+    options_from_request,
+    report_headers,
+    request_options,
+)
 from backend.utilities.pdf.report_options import DEFAULT as DEFAULT_OPTIONS, ReportOptions
 from backend.utilities.team.branding import load_report_branding
 
@@ -103,7 +110,7 @@ def _export_slot(session: Session, run: CbomCollectionRun, what: str) -> Iterato
         log("run deliverable busy", team=run.team_id, run=run.id, what=what, rows=rows, slots=EXPORT_SLOTS.SLOTS)
         raise HTTPException(
             status_code=429, headers={**PRIVATE, "Retry-After": str(EXPORT_SLOTS.RETRY_AFTER_S)},
-            detail=f"The server is busy building other large CBOM exports; retry in {EXPORT_SLOTS.RETRY_AFTER_S} s.",
+            detail=EXPORT_SLOTS.CBOM_BUSY,
         ) from None
 
 
@@ -286,14 +293,19 @@ async def verify_run_signature(team_id: TeamId, run_id: ObjectId, request: Reque
 @router.get(RUN + "/report.pdf", dependencies=[*WRITE, access.team("cbom.read")],
             summary="PDF report of a run: posture, algorithm family x source, certificate expiry, top risks, "
                     "compliance, findings and provenance")
+@router.post(RUN + "/report.pdf", dependencies=[*WRITE, access.team("cbom.read")],
+             summary="PDF report of a run, report options in a JSON body", openapi_extra=options_body_openapi("run"),
+             responses=OPTIONS_BODY_RESPONSES)
 async def run_report_pdf(team_id: TeamId, run_id: ObjectId, request: Request,
                          Authorization: AuthHeader = None) -> Response:
-    """Optional query parameters shape the report: ``preset`` (executive | technical | full), ``sections``
-    (summary, posture, catalog, provenance), ``severities``, ``prepared_for``, ``title`` and ``label``. The team's
-    report logo, when set, appears on the cover and in every page header."""
+    """Optional report options shape the report: ``preset`` (executive | technical | full), ``sections``
+    (summary, posture, catalog, provenance), ``severities``, ``prepared_for``, ``title`` and ``label``; query
+    parameters of a GET, or the JSON body of a POST, which keeps a client name out of URLs and access logs
+    (``utilities/pdf/report_http.py``). The team's report logo, when set, appears on the cover and in every page
+    header."""
     started = time.monotonic()
     engine, user = await authorize(team_id, Authorization)
-    options = options_from_request(request.query_params, "run")
+    options = await request_options(request, "run")
     body, ctx = await _run("report pdf", team_id, _report, engine, team_id, run_id, options)
     filename = f"cbom-sources-run-{run_id}-report.pdf"
     log_export("run", team=team_id, id=run_id, user=getattr(user, "id", None), ctx=ctx, size=len(body),

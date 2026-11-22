@@ -59,7 +59,7 @@ def _build(engine, team_id: int, f: EXPORT.Filters, fmt: str) -> tuple[IO[bytes]
                     out.close()
                     raise
         except EXPORT_SLOTS.Busy:
-            raise HTTPException(status_code=429, detail="Too many large exports are being written; try again shortly",
+            raise HTTPException(status_code=429, detail=EXPORT_SLOTS.CBOM_BUSY,
                                 headers={"Retry-After": str(EXPORT_SLOTS.RETRY_AFTER_S)}) from None
     size = out.tell()
     out.seek(0)
