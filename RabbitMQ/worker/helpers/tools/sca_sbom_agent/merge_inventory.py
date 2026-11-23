@@ -150,6 +150,12 @@ def prefer_pinned(
     Returns ``(components, constraints, dropped purls)``; the guessed component's manifest location moves to the
     pinned one, so the SBOM still says which manifest asked for the package.
     """
+    # a lock that pins exactly the range's lower bound (certifi>=2026.10.23 and certifi==2026.10.23) merged into the
+    # same component: its version is confirmed, not a guess
+    confirmed = {str(c.get("purl") or "").split("?", 1)[0] for c in components
+                 if any(isinstance(p, dict) and p.get("name") == "dss:version_source" and p.get("value") == "lock_file"
+                        for p in c.get("properties") or [])}
+    constraints = {k: v for k, v in constraints.items() if k not in confirmed}
     pinned: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for c in components:
         key = _eco_name(c)

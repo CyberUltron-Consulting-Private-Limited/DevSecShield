@@ -533,7 +533,8 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         project_name="SBOM / SCA Dependencies",
         scan_time=scan_time,
         meta_chips=[
-            ("Scan type", "SBOM / SCA"),
+            # the strip holds 4 chips: a scan with matches on range-guessed versions says so first (review M2)
+            ("Unverified version", f"{unverified} not counted") if unverified else ("Scan type", "SBOM / SCA"),
             ("Packages affected", str(len(unique_packages))),
             ("Report generated", report_generated()),
             ("Fixable", str(fixable_count)),

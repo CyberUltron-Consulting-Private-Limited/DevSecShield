@@ -178,6 +178,20 @@ def test_lock_pins_replace_range_guesses(monkeypatch):
     assert agent.bom_properties["sbom:versions_from_ranges"] == "1"
 
 
+def test_lock_pinning_the_lower_bound_itself_confirms_the_version():
+    """certifi>=2026.10.23 guessed as 2026.10.23 and a lock pinning certifi==2026.10.23 are one component: confirmed."""
+    from helpers.tools.sca_sbom_agent.merge_inventory import merge_cdx_components, prefer_pinned
+
+    guess = {"components": [{"name": "certifi", "version": "2026.10.23", "purl": "pkg:pypi/certifi@2026.10.23"}]}
+    lock = {"components": [{"name": "certifi", "version": "2026.10.23", "purl": "pkg:pypi/certifi@2026.10.23",
+                            "properties": [{"name": "dss:version_source", "value": "lock_file"}],
+                            "evidence": {"occurrences": [{"location": "/requirements.lock"}]}}]}
+    comps = merge_cdx_components(guess, lock)
+    kept, constraints, dropped = prefer_pinned(comps, {"pkg:pypi/certifi@2026.10.23": ">=2026.10.23"})
+    assert len(kept) == 1 and constraints == {} and dropped == []
+    assert _props(kept[0])["dss:version_source"] == "lock_file"
+
+
 # ------------------------------------------------------------------------------------------------------------ M1
 def test_no_made_up_edges_and_compositions_say_what_is_incomplete(monkeypatch):
     agent = _scan_repo(monkeypatch)
