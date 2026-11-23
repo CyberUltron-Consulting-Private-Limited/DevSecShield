@@ -3,13 +3,13 @@
   "trees": {
     "synthetic-crypto-app": {
       "cyclonedx": "aa8365c9a706d6fc2b02cc11992802238a7043b9eefac66219701963d14edd5d",
-      "normalize": "8c91e10e0b38b0509249dd61b41cd82c1f42952d1b36f00220bef0b0f297ba7f",
+      "normalize": "0bc0f6f1656e593e4d065f369496284d57d4707198fc229b3a2cbe2312b94b84",
       "scan": "7518cc59901d057343a3e6ae6c9821e812a9a9aa5715f3a99d7365a6803687fb"
     },
     "synthetic-crypto-ast": {
-      "cyclonedx": "269e916e06c8f63176312fc031dd72cabca8c3bf836aee9203b84dc7241f16ec",
-      "normalize": "ace9c6bc9362e7f520ec84115db34c51f402dde13c8d8174dfef5959ada2de00",
-      "scan": "4681e9e75910388058a59ed1d3d42b5a5836fe3af6a23e9ef733e876def51e6b"
+      "cyclonedx": "b053b0a39ba996eed8c455af374d33a31976bc66cefa4f87fb2fea92d66e5e8d",
+      "normalize": "4c0cde36944cedaf3a2a4d5eb818d37c4cc82911d333b2e79a3a7e23774bfa28",
+      "scan": "301efe180c53b250b3a3efff28064a473f17ede0f9b933d0070bdd5754721fac"
     },
     "synthetic-crypto-certs": {
       "cyclonedx": "821f039952dce6920e8459a98c0ba80ab216a5ae9efccc7408e9bbc5095c86db",
@@ -33,7 +33,7 @@
     },
     "synthetic-crypto-jvm-go": {
       "cyclonedx": "ca453460b3b6a82812e0304803da157768c7716f542f77d317205240f1d5e600",
-      "normalize": "e07cd95946e494f4d9b8950f40c12129c5a30d1e8d678d74a395b1b07f7d4928",
+      "normalize": "4233dc31f87fa6689e08645f49258e7156724887ea03079c8444dec2c1a6d815",
       "scan": "48fd97783838b1db1869b04a0489ea4c59ba222067288e74950785239f74b00b"
     },
     "synthetic-crypto-manifests": {
@@ -43,7 +43,7 @@
     },
     "synthetic-crypto-misuse": {
       "cyclonedx": "b8586db2be76cb81a1e0eee9d5ab857828b65e16c4189beb33fd6e1027bdfca1",
-      "normalize": "4febd1b1fda4acdab21f46aad4ae1820cb428d78d0ad0672db4c149e56c22ab2",
+      "normalize": "fbe9f98519c721fb31ab6da80b6d57c35563489f2966d3aa06fbd9d9487e4a93",
       "scan": "6724cba5284a17ca60e60287ff91c1ba7eb6fdcea94886de3101f37f2bc5e2b4"
     },
     "synthetic-crypto-multilang": {
@@ -68,7 +68,7 @@
     },
     "synthetic-crypto-policy": {
       "cyclonedx": "f10b4eded5b5d5fe61464fc40948945354a33bba44d128530bf5374983725eb9",
-      "normalize": "24df31402bb8a3c74b5420577afcbbff334b0554dbb97a0df5a746f2e8e4a088",
+      "normalize": "071cab7e00c7b80529dc808b022f62a2c1896ee52b594caf5afa18038d765fe0",
       "scan": "582df80a314eb61a84aca4a9b5cb9626a06bb2ad950a27aeaf9eb2530fbe8e45"
     },
     "synthetic-crypto-pqc": {
@@ -83,7 +83,7 @@
     },
     "synthetic-crypto-suites": {
       "cyclonedx": "615250a3b2819d5dee9a3a557dbce0ca0581f66a07fc3af1c1864f680f28d68a",
-      "normalize": "64bd3c21d314cec36a8cc895089e69f033758d7809d5435ce02ba829bd32f00b",
+      "normalize": "85c2d088df4c7b4773fc04d080df29cffcadf5e0b049ab3199375610c280cda0",
       "scan": "0519411700d4160e4332e80c71fb6824615476148421011798093af0c03328d0"
     },
     "synthetic-crypto-web-native": {

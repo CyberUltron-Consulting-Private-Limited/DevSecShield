@@ -317,23 +317,18 @@ def _literal_value(
     return None
 
 
-def _fold_int(value: object) -> bool:
-    return (
-        isinstance(value, int)
-        and not isinstance(value, bool)
-        and abs(value) < _FOLD_INT_LIMIT
-    )
-
-
-def _fold_text(value: object) -> bool:
-    return isinstance(value, (str, bytes)) and len(value) <= _FOLD_TEXT_LIMIT
+def _fold_int(value: object) -> int | None:
+    """``value`` when it is a plain int (not bool) below 2**64, else None."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if abs(value) < _FOLD_INT_LIMIT else None
 
 
 def _fold(op: ast.operator, left: object, right: object) -> object | None:
     """``left <op> right`` for an int or a str / bytes, only when the result stays
     within the folding bounds; every size is checked BEFORE the value is built."""
-    if _fold_int(left) and _fold_int(right):
-        a, b = int(left), int(right)  # type: ignore[call-overload]
+    a, b = _fold_int(left), _fold_int(right)
+    if a is not None and b is not None:
         if isinstance(op, (ast.Pow, ast.LShift)):
             # ``n=2**14`` / ``1 << 14`` (the cryptography docs' scrypt cost): a shift
             # or exponent of 0..64 on a base below 2**64 is at most 4,096 bits
@@ -344,18 +339,22 @@ def _fold(op: ast.operator, left: object, right: object) -> object | None:
             result = a * b if isinstance(op, ast.Mult) else a + b
         return result if abs(result) < _FOLD_INT_LIMIT else None
     if isinstance(op, ast.Mult):
-        text, count = (left, right) if _fold_text(left) else (right, left)
-        if not (_fold_text(text) and _fold_int(count)):
+        # ``b"x" * n`` or ``n * b"x"``
+        text, count = (left, b) if b is not None else (right, a)
+        if not isinstance(text, (str, bytes)) or count is None:
             return None
-        if len(text) * max(int(count), 0) > _FOLD_TEXT_LIMIT:  # type: ignore[arg-type,call-overload]
+        if len(text) * max(count, 0) > _FOLD_TEXT_LIMIT:
             return None
-        return text * int(count)  # type: ignore[operator,call-overload]
+        return text * count
     if isinstance(op, ast.Add):
-        if not (_fold_text(left) and _fold_text(right) and type(left) is type(right)):
-            return None
-        if len(left) + len(right) > _FOLD_TEXT_LIMIT:  # type: ignore[arg-type]
-            return None
-        return left + right  # type: ignore[operator]
+        if isinstance(left, str) and isinstance(right, str):
+            if len(left) + len(right) > _FOLD_TEXT_LIMIT:
+                return None
+            return left + right
+        if isinstance(left, bytes) and isinstance(right, bytes):
+            if len(left) + len(right) > _FOLD_TEXT_LIMIT:
+                return None
+            return left + right
     return None
 
 
@@ -908,7 +907,8 @@ class AstCryptoScanner(Scanner):
                 )
             )
 
-        shared = defaultdict(int)  # literals of one kind written on one line
+        # literals of one kind written on one line
+        shared: dict[tuple[str, str, int], int] = defaultdict(int)
         for material in materials:
             if material.line:
                 shared[(material.kind, material.location, material.line)] += 1
