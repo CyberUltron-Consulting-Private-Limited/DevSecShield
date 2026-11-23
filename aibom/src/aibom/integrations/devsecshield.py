@@ -48,7 +48,7 @@ from aibom.graph_view import (
     build_graph_view,
     compact_aibom_graph,
 )
-from aibom.model.component import AIComponent
+from aibom.model.component import AIComponent, is_model_mention
 from aibom.scan.parsers.license_resolver import resolve_license
 from aibom.model.result import Flag, ScanResult
 from aibom.owasp import OWASP_LLM_LABELS as _OWASP_2025_LABELS
@@ -184,7 +184,20 @@ def _provider(
         ("mistral", "mistral"),
         ("hugging", "huggingface"),
         ("ollama", "ollama"),
+        ("openrouter", "openrouter"),
+        ("groq", "groq"),
+        ("together.xyz", "together"),
+        ("together.ai", "together"),
+        ("together ai", "together"),
+        ("deepseek", "deepseek"),
+        ("api.x.ai", "xai"),
+        ("xai api", "xai"),
         ("openai", "openai"),
+        # after vertex: the Gemini API (generativelanguage.googleapis.com) and
+        # Google's models are Google's SaaS, never ``local`` (review of #487 m7)
+        ("gemini", "google"),
+        ("googleapis", "google"),
+        ("google", "google"),
     ):
         if needle in text:
             return value
@@ -222,10 +235,7 @@ def _is_catalog_model(comp: AIComponent) -> bool:
     completeness, but excluded from the risk-asset findings + dashboard graph so the
     headline model count reflects the models the application USES (not the catalog
     over-count)."""
-    return (
-        comp.kind == "model"
-        and (comp.properties or {}).get("model:reference_type") == "catalog"
-    )
+    return is_model_mention(comp)
 
 
 def _inventory(result: ScanResult) -> list[AIComponent]:

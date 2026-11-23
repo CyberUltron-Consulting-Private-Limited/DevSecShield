@@ -18,10 +18,17 @@ def show_upload_progress(no_of_bytes_uploaded : int ):
 def show_download_progress(no_of_bytes_downloaded : int ):
     console.print(f"Downloaded {no_of_bytes_downloaded} bytes of the file ",style="bold orange3")
 
+def storage_region():
+    """``S3_REGION``, else ``AWS_DEFAULT_REGION``: the same rule as the backend uploader
+    (backend/utilities/db/s3_utils.storage_region), so a bucket in another region is
+    downloaded from the region it was uploaded to."""
+    return (os.getenv("S3_REGION") or "").strip() or (os.getenv("AWS_DEFAULT_REGION") or "").strip() or None
+
+
 def _s3_client():
     aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID")
     aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
-    region_name = os.getenv("AWS_DEFAULT_REGION")
+    region_name = storage_region()
     if not aws_access_key_id or not aws_secret_access_key or not region_name:
         raise Exception("AWS credentials are not set")
     kwargs = {

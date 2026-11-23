@@ -12,9 +12,11 @@ from __future__ import annotations
 from aibom.compliance.base import (
     FAIL,
     NA,
+    NOT_EVIDENCEABLE,
     PASS,
     CheckResult,
     Requirement,
+    healthcare_profile,
     is_deidentified,
     models,
     register_applicability,
@@ -54,7 +56,14 @@ R7 = _r("EUAIACT-7", "Data governance: training data de-identified", "Annex IV �
 R8 = _r("EUAIACT-8", "Model integrity (hash)", "Annex IV §2(e)")
 R9 = _r("EUAIACT-9", "Model card / technical description present", "Annex IV §2(b)")
 R10 = _r("EUAIACT-10", "Versioning + lineage (pedigree)", "Annex IV §1 / Art 12")
-R11 = _r("EUAIACT-11", "High-risk classification asserted", "Art 6 / Annex I")
+R11 = Requirement(
+    "EUAIACT-11",
+    _FW,
+    "Risk classification asserted",
+    "Art 6 / Annex III",
+    healthcare_title="High-risk classification asserted",
+    healthcare_source="Art 6 / Annex I",
+)
 
 
 @register_check(R1)
@@ -209,6 +218,21 @@ def _high_risk(r: ScanResult, req: Requirement) -> CheckResult:
     ms = models(r)
     if not ms:
         return NA("no model component")
+    if not healthcare_profile(r):
+        # Outside medical devices the tier follows the intended use (Annex III, e.g.
+        # creditworthiness assessment): a recorded tier passes, a missing one is the
+        # provider's determination to record or attest, not a fail.
+        unclassified = [m.bom_ref for m in ms if not m.model_card.eu_ai_act_risk_tier]
+        if unclassified:
+            return NOT_EVIDENCEABLE(
+                f"{len(unclassified)} model(s) record no EU AI Act risk "
+                "classification; "
+                "it depends on the intended use (Art 6, Annex III): record it in the "
+                "model card or attach it as evidence",
+                unclassified,
+            )
+        return PASS("every model records its EU AI Act risk classification",
+                    [m.bom_ref for m in ms])
     bad = [
         m.bom_ref
         for m in ms

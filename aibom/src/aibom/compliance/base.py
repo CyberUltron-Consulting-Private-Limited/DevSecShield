@@ -20,12 +20,18 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal
 
-from aibom.emit._disclaimer import ADVISORY_DISCLAIMER, CBOM_DISCLAIMER
+from aibom.emit._disclaimer import (
+    ADVISORY_DISCLAIMER,
+    CBOM_DISCLAIMER,
+    HEALTHCARE_AIBOM_DISCLAIMER,
+    disclaimer_of,
+)
 from aibom.model.component import (
     DatasetComponent,
     FrameworkComponent,
     InfraComponent,
     ModelComponent,
+    is_model_mention,
     ServiceComponent,
     is_deidentified,
 )
@@ -54,6 +60,8 @@ __all__ = [
     "NA",
     "OUT_OF_SCOPE",
     "NOT_EVIDENCEABLE",
+    "healthcare_profile",
+    "vendor_accountability",
     "models",
     "clinical_models",
     "datasets",
@@ -87,6 +95,22 @@ class Requirement:
     framework: str  # canonical key, e.g. "hipaa", "eu_ai_act_annexIV"
     title: str
     source: str  # citation, e.g. "Annex IV §2 / Art 10"
+    # The healthcare profile's wording (BAA, MDR, PHI), shown only for an AI BOM
+    # with clinical / regulatory metadata; every other AI BOM gets ``title``.
+    healthcare_title: str | None = None
+    healthcare_source: str | None = None
+
+    def title_for(self, r: object) -> str:
+        """The title shown for this scan's profile."""
+        if self.healthcare_title and healthcare_profile(r):
+            return self.healthcare_title
+        return self.title
+
+    def source_for(self, r: object) -> str:
+        """The citation shown for this scan's profile."""
+        if self.healthcare_source and healthcare_profile(r):
+            return self.healthcare_source
+        return self.source
 
 
 @dataclass(frozen=True)
@@ -178,6 +202,38 @@ def OUT_OF_SCOPE(evidence: str, refs: list[str] | None = None) -> CheckResult:
     return CheckResult("out_of_scope", evidence, tuple(refs or ()))
 
 
+def vendor_accountability(r: ScanResult, ms: list[ModelComponent]) -> CheckResult:
+    """Outside the healthcare profile: is each externally-served model's vendor
+    contractually accountable (a DPA / outsourcing agreement)? A service node that
+    records the contract (``service:dpa``, ``service:contract`` or ``service:baa``
+    = ``"true"``) passes. The contract itself is never visible in code, so without
+    that fact the requirement needs evidence (attestable), never a fail."""
+    served = [m for m in ms if serving_services(r, m)]
+    if not served:
+        return NA("no externally-served models to assess vendor accountability")
+    keys = ("service:dpa", "service:contract", "service:baa")
+    missing = [
+        m.bom_ref
+        for m in served
+        if not any(
+            (s.properties or {}).get(k) == "true"
+            for s in serving_services(r, m)
+            for k in keys
+        )
+    ]
+    if not missing:
+        return PASS(
+            "every externally-served model's vendor records a contract "
+            "(DPA / outsourcing agreement)",
+            [m.bom_ref for m in served],
+        )
+    return NOT_EVIDENCEABLE(
+        f"{len(missing)} served model(s): the vendor contract (DPA / outsourcing "
+        "agreement) is not visible in code; attach it as evidence",
+        missing,
+    )
+
+
 def NOT_EVIDENCEABLE(evidence: str, refs: list[str] | None = None) -> CheckResult:
     """Process evidence a BOM scan cannot see (attestable -> pass_with_evidence)."""
     return CheckResult("not_bom_evidenceable", evidence, tuple(refs or ()))
@@ -188,8 +244,20 @@ def NOT_EVIDENCEABLE(evidence: str, refs: list[str] | None = None) -> CheckResul
 # --------------------------------------------------------------------------- #
 
 
+def healthcare_profile(r: object) -> bool:
+    """An AI BOM with clinical / regulatory healthcare metadata: the one profile whose
+    reports may use healthcare terms (BAA, MDR, PHI, HIPAA, FDA). The same test as
+    the disclaimer's (``emit/_disclaimer.disclaimer_of``)."""
+    return disclaimer_of(r) == HEALTHCARE_AIBOM_DISCLAIMER
+
+
 def models(r: ScanResult) -> list[ModelComponent]:
-    return [c for c in r.components if isinstance(c, ModelComponent)]
+    """The models the application uses (catalog / test mentions are not checked)."""
+    return [
+        c
+        for c in r.components
+        if isinstance(c, ModelComponent) and not is_model_mention(c)
+    ]
 
 
 def clinical_models(r: ScanResult) -> list[ModelComponent]:

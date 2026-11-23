@@ -1,13 +1,13 @@
 """CBOM policy gate for the hosted CI path (``POST /cicd/cbom/scan``).
 
-A customer's pipeline uploads its tree with the team's CI/CD key; the answer tells it whether to fail. The policy is
-the code-scan CLI's: ``aibom cbom`` exits 1 when a finding code is in ``aibom.cbom.gate.FAIL_CODES`` (weak algorithm,
-ECB, weak key, hard-coded key, static IV, reused nonce, weak RNG, weak padding, disabled certificate verification,
-a vulnerable crypto library). Quantum-vulnerable and custom-crypto findings are reported and do not fail.
+A customer's pipeline uploads its tree with the team's CI/CD key; the answer tells it whether to fail. The verdict is
+decided by the CBOM gate policy of the integration, else of the team, else the default
+(``gate_policy.DEFAULT_POLICY``: NIST SP 800-131A Rev. 2 key sizes and banned algorithms, the code-scan CLI's high
+finding codes, quantum-vulnerable and deprecated algorithms reported as warnings). The policy format, its validation
+and the per-rule evaluation live in ``gate_policy.py``, vendored byte-identical into the ``aibom cbom`` offline gate.
 
-The backend image does not ship the aibom package, so the code set is copied here;
-backend/tests/test_cicd_cbom_gate.py keeps it equal to the engine's. The verdict is decided from the run-object rows
-the hosted scan returns (each row's ``finding_codes``), which carry every flag the CLI gate reads.
+The verdict is decided from the run-object rows the hosted scan returns (``finding_codes``, ``title``, ``primitive``,
+``key_size``, ``curve``, ``quantum_vulnerable``); every failing finding lists each rule it broke.
 
 Fail closed: when no run-object arrived (the poll window ended) or the one that arrived cannot be read, the verdict
 is ``no_result`` (each case with its own reason) and ``gate_failed`` is true, so a pipeline never passes a tree nobody
@@ -15,9 +15,12 @@ judged.
 """
 from __future__ import annotations
 
+import datetime as _dt
 from typing import Any
 
-POLICY = "cbom-code-high"  # the CLI gate's set; named so a later policy change is visible in stored verdicts
+from backend.utilities.cicd import gate_policy as GP
+
+POLICY = GP.DEFAULT_POLICY["name"]  # the name a verdict carries when no team policy is set
 
 # == aibom.cbom.gate.FAIL_CODES
 FAIL_CODES = frozenset(
@@ -40,23 +43,33 @@ MAX_LISTED = 50  # failing findings listed in the answer (all are counted)
 PASS, FAIL, NO_RESULT = "pass", "fail", "no_result"
 
 
-def _line(value: Any) -> int | None:
-    return value if isinstance(value, int) and not isinstance(value, bool) else None
+def _cap(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return entries[:MAX_LISTED]
 
 
-def _text(value: Any) -> str:
-    return value if isinstance(value, str) else ""
+def evaluate(run: Any, policy: dict[str, Any] | None = None, *, source: str = "default", version: int | None = None,
+             today: _dt.date | None = None) -> dict[str, Any]:
+    """The gate verdict for one hosted CBOM run-object (JSON-safe; stored on the CI log as returned).
 
-
-def evaluate(run: Any) -> dict[str, Any]:
-    """The gate verdict for one hosted CBOM run-object (JSON-safe; stored on the CI log as returned)."""
+    ``policy`` is a validated policy (``gate_policy.validate_policy``); None uses the default. ``source`` says where it
+    came from (``default``, ``team``, ``integration`` or ``file``) and ``version`` its stored version."""
+    active = policy if policy is not None else GP.DEFAULT_POLICY
     gate: dict[str, Any] = {
-        "policy": POLICY,
+        "policy": active["name"],
+        "policy_source": source if policy is not None else "default",
+        "policy_version": version,
+        "policy_digest": GP.policy_digest(active),
         "verdict": NO_RESULT,
-        "fail_codes": sorted(FAIL_CODES),
+        "fail_codes": list(active["block_codes"]),
         "failing_count": 0,
         "failing": [],
         "truncated": False,
+        "rules_failed": {},
+        "warning_count": 0,
+        "warnings": [],
+        "waived_count": 0,
+        "waived": [],
+        "expired_exceptions": [],
         "reason": "",
     }
     rows = run.get("results") if isinstance(run, dict) else None
@@ -68,36 +81,38 @@ def evaluate(run: Any) -> dict[str, Any]:
             gate["reason"] = ("The CBOM result could not be read (it has no list of findings), so the tree was not "
                               "judged; the gate fails closed. Contact DevSecShield support with the scan's log id.")
         return gate
-    failing: list[dict[str, Any]] = []
-    codes_seen: set[str] = set()
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        codes = row.get("finding_codes")
-        if not isinstance(codes, list):
-            continue
-        hit = sorted({code for code in codes if isinstance(code, str) and code in FAIL_CODES})
-        if not hit:
-            continue
-        codes_seen.update(hit)
-        failing.append({
-            "codes": hit,
-            "title": _text(row.get("title")),
-            "location": _text(row.get("location")),
-            "line": _line(row.get("line")),
-            "impact": row.get("impact") if isinstance(row.get("impact"), str) else None,
-        })
-    gate["failing_count"] = len(failing)
-    gate["failing"] = failing[:MAX_LISTED]
-    gate["truncated"] = len(failing) > MAX_LISTED
+    judged = GP.evaluate_rows(rows, active, today=today)
+    failing, warnings, waived = judged["failing"], judged["warnings"], judged["waived"]
+    gate.update({
+        "failing_count": len(failing), "failing": _cap(failing), "truncated": len(failing) > MAX_LISTED,
+        "rules_failed": judged["rules_failed"],
+        "warning_count": len(warnings), "warnings": _cap(warnings),
+        "waived_count": len(waived), "waived": _cap(waived),
+        "expired_exceptions": judged["expired_exceptions"],
+    })
+    extra = []
+    if warnings:
+        extra.append(f"{len(warnings)} warning(s) reported")
+    if waived:
+        extra.append(f"{len(waived)} finding(s) waived by an exception")
+    if judged["expired_exceptions"]:
+        extra.append(f"{len(judged['expired_exceptions'])} exception(s) expired")
+    tail = f" ({'; '.join(extra)})" if extra else ""
     if failing:
+        codes = sorted({code for entry in failing for code in entry["codes"]})
+        rules = ", ".join(f"{rule} x{count}" for rule, count in judged["rules_failed"].items())
         gate["verdict"] = FAIL
-        gate["reason"] = (f"{len(failing)} high crypto finding(s): {', '.join(sorted(codes_seen))}. "
-                          "The policy fails on these codes; quantum-vulnerable findings are reported only.")
+        gate["reason"] = (f"{len(failing)} finding(s) blocked by the CBOM policy \"{active['name']}\": {rules}"
+                          + (f" (codes: {', '.join(codes)})" if codes else "") + f".{tail}")
     else:
         gate["verdict"] = PASS
-        gate["reason"] = "No high crypto finding."
+        gate["reason"] = f"Nothing the CBOM policy \"{active['name']}\" blocks{tail}."
     return gate
+
+
+def summary_line(gate: dict[str, Any]) -> str:
+    """The verdict on one grep-safe line (no quotes or backslashes): the templates without jq print it."""
+    return GP.summary_line(gate)
 
 
 def gate_failed(gate: dict[str, Any]) -> bool:

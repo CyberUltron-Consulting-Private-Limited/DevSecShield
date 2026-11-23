@@ -148,10 +148,29 @@ _USAGE_CONTEXT = re.compile(
     r"\b[a-z_]*_model(?:_name|_id)?\s*(?::\s*[\w\[\]|. ]+)?=\s*"
     r"(?:Field\s*\(\s*(?:default\s*=\s*)?)?['\"]|"
     # an environment / .env setting: OPENAI_MODEL=gpt-4o, ROUTER_JUDGE_MODEL="…"
-    r"^\s*(?:export\s+)?[A-Z][A-Z0-9_]*_MODEL(?:_NAME|_ID)?\s*=\s*['\"]?"
+    r"^\s*(?:export\s+)?[A-Z][A-Z0-9_]*_MODEL(?:_NAME|_ID)?\s*=\s*['\"]?|"
+    # the default of an environment lookup: os.getenv("OPENAI_MODEL", "o3-mini"),
+    # os.environ.get("M", "…"), process.env.MODEL || "…" / ?? "…"
+    r"\b(?:getenv|environ\.get|env\.get)\s*\(\s*['\"][^'\"]*['\"]\s*,\s*['\"]|"
+    r"process\.env\.\w+\s*(?:\|\||\?\?)\s*['\"]"
     r")",
     re.IGNORECASE,
 )
+# A model as the value of a ``model`` key: a request body or payload dict
+# (``json={"model": "gpt-4.1"}``, ``"model": "…",``) or an unquoted YAML value
+# (``model: claude-3-5-sonnet-20241022``). Matched on the text right BEFORE the
+# reference, so the reference is the key's value itself (a docstring such as
+# ``model_name: Model name (e.g. "gpt-4")`` is not). Usage, unless the line or the
+# line before reads as a catalog (a pricing / supported-models table also has
+# ``"model"`` keys).
+_KEYED_USAGE = re.compile(
+    r"""(?:['"]model(?:_name|_id)?['"]\s*:\s*['"](?:[\w.-]+/)?|"""
+    r"""^\s*-?\s*model(?:_name|_id)?\s*:\s*['"]?(?:[\w.-]+/)?)$""",
+    re.IGNORECASE,
+)
+# A model id in a REST path: /v1beta/models/gemini-1.5-flash:generateContent,
+# Bedrock /model/<id>/invoke.
+_URL_PATH = re.compile(r"/models?/$", re.IGNORECASE)
 # The reference sits in a registry / catalog / docs / comment -> CATALOG.
 _CATALOG_HINT = re.compile(
     r"(?:supported|available|allowed|known|valid|registry|catalog|_models\b|"
@@ -161,12 +180,15 @@ _CATALOG_HINT = re.compile(
 _COMMENT = re.compile(r"^\s*(?:#|//|\*|/\*|-{1,}|\|)")  # comment / md table / list row
 
 
-def _classify(line: str, prev: str) -> str:
-    """usage | catalog for a reference, from its line (+ the preceding line)."""
+def _classify(line: str, prev: str, before: str = "") -> str:
+    """usage | catalog for a reference, from its line (+ the preceding line);
+    ``before`` is the text of the line before the reference."""
     if _USAGE_CONTEXT.search(line):
         return "usage"
     if _COMMENT.match(line) or _CATALOG_HINT.search(line) or _CATALOG_HINT.search(prev):
         return "catalog"
+    if _KEYED_USAGE.search(before) or _URL_PATH.search(before):
+        return "usage"
     # A line that is just a quoted string in a collection ("foo", / 'foo':) with
     # no call around it reads as a catalog entry; default ambiguous -> catalog,
     # since catalog over-counting is the documented failure mode.
@@ -211,7 +233,8 @@ def find_model_refs_ctx(text: str) -> dict[str, tuple[str, str]]:
             li = line_index(m.start()) if offsets else 0
             line = lines[li] if li < len(lines) else ""
             prev = lines[li - 1] if li > 0 else ""
-            rtype = _classify(line, prev)
+            start = offsets[li] if offsets else 0
+            rtype = _classify(line, prev, text[start:m.start()])
             casing.setdefault(low, name)
             if low not in found:
                 found[low] = (vendor, rtype)

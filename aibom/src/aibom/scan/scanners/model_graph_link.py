@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from aibom.model.component import ServiceComponent
+from aibom.model.component import ServiceComponent, is_model_mention
 from aibom.model.result import REL_DEPENDS_ON, REL_SERVED_BY
 from aibom.scan.registry import ScanContext, Scanner, register
 
@@ -61,7 +61,9 @@ class ModelGraphLinker(Scanner):
         models = [
             c
             for c in ctx.components
-            if c.kind == "model" and c.bom_ref.startswith("modelref-")
+            if c.kind == "model"
+            and c.bom_ref.startswith("modelref-")
+            and not is_model_mention(c)  # a catalog / test mention is served by nothing
         ]
         if not models:
             return

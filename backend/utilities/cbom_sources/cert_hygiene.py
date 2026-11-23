@@ -52,7 +52,7 @@ MANAGING_AWS = frozenset({"acm", "acm-pca"})
 STALE_RUNS = 3
 MAX_LIMIT = 500
 CACHE_TTL_S = 120.0
-CSV_COLUMNS = ("key", "subject", "issuer", "serial", "not_after", "days_left", "flags", "sources", "owners",
+CSV_COLUMNS = ("key", "sha256_thumbprint", "subject", "issuer", "serial", "not_after", "days_left", "flags", "sources", "owners",
                "applications", "observations", "not_seen_runs", "locations")
 
 
@@ -91,6 +91,7 @@ class Cert:
     subject: str | None = None
     issuer: str | None = None
     serial: str | None = None
+    thumbprint: str = ""  # SHA-256 of the DER (cert_estate.thumbprint), "" when no observation recorded it
     not_after: _dt.datetime | None = None
     flags: tuple[str, ...] = ()
     not_seen_runs: int = 0
@@ -102,7 +103,7 @@ class Cert:
         days = (self.not_after.date() - today).days if self.not_after else None
         return {
             "key": self.key, "label": self.label, "key_kind": self.key_kind, "subject": self.subject,
-            "issuer": self.issuer, "serial": self.serial,
+            "issuer": self.issuer, "serial": self.serial, "sha256_thumbprint": self.thumbprint,
             "not_after": self.not_after.strftime("%Y-%m-%dT%H:%M:%SZ") if self.not_after else None,
             "days_left": days, "expired": days is not None and days < 0, "flags": list(self.flags),
             "not_seen_runs": self.not_seen_runs, "owners": list(self.owners), "applications": list(self.applications),
@@ -254,12 +255,16 @@ def build(session: Any, team_id: int, *, now: _dt.datetime | None = None, stale_
     sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
         CbomCollectionSource.team_id == team_id)).all()}
 
+    from backend.utilities.cbom_sources.cert_estate import is_certificate_record, thumbprint
+
     certs: dict[str, Cert] = {}
     probed = False
     for o in found:
         ptr = (o.latest_job_id, o.latest_attempt) if o.presence == "present" else (o.seen_job_id, o.seen_attempt)
         row = rows.get((ptr[0], ptr[1], o.row_key))
         facts = row.facts if row is not None and isinstance(row.facts, dict) else {}
+        if not is_certificate_record(facts):
+            continue  # a trust-store bundle FILE (N roots, no subject) is not a certificate (the D8 rule, cert_estate)
         location = str((row.location if row is not None else None) or o.location or "")
         a_type = str(row.asset_type if row is not None else "certificate")
         job = jobs.get(ptr[0])
@@ -290,6 +295,8 @@ def build(session: Any, team_id: int, *, now: _dt.datetime | None = None, stale_
             serial = facts.get("serial") or facts.get("serial_number")
             cert.serial = str(serial) if serial else cert.serial
             cert.not_after = _parse(facts.get("not_after") or leaf.get("not_after")) or cert.not_after
+        cert.thumbprint = cert.thumbprint or thumbprint(facts) or thumbprint(
+            facts.get("leaf") if isinstance(facts.get("leaf"), dict) else None)
     for cert in certs.values():
         obs = cert.observations
         obs.sort(key=lambda o: (o["presence"] != "present", o["source_name"].casefold(), o["location"]))
