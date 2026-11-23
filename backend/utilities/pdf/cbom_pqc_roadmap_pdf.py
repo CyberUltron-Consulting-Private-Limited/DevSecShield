@@ -49,6 +49,7 @@ from collections.abc import Sequence
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import CondPageBreak, Flowable, KeepTogether, Paragraph, Spacer
 
+import backend.utilities.cbom_sources.pqc_targets as PQT
 from backend.utilities.dashboard.cbom_team_rollup import (
     ASSET_ALGORITHM,
     IMPACT_LEVELS,
@@ -92,8 +93,8 @@ _ROADMAP_HEADERS = (
     "Key/curve",
     "Classical strength (bits)",
     "NIST QSL",
-    "Target family",
-    "Sized target",
+    "Function",
+    "NIST PQ target",
     "Impact",
     "Where found",
     "Seen",
@@ -104,13 +105,15 @@ _ROADMAP_HEADERS = (
 # Column widths in points.  Every full-width table sums to the 720 pt frame of a landscape letter
 # page.  "Where found" fits "github.com/e2e-demo/payments-service" (125 pt at 7 pt) on one line,
 # so a typical repository label is not broken in the middle of a word.
-_ROADMAP_COLS = (24, 46, 44, 38, 30, 76, 88, 44, 138, 52, 42, 44, 54)
+_ROADMAP_COLS = (22, 46, 42, 36, 28, 52, 118, 42, 112, 50, 54, 60, 58)
 _MANUAL_COLS = (10, 11, 12)  # Wave, Target date, Owner / status: left blank for the assessor
 _TIMELINE_HEADERS = ("When", "Milestone", "Status", "Source", "Source URL")
 # The URL column fits the longest authored URL (CNSA 2.0, 305 pt at 7 pt) on one line.
 _TIMELINE_COLS = (56, 198, 50, 96, 320)
-_FAMILY_HEADERS = ("Target family", "Primitive", "Occurrences", "Sources")
-_FAMILY_COLS = (330, 150, 120, 120)
+_FAMILY_HEADERS = ("Function", "NIST PQ target", "CNSA 2.0", "Reference", "Assets", "Sources")
+_FAMILY_COLS = (150, 230, 120, 90, 60, 70)
+_WAVE_HEADERS = ("Wave", "What goes in it", "Assets", "Proposed date", "Basis (public milestones)", "Owners")
+_WAVE_COLS = (34, 150, 44, 70, 270, 152)
 _LEVEL_HEADERS = ("NIST quantum security level", "Occurrences", "Of which hybrid")
 _LEVEL_COLS = (260, 130, 130)
 _PREVIOUS_HEADERS = (
@@ -136,12 +139,13 @@ _TIMELINE_INTRO = (
 # Product text: aibom/src/aibom/cbom/pqc.py grades quantum-vulnerable public-key algorithms at
 # NIST quantum security level 0 and flags hybrid key exchange.
 _SAFE_INTRO = (
-    "Current algorithm occurrences with no known quantum weakness, by the NIST quantum "
+    "Current assets (code scans and collected infrastructure) with no known quantum weakness, the "
+    "population of the summary card, by the NIST quantum "
     "security level the engine recorded. Level 0 would mean no security against a quantum "
     "computer. Hybrid means a key exchange that combines a classical and a post-quantum "
     "algorithm."
 )
-_NO_SAFE_TEXT = "No quantum-safe algorithm occurrences are recorded in the current scans."
+_NO_SAFE_TEXT = "No quantum-safe asset is recorded in the current scans and collections."
 _UNGRADED_NOTE = (
     "Algorithm occurrences with no recorded quantum status are left out of the readiness "
     "figure (count: {count})."
@@ -166,25 +170,35 @@ _NOTES = (
     "Counts are current occurrences, not de-duplicated across sources: the same algorithm in "
     "two sources is counted twice because each source's usage is a separate exposure.",
     "NIST QSL is the NIST quantum security level the engine recorded; 0 means no security "
-    "against a quantum computer. The sized target is the post-quantum parameter set the "
-    "engine matches to the asset's classical strength; it exists only for scans in the "
-    "current format.",
+    "against a quantum computer. The NIST PQ target follows the asset's function (key "
+    "establishment, TLS / SSH / IKE key exchange, signatures, certificates, CAs, code signing, "
+    "symmetric, hashes): the NIST default parameter set first, the CNSA 2.0 one below it, with "
+    "the FIPS 203 / 204 / 205 or SP 800-208 reference. One table in the crypto knowledge base "
+    "drives it, the same one behind the run pages.",
     "A dash (" + _DASH + ") means the value is not recorded: legacy-format scans carry no "
     "classical strength, quantum security level or sized target.",
     "Wave, target date and owner / status are for the assessor to complete. This document "
     "lists assets and the NIST target for each; it does not sequence the migration.",
 )
+_UNKNOWN_FUNCTION = "not recorded"
 # With the team's remediation plan loaded (``view.remediation``) the last note is replaced by this one: the three
 # columns are filled from the plan, and scan-node / cloud assets get their own table.
 _PLAN_NOTE = (
     "Wave, target date and owner / status come from the team's remediation plan in DevSecShield. "
     "Where no wave was assigned, the suggested wave is printed with \"(suggested)\": 1 = critical or high "
     "and internet-facing or harvest-now-decrypt-later, 2 = other critical or high, 3 = any other weakness, "
-    "4 = quantum-vulnerable with no other weakness. Blank cells are for the assessor."
+    "4 = quantum-vulnerable with no other weakness. A target date marked \"(proposed)\" is the wave's date from "
+    "the public milestones (NIST IR 8547, CNSA 2.0); an owner marked \"(source owner)\" is the owner recorded on the "
+    "source. Waves, dates and owners are proposals until ZeroShield confirms them with the asset owners before issue."
 )
-_NODE_HEADERS = ("#", "Asset", "Type", "Algorithm / key", "Impact", "Where found", "Collected", "Wave",
+_WAVE_INTRO = (
+    "Each wave with its proposed completion date. The dates come from public milestones (NIST IR 8547, CNSA 2.0), "
+    "not from this document; an assigned date in the plan replaces the proposal. ZeroShield confirms waves, dates and "
+    "owners with the asset owners before issue."
+)
+_NODE_HEADERS = ("#", "Asset", "Type", "Algorithm / key", "NIST PQ target", "Impact", "Where found", "Wave",
                  "Target date", "Owner / status")
-_NODE_COLS = (24, 150, 70, 64, 44, 150, 52, 52, 50, 64)
+_NODE_COLS = (22, 100, 52, 72, 124, 42, 142, 44, 64, 58)
 
 _KEY_BITS_RE = re.compile(r"\s*(\d{1,9})\b")
 _DIGITS_RE = re.compile(r"\d+")
@@ -300,16 +314,49 @@ def _seen(asset: AssetAgg) -> str:
     return f"{span}\n{_plural(max(int(asset.scan_count), 0), 'scan')}"
 
 
-def _plan_cells(plan: dict | None, suggested: int | None) -> list[str]:
-    """Wave, target date and owner / status from the team's remediation plan (blank without a plan)."""
+def _effective_wave(plan: dict | None) -> int | None:
+    """The wave a row is planned in: the assigned one, else the suggested one."""
+    if plan is None:
+        return None
+    wave = (plan.get("assigned") or {}).get("wave") or plan.get("suggested")
+    return int(wave) if isinstance(wave, int) and not isinstance(wave, bool) else None
+
+
+def _plan_cells(plan: dict | None, suggested: int | None, owner_hint: str | None = None) -> list[str]:
+    """Wave, target date and owner / status from the team's remediation plan (blank without a plan). A date the plan
+    does not set is the wave's proposed date (``pqc_targets.wave_milestone``, "(proposed)"); an owner it does not set
+    is the source's recorded owner (C5, "(source owner)"), else ``UNASSIGNED_OWNER``."""
     if plan is None:
         return ["", "", ""]
     assigned = plan.get("assigned") or {}
     wave = assigned.get("wave")
     wave_text = str(wave) if wave else (f"{suggested} (suggested)" if suggested else "")
+    date = str(assigned.get("target_date") or "")
+    if not date:
+        milestone = PQT.wave_milestone(wave or suggested)
+        date = f"{milestone['date']} (proposed)" if milestone else ""
     status = str(assigned.get("status") or "").replace("_", " ")
-    owner = " / ".join(x for x in (assigned.get("owner") or "", status if assigned else "") if x)
-    return [wave_text, str(assigned.get("target_date") or ""), owner]
+    owner = assigned.get("owner") or ""
+    if not owner:
+        hint = str(owner_hint or "").strip()
+        owner = f"{hint} (source owner)" if hint else PQT.UNASSIGNED_OWNER
+    owner = " / ".join(x for x in (owner, status if assigned else "") if x)
+    return [wave_text, date, owner]
+
+
+def _code_target(asset: AssetAgg) -> dict | None:
+    """The NIST PQ target of a code-scan algorithm row, from its primitive (``pqc_targets``, as the API's
+    ``waves.code_items``)."""
+    return PQT.asset_target(asset.asset_type, asset.title, None, asset.primitive)
+
+
+def _function(target: dict | None) -> str:
+    return target["usage_label"] if target else _UNKNOWN_FUNCTION
+
+
+def _short_function(target: dict | None) -> str:
+    """The function without its examples ("Key establishment"), for the narrow per-asset column."""
+    return _function(target).split(" (")[0]
 
 
 def _asset_plan(view: TeamCbomView, asset: AssetAgg) -> dict | None:
@@ -326,8 +373,8 @@ def _roadmap_row(number: int, asset: AssetAgg, plan: dict | None = None) -> list
         _key_curve(asset),
         _number(asset.security_strength_bits),
         _number(asset.nist_quantum_security_level),
-        _family(asset),
-        _sized(asset),
+        _short_function(_code_target(asset)),
+        PQT.cell_text(_code_target(asset)),
         status_chip(asset.impact.upper(), tone_for_impact(asset.impact)),
         _where(asset),
         _seen(asset),
@@ -415,17 +462,26 @@ def _timeline(styles: Styles, width: float, title: str) -> list[Flowable]:
     return [block, Spacer(1, 4)]
 
 
-def _families(rows: list[AssetAgg], styles: Styles, width: float, title: str) -> list[Flowable]:
-    tally: dict[tuple[int, str, str], tuple[int, set[str]]] = {}
-    for asset in rows:
-        code = _group_code(asset)
-        key = (_GROUP_ORDER.index(code), code, _family(asset))
-        count, sources = tally.get(key, (0, set()))
-        tally[key] = (count + 1, sources | {asset.source_key})
-    table_rows = [
-        [family, code, str(count), str(len(sources))]
-        for (_index, code, family), (count, sources) in sorted(tally.items())
-    ]
+def _families(rows: list[AssetAgg], styles: Styles, width: float, title: str,
+              node_rows: Sequence[dict] = ()) -> list[Flowable]:
+    """NIST PQ targets by function, over the code-scan rows and the collected infrastructure rows."""
+    order = list(PQT.table())
+    tally: dict[str, tuple[int, set[str]]] = {}
+    targets: dict[str, dict | None] = {}
+    entries = [(_code_target(a), a.source_key) for a in rows]
+    entries += [(PQT.target_for(r.get("pq_usage")), str(r.get("source_name") or "")) for r in node_rows]
+    for target, source in entries:
+        usage = target["usage"] if target else ""
+        targets[usage] = target
+        count, sources = tally.get(usage, (0, set()))
+        tally[usage] = (count + 1, sources | {source})
+    table_rows = []
+    for usage in sorted(tally, key=lambda u: (order.index(u) if u in order else len(order), u)):
+        target, (count, sources) = targets[usage], tally[usage]
+        table_rows.append([
+            _function(target), target["target_text"] if target else PQT.cell_text(None),
+            target["cnsa_target"] if target else _DASH, target["reference"] if target else _DASH,
+            str(count), str(len(sources))])
     block = KeepTogether(
         [
             _heading(title, styles),
@@ -501,10 +557,9 @@ def _no_rows(view: TeamCbomView, styles: Styles, title_prefix: str) -> list[Flow
 
 
 def _safe_section(view: TeamCbomView, styles: Styles, width: float, title: str) -> list[Flowable]:
-    safe = [
-        a for a in view.assets
-        if a.current and _is_algorithm(a) and a.quantum_vulnerable is False and not a.broken_today  # not MD5, DES ...
-    ]
+    # the population of the summary card "Quantum-safe" (cbom_team_rollup._headline: every current asset, code scans
+    # and collected infrastructure), so the card and this section never disagree (audit A-08)
+    safe = [a for a in view.assets if a.current and a.quantum_vulnerable is False and not a.broken_today]
     parts: list[Flowable] = [_heading(title, styles)]
     if not safe:
         parts.append(_note(_NO_SAFE_TEXT, styles, style="body"))
@@ -518,9 +573,13 @@ def _safe_section(view: TeamCbomView, styles: Styles, width: float, title: str) 
         if None in by_level:
             rows.append(["Not recorded", str(by_level[None]), str(hybrid.get(None, 0))])
         rows.append(["Total quantum-safe", str(len(safe)), str(sum(hybrid.values()))])
+        kinds = Counter(a.asset_type for a in safe)
         parts += [
             _note(_SAFE_INTRO, styles),
             dense_table(_LEVEL_HEADERS, rows, _fit(_LEVEL_COLS, width, stretch=False)),
+            Spacer(1, 3),
+            _note("By asset type: " + ", ".join(f"{k} {n}" for k, n in sorted(kinds.items(), key=lambda kv: (-kv[1], kv[0]))),
+                  styles),
         ]
     if view.pqc_ungraded:
         parts += [Spacer(1, 3), _note(_UNGRADED_NOTE.format(count=view.pqc_ungraded), styles)]
@@ -564,29 +623,40 @@ def _notes_section(styles: Styles, title: str, *, planned: bool = False) -> list
     return [KeepTogether([_heading(title, styles), *lines])]
 
 
+def _node_key(item: dict) -> str:
+    """Algorithm / key of a collected row; a TLS or SSH endpoint leads with its key-exchange group (the part a
+    quantum computer breaks), not only the symmetric suite."""
+    key = item.get("algorithm") or ""
+    if item.get("key_size"):
+        key = f"{key} {item['key_size']}".strip()
+    group = str(item.get("kex_group") or "").strip()
+    if group and item.get("pq_usage") in ("tls_kex", "ssh_kex", "vpn_kex"):
+        key = f"{group} (key exchange)" + (f"\n{key}" if key else "")
+    return key or _DASH
+
+
 def _node_section(view: TeamCbomView, styles: Styles, width: float, title: str, max_rows: int) -> list[Flowable]:
     """Quantum-vulnerable assets of each collection source's latest complete run (scan nodes, cloud worker)."""
     rem = view.remediation or {}
     rows = rem.get("node_rows") or []
     table_rows = []
     for number, item in enumerate(rows[: max(int(max_rows), 0)], start=1):
-        key = item.get("algorithm") or ""
-        if item.get("key_size"):
-            key = f"{key} {item['key_size']}".strip()
+        collected = (item.get("collected_at") or "")[:10]
         where = "\n".join(x for x in (item.get("source_name") or "", item.get("target") or "",
-                                       item.get("location") or "") if x)
+                                       item.get("location") or "", f"collected {collected}" if collected else "") if x)
         impact = str(item.get("impact") or "Info")
         plan = {"assigned": item.get("assignment") or {}, "suggested": item.get("suggested_wave")}
         table_rows.append([
-            str(number), item.get("label") or "", item.get("type") or "", key or _DASH,
+            str(number), item.get("label") or "", item.get("type") or "", _node_key(item),
+            PQT.cell_text(PQT.target_for(item.get("pq_usage"))),
             status_chip(impact.upper(), tone_for_impact(impact)), where,
-            (item.get("collected_at") or "")[:10], *_plan_cells(plan, plan["suggested"]),
+            *_plan_cells(plan, plan["suggested"], item.get("owner_hint")),
         ])
     story: list[Flowable] = [
         *section_heading(title, styles),
         _note("Quantum-vulnerable assets found by scan nodes and the ZeroShield cloud worker in each source's "
               "latest complete collection (servers, clusters, databases, cloud accounts, identity providers, "
-              "network endpoints).", styles),
+              "network endpoints), each with the NIST post-quantum target of its function.", styles),
     ]
     if table_rows:
         story.append(dense_table(_NODE_HEADERS, table_rows, _fit(_NODE_COLS, width)))
@@ -596,6 +666,41 @@ def _node_section(view: TeamCbomView, styles: Styles, width: float, title: str, 
                                                                cap=max(int(max_rows), 0)), styles)]
     story.append(Spacer(1, 4))
     return story
+
+
+def _owner_of(plan: dict, hint: str | None) -> str:
+    owner = (plan.get("assigned") or {}).get("owner") or str(hint or "").strip()
+    return owner or PQT.UNASSIGNED_OWNER
+
+
+def _waves(view: TeamCbomView, rows: list[AssetAgg], styles: Styles, width: float, title: str) -> list[Flowable]:
+    """Count, proposed date, basis and owners per wave over the code-scan rows and the collected rows."""
+    planned: list[tuple[int | None, str]] = []
+    for asset in rows:
+        plan = _asset_plan(view, asset) or {}
+        planned.append((_effective_wave(plan), _owner_of(plan, None)))
+    rem = view.remediation or {}
+    for item in rem.get("node_rows") or []:
+        plan = {"assigned": item.get("assignment") or {}, "suggested": item.get("suggested_wave")}
+        planned.append((_effective_wave(plan), _owner_of(plan, item.get("owner_hint"))))
+    by_wave: dict[int, Counter] = {}
+    for wave, owner in planned:
+        if wave is not None:
+            by_wave.setdefault(wave, Counter())[owner] += 1
+    table_rows = []
+    for wave in sorted(by_wave):
+        owners = by_wave[wave]
+        milestone = PQT.wave_milestone(wave) or {}
+        named = [f"{o} ({n})" for o, n in sorted(owners.items(), key=lambda kv: (-kv[1], kv[0]))
+                 if o != PQT.UNASSIGNED_OWNER][:3]
+        if owners.get(PQT.UNASSIGNED_OWNER):
+            named.append(f"{owners[PQT.UNASSIGNED_OWNER]} {PQT.UNASSIGNED_OWNER}")
+        table_rows.append([str(wave), PQT.WAVE_LABEL.get(wave, ""), str(sum(owners.values())),
+                           milestone.get("date") or _DASH, milestone.get("basis") or "", "\n".join(named)])
+    parts: list[Flowable] = [*section_heading(title, styles), _note(_WAVE_INTRO, styles)]
+    if table_rows:
+        parts.append(dense_table(_WAVE_HEADERS, table_rows, _fit(_WAVE_COLS, width)))
+    return [*parts, Spacer(1, 4)]
 
 
 # ---------------------------------------------------------------------------------------------
@@ -615,14 +720,18 @@ def build_body(
     story: list[Flowable] = []
     story += _summary(view, rows, styles, width, title("Summary"))
     story += _timeline(styles, width, title("Regulatory timeline"))
+    node_rows = (view.remediation or {}).get("node_rows") or []
+    if rows or node_rows:
+        story += _families(rows, styles, width, title("NIST post-quantum targets by function"), node_rows)
     if rows:
-        story += _families(rows, styles, width, title("Target families"))
         story += _roadmap(rows, styles, width, title("Per-asset roadmap"), max_rows, view)
     else:
         story += _no_rows(view, styles, str(next(counter)))
-    if view.remediation is not None and view.remediation.get("node_rows"):
+    if view.remediation is not None and node_rows:
         story += _node_section(view, styles, width, title("Collected infrastructure (scan nodes and cloud)"),
                                max_rows)
+    if view.remediation is not None and (rows or node_rows):
+        story += _waves(view, rows, styles, width, title("Waves: proposed dates and owners"))
     if not view.is_empty:
         story += _safe_section(view, styles, width, title("Already quantum-safe and hybrid"))
     if previous:

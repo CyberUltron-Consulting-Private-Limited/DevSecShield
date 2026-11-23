@@ -11,7 +11,12 @@ Sections::
     B  Heat-map                - algorithm family x source, worst known grade per cell with counts (Q0 apart)
     C  Q1 Critical assets      - up to 100 rows (the total is always printed)
     D  Q0 Unknown gaps         - open gaps by reason (evidence, unread scope, assets, inputs), up to 200 rows
-    E  Closure trend           - Q0 gaps closed per week (12 weeks) by cause
+    E  Closure trend           - Q0 gaps opened, closed and still open per week (12 weeks), closures by cause
+    F  Every asset             - each register row with its grade, class, standards verdicts, fix class, NIST PQ
+                                 target and the Mosca inputs used (up to 2,000 rows; the CSV holds every row)
+
+Grades read the team's Mosca X / Y / Z where set, else documented defaults; a grade that used one says "default
+assumptions" (``summary.default_assumptions``, the rows' ``grade_inputs``).
 
 Rules as the other deliverables: reportlab, the standard library and ``backend.utilities.pdf.*`` only; no network,
 no language model, no wall clock (dates come from the view and the register rows); every data string goes through
@@ -64,13 +69,27 @@ def _summary(reg: dict[str, Any], width: float) -> list[Flowable]:
     cards = [("Assets", str(s.get("total", 0)), "distinct assets across sources")]
     cards += [(grade_text(g), str(q.get(g, 0)), "", TONE[g]) for g in GRADES]
     cards += [("Q0 Unknown", str(q.get("Q0", 0)), "assets the product could not grade", "unknown"),
-              ("No grade", str(q.get("none", 0)), "no public-key cryptography"),
+              ("No grade", str(q.get("none", 0)), "no public-key or disallowed cryptography"),
               ("Still to re-grade", str(s.get("pending_regrade", 0)), "after an input or model change")]
     return [kpi_strip(cards, width, max_per_row=8)]
 
 
+def assumptions_text(summary: dict[str, Any]) -> str | None:
+    """The "default assumptions" line: how many grades rest on a default Mosca input, which inputs, the defaults."""
+    d = summary.get("default_assumptions") or {}
+    n = int(d.get("count") or 0)
+    if n <= 0:
+        return None
+    which = ", ".join(f"{k.upper()} ({v})" for k, v in (d.get("inputs") or {}).items())
+    return (f"Default assumptions: {n} quantum-vulnerable grade{'' if n == 1 else 's'} used a default Mosca input "
+            f"({which}) because the team or the source has not set it. Defaults: {d.get('defaults')}. Set the data "
+            "lifetime on each source and the team's migration and quantum-computer years to replace them; the "
+            "register re-grades in the background.")
+
+
 # Q0 gap reasons as the Quantum risk tab heads them (frontend components/cbom/grade/model.ts q0ReasonHeading)
 _REASON_WORDS = {"evidence_e0": "evidence at E0", "mosca_missing": "Mosca inputs missing",
+                 "deprecated": "disallowed by SP 800-131A",
                  "unknown_verdict": "PQC class unknown", "coverage_gap": "scope not read"}
 
 
@@ -124,16 +143,27 @@ def _heatmap(reg: dict[str, Any], styles: Styles, width: float) -> list[Flowable
     return [dense_table(headers, rows, [first] + [rest] * len(cols))]
 
 
+def inputs_cell(i: dict[str, Any]) -> str:
+    """The Mosca inputs a row's grade read (``risk_register.add_detail``): X with its basis, Y, Z and the marker."""
+    if i.get("data_lifetime_years") is None:
+        return ""
+    if str(i.get("grade_inputs") or "").startswith("not used"):
+        return str(i["grade_inputs"])
+    head = (f"X {i['data_lifetime_years']} ({i.get('data_lifetime_basis')}), Y {i.get('migration_years')}, "
+            f"Z {i.get('crqc_years')}")
+    return f"{head}\n{i.get('grade_inputs') or ''}".strip()
+
+
 def _top_q1(reg: dict[str, Any], styles: Styles, width: float) -> list[Flowable]:
     items = reg.get("top_q1") or []
     total = int(reg.get("top_q1_total") or 0)
     if not items:
         return [_note("No asset grades Q1 Critical.", styles)]
     rows = [[_chip(i["q_grade"]), i.get("label") or i["item_key"], i.get("asset_type"), i.get("family"),
-             i.get("exposure"), i.get("source_name"), i.get("sources"), i.get("q_reason")] for i in items]
+             i.get("exposure"), i.get("source_name"), i.get("q_reason"), inputs_cell(i)] for i in items]
     out: list[Flowable] = [dense_table(
-        ["Grade", "Asset", "Type", "Family", "Exposure", "Source", "Sources", "Reason"], rows,
-        [62, width - 62 - 80 - 70 - 60 - 110 - 40 - 110, 80, 70, 60, 110, 40, 110])]
+        ["Grade", "Asset", "Type", "Family", "Exposure", "Source", "Reason", "Inputs used"], rows,
+        [62, width - 62 - 72 - 60 - 52 - 96 - 100 - 130, 72, 60, 52, 96, 100, 130])]
     if total > len(items):
         out.append(_note(f"{total - len(items)} further Q1 Critical assets are omitted here; the register list and "
                          "its CSV hold every row.", styles))
@@ -157,13 +187,52 @@ def _q0(reg: dict[str, Any], styles: Styles, width: float) -> list[Flowable]:
     return out
 
 
+def trend_weeks(weeks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The weeks the trend prints: from the first week with a gap open, opened or closed (weeks before the
+    engagement had no gap and would only print zeros); the numbers are the API's, never recomputed."""
+    for i, w in enumerate(weeks):
+        if w.get("total") or w.get("opened") or w.get("open_end"):
+            return weeks[i:]
+    return []
+
+
 def _trend(reg: dict[str, Any], styles: Styles, width: float) -> list[Flowable]:
-    weeks = reg["summary"].get("closures_by_week") or []
-    if not any(w.get("total") for w in weeks):
-        return [_note("No Q0 gap closed in the last 12 weeks.", styles)]
-    rows = [[w["week"], w["total"], ", ".join(f"{k} {v}" for k, v in sorted((w.get("by_cause") or {}).items()))]
-            for w in weeks]
-    return [dense_table(["Week of", "Closed", "By cause"], rows, [90, 60, width - 150])]
+    weeks = trend_weeks(reg["summary"].get("closures_by_week") or [])
+    if not weeks:
+        return [_note("No Q0 gap opened or closed in the last 12 weeks.", styles)]
+    rows = [[w["week"], w.get("opened", ""), w["total"], w.get("open_end", ""),
+             ", ".join(f"{k} {v}" for k, v in sorted((w.get("by_cause") or {}).items()))] for w in weeks]
+    return [_note("Q0 gaps opened and closed each week (Monday to Sunday, UTC) and the gaps still open at the end "
+                  "of the week, from the gap lifecycle the runs recorded.", styles), Spacer(1, 3),
+            dense_table(["Week of", "Opened", "Closed", "Open at week end", "Closed by cause"], rows,
+                        [90, 60, 60, 90, width - 300])]
+
+
+_ASSET_HEADERS = ["Grade", "Asset", "Type", "PQC class", "Algorithm", "Exposure",
+                  "FIPS 203/204/205 / CNSA 2.0 / SP 800-131A", "Fix class", "NIST PQ target", "Inputs used", "Owner"]
+
+
+def _assets(reg: dict[str, Any], styles: Styles, width: float) -> list[Flowable]:
+    items = reg.get("assets") or []
+    total = int(reg.get("assets_total") or len(items))
+    if not items:
+        return [_note("The register has no assets yet.", styles)]
+    rows = []
+    for i in items:
+        algorithm = " ".join(str(x) for x in (i.get("algorithm"), i.get("key_size")) if x not in (None, ""))
+        verdicts = "\n".join(str(i.get(k) or "\u2014") for k in ("fips_203_204_205", "cnsa_2_0", "sp800_131a"))
+        rows.append([_chip(i["q_grade"]), i.get("label") or i["item_key"], i.get("asset_type"), i.get("pqc_class"),
+                     algorithm, i.get("exposure"), verdicts, i.get("fix_class"), i.get("nist_pq_target"),
+                     inputs_cell(i), i.get("owner")])
+    fixed = [48, 0, 50, 64, 50, 40, 88, 48, 92, 86, 56]
+    fixed[1] = width - sum(fixed)
+    out: list[Flowable] = [
+        _note("Every register row, worst grade first, with the columns of the register CSV (the CSV is the full "
+              "per-asset list).", styles), Spacer(1, 3), dense_table(_ASSET_HEADERS, rows, fixed)]
+    if total > len(items):
+        out.append(_note(f"{total - len(items)} further assets are omitted here; the register CSV holds every row.",
+                         styles))
+    return out
 
 
 def build_body(view: TeamCbomView, styles: Styles, width: float) -> list[Flowable]:
@@ -173,6 +242,9 @@ def build_body(view: TeamCbomView, styles: Styles, width: float) -> list[Flowabl
     out: list[Flowable] = []
     out += section_heading("A. Summary", styles)
     out += _summary(reg, width)
+    assumed = assumptions_text(reg.get("summary") or {})
+    if assumed:
+        out += [Spacer(1, 4), _note(assumed, styles)]
     if not (reg.get("summary") or {}).get("total"):
         out += [Spacer(1, 6), _note(EMPTY, styles)]
     out += section_heading("B. Heat-map: algorithm family x source (worst known grade; Q0 counted apart)", styles)
@@ -181,8 +253,10 @@ def build_body(view: TeamCbomView, styles: Styles, width: float) -> list[Flowabl
     out += _top_q1(reg, styles, width)
     out += section_heading("D. Q0 Unknown gaps (open)", styles)
     out += _q0(reg, styles, width)
-    out += section_heading("E. Q0 gaps closed per week", styles)
+    out += section_heading("E. Q0 gaps opened, closed and open per week", styles)
     out += _trend(reg, styles, width)
+    out += section_heading("F. Every asset with its grade", styles)
+    out += _assets(reg, styles, width)
     return out
 
 

@@ -34,14 +34,14 @@ from backend.new_models import (
     Scan,
 )
 from backend.utilities.cbom_sources import identity as ID
+from backend.utilities.cbom_sources import pqc_targets as PQT
 from backend.utilities.cbom_sources.cbom_metrics import code_row_quantum_vulnerable
 from backend.utilities.cbom_sources.cbom_rows import display_row, is_finding
 from backend.utilities.cbom_sources.common import iso_z
 
 WAVES = (1, 2, 3, 4)
 STATUSES = ("open", "in_progress", "done", "accepted_risk")
-WAVE_LABEL = {1: "Wave 1: urgent (exposed or HNDL)", 2: "Wave 2: high", 3: "Wave 3: other weaknesses",
-              4: "Wave 4: post-quantum migration"}
+WAVE_LABEL = PQT.WAVE_LABEL
 
 
 @dataclass(frozen=True)
@@ -124,13 +124,27 @@ def _with_assignment(items: list[dict[str, Any]], found: dict[str, CbomRemediati
         item["assignment"] = public_assignment(a)
         item["wave"] = a.wave if a is not None and a.wave is not None else item["suggested_wave"]
         item["wave_source"] = "assigned" if a is not None and a.wave is not None else "suggested"
+        # D13: the wave's proposed completion date (NIST IR 8547 / CNSA 2.0 milestones, crypto KB) unless the team set one
+        milestone = PQT.wave_milestone(item["wave"]) if item["wave"] else None
+        item["proposed_date"] = milestone["date"] if milestone else None
     return items
+
+
+def target_fields(asset_type: Any, algorithm: Any, facts: Any, primitive: Any = None) -> dict[str, Any]:
+    """The asset's NIST post-quantum target (``pqc_targets``), as every surface prints it."""
+    t = PQT.asset_target(asset_type, algorithm, facts, primitive)
+    return {"pq_usage": t["usage"] if t else None, "pq_target": t["target_text"] if t else None,
+            "pq_target_cnsa": t["cnsa_target"] if t else None, "pq_reference": t["reference"] if t else None}
 
 
 # ----------------------------------------------------------------------------- node runs
 def node_items(session: Session, team_id: int, run: CbomCollectionRun, *,
                asset_ids: Iterable[int] | None = None) -> list[dict[str, Any]]:
-    from backend.utilities.cbom_sources.posture import asset_exposure, hndl, job_metadata
+    from backend.utilities.cbom_sources.posture import (
+        asset_exposure,
+        hndl,
+        job_metadata,
+    )
 
     jobs = {j.id: j for j in session.exec(select(CbomCollectionJob).where(
         CbomCollectionJob.team_id == team_id, CbomCollectionJob.run_id == run.id)).all()}
@@ -163,7 +177,7 @@ def node_items(session: Session, team_id: int, run: CbomCollectionRun, *,
             "source_ref": ref, "source_name": ID.job_source_name(job, src) if job else None,
             "label": ID.node_label(row), "type": row.asset_type, "impact": view["impact"], "finding_codes": codes,
             "quantum_vulnerable": row.quantum_vulnerable, "exposure": exposure, "hndl": in_transit,
-            "owner_hint": owner,
+            "owner_hint": owner, **target_fields(row.asset_type, row.algorithm, row.facts),
             "suggested_wave": suggested_wave(view["impact"], codes, row.quantum_vulnerable,
                                              internet=exposure == "internet", hndl=in_transit),
         })
@@ -191,7 +205,10 @@ def code_items(session: Session, team_id: int, scan: Scan) -> list[dict[str, Any
                          "source_ref": ref, "source_name": label, "label": ID.code_label(row),
                          "type": row.get("asset_type") or row.get("algorithm_type"), "impact": impact,
                          "finding_codes": codes, "quantum_vulnerable": qv, "exposure": "unknown", "hndl": False,
-                         "owner_hint": row.get("owner") or row.get("owner_hint")}
+                         "owner_hint": row.get("owner") or row.get("owner_hint"),
+                         **target_fields(row.get("asset_type") or "algorithm",
+                                         row.get("title") or row.get("algorithm_name"), None,
+                                         row.get("primitive") or row.get("algorithm_type"))}
         else:  # the same asset on several lines: one plan
             item["finding_codes"] = sorted(set(item["finding_codes"]) | set(codes))
             item["quantum_vulnerable"] = item["quantum_vulnerable"] or qv
@@ -293,6 +310,17 @@ def upsert(session: Session, team_id: int, user_id: int, body: AssignmentBulk, n
 
 
 # ----------------------------------------------------------------------------- roadmap
+def _kex_group(facts: Any) -> str | None:
+    facts = facts if isinstance(facts, dict) else {}
+    for key in ("negotiated_group", "group", "kex"):
+        value = facts.get(key)
+        if isinstance(value, list):
+            value = ", ".join(str(v) for v in value[:3])
+        if isinstance(value, str) and value.strip() and value != "<NULL>":
+            return value.strip()[:64]
+    return None
+
+
 def code_asset_key(asset: Any) -> str:
     return ID.stable_key("code", asset.source_key, ID.asset_agg_identity(asset))
 
@@ -326,7 +354,7 @@ def roadmap_extras(session: Session, team_id: int, view: Any = None) -> dict[str
         runs[run.id] = run
         ids = [r for r in session.exec(select(CbomCollectedAsset.id).where(
             CbomCollectedAsset.job_id == job.id, CbomCollectedAsset.attempt == job.attempts,
-            CbomCollectedAsset.quantum_vulnerable == True)).all()]  # noqa: E712
+            CbomCollectedAsset.quantum_vulnerable == True)).all()]
         if not ids:
             continue
         for item in node_items(session, team_id, run, asset_ids=ids):
@@ -334,6 +362,8 @@ def roadmap_extras(session: Session, team_id: int, view: Any = None) -> dict[str
             node_rows.append({**item, "algorithm": row.algorithm if row else None,
                               "key_size": row.key_size if row else None, "target": row.target if row else None,
                               "location": row.location if row else None, "run_id": run.id,
+                              # the key-exchange group an endpoint negotiated (the part a quantum computer breaks)
+                              "kex_group": _kex_group(row.facts) if row else None,
                               "collected_at": iso_z(row.created_at) if row else None})
     order = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
     node_rows.sort(key=lambda r: (r["wave"] or 9, order.get(r["impact"] or "", 8), str(r["source_name"]), r["label"]))

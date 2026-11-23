@@ -156,7 +156,8 @@ def test_the_register_pdf_prints_the_summary_heatmap_top_q1_and_q0_numbers_of_th
     summary = view.register["summary"]
     assert "Quantum Risk Register" in flat and "CBOM-D02-T1" in flat
     assert f"Assets {summary['total']}" in flat or str(summary["total"]) in flat
-    for section in ("A. Summary", "B. Heat-map", "C. Q1 Critical assets", "D. Q0 Unknown gaps", "E. Q0 gaps closed"):
+    for section in ("A. Summary", "B. Heat-map", "C. Q1 Critical assets", "D. Q0 Unknown gaps",
+                    "E. Q0 gaps opened, closed", "F. Every asset with its grade"):
         assert section in flat, section
     q1 = [r for r in register(lab).values() if r.q_grade == "Q1"]
     if q1:

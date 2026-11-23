@@ -4,7 +4,8 @@
 then Q0, then no grade), keyset-paged by ``after``, filtered by grade, reason, kind, source, application, family,
 exposure, type or presence; ``…/register/summary`` gives the distribution, Q0 by reason, the algorithm family x grade
 counts, closures per week and what is still to re-grade; ``…/register/items/{key}`` one row with its observations
-and Q0 history; ``…/register.csv`` the filtered register, streamed.
+and Q0 history; ``…/register.csv`` the filtered register, streamed (UTF-8 with a byte order mark, RFC 4180, with the per-asset
+detail columns that ``?detail=true`` adds to the list).
 
 ``GET /{team_id}/cbom/register/q0?status=open|closed&kind&reason&after&limit`` lists the team's Q0 items with their
 lifecycle (opened, last seen, closed, cause), newest opening first, keyset-paged by ``after`` (the opaque
@@ -88,10 +89,11 @@ def _cursor(after: str | None) -> tuple[int, str] | None:
         raise HTTPException(status_code=400, detail="after: not a cursor from this list") from None
 
 
-def _list(engine, team_id: int, filters: dict[str, Any], after: str | None, limit: int) -> dict[str, Any]:
+def _list(engine, team_id: int, filters: dict[str, Any], after: str | None, limit: int,
+          detail: bool = False) -> dict[str, Any]:
     cursor = _cursor(after)
     with Session(engine) as session:
-        return RISK.list_register(session, team_id, filters, after=cursor, limit=limit)
+        return RISK.list_register(session, team_id, filters, after=cursor, limit=limit, detail=detail, now=utcnow())
 
 
 async def _call(what: str, team_id: int, fn, *args) -> Any:
@@ -114,11 +116,15 @@ async def register_list(team_id: TeamId, grade: str | None = GradeQ, reason: str
                         presence: str | None = Query(default=None, pattern="^(present|not_read)$"),
                         after: str | None = Query(default=None, max_length=512),
                         limit: int = Query(default=100, ge=1, le=RISK.LIMIT_MAX),
+                        detail: bool = Query(default=False, description="SOW D12: the CSV's per-asset columns "
+                                             "(PQC class, algorithm, standards verdicts, fix class, NIST PQ target, "
+                                             "Mosca inputs used, criticality, owner)"),
                         Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
     filters = _filters(grade=grade, reason=reason, kind=kind, source=source, application=application, family=family,
                        exposure=exposure, type=type, presence=presence)
-    return JSONResponse(await _call("list", team_id, _list, engine, team_id, filters, after, limit), headers=PRIVATE)
+    return JSONResponse(await _call("list", team_id, _list, engine, team_id, filters, after, limit, detail),
+                        headers=PRIVATE)
 
 
 def _summary(engine, team_id: int) -> dict[str, Any]:

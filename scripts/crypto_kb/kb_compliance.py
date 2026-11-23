@@ -102,10 +102,114 @@ def refs(r: dict) -> dict:
     return {"_clauses": catalog, **{area: [key_of[id(ref)] for ref in items] for area, items in areas.items()}}
 
 
+# NIST post-quantum target per asset FUNCTION (D13 PQC Migration Roadmap, D12 register CSV). A target never names a
+# post-quantum algorithm here: each one is an algid SELECTOR (backend/utilities/cbom_sources/pqc_targets.py resolves it
+# against algid's rows, the single source of post-quantum names, parameter sets and NIST categories). Selector keys:
+#   standard      the row's published standard (FIPS 203 / FIPS 204 / FIPS 205 / SP 800-208), status "standard" only
+#   category      the FIPS NIST security category (3 = the NIST default parameter set, 5 = CNSA 2.0)
+#   construction  pure (default) | hybrid
+#   with          a classical component of a hybrid (X25519, P-384)
+#   registry      tls_group | ssh_kex: only names that registry carries (the codepoint a server is configured with)
+#   variant       the end of a FIPS 205 parameter set (SHA2-256s: the small-signature SHA-2 set)
+#   all           every matching name (the stateful hash-based family, SP 800-208), joined with " / "
+# "text" parts are classical names, written as is. "then" is the step after a transition (hybrid first, then pure).
+# Sources: research compliance.json nist.ir8547.ml_kem_default (category 3 default), cnsa2.algorithms (category 5,
+# LMS / XMSS for software and firmware signing, AES-256, SHA-384/512).
+_KEM3 = {"standard": "FIPS 203", "category": 3}
+_KEM5 = {"standard": "FIPS 203", "category": 5}
+_DSA3 = {"standard": "FIPS 204", "category": 3}
+_DSA5 = {"standard": "FIPS 204", "category": 5}
+_SLH5 = {"standard": "FIPS 205", "category": 5, "variant": "SHA2-256s"}
+_STATEFUL = {"standard": "SP 800-208", "all": True}
+MIGRATION_TARGETS = [
+    {"usage": "tls_kex", "label": "TLS key exchange",
+     "target": [{"select": {**_KEM3, "construction": "hybrid", "with": "X25519", "registry": "tls_group"},
+                 "suffix": " (hybrid)"}],
+     "then": [{"select": _KEM3}],
+     "cnsa": [{"select": _KEM5}],
+     "reference": "FIPS 203", "note": "Offer the hybrid group first, keep the classical group for old clients, then "
+                                      "move to the pure parameter set once clients support it."},
+    {"usage": "ssh_kex", "label": "SSH key exchange",
+     "target": [{"select": {**_KEM3, "construction": "hybrid", "with": "X25519", "registry": "ssh_kex"},
+                 "suffix": " (hybrid)"}],
+     "then": [{"select": _KEM3}],
+     "cnsa": [{"select": {**_KEM5, "construction": "hybrid", "with": "P-384", "registry": "ssh_kex"}}],
+     "reference": "FIPS 203", "note": "Put the hybrid key exchange first in the server's KexAlgorithms."},
+    {"usage": "vpn_kex", "label": "IKEv2 / IPsec key exchange",
+     "target": [{"select": _KEM3}, {"text": " as an additional key exchange (RFC 9370)"}],
+     "cnsa": [{"select": _KEM5}],
+     "reference": "FIPS 203", "note": "Keep the classical group as the first key exchange (hybrid)."},
+    {"usage": "key_establishment", "label": "Key establishment (KEM, key transport, key agreement)",
+     "target": [{"select": _KEM3}], "cnsa": [{"select": _KEM5}],
+     "reference": "FIPS 203", "note": "Category 3 is NIST's default parameter set; category 5 under CNSA 2.0."},
+    {"usage": "signature", "label": "Digital signatures (signing keys, tokens, host keys)",
+     "target": [{"select": _DSA3}], "cnsa": [{"select": _DSA5}],
+     "reference": "FIPS 204", "note": "Category 3 by default; category 5 under CNSA 2.0."},
+    {"usage": "certificate", "label": "Certificates (end-entity)",
+     "target": [{"select": _DSA3}], "cnsa": [{"select": _DSA5}],
+     "reference": "FIPS 204", "note": "Re-issue from a CA that signs with the same family."},
+    {"usage": "ca_signature", "label": "Certificate authorities and trust anchors (long-lived)",
+     "target": [{"select": _DSA5}, {"text": " or "}, {"select": _SLH5}, {"text": " (stateless hash-based)"}],
+     "cnsa": [{"select": _DSA5}],
+     "reference": "FIPS 204 / FIPS 205", "note": "A root or long-lived CA key outlives most migrations: category 5, "
+                                                 "or the stateless hash-based scheme where signatures are rare."},
+    {"usage": "code_signing", "label": "Software and firmware signing",
+     "target": [{"select": _STATEFUL}, {"text": " or "}, {"select": _DSA5}],
+     "cnsa": [{"select": _STATEFUL}, {"text": " or "}, {"select": _DSA5}],
+     "reference": "SP 800-208 / FIPS 204", "note": "CNSA 2.0 names the stateful hash-based schemes for software and "
+                                                   "firmware signing (state must be managed by the signer)."},
+    {"usage": "asymmetric", "label": "Public-key algorithm, usage not recorded",
+     "target": [{"select": _KEM3}, {"text": " for key establishment, "}, {"select": _DSA3}, {"text": " for signatures"}],
+     "cnsa": [{"select": _KEM5}, {"text": " / "}, {"select": _DSA5}],
+     "reference": "FIPS 203 / FIPS 204", "note": "The collector did not record what the key is used for: confirm it "
+                                                 "with the owner, then keep one of the two."},
+    {"usage": "symmetric", "label": "Symmetric encryption",
+     "target": [{"text": "AES-256 (GCM)"}], "cnsa": [{"text": "AES-256"}],
+     "reference": "FIPS 197", "note": "Grover's algorithm halves a symmetric key's strength: 256-bit keys keep 128 bits."},
+    {"usage": "hash", "label": "Hashes and MACs",
+     "target": [{"text": "SHA-384 or SHA-512 (SHA-3 also approved)"}], "cnsa": [{"text": "SHA-384 or SHA-512"}],
+     "reference": "FIPS 180-4 / FIPS 202", "note": "HMAC keeps the hash; move SHA-1 and MD5 first (SP 800-131A)."},
+]
+
+
+def wave_milestones(r: dict) -> list[dict]:
+    """The proposed completion date of each remediation wave (backend waves.WAVE_RULES), tied to the public
+    milestones of NIST IR 8547 (final) and CNSA 2.0, read from the research file so the basis quotes its years."""
+    ir, c = r["nist"]["ir8547"], r["cnsa2"]
+    by_cat = {row["category"]: row for row in c["timeline"]}
+    net = by_cat["Traditional networking equipment (e.g., VPNs, routers)"]
+    web = by_cat["Web browsers/servers and cloud services"]
+    osys = by_cat["Operating systems"]
+    fw = by_cat["Software- and firmware-signing"]
+    return [
+        {"wave": 1, "date": f"{osys['support_and_prefer_by']}-12-31",
+         "basis": f"CNSA 2.0 'support and prefer' milestones: web and cloud services {web['support_and_prefer_by']}, "
+                  f"networking equipment {net['support_and_prefer_by']}, operating systems "
+                  f"{osys['support_and_prefer_by']}. Exposed and harvest-now-decrypt-later assets cannot wait for the "
+                  "deprecation date.",
+         "sources": [c["source"]]},
+        {"wave": 2, "date": "2030-12-31",
+         "basis": f"NIST IR 8547: {ir['quote']} Federal key establishment by 31 December 2030 "
+                  f"({ir['federal_accelerators']['page']}). CNSA 2.0: networking equipment exclusively by "
+                  f"{net['exclusively_use_by']}, software and firmware signing by {fw['exclusively_use_by']}.",
+         "sources": [ir["source"], c["source"]]},
+        {"wave": 3, "date": "2031-12-31",
+         "basis": f"NIST IR 8547: federal digital signatures by 31 December 2031 ({ir['federal_accelerators']['page']}); "
+                  "remaining weaknesses fixed before the 2030 deprecation takes effect for signatures.",
+         "sources": [ir["source"]]},
+        {"wave": 4, "date": f"{web['exclusively_use_by']}-12-31",
+         "basis": f"CNSA 2.0: web and cloud services and operating systems exclusively by {web['exclusively_use_by']}; "
+                  "NIST IR 8547 disallows quantum-vulnerable public-key algorithms after 2035.",
+         "sources": [c["source"], ir["source"]]},
+    ]
+
+
 def pqc_context(r: dict) -> dict:
     m, ir, c = r["mosca"], r["nist"]["ir8547"], r["cnsa2"]
     gri = m["gri_quantum_threat_timeline_2025"]
     return {
+        "migration_targets": MIGRATION_TARGETS,
+        "wave_milestones": wave_milestones(r),
         "mosca": {"inequality": "X + Y > Z", "definitions": m["inequality"]["definitions"],
                   "source": m["inequality"]["source"], "paper": m["original_paper"]["citation"]},
         "expert_survey": {"title": gri["title"], "published": gri["published"], "source": gri["source"],

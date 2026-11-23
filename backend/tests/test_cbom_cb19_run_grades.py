@@ -195,18 +195,20 @@ def test_ssh_with_a_pq_and_a_classical_kex_is_graded_on_the_classical_one(api, w
 
 
 def test_da4_mosca_unset(api, world):
+    """SOW D12 (audit A-03): with the team's Mosca unset, quantum-vulnerable assets are graded on the documented
+    defaults (X 7, Y 5, Z 10) and marked "default assumptions" (``q_assumed``), never parked at Q0 mosca_missing."""
     w = seed(world[0], mosca={}, sources=[{"name": "S", "assets": [_asset("tls_endpoint", "10.20.0.1:443", facts=QV_TLS),
                                                                   _asset("certificate", "/etc/ssl/ca.pem", facts=CA)]}])
     aid = w["S"]["assets"]["10.20.0.1:443"]
     d = detail(api, aid)
-    assert g(d) == ("Q0", "mosca_missing") and d["q_item_key"] == "inputs:mosca"
-    assert d["q_explain"]["missing"] == ["x", "y", "z"]
+    assert g(d) == ("Q2", "qv_exceeds") and d["q_item_key"] is None and d["q_assumed"] is True
+    assert d["q_explain"]["missing"] == [] and d["q_explain"]["assumed"] == ["x", "y", "z"]
+    assert (d["q_explain"]["x"], d["q_explain"]["y"], d["q_explain"]["z"]) == (7, 5, 10)
+    assert d["q_explain"]["x_basis"] == "default" and d["q_explain"]["inequality"] == "7 + 5 > 10"
     p = posture(api, w["run"])
-    assert p["q_grades"]["Q0"] == 2
-    mosca_items = [i for i in p["q0_items"] if i["reason"] == "mosca_missing"]
-    # FP-5: one missing team setting is ONE item with the count of affected assets, not one item per asset
-    assert len(mosca_items) == 1 and mosca_items[0]["key"] == "inputs:mosca" and mosca_items[0]["count"] == 2
-    assert mosca_items[0]["missing"] == ["x", "y", "z"] and p["q0_reasons"]["mosca_missing"] == 1
+    assert p["q_grades"]["Q0"] == 0 and p["q_grades"]["Q2"] + p["q_grades"]["Q1"] == 2
+    assert not [i for i in p["q0_items"] if i["reason"] == "mosca_missing"]
+    assert "mosca_missing" not in p["q0_reasons"]
 
 
 def test_boundary_x_plus_y_equals_z_is_within(api, world):
@@ -482,8 +484,9 @@ def test_the_cap_never_drops_inputs_or_source_items(api, world):
         {"name": "S-fail", "status": "failure", "outcome": "failed"}])
     p = posture(api, w["run"])
     keys = [i["key"] for i in p["q0_items"]]
-    assert p["q0_items_total"] == 232 and len(keys) == 200
-    assert keys[:2] == ["inputs:mosca", f"source:{w['S-fail']['uid']}"]
+    # SOW D12: no "inputs:mosca" item any more (defaults grade the asset), the failed source still ranks first
+    assert p["q0_items_total"] == 231 and len(keys) == 200
+    assert keys[:1] == [f"source:{w['S-fail']['uid']}"]
 
 
 @pytest.mark.parametrize("bad", [{"exposure": ["internet"]}, {"node_segment": {"name": "DMZ"}},
