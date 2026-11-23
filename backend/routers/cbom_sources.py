@@ -122,6 +122,7 @@ from backend.utilities.cbom_sources.serialize import (
     public_settings,
     public_source,
     public_vendor,
+    schedule_names,
 )
 from backend.utilities.cbom_sources.settings import ensure_evidence_areas, get_or_create_settings
 from backend.utilities.cbom_sources import oci_keys
@@ -1624,8 +1625,9 @@ def _run_detail(session: Session, run: CbomCollectionRun, settings, now) -> dict
                         .order_by(CbomCollectionJob.id)).all()
     nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == run.team_id)).all()}
     sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(CbomCollectionSource.team_id == run.team_id)).all()}
+    names = schedule_names(session, run.team_id, [run.schedule_id])
     return public_run(run, [public_job(j, nodes.get(j.node_id), settings, now, sources.get(j.source_id)) for j in jobs],
-                      settings.risk_model or {})
+                      settings.risk_model or {}, schedule_name=names.get(run.schedule_id or 0))
 
 
 def _create_run(engine, team_id: int, user_id: int, body: RunCreate) -> tuple[dict, int]:

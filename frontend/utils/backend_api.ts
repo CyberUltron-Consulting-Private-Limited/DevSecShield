@@ -2349,7 +2349,13 @@ export interface RunListRow {
   linked_scan_id: number | null
   /** the severity counts are those judged when the run collected the assets */
   counts_basis: "as_collected"
+  /** S4: what started the run (absent on an older backend); schedule_name is null once the schedule is deleted */
+  trigger?: CbomRunTrigger
+  schedule_id?: number | null
+  schedule_name?: string | null
 }
+
+export type CbomRunTrigger = "scheduled" | "manual"
 
 export interface CBOMConversationResponse {
   title: string
@@ -4590,6 +4596,10 @@ export interface CbomRun {
     soc_ack_at: string | null
     cancelled_by: number | null
     cancelled_at: string | null
+    // S4: what started the run (absent on an older backend)
+    trigger?: CbomRunTrigger
+    schedule_id?: number | null
+    schedule_name?: string | null
     finished_at?: string | null
     created_at: string | null
     last_updated: string | null

@@ -728,6 +728,9 @@ class TeamCbomView:
     # the team's quantum risk register (``cbom_sources.risk_register.report``: summary, heat-map, top Q1 items, open
     # Q0 gaps) for deliverable #2; None = not loaded. Not part of the fold, like ``remediation``.
     register: dict[str, Any] | None = field(default=None, compare=False, repr=False)
+    # D2's live collection set-up (``cbom_sources.methodology_facts.load``: sources by kind and provider, ports, scan
+    # window, nodes, schedules, runs by trigger); None = not loaded. Not part of the fold, like ``register``.
+    methodology: dict[str, Any] | None = field(default=None, compare=False, repr=False)
 
     @property
     def is_empty(self) -> bool:
@@ -3296,6 +3299,13 @@ def load_team_cbom_view(engine: Any, team_id: int, *, now: datetime | None = Non
         except Exception as exc:  # pragma: no cover - defensive
             view.register = None
             view.warnings = (*view.warnings, f"quantum risk register not loaded: {type(exc).__name__}")
+        try:  # D2's live collection set-up; a failure prints "Not loaded" in its tables
+            from backend.utilities.cbom_sources.methodology_facts import load as methodology_facts
+
+            view.methodology = methodology_facts(session, team_id)
+        except Exception as exc:  # pragma: no cover - defensive
+            view.methodology = None
+            view.warnings = (*view.warnings, f"methodology facts not loaded: {type(exc).__name__}")
         return view
 
 
