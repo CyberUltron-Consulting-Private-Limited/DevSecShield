@@ -37,7 +37,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from backend.tests.support import sources_every_type as FX  # noqa: E402
 from backend.tests.support.pdf_text import pdf_text  # noqa: E402
-from backend.utilities.dashboard.cbom_team_rollup import TeamCbomView, merge_collections  # noqa: E402
+from backend.utilities.dashboard.cbom_team_rollup import PostureFactAgg, TeamCbomView, merge_collections  # noqa: E402
 from backend.utilities.pdf import cbom_assurance_register_pdf as d10  # noqa: E402
 from backend.utilities.pdf import cbom_data_at_rest_pdf as d9  # noqa: E402
 from backend.utilities.pdf import cbom_infra_posture_pdf as d6  # noqa: E402
@@ -575,3 +575,211 @@ def test_d7_keeps_the_cloud_tls_listeners_the_mapper_collected_and_lists_their_s
     assert "ComplianceShield-LB:443" in text
     assert "DES-CBC3-SHA" in text  # its weak suite, in the weak cipher suite table (only this listener offers it)
     assert "RSAkeyexchangeaccepted" in text  # its forward-secrecy cell (static_rsa_kex)
+
+
+# ------------------------------------------------------------------------------------------------ second review of #482
+# One team stored the way the workers store it, then loaded with the real ``load_team_cbom_view``:
+# * "Lab network" probes the fixture's one TLS endpoint;
+# * "AWS prod" and "AWS prod (second role)" read the SAME AWS account (two roles, as #481's fixture does for the PCA):
+#   both collect the same 4 TLS listeners / distributions (ComplianceShield-LB:80, ComplianceShield-LB:443,
+#   d3lg18b01vnyjz.cloudfront.net, api.payments.example) and the same keys and stores;
+# * "AWS PCA only" holds the private CA only (D8 evidence, nothing D7 prints);
+# * "SQL Server 2022" holds the fixture's database settings;
+# * "Gone AWS" was DELETED (job source_id 9999, no source row) and left one load balancer listener "Gone-LB:443"
+#   offering TLS 1.0 and DES-CBC3-SHA.
+GONE_LB = "Gone-LB"
+GONE_LABEL = "Gone AWS"
+
+
+@pytest.fixture(scope="module")
+def seeded_view():
+    import collections as _collections
+
+    from sqlalchemy.pool import StaticPool
+    from sqlmodel import Session, SQLModel, create_engine
+
+    from backend.new_models import (
+        CbomCollectedAsset,
+        CbomCollectionJob,
+        CbomCollectionRun,
+        CbomCollectionSource,
+    )
+    from backend.utilities.cbom_sources import classify as C
+    from backend.utilities.dashboard.cbom_team_rollup import load_team_cbom_view
+
+    eng = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    SQLModel.metadata.create_all(eng)
+    counter = [0]
+    with Session(eng) as s:
+        run = CbomCollectionRun(team_id=1, owner_user_id=1, client_request_id="rev482b", status="success")
+        s.add(run)
+        s.flush()
+
+        def source(kind, name, *, deleted=False, hours_ago=2):
+            src_id = None
+            if not deleted:
+                src = CbomCollectionSource(team_id=1, owner_user_id=1, kind=kind, name=name, name_lower=name.lower(),
+                                           config={}, created_at=NOW.replace(tzinfo=None))
+                s.add(src)
+                s.flush()
+                src_id = src.id
+            job = CbomCollectionJob(team_id=1, run_id=run.id, source_id=src_id or 9999, kind="collect",
+                                    status="success", attempts=1,
+                                    finished_at=(NOW - dt.timedelta(hours=hours_ago)).replace(tzinfo=None),
+                                    params={"source_uid": f"uid-{name}", "source_name": name})
+            s.add(job)
+            s.flush()
+            return run.id, job.id, src_id
+
+        def add(where, asset):
+            counter[0] += 1
+            run_id, job_id, src_id = where
+            judged = C.classify(asset["type"], asset.get("algorithm"), asset.get("key_size"), asset.get("protocol"),
+                                asset["facts"])
+            s.add(CbomCollectedAsset(team_id=1, run_id=run_id, job_id=job_id, source_id=src_id, attempt=1,
+                                     asset_key=f"r{counter[0]}", asset_type=asset["type"],
+                                     cdx_type=judged["cdx_type"], target=asset.get("target") or "fixture",
+                                     location=asset["location"], name=asset.get("name"),
+                                     algorithm=asset.get("algorithm"), key_size=asset.get("key_size"),
+                                     protocol=asset.get("protocol"), quantum_vulnerable=judged["quantum_vulnerable"],
+                                     impact=judged["impact"], finding_codes=judged["finding_codes"],
+                                     finding=judged["finding"], facts=asset["facts"]))
+
+        by_source = _collections.defaultdict(list)
+        for name, _kind, _run, asset in FX.assets():
+            by_source[name].append(asset)
+        net = source("network", "Lab network", hours_ago=6)
+        for asset in by_source["Lab network"]:
+            add(net, asset)
+        for label, hours in (("AWS prod", 5), ("AWS prod (second role)", 4)):
+            aws = source("aws_account", label, hours_ago=hours)
+            for asset in by_source["AWS production"]:
+                add(aws, asset)
+        pca_only = source("aws_account", "AWS PCA only", hours_ago=3)
+        for asset in by_source["AWS production"]:
+            if asset["type"] == "cloud_ca":
+                add(pca_only, asset)
+        sql = source("databases", "SQL Server 2022", hours_ago=2)
+        for asset in by_source["SQL Server 2022"]:
+            add(sql, asset)
+        gone = source("aws_account", GONE_LABEL, deleted=True, hours_ago=1)
+        add(gone, {"type": "load_balancer_tls", "name": "Gone-LB:443", "protocol": "HTTPS",
+                   "location": "arn:aws:elasticloadbalancing:ap-south-1:999:listener/app/Gone-LB/1/2",
+                   "facts": {"ssl_policy": "ELBSecurityPolicy-2016-08", "protocols": ["TLSv1.0", "TLSv1.2"],
+                             "ciphers": ["DES-CBC3-SHA"], "static_rsa_kex": True}})
+        s.commit()
+    yield load_team_cbom_view(eng, 1, now=NOW)
+    eng.dispose()
+
+
+def _squashed(pdf: bytes) -> str:
+    return re.sub(r"\s+", "", pdf_text(pdf))
+
+
+def _evidence_text(pdf: bytes) -> str:
+    """The document without its scope-of-method sentence, which names every collection the team's scan nodes read
+    ("CBOM Sources: 6 collections (...)", deleted ones included: what was read, not what is counted)."""
+    return re.sub(r"CBOMSources:\d+collections\(.*?\)readbytheteam'sscannodes", "", _squashed(pdf))
+
+
+def test_a_deleted_sources_collection_is_never_current_posture_evidence(seeded_view):
+    """Review 6028864106 blocker: "Gone AWS | assessed", Sources 6/6 and Gone-LB:443 in D6, D7 and D9."""
+    from backend.utilities.pdf import cbom_network_tls_pdf as d7
+
+    gone = [c.key for c in seeded_view.collections if not c.source_kind]
+    assert [c.label.split(" · ", 1)[1] for c in seeded_view.collections if not c.source_kind] == [GONE_LABEL]
+    # the posture: no source row, no fact of the deleted collection
+    assert [row.label.split(" · ", 1)[1] for row in seeded_view.posture.sources] == [
+        "AWS PCA only", "AWS prod", "AWS prod (second role)", "Lab network", "SQL Server 2022"]
+    assert not [f for f in seeded_view.posture.facts if f.source_key in gone]
+    assert not [f for f in seeded_view.posture.facts if GONE_LB in str(f.fact.get("name") or "")]
+    # D6 / D9: not in a register, not in the source table, and the Sources KPI counts the 5 current sources
+    for module in (d6, d9):
+        body = story(module, seeded_view)
+        assert kpi_cards(body)["Sources"].startswith("5/5"), module.__name__
+        flat = _evidence_text(module.build_pdf(seeded_view))
+        assert GONE_LB not in flat and "GoneAWS" not in flat, module.__name__
+        assert "5of5currentsourcesassessed" in flat, module.__name__
+    # D7: not in the endpoint register, the protocol matrix, the weak-suite table or a KPI; only in "Left out"
+    scoped, _model = d7._scoped(seeded_view)
+    assert not [f for f in scoped.posture.facts if f.source_key in gone]
+    assert GONE_LABEL not in " ".join(row.label for row in scoped.posture.sources)
+    flat = _evidence_text(d7.build_pdf(seeded_view))
+    assert GONE_LB not in flat
+    assert flat.count("GoneAWS") == 1 and "Leftout:thelatestcollectionsof1deletedsource" in flat
+
+
+@pytest.mark.parametrize("deleted", ["Lab network", "AWS production"])
+def test_merge_adds_no_posture_fact_or_source_row_for_a_deleted_collection(deleted):
+    """The root cause, in the pure merge: a deleted source's probed endpoints (``_probed_tls_fact``) and its mapped
+    settings (``posture_mapper``) were posture facts, and so the collection became an "assessed" posture source."""
+    rows, collections = FX.build()
+    gone = {c.key for c in collections if c.source_name == deleted}
+    collections = [dataclasses.replace(c, source_kind="") if c.key in gone else c for c in collections]
+    by_key = {c.key: c for c in collections}
+    for row in rows:
+        row.collection = by_key[row.collection.key]
+    merged = merge_collections(_empty_view(), rows, collections)
+    assert gone and not [f for f in merged.posture.facts if f.source_key in gone]
+    assert not [row for row in merged.posture.sources if row.key in gone]
+    assert [c.key for c in merged.collections if not c.source_kind] == sorted(gone)  # still named as left out
+    kept = {f.source_key for f in merged.posture.facts}
+    assert kept and not kept & gone
+
+
+def test_d7_prints_a_listener_two_sources_collected_once_and_names_both(seeded_view):
+    """Review 6028864106 major: two roles reading one AWS account printed each listener twice (Endpoints 10)."""
+    from backend.utilities.pdf import cbom_network_tls_pdf as d7
+
+    scoped, _model = d7._scoped(seeded_view)
+    labels = sorted(d7.common.endpoint_label(f) for f in d7._endpoints(scoped))
+    assert labels == ["10.232.0.101:443", "ComplianceShield-LB:443", "ComplianceShield-LB:80",
+                      "api.payments.example", "d3lg18b01vnyjz.cloudfront.net"]
+    body = story(d7, seeded_view)
+    cards = kpi_cards(body)
+    assert (cards["Endpoints"], cards["Legacy protocol"], cards["Weak suites"]) == ("5", "3", "2")
+    weak = rows_under(body, "Endpoint")
+    des = [r for r in weak if r.get("Suite") == "DES-CBC3-SHA"]
+    assert [r["Endpoint"] for r in des] == ["ComplianceShield-LB:443"]
+    register = [r for r in weak if "Location" in r and r["Endpoint"] == "ComplianceShield-LB:443"]
+    assert len(register) == 1
+    where = re.sub(r"\s+", " ", register[0]["Location"])
+    # the newest read wins (the second role, 4 h ago) and the other source is named
+    assert "Sources run #1 · AWS prod (second role) (also: Sources run #1 · AWS prod)" in where
+    # both sources stay in the D7 source table: each holds evidence printed here
+    assert [s.label.split(" · ", 1)[1] for s in scoped.posture.sources] == [
+        "AWS prod", "AWS prod (second role)", "Lab network"]
+
+
+def test_d7_basis_box_counts_the_same_current_sources_as_the_sources_kpi(seeded_view):
+    """Review 6028864106 minor: Basis box "6 of 6 current sources" against the Sources KPI "3/3"."""
+    from backend.utilities.pdf import cbom_network_tls_pdf as d7
+
+    assert kpi_cards(story(d7, seeded_view))["Sources"] == "3/3"
+    flat = _squashed(d7.build_pdf(seeded_view))
+    assert "3of3currentsourcesassessed" in flat
+    assert "5of5currentsourcesassessed" not in flat
+
+
+def test_d6_scope_cache_lives_and_dies_with_the_view():
+    """Review 6028864106 minor: a module-global cache kept the last view's facts (45k at 50k assets) alive."""
+    import gc
+    import weakref
+
+    class _Probe(PostureFactAgg):  # a subclass without __slots__ can be weakly referenced
+        pass
+
+    rows, collections = FX.build()
+    built = merge_collections(_empty_view(), rows, collections)
+    first_fact = built.posture.facts[0]
+    held = _Probe(**{f.name: getattr(first_fact, f.name) for f in dataclasses.fields(first_fact)})
+    built.posture = dataclasses.replace(built.posture, facts=(held, *built.posture.facts[1:]))
+    probe = weakref.ref(held)  # alive while anything holds the posture's fact tuple
+    del held, first_fact
+    first = d6.scope_facts(built)
+    assert first and d6.scope_facts(built) == first  # the second read is served from the cache
+    cached_on_view = getattr(d6, "_SCOPE_ATTR", "?") in vars(built.posture)
+    del built, first
+    gc.collect()
+    assert probe() is None  # nothing outside the view holds its facts once the request is done
+    assert cached_on_view and not hasattr(d6, "_SCOPE_CACHE")

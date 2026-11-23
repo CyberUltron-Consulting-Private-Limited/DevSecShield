@@ -133,6 +133,52 @@ def _from_sources(item: Any) -> bool:
     return (ident.startswith("sources:") or evidence.startswith("probed:")) and common.kind_of(fact) in _SOURCES_RENDERED
 
 
+def _collected_tls(item: Any) -> bool:
+    """A TLS listener, CDN distribution or API domain the posture mapper read from a cloud account."""
+    fact = common.fact_map(item)
+    return common.kind_of(fact) == "tls_endpoint" and common.evidence_kind(fact).startswith("collected")
+
+
+def _fold_collected(facts: list[PostureFactAgg]) -> list[PostureFactAgg]:
+    """One fact per collected listener: two sources that read the same cloud account (two roles) collect the same
+    listener ARN.  Keyed by ``(native_type, location)``; the newest read wins and the other sources are recorded in
+    ``also_seen``, as ``network_estate.tls_endpoints`` does for a probed ``host:port``.  Other facts are kept as they
+    are, in their order."""
+    groups: dict[tuple[str, str], list[PostureFactAgg]] = {}
+    order: list[PostureFactAgg | tuple[str, str]] = []
+    for item in facts:
+        if not _collected_tls(item):
+            order.append(item)
+            continue
+        fact = item.fact
+        key = (str(fact.get("native_type") or ""), str(fact.get("location") or fact.get("address") or item.fact_id))
+        if key not in groups:
+            order.append(key)
+        groups.setdefault(key, []).append(item)
+    out: list[PostureFactAgg] = []
+    for entry in order:
+        if not isinstance(entry, tuple):
+            out.append(entry)
+            continue
+        items = sorted(groups[entry], key=lambda f: (f.last_seen, f.last_scan_id, f.fact_id), reverse=True)
+        head = items[0]
+        own = str(head.fact.get("source") or head.source_key)
+        also = tuple(dict.fromkeys(label for label in (str(f.fact.get("source") or f.source_key) for f in items[1:])
+                                   if label != own))
+        out.append(replace(head, fact={**head.fact, "also_seen": list(also)}) if also else head)
+    return out
+
+
+def _where(fact: dict[str, Any]) -> str:
+    """The Location cell: a collected listener names its resource id and every source that read it."""
+    where = common.location_of(fact)
+    if not _collected_tls(fact) or not fact.get("source"):
+        return where
+    also = [str(label) for label in common.as_rows(fact.get("also_seen"))]
+    seen = str(fact["source"]) + (f" (also: {', '.join(also)})" if also else "")
+    return f"{where} · {seen}" if where else seen
+
+
 def _read_here(item: Any) -> bool:
     """A fact one of this document's tables prints: a TLS endpoint or listener, SSH, or a database transport."""
     fact = common.fact_map(item)
@@ -155,7 +201,9 @@ def _scoped(view: TeamCbomView) -> tuple[TeamCbomView, _Model]:
     ike, d4 = NE.ike_endpoints(view)
     opcua, modbus, d5 = NE.ot_endpoints(view)
     posture = view.posture
-    kept = [f for f in posture.facts if not _from_sources(f)]
+    # a deleted source's facts are never current evidence (the rollup already leaves them out; this keeps D7 honest
+    # for any view that still carries one), and a listener collected by two sources is printed once
+    kept = _fold_collected([f for f in posture.facts if not _from_sources(f) and f.source_key not in deleted_keys])
     new = [PostureFactAgg(source_key=e.observed.item.collection.key, fact_id=f"sources-endpoint:{e.key}", current=True,
                           first_seen=e.observed.item.collection.observed_at,
                           last_seen=e.observed.item.collection.observed_at, scan_count=1,
@@ -261,7 +309,7 @@ def _endpoint_register(view: object, styles: Styles, width: float) -> list[Flowa
                 net.get("downgrade") or "",
                 _cert_summary(net),
                 common.codes_cell(fact),
-                common.location_of(fact),
+                _where(fact),
             ]
         )
     return [
@@ -283,7 +331,7 @@ def _endpoint_register(view: object, styles: Styles, width: float) -> list[Flowa
                 "Location",
             ),
             rows,
-            (130, 60, 46, 34, 36, 30, 60, 56, 46, 52, 56, 64, 42),
+            (116, 60, 46, 34, 36, 30, 54, 56, 46, 46, 56, 64, 96),
             width,
             styles,
             view=view,
@@ -690,7 +738,10 @@ def _deleted_note(model: _Model, styles: Styles) -> list[Flowable]:
 
 def build_story(view: TeamCbomView, styles: Styles, width: float) -> list[Flowable]:
     """Document body for deliverable D7."""
-    view, model = _scoped(view)
+    return _story(*_scoped(view), styles, width)
+
+
+def _story(view: TeamCbomView, model: _Model, styles: Styles, width: float) -> list[Flowable]:
     return [
         common.note(REPORT_META[REPORT_KEY]["how_to_read"], styles),
         common.gap(),
@@ -733,17 +784,19 @@ def build_story(view: TeamCbomView, styles: Styles, width: float) -> list[Flowab
 
 
 def build_pdf(view: TeamCbomView, *, ctx: Any = None) -> bytes:
-    """Render deliverable D7. Returns PDF bytes."""
-    return build_document(ctx=ctx, 
+    """Render deliverable D7. Returns PDF bytes.  The Basis box, the banners and the body all read ONE scoped view,
+    so the Basis box's "N of M current sources" is the Sources KPI's number."""
+    scoped, model = _scoped(view)
+    return build_document(ctx=ctx,
         view=view,
         number=DOCUMENT_NUMBER,
         report_key=REPORT_KEY,
         title=REPORT_META[REPORT_KEY]["title"],
         landscape=True,
-        body=lambda styles, width: build_story(view, styles, width),
-        basis_extra=common.basis_lines(view),
-        disclaimer_paragraphs=text.disclaimer_paragraphs(view),
-        extra_banners=common.banner_pairs(view),
+        body=lambda styles, width: _story(scoped, model, styles, width),
+        basis_extra=common.basis_lines(scoped),
+        disclaimer_paragraphs=text.disclaimer_paragraphs(scoped),
+        extra_banners=common.banner_pairs(scoped),
     )
 
 

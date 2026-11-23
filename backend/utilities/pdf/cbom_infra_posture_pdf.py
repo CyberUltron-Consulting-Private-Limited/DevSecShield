@@ -54,20 +54,23 @@ def _is_at_rest(fact: Mapping[str, Any]) -> bool:
     return common.kind_of(fact) in text.AT_REST_KINDS and not common.is_evidence_only(fact)
 
 
-# (the view's posture fact tuple, its scope facts): one document reads the scope seven times; at 50k facts the
-# conversion (``facts_of``) dominated the build.  Keyed by the tuple object itself (held here, so its id is never
-# reused); a different view or a new fold misses the cache.
-_SCOPE_CACHE: tuple[object, list[dict[str, Any]]] = ((), [])
+# One document reads the scope seven times; at 50k facts the conversion (``facts_of``) dominated the build.  The
+# scope is cached ON the view's posture object (attribute ``_SCOPE_ATTR``: (the posture fact tuple, its scope facts)),
+# so it lives exactly as long as the view and nothing holds a finished request's facts.  Keyed by the fact tuple
+# itself: a new fold, or ``replace(posture, facts=...)``, misses the cache.
+_SCOPE_ATTR = "_d6_scope_cache"
 
 
 def scope_facts(view: object) -> list[dict[str, Any]]:
     """The facts this document reports on, in view order.  Every KPI and register below reads this list (a fresh
     list each call; the fact dicts are shared and read only)."""
-    global _SCOPE_CACHE
-    raw = common.grab(common.posture_block(view), "facts", ())
-    held, cached = _SCOPE_CACHE
-    if raw is held and isinstance(raw, tuple) and raw:
-        return list(cached)
+    block = common.posture_block(view)
+    raw = common.grab(block, "facts", ())
+    cacheable = isinstance(raw, tuple) and bool(raw) and hasattr(block, "__dict__")
+    if cacheable:
+        held = block.__dict__.get(_SCOPE_ATTR)
+        if held is not None and held[0] is raw:
+            return list(held[1])
     found = [
         fact
         for fact in _facts(view)
@@ -77,8 +80,8 @@ def scope_facts(view: object) -> list[dict[str, Any]]:
         or _is_at_rest(fact)
         or _is_managed_tls(fact)
     ]
-    if isinstance(raw, tuple) and raw:
-        _SCOPE_CACHE = (raw, found)
+    if cacheable:
+        block.__dict__[_SCOPE_ATTR] = (raw, found)  # not a dataclass field: replace() / asdict() never copy it
     return list(found)
 
 

@@ -3310,11 +3310,15 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
                 locations_total=len(places), current=True, first_seen=min([agg.observed_at] + [
                     c.first_seen for c in earlier if c.first_seen]), last_seen=agg.observed_at,
                 scan_count=1 + sum(c.scan_count for c in earlier), scan_ids=(), latest_scan_id=None))
+        # a deleted source's last collection (source_kind "") is never current posture evidence: no posture fact and
+        # so no posture source row (D6 / D7 / D9 print "Left out" from ``collections`` instead)
+        posture_evidence = bool(agg.source_kind)
         if item.node_type == "tls_endpoint":
-            facts_of.setdefault(agg.key, []).append(_probed_tls_fact(item, agg, asset))
+            if posture_evidence:
+                facts_of.setdefault(agg.key, []).append(_probed_tls_fact(item, agg, asset))
             continue
         # every other cloud / key / database / host setting a register reads (posture_mapper: the ONE mapper)
-        fact = mapper.posture_fact(
+        fact = None if not posture_evidence else mapper.posture_fact(
             item.node_type, item.facts, fact_id=f"sources:{agg.job_id}:{asset.ident}", name=item.row.get("title"),
             location=item.row.get("location"), algorithm=item.row.get("algorithm_name"),
             key_size=item.row.get("key_size"), impact=asset.impact if asset.impact != INFO else None,
