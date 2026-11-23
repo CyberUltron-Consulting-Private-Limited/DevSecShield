@@ -17,6 +17,7 @@ from backend.utilities.dashboard.aibom_license import (
     resolve_aibom_license,
 )
 from backend.utilities.dashboard.aibom_provider import resolve_aibom_provider
+from backend.utilities.dashboard.risk_scale import average_risk_of
 from backend.utilities.pdf.report_context import ReportContext, details_note, join_parts
 from backend.utilities.pdf.report_branding import (
     report_generated,
@@ -25,6 +26,8 @@ from backend.utilities.pdf.report_branding import (
     append_executive_summary,
     append_findings_catalog,
     build_finding_section,
+    compute_posture_risk_score,
+    styled_data_table,
     count_label,
     escape_html,
     finding_location,
@@ -37,11 +40,28 @@ from backend.utilities.pdf.report_branding import (
     split_scan_payload,
 )
 
-IMPACT_TO_RISK: Dict[str, float] = {
-    "critical": 9.0,
-    "high": 7.0,
-    "medium": 5.0,
-    "low": 2.0,
+# The SOW AI BOM checks (CERT-In AIBOM, RBI FREE-AI, SEBI CSCRF, NIST AI RMF, EU AI Act Annex IV), in report
+# order, keyed as the engine's compliance report (aibom.compliance) keys them. The healthcare frameworks follow only
+# when the scan is in their scope.
+SOW_FRAMEWORKS: tuple[tuple[str, str], ...] = (
+    ("cert_in_aibom", "CERT-In AIBOM (Technical Guidelines v2.0, Table 10)"),
+    ("rbi_free_ai", "RBI FREE-AI Framework (2025)"),
+    ("sebi_cscrf_aibom", "SEBI CSCRF"),
+    ("nist_rmf", "NIST AI RMF 1.0"),
+    ("eu_ai_act_annexIV", "EU AI Act Annex IV"),
+)
+HEALTHCARE_FRAMEWORKS: tuple[tuple[str, str], ...] = (
+    ("fda_524b", "FDA Section 524B"),
+    ("hipaa", "HIPAA"),
+    ("gmlp", "FDA GMLP"),
+)
+VERDICT_LABEL = {
+    "pass": "Pass",
+    "pass_with_evidence": "Pass (attested)",
+    "fail": "Fail",
+    "not_bom_evidenceable": "Needs evidence",
+    "out_of_scope": "Out of scope",
+    "na": "Not applicable",
 }
 
 
@@ -100,13 +120,11 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     by_type: Dict[str, int] = {}
     by_risk_category: Dict[str, int] = {}
     unlicensed = 0
-    risk_sum = 0.0
 
     for v in assets:
         impact_raw = (v.get("impact") or "unknown").strip().lower()
         impact = count_label(impact_raw)
         by_impact[impact] = by_impact.get(impact, 0) + 1
-        risk_sum += IMPACT_TO_RISK.get(impact_raw, 2.0)
 
         provider = _provider(v).strip().lower()
         by_provider[provider] = by_provider.get(provider, 0) + 1
@@ -124,7 +142,8 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         ):
             unlicensed += 1
 
-    avg_risk = risk_sum / total if total > 0 else 0.0
+    # One scale with the dashboard card (risk_scale: Critical 10, High 7.5, Medium 5, Low 2.5).
+    avg_risk = average_risk_of(v.get("impact") for v in assets) or 0.0
 
     styles = get_report_styles()
     doc = SimpleDocTemplate(
@@ -147,6 +166,19 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                 [4.0 * inch, 1.5 * inch],
             )
         )
+
+    scope_rows = [
+        ("Average risk score (0–10)", f"{avg_risk:.1f}"),
+        *_bom_scope_rows(raw if raw else (scan_results if isinstance(scan_results, dict) else {})),
+    ]
+    extra_tables.append(
+        (
+            "What this AI BOM counts",
+            ["Measure", "Value"],
+            [[label, value] for label, value in scope_rows],
+            [4.0 * inch, 1.5 * inch],
+        )
+    )
 
     overview = [
         ("Scan type", "AI Bill of Materials (AI BOM)"),
@@ -183,6 +215,8 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         extra_tables=extra_tables or None,
         project_name="AI BOM Findings",
         scan_time=format_scan_duration(duration),
+        # the grade never claims a worse posture than the worst severity found (same formula as the engine's score)
+        risk_score_fn=compute_posture_risk_score,
         meta_chips=[
             ("Scan type", "AI BOM"),
             ("Total assets", str(total)),
@@ -260,6 +294,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     join_parts(story, [summary, catalog_part, details], PageBreak)
     if ctx.has("compliance"):
         appendix_payload = raw if raw else (scan_results if isinstance(scan_results, dict) else {})
+        append_aibom_regulatory_checks(story, appendix_payload, styles)
         append_bom_compliance_sections(story, appendix_payload, styles)
 
     doc.build(
@@ -268,6 +303,100 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         onLaterPages=make_footer_callback("ai_bom", ctx),
     )
     return output_path
+
+
+def _bom_props(payload: Any) -> Dict[str, str]:
+    bom = payload.get("ai_bom_json") if isinstance(payload, dict) else None
+    meta = bom.get("metadata") if isinstance(bom, dict) else None
+    props = meta.get("properties") if isinstance(meta, dict) else None
+    return {str(p.get("name")): str(p.get("value")) for p in props or [] if isinstance(p, dict)}
+
+
+def _bom_scope_rows(payload: Any) -> List[tuple]:
+    """What the AI BOM counted and what it left out (catalog mentions, test-only references, non-AI dependencies)."""
+    bom = payload.get("ai_bom_json") if isinstance(payload, dict) else None
+    rows: List[tuple] = []
+    if isinstance(bom, dict):
+        comps = [c for c in bom.get("components") or [] if isinstance(c, dict)]
+        models = sum(1 for c in comps if c.get("type") == "machine-learning-model")
+        rows.append(("Models in use", str(models)))
+        rows.append(("AI services and endpoints", str(len(bom.get("services") or []))))
+    props = _bom_props(payload)
+    for key, label in (
+        ("aibom:model_mentions_catalog", "Model names only listed in catalogs (not counted)"),
+        ("aibom:model_mentions_test", "Model names only in test code (not counted)"),
+        ("aibom:dependencies_excluded_non_ai", "Non-AI dependencies (in the SBOM, not here)"),
+        ("aibom:dependencies_excluded_dev_tools", "Development and test tools (not counted)"),
+    ):
+        if props.get(key):
+            rows.append((label, props[key]))
+    return rows
+
+
+def _framework_rows(fw: dict) -> List[List[str]]:
+    rows: List[List[str]] = []
+    for req in fw.get("requirements") or []:
+        if not isinstance(req, dict):
+            continue
+        verdict = str(req.get("verdict") or "")
+        evidence = str(req.get("evidence") or "")
+        if len(evidence) > 220:
+            evidence = evidence[:217] + "..."
+        rows.append([
+            str(req.get("id") or ""),
+            str(req.get("title") or ""),
+            VERDICT_LABEL.get(verdict, verdict or "—"),
+            evidence or "—",
+        ])
+    return rows
+
+
+def append_aibom_regulatory_checks(story: List[Any], payload: Any, styles: Dict[str, Any]) -> None:
+    """The SOW AI BOM regulatory checks, computed by the engine from the BOM's fields and graph: a summary per
+    framework and every requirement with its verdict and evidence. Healthcare frameworks only when in scope."""
+    compliance = payload.get("ai_bom_compliance") if isinstance(payload, dict) else None
+    if not isinstance(compliance, dict):
+        return
+    shown = [(k, label) for k, label in SOW_FRAMEWORKS if isinstance(compliance.get(k), dict)]
+    for key, label in HEALTHCARE_FRAMEWORKS:
+        fw = compliance.get(key)
+        if isinstance(fw, dict) and any(int(fw.get(n) or 0) for n in ("pass", "pass_with_evidence", "fail",
+                                                                         "not_bom_evidenceable")):
+            shown.append((key, label))
+    if not shown:
+        return
+    story.append(PageBreak())
+    story.append(Paragraph("AI BOM regulatory checks", styles["title"]))
+    story.append(Paragraph(
+        "Each requirement is checked against the fields and relationships recorded in this AI BOM. Pass: the BOM "
+        "shows it. Fail: the BOM shows it is missing. Needs evidence: an organisational control the BOM cannot show; "
+        "attach an attestation on the results page. Coverage = pass / (pass + fail).", styles["muted"]))
+    summary = []
+    for key, label in shown:
+        fw = compliance[key]
+        cov = fw.get("coverage")
+        summary.append([
+            label,
+            str(int(fw.get("pass") or 0) + int(fw.get("pass_with_evidence") or 0)),
+            str(fw.get("fail") or 0),
+            str(fw.get("not_bom_evidenceable") or 0),
+            "n/a" if cov is None else f"{round(float(cov) * 100)}%",
+        ])
+    story.append(styled_data_table(["Framework", "Pass", "Fail", "Needs evidence", "Coverage"], summary,
+                                   styles=styles, col_widths=[3.2 * inch, 0.8 * inch, 0.8 * inch, 1.1 * inch,
+                                                              0.9 * inch]))
+    for key, label in shown:
+        rows = _framework_rows(compliance[key])
+        if not rows:
+            continue
+        story.append(Spacer(1, 0.12 * inch))
+        story.append(Paragraph(escape_html(label), styles["heading"]))
+        story.append(styled_data_table(["Requirement", "Title", "Result", "Evidence"], rows, styles=styles,
+                                       col_widths=[1.2 * inch, 1.9 * inch, 0.95 * inch, 2.75 * inch]))
+    disclaimer = compliance.get("disclaimer")
+    if disclaimer:
+        story.append(Spacer(1, 0.08 * inch))
+        story.append(Paragraph(escape_html(disclaimer), styles["muted"]))
 
 
 def create_title_page(canvas_obj, doc):

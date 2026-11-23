@@ -28,7 +28,9 @@ _DEP_NAME = re.compile(r"^\s*(?P<name>[A-Za-z0-9._-]+)")
 _PIN_RE = re.compile(
     r"^(?P<name>[A-Za-z0-9._-]+)\s*==\s*(?P<version>[A-Za-z0-9._*+!-]+)"
 )
-_NAME_RE = re.compile(r"^(?P<name>[A-Za-z0-9._-]+)")
+_NAME_RE = re.compile(r"^(?P<name>[A-Za-z0-9._-]+)(?:\[[^\]]*\])?")
+_SPEC = r"(?:[<>!~=]=?|===)\s*[A-Za-z0-9.*+!_-]+"
+_RANGE_RE = re.compile(rf"{_SPEC}(?:\s*,\s*{_SPEC})*")
 
 
 def _licenses_for(name: str) -> list[dict] | None:
@@ -66,11 +68,17 @@ def _parse_line(line: str) -> FrameworkComponent | None:
     named = _NAME_RE.match(stripped)
     if named:
         name = named.group("name")
+        # A range (">=0.27,<2") is not a version; keep it as the declared constraint
+        # so the BOM says what was asked for, without inventing a resolved version.
+        spec = _RANGE_RE.search(stripped[named.end():].split(";", 1)[0])
         return FrameworkComponent(
             bom_ref=f"lib-{name.lower()}",
             name=name,
             licenses=_licenses_for(name),
             purl=f"pkg:pypi/{name.lower()}",
+            properties={"aibom:version_constraint": spec.group(0).replace(" ", "")}
+            if spec
+            else None,
         )
     return None
 

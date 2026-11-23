@@ -33,10 +33,13 @@ _ORG = (
 # A model-id "segment": alphanumerics with dots allowed ONLY inside a numeric
 # version ("3.5", "v3.0"), never between letters — so a match cannot run into a
 # domain/path ("gpt-index.readthedocs.io" stops at the family boundary).
-_SEG = r"[a-z0-9]+(?:\.\d+)*"
+# A numeric version may carry a unit/size suffix ("0.5b", "1.5B", "v0.1"), so a
+# dotted number continues with letters/digits; otherwise "Qwen2-0.5B" was cut to
+# "Qwen2-0" (the "B" after "0.5" broke the match and the regex backtracked).
+_SEG = r"[a-z0-9]+(?:\.\d+[a-z0-9]*)*"
 # Tail after a constrained first character: rest of the first segment, an
 # optional version, then more '-'-joined segments.
-_TAIL = rf"[a-z0-9]*(?:\.\d+)*(?:-{_SEG})*"
+_TAIL = rf"[a-z0-9]*(?:\.\d+[a-z0-9]*)*(?:-{_SEG})*"
 
 # (raw pattern, vendor, org_prefix). ``org_prefix`` True prepends the optional
 # HuggingFace "org/" repo prefix (_ORG). Compiled with the _B boundary below.
@@ -139,7 +142,13 @@ _USAGE_CONTEXT = re.compile(
     r"\bpipeline\s*\(|"  # transformers pipeline(...)
     r"EmbeddingFunction\s*\(|OllamaEmbeddingFunction\s*\(|"
     r"\.(?:chat|completions|complete|embed|generate|invoke|converse)\s*\(|"
-    r"\b(?:MODEL|LLM|EMBED(?:DING)?_MODEL|GEN_MODEL|CLAUDE_MODEL)\b\s*[:=]\s*['\"]"
+    r"\b(?:MODEL|LLM|EMBED(?:DING)?_MODEL|GEN_MODEL|CLAUDE_MODEL)\b\s*[:=]\s*['\"]|"
+    # a *_model setting / field with the model as its value or default:
+    #   judge_model: str = Field(default="gpt-4o")   embedding_model = "bge-m3"
+    r"\b[a-z_]*_model(?:_name|_id)?\s*(?::\s*[\w\[\]|. ]+)?=\s*"
+    r"(?:Field\s*\(\s*(?:default\s*=\s*)?)?['\"]|"
+    # an environment / .env setting: OPENAI_MODEL=gpt-4o, ROUTER_JUDGE_MODEL="…"
+    r"^\s*(?:export\s+)?[A-Z][A-Z0-9_]*_MODEL(?:_NAME|_ID)?\s*=\s*['\"]?"
     r")",
     re.IGNORECASE,
 )

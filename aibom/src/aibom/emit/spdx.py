@@ -20,7 +20,8 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from aibom.emit._disclaimer import ADVISORY_DISCLAIMER
+from aibom.emit._disclaimer import disclaimer_for
+from aibom.emit.identity import SPDX_NAMESPACE, SUPPLIER, identity_for
 from aibom.emit.registry import BaseReporter, register_reporter
 from aibom.emit.validate import validate_spdx
 from aibom.model.component import (
@@ -38,8 +39,6 @@ from aibom.model.result import (
 
 SPDX_VERSION = "3.0.1"
 SPDX_CONTEXT = "https://spdx.org/rdf/3.0.1/spdx-context.jsonld"
-TOOL_NAME = "clinithread-aibom"
-_CREATED = "2026-06-21T00:00:00Z"  # pinned for deterministic, golden-stable output
 _NS_SEED = uuid.UUID("6f3c8b1e-2a4d-4f6a-9c0b-7e1d2f3a4b5c")
 _CREATION_INFO = "_:creationinfo"
 
@@ -82,7 +81,12 @@ class SpdxValidationError(Exception):
 
 def _base_ns(result: ScanResult) -> str:
     seed = "|".join(result.component_bom_refs())
-    return f"https://devsecshield.example/aibom/{uuid.uuid5(_NS_SEED, seed)}"
+    kind = getattr(result, "document_kind", "aibom")
+    return f"{SPDX_NAMESPACE}/{kind}/{uuid.uuid5(_NS_SEED, seed)}"
+
+
+def _slug(text: str) -> str:
+    return "".join(ch if ch.isalnum() else "-" for ch in text.lower()).strip("-")
 
 
 def _dataset_type_enum(value: str | None) -> str:
@@ -266,16 +270,27 @@ def emit_spdx(result: ScanResult) -> dict[str, Any]:
     def sid(suffix: str) -> str:
         return f"{ns}/{suffix}"
 
-    tool_id = sid("tool/clinithread-aibom")
+    # SPDX 3.0.1 CreationInfo: ``createdBy`` must be Agents (here the supplier
+    # Organization); the software that produced the document is ``createdUsing``
+    # (a Tool). A Tool in createdBy fails the official SHACL model.
+    identity = identity_for(result)
+    org_id = sid(f"agent/{_slug(SUPPLIER)}")
+    tool_id = sid(f"tool/{_slug(identity.tool_name)}")
     graph: list[dict[str, Any]] = [
         {
             "type": "CreationInfo",
             "@id": _CREATION_INFO,
             "specVersion": SPDX_VERSION,
-            "created": _CREATED,
-            "createdBy": [tool_id],
+            "created": identity.timestamp,
+            "createdBy": [org_id],
+            "createdUsing": [tool_id],
         },
-        _new("Tool", tool_id, name=TOOL_NAME),
+        _new("Organization", org_id, name=SUPPLIER),
+        _new(
+            "Tool",
+            tool_id,
+            name=f"{identity.tool_name} {identity.tool_version}",
+        ),
     ]
 
     models = [c for c in result.components if isinstance(c, ModelComponent)]
@@ -337,7 +352,7 @@ def emit_spdx(result: ScanResult) -> dict[str, Any]:
             "SpdxDocument",
             sid("document"),
             name=result.subject.name,
-            comment=ADVISORY_DISCLAIMER,  # advisory-only hard rule: every report
+            comment=disclaimer_for(result),  # advisory-only hard rule: every report
             rootElement=root_ids or None,
         )
     )

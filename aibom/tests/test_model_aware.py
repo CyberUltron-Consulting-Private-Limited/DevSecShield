@@ -22,9 +22,14 @@ def _fx(name: str) -> str:
 def test_synthetic_libs_resolve_and_zero_library_unlicensed() -> None:
     r = scan_repo(_fx("synthetic-ai-app"), level=4)
     fw = {c.name.lower(): c for c in r.components if c.kind == "framework"}
-    for lib in ("numpy", "torch", "requests", "pydantic", "chromadb"):
+    for lib in ("numpy", "torch", "chromadb"):
         assert lib in fw, f"library {lib} not detected"
         assert fw[lib].licenses, f"library {lib} should resolve to a known license"
+    # requests / pydantic are ordinary runtime dependencies: SBOM inventory, not AI
+    # components; the AI BOM counts them instead of listing them as ML frameworks.
+    for lib in ("requests", "pydantic"):
+        assert lib not in fw
+    assert int(r.properties["aibom:dependencies_excluded_non_ai"]) >= 2
     library_unlicensed = [
         c for c in r.components if c.kind == "framework" and not c.licenses
     ]

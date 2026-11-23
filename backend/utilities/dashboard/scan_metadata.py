@@ -21,6 +21,13 @@ _SECRET_WORDS = frozenset({"pat", "token", "tokens", "password", "passwd", "pass
                            "authorization", "credential", "credentials", "cookie", "apikey", "headers"})
 
 
+
+def _current_vex(scan_type: str, vex):
+    """A stored VEX written by older rules is not served (the page then fetches /vex, which rebuilds it)."""
+    from backend.utilities.cbom_sources.vex_semantics import is_current
+
+    return vex if is_current(scan_type, vex) else None
+
 def _secret_key(key) -> bool:
     name = str(key).lower()
     words = set(re.split(r"[^a-z0-9]+", name))
@@ -159,7 +166,7 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
                 sbom_compliance = scan.scan_data["sbom_compliance"]
             attestations = scan.scan_data.get("attestations")
             bom_signature = scan.scan_data.get("bom_signature")
-            vex_json = scan.scan_data.get("vex_json")
+            vex_json = _current_vex("sbom_sca", scan.scan_data.get("vex_json"))
             from backend.utilities.compliance.certin_attest import bom_dict_from_scan_data
 
             subject_name = None
@@ -438,7 +445,7 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
         if scan.scan_data and isinstance(scan.scan_data, dict):
             attestations = scan.scan_data.get("attestations")
             bom_signature = scan.scan_data.get("bom_signature")
-            vex_json = scan.scan_data.get("vex_json")
+            vex_json = _current_vex("ai_bom", scan.scan_data.get("vex_json"))
 
         return {
             "repo_url": repo_url,

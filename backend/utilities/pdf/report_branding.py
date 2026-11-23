@@ -17,7 +17,7 @@ import logging
 import os
 import re
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -1503,6 +1503,34 @@ def compute_risk_score(critical: int, high: int, medium: int, low: int) -> Tuple
     return score, "A", "Low risk"
 
 
+# The worst severity present bounds the grade: without it 32 Low and 10 Medium inventory rows scored 100 / F
+# "Critical risk" with zero Critical or High findings (AI BOM audit G-D5-4). Same formula as the AI BOM engine's
+# ``aibom.score.scorer.posture_score`` (pinned by backend/tests/test_aibom_risk_score_consistency.py).
+POSTURE_SCORE_CAPS = (("critical", 100), ("high", 69), ("medium", 49), ("low", 29))
+
+
+def compute_posture_risk_score(critical: int, high: int, medium: int, low: int) -> Tuple[int, str, str]:
+    """``compute_risk_score`` bounded by the worst severity present: no Critical -> at most D, no Critical/High ->
+    at most C, Low only -> at most B, nothing -> A (0)."""
+    score, _grade, _band = compute_risk_score(critical, high, medium, low)
+    counts = {"critical": critical, "high": high, "medium": medium, "low": low}
+    cap = next((c for sev, c in POSTURE_SCORE_CAPS if int(counts[sev] or 0) > 0), 0)
+    return compute_risk_score_band(min(score, cap))
+
+
+def compute_risk_score_band(score: int) -> Tuple[int, str, str]:
+    """The grade and band of a 0-100 score (the bands of ``compute_risk_score``)."""
+    if score >= 70:
+        return score, "F", "Critical risk"
+    if score >= 50:
+        return score, "D", "High risk"
+    if score >= 30:
+        return score, "C", "Elevated risk"
+    if score >= 15:
+        return score, "B", "Moderate risk"
+    return score, "A", "Low risk"
+
+
 def build_severity_bar(
     *,
     critical: int,
@@ -1865,6 +1893,7 @@ def append_executive_summary(
     meta_chips: Optional[Sequence[Tuple[str, str]]] = None,
     scan_time_hint: str = "Completed successfully",
     ctx: Any = None,
+    risk_score_fn: Optional[Callable[[int, int, int, int], Tuple[int, str, str]]] = None,
 ) -> None:
     styles = styles or get_report_styles()
     meta = REPORT_META.get(report_key, REPORT_META["sast"])
@@ -1919,7 +1948,7 @@ def append_executive_summary(
                 time_label = str(value)
                 break
 
-    risk_score, risk_grade, risk_band = compute_risk_score(critical, high, medium, low)
+    risk_score, risk_grade, risk_band = (risk_score_fn or compute_risk_score)(critical, high, medium, low)
 
     story.append(
         build_kpi_grid(

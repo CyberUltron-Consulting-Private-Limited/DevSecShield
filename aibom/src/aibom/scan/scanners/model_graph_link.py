@@ -71,6 +71,12 @@ class ModelGraphLinker(Scanner):
             c.name.lower(): c.bom_ref for c in ctx.components if c.kind == "framework"
         }
         providers: dict[str, str] = {}  # vendor -> provider bom_ref (created on demand)
+        # A vendor API the code calls (net-env scanner: api.openai.com, Bedrock
+        # runtime …) IS the service the model is served by: link to it rather than
+        # inventing a provider node without an endpoint.
+        for comp in ctx.components:
+            if comp.kind == "cloud_service" and comp.publisher:
+                providers.setdefault(comp.publisher.strip(), comp.bom_ref)
 
         for model in models:
             if model.bom_ref in already_linked:
@@ -83,6 +89,10 @@ class ModelGraphLinker(Scanner):
             )
             if sdk_ref is not None:
                 ctx.add_edge(model.bom_ref, REL_DEPENDS_ON, sdk_ref)
+                # The SDK is how the code calls it; the vendor API the code names is
+                # where it runs (and where the data goes): record both.
+                if vendor in providers:
+                    ctx.add_edge(model.bom_ref, REL_SERVED_BY, providers[vendor])
                 continue
 
             # No SDK framework present -> attach a provider service node + served_by.

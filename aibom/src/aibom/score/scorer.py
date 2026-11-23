@@ -135,6 +135,27 @@ def _calibration_cap(weights: dict[str, float], scale: dict[str, Any]) -> float:
     return float(catalog) if catalog > 0 else 1.0
 
 
+# The one 0-100 posture score (shared with the PDF reports: backend
+# utilities/pdf/report_branding.compute_risk_score delegates the same formula, and
+# backend/tests/test_aibom_risk_score_consistency.py pins the two together).
+POSTURE_WEIGHTS = {"critical": 10, "high": 5, "medium": 2, "low": 1}
+POSTURE_MULTIPLIER = 4
+# The score can never claim a worse posture than the worst severity present:
+# no critical -> at most 69 (grade D), no critical/high -> at most 49 (C),
+# lows only -> at most 29 (B), nothing -> 0. Without this cap 32 low and 10 medium
+# inventory rows scored 100 / F "Critical risk" with zero critical or high.
+POSTURE_CAPS = (("critical", 100), ("high", 69), ("medium", 49), ("low", 29))
+
+
+def posture_score(critical: int, high: int, medium: int, low: int) -> int:
+    """0-100 risk score from severity counts, bounded by the worst severity."""
+    counts = {"critical": critical, "high": high, "medium": medium, "low": low}
+    weighted = sum(POSTURE_WEIGHTS[k] * max(0, int(n or 0)) for k, n in counts.items())
+    score = min(100, weighted * POSTURE_MULTIPLIER)
+    cap = next((c for sev, c in POSTURE_CAPS if counts[sev] > 0), 0)
+    return min(score, cap)
+
+
 def normalize_score(raw: float, weights_path: str | None = None) -> float:
     """Scale a raw flag-weight sum to a 0-100 risk score (capped at 100)."""
     weights = dict(load_weights(weights_path))
@@ -202,14 +223,21 @@ def score_result(result: ScanResult, weights_path: str | None = None) -> ScanRes
             by_component[flag.target] = by_component.get(flag.target, 0.0) + w
         total += w
 
-    normalized = normalize_score(total, weights_path)
     # Per-component severity from the STACKED weight (flags stack per component).
     component_severity_map = {
         ref: component_severity(raw, weights_path) for ref, raw in by_component.items()
     }
+    # The headline 0-100 score counts every inventoried component at its stacked
+    # severity (an unflagged component is low), exactly the rows the dashboard and
+    # the PDF count, through the one posture_score function.
+    sev_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    for comp in result.components:
+        sev_counts[component_severity_map.get(comp.bom_ref, "low")] += 1
+    normalized = float(posture_score(**sev_counts))
     scores: dict[str, Any] = {
         "risk_total": total,  # raw internal sum
-        "risk_normalized": normalized,  # 0-100 (Trusera-style), defined scale
+        "risk_normalized": normalized,  # 0-100 posture_score over component severities
+        "severity_counts": sev_counts,
         "risk_band": risk_band(normalized, weights_path),  # low / medium / high
         "by_flag": dict(sorted(by_flag.items())),
         "by_component": dict(sorted(by_component.items())),
@@ -227,5 +255,6 @@ __all__ = [
     "normalize_score",
     "risk_band",
     "component_severity",
+    "posture_score",
     "_DEFAULT_WEIGHTS_PATH",
 ]

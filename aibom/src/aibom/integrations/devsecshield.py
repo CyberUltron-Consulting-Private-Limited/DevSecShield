@@ -547,6 +547,10 @@ def run_native_scan(
     """
     _report(progress, 10, "scanning repository for AI components")
     result = scan_repo(target, level=level, allowlist=allowlist)
+    # the real scan time: every BOM / SPDX / SARIF of this scan carries it
+    from aibom.emit.identity import utc_now
+
+    result.generated_at = utc_now()
     _report(progress, 70, "mapping compliance frameworks")
     # tri-state compliance: pass/fail (graph) + out_of_scope (framework N/A) +
     # not_bom_evidenceable (process evidence) -> pass_with_evidence via attestations.

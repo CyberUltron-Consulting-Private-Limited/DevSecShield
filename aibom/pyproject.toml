@@ -48,6 +48,7 @@ dev = [
     "types-PyYAML>=6.0",
     "types-jsonschema>=4.20",
     "pypdf>=4.0",  # PDF text extraction in deliverable tests
+    "pyshacl>=0.26",  # SPDX 3.0.1 official SHACL model validation in tests
 ]
 
 [build-system]

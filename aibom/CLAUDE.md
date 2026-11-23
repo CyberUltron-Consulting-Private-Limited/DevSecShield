@@ -30,20 +30,31 @@ and **SARIF 2.1.0** via a reporter registry.
 CycloneDX collapses all edges to `dependsOn`; SPDX maps `trained_on`/`depends_on`
 to native relationshipTypes and `served_by`/`deployed_at` to `other` + a comment.
 
-## Risk-score scale (locked before the Phase-4 heatmap)
-The scorer keeps `risk_total` as the raw flag-weight sum **and** publishes a
-**Trusera-style 0–100 normalized score** plus **low/medium/high bands**, defined
-in `config/risk-weights.yaml` under `scale:`:
+## Risk-score scale
+The scorer keeps `risk_total` as the raw flag-weight sum, maps each component's
+STACKED flag weight to a severity (`severity:` bands in `config/risk-weights.yaml`)
+and publishes the headline **0-100 `risk_normalized`** from `posture_score` over
+every component's severity (an unflagged component is low) — the same rows the
+dashboard and the PDF count, and the same formula as the PDF grade
+(`backend/utilities/pdf/report_branding.compute_posture_risk_score`, pinned by
+`backend/tests/test_aibom_risk_score_consistency.py`):
 
 ```
-risk_normalized = min(100, round(risk_total / scale.max_raw * 100, 1))
-band:  ≤ scale.bands.low → low;  ≤ scale.bands.medium → medium;  else → high
+risk_normalized = min(100, 4 x (10 critical + 5 high + 2 medium + 1 low)),
+                  capped by the worst severity: no critical <= 69, no critical/high <= 49,
+                  low only <= 29, nothing -> 0
+band:  <= scale.bands.low (33) -> low;  <= scale.bands.medium (66) -> medium;  else -> high
 ```
 
-`scale.max_raw` is the calibration ceiling = "every defined flag tripped once →
-100" (currently 27 = 8+10+5+4); omit it to auto-compute from the flag weights.
-Defaults: `max_raw=27`, bands `low≤33`, `medium≤66`. Rationale: 0–100 matches the
-dossier's Trusera reference and the dashboard's heatmap, so the scale never needs
-retrofitting; bands give a coarse triage signal. Editing the YAML re-scales with
-no code change. `scores` carries `risk_total`, `risk_normalized`, `risk_band`,
-`by_flag`, `by_component`, `flag_count`.
+The cap is the point: the old flag-sum normalisation saturated at 100 ("Critical
+risk") on a bank repo with zero critical or high findings. `scores` carries
+`risk_total`, `risk_normalized`, `risk_band`, `severity_counts`, `by_flag`,
+`by_component`, `component_severity`, `flag_count`. `normalize_score` (raw sum /
+max_raw) remains for callers that want the raw-weight scale.
+
+## Document identity and disclaimer
+`emit/identity.py`: tool `DevSecShield AI BOM` (CBOM: `DevSecShield CBOM`), version
+from `DSS_BUILD_VERSION` / `DSS_BUILD_SHA` (else the package version), supplier Zero
+Shield, creation time `ScanResult.generated_at` (the adapters stamp the scan time;
+None keeps the goldens on a pinned time). `emit/_disclaimer.py`: neutral advisory
+text; the FDA/HIPAA text only when the scan has clinical facts (`is_healthcare`).

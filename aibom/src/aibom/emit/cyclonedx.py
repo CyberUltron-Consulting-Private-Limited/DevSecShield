@@ -26,7 +26,9 @@ import uuid
 from typing import Any, NamedTuple
 
 from aibom.emit._disclaimer import ADVISORY_DISCLAIMER as _ADVISORY_DISCLAIMER
+from aibom.emit._disclaimer import disclaimer_for
 from aibom.emit.crypto_oid import algorithm_oid
+from aibom.emit.identity import PINNED_TIMESTAMP, TOOL_NAMES, identity_for
 from aibom.emit.registry import BaseReporter, register_reporter
 from aibom.emit.validate import validate_cyclonedx
 from aibom.model.component import (
@@ -37,17 +39,19 @@ from aibom.model.component import (
 )
 from aibom.model.result import ScanResult
 
-# Tool identity stamped into metadata.tools[].
-TOOL_NAME = "clinithread-aibom"
+# Tool identity stamped into metadata.tools (aibom.emit.identity: the AI BOM name;
+# a CBOM result stamps "DevSecShield CBOM"; the version is the product release).
+TOOL_NAME = TOOL_NAMES["aibom"]
+# the package version; emitted BOMs carry identity.product_version()
 TOOL_VERSION = "0.1.0"
 
 # Deterministic namespace for serial-number derivation. Stable across runs so
 # identical inventories yield identical serialNumbers (golden-file friendly).
 _SERIAL_NS = uuid.UUID("6f3c8b1e-2a4d-4f6a-9c0b-7e1d2f3a4b5c")
 
-# Pinned, deterministic timestamp when none is supplied. Keeps emit() pure and
-# golden-file stable; callers can override via aibom.properties or by post-edit.
-_DEFAULT_TIMESTAMP = "2026-06-21T00:00:00Z"
+# Pinned, deterministic timestamp when the host supplies no scan time
+# (ScanResult.generated_at). Keeps the committed goldens byte-stable.
+_DEFAULT_TIMESTAMP = PINNED_TIMESTAMP
 
 # Re-exported from the shared module so all reporters use one disclaimer string;
 # kept importable here for backward compat (cli.py imports it from cyclonedx).
@@ -895,6 +899,61 @@ def _emit_component(
 
 
 # --------------------------------------------------------------------------- #
+# AI services (CycloneDX 1.6 ``services[]``)
+# --------------------------------------------------------------------------- #
+
+#: Component kinds rendered as CycloneDX services rather than components.
+SERVICE_KINDS = frozenset({"service", "cloud_service", "endpoint"})
+
+# What crosses an AI inference service boundary: the prompt / input context goes
+# out, the model output comes back. The data classification is not knowable from
+# code, so it is stated as not assessed rather than guessed.
+_AI_DATA_FLOW = {
+    "flow": "bi-directional",
+    "classification": "not-assessed",
+    "description": "Prompts and input context are sent to the service; model "
+    "output is returned.",
+}
+
+
+def _emit_service(comp: Any) -> dict[str, Any]:
+    """Serialize a service / cloud_service / endpoint as a CycloneDX service.
+
+    ``service:endpoint`` -> ``endpoints``; ``service:authenticated`` ->
+    ``authenticated``; ``service:trust_zone`` -> ``trustZone`` and
+    ``x-trust-boundary`` (an external service is across a trust boundary). Facts
+    the scan did not establish are left out, never defaulted.
+    """
+    props = dict(comp.properties or {})
+    out: dict[str, Any] = {"bom-ref": comp.bom_ref}
+    publisher = (comp.publisher or "").strip()
+    if publisher and publisher.lower() != "local":
+        out["provider"] = {"name": publisher}
+    out["name"] = comp.name
+    _add(out, "version", comp.version)
+    endpoint = props.get("service:endpoint")
+    if endpoint:
+        out["endpoints"] = [endpoint]
+    auth = props.get("service:authenticated")
+    if auth in ("true", "false"):
+        out["authenticated"] = auth == "true"
+    zone = props.get("service:trust_zone")
+    if zone in ("external", "local"):
+        out["x-trust-boundary"] = zone == "external"
+        out["trustZone"] = zone
+    if endpoint or comp.kind == "cloud_service":
+        out["data"] = [dict(_AI_DATA_FLOW)]
+    _add(out, "licenses", comp.licenses)
+    if comp.external_references:
+        out["externalReferences"] = [
+            _external_reference(r) for r in comp.external_references
+        ]
+    props.setdefault("aibom:service_kind", comp.kind)
+    out["properties"] = _properties_list(props)
+    return out
+
+
+# --------------------------------------------------------------------------- #
 # Public API
 # --------------------------------------------------------------------------- #
 
@@ -926,9 +985,10 @@ def emit_cyclonedx(result: ScanResult) -> dict[str, Any]:
     ``emit_and_validate`` (or call ``validate_cyclonedx`` yourself) to enforce
     the build-failure rule.
     """
+    identity = identity_for(result)
     metadata: dict[str, Any] = {
-        "timestamp": _DEFAULT_TIMESTAMP,
-        "tools": [{"name": TOOL_NAME, "version": TOOL_VERSION}],
+        "timestamp": identity.timestamp,
+        "tools": identity.cyclonedx_tools(),
         "component": {
             "type": result.subject.type,
             "name": result.subject.name,
@@ -937,7 +997,7 @@ def emit_cyclonedx(result: ScanResult) -> dict[str, Any]:
     _add(metadata["component"], "version", result.subject.version)
 
     bom_props = dict(result.properties)
-    bom_props.setdefault("regulatory:disclaimer", ADVISORY_DISCLAIMER)
+    bom_props.setdefault("regulatory:disclaimer", disclaimer_for(result))
     metadata["properties"] = _properties_list(bom_props)
 
     # C9 crypto dependency graph: index the algorithm assets once so certificate/
@@ -946,7 +1006,14 @@ def emit_cyclonedx(result: ScanResult) -> dict[str, Any]:
     # asset (kept in ``synth``, appended after the scanned components).
     index = _algorithm_index(result.components)
     synth: dict[str, dict[str, Any]] = {}
-    components = [_emit_component(c, index, synth) for c in result.components]
+    # AI services and endpoints are CycloneDX ``services`` (endpoints, auth, trust
+    # boundary, data flow), not application components.
+    services = [_emit_service(c) for c in result.components if c.kind in SERVICE_KINDS]
+    components = [
+        _emit_component(c, index, synth)
+        for c in result.components
+        if c.kind not in SERVICE_KINDS
+    ]
     components.extend(synth[ref] for ref in sorted(synth))
 
     bom: dict[str, Any] = {
@@ -957,6 +1024,8 @@ def emit_cyclonedx(result: ScanResult) -> dict[str, Any]:
         "metadata": metadata,
         "components": components,
     }
+    if services:
+        bom["services"] = services
 
     deps = _dependencies(result)
     if deps:
