@@ -8,19 +8,24 @@ from raw scan blobs.
 
 Sections (plan 5.4, in order)::
 
-    A  Third-party cryptographic components  - one row per library, current state
+    A  Third-party cryptographic components  - one row per component, current state: code-scan
+                                               libraries and CBOM Sources packages / mapped libraries
        A.1 Previously seen, not in latest scan - only when such libraries exist
     B  Control attestation ledger            - one row per (framework, requirement) that needs
                                                attestation, with "Attested k/n"
     C  Attestation summary                   - KPI cards (controls, fully / partly attested, %)
-    D  Vendor attestation register           - blank manual rows
+    D  Vendor attestation register           - the Evidence tab's vendor questionnaires, then
+                                               blank manual rows
     E  Sign-off                              - blank manual block
 
 Data rules the sections rely on.
 
-* Libraries: the engine records a library's name and where it was found, nothing else.  The
-  version column is therefore a blank MANUAL column (header "Version (not captured)"), as are the
-  four vendor-assurance columns; nothing is ever made up.
+* Components: one row per ``LibAgg`` (the roll-up de-duplicates by package URL, else name and
+  version).  Version, package URL and known-vulnerability / end-of-life status are printed where
+  the engine or a Sources collection recorded them ("not captured" otherwise); vendor and the
+  four vendor-assurance columns stay blank MANUAL columns; nothing is ever made up.
+* Vendors: ``view.vendors`` (``cbom_sources.evidence.vendor_register``): attestation date is the
+  day the vendor answered, scope the questionnaire topics it answered, evidence ref its link.
 * Ledger: ``RequirementAgg`` rows with at least one source whose verdict is "not evidenceable from
   BOM" or "pass with evidence".  ``Attested k/n``: n = sources that need the control, k = those
   already evidenced by an attestation.  Only the CURRENT, full-fidelity scan of each source feeds
@@ -67,12 +72,13 @@ from backend.utilities.pdf.cbom_deliverable_common import (
 )
 from backend.utilities.pdf.report_branding import REPORT_META
 
-DOCUMENT_NUMBER = 10  # "#10" in the 16-item regulatory set (Document ID ...-D10-...)
+DOCUMENT_NUMBER = 10  # SOW Table 7: D10 (Document ID ...-D10-...)
 REPORT_KEY = "cbom_assurance_register"  # REPORT_META key: its own header and footer label
 
 MAX_LIBRARY_ROWS = 1000  # decision D-04: libraries table cap
 MAX_LEDGER_ROWS = 1000  # plan 5.4: "thousands of NBE rows capped at 1 000 with notice"
-VENDOR_BLANK_ROWS = 12  # plan 5.4: vendor attestation register, 12 blank rows
+VENDOR_BLANK_ROWS = 12  # plan 5.4: vendor attestation register, 12 blank rows (fewer when vendors are recorded)
+VENDOR_MIN_BLANK_ROWS = 4  # write-in rows kept under the recorded vendors
 
 _MAX_SOURCES_SHOWN = 4  # source labels listed in one cell before "+N more"
 _LABEL_LIMIT = 120
@@ -99,8 +105,31 @@ _HEAD_E = "E. Sign-off"
 _SIGNOFF_ROLES = ("Prepared by", "Reviewed by", "Approved by")
 
 _LIBRARY_SUMMARY = (
-    "{libraries} found in {with_libs} of {sources}; {multi} used by more than one source."
+    "{libraries} found in {with_libs} of {sources}; {multi} used by more than one source; "
+    "{flagged} with a known-vulnerability or end-of-life status."
 )
+_NOT_CAPTURED = "not captured"
+_STATUS_NONE = "none recorded"
+_STATUS_UNASSESSED = "not assessed (no version)"
+_VENDOR_NONE = "No vendor questionnaire is recorded in the Evidence tab of CBOM Sources yet."
+_VENDOR_SOME = (
+    "{count} recorded in the Evidence tab of CBOM Sources (attestation date = the day the vendor "
+    "answered; renew by = 12 months later; scope = the questionnaire topics it answered)."
+)
+_HEAD_D_MORE = "Further vendors"
+_VENDOR_COLUMNS = (
+    "Vendor",
+    "Area",
+    "Status",
+    "Evidence level",
+    "Attestation date",
+    "Scope",
+    "Evidence ref",
+    "Renew by",
+    "Owner",
+)
+_VENDOR_WEIGHTS = (90, 70, 60, 60, 60, 150, 120, 56, 60)
+_VENDOR_MANUAL = (8,)
 _LIBRARY_NONE = "No cryptographic libraries were recorded in the current scans."
 _LEDGER_INTRO = (
     "Controls the BOM cannot evidence on its own ({nbe}) or that an uploaded attestation has "
@@ -131,20 +160,22 @@ _KPI_COUNTS_ALL = "The summary counts all {total} controls, including the rows o
 # columns) and relative widths, scaled to the frame width.
 _LIB_COLUMNS = (
     "Library",
+    "Version",
+    "Package URL or ecosystem",
     "#Sources",
     "Sources",
+    "Known-vulnerability / end-of-life status",
     "First seen",
     "Last seen",
-    "Version (not captured)",
     "Vendor",
     "FIPS 140-3 / CMVP cert #",
     "SOC 2 / ISO 27001 ref",
     "PQC statement",
     "Attestation status",
 )
-_LIB_WEIGHTS = (100, 38, 168, 48, 48, 46, 54, 60, 60, 46, 52)  # Sources fits the longest label
-_LIB_MANUAL = tuple(range(5, len(_LIB_COLUMNS)))  # version + vendor-assurance columns
-_PREVIOUS_COLUMNS = _LIB_COLUMNS[:5]
+_LIB_WEIGHTS = (70, 44, 62, 24, 166, 72, 44, 44, 38, 40, 40, 36, 40)  # Sources fits the longest label; a date one line
+_LIB_MANUAL = tuple(range(8, len(_LIB_COLUMNS)))  # vendor-assurance columns
+_PREVIOUS_COLUMNS = ("Library", "#Sources", "Sources", "First seen", "Last seen")
 _PREVIOUS_WEIGHTS = (150, 50, 320, 100, 100)
 _LEDGER_COLUMNS = (
     "Framework",
@@ -220,9 +251,20 @@ def _ledger_sort_key(req: RequirementAgg) -> tuple:
     return (rank, framework, _natural_key(req_id), req_id)
 
 
+# Frameworks whose attestable controls are not third-party cryptographic assurance: the RBI FREE-AI protection
+# mapping's attestation-only controls are AI governance (AI incident response, adversarial / red-team testing) and
+# belong to the AIBOM documents, not to this register (audit B-08).  Its algorithm checks pass or fail on the BOM and
+# never reach the ledger anyway.
+LEDGER_EXCLUDED_FRAMEWORKS = frozenset({"rbi_free_ai_protection"})
+
+
 def _attestable(view: TeamCbomView) -> list[RequirementAgg]:
     """Ledger rows: controls with at least one source needing (or already holding) attestation."""
-    rows = [req for req in view.requirements if _attested_counts(req)[1] > 0]
+    rows = [
+        req
+        for req in view.requirements
+        if _attested_counts(req)[1] > 0 and str(req.framework) not in LEDGER_EXCLUDED_FRAMEWORKS
+    ]
     return sorted(rows, key=_ledger_sort_key)
 
 
@@ -293,16 +335,39 @@ def _note(text: str, styles: Styles, *, style: str = "muted") -> Paragraph:
 # ---------------------------------------------------------------------------------------------
 # A. Third-party cryptographic components
 # ---------------------------------------------------------------------------------------------
+def _status_cell(lib: LibAgg) -> str:
+    status = pdf_plain(getattr(lib, "status", ""), limit=160).strip()
+    advisories = [pdf_plain(a, limit=30) for a in getattr(lib, "advisories", ())[:2]]
+    if status and advisories:
+        more = len(getattr(lib, "advisories", ())) - len(advisories)
+        status += " (" + ", ".join(advisories) + (f" +{more} more" if more > 0 else "") + ")"
+    if status:
+        return status
+    return _STATUS_NONE if getattr(lib, "version", "") else _STATUS_UNASSESSED
+
+
+def _package_cell(lib: LibAgg) -> str:
+    purl = pdf_plain(getattr(lib, "purl", ""), limit=160).split("?", 1)[0]
+    return purl or pdf_plain(getattr(lib, "ecosystem", ""), limit=40) or _DASH
+
+
 def _library_row(lib: LibAgg) -> list[object]:
     labels = _source_labels(lib, current=True)
     return [
         lib.name,
+        pdf_plain(getattr(lib, "version", ""), limit=60) or _NOT_CAPTURED,
+        _package_cell(lib),
         str(len(labels)),
         _sources_cell(labels),
+        _status_cell(lib),
         fmt_date_utc(lib.first_seen),
         fmt_date_utc(lib.last_seen),
-        *([""] * len(_LIB_MANUAL)),  # version + vendor assurance: left for the assessor
+        *([""] * len(_LIB_MANUAL)),  # vendor assurance: left for the assessor
     ]
+
+
+def _flagged(lib: LibAgg) -> bool:
+    return bool(getattr(lib, "status", ""))
 
 
 def _previous_row(lib: LibAgg) -> list[object]:
@@ -327,6 +392,7 @@ def _library_summary(view: TeamCbomView, current: Sequence[LibAgg]) -> str:
         with_libs=with_libs,
         sources=_plural(sources, "source", "sources"),
         multi=multi,
+        flagged=sum(1 for lib in current if _flagged(lib)),
     )
 
 
@@ -481,6 +547,57 @@ def _summary_section(view: TeamCbomView, styles: Styles, width: float) -> list[F
 
 
 # ---------------------------------------------------------------------------------------------
+# D. Vendor attestation register
+# ---------------------------------------------------------------------------------------------
+def _vendor_row(vendor: Any) -> list[object]:
+    def get(key: str) -> str:
+        value = vendor.get(key) if isinstance(vendor, dict) else getattr(vendor, key, None)
+        return "" if value is None else str(value)
+
+    level = get("level")
+    label = get("level_label")
+    return [
+        pdf_plain(get("name"), limit=_LABEL_LIMIT),
+        pdf_plain(get("area"), limit=60),
+        pdf_plain(get("status"), limit=40),
+        f"{level} {label}".strip() if level else _DASH,
+        get("attested_on") or "not answered",
+        pdf_plain(get("scope"), limit=200),
+        pdf_plain(get("evidence_ref"), limit=200) or _DASH,
+        get("renew_by") or _DASH,
+        "",
+    ]
+
+
+def _vendor_section(view: TeamCbomView, styles: Styles, width: float) -> list[Flowable]:
+    """Recorded vendors first (the Evidence tab), then write-in rows for the ones not asked yet."""
+    vendors = list(getattr(view, "vendors", ()) or ())
+    if not vendors:
+        return [
+            manual_form(_HEAD_D, authored.ASSURANCE_VENDOR_COLUMNS, VENDOR_BLANK_ROWS, width=width),
+            _note(_VENDOR_NONE, styles),
+        ]
+    note = _VENDOR_SOME.format(count=_plural(len(vendors), "vendor attestation", "vendor attestations"))
+    return [
+        *section_heading(_HEAD_D, styles, min_space=150),
+        _note(note, styles),
+        dense_table(
+            _VENDOR_COLUMNS,
+            [_vendor_row(vendor) for vendor in vendors],
+            _widths(_VENDOR_WEIGHTS, width),
+            manual_cols=_VENDOR_MANUAL,
+        ),
+        Spacer(1, 6),
+        manual_form(
+            _HEAD_D_MORE,
+            authored.ASSURANCE_VENDOR_COLUMNS,
+            max(VENDOR_MIN_BLANK_ROWS, VENDOR_BLANK_ROWS - len(vendors)),
+            width=width,
+        ),
+    ]
+
+
+# ---------------------------------------------------------------------------------------------
 # Public entry points
 # ---------------------------------------------------------------------------------------------
 def build_story(view: TeamCbomView, styles: Styles, width: float) -> list[Flowable]:
@@ -494,7 +611,7 @@ def build_story(view: TeamCbomView, styles: Styles, width: float) -> list[Flowab
         *_components_section(view, styles, width),
         *_ledger_section(view, styles, width),
         *_summary_section(view, styles, width),
-        manual_form(_HEAD_D, authored.ASSURANCE_VENDOR_COLUMNS, VENDOR_BLANK_ROWS, width=width),
+        *_vendor_section(view, styles, width),
         Spacer(1, 10),
         signoff_block(_SIGNOFF_ROLES, title=_HEAD_E, width=width),
     ]

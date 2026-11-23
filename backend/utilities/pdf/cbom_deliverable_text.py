@@ -134,7 +134,7 @@ RBI_BOM_DISCLAIMER = (
 # live network, a key-management system or stored data.
 SCOPE_OF_METHOD = (
     "Method: static analysis of repositories and uploaded artefacts, including declared "
-    "infrastructure and server configuration (documents #5, #6 and #9) and offline import "
+    "infrastructure and server configuration (documents #6, #7 and #9) and offline import "
     "of TLS result files. It does not include live-network discovery, inspection of HSM "
     "or KMS custody, or inspection of stored data."
 )
@@ -190,7 +190,7 @@ def scope_of_method(view: object) -> str:
     negatives.append("inspection of stored data")
     return (
         "Method: static analysis of repositories and uploaded artefacts, including declared infrastructure and "
-        "server configuration (documents #5, #6 and #9), offline import of TLS result files, and collection from the "
+        "server configuration (documents #6, #7 and #9), offline import of TLS result files, and collection from the "
         f"team's own systems. {sources_sentence(view)} It does not include {_join_negatives(negatives)}."
     )
 
@@ -936,7 +936,9 @@ SCOPE_BOUNDARY_STATEMENT = "Assessment boundary statement and approver"
 # Product text: the engine records a library's name and where it was found, nothing else
 # (backend/utilities/dashboard/cbom_team_rollup.py LibAgg).
 ASSURANCE_LIBRARY_NOTE = (
-    "The engine records each library's name and where it was found. Versions, vendors and "
+    "Code-scan libraries and the packages and mapped libraries CBOM Sources collections found, one "
+    "row per component (same package URL, or same name and version). Version, package URL and "
+    "known-vulnerability or end-of-life status are printed where they were recorded; vendors and "
     "licences are not captured, so those columns are left for the assessor."
 )
 ASSURANCE_VENDOR_COLUMNS = (

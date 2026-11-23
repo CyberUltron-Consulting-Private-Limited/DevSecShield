@@ -219,3 +219,39 @@ def vendor_status(vendor: Any, now: _dt.datetime) -> str:
     if now - vendor.link_created_at > _dt.timedelta(days=VENDOR_DUE_DAYS):
         return "overdue"
     return "link_created"
+
+
+# The questionnaire topics a vendor answered, as the D10 vendor attestation register names its scope
+_TOPIC = {"tls": "TLS versions and cipher suites", "keys": "key custody", "pqc": "post-quantum plan",
+          "model": "HSM model", "firmware": "firmware version", "fips_cert": "FIPS 140 certificate",
+          "process": "firmware update process", "algorithm": "backup algorithm"}
+
+
+def vendor_register(vendors: list[Any], now: _dt.datetime) -> tuple[dict[str, Any], ...]:
+    """The vendor attestation register of the Third-Party Cryptographic Assurance deliverable (SOW D10): one row per
+    vendor of the Evidence tab, newest answer first.  ``attested_on`` is the day the vendor answered (None until it
+    does); ``renew_by`` is 12 months later (the evidence age rule of this module); ``level`` is the effective level
+    every other surface shows (E0 until the vendor answers).  The answers themselves are not copied."""
+    rows = []
+    for vendor in vendors:
+        effective, _gap = vendor_level(vendor, now)
+        answered = vendor.answered_at.date() if vendor.answered_at else None
+        answers = vendor.answers if isinstance(vendor.answers, dict) else {}
+        spec = AREAS.get(vendor.area_key or "") or AREAS["third_party_vendors"]
+        asked = [q["id"] for q in spec["questions"]]
+        given = [q for q in asked if str(answers.get(q) or "").strip()]
+        scope = ", ".join(_TOPIC.get(q, q.replace("_", " ")) for q in given)
+        rows.append({
+            "name": str(vendor.name or ""),
+            "area": spec["title"],
+            "status": vendor_status(vendor, now).replace("_", " "),
+            "level": effective,
+            "level_label": CONFIDENCE_LABEL[effective],
+            "attested_on": answered.isoformat() if answered else None,
+            "renew_by": (answered + _dt.timedelta(days=EVIDENCE_MAX_AGE_DAYS)).isoformat() if answered else None,
+            "scope": f"{scope} ({len(given)} of {len(asked)} answered)" if given else f"0 of {len(asked)} answered",
+            "evidence_ref": str(vendor.evidence_url or ""),
+        })
+    rows.sort(key=lambda row: row["name"].casefold())
+    rows.sort(key=lambda row: row["attested_on"] or "", reverse=True)  # newest answer first, unanswered last
+    return tuple(rows)
