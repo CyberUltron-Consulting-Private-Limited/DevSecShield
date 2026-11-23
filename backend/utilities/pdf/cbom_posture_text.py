@@ -6,6 +6,8 @@ This module does not read a clock and does not import a client.
 
 from __future__ import annotations
 
+import re
+
 from backend.utilities.pdf.cbom_deliverable_text import CERTIN_DISCLAIMER, RBI_BOM_DISCLAIMER
 
 FINDING_CODES = (
@@ -182,6 +184,22 @@ CAPABILITY_EVIDENCE = "capability evidence, not proof that stored data is protec
 NO_CLASSIFICATION = "no classification was declared; a Business_Mapping_File supplies it"
 NO_RETENTION = "no backup retention or point-in-time recovery setting was declared"
 INFRA_LIMIT = "declared configuration is not proof of operation"
+INFRA_FINDINGS_NOTE = (
+    "Findings on the keys, key stores, at-rest resources, cloud-managed TLS listeners, secrets and private CAs "
+    "listed in this document. Probed and server-configured TLS endpoints are assessed in SOW D7 (TLS and crypto "
+    "protocol assessment)."
+)
+# Source: SOW v2.3 section 7.2, HSM coverage is limited to PKCS#11 and KMIP metadata
+KEY_STORE_NOTE = (
+    "PKCS#11 tokens, KMIP servers, Vault transit mounts and cloud custom key stores as their own interfaces report "
+    "them (metadata only). HSM firmware, key custodianship and key escrow are not inspected."
+)
+# Source: SOW v2.3 section 7.2, the data-at-rest assessment (D9) covers declared encryption settings only
+DECLARED_SETTINGS_NOTE = (
+    "Declared encryption settings only: read from repository configuration and from the configuration the team's "
+    "cloud accounts, databases and hosts report (cloud APIs, database catalogs, dm-crypt and BitLocker status). "
+    "Stored data was not read (SOW section 7.2)."
+)
 ENDPOINT_LIMIT = (
     "The platform did not probe any endpoint. Imported results reflect the time the "
     "customer's tool ran."
@@ -275,14 +293,65 @@ def coverage_line(assessed: int, total: int, not_assessed: int, partial: int) ->
     return text + f"; {not_assessed} not assessed (re-scan needed)"
 
 
+def _kb_entry(code: str) -> dict:
+    """The platform knowledge base entry of a CBOM Sources finding code (``crypto_kb.json``, read from disk), or {}.
+    A code the posture engine owns is answered by the tables above; a code a Sources collection set (KMS_NO_ROTATION,
+    STORAGE_UNENCRYPTED, MIN_TLS10 ...) by the same entry the run page explains it with."""
+    if not code or code in FINDING_LABELS:
+        return {}
+    try:
+        from backend.utilities.cbom_sources import crypto_kb
+
+        return crypto_kb.entry("node", code) or {}
+    except Exception:  # a missing or unreadable knowledge base leaves the generic words
+        return {}
+
+
 def finding_label(code: object) -> str:
     key = str(code or "").strip()
-    return FINDING_LABELS.get(key, key.replace("_", " ").capitalize() if key else "")
+    if key in FINDING_LABELS:
+        return FINDING_LABELS[key]
+    title = str(_kb_entry(key).get("title") or "")
+    return title or (key.replace("_", " ").capitalize() if key else "")
 
 
 def finding_action(code: object) -> str:
     key = str(code or "").strip()
-    return FINDING_ACTIONS.get(key, "Review this finding against the cryptographic policy.")
+    if key in FINDING_ACTIONS:
+        return FINDING_ACTIONS[key]
+    summary = None
+    if _kb_entry(key):
+        try:
+            from backend.utilities.cbom_sources import crypto_kb
+
+            summary = crypto_kb.summary_fix("node", [key])
+        except Exception:
+            summary = None
+    if isinstance(summary, str) and summary.strip():
+        text = re.sub(r"\{(\w+)\}", r"<\1>", " ".join(summary.split()))  # command placeholders stay placeholders
+        return text if text.endswith((".", ")")) else text + "."
+    return "Review this finding against the cryptographic policy."
+
+
+def finding_impact(code: object, observed: object = None) -> str:
+    """Impact band of a code: the posture table, else the knowledge base default, else the impact the assets that
+    carry it were given (``observed``), else Medium.  Never blank (a findings row always states its impact)."""
+    key = str(code or "").strip()
+    if key in FINDING_IMPACT:
+        return FINDING_IMPACT[key]
+    default = str(_kb_entry(key).get("default_impact") or "")
+    if default in ("Critical", "High", "Medium", "Low"):
+        return default
+    seen = str(observed or "")
+    return seen if seen in ("Critical", "High", "Medium", "Low") else "Medium"
+
+
+def finding_anchor(code: object) -> str:
+    key = str(code or "").strip()
+    if key in FINDING_ANCHORS:
+        return FINDING_ANCHORS[key]
+    cwe = _kb_entry(key).get("cwe")
+    return ", ".join(str(c) for c in cwe[:3]) if isinstance(cwe, list) else ""
 
 
 def verdict_label(value: object) -> str:

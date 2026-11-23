@@ -70,15 +70,15 @@ EXPECTED = [
     ("methodology-evidence-plan", 3, "Cryptographic Discovery Methodology & Evidence Plan"),
     (
         "infrastructure-cloud-encryption-posture",
-        5,
+        6,  # SOW Table 7 D6 (was #5 of the older 16-item set, audit B-09)
         "Infrastructure & Cloud Encryption Posture",
     ),
     (
         "network-tls-protocol-assessment",
-        6,
+        7,  # SOW D7
         "Network, TLS & Crypto Protocol Assessment",
     ),
-    ("certificate-estate-register", 7, "Certificate Estate Register"),
+    ("certificate-estate-register", 8, "Certificate Estate Register"),  # SOW D8
     (
         "data-at-rest-encryption-assessment",
         9,

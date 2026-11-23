@@ -188,8 +188,8 @@
       "header_label": "CBOM Discovery Methodology", "orientation": "portrait", "min_pages": 4, "max_pages": 9
     },
     "certificate-estate-register": {
-      "number": 7, "title": "Certificate Estate Register",
-      "menu_label": "#7 · Certificate Estate Register",
+      "number": 8, "title": "Certificate Estate Register",
+      "menu_label": "#8 · Certificate Estate Register",
       "header_label": "CBOM Certificate Estate Register", "orientation": "landscape", "min_pages": 4, "max_pages": 8
     },
     "third-party-assurance-register": {
@@ -198,13 +198,13 @@
       "header_label": "CBOM Third-Party Assurance Register", "orientation": "landscape", "min_pages": 5, "max_pages": 10
     },
     "infrastructure-cloud-encryption-posture": {
-      "number": 5, "title": "Infrastructure & Cloud Encryption Posture",
-      "menu_label": "#5 · Infrastructure & Cloud Encryption Posture",
+      "number": 6, "title": "Infrastructure & Cloud Encryption Posture",
+      "menu_label": "#6 · Infrastructure & Cloud Encryption Posture",
       "header_label": "CBOM Infrastructure Posture", "orientation": "landscape", "min_pages": 1, "max_pages": 20
     },
     "network-tls-protocol-assessment": {
-      "number": 6, "title": "Network, TLS & Crypto Protocol Assessment",
-      "menu_label": "#6 · Network, TLS & Crypto Protocol Assessment",
+      "number": 7, "title": "Network, TLS & Crypto Protocol Assessment",
+      "menu_label": "#7 · Network, TLS & Crypto Protocol Assessment",
       "header_label": "CBOM Network TLS Assessment", "orientation": "landscape", "min_pages": 1, "max_pages": 20
     },
     "data-at-rest-encryption-assessment": {

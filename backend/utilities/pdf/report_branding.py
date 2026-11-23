@@ -261,7 +261,7 @@ REPORT_META: Dict[str, Dict[str, str]] = {
             "and sign-offs are completed by the named owners."
         ),
     },
-    # Posture deliverables (#5, #6, #9). Appended after the six regulatory documents so their
+    # Posture deliverables (SOW D6, D7, D9). Appended after the six regulatory documents so their
     # headers and footers stay on the entries above.
     "cbom_infra_posture": {
         "title": "Infrastructure & Cloud Encryption Posture",

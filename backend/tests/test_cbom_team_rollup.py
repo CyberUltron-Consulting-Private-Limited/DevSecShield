@@ -2229,7 +2229,9 @@ def test_module_level_imports_are_standard_library_only():
 # imports sqlmodel lazily and is called from load_team_cbom_view only); asset_keys: the cross-source asset key (CB-21)
 SHARED_PURE_RULES = {"backend.utilities.cbom_sources.cbom_rows", "backend.utilities.cbom_sources.cbom_metrics",
                      "backend.utilities.cbom_sources.collections_view", "backend.utilities.cbom_sources.asset_keys",
-                     "backend.utilities.cbom_sources.frameworks"}  # CB-16: pure, the shared standards predicates
+                     "backend.utilities.cbom_sources.frameworks",  # CB-16: pure, the shared standards predicates
+                     # SOW D6/D9/D10: Sources assets as posture facts and components (pure, stdlib only)
+                     "backend.utilities.cbom_sources.posture_mapper"}
 
 
 def test_only_the_db_loader_imports_non_stdlib_modules_and_only_lazily():
@@ -2323,7 +2325,9 @@ FROZEN_FIELDS = {
     ),
     "LibAgg": (
         "key name source_keys source_labels current_source_keys discovered_in "
-        "discovered_in_total current first_seen last_seen scan_count scan_ids latest_scan_id"
+        "discovered_in_total current first_seen last_seen scan_count scan_ids latest_scan_id "
+        # SOW D10: the package version, purl, ecosystem and known-vulnerability / EOL marks a component records
+        "version purl ecosystem status advisories"
     ),
     "RequirementAgg": (
         "framework req_id title citation verdict verdicts attestable_sources attested_sources "
@@ -2341,7 +2345,8 @@ FROZEN_FIELDS = {
         "pqc_hybrid pqc_broken_today pqc_ungraded readiness_pct compliance_sources_pooled "
         # remediation: WP10 (loader only, not compared); collections: M1x (CBOM Sources results, merge_collections);
         # register: CB-23 (the quantum risk register for deliverable #2; loader only, not compared)
-        "compliance_legacy_excluded warnings posture collections remediation register"
+        # vendors: SOW D10 vendor attestation register (Evidence tab; loader only, not compared)
+        "compliance_legacy_excluded warnings posture collections remediation register vendors"
     ),
 }
 

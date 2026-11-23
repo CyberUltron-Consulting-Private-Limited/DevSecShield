@@ -24,7 +24,7 @@ from backend.utilities.pdf.cbom_deliverable_common import (
 )
 from backend.utilities.pdf.report_branding import REPORT_META
 
-DOCUMENT_NUMBER = 6
+DOCUMENT_NUMBER = 7  # SOW Table 7: D7
 REPORT_KEY = "cbom_network_tls"
 _SIGNOFF = ("Prepared by", "Reviewed by", "Approved by")
 _OFFERED = {"offered": "offered", "not_offered": "not offered", "unknown": "unknown"}

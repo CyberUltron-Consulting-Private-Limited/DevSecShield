@@ -79,21 +79,25 @@ CURRENT_SCAN_IDS = (2, 3, 4, 5, 6, 7, 8)  # latest scan of each of the 7 sources
 POOLED_SCAN_IDS = (2, 3, 4, 5, 6, 7)  # current AND full fidelity (legacy #8 has no compliance)
 
 # Headers are literals on purpose: they are the contract with plan 5.4, not a re-export.
+# SOW D10 (audit B-08): version, package URL and known-vulnerability / end-of-life status are data columns now;
+# only the vendor-assurance columns are MANUAL.
 LIB_HEADERS = (
     "Library",
+    "Version",
+    "Package URL or ecosystem",
     "#Sources",
     "Sources",
+    "Known-vulnerability / end-of-life status",
     "First seen",
     "Last seen",
-    "Version (not captured) (assessor)",
     "Vendor (assessor)",
     "FIPS 140-3 / CMVP cert # (assessor)",
     "SOC 2 / ISO 27001 ref (assessor)",
     "PQC statement (assessor)",
     "Attestation status (assessor)",
 )
-MANUAL_LIB_COLUMNS = LIB_HEADERS[5:]
-PREVIOUS_HEADERS = LIB_HEADERS[:5]
+MANUAL_LIB_COLUMNS = LIB_HEADERS[8:]
+PREVIOUS_HEADERS = ("Library", "#Sources", "Sources", "First seen", "Last seen")
 LATEST_HEADER = "Latest attestation (file \u00b7 note \u00b7 date)"
 LEDGER_HEADERS = (
     "Framework",
@@ -105,6 +109,8 @@ LEDGER_HEADERS = (
     LATEST_HEADER,
 )
 VENDOR_HEADERS = ("Vendor", "Service", "Crypto function", "Evidence ref", "Valid until", "Owner")
+RECORDED_VENDOR_HEADERS = ("Vendor", "Area", "Status", "Evidence level", "Attestation date", "Scope",
+                           "Evidence ref", "Renew by", "Owner (assessor)")
 SIGNOFF_HEADERS = ("Sign-off", "Name", "Role", "Date", "Signature")
 DASH = "\u2014"
 
@@ -672,28 +678,32 @@ def test_multi_source_rows_list_every_source_label(base_story):
     assert rows["secrets (stdlib)"]["First seen"] == "2026-10-09"
 
 
-def test_version_column_says_not_captured_and_every_manual_cell_is_blank(base_story, base_text):
+def test_version_column_prints_only_recorded_versions_and_every_manual_cell_is_blank(base_story):
+    """SOW D10 / audit B-08: a version is printed when the engine recorded one on the component (the advisory
+    components ``cryptography@42.0.5`` and ``golang.org/x/crypto@v0.24.0`` carry ``crypto:version``) and "not
+    captured" otherwise; nothing is invented and the vendor-assurance columns stay blank MANUAL columns."""
     table = find_table(base_story, LIB_HEADERS)
-    assert LIB_HEADERS[5].startswith("Version (not captured)")
-    assert "Version (not captured) (assessor)" in base_text  # and so does the printed header
     for row in body_rows(table):
-        for column in range(5, len(LIB_HEADERS)):
+        for column in range(8, len(LIB_HEADERS)):
             assert cell_text(row[column]) == "", (LIB_HEADERS[column], cell_text(row[0]))
-    # nothing invented: no version-looking value in the component rows except inside the name the
-    # engine gave an advisory component (``<package>@<version>``, crypto_advisory_scan.py)
-    flat = "\n".join(cell_text(c) for row in body_rows(table) for c in row[1:])
-    assert not re.search(r"\b\d+\.\d+\.\d+\b", flat)
-    versioned = sorted(
-        cell_text(row[0]) for row in body_rows(table) if re.search(r"\d+\.\d+\.\d+", cell_text(row[0]))
+    rows = {r["Library"]: r for r in records(table)}
+    versions = {name: row["Version"] for name, row in rows.items() if row["Version"] != "not captured"}
+    assert versions == {"cryptography@42.0.5": "42.0.5", "golang.org/x/crypto@v0.24.0": "v0.24.0"}
+    assert rows["cryptography@42.0.5"]["Package URL or ecosystem"] == "pypi"
+    assert rows["golang.org/x/crypto@v0.24.0"]["Known-vulnerability / end-of-life status"] == (
+        "known vulnerability (CVE-2024-45337, CVE-2025-22869 +19 more)"
     )
-    assert versioned == ["cryptography@42.0.5", "golang.org/x/crypto@v0.24.0"]
-    # the version column is a blank MANUAL column like the four vendor-assurance ones
+    # a library without a recorded version cannot be checked against advisories: it says so
+    assert rows["Bouncy Castle"]["Known-vulnerability / end-of-life status"] == "not assessed (no version)"
     assert all("(assessor)" in header for header in MANUAL_LIB_COLUMNS)
 
 
 def test_library_note_and_summary_line_are_printed(base_text):
     assert norm(authored.ASSURANCE_LIBRARY_NOTE) in base_text
-    summary = "26 cryptographic libraries found in 4 of 7 sources; 4 used by more than one source."
+    summary = (
+        "26 cryptographic libraries found in 4 of 7 sources; 4 used by more than one source; "
+        "2 with a known-vulnerability or end-of-life status."
+    )
     assert summary in base_text
 
 
@@ -767,7 +777,7 @@ def test_fixture_labels_fit_their_columns_without_wrapping(base_story):
     components = find_table(base_story, LIB_HEADERS)
     for row in records(components):
         for label in row["Sources"].split("\n"):
-            assert fits(label, components, 2), label
+            assert fits(label, components, LIB_HEADERS.index("Sources")), label
     ledger = find_table(base_story, LEDGER_HEADERS)
     for label in authored.FRAMEWORK_LABELS.values():
         assert fits(label, ledger, 0), label
@@ -1026,13 +1036,43 @@ def test_summary_kpis_count_fully_attested_controls(raw_scans):
 # ---------------------------------------------------------------------------------------------
 # D / E. Manual forms
 # ---------------------------------------------------------------------------------------------
-def test_vendor_register_is_twelve_blank_rows_with_the_plan_columns(base_story, base_text):
+def test_vendor_register_without_recorded_vendors_is_twelve_blank_rows(base_story, base_text):
     table = find_table(base_story, VENDOR_HEADERS)
     assert headers_of(table) == tuple(authored.ASSURANCE_VENDOR_COLUMNS) == VENDOR_HEADERS
     rows = body_rows(table)
     assert len(rows) == 12
     assert all(cell_text(cell) == "" for row in rows for cell in row)
+    assert "No vendor questionnaire is recorded in the Evidence tab" in base_text
     assert "To be completed by assessor" in base_text
+    assert not has_table(base_story, RECORDED_VENDOR_HEADERS)
+
+
+def test_vendor_register_lists_the_evidence_tab_vendors_then_blank_rows(base_view):
+    """Staging 23 Nov 2026 (audit B-08): vendor "Acme Payments Gateway" had answered its questionnaire in the
+    Evidence tab, yet section D printed twelve blank rows.  The register now lists it with its attestation date,
+    scope and evidence reference (``view.vendors``, built by ``evidence.vendor_register``)."""
+    view = dataclasses.replace(base_view, vendors=(
+        {"name": "Acme Payments Gateway", "area": "Third-party vendors", "status": "answered", "level": "E2",
+         "level_label": "Documented", "attested_on": "2026-11-12", "renew_by": "2027-11-12",
+         "scope": "TLS versions and cipher suites, key custody, post-quantum plan (3 of 3 answered)",
+         "evidence_ref": "https://acme.example/security"},
+        {"name": "Beta Card Switch", "area": "Third-party vendors", "status": "not sent", "level": "E0",
+         "level_label": "Unknown", "attested_on": None, "renew_by": None, "scope": "0 of 3 answered",
+         "evidence_ref": ""},
+    ))
+    story = build_story(view)
+    rows = records(find_table(story, RECORDED_VENDOR_HEADERS))
+    assert len(rows) == 2
+    assert rows[0] == {
+        "Vendor": "Acme Payments Gateway", "Area": "Third-party vendors", "Status": "answered",
+        "Evidence level": "E2 Documented", "Attestation date": "2026-11-12",
+        "Scope": "TLS versions and cipher suites, key custody, post-quantum plan (3 of 3 answered)",
+        "Evidence ref": "https://acme.example/security", "Renew by": "2027-11-12", "Owner (assessor)": "",
+    }
+    assert (rows[1]["Vendor"], rows[1]["Attestation date"], rows[1]["Evidence ref"]) == (
+        "Beta Card Switch", "not answered", DASH)
+    further = body_rows(find_table(story, VENDOR_HEADERS))  # write-in rows for vendors not asked yet
+    assert len(further) == 10 and all(cell_text(cell) == "" for row in further for cell in row)
 
 
 def test_signoff_block_is_blank_apart_from_the_roles(base_story):

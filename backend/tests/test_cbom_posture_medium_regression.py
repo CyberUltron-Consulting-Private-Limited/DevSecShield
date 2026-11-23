@@ -31,7 +31,7 @@ OLD_SCOPE = (
 )
 NEW_SCOPE = (
     "Method: static analysis of repositories and uploaded artefacts, including declared "
-    "infrastructure and server configuration (documents #5, #6 and #9) and offline import "
+    "infrastructure and server configuration (documents #6, #7 and #9) and offline import "
     "of TLS result files. It does not include live-network discovery, inspection of HSM "
     "or KMS custody, or inspection of stored data."
 )
