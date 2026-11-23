@@ -36,6 +36,7 @@ for (const name of RESULT_PAGES) {
 }
 assert.match(RESULTS_HEADER.row, /\bflex-wrap\b/);
 assert.match(RESULTS_HEADER.actions, /\bflex-wrap\b/);
+assert.match(RESULTS_HEADER.actions, /\blg:ml-auto\b/, "desktop actions stay at the right edge");
 assert.match(RESULTS_HEADER.lead, /\bmin-w-0\b/);
 const chat = src("components/ai/ChatWindow.tsx");
 for (const key of ["row", "lead", "crumb", "crumbTitle", "status", "actions"]) {
@@ -50,12 +51,15 @@ const OLD_RESULTS: ResultsClasses = { row: "flex items-center justify-between", 
 const ACTIONS: Record<string, string[]> = {
   sast: ["Download Scan Report", "Chat with the Results"],
   sca: ["Download SBOM", "VEX", "Signature", "Evidence pack", "Download Scan Report", "Chat with the Results"],
+  mcp: ["Refresh", "Download Scan Report", "Chat with the Results"],
 };
-const TITLES: Record<string, string> = { sast: "SAST Scan Results", sca: "SCA + SBOM Scan Results" };
+const TITLES: Record<string, string> = { sast: "SAST Scan Results", sca: "SCA + SBOM Scan Results", mcp: "MCP Scan Results" };
 
 function resultsHeader(c: ResultsClasses, kind: string): string {
-  const btn = (label: string): ReactNode => h(Button, { key: label, variant: "outline", className: "cursor-pointer" },
-    h(label.startsWith("Chat") ? MessageCircle : Download, { className: "h-4 w-4 mr-2" }), label);
+  const btn = (label: string): ReactNode => label === "Refresh"  // MCP's icon-only refresh
+    ? h(Button, { key: label, variant: "outline", size: "icon", title: "Refresh" }, h(RefreshCcwIcon, { className: "h-4 w-4" }))
+    : h(Button, { key: label, variant: "outline", className: "cursor-pointer" },
+      h(label.startsWith("Chat") ? MessageCircle : Download, { className: "h-4 w-4 mr-2" }), label);
   return renderToStaticMarkup(h("div", { className: "container mx-auto p-6 space-y-6" },
     h("div", { className: c.row, id: "header" },
       h("div", { className: c.lead },
@@ -63,7 +67,7 @@ function resultsHeader(c: ResultsClasses, kind: string): string {
         h("div", { className: c.title || undefined },
           h("h1", { className: "text-3xl font-bold text-zinc-900 dark:text-white", id: "title" }, TITLES[kind]),
           h("p", { className: "text-sm text-zinc-600 dark:text-zinc-400 mt-1" }, "Agent analysis by logical component"))),
-      h("div", { className: c.actions }, ACTIONS[kind].map(btn)))));
+      h("div", { className: c.actions, id: "actions" }, ACTIONS[kind].map(btn)))));
 }
 
 type ChatClasses = { row: string; lead: string; crumb: string; crumbTitle: string; status: string; actions: string };
@@ -116,31 +120,38 @@ async function main() {
     const box = (e) => { const r = e.getBoundingClientRect(); return { left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top), bottom: Math.round(r.bottom) }; };
     const column = box(document.getElementById("column"));
     const header = document.getElementById("header");
+    const actions = document.getElementById("actions");
     const buttons = [...header.querySelectorAll("button")].map(box);
     const t = box(document.getElementById("title"));
     const refresh = document.getElementById("refresh");
     let covered = false;
     if (refresh) { const r = box(refresh); covered = t.right > r.left && t.left < r.right && t.bottom > r.top && t.top < r.bottom; }
-    return { column, buttons, title: t, covered,
+    return { column, buttons, title: t, covered, header: box(header), actions: actions ? box(actions) : null,
+      actionsRight: actions ? Math.round(Math.max(...[...actions.children].map((e) => e.getBoundingClientRect().right))) : null,
       pageWide: document.documentElement.scrollWidth > document.documentElement.clientWidth,
       headerWide: header.scrollWidth > header.clientWidth + 1 };
   })()`;
-  type Measured = { column: Box; buttons: Box[]; title: Box; covered: boolean; pageWide: boolean; headerWide: boolean };
+  type Measured = { column: Box; buttons: Box[]; title: Box; covered: boolean; pageWide: boolean; headerWide: boolean;
+    header: Box; actions: Box | null; actionsRight: number | null };
   const measure = (p: Page) => p.evaluate(MEASURE) as Promise<Measured>;
 
   const browser = await playwright.chromium.launch({ executablePath: chrome, args: ["--no-sandbox"] });
   const lines: string[] = [];
   try {
-    for (const kind of ["sast", "sca"]) {
+    for (const kind of ["sast", "sca", "mcp"]) {
       for (const [name, classes] of [["before", OLD_RESULTS], ["after", RESULTS_HEADER]] as const) {
-        for (const [width, height] of [[390, 844], [820, 1180], [1440, 900]]) {
+        for (const [width, height] of [[390, 844], [820, 1180], [1280, 800], [1440, 900]]) {
           const p = await browser.newPage({ viewport: { width, height } });
           await p.setContent(doc(resultsHeader(classes, kind)));
           const m = await measure(p);
           const out = m.buttons.filter((b) => b.left < m.column.left - 1 || b.right > Math.min(width, m.column.right) + 1);
-          lines.push(`results ${kind} ${name} ${width}: buttons outside ${out.length}, page wider than screen ${m.pageWide}, title ${m.title.left}..${m.title.right}`);
+          const rightGap = m.header.right - (m.actionsRight ?? 0);
+          lines.push(`results ${kind} ${name} ${width}: buttons outside ${out.length}, page wider than screen ${m.pageWide}, title ${m.title.left}..${m.title.right}, last button ${rightGap}px from the header's right edge`);
           if (name === "after") {
             assert.equal(out.length, 0, `${kind} ${width}px: a button is outside the screen ${JSON.stringify(out)}`);
+            if (width >= 1280) {  // desktop: the actions end at the header's right edge, as on dev
+              assert.ok(Math.abs(rightGap) <= 1, `${kind} ${width}px: the actions end ${rightGap}px left of the header's right edge`);
+            }
             assert.ok(!m.pageWide && !m.headerWide, `${kind} ${width}px: the header is wider than the screen`);
             assert.ok(m.title.right <= width, `${kind} ${width}px: the title runs off screen`);
           } else if (width === 390) {

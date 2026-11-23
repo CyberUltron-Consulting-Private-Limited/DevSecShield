@@ -208,7 +208,7 @@ run([
     localStorage.clear();
   }],
   ["429 shows the wait and holds Download until Retry-After; 400 and 503 show the server's words", async () => {
-    const busyWords = "The server is busy building other large scan PDF reports; retry in 30 s.";
+    const busyWords = "The server is busy building other large scan PDF reports.";  // backend export_slots.PDF_BUSY
     let reply: { status: number; data: unknown; headers?: Record<string, string> } = { status: 429, data: json(busyWords), headers: { "retry-after": "2", "x-export-busy": "pdf" } };
     api(() => reply);
     await render(scanOpener());
@@ -217,11 +217,15 @@ run([
     await settle(60);
     assert.equal(byTest("export-error")!.getAttribute("data-status"), "429");
     assert.equal(byTest("export-error")!.getAttribute("data-busy"), "pdf");
-    assert.ok(byTest("export-error")!.textContent!.startsWith(busyWords), "a slot 429 shows the server's own words");
+    const title = () => byTest("export-error")!.querySelector("p.font-semibold")!.textContent!;
+    assert.equal(title(), busyWords, "a slot 429 shows the server's own words as the title");
     assert.match(byTest("export-error")!.textContent!, /Try again in [12] s\./);
+    // the only wait shown is the live countdown (review 6015645210: a fixed "retry in 30 s" title contradicted it)
+    assert.doesNotMatch(title(), /\d|retry/i, "the title states no wait of its own");
     assert.equal(download().disabled, true, "Download waits for Retry-After");
     await settle(2400);
     assert.match(byTest("export-error")!.textContent!, /You can try again now\./);
+    assert.doesNotMatch(title(), /\d|retry/i, "nor once Download is enabled again");
     assert.equal(download().disabled, false, "then it can be retried");
     reply = { status: 400, data: json("The scan has not finished yet") };
     await click(download());
@@ -277,14 +281,19 @@ run([
     await settle(60);
     const sent = fake.calls("post", EXPORT).at(-1)!;
     assert.equal((sent.body as Record<string, unknown>).sections, "summary,catalog,notes", "a consistent set is sent");
-    // ticking details back enables them (left for the user to tick)
+    // reopened without details (remembered): ticking details ticks what is drawn inside it, enabled again
     await openDialog();
     await click(choice("Finding details"));
-    const remediation = byTest("export-sections")!.querySelector<HTMLInputElement>('input[id$="-section-remediation"]')!;
-    assert.equal(remediation.disabled, false);
+    const box = (s: string) => byTest("export-sections")!.querySelector<HTMLInputElement>(`input[id$="-section-${s}"]`)!;
+    assert.equal(box("remediation").disabled, false);
     assert.equal(byTest("export-section-needs-remediation"), null, "the hint goes with the dependency");
-    await click(remediation);
-    assert.ok(sectionsTicked().includes("remediation"));
+    assert.deepEqual(sectionsTicked(), ["summary", "catalog", "details", "remediation", "mappings", "notes"]);
+    // within one dialog, untick then re-tick details restores what was ticked inside it (review 6015645210)
+    await click(box("mappings"));
+    await click(choice("Finding details"));
+    assert.deepEqual(sectionsTicked(), ["summary", "catalog", "notes"]);
+    await click(choice("Finding details"));
+    assert.deepEqual(sectionsTicked(), ["summary", "catalog", "details", "remediation", "notes"], "remediation back, mappings stays off");
     saved.length = 0;
     localStorage.clear();
   }],

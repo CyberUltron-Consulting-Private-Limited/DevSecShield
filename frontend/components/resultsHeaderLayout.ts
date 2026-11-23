@@ -12,8 +12,9 @@ export const RESULTS_HEADER = {
   // may shrink below its content (min-w-0), so a long title wraps inside the screen
   lead: "flex min-w-0 items-center gap-4",
   title: "min-w-0 break-words",
-  // the buttons wrap too, one under another when even one row of them is wider than the screen
-  actions: "flex flex-wrap items-center gap-2 lg:justify-end",
+  // the buttons wrap too, one under another when even one row of them is wider than the screen; from lg up they stay
+  // at the right edge even on a line of their own, as on dev (review 6015645210: SCA at 1280/1440, MCP at 1280)
+  actions: "flex flex-wrap items-center gap-2 lg:ml-auto lg:justify-end",
 } as const;
 
 /**

@@ -312,9 +312,19 @@ export function ExportPdfForm({ teamId, target, pending, error, onDownload, onCl
   const blocked = Object.keys(problems).length > 0;
   const statusFiltered = family === "scan" && options.statuses != null;
 
+  // what was ticked inside a section when it was unticked, so ticking it again brings those back (null: never unticked
+  // in this dialog; ticking it then ticks every section drawn inside it, as the full report has them)
+  const insideWhenUnticked = useRef<Partial<Record<ReportSection, ReportSection[]>>>({});
   const toggleSection = (s: ReportSection, on: boolean) => {
+    const inside = available.filter((a) => SECTION_NEEDS[a] === s);
+    let base = available.filter((a) => (a === s ? on : chosen.includes(a)));
+    if (!on && inside.length) insideWhenUnticked.current[s] = inside.filter((a) => chosen.includes(a));
+    if (on && inside.length) {
+      const back = insideWhenUnticked.current[s] ?? inside;
+      base = available.filter((a) => base.includes(a) || back.includes(a));
+    }
     // unticking Finding details unticks what is drawn inside it (Remediation, Standards mappings): a consistent set
-    const next = consistentSections(available.filter((a) => (a === s ? on : chosen.includes(a))));
+    const next = consistentSections(base);
     set({ sections: next, preset: presetFor(family, next, scanType) });
   };
   /** The section `s` is drawn inside, when that one is not ticked (`s` is then disabled). */

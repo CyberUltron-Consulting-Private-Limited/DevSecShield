@@ -26,7 +26,7 @@ async function main() {
   const reportReply = (res: http.ServerResponse, q: Record<string, unknown>) => {
     if (q.label === "public") {  // a full export-slot pool: the server's busy signal
       res.writeHead(429, { "content-type": "application/json", "retry-after": "30", "x-export-busy": "cbom" });
-      res.end(JSON.stringify({ detail: "The server is busy building other large CBOM exports; retry in 30 s." }));
+      res.end(JSON.stringify({ detail: "The server is busy building other large CBOM exports." }));
       return;
     }
     if (q.label === "restricted") {
@@ -185,7 +185,7 @@ async function main() {
     const busy = await downloadRunReport(7, 12, { ...DEFAULT_OPTIONS, label: "public" }).then(() => null, (e: unknown) => e);
     assert.ok(busy instanceof ReportDownloadError && busy.status === 429);
     assert.equal(busy.busy, "cbom", "the slot refusal's header reaches the dialog");
-    assert.equal(busy.detail, "The server is busy building other large CBOM exports; retry in 30 s.");
+    assert.equal(busy.detail, "The server is busy building other large CBOM exports.");
     assert.ok(refused.retryAt! > Date.now() + 15_000, "Download waits until then");
 
     // the menu offers the code page's four buttons, in its order, through this client

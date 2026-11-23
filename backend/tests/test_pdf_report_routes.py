@@ -227,7 +227,7 @@ def test_a_large_build_takes_a_slot_and_a_busy_host_answers_429(api, monkeypatch
     assert r.status_code == 429 and r.headers["Retry-After"] == str(export_slots.RETRY_AFTER_S)
     assert "no-store" in r.headers["Cache-Control"]
     assert r.json()["detail"] == export_slots.PDF_BUSY
-    assert r.json()["detail"] == "The server is busy building other large scan PDF reports; retry in 30 s."
+    assert r.json()["detail"] == "The server is busy building other large scan PDF reports."
     monkeypatch.setattr("backend.routers.scans.LARGE_PDF_ROWS", 10**9)
     assert export(http, ids).status_code == 200  # a small build never waits
 

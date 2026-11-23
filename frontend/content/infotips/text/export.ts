@@ -48,7 +48,7 @@ const TEXT = {
   },
   // src: backend/utilities/pdf/report_options.py:32 — details (remediation and mappings print inside them)
   "export.section.scan.details": {
-    what: "A card per finding: where it is, what was found and the evidence. Remediation and standards mappings are printed inside these cards, so unticking this unticks them too.",
+    what: "A card per finding: where it is, what was found and the evidence. Remediation and standards mappings are printed inside these cards, so unticking this unticks them too, and ticking it again brings them back.",
     why: "Engineers fix from the details; an executive summary does not need them.",
     example: "Finding #17 with its file, line and code snippet.",
   },
