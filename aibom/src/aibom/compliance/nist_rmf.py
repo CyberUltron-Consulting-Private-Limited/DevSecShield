@@ -15,11 +15,11 @@ from aibom.compliance.base import (
     has_license,
     healthcare_profile,
     models,
-    vendor_accountability,
     register_check,
     register_manual,
     serving_services,
     trained_datasets,
+    vendor_accountability,
 )
 from aibom.model.result import ScanResult
 

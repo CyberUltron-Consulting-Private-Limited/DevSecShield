@@ -26,9 +26,9 @@ from aibom.model.component import (
     FrameworkComponent,
     InfraComponent,
     ModelComponent,
-    is_model_mention,
     ServiceComponent,
     is_deidentified,
+    is_model_mention,
 )
 from aibom.model.result import (
     REL_DEPENDS_ON,
