@@ -451,7 +451,8 @@ def certin_db(world, monkeypatch):  # noqa: F811
 BASE_SERIAL = "urn:uuid:7b2f2a8e-4c1d-4b8e-9f00-2a1c3d4e5f60"
 
 
-def test_code_scan_vex_states_drift_resolved_and_schema(api, certin_db, monkeypatch):  # noqa: F811
+def test_code_scan_vex_states_drift_resolved_and_schema(api, certin_db, monkeypatch,  # noqa: F811
+                                                       bom_signing_fixture_key):
     engine, ids = certin_db
     meta = {"repo_url": "https://github.com/acme/vex", "branch": "main"}
     des = _row("3DES-CBC", "app.py", ["WEAK_ALGORITHM"], cves=["CVE-2016-2183"])
@@ -505,13 +506,18 @@ def test_code_scan_vex_states_drift_resolved_and_schema(api, certin_db, monkeypa
     assert vex["serialNumber"].startswith("urn:uuid:") and vex["metadata"]["timestamp"].endswith("Z")
     assert meta["zs:supersedes"] == "rules 2" and meta["zs:scan_id"] == "61"
     assert json_errors(vex) == []
+    # D7 (review 6026853603): the download is signed (JSF inside, X-ZS-Signature header); the stored document is the
+    # same without the signature member
+    assert vex["signature"]["algorithm"] == "ES256" and r.headers["x-zs-signature-alg"] == "ES256"
+    vex = {k: v for k, v in vex.items() if k != "signature"}
     assert metadata_vex(61) == vex  # rebuilt and stored: served from metadata from now on
     from backend.routers import certin
 
     writes = []
     real_save = certin._save_scan_data
     monkeypatch.setattr(certin, "_save_scan_data", lambda *a, **kw: (writes.append(a), real_save(*a, **kw)))
-    assert api("GET", "/1/cbom/scan/61/vex").json() == vex and writes == []  # current: served, not rebuilt
+    again = api("GET", "/1/cbom/scan/61/vex").json()
+    assert {k: v for k, v in again.items() if k != "signature"} == vex and writes == []  # current: served, not rebuilt
 
     old = api("GET", "/1/cbom/scan/60/vex").json()  # the baseline: weak algorithm in triage, CVE in triage
     states = {(v["id"], v["analysis"]["state"]) for v in old["vulnerabilities"]}

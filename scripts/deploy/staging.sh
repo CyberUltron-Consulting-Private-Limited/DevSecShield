@@ -531,6 +531,35 @@ require_host_files() {
   if grep -Eq '^[[:space:]]*(DSS_DEV_MODE|LOCAL_DEV_VERIFICATION_(EMAIL|CODE))=' "${ENV_FILE}" "${STAGING_DIR}/backend.env"; then
     die "DSS_DEV_MODE / LOCAL_DEV_VERIFICATION_* must never be set on staging"
   fi
+  check_bom_signing_seed "${STAGING_DIR}/backend.env"
+}
+
+check_bom_signing_seed() { # <backend.env>: will the backend have a BOM signing key (bom_signing.weak_seed)? Names only.
+  # The backend derives the D11 signing key from CERTIN_HMAC_SECRET (else ENCRYPTION_KEY) unless CBOM_SIGNING_KEY_PEM /
+  # _PATH is set, and refuses a seed shorter than 32 bytes or a placeholder: the BOMs are then served unsigned. Only the
+  # length and the placeholder rule are checked here; no value is printed.
+  local file="$1" name verdict
+  verdict="$(awk -F= '
+    function val(line) { sub(/^[^=]*=/, "", line); gsub(/^["'"'"']|["'"'"']$/, "", line); return line }
+    /^[[:space:]]*CBOM_SIGNING_KEY_(PEM|PATH)=./ { configured = 1 }
+    /^[[:space:]]*CERTIN_HMAC_SECRET=/ { certin = val($0) }
+    /^[[:space:]]*ENCRYPTION_KEY=/ { enc = val($0) }
+    END {
+      if (configured) { print "configured"; exit }
+      if (certin != "") { name = "CERTIN_HMAC_SECRET"; v = certin } else if (enc != "") { name = "ENCRYPTION_KEY"; v = enc }
+      else { print "none"; exit }
+      low = tolower(v)
+      if (length(v) < 32) print name " short"
+      else if (low ~ /change-me|changeme|change_me|replace-?me|placeholder|generate_a_|your[-_]secret|example|insecure/) print name " placeholder"
+      else print name " ok"
+    }' "${file}")"
+  name="${verdict%% *}"
+  case "${verdict}" in
+    configured) log "BOM signing: key from CBOM_SIGNING_KEY_PEM / CBOM_SIGNING_KEY_PATH" ;;
+    none) log "WARNING BOM signing: no CERTIN_HMAC_SECRET / ENCRYPTION_KEY / CBOM_SIGNING_KEY_*: BOMs will be served unsigned" ;;
+    *" ok") log "BOM signing: key derived from ${name} (32+ bytes, not a placeholder)" ;;
+    *) log "WARNING BOM signing: ${name} is ${verdict#* } (needs 32+ random bytes): the backend refuses to derive a signing key from it and serves BOMs unsigned; see docs/security/secret-rotation.md" ;;
+  esac
 }
 
 record_services() { # <tag>: the STAGING_SERVICES <tag> is deployed with; no file means every service

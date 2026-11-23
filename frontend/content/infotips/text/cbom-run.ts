@@ -421,7 +421,7 @@ const TEXT = {
   },
   // src: frontend/components/cbom/results/RunSections.tsx:163-192 — verifyCbomRunSignature; ES256, key published at GET /{team}/bom-signing-keys
   "cbom.run.verify": {
-    what: "Checks a CycloneDX JSON file you downloaded from this run against the run's signature. The signature is ES256 with a published public key, so the same check also works offline (openssl or the verifier in the evidence pack); the result says whether the file is unchanged.",
+    what: "Checks a CycloneDX JSON file you downloaded from this run against the run's signature. The signature is ES256 with a published public key, so the same check also works offline (openssl or the verifier in the evidence pack, with the key from GET /{team}/bom-signing-keys, not the pack's copy); the result says whether the file is unchanged and is this run's (a file of another run is not verified).",
     why: "Proves a file someone sends you is the run's real CBOM, not an edited copy.",
     example: "Verified: this file is the run's signed CycloneDX JSON, unchanged.",
   },

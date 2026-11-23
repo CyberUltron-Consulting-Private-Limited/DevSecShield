@@ -1,5 +1,6 @@
 {
   "base_commit": "f7385517523212e50b20ec6f1947831a5ef19872",
+  "digests_from": "PR #484 (D11) emit changes on top of base_commit f7385517; regenerate with support/make_goldens.py",
   "trees": {
     "synthetic-crypto-app": {
       "cyclonedx": "0ce032105308e472c678a3c4011c3e49fff9a9a590b200bd47d3b42e48909540",

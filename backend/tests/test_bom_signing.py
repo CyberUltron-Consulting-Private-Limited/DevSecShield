@@ -64,7 +64,8 @@ def test_jcs_matches_rfc8785_example():
 @pytest.mark.parametrize("value,text", [
     (0.0, "0"), (-0.0, "0"), (1.0, "1"), (1e20, "100000000000000000000"), (1e21, "1e+21"), (1e-6, "0.000001"),
     (1e-7, "1e-7"), (5e-324, "5e-324"), (1.7976931348623157e308, "1.7976931348623157e+308"), (-1.5, "-1.5"),
-    (123456789012345680000.0, "123456789012345680000"), (2 ** 53, "9007199254740992"), (0.1, "0.1")])
+    (123456789012345680000.0, "123456789012345680000"), (float(2 ** 53), "9007199254740992"), (0.1, "0.1"),
+    (2 ** 53 - 1, "9007199254740991")])
 def test_jcs_numbers_follow_ecmascript(value, text):
     assert V._number(value) == text
 
@@ -239,14 +240,22 @@ def test_pack_manifest_covers_every_file_and_the_shipped_verifier_passes(tmp_pat
     assert {"bom.cdx.xml.sig", "bom.cdx.json.sig", "keys/jwks.json", "verify/README.txt"} <= listed
     assert manifest["signing"]["kid"] == SIGN.keyring().active.kid
     assert sums.count("\n") == len(listed)
-    # the verifier the client gets, run as the client would: isolated interpreter, the pack's own keys
-    run = subprocess.run([sys.executable, "-I", str(SIGN.VERIFIER_PATH), "pack", str(path)],
+    # the verifier the client gets, run as the client would: isolated interpreter, the key the deployment publishes
+    # (saved outside the pack, review 6026853603 D3)
+    published = tmp_path / "published-keys.json"
+    published.write_text(json.dumps(SIGN.public_keys_document()))
+    run = subprocess.run([sys.executable, "-I", str(SIGN.VERIFIER_PATH), "--keys", str(published), "pack", str(path)],
                          capture_output=True, text=True)
     assert run.returncode == 0, run.stdout + run.stderr
     result = json.loads(run.stdout)
-    assert result["valid"] is True and SIGN.keyring().active.kid in result["keys"]
+    assert result["valid"] is True and result["trusted_keys"] is True
     assert {c["check"] for c in result["checks"]} >= {"manifest.json.sig", "jsf bom.cdx.json",
                                                       "detached bom.cdx.xml.sig", "sha256 report.pdf"}
+    # the pack's own keys: every signature matches, but that proves nothing: exit 3, UNTRUSTED KEY
+    own = subprocess.run([sys.executable, "-I", str(SIGN.VERIFIER_PATH), "pack", str(path)],
+                         capture_output=True, text=True)
+    assert own.returncode == 3 and "UNTRUSTED KEY" in own.stderr, own.stderr
+    assert json.loads(own.stdout)["valid"] is True and SIGN.keyring().active.kid in json.loads(own.stdout)["keys"]
 
 
 def test_pack_verifier_catches_a_changed_or_added_file(tmp_path):
@@ -267,15 +276,17 @@ def test_readme_openssl_steps_work_on_an_unzipped_pack(tmp_path):
     path = _pack(tmp_path)
     out = tmp_path / "unzipped"
     zipfile.ZipFile(path).extractall(out)
-    kid = SIGN.keyring().active.kid
+    published = tmp_path / "zeroshield-bom-key.pem"  # GET /{team}/bom-signing-keys?format=pem, outside the pack
+    published.write_text(SIGN.keyring().active.pem())
     for target in ("SHA256SUMS", "manifest.json", "bom.cdx.xml"):
-        done = subprocess.run(["openssl", "dgst", "-sha256", "-verify", f"keys/{kid}.pem", "-signature",
+        done = subprocess.run(["openssl", "dgst", "-sha256", "-verify", str(published), "-signature",
                                f"{target}.sig", target], cwd=out, capture_output=True, text=True)
         assert done.returncode == 0 and "Verified OK" in done.stdout, target
     for line in (out / "SHA256SUMS").read_text().splitlines():
         digest, name = line.split("  ", 1)
         assert hashlib.sha256((out / name).read_bytes()).hexdigest() == digest
-    assert f"keys/{kid}.pem" in SIGN.readme_text(SIGN.keyring().active)
+    readme = SIGN.readme_text(SIGN.keyring().active)
+    assert "-verify ~/zeroshield-bom-key.pem" in readme and "-verify keys/" not in readme
 
 
 def test_public_keys_document_has_pem_jwk_and_fingerprint():

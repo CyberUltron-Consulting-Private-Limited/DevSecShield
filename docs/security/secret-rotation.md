@@ -63,6 +63,36 @@ One key at a time; the code has no multi-key decryption. If the key itself was e
 stored credential unreadable: rotate it, then ask each team to re-enter its CBOM source secrets, DAST profile
 logins and Jira tokens. There is no re-encryption tool yet.
 
+### BOM signing key (D11): `CERTIN_HMAC_SECRET` / `ENCRYPTION_KEY`, `CBOM_SIGNING_KEY_*`
+Every CycloneDX BOM, VEX and evidence pack is signed with one ES256 key per deployment; customers verify it offline
+with the public key at `GET /{team}/bom-signing-keys`. Unless `CBOM_SIGNING_KEY_PEM` or `CBOM_SIGNING_KEY_PATH` is
+set, that key is **derived** from `CERTIN_HMAC_SECRET` (else `ENCRYPTION_KEY`). So rotating either secret also
+replaces the signing key, and the old public key is no longer published: every file a customer downloaded before then
+fails verification. Keep the old public key published:
+
+1. Before the rotation, save each published public key (public material, not a secret):
+   `curl -fsS -H "Authorization: Bearer $TOKEN" "https://<api host>/<team>/bom-signing-keys?format=pem" > bom-signing-<kid>.pem`
+   (the JSON form lists every key, retired ones included, in its `pem` field).
+2. Concatenate those PEMs into one file on a volume every backend-image container mounts, and set
+   `CBOM_SIGNING_RETIRED_PUBLIC_KEYS=<that path>`.
+3. Rotate the secret, restart, and check that `GET /{team}/bom-signing-keys` lists the new key as `active` and the old
+   one as `retired`, and that an old download still verifies (`zs_bom_verify.py --keys <keys.json> bom <file>`).
+
+To replace only the signing key and keep the secret, raise `CBOM_SIGNING_KEY_GENERATION` (default 1): the public
+keys of earlier generations stay published without a bundle. With a configured key (`CBOM_SIGNING_KEY_PEM` /
+`_PATH`), put the old public key in the `CBOM_SIGNING_RETIRED_PUBLIC_KEYS` bundle the same way and prefer a new
+`CBOM_SIGNING_KEY_ID`; a reused id still works, since the verifier matches keys by their bytes (RFC 7638 thumbprint).
+
+A seed must be at least 32 bytes and not a placeholder (`change-me`, an `.env.example` value, one character
+repeated): the backend refuses to derive a key from it, logs `BOM signing unavailable` with the rule (never the
+value), and serves BOMs unsigned; `scripts/deploy/staging.sh` reports the same check before a staging deploy. If the
+signing key or its seed was **exposed**, do not add the exposed public key to the retired bundle: files signed with it
+can no longer be trusted, so tell the teams that rely on them and re-issue their exports.
+
+`CERTIN_HMAC_SECRET` also keys the legacy HMAC (`bom_signature`, the run signature's `legacy_hmac`), which only
+verifies files signed before the ES256 key; unset, that HMAC still falls back to `JWT_SECRET_KEY` (read-only
+verification of old files), as described under the JWT secrets above.
+
 ### PostgreSQL: `PG_USER_PASS`
 `ALTER ROLE <PG_USER> WITH PASSWORD '<new>';` (with `password_encryption = scram-sha-256`), then update
 `PG_USER_PASS` for the backend-image containers and restart them. `POSTGRES_PASSWORD` in a compose file only

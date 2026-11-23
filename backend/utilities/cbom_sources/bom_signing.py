@@ -21,10 +21,16 @@ Where the key comes from (``keyring``; first match wins, nothing reaches the net
 3. Derived per deployment (HKDF-SHA256, domain-separated) from ``CERTIN_HMAC_SECRET``, else ``ENCRYPTION_KEY``: a
    key that needs no storage, is the same on every worker and replica and survives restarts; never stored anywhere.
    ``CBOM_SIGNING_KEY_GENERATION`` (default 1) rotates it; the public keys of earlier generations stay published as
-   ``retired`` so files signed before a rotation still verify.
+   ``retired`` so files signed before a rotation still verify. The secret must be at least 32 bytes and not a known
+   placeholder (``change-me``, the ``.env.example`` values, a run of one or two characters; ``weak_seed``): anyone can
+   rebuild a key derived from such a value, so the deployment refuses to sign with it (``SigningUnavailable`` names
+   the variable and the rule, never the value) instead of falling back to another variable.
 Optional: ``CBOM_SIGNING_KEY_ID`` names the active key (default ``zs-`` + 16 characters of its RFC 7638 thumbprint);
 ``CBOM_SIGNING_RETIRED_PUBLIC_KEYS``: a file of PEM public keys (concatenated) that stay published after a rotation of
-a configured key. With none of 1-3 the BOMs are served unsigned and say so (``SigningUnavailable``).
+a configured key. With none of 1-3 the BOMs are served unsigned and say so (``SigningUnavailable``). Key ids are
+unique within the key ring (a retired key whose id equals the active one is listed under its thumbprint id), and the
+verifier picks a key by its bytes (RFC 7638 thumbprint), so a reused ``CBOM_SIGNING_KEY_ID`` never hides an old key.
+Rotation: ``docs/security/secret-rotation.md`` ("BOM signing key").
 
 Small API (other lanes call these; keep it small)
 -------------------------------------------------
@@ -41,10 +47,13 @@ Small API (other lanes call these; keep it small)
 from __future__ import annotations
 
 import base64
+import contextlib
 import datetime as _dt
 import hashlib
 import json
+import logging
 import os
+import stat
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -57,6 +66,17 @@ VERIFIER_NAME = "verify/zs_bom_verify.py"
 VERIFIER_PATH = Path(V.__file__).resolve()
 KEYS_ROUTE = "/{team_id}/bom-signing-keys"
 _HKDF_SALT = b"zeroshield-bom-signing-v1"
+MIN_SEED_BYTES = 32
+# Values no deployment may sign with: the .env.example placeholders and other well-known defaults (compared lowercased,
+# stripped), and fragments that only a placeholder contains. Never a real secret: a list of what is public.
+_WEAK_SEEDS = frozenset({
+    "change-me", "changeme", "change_me", "generate_a_fernet_key", "secret", "password", "test", "x", "dev",
+    "development", "default", "example", "placeholder", "replace-me", "replaceme", "todo", "none", "null", "ci",
+    "ci-only-dummy", "your-secret-key", "your_secret_key", "insecure", "unsafe"})
+_WEAK_PARTS = ("change-me", "changeme", "change_me", "replace-me", "replace_me", "replaceme", "placeholder",
+               "generate_a_", "your-secret", "your_secret", "example", "insecure", "tests-only")
+LARGE_PARSE_BYTES = 8 * 1024 * 1024  # a JSON upload this large is parsed only while holding an export slot
+log = logging.getLogger("zeroshield.bom_signing")
 # the order of each of these inputs matters: a change of one is a different key
 _ENV = ("CBOM_SIGNING_KEY_PEM", "CBOM_SIGNING_KEY_PATH", "CBOM_SIGNING_KEY_ID", "CBOM_SIGNING_KEY_GENERATION",
         "CBOM_SIGNING_RETIRED_PUBLIC_KEYS", "CERTIN_HMAC_SECRET", "ENCRYPTION_KEY")
@@ -146,13 +166,53 @@ def _generate_at(path: Path) -> Any:
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, "wb") as fh:
             fh.write(pem)
+            fh.flush()
+            os.fsync(fh.fileno())  # the bytes are on disk before the name points at them
         try:
             os.link(tmp, path)  # atomic and fails if another worker made it first: its key is the key
         except FileExistsError:
             pass
         finally:
             tmp.unlink(missing_ok=True)
+        with contextlib.suppress(OSError):  # the new name itself survives a crash
+            dir_fd = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+    _tighten(path)
     return _load_private_pem(path.read_bytes())
+
+
+def _tighten(path: Path) -> None:
+    """A key file others can read: made 0600 when this process owns it, else a warning (it is still used: a key
+    mounted read-only by the platform is the operator's call). Logs the path and mode, never the key."""
+    info = path.stat()
+    if not info.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+        return
+    mode = oct(stat.S_IMODE(info.st_mode))
+    if info.st_uid == os.geteuid():
+        try:
+            os.chmod(path, 0o600)
+            log.warning("BOM signing key file %s was mode %s: tightened to 0600", path, mode)
+            return
+        except OSError:
+            pass
+    log.warning("BOM signing key file %s is mode %s and owned by uid %s, not this process (uid %s): other users "
+                "may read the private key; make it 0600", path, mode, info.st_uid, os.geteuid())
+
+
+def weak_seed(secret: str) -> str | None:
+    """Why ``secret`` cannot seed a signing key (None = it can). Names the rule, never the value."""
+    raw = secret.encode("utf-8")
+    if len(raw) < MIN_SEED_BYTES:
+        return f"shorter than {MIN_SEED_BYTES} bytes"
+    folded = secret.strip().lower()
+    if folded in _WEAK_SEEDS or any(part in folded for part in _WEAK_PARTS):
+        return "a placeholder value (change-me, an .env.example value or similar)"
+    if len(set(raw)) < 8:
+        return "fewer than 8 distinct characters"
+    return None
 
 
 def _derive(secret: str, generation: int) -> Any:
@@ -194,6 +254,7 @@ def keyring() -> KeyRing:
                 hit = _build(env)
             except SigningUnavailable as exc:
                 hit = exc
+                log.error("BOM signing unavailable: %s", exc)  # once per configuration; never the secret
             _CACHE.clear()
             _CACHE[fingerprint] = hit
     if isinstance(hit, SigningUnavailable):
@@ -212,6 +273,13 @@ def _build(env: dict[str, str]) -> KeyRing:
         if name is None:
             raise SigningUnavailable("no BOM signing key: set CBOM_SIGNING_KEY_PEM or CBOM_SIGNING_KEY_PATH, or "
                                      "CERTIN_HMAC_SECRET to derive one")
+        why = weak_seed(env[name])
+        if why:
+            raise SigningUnavailable(
+                f"refusing to derive the BOM signing key from {name}: it is {why}. Anyone could rebuild a key derived "
+                f"from it. Set {name} to {MIN_SEED_BYTES}+ random bytes (openssl rand -hex 32), or give the key as "
+                "CBOM_SIGNING_KEY_PEM / CBOM_SIGNING_KEY_PATH; files signed with the old key need its public key in "
+                "CBOM_SIGNING_RETIRED_PUBLIC_KEYS (docs/security/secret-rotation.md)")
         try:
             generation = max(1, int(env["CBOM_SIGNING_KEY_GENERATION"] or 1))
         except ValueError:
@@ -224,8 +292,16 @@ def _build(env: dict[str, str]) -> KeyRing:
     kid = env["CBOM_SIGNING_KEY_ID"].strip() or V.key_id(jwk)
     if env["CBOM_SIGNING_RETIRED_PUBLIC_KEYS"].strip():
         retired += _retired_from_file(env["CBOM_SIGNING_RETIRED_PUBLIC_KEYS"].strip())
-    retired = [k for k in retired if k.public_jwk != jwk]
-    return KeyRing(SigningKey(kid, jwk, "active", source, private), tuple(retired))
+    unique: list[SigningKey] = []
+    taken = {kid}
+    for old in retired:
+        if old.public_jwk == jwk or any(k.public_jwk == old.public_jwk for k in unique):
+            continue
+        if old.kid in taken:  # one id, two keys: the old one is listed under its own thumbprint id
+            old = SigningKey(V.key_id(old.public_jwk), old.public_jwk, old.status, old.source)
+        taken.add(old.kid)
+        unique.append(old)
+    return KeyRing(SigningKey(kid, jwk, "active", source, private), tuple(unique))
 
 
 def available() -> bool:
@@ -277,7 +353,18 @@ def write_json(out: Any, head: dict[str, Any], components: Iterable[dict[str, An
     JCS sorts members, so the canonical stream is: head members that sort before "components", the components (each
     canonicalised), then every other member in sorted order (head members after "components", the tail, and the
     signature without its value), all of which are known once the components are written. Returns the signature
-    written (None when unsigned)."""
+    written (None when unsigned).
+
+    So a tail member must sort after "components" (UTF-16 order, as JCS sorts): one that sorted before it would have to
+    be hashed before the components it is computed after. Such a tail, a tail or head member named "components" or
+    "signature", or a member in both, is refused (``ValueError``) before a byte is written, signed or not, so a
+    document whose signature cannot match is never produced."""
+    names = [name for name, _value_of in tail]
+    bad = [n for n in names if V._utf16_key(n) <= V._utf16_key("components")]
+    if bad or {"components", "signature"} & (set(head) | set(names)) or len(set(names)) != len(names) or \
+            set(head) & set(names):
+        raise ValueError(f"write_json: every tail member must sort after 'components' and be unique, and neither head "
+                         f"nor tail may hold 'components' or 'signature' (got head {sorted(head)}, tail {names})")
     key = None
     if sign:
         try:
@@ -288,8 +375,8 @@ def write_json(out: Any, head: dict[str, Any], components: Iterable[dict[str, An
     if canon is not None:
         before = sorted((k for k in head if V._utf16_key(k) < V._utf16_key("components")), key=V._utf16_key)
         canon.update(b"{" + b"".join(V.canonicalize(k) + b":" + V.canonicalize(head[k]) + b"," for k in before)
-                     + b'"components":[')
-    out.write(_dumps(head)[:-1] + b',"components":[')
+                     + b'"components":[')  # "components" sorts after every member in ``before``
+    out.write(_dumps(head)[:-1] + (b"," if head else b"") + b'"components":[')
     for index, component in enumerate(components):
         out.write((b"," if index else b"") + _dumps(component))
         if canon is not None:
@@ -301,7 +388,7 @@ def write_json(out: Any, head: dict[str, Any], components: Iterable[dict[str, An
         if isinstance(value, list) and not value and name != "vulnerabilities":
             continue
         after[name] = value
-        out.write(b',"' + name.encode() + b'":' + _dumps(value))
+        out.write(b"," + _dumps(name) + b":" + _dumps(value))
     if canon is None:
         out.write(b"}")
         return None
@@ -326,12 +413,108 @@ def detached(data: bytes, key: SigningKey | None = None) -> bytes:
 
 
 def verify_bom(data: bytes) -> dict[str, Any]:
-    """The embedded JSF signature of a JSON BOM against this deployment's published keys."""
+    """The embedded JSF signature of a JSON BOM against this deployment's published keys (parsed as I-JSON)."""
     return V.verify_bom(data, keyring().verifier_keys())
+
+
+def verify_document(doc: Any) -> dict[str, Any]:
+    """``verify_bom`` of a document already parsed with ``bom_verify.loads`` (parse once)."""
+    return V.verify_document(doc, keyring().verifier_keys())
 
 
 def verify_detached(data: bytes, signature: bytes, kid: str | None = None) -> dict[str, Any]:
     return V.verify_detached(data, signature, keyring().verifier_keys(), kid)
+
+
+def verify_detached_digest(sha256_digest: bytes, signature: bytes) -> dict[str, Any]:
+    """A detached signature over a file already hashed while it was received (the bytes are never held)."""
+    return V.verify_detached_digest(sha256_digest, signature, keyring().verifier_keys())
+
+
+# ----------------------------------------------------------------------------------------------- what a file is of
+EMBEDDED_MAX_BYTES = 64 * 1024 * 1024  # a JSON upload up to this size is parsed (a 50,000-component run CBOM: ~63 MB)
+
+
+@contextlib.contextmanager
+def parse_slot(size: int) -> Iterator[None]:
+    """Hold a host-wide export slot (``export_slots``; ``Busy`` when all are taken) while a large upload is parsed:
+    parsing a JSON document holds several times its size, so only a few may be parsed at once."""
+    if size < LARGE_PARSE_BYTES:
+        yield
+        return
+    from backend.utilities.cbom_sources import export_slots
+
+    with export_slots.slot():
+        yield
+
+
+def xml_subject(fh: BinaryIO) -> dict[str, Any]:
+    """``bom_verify.subject_of`` for a CycloneDX XML file: the root's ``serialNumber`` and the ``zs:`` properties of
+    ``metadata``, read as a stream that stops after ``metadata`` (constant memory). Only called on a file whose
+    detached signature this deployment made."""
+    import xml.etree.ElementTree as ET
+
+    out: dict[str, Any] = {}
+    props: list[dict[str, str]] = []
+    depth, meta = 0, False
+    try:
+        for event, el in ET.iterparse(fh, events=("start", "end")):
+            tag = el.tag.rsplit("}", 1)[-1] if isinstance(el.tag, str) else ""
+            if event == "start":
+                depth += 1
+                if depth == 1:
+                    if tag != "bom":
+                        return out
+                    if el.get("serialNumber"):
+                        out["serial"] = el.get("serialNumber")
+                elif depth == 2:
+                    meta = tag == "metadata"
+                    if not meta:
+                        break
+                continue
+            if meta and depth == 4 and tag == "property" and el.get("name"):
+                props.append({"name": el.get("name") or "", "value": (el.text or "").strip()})
+            if depth == 2 and meta:
+                break
+            depth -= 1
+    except ET.ParseError:
+        return out
+    return {**V.subject_of({"metadata": {"properties": props}}), **out}
+
+
+def file_subject(fh: BinaryIO, size: int) -> dict[str, Any]:
+    """What a signed upload (a temp file) says it belongs to (``bom_verify.subject_of``): JSON up to
+    ``EMBEDDED_MAX_BYTES`` is parsed once (I-JSON), XML is streamed; anything else (a PDF, SHA256SUMS) names nothing.
+    ``too_large`` / ``malformed`` say why nothing was read."""
+    fh.seek(0)
+    head = fh.read(4096).lstrip()
+    fh.seek(0)
+    if head.startswith(b"{"):
+        if size > EMBEDDED_MAX_BYTES:
+            return {"too_large": True}
+        try:
+            return V.subject_of(V.loads_file(fh))
+        except V.InputError:
+            return {"malformed": True}
+    if head.startswith(b"<"):
+        return xml_subject(fh)
+    return {}
+
+
+def binding(subject: dict[str, Any], *, run_id: int | None = None, scan_id: int | None = None,
+            scan_kind: str | None = None, bom_serial: str | None = None) -> bool:
+    """Whether a file signed by this deployment is one of the target's files (D4): of a run, its ``zs:run_id`` (CBOM,
+    VEX) or its pack manifest's ``subject.run_id``; of a scan, the scan BOM's ``serialNumber``, or ``zs:scan_id``
+    (VEX) / the pack manifest's ``subject.scan_id`` with no other BOM serial named."""
+    if run_id is not None:
+        return subject.get("run_id") == run_id and (not subject.get("pack")
+                                                    or subject.get("kind") == "cbom-sources-run")
+    if subject.get("pack"):
+        return subject.get("kind") == scan_kind and subject.get("scan_id") == scan_id and \
+            subject.get("bom_serial") in (None, bom_serial)
+    if bom_serial and subject.get("serial") == bom_serial:
+        return True
+    return scan_id is not None and subject.get("scan_id") == scan_id and subject.get("bom_serial") in (None, bom_serial)
 
 
 # ----------------------------------------------------------------------------------------------- publication
@@ -348,7 +531,9 @@ def public_keys_document() -> dict[str, Any]:
         "algorithm": ALG,
         "pem": {k.kid: k.pem() for k in ring.all()},
         "fingerprints": {k.kid: k.fingerprint() for k in ring.all()},
-        "sources": {k.kid: k.source for k in ring.all()},
+        "verifier": {"name": VERIFIER_NAME, "sha256": hashlib.sha256(VERIFIER_PATH.read_bytes()).hexdigest(),
+                     "note": "The SHA-256 of the verifier this deployment ships in every evidence pack: check the copy "
+                             "you run against it, or use a JSF / openssl verifier you obtained independently."},
         "verify": readme_text(ring.active).splitlines(),
     }
 
@@ -358,36 +543,58 @@ def readme_text(key: SigningKey) -> str:
 ==========================================================
 
 Signing key: {key.kid} (ES256 = ECDSA P-256 with SHA-256), fingerprint {key.fingerprint()}
-(RFC 7638 JWK thumbprint). Before trusting anything below, compare this fingerprint with the key your ZeroShield
-deployment publishes (GET /{{team}}/bom-signing-keys, field "fingerprints") or the one you were given out of band:
-the copy in keys/ came with the pack and can only vouch for itself.
+(RFC 7638 JWK thumbprint).
+
+Do not verify with the copies in this pack. keys/ and verify/ came with the pack, and anyone who re-signs a pack can
+replace both, so a check against them proves nothing. Verify against the key your ZeroShield deployment publishes,
+saved OUTSIDE this folder, with a verifier you obtained independently (the "verifier" field of the same document
+gives the SHA-256 of the one ZeroShield ships; any JSF 0.82 verifier or openssl gives the same answers).
 
 Files
-  keys/jwks.json, keys/{key.kid}.pem   the public key(s), JWK set and PEM
+  keys/jwks.json, keys/{key.kid}.pem   copies of the public key(s): compare only, never verify with them
   manifest.json                        SHA-256 and size of every other file of the pack
   manifest.json.sig, SHA256SUMS.sig    detached DER signatures (openssl format) of manifest.json and SHA256SUMS
-  *.cdx.xml.sig, *.cdx.json.sig        detached signatures of the BOM files (exact bytes)
-  *.cdx.json                           CycloneDX JSON with an embedded JSF signature (JCS / RFC 8785, ES256)
-  verify/zs_bom_verify.py              this verifier (Python 3.8+, standard library; uses the 'cryptography'
+  *.cdx.xml.sig, *.cdx.json.sig, vex.json.sig   detached signatures of the BOM and VEX files (exact bytes)
+  *.cdx.json, vex.json                 CycloneDX JSON with an embedded JSF signature (JCS / RFC 8785, ES256)
+  verify/zs_bom_verify.py              a verifier (Python 3.8+, standard library; uses the 'cryptography'
                                        package when installed, else the openssl command line)
 
-1. Everything at once (unzip first, or pass the zip):
-     python3 verify/zs_bom_verify.py --keys keys/jwks.json pack .
+1. Get the deployment's key once, as a team member, and keep it outside the pack:
+     curl -fsS -H "Authorization: Bearer $ZS_TOKEN" -o ~/zeroshield-bom-keys.json \\
+          https://<your ZeroShield API host>/<team id>/bom-signing-keys
+     curl -fsS -H "Authorization: Bearer $ZS_TOKEN" -o ~/zeroshield-bom-key.pem \\
+          "https://<your ZeroShield API host>/<team id>/bom-signing-keys?format=pem"
+   (or the key file your ZeroShield administrator gave you out of band). Its "fingerprints" field must show the
+   fingerprint above. Then check everything at once (unzip first, or pass the zip):
+     python3 verify/zs_bom_verify.py --keys ~/zeroshield-bom-keys.json pack .
+   VERIFIED and exit status 0: every signature and hash checks out against the deployment's key. Without --keys, or
+   with a --keys file from inside the pack, it prints UNTRUSTED KEY and exits with status 3 even when every
+   signature matches (--trust-pack-keys accepts them, only after you have compared the fingerprints yourself).
 
 2. With openssl and coreutils only:
-     openssl dgst -sha256 -verify keys/{key.kid}.pem -signature SHA256SUMS.sig SHA256SUMS
+     openssl dgst -sha256 -verify ~/zeroshield-bom-key.pem -signature SHA256SUMS.sig SHA256SUMS
      sha256sum -c SHA256SUMS
-     openssl dgst -sha256 -verify keys/{key.kid}.pem -signature manifest.json.sig manifest.json
-     openssl dgst -sha256 -verify keys/{key.kid}.pem -signature bom.cdx.xml.sig bom.cdx.xml
-   Each openssl line prints "Verified OK".
+     openssl dgst -sha256 -verify ~/zeroshield-bom-key.pem -signature manifest.json.sig manifest.json
+     openssl dgst -sha256 -verify ~/zeroshield-bom-key.pem -signature bom.cdx.xml.sig bom.cdx.xml
+   Each openssl line prints "Verified OK". sha256sum -c also refuses a pack whose zip held two entries of one name:
+   the verifier rejects such a pack outright, since unzip tools disagree on which entry is the file.
 
-3. The JSF signature inside a CycloneDX JSON BOM (a downloaded file on its own):
-     python3 verify/zs_bom_verify.py --keys keys/jwks.json bom bom.cdx.json
+3. The JSF signature inside a CycloneDX JSON BOM or VEX (a downloaded file on its own):
+     python3 verify/zs_bom_verify.py --keys ~/zeroshield-bom-keys.json bom bom.cdx.json
    It removes signature.value, canonicalises the document with RFC 8785 (JCS) and checks the ES256 value
-   (base64url R||S) against the key named by signature.keyId. Any JSF 0.82 verifier gives the same answer.
+   (base64url R||S) against the trusted key with the same thumbprint as signature.publicKey. Any JSF 0.82 verifier
+   gives the same answer. A document that is not I-JSON (RFC 7493: a duplicate member name, NaN or Infinity, an
+   integer beyond +-(2^53 - 1)) is refused, never verified: two JSON readers could disagree about what it says.
+   ZeroShield never signs such a document (large integers are written as strings).
 
-A file signed before a key rotation names its key id; the published key set keeps retired keys so it still
-verifies. Nothing here needs network access.
+A file signed before a key rotation still verifies: the published key set keeps retired keys, and a key is matched by
+its bytes, not only by its id. Nothing here needs network access once you have the key.
+
+JSON Schema validators: the CycloneDX 1.6 schema defines the JSF signature.algorithm as oneOf(a list of names that
+includes "ES256", any string with "format": "uri"). A validator that does not assert the "uri" format (the default of
+many) finds "ES256" matching both branches and reports the signed document invalid. Validate with the uri format
+checked (check-jsonschema, or jsonschema with a FormatChecker), or with cyclonedx-cli / cyclonedx-python-lib, which
+accept it.
 """
 
 

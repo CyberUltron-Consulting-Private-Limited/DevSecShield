@@ -314,36 +314,55 @@ def _decode(sent_b64: str) -> bytes:
         return b""
 
 
+def sent_signature(file_sha: str, file_mac: bytes, sent_b64: str) -> tuple[str, str] | None:
+    """(alg, key id) when ``sent_b64`` (``X-ZS-Signature-B64``) is a signature of these bytes: ES256 DER by a
+    published key, or the older HMAC; None otherwise."""
+    sent = _decode(sent_b64)
+    if not sent:
+        return None
+    try:
+        keys = SIGN.keyring().verifier_keys()
+    except SIGN.SigningUnavailable:
+        keys = None
+    checked = BV.verify_detached_digest(bytes.fromhex(file_sha), sent, keys) if keys else None
+    if checked and checked["valid"]:
+        return SIGN.ALG, checked["kid"]
+    if hmac.compare_digest(sent, file_mac):
+        return "HMAC-SHA256", KEY_ID
+    return None
+
+
 def verify_upload(file_sha: str, file_mac: bytes, *, sent_b64: str | None, current: dict[str, Any] | None,
-                  embedded: dict[str, Any] | None = None, run_id: int | None = None) -> dict[str, Any]:
+                  embedded: dict[str, Any] | None = None, run_id: int | None = None,
+                  subject: dict[str, Any] | None = None) -> dict[str, Any]:
     """The answer of ``POST .../signature/verify`` for an uploaded file (its sha256 and HMAC given):
 
     * ``sent_b64`` (``X-ZS-Signature-B64``): an ES256 DER signature (``signature_b64`` of today's signature document)
       checked against the published keys, or an HMAC (files signed before the ES256 key) checked with the server key;
-    * else the file's own embedded JSF signature (``embedded``: ``bom_signing.verify_bom`` of the upload) when it is
-      valid and the file says it is this run's (``zs:run_id``): a download of this run, unchanged since it was signed;
+    * else the file's own embedded JSF signature (``embedded``: ``bom_signing.verify_document`` of the upload) when it
+      is valid and the file says it is this run's (``zs:run_id``): a download of this run, unchanged since it was signed;
     * else the run's current CBOM JSON (``current``: its signature document).
-    ``digest_match``: the file equals the run's current CBOM JSON (None when nothing was compared)."""
+
+    D4: ``valid`` needs the signature AND the file to be this run's: the run's current CBOM (``digest_match``), or a
+    file that says so (``subject``: ``bom_signing.file_subject`` of the upload: ``zs:run_id`` of a CBOM / VEX, the
+    pack manifest's ``subject``). ``signed_by_deployment``: the signature alone checks out (true for another run's
+    file, which is ``valid: false``). ``digest_match``: the file equals the run's current CBOM JSON (None when nothing
+    was compared)."""
     digest_match = None if current is None else hmac.compare_digest(file_sha, str(current["digest"]))
     alg, key_id = (current or {}).get("alg") or "HMAC-SHA256", (current or {}).get("key_id") or KEY_ID
+    bound = bool(digest_match)
     if sent_b64 is not None:
-        sent = _decode(sent_b64)
-        signature_match, compared = False, "the signature sent with the file"
-        if sent:
-            es = None
-            if SIGN.available():
-                try:
-                    es = SIGN.keyring()
-                except SIGN.SigningUnavailable:
-                    es = None
-            checked = BV.verify_detached_digest(bytes.fromhex(file_sha), sent, es.verifier_keys()) if es else None
-            if checked and checked["valid"]:
-                signature_match, alg, key_id = True, SIGN.ALG, checked["kid"]
-            elif hmac.compare_digest(sent, file_mac):
-                signature_match, alg, key_id = True, "HMAC-SHA256", KEY_ID
-    elif embedded is not None and embedded.get("valid") and embedded.get("run_id") == run_id:
-        signature_match, compared = True, "the file's embedded JSF signature"
+        compared = "the signature sent with the file"
+        matched = sent_signature(file_sha, file_mac, sent_b64)
+        signature_match = matched is not None
+        if matched is not None:
+            alg, key_id = matched
+        if signature_match and not bound:
+            bound = SIGN.binding(subject or {}, run_id=run_id)
+    elif embedded is not None and embedded.get("valid"):
         alg, key_id = SIGN.ALG, embedded.get("kid") or key_id
+        signature_match, compared = True, "the file's embedded JSF signature"
+        bound = bound or embedded.get("run_id") == run_id
     else:
         assert current is not None
         if current.get("alg") == SIGN.ALG:
@@ -352,8 +371,14 @@ def verify_upload(file_sha: str, file_mac: bytes, *, sent_b64: str | None, curre
             signature_match = hmac.compare_digest(base64.b64encode(file_mac).decode("ascii"),
                                                   str(current["signature_b64"]))
         compared = "the run's current CBOM JSON"
-    out = {"valid": bool(signature_match), "signature_match": bool(signature_match), "digest_match": digest_match,
-           "digest": file_sha, "key_id": key_id, "alg": alg, "compared_with": compared}
+    valid = bool(signature_match) and bound
+    out = {"valid": valid, "signature_match": valid, "signed_by_deployment": bool(signature_match), "bound": bound,
+           "digest_match": digest_match, "digest": file_sha, "key_id": key_id, "alg": alg, "compared_with": compared}
+    if signature_match and not bound:
+        out["reason"] = "signed by this deployment but not this run's file"
+        if subject or embedded:
+            out["file_subject"] = {k: v for k, v in (subject or {"run_id": (embedded or {}).get("run_id")}).items()
+                                   if k in ("serial", "run_id", "scan_id", "kind")}
     if embedded is not None:
         out["embedded_signature"] = {k: embedded.get(k) for k in ("valid", "kid", "reason") if k in embedded}
     return out
@@ -457,7 +482,12 @@ def run_vex(run: CbomCollectionRun, data: Summary, context: dict[str, dict[str, 
 
 
 def vex_bytes(vex: dict[str, Any]) -> bytes:
-    return json.dumps(vex, indent=2, ensure_ascii=False).encode("utf-8")
+    """The run VEX as served (route, pack): with an embedded JSF signature when the deployment has a key (D7; the
+    route adds the detached ``X-ZS-Signature`` header and the pack ``vex.json.sig``). Deterministic (RFC 6979)."""
+    try:
+        return SIGN.bom_bytes(vex, indent=2)
+    except SIGN.SigningUnavailable:
+        return json.dumps(vex, indent=2, ensure_ascii=False).encode("utf-8")
 
 
 def vex_states(vex: dict[str, Any]) -> dict[str, int]:
@@ -546,7 +576,7 @@ def evidence_pack(*, run: CbomCollectionRun, sources: list[dict[str, Any]], at: 
               for name, body, _media, _endpoint in files]
     try:
         added = SIGN.pack_files(hashed, subject={"kind": "cbom-sources-run", "run_id": run.id, "team_id": run.team_id},
-                                detached_for=("bom.cdx.json", "bom.cdx.xml"),
+                                detached_for=("bom.cdx.json", "bom.cdx.xml", "vex.json"),
                                 manifest_extra={**manifest, "format": "zeroshield-cbom-run-evidence-pack/2"})
     except SIGN.SigningUnavailable:
         added = [("manifest.json", json.dumps(manifest, indent=2, ensure_ascii=False).encode("utf-8"))]

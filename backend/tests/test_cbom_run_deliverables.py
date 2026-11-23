@@ -288,7 +288,8 @@ def test_evidence_pack_manifest_hashes_equal_the_endpoint_bodies(api, world, mon
     kid = _signing_key.keyring().active.kid
     assert names == ["bom.cdx.json", "bom.cdx.xml", "oscal-assessment-results.json", "vex.json",
                      "bom_signature.json", "report.pdf", "keys/jwks.json", f"keys/{kid}.pem",
-                     "verify/zs_bom_verify.py", "verify/README.txt", "bom.cdx.json.sig", "bom.cdx.xml.sig"]
+                     "verify/zs_bom_verify.py", "verify/README.txt", "bom.cdx.json.sig", "bom.cdx.xml.sig",
+                     "vex.json.sig"]
     assert sorted(zf.namelist()) == sorted(names + ["manifest.json", "manifest.json.sig", "SHA256SUMS",
                                                     "SHA256SUMS.sig"]) and manifest["omitted"] == []
     assert manifest["format"] == "zeroshield-cbom-run-evidence-pack/2" and manifest["signing"]["kid"] == kid
@@ -318,13 +319,19 @@ def test_evidence_pack_manifest_hashes_equal_the_endpoint_bodies(api, world, mon
     assert hmac.compare_digest(base64.b64decode(sig["legacy_hmac"]["signature_b64"]), mac)
     assert base64.b64decode(sig["signature_b64"]) == zf.read("bom.cdx.json.sig")  # the ES256 detached signature
     assert manifest["signature"]["digest"] == hashlib.sha256(zf.read("bom.cdx.json")).hexdigest()
-    # the client's offline check with the verifier the pack carries (isolated interpreter, pack's own key)
+    # the client's offline check with the verifier the pack carries (isolated interpreter) and the key the deployment
+    # publishes, saved outside the pack; with the pack's own key it says UNTRUSTED KEY (exit 3: review 6026853603 D3)
     path = tmp_path / "pack.zip"
     path.write_bytes(r.content)
-    done = subprocess.run([sys.executable, "-I", str(tmp_path / "v.py"), "pack", str(path)], capture_output=True,
-                          text=True) if (tmp_path / "v.py").write_bytes(zf.read("verify/zs_bom_verify.py")) else None
-    assert done is not None and done.returncode == 0, (done.stdout, done.stderr)
+    (tmp_path / "keys.json").write_bytes(api("GET", "/1/bom-signing-keys").content)
+    (tmp_path / "v.py").write_bytes(zf.read("verify/zs_bom_verify.py"))
+    done = subprocess.run([sys.executable, "-I", str(tmp_path / "v.py"), "--keys", str(tmp_path / "keys.json"), "pack",
+                           str(path)], capture_output=True, text=True)
+    assert done.returncode == 0, (done.stdout, done.stderr)
     assert json.loads(done.stdout)["valid"] is True
+    own = subprocess.run([sys.executable, "-I", str(tmp_path / "v.py"), "pack", str(path)], capture_output=True,
+                         text=True)
+    assert own.returncode == 3 and "UNTRUSTED KEY" in own.stderr
     # every time in it is the run's: the zip entries, the manifest, the signature, the PDF
     with Session(engine) as s:
         finished = RD.iso_z(RD.stamp(s, s.get(CbomCollectionRun, rid), FROZEN))

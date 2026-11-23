@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import contextlib
 import datetime as _dt
+import hashlib
 import json
 import time
 from typing import IO, Annotated, Any, Iterator
@@ -68,8 +69,8 @@ VEX_MEDIA = "application/vnd.cyclonedx+json; version=1.6"
 # Full passes over the run's assets each route makes (export, remediation join, posture, heat-map, OSCAL): a run takes
 # an export slot when assets x passes reaches the single export's threshold (export_slots.LARGE_ASSETS).
 PASSES = {"signature": 1, "verify": 1, "vex": 2, "report": 4, "pack": 5}
-VERIFY_MAX_BYTES = 512 * 1024 * 1024  # a 50,000-component export is far below this
-EMBEDDED_MAX_BYTES = 128 * 1024 * 1024  # an upload up to this size also gets its embedded JSF signature checked
+VERIFY_MAX_BYTES = 512 * 1024 * 1024  # spooled to disk and hashed as it arrives: a detached / digest check of any export
+EMBEDDED_MAX_BYTES = RD.SIGN.EMBEDDED_MAX_BYTES  # D6: a JSON upload up to this size is parsed (once) for its JSF
 
 
 async def _run(what: str, team_id: int, fn, *args) -> Any:
@@ -100,11 +101,12 @@ def _attachment(body: bytes, media: str, filename: str) -> Response:
 
 
 @contextlib.contextmanager
-def _export_slot(session: Session, run: CbomCollectionRun, what: str) -> Iterator[None]:
-    """Hold one of the host-wide export slots while a large run's documents are built (module docstring)."""
+def _export_slot(session: Session, run: CbomCollectionRun, what: str, *, large: bool = False) -> Iterator[None]:
+    """Hold one of the host-wide export slots while a large run's documents are built (module docstring); ``large``:
+    take one whatever the run's size (an upload of ``bom_signing.LARGE_PARSE_BYTES`` or more is parsed)."""
     rows = int(session.exec(select(func.count()).select_from(CbomCollectedAsset).where(
         CbomCollectedAsset.team_id == run.team_id, CbomCollectedAsset.run_id == run.id)).one())
-    if not EXPORT_SLOTS.is_large(rows * PASSES[what]):
+    if not large and not EXPORT_SLOTS.is_large(rows * PASSES[what]):
         yield
         return
     try:
@@ -147,7 +149,7 @@ def _pdf(session: Session, run: CbomCollectionRun, data: RD.Summary, vex: dict[s
     return pdf
 
 
-def _vex_doc(engine, team_id: int, run_id: int) -> bytes:
+def _vex_doc(engine, team_id: int, run_id: int) -> bytes:  # signed: embedded JSF (RD.vex_bytes), D7
     now = utcnow()
     with Session(engine) as session:
         run = _get_owned(session, run_id, team_id)
@@ -170,35 +172,47 @@ def _signature(engine, team_id: int, run_id: int) -> dict[str, Any]:
 
 
 def _embedded(upload: RD.Digests) -> dict[str, Any] | None:
-    """The upload's own JSF signature checked against the published keys (``bom_signing.verify_bom``), with the run
-    the file says it is (``zs:run_id``); None when it is not JSON, carries no signature or no key is configured."""
+    """The upload's own JSF signature checked against the published keys (``bom_signing.verify_document``), with the
+    run the file says it is (``zs:run_id``); None when it is not JSON, too large to parse (``EMBEDDED_MAX_BYTES``),
+    carries no signature or no key is configured. Parsed once, as I-JSON: a JSON body with a duplicate member name,
+    NaN or an out-of-range number, or a malformed signature member, is 400 (D1); one that is not JSON at all (a
+    corrupted download) is compared with the current CBOM as before."""
     if upload.out is None or upload.size > EMBEDDED_MAX_BYTES or not RD.SIGN.available():
         return None
     upload.out.seek(0)
-    body = upload.out.read()
-    try:
-        doc = json.loads(body)
-    except ValueError:
+    if not upload.out.read(4096).lstrip().startswith(b"{"):
         return None
+    try:
+        doc = RD.BV.loads_file(upload.out)
+    except RD.BV.NotJSON:  # a corrupted file: compared with the run's current CBOM instead, as before
+        return None
+    except RD.BV.InputError as exc:
+        raise HTTPException(status_code=400, detail=f"Not verified: {exc}") from None
     if not isinstance(doc, dict) or not isinstance(doc.get("signature"), dict):
         return None
-    result = RD.SIGN.verify_bom(body)
-    props = {p.get("name"): p.get("value") for p in (doc.get("metadata") or {}).get("properties") or []
-             if isinstance(p, dict)}
-    run = props.get("zs:run_id")
-    result["run_id"] = int(run) if isinstance(run, str) and run.isdigit() else None
+    result = RD.SIGN.verify_document(doc)
+    if result.get("malformed"):
+        raise HTTPException(status_code=400, detail=f"Not verified: {result['reason']}")
+    result["run_id"] = RD.BV.subject_of(doc).get("run_id")
     return result
 
 
 def _verify(engine, team_id: int, run_id: int, upload: RD.Digests, sent_b64: str | None) -> dict[str, Any]:
     now = utcnow()
-    embedded = _embedded(upload) if sent_b64 is None else None
     with Session(engine) as session:
         run = _get_owned(session, run_id, team_id)
-        with _export_slot(session, run, "verify"):
+        with _export_slot(session, run, "verify", large=upload.size >= RD.SIGN.LARGE_PARSE_BYTES):
+            embedded = _embedded(upload) if sent_b64 is None else None
             current = _current_signature(session, run, now)
+            # D4: a file whose detached signature is good but that is not the run's current CBOM must say it is this
+            # run's (zs:run_id of the CBOM / VEX, the pack manifest's subject): read only then, after the signature
+            subject = None
+            digest = upload.sha.hexdigest()
+            if sent_b64 is not None and digest != current["digest"] and \
+                    RD.sent_signature(digest, upload.mac.digest(), sent_b64) is not None:  # type: ignore[union-attr]
+                subject = RD.SIGN.file_subject(upload.out, upload.size)
     out = RD.verify_upload(upload.sha.hexdigest(), upload.mac.digest(), sent_b64=sent_b64,  # type: ignore[union-attr]
-                           current=current, embedded=embedded, run_id=run_id)
+                           current=current, embedded=embedded, run_id=run_id, subject=subject)
     out.update({"bytes": upload.size, "run_id": run_id, "current_digest": current["digest"],
                 "run_status": current["run_status"]})
     return out
@@ -289,7 +303,9 @@ def _chunks(out: IO[bytes], size: int = 1024 * 1024) -> Iterator[bytes]:
 async def run_vex(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader = None) -> Response:
     engine, _user = await authorize(team_id, Authorization)
     body = await _run("vex", team_id, _vex_doc, engine, team_id, run_id)
-    return _attachment(body, VEX_MEDIA, f"cbom-sources-run-{run_id}.vex.json")
+    response = _attachment(body, VEX_MEDIA, f"cbom-sources-run-{run_id}.vex.json")
+    response.headers.update(RD.SIGN.signature_headers(hashlib.sha256(body).digest()))  # D7: detached, as the CBOM
+    return response
 
 
 @router.get(RUN + "/signature", dependencies=[*WRITE, access.team("cbom.read")],
@@ -302,9 +318,9 @@ async def run_signature(team_id: TeamId, run_id: ObjectId, Authorization: AuthHe
 
 
 @router.post(RUN + "/signature/verify", dependencies=[*WRITE, access.team("cbom.read")],
-             summary="Verify a downloaded run CycloneDX JSON (the request body, as downloaded) against the signature "
-                     "sent in X-ZS-Signature-B64 (ES256 or the older HMAC), else its embedded JSF signature, else "
-                     "the run's current CBOM")
+             summary="Verify a downloaded run file (the request body, as downloaded) against the signature sent in "
+                     "X-ZS-Signature-B64 (ES256 or the older HMAC), else its embedded JSF signature, else the run's "
+                     "current CBOM; valid only for this run's files (signed_by_deployment says whose signature)")
 async def verify_run_signature(team_id: TeamId, run_id: ObjectId, request: Request,
                                Authorization: AuthHeader = None,
                                x_zs_signature_b64: Annotated[str | None, Header(max_length=512)] = None

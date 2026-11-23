@@ -5440,8 +5440,14 @@ const downloadCbomRunDeliverable = async (team_id: number, run_id: number, kind:
 
 /** The answer of POST /runs/{id}/signature/verify for a downloaded run CycloneDX JSON. */
 export interface CbomRunSignatureVerification {
+    /** the signature is this deployment's AND the file is this run's */
     valid: boolean
     signature_match: boolean
+    /** the signature alone checks out (true for another run's file, which is not valid) */
+    signed_by_deployment?: boolean
+    /** the file is this run's: its current CBOM, or a file whose zs:run_id / pack subject names this run */
+    bound?: boolean
+    reason?: string
     /** the file equals the run's current CBOM JSON (null only when nothing was compared) */
     digest_match: boolean | null
     digest: string
