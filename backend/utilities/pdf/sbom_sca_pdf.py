@@ -145,6 +145,29 @@ def _package_line(item: Dict[str, Any]) -> tuple[str, str, str, str]:
     return name, version.strip(), ecosystem, licence
 
 
+# The height a package panel may fill: a panel is one flowable, so it must fit on a page whole (frame 672 pt, less
+# the panel's title bar and the table header).
+_PANEL_BUDGET_PT = 560.0
+_CELL_PADDING_PT = 12.0
+
+
+def _package_chunks(cells: List[List[Any]], widths: List[float]) -> List[tuple]:
+    """(offset, rows) panels of at most _PACKAGE_ROWS_PER_PANEL rows whose measured height fits a page: long package
+    names (@babel/plugin-transform-react-jsx-source) wrap, and 30 two-line rows (758 pt) overflowed the 672 pt frame,
+    so the whole PDF export failed for a repository like ninedter/pcap-hunter."""
+    out: List[tuple] = []
+    start, height = 0, 0.0
+    for i, row in enumerate(cells):
+        h = max(cell.wrap(w - _CELL_PADDING_PT, 10_000)[1] for cell, w in zip(row, widths)) + _CELL_PADDING_PT
+        if i > start and (i - start >= _PACKAGE_ROWS_PER_PANEL or height + h > _PANEL_BUDGET_PT):
+            out.append((start, cells[start:i]))
+            start, height = i, 0.0
+        height += h
+    if start < len(cells):
+        out.append((start, cells[start:]))
+    return out
+
+
 def _append_package_panels(
     story: List[Any], *, title: str, intro: str, headers: List[str], lines: List[List[str]], styles: Dict[str, Any]
 ) -> None:
@@ -153,12 +176,12 @@ def _append_package_panels(
     story.append(Paragraph(escape_html(intro), styles["muted"]))
     story.append(Spacer(1, 0.1 * inch))
     widths = [2.9 * inch, 1.3 * inch, 0.9 * inch, 1.9 * inch]
-    for offset in range(0, len(lines), _PACKAGE_ROWS_PER_PANEL):
-        chunk = lines[offset : offset + _PACKAGE_ROWS_PER_PANEL]
-        cells = [
-            [Paragraph(escape_html(c or "—"), styles["mono_cell" if i < 2 else "table_cell"]) for i, c in enumerate(row)]
-            for row in chunk
-        ]
+    all_cells = [
+        [Paragraph(escape_html(c or "—"), styles["mono_cell" if i < 2 else "table_cell"]) for i, c in enumerate(row)]
+        for row in lines
+    ]
+    for offset, cells in _package_chunks(all_cells, widths):
+        chunk = cells
         end = offset + len(chunk)
         meta = f"{len(lines)} packages" if offset == 0 else f"{offset + 1}–{end} of {len(lines)}"
         heading = title if offset == 0 else f"{title} (cont.)"

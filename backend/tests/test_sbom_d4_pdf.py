@@ -85,3 +85,16 @@ def test_pdf_package_list_takes_licences_from_the_sbom_and_skips_files(tmp_path)
     assert "click" in package_part and "BSD-3-Clause" in package_part
     assert "MIT" in package_part  # actions/* resolve to MIT in the downloaded SBOM
     assert "/test_model.gguf" not in text
+
+
+def test_pdf_builds_for_a_repository_with_long_package_names(tmp_path):
+    """ninedter/pcap-hunter (staging SBOM #13): 264 npm packages, many with long scoped names; 30 two-line rows made
+    one panel taller than the page and the PDF export failed (reportlab LayoutError), also before FIX-C1."""
+    long_rows = [{"dependency": f"@babel/plugin-transform-react-jsx-source-{i:03d}==7.29.7",
+                  "purl": f"pkg:npm/%40babel/plugin-transform-react-jsx-source-{i:03d}@7.29.7",
+                  "inventory_only": True, "vuln_assessed": True, "cves": {}, "impact": "Low"} for i in range(120)]
+    out = tmp_path / "long.pdf"
+    generate_pdf({"results": ROWS + long_rows, "duration_of_scan": 1.0, "sbom_json": SBOM}, str(out))
+    text = "\n".join(p.extract_text() or "" for p in pypdf.PdfReader(io.BytesIO(out.read_bytes())).pages)
+    assert "Packages with no known vulnerability (cont.)" in text  # split into several page-sized panels
+    assert "of 122" in text  # every package listed (120 + click + actions/checkout)
