@@ -12,11 +12,22 @@ export interface PolicyGateView {
 
 // The CBOM policy gate verdict as the pipeline received it (stored on the CI log). POST /cicd/cbom/scan answers
 // gate_failed = (verdict != "pass"), so "fail", "no_result" and any other verdict all blocked the job.
+// SOW S1: a verdict judged by the team's CBOM policy lists, per failing finding, the rules it broke; the hover text shows
+// them under the reason (at most 10 findings), so the page tells the same story as the pipeline log.
+export function gateTitle(gate: CicdCbomGate): string {
+  const lines = gate.failing
+    .filter((f) => f.rules && f.rules.length)
+    .slice(0, 10)
+    .map((f) => `• ${f.title}${f.location ? ` (${f.location}${f.line ? `:${f.line}` : ""})` : ""}: ` +
+      (f.rules ?? []).filter((r) => r.outcome === "fail").map((r) => r.rule).join(", "));
+  return lines.length ? `${gate.reason}\n${lines.join("\n")}` : gate.reason;
+}
+
 export function policyGateView(gate: CicdCbomGate | null | undefined): PolicyGateView {
   if (!gate) return { label: "—", blocked: null };
-  if (gate.verdict === "pass") return { label: "Passed", blocked: false, title: gate.reason };
-  if (gate.verdict === "fail") return { label: `Blocked (${gate.failing_count})`, blocked: true, title: gate.reason };
-  return { label: "Blocked: no result", blocked: true, title: gate.reason };
+  if (gate.verdict === "pass") return { label: "Passed", blocked: false, title: gateTitle(gate) };
+  if (gate.verdict === "fail") return { label: `Blocked (${gate.failing_count})`, blocked: true, title: gateTitle(gate) };
+  return { label: "Blocked: no result", blocked: true, title: gateTitle(gate) };
 }
 
 export function PolicyGateBadge({ gate }: { gate: CicdCbomGate | null | undefined }) {

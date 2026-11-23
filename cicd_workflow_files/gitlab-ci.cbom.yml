@@ -1,5 +1,5 @@
 # DevSecShield CBOM scan for GitLab CI: add this job to .gitlab-ci.yml and the CI/CD variable CICD_API_KEY
-# (Settings > CI/CD > Variables, masked). The job fails on a high crypto finding (CBOM policy gate).
+# (Settings > CI/CD > Variables, masked). The job fails when the team's CBOM policy blocks a finding (CBOM policy gate).
 cbom-check:
   image: alpine:3.22
   rules:
@@ -38,14 +38,18 @@ cbom-check:
       fi
       echo "CBOM findings: $(jq '.finding_count // 0' devsecshield-response.json)"
       jq -r '(.results | if type == "object" then (.results // []) elif type == "array" then . else [] end)[] | (.impact // "unknown") + " " + (.title // .name // "")' devsecshield-response.json
+      jq -r '"CBOM policy: " + (.gate.policy // "none") + " (" + (.gate.policy_source // "default") + ")"' devsecshield-response.json
       jq -r '.gate.reason // "No CBOM policy verdict in the answer."' devsecshield-response.json
-      jq -r '.gate.failing[]? | "\(.impact // "High") \(.codes | join(",")) \(.location)\(if .line then ":\(.line)" else "" end) \(.title)"' devsecshield-response.json
-      # CBOM policy gate: fail on a high crypto finding, and fail closed when the answer carries no verdict.
+      jq -r '.gate.failing[]? | "\(.impact // "High") \(.codes | join(",")) \(.location)\(if .line then ":\(.line)" else "" end) \(.title) [\([.rules[]? | select(.outcome == "fail") | .rule] | join(","))]"' devsecshield-response.json
+      jq -r '.gate.warnings[]? | "warning: \(.title) \(.location) [\([.rules[]? | .rule] | join(","))]"' devsecshield-response.json
+      # CBOM policy gate: fail when the team's CBOM policy blocks a finding, and fail closed when the answer carries no verdict.
+      summary=$(grep -o '"gate_summary":"[^"]*"' devsecshield-response.json | head -n 1 | sed 's/^"gate_summary":"//; s/"$//')
+      if [ -n "${summary}" ]; then echo "DevSecShield CBOM policy verdict: ${summary}"; fi
       if grep -Eq '"gate_failed"[[:space:]]*:[[:space:]]*true' devsecshield-response.json; then
-        echo "DevSecShield CBOM policy gate: FAILED (high crypto findings, or no result in time; see the list above and the CI/CD page)"
+        echo "DevSecShield CBOM policy gate: FAILED (findings the CBOM policy blocks, or no result in time; see the list above and the CI/CD page)"
         exit 1
       elif grep -Eq '"gate_failed"[[:space:]]*:[[:space:]]*false' devsecshield-response.json; then
-        echo "DevSecShield CBOM policy gate: passed (no high crypto finding)"
+        echo "DevSecShield CBOM policy gate: passed (nothing the CBOM policy blocks)"
       else
         echo "DevSecShield CBOM policy gate: the answer has no verdict, so the job fails (fail closed)"
         exit 1

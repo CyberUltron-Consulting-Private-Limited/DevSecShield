@@ -409,6 +409,48 @@ const TEXT = {
     why: "Names the exact cause to fix at the destination.",
     example: "HTTP 401: the HEC token is disabled.",
   },
+  // src: backend/routers/integrations_ticketing.py:153-196, frontend/components/integrations/JiraCard.tsx:79 — the team's one Jira connection (code scans, CI/CD, CBOM Sources)
+  "int.card.jira": {
+    what: "Connects the team to Jira (REST API v3). Code scans and CI/CD open one issue per finding, CBOM Sources runs one issue per asset, all with this connection. Send test signs in and checks the project without creating anything.",
+    why: "Findings land in the backlog your teams already work from, with one connection to maintain.",
+    example: "https://bank.atlassian.net, project SEC, issue type Task.",
+  },
+  // src: backend/routers/integrations_ticketing.py:85-101, frontend/components/integrations/JiraCard.tsx:94 — https only, no path
+  "int.jira.url": {
+    what: "The https:// address of your Jira site (Jira Cloud, or Jira Server / Data Center allowed by the operator). Changing it clears the stored token unless you enter it again.",
+    why: "Tickets are created on this site only, and a stored token is never sent to a different site.",
+    example: "https://bank.atlassian.net.",
+  },
+  // src: backend/routers/integrations_ticketing.py:103-108, frontend/components/integrations/JiraCard.tsx:98 — basic auth with the API token
+  "int.jira.email": {
+    what: "The email of the Jira account tickets are created as. It needs permission to create issues in the project below.",
+    why: "Issues show this account as reporter, so a dedicated bot account keeps their origin clear.",
+    example: "secops-bot@bank.in.",
+  },
+  // src: backend/routers/integrations_ticketing.py:166-179, frontend/components/integrations/JiraCard.tsx:102 — write-only, encrypted at rest
+  "int.jira.token": {
+    what: "An API token of that account (Atlassian account settings > Security > API tokens). Stored encrypted and never shown again; leave it blank to keep the stored one.",
+    why: "Without a valid token no issue can be created, and a leaked token would let anyone file issues as the account.",
+    example: "A token created for secops-bot.",
+  },
+  // src: backend/utilities/cbom_sources/run_tickets.py:97-106, frontend/components/integrations/JiraCard.tsx:108 — key or numeric id
+  "int.jira.project": {
+    what: "The Jira project CBOM tickets and test tickets go to: its key (such as SEC) or numeric id. Code scans and CI/CD integrations still choose their own project in their ticketing settings.",
+    why: "No CBOM ticket and no test ticket can be raised until a project is set.",
+    example: "SEC (Security).",
+  },
+  // src: backend/utilities/cbom_sources/run_tickets.py:54,108-113, frontend/components/integrations/JiraCard.tsx:113 — Task by default
+  "int.jira.issue_type": {
+    what: "The issue type of CBOM tickets and test tickets, as named in the project (Task when left empty).",
+    why: "A type the project does not have makes Jira refuse every ticket.",
+    example: "Bug, or Task by default.",
+  },
+  // src: backend/routers/integrations_ticketing.py:294-330,389-394, backend/utilities/integrations/jira_test.py:87-110, backend/utilities/integrations/servicenow.py:355-400, frontend/components/integrations/TestTicketButton.tsx:57 — one ticket per click
+  "int.test_ticket": {
+    what: "Creates one clearly labelled test ticket (\"Integration test ticket - safe to close\"; Jira label zs-test, ServiceNow low priority) in the configured project or table and shows its key and link. Each click raises at most one ticket, even when repeated or retried.",
+    why: "Proves end to end that findings can be ticketed (SOW acceptance evidence) without waiting for a real finding.",
+    example: "SEC-42 created in Jira, or INC0012345 in ServiceNow.",
+  },
 } as const satisfies TipAreaText;
 
 export default TEXT;

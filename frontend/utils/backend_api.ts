@@ -3890,13 +3890,45 @@ const revokeCicdApiKey = async (team_id: number, integration_id: number): Promis
 }
 
 /** CBOM policy gate of the hosted CI path (backend utilities/cicd/cbom_gate.py) */
+/** One rule a finding broke under the CBOM gate policy (SOW S1); "waived" carries the exception that allowed it. */
+export interface CicdCbomGateRule {
+    rule: "finding_code" | "banned_algorithm" | "min_key_size" | "deprecated_algorithm" | "quantum_vulnerable"
+    outcome: "fail" | "warn" | "waived"
+    detail: string
+    /** the blocked finding code (rule finding_code: one entry per code) */
+    code?: string
+    exception_id?: string
+    reason?: string
+    expires?: string
+}
+
+export interface CicdCbomGateEntry {
+    codes: string[]
+    title: string
+    location: string
+    line: number | null
+    impact: string | null
+    /** absent on verdicts stored before the per-team policy */
+    rules?: CicdCbomGateRule[]
+}
+
 export interface CicdCbomGate {
+    /** the policy's name ("cbom-code-high" on verdicts stored before the per-team policy) */
     policy: string
+    policy_source?: "default" | "team" | "integration" | "unreadable"
+    policy_version?: number | null
+    policy_digest?: string
     verdict: "pass" | "fail" | "no_result"
     fail_codes: string[]
     failing_count: number
-    failing: { codes: string[]; title: string; location: string; line: number | null; impact: string | null }[]
+    failing: CicdCbomGateEntry[]
     truncated: boolean
+    rules_failed?: Partial<Record<CicdCbomGateRule["rule"], number>>
+    warning_count?: number
+    warnings?: CicdCbomGateEntry[]
+    waived_count?: number
+    waived?: CicdCbomGateEntry[]
+    expired_exceptions?: { id: string; expires: string; reason: string }[]
     reason: string
 }
 
