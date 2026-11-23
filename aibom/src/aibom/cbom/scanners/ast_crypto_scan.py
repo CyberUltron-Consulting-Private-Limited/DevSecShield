@@ -63,7 +63,7 @@ def read_text_safely(path: Path) -> str | None:
 # never mistaken for a crypto-API call.
 _CRYPTO_IMPORT_ROOTS = frozenset(
     {"cryptography", "hashlib", "hmac", "ssl", "secrets", "nacl",
-     "jwt", "jose", "crypto", "cryptodome", "openssl"}
+     "jwt", "jose", "crypto", "cryptodome", "openssl", "argon2"}
 )
 
 # --------------------------------------------------------------------------- #
@@ -134,6 +134,87 @@ _KDF: dict[str, tuple[str, str]] = {
     "Scrypt": ("scrypt", "kdf"),
     "HKDF": ("hkdf", "kdf"),
     "HKDFExpand": ("hkdf", "kdf"),
+    "hashlib.pbkdf2_hmac": ("pbkdf2", "kdf"),
+    "pbkdf2_hmac": ("pbkdf2", "kdf"),
+    "hashlib.scrypt": ("scrypt", "kdf"),
+    "argon2.PasswordHasher": ("argon2", "kdf"),
+    "PasswordHasher": ("argon2", "kdf"),
+    "low_level.hash_secret": ("argon2", "kdf"),
+    "hash_secret": ("argon2", "kdf"),
+    "low_level.hash_secret_raw": ("argon2", "kdf"),
+    "hash_secret_raw": ("argon2", "kdf"),
+}
+# Where each KDF call takes its parameters: property -> (keyword, positional index
+# or None). The values are captured as written (SOW D3: KDF parameters); a
+# password-based KDF's literal salt is a STATIC_SALT finding.
+_KDF_PARAMS: dict[str, dict[str, tuple[str, int | None]]] = {
+    "PBKDF2HMAC": {
+        "length": ("length", None),
+        "salt": ("salt", None),
+        "iterations": ("iterations", None),
+    },
+    "Scrypt": {
+        "length": ("length", None),
+        "salt": ("salt", None),
+        "n": ("n", None),
+        "r": ("r", None),
+        "p": ("p", None),
+    },
+    "HKDF": {"length": ("length", None), "salt": ("salt", None)},
+    "HKDFExpand": {"length": ("length", None)},
+    "pbkdf2_hmac": {
+        "prf": ("hash_name", 0),
+        "salt": ("salt", 2),
+        "iterations": ("iterations", 3),
+        "length": ("dklen", 4),
+    },
+    "scrypt": {
+        "salt": ("salt", None),
+        "n": ("n", None),
+        "r": ("r", None),
+        "p": ("p", None),
+        "length": ("dklen", None),
+    },
+    "PasswordHasher": {
+        "time_cost": ("time_cost", 0),
+        "memory_cost": ("memory_cost", 1),
+        "parallelism": ("parallelism", 2),
+        "length": ("hash_len", 3),
+        "salt_length": ("salt_len", 4),
+        "variant": ("type", 6),
+    },
+    "hash_secret": {
+        "salt": ("salt", 1),
+        "time_cost": ("time_cost", 2),
+        "memory_cost": ("memory_cost", 3),
+        "parallelism": ("parallelism", 4),
+        "length": ("hash_len", 5),
+        "variant": ("type", 6),
+    },
+    "hash_secret_raw": {
+        "salt": ("salt", 1),
+        "time_cost": ("time_cost", 2),
+        "memory_cost": ("memory_cost", 3),
+        "parallelism": ("parallelism", 4),
+        "length": ("hash_len", 5),
+        "variant": ("type", 6),
+    },
+}
+# A fixed salt defeats a PASSWORD-based KDF (CWE-760); HKDF's salt is optional and
+# may be fixed (RFC 5869 3.1).
+_PASSWORD_KDFS = frozenset({"pbkdf2", "scrypt", "argon2"})
+_PROP_OF = {
+    "iterations": "crypto:iterations",
+    "length": "crypto:kdfLength",
+    "n": "crypto:scryptN",
+    "r": "crypto:scryptR",
+    "p": "crypto:scryptP",
+    "time_cost": "crypto:argon2TimeCost",
+    "memory_cost": "crypto:argon2MemoryCost",
+    "parallelism": "crypto:argon2Parallelism",
+    "salt_length": "crypto:saltLength",
+    "variant": "crypto:argon2Variant",
+    "prf": "crypto:kdfPrf",
 }
 # Message authentication. symbol -> algo key.
 _MAC: dict[str, str] = {
@@ -279,7 +360,8 @@ def _collect_calls(node: ast.AST, scope: tuple[str, ...], out: list) -> None:
 
 class _Asset:
     __slots__ = ("key", "name", "key_size", "mode", "curve", "primitive",
-                 "context", "padding", "iterations", "scope", "location")
+                 "context", "padding", "iterations", "scope", "location", "params",
+                 "symbol")
 
     def __init__(self, key, name, key_size, mode, curve, primitive, context,
                  scope, location):
@@ -292,16 +374,20 @@ class _Asset:
         self.context = context
         self.padding: str | None = None
         self.iterations: int | None = None
+        self.params: dict[str, str] = {}  # KDF parameters as crypto:* properties
+        self.symbol: str | None = None  # the callee that fixed it: its library
         self.scope = scope
         self.location = location
 
 
 class _Material:
-    __slots__ = ("kind", "location")
+    __slots__ = ("kind", "location", "props")
 
     def __init__(self, kind, location):
         self.kind = kind
         self.location = location
+        # a static literal: crypto:staticSalt / staticIv, its length, usedBy
+        self.props: dict[str, str] = {}
 
 
 _LIBRARY = "pyca/cryptography"
@@ -373,8 +459,8 @@ def _scan_file(
     assets: dict[tuple[str, str], _Asset] = {}
     materials: dict[tuple[str, str], _Material] = {}
 
-    def _emit_material(kind: str) -> None:
-        materials.setdefault((kind, rel), _Material(kind, rel))
+    def _emit_material(kind: str) -> _Material:
+        return materials.setdefault((kind, rel), _Material(kind, rel))
 
     def _add_asset(asset: _Asset | None) -> _Asset | None:
         if asset is None:
@@ -404,10 +490,19 @@ def _scan_file(
                 _make_asset(algo_key, None, mode, None, "cipher", scope, rel))
             # IV / nonce: a literal first argument of the mode constructor.
             if isinstance(mode_node, ast.Call) and mode:
-                iv = _literal_value(_arg(mode_node, 0), consts)
+                iv_node = _arg(mode_node, 0)
+                iv = _literal_value(iv_node, consts)
                 if isinstance(iv, (bytes, str)):
-                    _emit_material(
+                    material = _emit_material(
                         "nonce" if mode in _NONCE_MODES else "initialization-vector")
+                    # an IV written into the call is static (a named constant is
+                    # the misuse lane's: no double finding); its value is never
+                    # recorded, only its length
+                    if isinstance(iv_node, ast.Constant) and asset is not None:
+                        material.props.update({
+                            "crypto:staticIv": "true", "crypto:usedBy": asset.name,
+                            "crypto:literalLength": str(len(iv)),
+                        })
             continue
 
         algo_key = _rule(func, _CIPHER_ALGO)
@@ -450,12 +545,8 @@ def _scan_file(
             asset = _add_asset(
                 _make_asset(base_key, None, None, None, context, scope, rel))
             if asset is not None:
-                iters = _literal_value(_kwarg(call, "iterations"), consts)
-                if isinstance(iters, int):
-                    asset.iterations = iters
-                salt = _literal_value(_kwarg(call, "salt"), consts)
-                if isinstance(salt, (bytes, str)):
-                    _emit_material("salt")
+                asset.symbol = asset.symbol or (_symbols(func) or (None,))[0]
+                _kdf_parameters(call, func, base_key, asset, consts, _emit_material)
             continue
 
         mac = _rule(func, _MAC)
@@ -477,16 +568,87 @@ def _scan_file(
     )
 
 
+def _param_node(call: ast.Call, keyword: str, index: int | None) -> ast.expr | None:
+    node = _kwarg(call, keyword)
+    if node is None and index is not None:
+        node = _arg(call, index)
+    return node
+
+
+def _prf_name(node: ast.expr | None, consts: dict[str, object]) -> str | None:
+    """The PRF of a PBKDF2 / HKDF: ``hashes.SHA256()`` / ``"sha256"`` -> HMAC-SHA256."""
+    if isinstance(node, ast.Call):
+        tail = _callee_path(node.func)[-1:] or [""]
+        name = tail[0]
+    else:
+        value = _literal_value(node, consts)
+        name = value if isinstance(value, str) else ""
+    digest = name.upper().replace("_", "").replace("-", "")
+    return f"HMAC-{digest}" if digest.startswith(("SHA", "MD5", "BLAKE")) else None
+
+
+def _add_to_list(props: dict[str, str], key: str, value: str) -> None:
+    items = [v for v in (props.get(key) or "").split(",") if v]
+    if value not in items:
+        items.append(value)
+    props[key] = ",".join(items)
+
+
+def _kdf_parameters(call, func, base_key, asset, consts, emit_material) -> None:
+    """KDF parameters (iterations, output length, salt length, scrypt n/r/p, Argon2
+    costs, the PRF) onto the KDF asset; a literal salt of a password-based KDF becomes
+    a static-salt material (its length, never its value)."""
+    tails = [sym.split(".")[-1] for sym in _symbols(func)]
+    spec = next((_KDF_PARAMS[t] for t in tails if t in _KDF_PARAMS), {})
+    prf = _prf_name(_kwarg(call, "algorithm"), consts) if "prf" not in spec else None
+    for name, (keyword, index) in spec.items():
+        node = _param_node(call, keyword, index)
+        if node is None:
+            continue
+        if name == "prf":
+            prf = _prf_name(node, consts)
+            continue
+        value = _literal_value(node, consts)
+        if name == "salt":
+            if isinstance(value, (bytes, str)):
+                asset.params["crypto:saltLength"] = str(len(value))
+                material = emit_material("salt")
+                if base_key in _PASSWORD_KDFS:  # one salt row per file: every KDF
+                    material.props["crypto:staticSalt"] = "true"
+                    _add_to_list(material.props, "crypto:usedBy", asset.name)
+                    _add_to_list(
+                        material.props, "crypto:literalLength", str(len(value))
+                    )
+            continue
+        if name == "variant" and isinstance(node, ast.Attribute):
+            asset.params[_PROP_OF[name]] = f"Argon2{node.attr.lower()}"
+            continue
+        if isinstance(value, int) and not isinstance(value, bool):
+            asset.params[_PROP_OF[name]] = str(value)
+            if name == "iterations":
+                asset.iterations = value
+    if prf:
+        asset.params["crypto:kdfPrf"] = prf
+    if base_key == "argon2" and "crypto:argon2Variant" not in asset.params:
+        asset.params["crypto:argon2Variant"] = "Argon2id (library default)"
+
+
 def _iter_py_files(walk: FileWalk) -> list[Path]:
     # a notebook is read as its code cells (see :mod:`aibom.cbom.notebook`)
     return walk.files(lambda p: p.suffix in (".py", ".ipynb"))
 
 
-def _library_for(context: str) -> str:
+def _library_for(
+    context: str, key: str | None = None, symbol: str | None = None
+) -> str:
     if context == "digest":
         return _HASHLIB
     if context == "mac":
         return _HMAC
+    if key == "argon2":
+        return "argon2-cffi"
+    if symbol and symbol.startswith("hashlib."):
+        return _HASHLIB
     return _LIBRARY
 
 
@@ -514,7 +676,9 @@ class AstCryptoScanner(Scanner):
                 props: dict[str, str] = {
                     "crypto:assetType": "algorithm",
                     "crypto:primitive": asset.primitive,
-                    "crypto:detectedBy": _library_for(asset.context),
+                    "crypto:detectedBy": _library_for(
+                        asset.context, asset.key, asset.symbol
+                    ),
                     "crypto:detectionContext": asset.context,
                     "crypto:detectionMethod": "ast",
                     "crypto:confidence": "high",
@@ -536,6 +700,7 @@ class AstCryptoScanner(Scanner):
                     props["crypto:padding"] = asset.padding
                 if asset.iterations:
                     props["crypto:iterations"] = str(asset.iterations)
+                props.update(asset.params)
                 ctx.add_component(
                     CryptoAssetComponent(
                         bom_ref=f"crypto-algo-{_slug(asset.name)}-{_slug(asset.location)}",
@@ -557,6 +722,7 @@ class AstCryptoScanner(Scanner):
                             "crypto:materialKind": material.kind,
                             "crypto:detectionMethod": "ast",
                             "discovery:source": material.location,
+                            **material.props,
                         },
                     )
                 )

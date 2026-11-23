@@ -958,22 +958,111 @@ def _emit_service(comp: Any) -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 
 
-def _dependencies(result: ScanResult) -> list[dict[str, Any]]:
-    """Collapse typed edges into CycloneDX ``dependencies[]`` (ref -> dependsOn).
+def _crypto_refs(node: Any) -> list[str]:
+    """Every bom-ref a CycloneDX ``cryptoProperties`` subtree links to (``*Ref``
+    fields, protocol ``cryptoRefArray``, cipher-suite ``algorithms``)."""
+    out: list[str] = []
+    if isinstance(node, dict):
+        for key, val in node.items():
+            if isinstance(val, str) and key.endswith("Ref"):
+                out.append(val)
+            elif key in ("cryptoRefArray", "algorithms") and isinstance(val, list):
+                out.extend(v for v in val if isinstance(v, str))
+            else:
+                out.extend(_crypto_refs(val))
+    elif isinstance(node, list):
+        for item in node:
+            out.extend(_crypto_refs(item))
+    return out
 
-    CycloneDX has a single ``dependsOn`` relation, so every out-edge of a
-    component (``trained_on``, ``depends_on``, ...) becomes a dependsOn target.
+
+def _dependencies(
+    result: ScanResult, components: list[dict[str, Any]] | None = None
+) -> list[dict[str, Any]]:
+    """CycloneDX 1.6 ``dependencies[]``: ``dependsOn`` ("uses") and ``provides``
+    ("implements").
+
+    Every typed scanner edge becomes a ``dependsOn`` target (CycloneDX has one
+    dependency relation). For a CBOM the crypto graph is also read off the
+    inventory itself, so the document carries the lineage a reviewer needs:
+    an asset uses what its ``cryptoProperties`` link to (certificate -> signature
+    algorithm, protocol -> cipher suites), a construction uses the primitives it
+    was derived from / built on (Fernet -> AES-128-CBC + HMAC-SHA256, PBKDF2 ->
+    its salt), and a crypto library ``provides`` the algorithms in the files that
+    import it.
     """
-    grouped: dict[str, list[str]] = {}
+    present = {c.bom_ref for c in result.components}
+    present |= {
+        str(c.get("bom-ref")) for c in components or [] if c.get("bom-ref")
+    }
+    uses: dict[str, list[str]] = {}
+    provides: dict[str, list[str]] = {}
+
+    def add(table: dict[str, list[str]], src: str, dst: str) -> None:
+        if src == dst or src not in present or dst not in present:
+            return
+        bucket = table.setdefault(src, [])
+        if dst not in bucket:
+            bucket.append(dst)
+
     for edge in result.edges:
-        grouped.setdefault(edge.src, [])
-        if edge.dst not in grouped[edge.src]:
-            grouped[edge.src].append(edge.dst)
+        uses.setdefault(edge.src, [])
+        if edge.dst not in uses[edge.src]:
+            uses[edge.src].append(edge.dst)
+    for comp in components or []:
+        ref = comp.get("bom-ref")
+        if isinstance(ref, str) and isinstance(comp.get("cryptoProperties"), dict):
+            for target in _crypto_refs(comp["cryptoProperties"]):
+                add(uses, ref, target)
+    crypto = [c for c in result.components if c.kind == "crypto_asset"]
+    by_name_file = {
+        ((c.name or "").lower(), (c.properties or {}).get("discovery:source")):
+        c.bom_ref
+        for c in crypto
+    }
+    libraries = {
+        (c.name or "").lower(): c.bom_ref
+        for c in result.components
+        if c.kind == "framework"
+        and (c.properties or {}).get("crypto:role") == "library"
+    }
+    for c in crypto:
+        props = c.properties or {}
+        parent = props.get("crypto:derivedFrom")
+        if parent:
+            add(uses, parent, c.bom_ref)
+        prf = props.get("crypto:kdfPrf") or props.get("crypto:innerDigest") or ""
+        digest = re.sub(r"^HMAC-SHA-?(\d+)$", r"SHA-\1", prf.upper())
+        # PBKDF2-HMAC-SHA256 uses the SHA-256 asset of its file
+        if digest != prf.upper():
+            hit = by_name_file.get((digest.lower(), props.get("discovery:source")))
+            if hit:
+                add(uses, c.bom_ref, hit)
+        source = props.get("discovery:source")
+        for used_by in (props.get("crypto:usedBy") or "").split(","):
+            hit = by_name_file.get((used_by.strip().lower(), source))
+            if hit:
+                add(uses, hit, c.bom_ref)
+        if props.get("crypto:assetType") != "algorithm":
+            continue  # a library implements algorithms, not a salt or a certificate
+        # the library whose API call fixed the algorithm; else every crypto library
+        # the file imports (a literal-only sighting names no API)
+        detected = (props.get("crypto:detectedBy") or "").strip().lower()
+        named = libraries.get(detected)
+        labels = [named] if named else [
+            libraries.get(label.strip().lower())
+            for label in (props.get("crypto:libraries") or "").split(",")
+        ]
+        for lib in labels:
+            if lib:
+                add(provides, lib, c.bom_ref)
     deps = []
-    for ref in sorted(grouped):
+    for ref in sorted(set(uses) | set(provides)):
         entry: dict[str, Any] = {"ref": ref}
-        if grouped[ref]:
-            entry["dependsOn"] = sorted(grouped[ref])
+        if uses.get(ref):
+            entry["dependsOn"] = sorted(uses[ref])
+        if provides.get(ref):
+            entry["provides"] = sorted(provides[ref])
         deps.append(entry)
     return deps
 
@@ -1027,7 +1116,7 @@ def emit_cyclonedx(result: ScanResult) -> dict[str, Any]:
     if services:
         bom["services"] = services
 
-    deps = _dependencies(result)
+    deps = _dependencies(result, components)
     if deps:
         bom["dependencies"] = deps
 
