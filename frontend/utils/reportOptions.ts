@@ -131,6 +131,19 @@ function inOrder<T extends string>(order: readonly T[], chosen: readonly string[
 
 const sameSet = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((v) => b.includes(v));
 
+/** Sections drawn only inside another section: Remediation and Standards mappings are parts of each finding's card in
+ * "Finding details" (backend report_branding.finding_card), so without details they draw nothing. The dialog disables
+ * them while details is off and never sends them without it (`consistentSections`). */
+export const SECTION_NEEDS: Partial<Record<ReportSection, ReportSection>> = { remediation: "details", mappings: "details" };
+
+/** `sections` without a section whose parent section is left out (in the same order). */
+export function consistentSections<T extends string>(sections: readonly T[]): T[] {
+  return sections.filter((s) => {
+    const parent = SECTION_NEEDS[s as unknown as ReportSection];
+    return !parent || (sections as readonly string[]).includes(parent);
+  });
+}
+
 /** The sections a report of this family (and scan type) has. */
 export function availableSections(family: DialogFamily, scanType?: ReportScanType | null): readonly ReportSection[] {
   if (family === "run") return RUN_SECTIONS;
@@ -244,7 +257,7 @@ export function toQuery(options: ReportOptions, family: DialogFamily, scanType?:
     const available = availableSections(family, scanType);
     const preset = options.preset && options.preset !== "full" ? options.preset : null;
     const expected = preset ? presetSections(family, preset, scanType) : [...available];
-    const chosen = options.sections ? inOrder(available, options.sections) : expected;
+    const chosen = options.sections ? consistentSections(inOrder(available, options.sections)) : expected;
     if (preset) q.preset = preset;
     // explicit sections win over a preset on the server: sent only when they differ from what the preset gives
     if (!sameSet(chosen, expected)) q.sections = chosen.join(",");
@@ -325,7 +338,7 @@ export function initialOptions(teamId: number | string, family: DialogFamily, sc
     if (options.preset) {
       options.sections = presetSections(family, options.preset, scanType);
     } else {
-      const kept = inOrder(available, options.sections ?? []);
+      const kept = consistentSections(inOrder(available, options.sections ?? []));
       options.sections = kept.length ? kept : [...available];
       options.preset = presetFor(family, options.sections, scanType);
     }

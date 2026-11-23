@@ -183,6 +183,9 @@ def test_a_large_estate_waits_for_an_export_slot(api, two_runs, monkeypatch):
     monkeypatch.setattr(export_slots, "slot", busy)
     r = _export(api)
     assert r.status_code == 429 and r.headers.get("retry-after") == str(export_slots.RETRY_AFTER_S)
+    # the slot refusal's stable signal and private headers (staging QA 23 Nov 2026), unlike the rate limiter's 429
+    assert r.headers.get("x-export-busy") == "cbom" and r.headers.get("cache-control") == "no-store"
+    assert r.headers.get("x-content-type-options") == "nosniff"
 
 
 # ----------------------------------------------------------------------------- certificate hygiene (#263, #126)

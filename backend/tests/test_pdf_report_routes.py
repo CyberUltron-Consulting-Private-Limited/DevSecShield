@@ -625,3 +625,217 @@ def test_deliverable_default_bytes_do_not_change_without_a_logo(deliverable_api)
     url = DROUTE.pdf_url(DROUTE.TEAM_ONE, "scope-baseline-register")
     assert client.get(url).content == client.get(url + "?label=confidential").content
 
+
+
+# ----------------------------------------------------------------------------- staging QA 23 Nov 2026
+# Every report download and every slot refusal is private (Cache-Control: no-store, X-Content-Type-Options: nosniff):
+# R1 used to send neither, R2 and the scan's CycloneDX download neither, R3-R5 both. Each attempt logs one line with
+# its outcome; a slot 429 carries X-Export-Busy, the rate limiter's 429 never does.
+def assert_private(r, what: str) -> None:
+    assert r.headers.get("Cache-Control") == "no-store", (what, dict(r.headers))
+    assert r.headers.get("X-Content-Type-Options") == "nosniff", (what, dict(r.headers))
+
+
+def export_lines(out: str) -> list[str]:
+    return [line for line in out.splitlines() if "pdf report export" in line]
+
+
+def test_every_report_helper_answer_is_private():
+    from backend.utilities.cbom_sources.http import PRIVATE as CBOM_PRIVATE
+    from backend.utilities.pdf import report_http
+    from backend.utilities.pdf.report_context import ReportContext
+
+    assert report_http.PRIVATE == CBOM_PRIVATE == {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
+    for findings in (True, False):
+        headers = report_http.report_headers(ReportContext(), "r.pdf", findings=findings)
+        assert headers["Cache-Control"] == "no-store" and headers["X-Content-Type-Options"] == "nosniff"
+        assert ("X-Report-Findings" in headers) is findings
+    for pool, words in (("pdf", "scan PDF"), ("cbom", "CBOM")):
+        busy = report_http.busy_refusal(pool)
+        assert busy.status_code == 429 and words in busy.detail
+        assert busy.headers["X-Export-Busy"] == pool and busy.headers["Retry-After"] == "30"
+        assert busy.headers["Cache-Control"] == "no-store" and busy.headers["X-Content-Type-Options"] == "nosniff"
+        assert report_http.failure_outcome(busy) == ("busy", 429)
+    from fastapi import HTTPException
+
+    assert report_http.failure_outcome(HTTPException(429, "Too Many Requests", {"Retry-After": "7"})) == ("refused", 429)
+    assert report_http.failure_outcome(HTTPException(422, "label: x")) == ("refused", 422)
+    assert report_http.failure_outcome(HTTPException(503, "down")) == ("error", 503)
+    assert report_http.failure_outcome(RuntimeError("boom")) == ("error", 500)
+
+
+def test_scan_export_get_and_post_are_private(api):
+    http, ids = api
+    assert_private(export(http, ids), "R1 GET")
+    assert_private(export(http, ids, query="label=internal"), "R1 GET with options")
+    assert_private(post_export(http, ids, {"label": "internal"}), "R1 POST")
+    assert_private(post_export(http, ids, json={}), "R1 POST without options")
+
+
+def test_certin_pack_and_bom_downloads_are_private(pack_api):
+    http, ids, _engine = pack_api
+    pack = _pack(http, ids)
+    assert pack.status_code == 200, pack.text
+    assert_private(pack, "R2 certin evidence pack")
+    sca = ids["scan_ids"]["sbom_sca"]
+    assert pack.headers["Content-Disposition"] == f'attachment; filename="certin-evidence-pack-sbom_sca-{sca}.zip"'
+    assert pack.headers["X-Report-Logo"] == "none"
+    served = 0
+    for scan_type, query in (("sbom_sca", ""), ("cbom", ""), ("cbom", "?format=xml")):
+        r = http.get(f"/{ids['team_id']}/{scan_type}/scan/{ids['scan_ids'][scan_type]}/bom{query}", headers=AUTH)
+        if r.status_code == 200:
+            served += 1
+            assert_private(r, f"{scan_type} bom {query}")
+            assert r.headers["Content-Disposition"].startswith("attachment; ")
+        else:  # a stored scan without a CycloneDX document: refused, nothing to cache
+            assert r.status_code == 409, r.text
+    assert served, "no CycloneDX download was served"
+
+
+def test_a_slot_refusal_is_private_and_says_it_is_busy(api, monkeypatch, tmp_path):
+    http, ids = api
+    from backend.utilities.cbom_sources import export_slots as ES
+
+    monkeypatch.setattr(ES, "LOCK_DIR", str(tmp_path))
+    monkeypatch.setattr(ES, "PDF_SLOTS", 1)
+    monkeypatch.setattr("backend.routers.scans.LARGE_PDF_ROWS", 1)
+    with ES.pdf_slot():
+        for r in (export(http, ids), post_export(http, ids, {"label": "internal"})):
+            assert r.status_code == 429 and r.json()["detail"] == ES.PDF_BUSY
+            assert r.headers["X-Export-Busy"] == "pdf" and r.headers["Retry-After"] == str(ES.RETRY_AFTER_S)
+            assert_private(r, "R1 slot 429")
+
+
+def test_the_rate_limiter_429_has_no_busy_signal(api):
+    http, ids = api
+    from backend.routers import scans
+
+    scans.write_limiter.reset()
+    old = scans.write_limiter.times
+    scans.write_limiter.times = 1
+    try:
+        assert export(http, ids).status_code == 200
+        limited = export(http, ids)
+    finally:
+        scans.write_limiter.times = old
+        scans.write_limiter.reset()
+    assert limited.status_code == 429 and limited.headers.get("Retry-After"), limited.text
+    assert "X-Export-Busy" not in limited.headers  # the client tells "too many requests" by its absence
+
+
+def test_cors_exposes_the_busy_signal():
+    from starlette.middleware.cors import CORSMiddleware
+
+    from backend.main import app
+
+    (cors,) = [m for m in app.user_middleware if m.cls is CORSMiddleware]
+    assert "X-Export-Busy" in cors.kwargs["expose_headers"]
+
+
+def test_every_scan_export_outcome_is_logged(api, monkeypatch, capsys, tmp_path):
+    http, ids = api
+    from backend.utilities.cbom_sources import export_slots as ES
+
+    def one_line(r, status):
+        assert r.status_code == status, r.text
+        lines = export_lines(capsys.readouterr().out)
+        assert len(lines) == 1, lines
+        return lines[0]
+
+    assert "outcome=ok" in one_line(export(http, ids), 200)
+    line = one_line(export(http, ids, query="label=secret"), 422)
+    assert "outcome=refused" in line and "status=422" in line and "family=scan" in line
+    monkeypatch.setattr(ES, "LOCK_DIR", str(tmp_path))
+    monkeypatch.setattr(ES, "PDF_SLOTS", 1)
+    monkeypatch.setattr("backend.routers.scans.LARGE_PDF_ROWS", 1)
+    with ES.pdf_slot():
+        line = one_line(post_export(http, ids, {"label": "internal", "prepared_for": "Acme Bank"}), 429)
+    assert "outcome=busy" in line and "status=429" in line and "label=internal" in line
+    assert "prepared_for_set=1" in line and "Acme" not in line  # the options asked for, never their free text
+    monkeypatch.setattr("backend.routers.scans.LARGE_PDF_ROWS", 10**9)
+
+    def boom(*_a, **_k):
+        raise RuntimeError("renderer failed")
+
+    monkeypatch.setattr("backend.routers.scans.write_scan_pdf", boom)
+    line = one_line(export(http, ids), 500)
+    assert "outcome=error" in line and "status=500" in line and "renderer failed" not in line
+
+
+def _asgi_export(ids, method: str, gone: bool) -> int:
+    """Drive the real ASGI app (middleware included) with a client that is still there, or that disconnected while
+    the report was built: after its request body, ``receive`` answers ``http.disconnect`` (``gone``) or never
+    answers (a connected client; Starlette's non-blocking look then sees nothing)."""
+    import anyio
+
+    from backend.main import app
+
+    body = b'{"label": "internal"}' if method == "POST" else b""
+    path = f"/{ids['team_id']}/sast/scan/{ids['scan_ids']['sast']}/export"
+    headers = [(b"authorization", b"Bearer test"), (b"host", b"testserver")]
+    if body:
+        headers.append((b"content-type", b"application/json"))
+    scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": method, "scheme": "http",
+             "path": path, "raw_path": path.encode(), "query_string": b"", "headers": headers,
+             "client": ("127.0.0.1", 5000), "server": ("testserver", 80), "root_path": ""}
+    sent: list[dict] = []
+    first = [True]
+
+    async def receive():
+        if first[0]:
+            first[0] = False
+            if method == "POST" or not gone:
+                return {"type": "http.request", "body": body, "more_body": False}
+        if gone:
+            return {"type": "http.disconnect"}
+        await anyio.sleep_forever()
+
+    async def send(message):
+        sent.append(message)
+
+    async def main():
+        await app(scope, receive, send)
+
+    anyio.run(main)
+    return next(m for m in sent if m["type"] == "http.response.start")["status"]
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])
+def test_an_abandoned_export_is_logged_client_gone_not_ok(api, capsys, method):
+    _http, ids = api
+    capsys.readouterr()
+    status = _asgi_export(ids, method, gone=True)
+    lines = export_lines(capsys.readouterr().out)
+    assert len(lines) == 1 and "outcome=client_gone" in lines[0], lines
+    assert status == 200  # nothing changes for the response itself
+    _asgi_export(ids, method, gone=False)
+    lines = export_lines(capsys.readouterr().out)
+    assert len(lines) == 1 and "outcome=ok" in lines[0], lines
+
+
+def test_certin_pack_outcomes_are_logged(pack_api, capsys):
+    http, ids, _engine = pack_api
+    capsys.readouterr()
+    assert _pack(http, ids).status_code == 200
+    assert "outcome=ok" in export_lines(capsys.readouterr().out)[0]
+    assert _pack(http, ids, query="preset=executive").status_code == 422
+    (line,) = export_lines(capsys.readouterr().out)
+    assert "family=pack" in line and "outcome=refused" in line and "status=422" in line
+
+
+def test_deliverable_get_and_post_are_private_and_log_their_outcome(deliverable_api, capsys):
+    client, _world = deliverable_api
+    url = DROUTE.pdf_url(DROUTE.TEAM_ONE, "scope-baseline-register")
+    capsys.readouterr()
+    for r in (client.get(url), client.post(url, json={"label": "internal"}), client.post(url, json={})):
+        assert r.status_code == 200, r.text
+        assert_private(r, "R3")
+        assert r.headers["Content-Disposition"].startswith('attachment; filename="cbom-scope-baseline-register-team')
+    lines = [line for line in capsys.readouterr().out.splitlines() if line.startswith("cbom deliverable team=")]
+    assert len(lines) == 3 and all("outcome=ok" in line for line in lines), lines
+    assert client.get(url + "?severities=high").status_code == 422
+    assert client.get(DROUTE.pdf_url(DROUTE.TEAM_ONE, "no-such-slug%0Aforged")).status_code == 404
+    lines = [line for line in capsys.readouterr().out.splitlines() if line.startswith("cbom deliverable team=")]
+    assert len(lines) == 2, lines
+    assert "slug=scope-baseline-register outcome=refused status=422" in lines[0]
+    assert "slug=unknown outcome=refused status=404" in lines[1] and "forged" not in "".join(lines)

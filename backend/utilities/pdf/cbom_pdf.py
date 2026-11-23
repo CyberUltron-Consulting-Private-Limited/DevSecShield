@@ -14,6 +14,7 @@ from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer
 
 from backend.utilities.pdf.report_context import ReportContext, details_note, join_parts
 from backend.utilities.pdf.report_branding import (
+    report_generated,
     append_report_masthead,
     append_bom_compliance_sections,
     append_executive_summary,
@@ -226,7 +227,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         ("Quantum-safe", str(quantum_safe_count)),
         ("Broken today", str(broken_today)),
         ("Average risk score (0–10)", f"{avg_risk:.1f}"),
-        ("Report generated", datetime.now().strftime("%B %d, %Y at %I:%M %p")),
+        ("Report generated", report_generated(long=True)),
     ]
     advisory = advisory_text(raw)
     if advisory:  # CB-29: which crypto-library advisory data the scan matched, and how old it is
@@ -259,7 +260,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         meta_chips=[
             ("Scan type", "CBOM"),
             ("Total findings", str(total)),
-            ("Report generated", datetime.now().strftime("%b %d, %Y · %I:%M %p")),
+            ("Report generated", report_generated()),
             ("Quantum-vulnerable", str(quantum_vulnerable)),
         ],
         ctx=ctx,

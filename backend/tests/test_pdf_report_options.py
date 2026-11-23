@@ -255,3 +255,26 @@ def test_a_row_the_status_join_cannot_place_refuses_rather_than_guessing():
                         row_statuses=["fixed"])
     with pytest.raises(StatusesUnavailable):
         ctx.select(["a", "b"], lambda _i: "High", lambda position, _item: position if position == 0 else None)
+
+
+# -- staging QA 23 Nov 2026: "REPORT GENERATED" said a UTC time without saying so ----------------------------------
+
+def test_report_generated_is_utc_and_says_so(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    from backend.utilities.pdf.report_branding import report_generated
+
+    at = datetime(2026, 11, 23, 17, 5, tzinfo=timezone.utc)
+    assert report_generated(now=at) == "Nov 23, 2026 · 17:05 UTC"  # the run report's form (cbom_run_pdf)
+    assert report_generated(long=True, now=at) == "November 23, 2026 at 17:05 UTC"
+    assert report_generated(now=at.astimezone(timezone(timedelta(hours=5, minutes=30)))) == "Nov 23, 2026 · 17:05 UTC"
+    stamp = re.compile(r"REPORT GENERATED\n[A-Z][a-z]{2} \d{2}, \d{4} · \d{2}:\d{2} UTC\n")
+    row = re.compile(r"Report generated\s+[A-Z][a-z]+ \d{2}, \d{4} at \d{2}:\d{2} UTC")
+    for scan_type in SCAN_TYPES:
+        out = tmp_path / f"{scan_type}.pdf"
+        generate_pdf_for_type(scan_type, prepare_pdf_export_payload(scan_type, smoke._typical_payload(scan_type)), str(out))
+        text = "\n".join(pdf_pages_text(out.read_bytes()))
+        assert stamp.search(text), (scan_type, text[:600])
+        assert " AM\n" not in text and " PM\n" not in text, scan_type
+        if "Report generated" in text:
+            assert row.search(text), scan_type

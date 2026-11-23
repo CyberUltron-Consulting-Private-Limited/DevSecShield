@@ -16,6 +16,7 @@ from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer
 
 from backend.utilities.pdf.report_context import ReportContext, details_note, join_parts
 from backend.utilities.pdf.report_branding import (
+    report_generated,
     append_report_masthead,
     append_executive_summary,
     append_findings_catalog,
@@ -166,7 +167,7 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None, *, ctx: 
             ("Resources", str(num_resources)),
             ("Total vulnerabilities", str(total_issues)),
             ("Scan errors", str(len(error_messages))),
-            ("Report generated", datetime.now().strftime("%B %d, %Y at %I:%M %p")),
+            ("Report generated", report_generated(long=True)),
         ]
     else:
         overview = [
@@ -175,7 +176,7 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None, *, ctx: 
             ("Unique tools affected", str(len(unique_tools))),
             ("Unique servers scanned", str(len(by_server))),
             ("Scan errors", str(len(error_messages))),
-            ("Report generated", datetime.now().strftime("%B %d, %Y at %I:%M %p")),
+            ("Report generated", report_generated(long=True)),
         ]
 
     extra_tables = []
@@ -214,7 +215,7 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None, *, ctx: 
         meta_chips=[
             ("Scan type", "MCP"),
             ("Total issues", str(total_issues)),
-            ("Report generated", datetime.now().strftime("%b %d, %Y · %I:%M %p")),
+            ("Report generated", report_generated()),
             ("Platform", "zeroshield.ai"),
         ],
         ctx=ctx,

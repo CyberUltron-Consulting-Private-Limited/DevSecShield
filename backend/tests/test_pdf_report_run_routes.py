@@ -183,3 +183,121 @@ def test_the_findings_cap_sentence_is_true_for_filtered_and_unfiltered_runs():
     text = _run_pdf(plain, [], cap=2)
     assert "lists the first 2 of 3 findings" in text
     assert (plain.shown, plain.total) == (2, 3)  # X-Report-Findings counts what the PDF draws
+
+
+# ----------------------------------------------------------------------------- staging QA 23 Nov 2026
+def _private(r, what):
+    assert r.headers.get("Cache-Control") == "no-store", (what, dict(r.headers))
+    assert r.headers.get("X-Content-Type-Options") == "nosniff", (what, dict(r.headers))
+
+
+def _export_lines(out: str) -> list[str]:
+    return [line for line in out.splitlines() if "pdf report export" in line]
+
+
+def test_the_default_run_report_counts_its_findings_and_keeps_its_bytes(run_env, monkeypatch, capsys):
+    """QA: the default run report (no option, no logo) answered X-Report-Findings 0/0 and logged shown=0 total=0
+    while the PDF held 5 findings: the byte-identity path built with no context, so nothing was counted. The counts
+    now come from that build; its bytes are what the old ctx=None build gives."""
+    call, engine, rid = run_env
+    _finish(engine, rid)
+    _freeze(monkeypatch)
+    url = f"/1/cbom/sources/runs/{rid}/report.pdf"
+    capsys.readouterr()
+    default = call("GET", url)
+    assert default.status_code == 200, default.text
+    shown, total = map(int, default.headers["X-Report-Findings"].split("/"))
+    assert shown == total > 0, default.headers["X-Report-Findings"]
+    (line,) = _export_lines(capsys.readouterr().out)
+    assert f"shown={shown} total={total}" in line and "outcome=ok" in line
+    # the options path counts the same rows
+    labelled = call("POST", url, json={"label": "internal"})
+    assert labelled.headers["X-Report-Findings"] == default.headers["X-Report-Findings"]
+    assert call("POST", url, json={}).headers["X-Report-Findings"] == default.headers["X-Report-Findings"]
+
+    # byte identity: rebuild with the old fast path (ctx=None for default options and no logo) and compare
+    from backend.routers import cbom_run_deliverables as R
+
+    real = R.build_run_pdf
+
+    def dev_behaviour(**kwargs):
+        ctx = kwargs["ctx"]
+        if ctx is not None and ctx.options.is_default and not ctx.branding.applied:
+            kwargs["ctx"] = None
+        return real(**kwargs)
+
+    monkeypatch.setattr(R, "build_run_pdf", dev_behaviour)
+    assert call("GET", url).content == default.content
+    # the evidence pack's report.pdf is built the same way: same bytes as the download
+    monkeypatch.setattr(R, "build_run_pdf", real)
+    pack = zipfile.ZipFile(io.BytesIO(call("GET", f"/1/cbom/sources/runs/{rid}/evidence-pack").content))
+    assert pack.read("report.pdf") == default.content
+
+
+def test_run_report_and_pack_are_private_and_a_busy_host_says_so(run_env, monkeypatch, tmp_path):
+    call, _engine, rid = run_env
+    url = f"/1/cbom/sources/runs/{rid}/report.pdf"
+    _private(call("GET", url), "R4 GET")
+    _private(call("POST", url, json={"label": "internal"}), "R4 POST")
+    pack = call("GET", f"/1/cbom/sources/runs/{rid}/evidence-pack")
+    _private(pack, "R5")
+    assert pack.headers["Content-Disposition"] == f'attachment; filename="cbom-sources-run-{rid}-evidence-pack.zip"'
+    assert pack.headers["Content-Length"] == str(len(pack.content)) and pack.headers["X-Report-Logo"] == "none"
+    from backend.utilities.cbom_sources import export_slots as ES
+
+    monkeypatch.setattr(ES, "LOCK_DIR", str(tmp_path))
+    monkeypatch.setattr(ES, "SLOTS", 1)
+    monkeypatch.setattr(ES, "LARGE_ASSETS", 1)
+    with ES.slot():
+        for r in (call("GET", url), call("POST", url, json={}), call("GET", f"/1/cbom/sources/runs/{rid}/evidence-pack"),
+                  call("GET", f"/1/cbom/sources/runs/{rid}/cbom")):
+            assert r.status_code == 429 and r.json()["detail"] == ES.CBOM_BUSY, r.text
+            assert r.headers["X-Export-Busy"] == "cbom"
+            _private(r, "CBOM slot 429")
+
+
+def test_run_report_and_pack_log_every_outcome(run_env, monkeypatch, capsys, tmp_path):
+    call, _engine, rid = run_env
+    url = f"/1/cbom/sources/runs/{rid}/report.pdf"
+    capsys.readouterr()
+    assert call("GET", f"/1/cbom/sources/runs/{rid}/evidence-pack").status_code == 200
+    (line,) = _export_lines(capsys.readouterr().out)
+    assert "family=run_pack" in line and "outcome=ok" in line
+    assert call("GET", url + "?statuses=fixed").status_code == 422
+    (line,) = _export_lines(capsys.readouterr().out)
+    assert "family=run" in line and "outcome=refused" in line and "status=422" in line
+    assert call("GET", "/1/cbom/sources/runs/999999/report.pdf").status_code == 404
+    assert "outcome=refused status=404" in _export_lines(capsys.readouterr().out)[0]
+    from backend.utilities.cbom_sources import export_slots as ES
+
+    monkeypatch.setattr(ES, "LOCK_DIR", str(tmp_path))
+    monkeypatch.setattr(ES, "SLOTS", 1)
+    monkeypatch.setattr(ES, "LARGE_ASSETS", 1)
+    with ES.slot():
+        assert call("POST", url, json={"label": "internal"}).status_code == 429
+        (line,) = _export_lines(capsys.readouterr().out)
+        assert "outcome=busy" in line and "status=429" in line and "label=internal" in line
+        assert call("GET", f"/1/cbom/sources/runs/{rid}/evidence-pack").status_code == 429
+        (line,) = _export_lines(capsys.readouterr().out)
+        assert "family=run_pack" in line and "outcome=busy" in line and "status=429" in line
+    monkeypatch.setattr(ES, "LARGE_ASSETS", 10**9)
+    from backend.routers import cbom_run_deliverables as R
+
+    real = R.build_run_pdf
+
+    def boom(*_a, **_k):
+        raise RuntimeError("renderer failed")
+
+    monkeypatch.setattr(R, "build_run_pdf", boom)
+    assert call("GET", url).status_code == 500
+    (line,) = _export_lines(capsys.readouterr().out)
+    assert "outcome=error" in line and "status=500" in line and "renderer failed" not in line
+    monkeypatch.setattr(R, "build_run_pdf", real)
+
+    async def gone(_request) -> bool:  # the client disconnected while the report was built
+        return True
+
+    monkeypatch.setattr("starlette.requests.Request.is_disconnected", gone)
+    assert call("GET", url).status_code == 200
+    (line,) = _export_lines(capsys.readouterr().out)
+    assert "family=run" in line and "outcome=client_gone" in line

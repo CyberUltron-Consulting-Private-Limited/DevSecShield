@@ -78,6 +78,7 @@ from backend.utilities.cbom_sources.http import (
 )
 from backend.utilities.cbom_sources import cdx_xml as CDX_XML
 from backend.utilities.cbom_sources import export_slots as EXPORT_SLOTS
+from backend.utilities.pdf.report_http import busy_refusal
 from backend.utilities.cbom_sources import inventory as INV
 from backend.utilities.cbom_sources import posture as POSTURE
 from backend.utilities.cbom_sources import q0register as Q0REG
@@ -1770,10 +1771,7 @@ def _run_cbom(engine, team_id: int, run_id: int, fmt: str = "json") -> IO[bytes]
                 return out
         except EXPORT_SLOTS.Busy:  # 429 + Retry-After: the UI's error handler already says "try again in N seconds"
             log("run cbom export busy", team=team_id, run=run_id, rows=rows, slots=EXPORT_SLOTS.SLOTS)
-            raise HTTPException(
-                status_code=429, headers={**PRIVATE, "Retry-After": str(EXPORT_SLOTS.RETRY_AFTER_S)},
-                detail=EXPORT_SLOTS.CBOM_BUSY,
-            ) from None
+            raise busy_refusal("cbom") from None
 
 
 def _chunks(out: IO[bytes], size: int = 1024 * 1024) -> Iterator[bytes]:

@@ -16,6 +16,7 @@ from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer
 
 from backend.utilities.pdf.report_context import ReportContext, details_note, join_parts
 from backend.utilities.pdf.report_branding import (
+    report_generated,
     append_report_masthead,
     append_executive_summary,
     append_findings_catalog,
@@ -94,7 +95,7 @@ def generate_pdf(scan_data: Any, output_path: Optional[str] = None, *, ctx: Opti
     overview = [
         ("Scan type", "Dynamic Application Security Testing (DAST)"),
         ("Total issues found", str(total)),
-        ("Report generated", datetime.now().strftime("%B %d, %Y at %I:%M %p")),
+        ("Report generated", report_generated(long=True)),
     ]
     if duration_of_scan is not None:
         overview.append(("Scan duration", format_scan_duration(duration_of_scan)))
@@ -157,7 +158,7 @@ def generate_pdf(scan_data: Any, output_path: Optional[str] = None, *, ctx: Opti
         meta_chips=[
             ("Scan type", "DAST"),
             ("Total issues", str(total)),
-            ("Report generated", datetime.now().strftime("%b %d, %Y · %I:%M %p")),
+            ("Report generated", report_generated()),
             ("Scan duration", duration_label),
         ],
         ctx=ctx,

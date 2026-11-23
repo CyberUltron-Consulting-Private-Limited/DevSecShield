@@ -5586,7 +5586,8 @@ export interface ReportDownload {
 }
 
 /** A PDF build the server refused, with its own words: 422 (an option), 409 (statuses not available for this scan),
- * 429 (busy: retry after `retryAfter` seconds), 503 (statuses unavailable right now), 400 (scan not finished). */
+ * 429 (retry after `retryAfter` seconds: `busy` names the full export-slot pool when the host is busy building other
+ * large exports, null for the per-route rate limit), 503 (statuses unavailable right now), 400 (scan not finished). */
 export class ReportDownloadError extends Error {
     readonly status: number | null
     readonly detail: string | null
@@ -5596,8 +5597,10 @@ export class ReportDownloadError extends Error {
     readonly field: string | null
     /** 429: when a new build may start (ms since the epoch; 30 s when the server gave no Retry-After) */
     readonly retryAt: number | null
+    /** 429 from a full export-slot pool: its X-Export-Busy header ("pdf" | "cbom"); null for a rate-limit 429 */
+    readonly busy: string | null
 
-    constructor(message: string, init: { status: number | null; detail: string | null; retryAfter: number | null; field: string | null; cause?: unknown }) {
+    constructor(message: string, init: { status: number | null; detail: string | null; retryAfter: number | null; field: string | null; busy?: string | null; cause?: unknown }) {
         super(message)
         this.name = "ReportDownloadError"
         this.status = init.status
@@ -5605,6 +5608,7 @@ export class ReportDownloadError extends Error {
         this.retryAfter = init.retryAfter
         this.field = init.field
         this.retryAt = init.status === 429 ? Date.now() + (init.retryAfter ?? 30) * 1000 : null
+        this.busy = init.status === 429 ? (init.busy?.trim() || null) : null
         if (init.cause !== undefined) (this as { cause?: unknown }).cause = init.cause
     }
 }
@@ -5660,6 +5664,8 @@ async function reportError(error: unknown): Promise<ReportDownloadError> {
         detail,
         retryAfter: retryAfterHeaderSeconds(header(response?.headers, "retry-after")),
         field: field && REPORT_FIELDS.includes(field) ? field : null,
+        // the slot refusal's own header (backend export_slots.BUSY_HEADER, CORS-exposed); the rate limiter never sends it
+        busy: header(response?.headers, "x-export-busy"),
         cause: error,
     })
 }

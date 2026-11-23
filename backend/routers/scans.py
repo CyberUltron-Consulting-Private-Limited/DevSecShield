@@ -32,6 +32,9 @@ from backend.utilities.pdf.report_options import TYPE_SECTIONS
 from backend.utilities.pdf.report_http import (
     LARGE_PDF_ROWS,
     OPTIONS_BODY_RESPONSES,
+    busy_refusal,
+    failure_outcome,
+    finished_outcome,
     log_export,
     options_body_openapi,
     report_headers,
@@ -960,11 +963,7 @@ def _build_scan_report(engine, team_id: int, type: str, scan_id: int, options) -
                 try:
                     stack.enter_context(EXPORT_SLOTS.pdf_slot())  # the scan PDF pool: never a CBOM export's slot
                 except EXPORT_SLOTS.Busy:
-                    raise HTTPException(
-                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                        headers={"Retry-After": str(EXPORT_SLOTS.RETRY_AFTER_S), "Cache-Control": "private, no-store"},
-                        detail=EXPORT_SLOTS.PDF_BUSY,
-                    ) from None
+                    raise busy_refusal("pdf") from None
                 slot_wait_ms = int((time.monotonic() - waited) * 1000)
             try:
                 write_scan_pdf(type, scan_data, temp_pdf_path, started_at=started_at, completed_at=completed_at, ctx=ctx)
@@ -1004,10 +1003,13 @@ async def export_scan(
     The team's report logo, when set, appears on the cover and in every page header.
     """
     started = time.monotonic()
+    user_id: int | None = None  # every attempt by a known user gets one log line, whatever its outcome
+    options = None
     try:
         # STEP [ 0 ] : =========== Get the engine and user ======================
         engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
+        user_id = user.id
 
         # STEP [ 1 ] : =========== Check if user is in team ======================
         check_if_user_is_in_team(user.id, team_id, engine)
@@ -1018,14 +1020,21 @@ async def export_scan(
         # STEP [ 3 ] : =========== Build off the event loop ======================
         body, ctx, slot_wait_ms = await run_in_threadpool(_build_scan_report, engine, team_id, type, scan_id, options)
         log_export("scan", type=type, team=team_id, id=scan_id, user=user.id, ctx=ctx, size=len(body),
-                   started=started, slot_wait_ms=slot_wait_ms)
+                   started=started, slot_wait_ms=slot_wait_ms, outcome=await finished_outcome(request))
         return Response(content=body, media_type="application/pdf",
                         headers=report_headers(ctx, f"{type}-scan-{scan_id}-report.pdf"))
 
     except HTTPException as e:
+        if user_id is not None:
+            outcome, code = failure_outcome(e)
+            log_export("scan", type=type, team=team_id, id=scan_id, user=user_id, started=started, outcome=outcome,
+                       status=code, options=options)
         raise e
     except Exception as e:
         console.print(f"Error in exporting scan with id: {scan_id} for team: {team_id}: {e.__class__.__name__}",style="bold red", markup=False)
+        if user_id is not None:
+            log_export("scan", type=type, team=team_id, id=scan_id, user=user_id, started=started, outcome="error",
+                       status=500, options=options)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in exporting scan , please try again later")
 
 

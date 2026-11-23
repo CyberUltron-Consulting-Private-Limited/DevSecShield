@@ -16,7 +16,7 @@ import io
 import logging
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 logger = logging.getLogger(__name__)
@@ -590,6 +590,14 @@ def with_scan_duration(data: Any, started_at: Any = None, completed_at: Any = No
     if isinstance(data, list):
         return {"results": data, "duration_of_scan": fallback}
     return data
+
+
+def report_generated(*, long: bool = False, now: datetime | None = None) -> str:
+    """When a scan report was built, in UTC and labelled so, as the run report states its time (``cbom_run_pdf``,
+    ``%b %d, %Y · %H:%M UTC``): ``Nov 23, 2026 · 17:05 UTC`` (cover chip), ``November 23, 2026 at 17:05 UTC`` with
+    ``long`` (overview row). It used to be the server's local time without a zone (UTC in the containers, unstated)."""
+    at = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    return at.strftime("%B %d, %Y at %H:%M UTC" if long else "%b %d, %Y · %H:%M UTC")
 
 
 def format_scan_duration(seconds: Any) -> str:

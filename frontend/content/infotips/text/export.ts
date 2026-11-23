@@ -48,19 +48,19 @@ const TEXT = {
   },
   // src: backend/utilities/pdf/report_options.py:32 — details (remediation and mappings print inside them)
   "export.section.scan.details": {
-    what: "A card per finding: where it is, what was found and the evidence. Remediation and standards mappings are printed inside these cards.",
+    what: "A card per finding: where it is, what was found and the evidence. Remediation and standards mappings are printed inside these cards, so unticking this unticks them too.",
     why: "Engineers fix from the details; an executive summary does not need them.",
     example: "Finding #17 with its file, line and code snippet.",
   },
   // src: backend/utilities/pdf/report_options.py:32 — remediation, part of details
   "export.section.scan.remediation": {
-    what: "How to fix each finding, printed inside its details card.",
+    what: "How to fix each finding, printed inside its details card, so it needs Finding details: without them this box is unticked and disabled.",
     why: "Leave it in for the people who fix; leave it out for a report that only states exposure.",
     example: "Move the password to a secret store and rotate it.",
   },
   // src: backend/utilities/pdf/report_options.py:32 — mappings, part of details
   "export.section.scan.mappings": {
-    what: "The standards each finding maps to (CWE, OWASP and similar references), printed inside its details card.",
+    what: "The standards each finding maps to (CWE, OWASP and similar references), printed inside its details card, so it needs Finding details: without them this box is unticked and disabled.",
     why: "Auditors and compliance teams trace findings to the standards they report against.",
     example: "CWE-798, OWASP A07:2021.",
   },

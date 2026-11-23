@@ -110,6 +110,7 @@ import { useExportPdf } from "@/components/reports/ExportPdfDialog";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
 import { criticalFixedPct } from "@/components/cbom/remediationKpis";
+import { RESULTS_HEADER } from "@/components/resultsHeaderLayout";
 
 interface AiBomResultsProps {
   data: unknown;
@@ -655,8 +656,8 @@ export default function AiBomResults({
   return (
     <div className="container mx-auto p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <div className={RESULTS_HEADER.row}>
+        <div className={RESULTS_HEADER.lead}>
           {origin === "chat" && (
             <Button
               variant="outline"
@@ -668,7 +669,7 @@ export default function AiBomResults({
               <ArrowLeft className="h-4 w-4" />
             </Button>
           )}
-          <div>
+          <div className={RESULTS_HEADER.title}>
             <h1 className="text-3xl font-bold text-zinc-900 dark:text-white flex items-center gap-2">
               <Bot className="h-6 w-6 text-blue-600 dark:text-blue-400" />
               AI BOM Scan Results
@@ -678,7 +679,7 @@ export default function AiBomResults({
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className={RESULTS_HEADER.actions}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" className="cursor-pointer">
