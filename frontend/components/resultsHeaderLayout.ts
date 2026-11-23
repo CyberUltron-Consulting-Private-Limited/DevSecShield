@@ -8,7 +8,9 @@
  */
 export const RESULTS_HEADER = {
   // wraps: the actions take a line of their own when title and actions do not fit side by side
-  row: "flex flex-wrap items-center justify-between gap-4",
+  // gap-y only: dev had no gap between title and actions, so a header that fit on one line at 1280 px still does
+  // (review 6015796583: gap-4 wrapped MCP and AI BOM at 1280)
+  row: "flex flex-wrap items-center justify-between gap-y-4",
   // may shrink below its content (min-w-0), so a long title wraps inside the screen
   lead: "flex min-w-0 items-center gap-4",
   title: "min-w-0 break-words",

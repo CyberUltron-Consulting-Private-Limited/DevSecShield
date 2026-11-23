@@ -130,6 +130,10 @@ assert.deepEqual(RO.optionProblems(opts({ severities: [] }), "scan", "sast"), { 
 assert.deepEqual(RO.optionProblems(opts({ statuses: [] }), "scan", "sast"), { statuses: "Choose at least one status" });
 assert.deepEqual(RO.optionProblems(opts({ statuses: [] }), "run"), {}, "a run takes no status filter");
 assert.deepEqual(RO.optionProblems(opts({ sections: ["inventory"] }), "scan", "sast"), { sections: "Choose at least one section" }, "SAST has no inventory");
+// review 6015786659: validation judges the same set the request is built from (remediation/mappings need details)
+assert.deepEqual(RO.optionProblems(opts({ sections: ["remediation"] }), "scan", "sast"), { sections: "Choose at least one section" });
+assert.deepEqual(RO.optionProblems(opts({ sections: ["remediation", "mappings"] }), "scan", "sast"), { sections: "Choose at least one section" });
+assert.deepEqual(RO.optionProblems(opts({ sections: ["details", "remediation"] }), "scan", "sast"), {});
 assert.deepEqual(RO.optionProblems(opts({ title: "東" }), "deliverable"), {}, "a deliverable takes no title");
 assert.deepEqual(RO.optionProblems(opts({ prepared_for: "東" }), "deliverable"), { prepared_for: SCRIPTS });
 assert.deepEqual(RO.optionProblems(opts({ prepared_for: "भारतीय स्टेट बैंक" }), "deliverable"), {});

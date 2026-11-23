@@ -137,6 +137,7 @@ async function main() {
 
   const browser = await playwright.chromium.launch({ executablePath: chrome, args: ["--no-sandbox"] });
   const lines: string[] = [];
+  const devHeight = new Map<string, number>();  // "kind width" -> the old (dev) header's height
   try {
     for (const kind of ["sast", "sca", "mcp"]) {
       for (const [name, classes] of [["before", OLD_RESULTS], ["after", RESULTS_HEADER]] as const) {
@@ -146,11 +147,18 @@ async function main() {
           const m = await measure(p);
           const out = m.buttons.filter((b) => b.left < m.column.left - 1 || b.right > Math.min(width, m.column.right) + 1);
           const rightGap = m.header.right - (m.actionsRight ?? 0);
+          if (name === "before") devHeight.set(`${kind} ${width}`, m.header.bottom - m.header.top);
           lines.push(`results ${kind} ${name} ${width}: buttons outside ${out.length}, page wider than screen ${m.pageWide}, title ${m.title.left}..${m.title.right}, last button ${rightGap}px from the header's right edge`);
           if (name === "after") {
             assert.equal(out.length, 0, `${kind} ${width}px: a button is outside the screen ${JSON.stringify(out)}`);
             if (width >= 1280) {  // desktop: the actions end at the header's right edge, as on dev
               assert.ok(Math.abs(rightGap) <= 1, `${kind} ${width}px: the actions end ${rightGap}px left of the header's right edge`);
+              // a header that fit on one line on dev still does (review 6015796583: gap-4 wrapped MCP and AI BOM at
+              // 1280); SCA's six buttons never fit beside its title and take a right-aligned line of their own
+              if (kind !== "sca") {
+                const was = devHeight.get(`${kind} ${width}`) ?? 0;
+                assert.equal(m.header.bottom - m.header.top, was, `${kind} ${width}px: the header is ${m.header.bottom - m.header.top}px tall, dev's ${was}px`);
+              }
             }
             assert.ok(!m.pageWide && !m.headerWide, `${kind} ${width}px: the header is wider than the screen`);
             assert.ok(m.title.right <= width, `${kind} ${width}px: the title runs off screen`);

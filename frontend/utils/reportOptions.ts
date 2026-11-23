@@ -233,7 +233,10 @@ export interface OptionProblems {
 export function optionProblems(options: ReportOptions, family: DialogFamily, scanType?: ReportScanType | null): OptionProblems {
   const keys = FAMILY_KEYS[family] as readonly string[];
   const out: OptionProblems = {};
-  if (keys.includes("sections") && options.sections && inOrder(availableSections(family, scanType), options.sections).length === 0) {
+  // the same set the request is built from (consistentSections: remediation and mappings only count with details), so
+  // validation and the query never disagree (review 6015786659: ["remediation"] passed here and was sent as "")
+  if (keys.includes("sections") && options.sections
+      && consistentSections(inOrder(availableSections(family, scanType), options.sections)).length === 0) {
     out.sections = "Choose at least one section";
   }
   if (keys.includes("severities") && options.severities && options.severities.length === 0) out.severities = "Choose at least one severity";
