@@ -31,6 +31,7 @@ from sqlalchemy import case, func
 from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionRun, CbomCollectionSource, User
+from backend.utilities.cbom_sources.run_status import status_reason
 from backend.utilities.cbom_sources.cbom_metrics import average_risk
 from backend.utilities.cbom_sources.collections_view import NETWORK_TYPES, REMEDIATION_BUCKET
 from backend.utilities.build_info import utc_timestamp
@@ -178,7 +179,7 @@ def _counts_for(session: Session, team_id: int, runs: list[CbomCollectionRun]) -
 
 # ----------------------------------------------------------------------------- jobs, sources, owners (live)
 def _jobs_by_run(session: Session, team_id: int, run_ids: list[int]) -> dict[int, dict[str, Any]]:
-    out: dict[int, dict[str, Any]] = {i: {"jobs_total": 0, "jobs_done": 0, "sources": {}} for i in run_ids}
+    out: dict[int, dict[str, Any]] = {i: {"jobs_total": 0, "jobs_done": 0, "sources": {}, "rows": []} for i in run_ids}
     if not run_ids:
         return out
     sources = {s_id: (name, kind) for s_id, name, kind in session.exec(
@@ -186,13 +187,16 @@ def _jobs_by_run(session: Session, team_id: int, run_ids: list[int]) -> dict[int
         .where(CbomCollectionSource.team_id == team_id)).all()}
     orphans: list[int] = []
     rows = session.exec(select(CbomCollectionJob.id, CbomCollectionJob.run_id, CbomCollectionJob.status,
-                               CbomCollectionJob.source_id)
+                               CbomCollectionJob.source_id, CbomCollectionJob.outcome, CbomCollectionJob.error)
                         .where(CbomCollectionJob.team_id == team_id,
                                CbomCollectionJob.run_id.in_(run_ids))  # type: ignore[union-attr]
                         .order_by(CbomCollectionJob.id)).all()
-    for job_id, run_id, job_status, source_id in rows:
+    for job_id, run_id, job_status, source_id, outcome, error in rows:
         entry = out[int(run_id)]
         entry["jobs_total"] += 1
+        # FIX-B3: what the run's status_reason is built from (no result JSON is read for the list)
+        entry["rows"].append({"id": job_id, "status": job_status, "outcome": outcome, "error": error,
+                              "source_name": sources.get(source_id, (None, None))[0] if source_id else None})
         if job_status in JOB_DONE:
             entry["jobs_done"] += 1
         if source_id is not None and source_id in sources:
@@ -243,6 +247,8 @@ def run_row(run: CbomCollectionRun, counts: dict[str, Any], jobs: dict[str, Any]
         "finished_at": iso_z(run.finished_at),
         "scan_status": unified_run_status(run.status),
         "run_status": run.status,
+        # FIX-B3: why the run is partial / failed / cancelled (null when done or still running)
+        "status_reason": status_reason(run.status, jobs.get("rows") or [])["status_reason"],
         "risk_data": risk,
         "average_risk_score": average_risk(severity),
         "sources": [{"id": s["id"], "name": s["name"], "kind": s["kind"]} for s in sources],

@@ -208,7 +208,8 @@ def test_b1_scan_list_includes_runs(api, world, no_mongo, api_run):
     expected_keys = {"kind", "id", "title", "created_at", "last_updated", "finished_at", "scan_status", "run_status",
                      "risk_data", "average_risk_score", "sources", "repo_url", "branch", "estimated_credits",
                      "credits_refunded", "owner_user_email", "owner_user_full_name", "asset_count",
-                     "endpoints_probed", "jobs_total", "jobs_done", "linked_scan_id", "counts_basis"}
+                     "endpoints_probed", "jobs_total", "jobs_done", "linked_scan_id", "counts_basis",
+                     "status_reason"}  # FIX-B3: why a run is partial / failed (additive)
     assert all(set(r) == expected_keys for r in rows)
 
 

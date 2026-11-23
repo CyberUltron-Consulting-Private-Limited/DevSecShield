@@ -2349,6 +2349,8 @@ export interface RunListRow {
   linked_scan_id: number | null
   /** the severity counts are those judged when the run collected the assets */
   counts_basis: "as_collected"
+  /** FIX-B3: why the run is partial / failed / cancelled (null when done or still running) */
+  status_reason?: string | null
 }
 
 export interface CBOMConversationResponse {
@@ -4577,6 +4579,15 @@ export interface CbomSourcesOverview {
     }
 }
 
+export interface CbomRunStatusReasonJob {
+    job_id: number | null
+    source_name: string | null
+    status: string | null
+    outcome: string | null
+    category: "partial" | "failed" | "expired" | "cancelled" | "waiting"
+    reason: string
+}
+
 export interface CbomRun {
     id: number
     team_id: number
@@ -4596,6 +4607,10 @@ export interface CbomRun {
     jobs?: CbomJob[]
     job_counts?: Partial<Record<CbomJobStatus, number>>
     asset_count?: number
+    /** FIX-B3: why the run is partial / failed / cancelled, or what an open run waits for (offline scan nodes); null when done */
+    status_reason?: string | null
+    /** FIX-B3 (run detail only): the jobs behind status_reason */
+    status_reason_jobs?: CbomRunStatusReasonJob[]
     // CB-19 PR-2: the grade model and inputs recorded at Start; inputs_changed when the team's Mosca differs now
     grades?: {
         model_version: string | null

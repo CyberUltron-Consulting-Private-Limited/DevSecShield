@@ -60,7 +60,21 @@ def lease() -> _dt.timedelta:
 
 MAX_ATTEMPTS = 3
 TEST_JOB_TTL = _dt.timedelta(hours=24)
-COLLECT_JOB_TTL = _dt.timedelta(days=7)
+COLLECT_JOB_TTL = _dt.timedelta(days=7)  # the default; CBOM_JOB_QUEUE_TTL_S sets it (``collect_job_ttl()``)
+
+
+def collect_job_ttl() -> _dt.timedelta:
+    """How long a collection (or cloud slice) may wait unclaimed after it was queued: then it expires, refunded."""
+    return _dt.timedelta(seconds=L.job_queue_ttl_seconds())
+
+
+def node_offline_deadline() -> _dt.timedelta:
+    """How long a job's scan node may stay offline before the job expires (``CBOM_JOB_NODE_OFFLINE_S``, 6 h)."""
+    return _dt.timedelta(seconds=L.node_offline_seconds())
+
+
+def _pending_ttl(job: CbomCollectionJob) -> _dt.timedelta:
+    return collect_job_ttl() if job.kind in CLOUD_KINDS else TEST_JOB_TTL
 TERMINAL = ("success", "failure", "cancelled", "expired")
 OPEN = ("pending", "claimed")
 # A job may run at most this long after it was claimed, whatever its lease says.
@@ -528,7 +542,8 @@ def _reap_candidates(session: Session, now: _dt.datetime, team_id: int | None, n
         select(CbomCollectionJob).where(claimed, CbomCollectionJob.cancel_requested_at < now - CANCEL_GRACE),
         select(CbomCollectionJob).where(claimed, CbomCollectionJob.lease_id.like(S.FANOUT_PREFIX + "%")),  # type: ignore[union-attr]
         select(CbomCollectionJob).where(CbomCollectionJob.status == "pending",
-                                        CbomCollectionJob.created_at < now - min(TEST_JOB_TTL, COLLECT_JOB_TTL)),
+                                        CbomCollectionJob.created_at < now - min(TEST_JOB_TTL, collect_job_ttl())),
+        *_offline_candidate_queries(now),
     ]
     seen: dict[int, CbomCollectionJob] = {}
     for query in queries:
@@ -644,19 +659,114 @@ def _reap_one(session: Session, job: CbomCollectionJob, now: _dt.datetime) -> st
             log_after_commit(session, "job lease expired", team=job.team_id, job=job.id, node=held_by,
                              status=target, claimed_age_s=age, attempt=job.attempts, refund_due_c=refunded)
         return "lease_expired"
+    if job.status in OPEN:
+        offline = node_offline_reason(session, job, now)
+        if offline is not None:
+            return "node_offline" if _expire_open(session, job, now, offline[0], rule="node_offline",
+                                                  offline_since=offline[1]) else None
     if job.status == "pending":
-        ttl = COLLECT_JOB_TTL if job.kind in CLOUD_KINDS else TEST_JOB_TTL
+        ttl = _pending_ttl(job)
         if job.created_at is not None and job.created_at < now - ttl:
             return "expired" if _expire_pending(session, job, now) else None
     return None
 
 
+def _utc_label(at: _dt.datetime) -> str:
+    return at.strftime("%Y-%m-%d %H:%M UTC")
+
+
+def _span_label(span: _dt.timedelta) -> str:
+    seconds = int(span.total_seconds())
+    if seconds % 86_400 == 0:
+        return f"{seconds // 86_400} d"
+    if seconds >= 3_600 and seconds % 3_600 == 0:
+        return f"{seconds // 3_600} h"
+    if seconds >= 3_600:
+        return f"{seconds / 3_600:.1f} h"
+    return f"{max(1, seconds // 60)} min"
+
+
+def _segment_members(session: Session, team_id: int, segment: str) -> list[CbomScanNode]:
+    """The nodes that may take a segment job (``planning.segment_status``): enrolled, signed, agentless."""
+    rows = session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id,
+                                                   CbomScanNode.segment == segment)).all()
+    return [n for n in rows if (n.mode or "agentless") != "agent" and n.node_token_hash is not None
+            and n.signing_public_key]
+
+
+def node_offline_reason(session: Session, job: CbomCollectionJob, now: _dt.datetime,
+                        node: CbomScanNode | None = None) -> tuple[str, _dt.datetime | None] | None:
+    """(reason, offline since) when an open job's scan node, or every node of its segment, has been offline for
+    longer than ``node_offline_deadline()``, counted from the later of the last heartbeat and the job's queueing (or
+    claim); else None.  Cloud jobs (no node, no segment) never match.  The reason names the node and the time it was
+    last seen, so the run says why the job ended (``node X offline since ...``)."""
+    if job.status not in OPEN:
+        return None
+    if job.node_id is not None and (job.status == "claimed" or not job.node_segment):
+        node = node if node is not None and node.id == job.node_id else session.get(CbomScanNode, job.node_id)
+        if node is None or node_status(node, now) == "online":
+            return None
+        seen, label = node.last_heartbeat_at, f"Scan node {node.name}"
+    elif job.node_id is None and job.node_segment and job.status == "pending":
+        members = _segment_members(session, job.team_id, job.node_segment)
+        if any(node_status(n, now) == "online" for n in members):
+            return None
+        beats = [n.last_heartbeat_at for n in members if n.last_heartbeat_at is not None]
+        seen = max(beats) if beats else None
+        label = (f"Every scan node of segment {job.node_segment}" if members
+                 else f"No signed scan node of segment {job.node_segment}")
+    else:
+        return None
+    deadline = node_offline_deadline()
+    start = max([t for t in (seen, job.created_at, job.claimed_at) if t is not None], default=None)
+    if start is None or now - start < deadline:
+        return None
+    if seen is not None:
+        reason = f"{label} offline since {_utc_label(seen)}; the job expired after {_span_label(deadline)} without it"
+    elif job.node_id is None and label.startswith("No signed"):
+        reason = f"{label} was available for {_span_label(deadline)}; the job expired"
+    else:
+        reason = (f"{label} has not connected since the job was queued ({_utc_label(job.created_at or start)}); "
+                  f"the job expired after {_span_label(deadline)}")
+    return reason[:1024], seen
+
+
+def _offline_candidate_queries(now: _dt.datetime) -> list[Any]:
+    """Open jobs that may be past the node-offline deadline: pinned to a node with no heartbeat since the cutoff, and
+    pending segment jobs none of whose segment's nodes beat since the cutoff (``node_offline_reason`` decides)."""
+    cutoff = now - node_offline_deadline()
+    pinned = (select(CbomCollectionJob)
+              .join(CbomScanNode, CbomScanNode.id == CbomCollectionJob.node_id)
+              .where(CbomCollectionJob.status.in_(OPEN), CbomCollectionJob.created_at < cutoff,  # type: ignore[attr-defined]
+                     or_(CbomScanNode.last_heartbeat_at.is_(None), CbomScanNode.last_heartbeat_at < cutoff)))  # type: ignore[union-attr]
+    beating = (select(CbomScanNode.id).where(CbomScanNode.team_id == CbomCollectionJob.team_id,
+                                             CbomScanNode.segment == CbomCollectionJob.node_segment,
+                                             CbomScanNode.last_heartbeat_at >= cutoff).exists())  # type: ignore[operator]
+    segment = select(CbomCollectionJob).where(
+        CbomCollectionJob.status == "pending", CbomCollectionJob.node_id.is_(None),  # type: ignore[union-attr]
+        CbomCollectionJob.node_segment.is_not(None), CbomCollectionJob.created_at < cutoff, ~beating)  # type: ignore[union-attr]
+    return [pinned, segment]
+
+
 def _expire_pending(session: Session, job: CbomCollectionJob, now: _dt.datetime) -> bool:
     """A pending job no node picked up within its TTL: expired, refunded (collect)."""
+    ttl = _pending_ttl(job)
+    return _expire_open(session, job, now,
+                        f"No scan node picked this job up within {_span_label(ttl)} of queueing", rule="queue_ttl")
+
+
+def _expire_open(session: Session, job: CbomCollectionJob, now: _dt.datetime, error: str, *, rule: str,
+                 offline_since: _dt.datetime | None = None) -> bool:
+    """An open job that can no longer run (queue TTL, node offline past the deadline): expired with ``error``,
+    refunded (collect) under the existing refund rules, its run touched so the closer finishes it.  Guarded on the
+    status (and the lease of a claimed job) it was read with, so a claim or result racing it wins or loses cleanly."""
+    was = job.status
+    guard = [CbomCollectionJob.id == job.id, CbomCollectionJob.status == was]
+    if was == "claimed":
+        guard.append(CbomCollectionJob.lease_id == job.lease_id)
     changed = session.exec(
-        update(CbomCollectionJob)
-        .where(CbomCollectionJob.id == job.id, CbomCollectionJob.status == "pending")
-        .values(status="expired", finished_at=now, error="No scan node picked this job up in time")
+        update(CbomCollectionJob).where(*guard)
+        .values(status="expired", finished_at=now, error=error[:1024], lease_id=None, lease_expires_at=None)
     ).rowcount
     if not changed:
         return False
@@ -667,8 +777,10 @@ def _expire_pending(session: Session, job: CbomCollectionJob, now: _dt.datetime)
     _test_result_from_job(session, job, now)
     touch_run(session, job.run_id)
     audit(session, team_id=job.team_id, actor_type="system", actor_id=None, action="job.expired",
-          object_type="job", object_id=job.id)
-    log_after_commit(session, "job expired", team=job.team_id, job=job.id, node=job.node_id, refund_due_c=refunded)
+          object_type="job", object_id=job.id, changed_fields=[rule])
+    log_after_commit(session, "job expired", team=job.team_id, run=job.run_id, job=job.id, node=job.node_id,
+                     segment=job.node_segment, was=was, reason=rule,
+                     offline_since=offline_since.isoformat() + "Z" if offline_since else None, refund_due_c=refunded)
     return True
 
 
@@ -1176,8 +1288,7 @@ def claim_next(session: Session, node: CbomScanNode, settings: CbomCollectionSet
             ns=_NODE_CLAIM_LOCK_NS, node=int(node.id or 0)))
     full = session.exec(select(_node_busy(node.id))).one() >= cap
     for job in _pending_for_node(session, node, settings, now):
-        ttl = COLLECT_JOB_TTL if job.kind in CLOUD_KINDS else TEST_JOB_TTL
-        if job.created_at is not None and job.created_at < now - ttl:
+        if job.created_at is not None and job.created_at < now - _pending_ttl(job):
             _expire_pending(session, job, now)
             continue
         if full and job.kind in _CAPPED_KINDS:
@@ -2168,13 +2279,22 @@ def job_waiting_reason(
     if status in ("pending_registration", "registration_expired"):
         return f"Scan node {node.name} has not registered yet"
     if status == "offline":
-        return f"Scan node {node.name} is offline"
+        return offline_wait_reason(job, node, now)
     is_network = job.kind == "discovery" or (source is not None and source.kind == "network_range")
     if is_network and settings.stop_all_network:
         return "Network scanning is stopped"
     if job.kind != "test_connection" and not window_allows(_job_window(source, settings), settings.window_timezone, now):
         return "Outside the scan window"
     return "Waiting for the scan node to pick it up"
+
+
+def offline_wait_reason(job: CbomCollectionJob, node: CbomScanNode, now: _dt.datetime) -> str:
+    """A job waiting for an offline node: since when, and when it expires unless the node comes back."""
+    seen = node.last_heartbeat_at
+    start = max([t for t in (seen, job.created_at, job.claimed_at) if t is not None], default=now)
+    expires = start + node_offline_deadline()
+    since = f" since {_utc_label(seen)}" if seen else " (never connected)"
+    return f"Scan node {node.name} is offline{since}; the job expires at {_utc_label(expires)} unless it comes back"
 
 
 def run_credit_summary(run: CbomCollectionRun) -> dict[str, float]:

@@ -20,10 +20,19 @@ logged once. Names and defaults follow the F1 contract (section 3); defaults are
 | node requests in flight per worker before claims | CBOM_NODE_MAX_INFLIGHT        | 200     | 10 - 100,000    |
 | and enrollments are answered 429                |                               |         |                 |
 | a node request slower than this is logged (ms)  | CBOM_NODE_SLOW_MS             | 2,000   | 100 - 600,000   |
+| a job whose scan node is offline this long (s)  | CBOM_JOB_NODE_OFFLINE_S       | 21,600  | 600 - 2,592,000 |
+| expires (``node X offline since ...``) (**)     |                               |         |                 |
+| a collection no node or worker picked up within | CBOM_JOB_QUEUE_TTL_S          | 604,800 | 3,600 -         |
+| this many seconds of queueing expires           |                               |         | 2,592,000       |
 
 (*) The effective lease is never shorter than the floor ``lease_seconds()`` derives from the heartbeat intervals nodes
 honour (600 s at the defaults), so a live node whose heartbeats time out a few times in a row, or a backend outage of
 up to about lease / 2 - 60 s, never has its job re-queued.  The maximum stays 86,400 s.
+
+(**) Never shorter than the effective job lease, so a claimed job is first re-queued by the lease rule (a node that
+comes back keeps its retry); "offline" counts from the later of the node's last heartbeat and the job's queueing (or
+claim), so a job queued for a node that was already down still gets the full window.  The default queue TTL is one
+week because a node job may wait for its scan window, and a weekly grid can open up to a week later.
 
 Dispatch: each worker grants at most ``CBOM_DISPATCH_PER_WORKER_S`` job claims a second (a token bucket with a burst of
 one second of rate), so the deployment-wide claim rate is that times the number of workers (100/s on staging's 4).
@@ -47,6 +56,8 @@ _SPEC: dict[str, tuple[int, int, int]] = {  # name: (default, minimum, maximum)
     "CBOM_DISPATCH_PER_WORKER_S": (25, 1, 10_000),
     "CBOM_NODE_MAX_INFLIGHT": (200, 10, 100_000),
     "CBOM_NODE_SLOW_MS": (2_000, 100, 600_000),
+    "CBOM_JOB_NODE_OFFLINE_S": (21_600, 600, 2_592_000),
+    "CBOM_JOB_QUEUE_TTL_S": (604_800, 3_600, 2_592_000),
 }
 # Heartbeat intervals a node actually honours: scan node 1.2+ waits at most 600 s whatever the server says; scan node
 # 1.0/1.1 (protocol 1) at most 60 s.  The lease floor is derived from these, never from a value a node would cap.
@@ -121,6 +132,17 @@ def lease_seconds() -> int:
         log("job lease raised to the heartbeat floor", configured_s=configured, effective_s=effective,
             tolerated_outage_s=effective // 2 - 60)
     return effective
+
+
+def node_offline_seconds() -> int:
+    """How long a job's scan node may stay offline before the job expires (``CBOM_JOB_NODE_OFFLINE_S``), never
+    shorter than the effective lease (the lease rule re-queues first)."""
+    return max(get("CBOM_JOB_NODE_OFFLINE_S"), lease_seconds())
+
+
+def job_queue_ttl_seconds() -> int:
+    """How long a collection may wait unclaimed after it was queued before it expires (``CBOM_JOB_QUEUE_TTL_S``)."""
+    return get("CBOM_JOB_QUEUE_TTL_S")
 
 
 def dispatch_per_worker() -> int:

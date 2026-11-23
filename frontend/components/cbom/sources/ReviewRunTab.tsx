@@ -43,6 +43,7 @@ import {
   ErrorBlock,
   LoadingBlock,
   RunStatusBadge,
+  RunStatusReason,
   SectionCard,
   StatusBadge,
   Truncate,
@@ -467,7 +468,8 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
                       <TableCell className="font-medium text-zinc-900 dark:text-white">#{run.id}</TableCell>
                       <TableCell className="text-zinc-600 dark:text-zinc-400">{formatDateTime(run.created_at)}</TableCell>
                       <TableCell>
-                        <RunStatusBadge status={run.status} />
+                        <RunStatusBadge status={run.status} reason={run.status_reason} />
+                        <RunStatusReason reason={run.status_reason} clamp testId={`review-run-status-reason-${run.id}`} />
                       </TableCell>
                       <TableCell className="text-zinc-600 dark:text-zinc-400">{jobSummary(run.job_counts)}</TableCell>
                       <TableCell className="text-right text-zinc-600 dark:text-zinc-400" data-testid={`review-run-assets-${run.id}`}>
