@@ -18,6 +18,7 @@ REPO = Path(__file__).resolve().parents[2]
 WORKER = (REPO / "RabbitMQ" / "worker" / "Dockerfile").read_text()
 DAST = (REPO / "RabbitMQ" / "dast_worker" / "Dockerfile").read_text()
 BUILD = (REPO / "scripts" / "deploy" / "build_images.sh").read_text()
+IGNORE = (REPO / "RabbitMQ" / "worker" / "Dockerfile.dockerignore").read_text()
 
 
 def froms(text: str) -> list[str]:
@@ -81,6 +82,9 @@ def test_worker_image_copies_the_files_the_sbom_scan_loads_by_path():
         name = rel.rsplit("/", 1)[1]
         assert re.search(rf"^COPY .*\b{re.escape(rel)}\b.* /build/{re.escape(rel.rsplit('/', 1)[0])}/(?:{re.escape(name)})?$",
                          WORKER, re.M), rel
+        # the build context is an allowlist (RabbitMQ/worker/Dockerfile.dockerignore): a COPY of a file it leaves out
+        # fails the image build ("not found")
+        assert re.search(rf"^!{re.escape(rel)}$", IGNORE, re.M), rel
 
 
 def test_ci_installs_the_syft_and_grype_the_worker_image_ships():

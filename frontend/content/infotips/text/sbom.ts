@@ -45,13 +45,13 @@ const TEXT = {
     why: "Shows how many audit requirements the dependency findings touch.",
     example: "One finding mapped to 2 controls and one to 3: 5.",
   },
-  // src: backend/utilities/dashboard/scan_list.py, backend/utilities/dashboard/sbom_rows.py component_licence_categories — medium + high risk license categories over the SBOM components of successful scans (review 6028132826 M4)
+  // src: backend/utilities/dashboard/scan_list.py:970,1082-1084, backend/utilities/dashboard/sbom_rows.py:52-87 — medium + high risk license categories over the SBOM components of successful scans (review 6028132826 M4)
   "sbom.kpi.license_risks": {
     what: "Packages in your SBOMs whose license is medium-risk (weak copyleft such as LGPL or MPL, Creative Commons, commercial) or high-risk (strong copyleft such as GPL, network copyleft such as AGPL, source-available such as SSPL or BUSL), whether or not they have a known vulnerability.",
     why: "Some licenses impose obligations on how you distribute your software.",
     example: "An LGPL-3.0 package and a GPL-3.0 package: 2.",
   },
-  // src: backend/utilities/dashboard/scan_list.py, backend/utilities/dashboard/sbom_rows.py component_licence_categories, backend/utilities/dashboard/sbom_license.py spdx_to_license_category — strong copyleft, network copyleft, source-available, over the SBOM components (M4)
+  // src: backend/utilities/dashboard/scan_list.py:970,1082, backend/utilities/dashboard/sbom_rows.py:52-87, backend/utilities/dashboard/sbom_license.py:201 — strong copyleft, network copyleft, source-available, over the SBOM components (M4)
   "sbom.kpi.high_risk_licenses": {
     what: "Packages in your SBOMs under a strong copyleft (GPL), network copyleft (AGPL) or source-available (SSPL, BUSL) license, whether or not they have a known vulnerability.",
     why: "Strong copyleft or source-available licenses can force you to publish code or change your product.",
@@ -93,7 +93,7 @@ const TEXT = {
     why: "Shows whether dependency risk is growing or shrinking.",
     example: "Scans created on 5 Nov found 3 High in total: High shows 3 on 5 Nov.",
   },
-  // src: backend/utilities/dashboard/scan_list.py, backend/utilities/dashboard/sbom_rows.py component_licence_categories — license family of each SBOM component (M4)
+  // src: backend/utilities/dashboard/scan_list.py:970, backend/utilities/dashboard/sbom_rows.py:52-87 — license family of each SBOM component (M4)
   "sbom.chart.licenses": {
     what: "The packages in your SBOMs grouped by license family: permissive, public domain, weak copyleft, Creative Commons, commercial, strong copyleft, network copyleft, source-available, or not declared.",
     why: "Shows which license obligations come with your dependencies.",
@@ -155,19 +155,19 @@ const TEXT = {
     why: "Shows how many audit requirements this scan's findings touch.",
     example: "One vulnerability mapped to 2 controls and one to 3: 5.",
   },
-  // src: backend/utilities/dashboard/scan.py sbom_sca, backend/utilities/dashboard/sbom_rows.py component_licence_categories — medium + high risk license categories over this scan's SBOM components, the licences the downloaded SBOM lists (M4)
+  // src: backend/utilities/dashboard/scan.py:869-872, backend/utilities/dashboard/sbom_rows.py:52-87 — medium + high risk license categories over this scan's SBOM components, the licences the downloaded SBOM lists (M4)
   "sbom.res.kpi.license_risks": {
     what: "Packages in this scan's SBOM whose license is medium-risk (weak copyleft such as LGPL or MPL, Creative Commons, commercial) or high-risk (strong copyleft such as GPL, network copyleft such as AGPL, source-available such as SSPL or BUSL), whether or not they have a known vulnerability. The licences are the ones the downloaded SBOM lists.",
     why: "Some licenses impose obligations on how you distribute your software.",
     example: "An LGPL-3.0 package and a GPL-3.0 package: 2.",
   },
-  // src: backend/utilities/dashboard/scan.py sbom_sca, backend/utilities/dashboard/sbom_rows.py component_licence_categories — strong copyleft, network copyleft, source-available over the SBOM components (M4)
+  // src: backend/utilities/dashboard/scan.py:869,873, backend/utilities/dashboard/sbom_rows.py:52-87 — strong copyleft, network copyleft, source-available over the SBOM components (M4)
   "sbom.res.kpi.high_risk_licenses": {
     what: "Packages in this scan's SBOM under a strong copyleft (GPL), network copyleft (AGPL) or source-available (SSPL, BUSL) license, whether or not they have a known vulnerability.",
     why: "Strong copyleft or source-available licenses can force code publication or product changes.",
     example: "scapy under GPL-2.0-only.",
   },
-  // src: backend/utilities/dashboard/scan.py sbom_sca, backend/utilities/dashboard/sbom_rows.py is_unverified_version, RabbitMQ/worker/helpers/tools/sca_sbom_agent/grype_findings.py version_guessed_from — Grype matches on a version read from a manifest range (review 6028132826 M2)
+  // src: backend/utilities/dashboard/scan.py:836,954, backend/utilities/dashboard/sbom_rows.py:30-34, RabbitMQ/worker/helpers/tools/sca_sbom_agent/grype_findings.py:254, frontend/components/SbomResults.tsx:335-344 — Grype matches on a version read from a manifest range (review 6028132826 M2)
   "sbom.res.kpi.unverified": {
     what: "Vulnerabilities matched on a version read from a range in a manifest (pillow>=10.0 read as 10.0) because no lock file or pin names the installed version. They are listed with the findings but not counted in the totals, the severities or the risk score.",
     why: "The installed version may well be newer and not affected: pin the version or commit a lock file, then rescan.",
@@ -209,7 +209,7 @@ const TEXT = {
     why: "Shows when the findings were recorded.",
     example: "12 findings recorded on 11 Nov: one point with Critical 1, High 3, Medium 6, Low 2.",
   },
-  // src: backend/utilities/dashboard/scan.py sbom_sca, backend/utilities/dashboard/sbom_rows.py component_licence_categories, RabbitMQ/worker/helpers/tools/sca_sbom_agent/registry_enrich.py — license family per SBOM component (M4)
+  // src: backend/utilities/dashboard/scan.py:869, backend/utilities/dashboard/sbom_rows.py:52-87, RabbitMQ/worker/helpers/tools/sca_sbom_agent/registry_enrich.py:145,194 — license family per SBOM component (M4)
   "sbom.res.licenses": {
     what: "This scan's SBOM components by license family. The license is the one the downloaded SBOM lists (from the inventory tools, a built-in list of well-known packages, or the package registry, resolved once when the scan finished); otherwise Not declared.",
     why: "Shows which license obligations come with your dependencies.",
