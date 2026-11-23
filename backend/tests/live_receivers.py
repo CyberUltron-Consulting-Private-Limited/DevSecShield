@@ -471,7 +471,8 @@ class ReceiverLab:
             if method == "POST" and parts.path == "/rest/api/3/issue":
                 data = json.loads(body or b"{}")
                 fields = data.get("fields") or {}
-                if not (fields.get("project") or {}).get("id") or not fields.get("summary"):
+                project = fields.get("project") or {}
+                if not (project.get("id") or project.get("key") == "SEC") or not fields.get("summary"):
                     return 400, {"errors": {"summary": "You must specify a summary of the issue."}}, None
                 n = len(self.issues) + 1
                 key = f"SEC-{n}"
@@ -492,6 +493,20 @@ class ReceiverLab:
                     issue["status"] = {"21": "In Progress", "31": "Done"}.get(str(tid), issue["status"])
                     rec["transitioned"] = (m.group(1), issue["status"])
                     return 204, None, None
+            if method == "GET" and parts.path == "/rest/api/3/myself":
+                return 200, {"accountId": "5b10ac8d82e05b22cc7d4ef5", "displayName": "ZeroShield bot"}, None
+            m = re.fullmatch(r"/rest/api/3/project/([A-Z][A-Z0-9]*|\d+)", parts.path)
+            if method == "GET" and m:
+                if m.group(1) in ("SEC", "10001"):
+                    return 200, {"id": "10001", "key": "SEC", "name": "Security"}, None
+                return 404, {"errorMessages": ["No project could be found with key '" + m.group(1) + "'."]}, None
+            if method == "POST" and parts.path in ("/rest/api/3/search/jql", "/rest/api/3/search"):
+                jql = str((json.loads(body or b"{}") or {}).get("jql") or "")
+                wanted = re.search(r'labels = "([^"]+)"', jql)
+                hits = [i for i in self.issues.values()
+                        if wanted and wanted.group(1) in ((i.get("fields") or {}).get("labels") or [])]
+                rec["searched"] = wanted.group(1) if wanted else None
+                return 200, {"issues": [{"key": i["key"]} for i in reversed(hits)][:1]}, None
             if method == "GET" and parts.path == "/rest/api/3/project/search":
                 return 200, {"values": [{"id": "10001", "key": "SEC", "name": "Security"}]}, None
         return 404, {"errorMessages": ["Not found"]}, None

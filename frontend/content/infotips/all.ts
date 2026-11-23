@@ -7,6 +7,7 @@ import { INFO_TIP_LABELS, type InfoTipId } from "./labels";
 import type { InfoTipEntry, TipAreaText } from "./types";
 
 import aibom from "./text/aibom";
+import cbomGate from "./text/cbom-gate";
 import cbomGrade from "./text/cbom-grade";
 import cbomResults from "./text/cbom-results";
 import cbomRun from "./text/cbom-run";
@@ -53,6 +54,7 @@ export const AREA_TEXT: Record<TipArea, TipAreaText> = {
   "cbom-results": cbomResults,
   "cbom-grade": cbomGrade,
   "cbom-run": cbomRun,
+  "cbom-gate": cbomGate,
   "cbsrc-common": cbsrcCommon,
   "cbsrc-nodes": cbsrcNodes,
   "cbsrc-servers": cbsrcServers,

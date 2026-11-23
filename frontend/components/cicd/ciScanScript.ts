@@ -51,19 +51,22 @@ export function scanRequestScript({ zipPath, url, keyRef, responseFile }: ScanRe
 }
 
 // CBOM policy gate (POSIX sh, grep only: no jq on Bamboo / Jenkins agents). POST /cicd/cbom/scan answers
-// "gate_failed":true when the tree has a high crypto finding (the code-scan CLI's codes: weak algorithm or key, ECB,
-// hard-coded key, static IV, reused nonce, weak RNG, weak padding, disabled certificate verification, vulnerable crypto
-// library) and also when no result arrived in time. The answer is compact JSON, and text inside a JSON string has its
-// quotes escaped, so only the top-level key can match. "true" is tested first; an answer with neither value (an older
-// server, a cut-off body) fails the job too.
+// "gate_failed":true when the team's CBOM gate policy (Settings > CBOM policy gate; by default a high crypto finding, a
+// banned algorithm such as MD5 or 3DES, or a key below the NIST SP 800-131A minimum) blocks a finding, and also when no
+// result arrived in time. "gate_summary" is one line (no quotes or backslashes) naming the verdict, the policy and the
+// rules that failed, so every runner prints it with grep and sed. The answer is compact JSON, and text inside a JSON
+// string has its quotes escaped, so only the top-level keys can match. "true" is tested first; an answer with neither
+// value (an older server, a cut-off body) fails the job too.
 export function cbomGateScript(responseFile: string): string {
   return [
-    "# CBOM policy gate: fail on a high crypto finding, and fail closed when the answer carries no verdict.",
+    "# CBOM policy gate: fail when the team's CBOM policy blocks a finding, and fail closed when the answer carries no verdict.",
+    `summary=${D}(grep -o '"gate_summary":"[^"]*"' ${responseFile} | head -n 1 | sed 's/^"gate_summary":"//; s/"${D}//')`,
+    `if [ -n "${D}{summary}" ]; then echo "DevSecShield CBOM policy verdict: ${D}{summary}"; fi`,
     `if grep -Eq '"gate_failed"[[:space:]]*:[[:space:]]*true' ${responseFile}; then`,
-    '  echo "DevSecShield CBOM policy gate: FAILED (high crypto findings, or no result in time; see the list above and the CI/CD page)"',
+    '  echo "DevSecShield CBOM policy gate: FAILED (findings the CBOM policy blocks, or no result in time; see the list above and the CI/CD page)"',
     "  exit 1",
     `elif grep -Eq '"gate_failed"[[:space:]]*:[[:space:]]*false' ${responseFile}; then`,
-    '  echo "DevSecShield CBOM policy gate: passed (no high crypto finding)"',
+    '  echo "DevSecShield CBOM policy gate: passed (nothing the CBOM policy blocks)"',
     "else",
     '  echo "DevSecShield CBOM policy gate: the answer has no verdict, so the job fails (fail closed)"',
     "  exit 1",
@@ -71,11 +74,14 @@ export function cbomGateScript(responseFile: string): string {
   ].join("\n");
 }
 
-// jq lines printing the gate's reason and its failing findings (GitHub Actions and GitLab CI, where jq is present).
+// jq lines printing the gate's policy, reason, failing findings with the rules each broke, and warnings (GitHub Actions
+// and GitLab CI, where jq is present).
 export function cbomGateDetailsJq(responseFile: string): string {
   return [
+    `jq -r '"CBOM policy: " + (.gate.policy // "none") + " (" + (.gate.policy_source // "default") + ")"' ${responseFile}`,
     `jq -r '.gate.reason // "No CBOM policy verdict in the answer."' ${responseFile}`,
-    `jq -r '.gate.failing[]? | "\\(.impact // "High") \\(.codes | join(",")) \\(.location)\\(if .line then ":\\(.line)" else "" end) \\(.title)"' ${responseFile}`,
+    `jq -r '.gate.failing[]? | "\\(.impact // "High") \\(.codes | join(",")) \\(.location)\\(if .line then ":\\(.line)" else "" end) \\(.title) [\\([.rules[]? | select(.outcome == "fail") | .rule] | join(","))]"' ${responseFile}`,
+    `jq -r '.gate.warnings[]? | "warning: \\(.title) \\(.location) [\\([.rules[]? | .rule] | join(","))]"' ${responseFile}`,
   ].join("\n");
 }
 

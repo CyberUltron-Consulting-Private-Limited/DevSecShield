@@ -340,6 +340,63 @@ def test(ctx: Context, _event: dict[str, Any]) -> Outcome:
     return http_outcome(resp)
 
 
+# ----------------------------------------------------------------------------- "Raise test ticket" (SOW S2)
+TEST_SHORT = "[ZeroShield CBOM] Integration test ticket - safe to close"
+
+
+def test_correlation_id(team_id: int, click_id: str) -> str:
+    return "zs-cbom-test-" + hashlib.sha256(f"{team_id}|{click_id}".encode()).hexdigest()[:32]
+
+
+def record_url(cfg: ServiceNowConfig, sys_id: str) -> str:
+    return f"{cfg.instance_url}/nav_to.do?uri={cfg.table}.do%3Fsys_id%3D{sys_id}"
+
+
+def raise_test_ticket(ctx: Context, click_id: str) -> tuple[Outcome, str | None]:
+    """Create one clearly labelled low-priority record in the configured table (acceptance evidence: "a test ticket
+    raised successfully"). The correlation id is derived from the team and the click, and is looked up first, so a
+    repeated or retried click never makes a second record. Returns the outcome (``ref`` = the record number) and the
+    record's link. Messages are safe to show: an HTTP status or a short reason, never a response body."""
+    cfg: ServiceNowConfig = ctx.config
+    cid = test_correlation_id(ctx.team_id, click_id)
+    try:
+        headers = auth_headers(cfg, ctx.secrets)
+        resp, record = _find_active(cfg, headers, cid)
+        if resp.status != 200:
+            outcome = http_outcome(resp, "looking up the record")
+            return (outcome if outcome.status != "ok" else Outcome("retry", f"HTTP {resp.status} looking up the record"),
+                    None)
+        if record is not None:
+            sys_id = str(record.get("sys_id") or "")
+            link = record_url(cfg, sys_id) if re.fullmatch(r"[0-9a-f]{32}", sys_id) else None
+            return Outcome("ok", f"already raised {_ref(record) or ''}".strip(), ref=_ref(record)), link
+        body: dict[str, Any] = {
+            "short_description": TEST_SHORT,
+            "description": ("Raised by the \"Raise test ticket\" button in ZeroShield DevSecShield (Settings > "
+                            "Integrations) to prove that CBOM findings can be ticketed in this table. It is not a "
+                            f"finding. Team {ctx.team_id}, request {click_id}. Safe to close."),
+            cfg.correlation_field: cid, "correlation_display": "ZeroShield CBOM", "impact": "3", "urgency": "3"}
+        if cfg.category:
+            body["category"] = cfg.category
+        if cfg.assignment_group:
+            body["assignment_group"] = cfg.assignment_group
+        created = outbound.request("POST", _api(cfg, f"/api/now/table/{cfg.table}"), ca_pem=cfg.ca_pem,
+                                   body=json.dumps(body).encode("utf-8"),
+                                   headers={**headers, "Content-Type": "application/json"})
+    except PermissionError as exc:
+        return Outcome("retry", str(exc)), None
+    except Exception as exc:
+        return failure(exc), None
+    outcome = http_outcome(created, "creating the record")
+    if outcome.status != "ok":
+        return outcome, None
+    result = (parse_json(created.body) or {}).get("result") or {}
+    sys_id = str(result.get("sys_id") or "") if isinstance(result, dict) else ""
+    outcome.ref = _ref(result if isinstance(result, dict) else None)
+    outcome.reason = f"created {outcome.ref or ''}".strip()
+    return outcome, (record_url(cfg, sys_id) if re.fullmatch(r"[0-9a-f]{32}", sys_id) else None)
+
+
 # ----------------------------------------------------------------------------- CMDB pull
 def _value(row: dict[str, Any], name: str | None) -> str | None:
     """With ``sysparm_display_value=all`` every field is {display_value, value}: references read by display value."""
