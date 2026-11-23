@@ -15523,7 +15523,7 @@
    }
   }
  },
- "kb_version": "2026.11.23.5",
+ "kb_version": "2026.11.24.2",
  "legacy_controls": {
   "access": {
    "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control",
@@ -17748,6 +17748,10 @@
      {
       "select": {
        "all": true,
+       "names": [
+        "LMS",
+        "XMSS"
+       ],
        "standard": "SP 800-208"
       }
      },
@@ -17762,7 +17766,7 @@
      }
     ],
     "label": "Software and firmware signing",
-    "note": "CNSA 2.0 names the stateful hash-based schemes for software and firmware signing (state must be managed by the signer).",
+    "note": "NIST: every SP 800-208 scheme. CNSA 2.0 approves only the single-tree stateful hash-based schemes from SP 800-208 for software and firmware signing; the multi-tree variants are not allowed (NSA CNSA 2.0 FAQ). LMS SHA-256/192 is recommended. The signer must manage the one-time key state.",
     "reference": "SP 800-208 / FIPS 204",
     "target": [
      {
@@ -17876,37 +17880,49 @@
   },
   "wave_milestones": [
    {
-    "basis": "CNSA 2.0 'support and prefer' milestones: web and cloud services 2025, networking equipment 2026, operating systems 2027. Exposed and harvest-now-decrypt-later assets cannot wait for the deprecation date.",
-    "date": "2027-12-31",
-    "sources": [
-     "https://media.defense.gov/2022/Sep/07/2003071836/-1/-1/1/CSI_CNSA_2.0_FAQ_.PDF"
+    "cites": [
+     "cnsa_2"
     ],
+    "date": "2027-12-31",
+    "fix_basis": "Urgent: fix the classical weakness within 90 days of the assessment. SP 800-131A disallows it today.",
+    "fix_within_days": 90,
+    "pq_basis": "CNSA 2.0 'support and prefer': web and cloud 2025, networking 2026, operating systems 2027. Exposed and harvest-now-decrypt-later key exchange cannot wait for the deprecation date.",
+    "pq_date": "2027-12-31",
     "wave": 1
    },
    {
-    "basis": "NIST IR 8547: NIST will deprecate quantum-vulnerable public-key cryptography after 2030 and disallow its use under NIST standards and guidelines after 2035. Federal key establishment by 31 December 2030 (Sec. 4, p.13). CNSA 2.0: networking equipment exclusively by 2030, software and firmware signing by 2030.",
-    "date": "2030-12-31",
-    "sources": [
-     "https://csrc.nist.gov/pubs/ir/8547/final",
-     "https://media.defense.gov/2022/Sep/07/2003071836/-1/-1/1/CSI_CNSA_2.0_FAQ_.PDF"
+    "cites": [
+     "nist_ir_8547",
+     "cnsa_2"
     ],
+    "date": "2030-12-31",
+    "fix_basis": "Fix the classical weakness within 180 days of the assessment (the quarter after wave 1). SP 800-131A disallows it today.",
+    "fix_within_days": 180,
+    "pq_basis": "NIST IR 8547: high value assets and high impact systems adopt post-quantum key establishment by 31 December 2030 (Sec. 4, p.13). CNSA 2.0 exclusively: networking 2030, software and firmware signing 2030.",
+    "pq_date": "2030-12-31",
     "wave": 2
    },
    {
-    "basis": "NIST IR 8547: federal digital signatures by 31 December 2031 (Sec. 4, p.13); remaining weaknesses fixed before the 2030 deprecation takes effect for signatures.",
-    "date": "2031-12-31",
-    "sources": [
-     "https://csrc.nist.gov/pubs/ir/8547/final"
+    "cites": [
+     "nist_ir_8547"
     ],
+    "date": "2031-12-31",
+    "fix_basis": "Fix the classical weakness within 365 days of the assessment. SP 800-131A disallows or deprecates it today.",
+    "fix_within_days": 365,
+    "pq_basis": "NIST IR 8547: high value assets and high impact systems adopt post-quantum digital signatures by 31 December 2031 (Sec. 4, p.13). NIST will deprecate quantum-vulnerable public-key cryptography after 2030 and disallow its use under NIST standards and guidelines after 2035.",
+    "pq_date": "2031-12-31",
     "wave": 3
    },
    {
-    "basis": "CNSA 2.0: web and cloud services and operating systems exclusively by 2033; NIST IR 8547 disallows quantum-vulnerable public-key algorithms after 2035.",
-    "date": "2033-12-31",
-    "sources": [
-     "https://media.defense.gov/2022/Sep/07/2003071836/-1/-1/1/CSI_CNSA_2.0_FAQ_.PDF",
-     "https://csrc.nist.gov/pubs/ir/8547/final"
+    "cites": [
+     "cnsa_2",
+     "nist_ir_8547"
     ],
+    "date": "2033-12-31",
+    "fix_basis": null,
+    "fix_within_days": null,
+    "pq_basis": "CNSA 2.0: web, cloud and operating systems exclusively by 2033. NIST will deprecate quantum-vulnerable public-key cryptography after 2030 and disallow its use under NIST standards and guidelines after 2035.",
+    "pq_date": "2033-12-31",
     "wave": 4
    }
   ],

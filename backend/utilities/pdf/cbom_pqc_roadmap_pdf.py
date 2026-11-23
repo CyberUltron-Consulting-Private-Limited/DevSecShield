@@ -41,10 +41,11 @@ from __future__ import annotations
 
 from typing import Any
 
+import datetime as _dt
 import itertools
 import re
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import CondPageBreak, Flowable, KeepTogether, Paragraph, Spacer
@@ -112,8 +113,9 @@ _TIMELINE_HEADERS = ("When", "Milestone", "Status", "Source", "Source URL")
 _TIMELINE_COLS = (56, 198, 50, 96, 320)
 _FAMILY_HEADERS = ("Function", "NIST PQ target", "CNSA 2.0", "Reference", "Assets", "Sources")
 _FAMILY_COLS = (150, 230, 120, 90, 60, 70)
-_WAVE_HEADERS = ("Wave", "What goes in it", "Assets", "Proposed date", "Basis (public milestones)", "Owners")
-_WAVE_COLS = (34, 150, 44, 70, 270, 152)
+_WAVE_HEADERS = ("Wave", "What goes in it", "Assets", "Fix classical weakness by", "Post-quantum by", "Basis",
+                 "Owners")
+_WAVE_COLS = (30, 118, 36, 78, 60, 268, 130)
 _LEVEL_HEADERS = ("NIST quantum security level", "Occurrences", "Of which hybrid")
 _LEVEL_COLS = (260, 130, 130)
 _PREVIOUS_HEADERS = (
@@ -165,8 +167,9 @@ _OMITTED_TEMPLATE = (
 )
 # Product text: readiness is pqc_safe / (pqc_safe + pqc_vulnerable) of cbom_team_rollup.
 _NOTES = (
-    "Readiness = quantum-safe / (quantum-safe + quantum-vulnerable), over current algorithm "
-    "occurrences. Occurrences with no recorded quantum status are left out.",
+    "Readiness = quantum-safe / (quantum-safe + broken today + quantum-vulnerable), over the current "
+    "assets with a quantum verdict (the one readiness function every CBOM view uses). Broken today "
+    "(MD5, DES ...) is not ready. Occurrences with no recorded quantum status are left out.",
     "Counts are current occurrences, not de-duplicated across sources: the same algorithm in "
     "two sources is counted twice because each source's usage is a separate exposure.",
     "NIST QSL is the NIST quantum security level the engine recorded; 0 means no security "
@@ -176,7 +179,7 @@ _NOTES = (
     "the FIPS 203 / 204 / 205 or SP 800-208 reference. One table in the crypto knowledge base "
     "drives it, the same one behind the run pages.",
     "A dash (" + _DASH + ") means the value is not recorded: legacy-format scans carry no "
-    "classical strength, quantum security level or sized target.",
+    "classical strength or quantum security level.",
     "Wave, target date and owner / status are for the assessor to complete. This document "
     "lists assets and the NIST target for each; it does not sequence the migration.",
 )
@@ -184,17 +187,18 @@ _UNKNOWN_FUNCTION = "not recorded"
 # With the team's remediation plan loaded (``view.remediation``) the last note is replaced by this one: the three
 # columns are filled from the plan, and scan-node / cloud assets get their own table.
 _PLAN_NOTE = (
-    "Wave, target date and owner / status come from the team's remediation plan in DevSecShield. "
-    "Where no wave was assigned, the suggested wave is printed with \"(suggested)\": 1 = critical or high "
-    "and internet-facing or harvest-now-decrypt-later, 2 = other critical or high, 3 = any other weakness, "
-    "4 = quantum-vulnerable with no other weakness. A target date marked \"(proposed)\" is the wave's date from "
-    "the public milestones (NIST IR 8547, CNSA 2.0); an owner marked \"(source owner)\" is the owner recorded on the "
-    "source. Waves, dates and owners are proposals until ZeroShield confirms them with the asset owners before issue."
+    "Wave, target date and owner / status come from the team's remediation plan. Without an assigned wave the "
+    "suggested one is printed \"(suggested)\": 1 = critical or high and internet-facing or harvest-now-decrypt-later, "
+    "2 = other critical or high, 3 = any other weakness, 4 = quantum-vulnerable only. \"fix\" dates a classical "
+    "weakness SP 800-131A disallows today, from this assessment's date; \"PQ by\" is the post-quantum migration "
+    "(NIST IR 8547, CNSA 2.0), never a classical deadline. \"(source owner)\" is the owner on the source. All are "
+    "proposals until ZeroShield confirms them with the asset owners."
 )
 _WAVE_INTRO = (
-    "Each wave with its proposed completion date. The dates come from public milestones (NIST IR 8547, CNSA 2.0), "
-    "not from this document; an assigned date in the plan replaces the proposal. ZeroShield confirms waves, dates and "
-    "owners with the asset owners before issue."
+    "Each wave with its two proposed dates. A classical weakness (SP 800-131A disallows it today) is fixed within "
+    "the wave's window from this assessment ({as_of}); the post-quantum migration follows the public milestones "
+    "(NIST IR 8547, CNSA 2.0). An assigned date in the plan replaces either proposal. ZeroShield confirms waves, "
+    "dates and owners with the asset owners before issue."
 )
 _NODE_HEADERS = ("#", "Asset", "Type", "Algorithm / key", "NIST PQ target", "Impact", "Where found", "Wave",
                  "Target date", "Owner / status")
@@ -322,19 +326,34 @@ def _effective_wave(plan: dict | None) -> int | None:
     return int(wave) if isinstance(wave, int) and not isinstance(wave, bool) else None
 
 
-def _plan_cells(plan: dict | None, suggested: int | None, owner_hint: str | None = None) -> list[str]:
+def date_cell(wave: int | None, codes: Sequence[str], quantum_vulnerable: object, as_of: _dt.date,
+              windows: Mapping[int, int] | None) -> str:
+    """The proposed date(s) of one row (``pqc_targets.proposed_dates``): "fix" for a classical weakness, counted from
+    the assessment; "PQ by" for the post-quantum migration (IR 8547 / CNSA 2.0)."""
+    dates = PQT.proposed_dates(wave, codes, quantum_vulnerable, as_of, windows)
+    lines = []
+    if dates["fix_by"]:
+        lines.append(f"{dates['fix_by']} fix (proposed)")
+    if dates["pq_by"]:
+        lines.append(f"PQ by {dates['pq_by']} (proposed)")
+    return "\n".join(lines)
+
+
+def _plan_cells(plan: dict | None, suggested: int | None, owner_hint: str | None = None, *,
+                as_of: _dt.date | None = None, windows: Mapping[int, int] | None = None) -> list[str]:
     """Wave, target date and owner / status from the team's remediation plan (blank without a plan). A date the plan
-    does not set is the wave's proposed date (``pqc_targets.wave_milestone``, "(proposed)"); an owner it does not set
-    is the source's recorded owner (C5, "(source owner)"), else ``UNASSIGNED_OWNER``."""
+    does not set is proposed (``date_cell``: the classical fix from ``as_of``, the post-quantum date from the
+    milestones); an owner it does not set is the source's recorded owner (C5, "(source owner)"), else
+    ``UNASSIGNED_OWNER``."""
     if plan is None:
         return ["", "", ""]
     assigned = plan.get("assigned") or {}
     wave = assigned.get("wave")
     wave_text = str(wave) if wave else (f"{suggested} (suggested)" if suggested else "")
     date = str(assigned.get("target_date") or "")
-    if not date:
-        milestone = PQT.wave_milestone(wave or suggested)
-        date = f"{milestone['date']} (proposed)" if milestone else ""
+    if not date and (wave or suggested) and as_of is not None:
+        date = date_cell(wave or suggested, plan.get("finding_codes") or (), plan.get("quantum_vulnerable"), as_of,
+                         windows)
     status = str(assigned.get("status") or "").replace("_", " ")
     owner = assigned.get("owner") or ""
     if not owner:
@@ -359,14 +378,25 @@ def _short_function(target: dict | None) -> str:
     return _function(target).split(" (")[0]
 
 
+def _windows(view: TeamCbomView) -> dict[int, int]:
+    """Days-to-fix per wave for classical weaknesses: the team's (loaded with the plan), else the KB defaults."""
+    found = (view.remediation or {}).get("fix_windows") or {}
+    return {int(k): int(v) for k, v in found.items()} or PQT.fix_windows()
+
+
 def _asset_plan(view: TeamCbomView, asset: AssetAgg) -> dict | None:
     """The asset's remediation plan, precomputed into the view by the loader (``code_plans``)."""
     if view.remediation is None:
         return None
-    return (view.remediation.get("code_plans") or {}).get(plan_key(asset)) or {"assigned": {}, "suggested": None}
+    plan = (view.remediation.get("code_plans") or {}).get(plan_key(asset)) or {"assigned": {}, "suggested": None}
+    # the row's own codes and verdict date it (fix vs post-quantum), also on a plan loaded before they were recorded
+    plan = {**plan, "finding_codes": plan.get("finding_codes") or list(asset.finding_codes or ()),
+            "quantum_vulnerable": asset.quantum_vulnerable}
+    return plan
 
 
-def _roadmap_row(number: int, asset: AssetAgg, plan: dict | None = None) -> list[object]:
+def _roadmap_row(number: int, asset: AssetAgg, plan: dict | None = None, as_of: _dt.date | None = None,
+                 windows: Mapping[int, int] | None = None) -> list[object]:
     return [
         str(number),
         asset.title,
@@ -378,7 +408,7 @@ def _roadmap_row(number: int, asset: AssetAgg, plan: dict | None = None) -> list
         status_chip(asset.impact.upper(), tone_for_impact(asset.impact)),
         _where(asset),
         _seen(asset),
-        *_plan_cells(plan, (plan or {}).get("suggested")),
+        *_plan_cells(plan, (plan or {}).get("suggested"), as_of=as_of, windows=windows),
     ]
 
 
@@ -416,7 +446,9 @@ def _summary(
             "high" if view.pqc_vulnerable else "low",
         ),
         _card("Distinct kinds", str(kinds), "algorithm with key size or curve"),
-        _card("Quantum readiness", readiness, "quantum-safe / (safe + vulnerable)"),
+        _card("Quantum readiness", readiness, "safe / (safe + broken today + vulnerable)"),
+        _card("Broken today", str(view.pqc_broken_today), "MD5, DES ...: not ready",
+              "high" if view.pqc_broken_today else ""),
         _card("Quantum-safe", str(view.pqc_safe), "current occurrences", "low"),
         _card("Hybrid", str(view.pqc_hybrid), "subset of quantum-safe"),
         _card(
@@ -436,19 +468,70 @@ def _summary(
             kpi_strip(cards, width),
         ]
     )
-    return [block, Spacer(1, 4), _note(meta["how_to_read"], styles), Spacer(1, 2)]
+    return [block, Spacer(1, 4), _note(readiness_line(view), styles), _note(meta["how_to_read"], styles),
+            Spacer(1, 2)]
+
+
+def readiness_line(view: TeamCbomView) -> str:
+    """The readiness figure with its operands, as the view computed it (``cbom_metrics.quantum_readiness_pct``): never
+    recomputed here, so the printed formula and the number cannot disagree (Rule P)."""
+    if view.readiness_pct is None:
+        return "Quantum readiness: n/a (no current asset has a quantum verdict)."
+    return (f"Quantum readiness {view.readiness_pct:.1f}% = {view.pqc_safe} quantum-safe / ({view.pqc_safe} "
+            f"quantum-safe + {view.pqc_broken_today} broken today + {view.pqc_vulnerable} quantum-vulnerable).")
+
+
+_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def _month(day: str) -> str:
+    """``YYYY-MM[-DD]`` as "Oct 2026" ("" when it is not a date)."""
+    if len(day) >= 7 and day[4] == "-" and day[5:7].isdigit() and 1 <= int(day[5:7]) <= 12:
+        return f"{_MONTHS[int(day[5:7]) - 1]} {day[:4]}"
+    return ""
+
+
+def timeline_rows() -> list[tuple[str, str, str, str, str]]:
+    """(when, milestone, status, source, url) of the regulatory timeline. The NIST IR 8547 rows are built from the ONE
+    knowledge-base entry (``pqc_targets.ir8547``: citation, status, publication date, years, URL), never from authored
+    text, so this document cannot cite IR 8547 as final in one section and as a draft in another (the wording is the
+    one ``cbom_deliverable_text.pqc_timeline_rows`` prints from the same entry for D14). The other rows are authored."""
+    ir = PQT.ir8547()
+    status = "Final" if ir["status"] == "final" else "Draft"
+    cite, url = str(ir["citation"]), str(ir["url"])
+    rows = [(r.when, r.milestone, r.status, r.source, r.url) for r in authored.PQC_TIMELINE_ROWS
+            if "8547" not in f"{r.source} {r.milestone} {r.url}"]
+    ir_rows = []
+    published = _month(str(ir.get("published") or ""))
+    if published:
+        ir_rows.append((published, f"{cite} published: the transition timeline for quantum-vulnerable public-key "
+                        "algorithms (RSA, ECDSA, EdDSA, finite-field and elliptic-curve Diffie-Hellman and MQV).",
+                        status, cite, url))
+    ir_rows += [
+        (f"After {ir['deprecated_after']}",
+         f"Under {cite}, quantum-vulnerable public-key algorithms are deprecated from 112 bits of security strength "
+         "upward (for example RSA-2048, ECDSA P-256 and Ed25519).", status, cite, url),
+        (f"After {ir['disallowed_after']}",
+         f"Under {cite}, all quantum-vulnerable public-key algorithms are disallowed.", status, cite, url),
+    ]
+    return rows[:1] + ir_rows + rows[1:]
+
+
+def timeline_footnote() -> str:
+    ir = PQT.ir8547()
+    if ir["status"] == "final":
+        day = str(ir.get("published") or "")
+        month = _month(day)
+        when = f" on {int(day[8:10])} {month}" if month and len(day) == 10 and day[8:10].isdigit() else ""
+        return (f"{ir['citation']} was published in final form{when}. FIPS 203, 204 and 205 are final." if when
+                else f"{ir['citation']} is final. FIPS 203, 204 and 205 are final.")
+    return f"{ir['citation']} is a draft and its dates may change. FIPS 203, 204 and 205 are final."
 
 
 def _timeline(styles: Styles, width: float, title: str) -> list[Flowable]:
     rows = [
-        [
-            row.when,
-            row.milestone,
-            status_chip(row.status.upper(), _STATUS_TONE.get(row.status.casefold(), "unknown")),
-            row.source,
-            row.url,
-        ]
-        for row in authored.PQC_TIMELINE_ROWS
+        [when, milestone, status_chip(status.upper(), _STATUS_TONE.get(status.casefold(), "unknown")), source, url]
+        for when, milestone, status, source, url in timeline_rows()
     ]
     block = KeepTogether(
         [
@@ -456,7 +539,7 @@ def _timeline(styles: Styles, width: float, title: str) -> list[Flowable]:
             _note(_TIMELINE_INTRO, styles),
             dense_table(_TIMELINE_HEADERS, rows, _fit(_TIMELINE_COLS, width)),
             Spacer(1, 3),
-            _note(authored.PQC_TIMELINE_FOOTNOTE, styles),
+            _note(timeline_footnote(), styles),
         ]
     )
     return [block, Spacer(1, 4)]
@@ -482,13 +565,24 @@ def _families(rows: list[AssetAgg], styles: Styles, width: float, title: str,
             _function(target), target["target_text"] if target else PQT.cell_text(None),
             target["cnsa_target"] if target else _DASH, target["reference"] if target else _DASH,
             str(count), str(len(sources))])
+    notes = [_note(cnsa_note(targets[u]), styles) for u in tally if targets.get(u) and cnsa_note(targets[u])]
     block = KeepTogether(
         [
             _heading(title, styles),
             dense_table(_FAMILY_HEADERS, table_rows, _fit(_FAMILY_COLS, width)),
+            *notes,
         ]
     )
     return [block, Spacer(1, 4)]
+
+
+def cnsa_note(target: dict | None) -> str:
+    """Why a CNSA 2.0 target names fewer schemes than the NIST one (software and firmware signing: CNSA 2.0 approves
+    only the single-tree stateful hash-based schemes), from the KB row and algid."""
+    if not target or not target.get("cnsa_excluded"):
+        return ""
+    return (f"{target['usage_label']}, CNSA 2.0 column: {target['note'].replace('NIST: every SP 800-208 scheme. ', '')}"
+            f" Not approved under CNSA 2.0: {', '.join(target['cnsa_excluded'])}.")
 
 
 def _roadmap(
@@ -522,7 +616,8 @@ def _roadmap(
         table_rows = []
         for asset in shown:
             number += 1
-            table_rows.append(_roadmap_row(number, asset, _asset_plan(view, asset) if view else None))
+            table_rows.append(_roadmap_row(number, asset, _asset_plan(view, asset) if view else None,
+                                           view.as_of if view else None, _windows(view) if view else None))
         planned = view is not None and view.remediation is not None
         story += [
             CondPageBreak(90),
@@ -650,7 +745,9 @@ def _node_section(view: TeamCbomView, styles: Styles, width: float, title: str, 
             str(number), item.get("label") or "", item.get("type") or "", _node_key(item),
             PQT.cell_text(PQT.target_for(item.get("pq_usage"))),
             status_chip(impact.upper(), tone_for_impact(impact)), where,
-            *_plan_cells(plan, plan["suggested"], item.get("owner_hint")),
+            *_plan_cells({**plan, "finding_codes": item.get("finding_codes") or (),
+                          "quantum_vulnerable": item.get("quantum_vulnerable")}, plan["suggested"],
+                         item.get("owner_hint"), as_of=view.as_of, windows=_windows(view)),
         ])
     story: list[Flowable] = [
         *section_heading(title, styles),
@@ -688,6 +785,7 @@ def _waves(view: TeamCbomView, rows: list[AssetAgg], styles: Styles, width: floa
         if wave is not None:
             by_wave.setdefault(wave, Counter())[owner] += 1
     table_rows = []
+    windows = _windows(view)
     for wave in sorted(by_wave):
         owners = by_wave[wave]
         milestone = PQT.wave_milestone(wave) or {}
@@ -695,11 +793,18 @@ def _waves(view: TeamCbomView, rows: list[AssetAgg], styles: Styles, width: floa
                  if o != PQT.UNASSIGNED_OWNER][:3]
         if owners.get(PQT.UNASSIGNED_OWNER):
             named.append(f"{owners[PQT.UNASSIGNED_OWNER]} {PQT.UNASSIGNED_OWNER}")
-        table_rows.append([str(wave), PQT.WAVE_LABEL.get(wave, ""), str(sum(owners.values())),
-                           milestone.get("date") or _DASH, milestone.get("basis") or "", "\n".join(named)])
-    parts: list[Flowable] = [*section_heading(title, styles), _note(_WAVE_INTRO, styles)]
+        days = windows.get(wave)
+        fix = (f"within {days} days\n{(view.as_of + _dt.timedelta(days=days)).isoformat()}" if days
+               else "n/a (no classical weakness)")
+        basis = "\n".join(x for x in ((f"Classical: {milestone['fix_basis'].format(days=days)}"
+                                        if days and milestone.get("fix_basis") else ""),
+                                       f"Post-quantum: {milestone.get('pq_basis') or ''}") if x)
+        table_rows.append([str(wave), PQT.WAVE_LABEL.get(wave, ""), str(sum(owners.values())), fix,
+                           milestone.get("pq_date") or _DASH, basis, "\n".join(named)])
+    intro = _WAVE_INTRO.format(as_of=view.as_of.isoformat())
+    parts: list[Flowable] = [*section_heading(title, styles), _note(intro, styles)]
     if table_rows:
-        parts.append(dense_table(_WAVE_HEADERS, table_rows, _fit(_WAVE_COLS, width)))
+        parts.append(dense_table(_WAVE_HEADERS, table_rows, _fit(_WAVE_COLS, width), cell_limit=700))
     return [*parts, Spacer(1, 4)]
 
 

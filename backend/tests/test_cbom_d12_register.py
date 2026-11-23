@@ -5,7 +5,7 @@
   its basis, the Mosca inputs used ("default assumptions" when a default filled one), criticality and owner.
 * Rule P: the CSV's detail columns equal ``GET /register?detail=true`` row for row; the PDF prints the API's numbers.
 * "Gaps closed by week": each week has openings, closures and the gaps open at its end; the series is a burn-down
-  (open_end[i] = open_end[i-1] + opened[i] - closed[i]).
+  (q0_gaps_open_at_week_end[i] = q0_gaps_open_at_week_end[i-1] + q0_gaps_opened[i] - closed[i]).
 
     cd backend && PYTHONPATH=.. python -m pytest tests/test_cbom_d12_register.py -q
 """
@@ -21,6 +21,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from backend.new_models import CbomQ0Gap
 from backend.utilities.cbom_sources import drift as DRIFT
+from backend.utilities.cbom_sources import qgrade as QG
 from backend.utilities.cbom_sources import risk_register as REG
 from backend.utilities.pdf import cbom_risk_register_pdf as PDF
 from sqlmodel import Session
@@ -108,7 +109,7 @@ def test_grades_on_default_assumptions_are_marked_in_the_csv_and_the_summary(lab
     rsa = next(r for r in rows if r["algorithm"] == "RSA")
     assert rsa["q_grade"] in ("Q1", "Q2") and rsa["grade_inputs"] == "default assumptions: X, Y, Z"
     assert (rsa["data_lifetime_years"], rsa["data_lifetime_basis"], rsa["migration_years"], rsa["crqc_years"]) == (
-        "7", "default", "5", "10")
+        "7", "default", "5", str(QG.default_z()))  # Z: the years left until 2035
     assert rsa["pqc_class"] == "quantum-vulnerable" and rsa["owner"].startswith("unassigned")
     assert "ML-" not in rsa["nist_pq_target"] or rsa["nist_pq_reference"]  # a target with its FIPS reference
     tdes = next(r for r in rows if r["algorithm"] == "DES-EDE3")
@@ -117,7 +118,7 @@ def test_grades_on_default_assumptions_are_marked_in_the_csv_and_the_summary(lab
     with Session(lab.engine) as s:
         summary = REG.summary(s, 1, T0)
     d = summary["default_assumptions"]
-    assert d["count"] == 1 and d["inputs"] == {"x": 1, "y": 1, "z": 1} and "Z 10 years" in d["defaults"]
+    assert d["count"] == 1 and d["inputs"] == {"x": 1, "y": 1, "z": 1} and "Z the years left until 2035" in d["defaults"]
     assert "Default assumptions: 1 quantum-vulnerable grade" in PDF.assumptions_text(summary)
     mosca(lab, {"data_shelf_life_years": 10, "migration_years": 5, "threat_years": 12})
     with Session(lab.engine) as s:
@@ -138,14 +139,15 @@ def test_weekly_series_has_openings_closures_and_open_gaps_as_a_burn_down(lab):
         gap("asset:d", monday + dt.timedelta(days=3))
         s.commit()
         weeks = REG.summary(s, 1, now)["closures_by_week"]
-    assert len(weeks) == 12 and all({"opened", "open_end", "total"} <= set(w) for w in weeks)
+    assert len(weeks) == 12 and all({"q0_gaps_opened", "q0_gaps_open_at_week_end", "total"} <= set(w) for w in weeks)
+    assert not any("opened" in w or "open_end" in w for w in weeks)  # never drift's weekly_drift() key "opened"
     by = {w["week"]: w for w in weeks}
-    assert (by["2026-11-16"]["opened"], by["2026-11-16"]["total"], by["2026-11-16"]["open_end"]) == (2, 1, 2)
-    assert (by["2026-11-09"]["opened"], by["2026-11-09"]["total"], by["2026-11-09"]["open_end"]) == (0, 1, 1)
-    assert (by["2026-11-02"]["opened"], by["2026-11-02"]["open_end"]) == (1, 2)
+    assert (by["2026-11-16"]["q0_gaps_opened"], by["2026-11-16"]["total"], by["2026-11-16"]["q0_gaps_open_at_week_end"]) == (2, 1, 2)
+    assert (by["2026-11-09"]["q0_gaps_opened"], by["2026-11-09"]["total"], by["2026-11-09"]["q0_gaps_open_at_week_end"]) == (0, 1, 1)
+    assert (by["2026-11-02"]["q0_gaps_opened"], by["2026-11-02"]["q0_gaps_open_at_week_end"]) == (1, 2)
     for prev, cur in itertools.pairwise(weeks):
-        assert cur["open_end"] == prev["open_end"] + cur["opened"] - cur["total"], cur
+        assert cur["q0_gaps_open_at_week_end"] == prev["q0_gaps_open_at_week_end"] + cur["q0_gaps_opened"] - cur["total"], cur
     shown = PDF.trend_weeks(weeks)
     assert shown[0]["week"] == weeks[0]["week"]  # asset:a was open all along: no week is trimmed
-    assert PDF.trend_weeks([{"week": "w1", "total": 0, "opened": 0, "open_end": 0},
-                            {"week": "w2", "total": 0, "opened": 1, "open_end": 1}])[0]["week"] == "w2"
+    assert PDF.trend_weeks([{"week": "w1", "total": 0, "q0_gaps_opened": 0, "q0_gaps_open_at_week_end": 0},
+                            {"week": "w2", "total": 0, "q0_gaps_opened": 1, "q0_gaps_open_at_week_end": 1}])[0]["week"] == "w2"

@@ -214,20 +214,24 @@ def test_wave_rows_get_a_proposed_date_and_a_c5_owner_or_unassigned():
     date_col = next(i for i, h in enumerate(head) if h.startswith("Target date"))
     owner_col = next(i for i, h in enumerate(head) if h.startswith("Owner"))
     by = {r[1]: r for r in table[1:]}
-    assert by["tls a"][date_col] == "2027-12-31 (proposed)" and by["tls a"][owner_col].startswith("Network team")
-    assert by["tls b"][date_col] == "2030-12-31 (proposed)" and by["tls b"][owner_col] == T.UNASSIGNED_OWNER
+    # no classical weakness: the post-quantum milestone of the wave (a classical one is dated from the assessment:
+    # test_cbom_d12_d13_review_fixes)
+    assert by["tls a"][date_col] == "PQ by 2027-12-31 (proposed)" and by["tls a"][owner_col].startswith("Network team")
+    assert by["tls b"][date_col] == "PQ by 2030-12-31 (proposed)" and by["tls b"][owner_col] == T.UNASSIGNED_OWNER
     assert by["cert c"][date_col] == "2028-03-31" and by["cert c"][owner_col] == "PKI team / open"
 
 
 def test_the_wave_summary_lists_each_wave_with_its_date_basis_and_owners():
     rows = [_node("tls a", "tls_endpoint", wave=1, owner_hint="Network team"), _node("tls b", "tls_endpoint", wave=4)]
     body = body_of(_plan_view([algo("RSA-2048", ident="k1")], node_rows=rows))
-    table = _table_with(body, "Proposed date")
+    table = _table_with(body, "Post-quantum by")
     waves = {r[0]: r for r in table[1:]}
     assert set(waves) >= {"1", "4"}
-    assert waves["1"][2] == "1" and "2027-12-31" in waves["1"][3] and "Network team" in waves["1"][5]
-    assert waves["4"][2] == "2" and "2033-12-31" in waves["4"][3]  # one code row + one node row
-    assert "CNSA 2.0" in waves["1"][4]
+    assert waves["1"][2] == "1" and "2027-12-31" in waves["1"][4] and "Network team" in waves["1"][6]
+    assert waves["1"][3].startswith("within 90 days")  # the classical window, from the assessment
+    assert waves["4"][2] == "2" and "2033-12-31" in waves["4"][4]  # one code row + one node row
+    assert waves["4"][3].startswith("n/a")
+    assert "CNSA 2.0" in waves["1"][5] and "SP 800-131A" in waves["1"][5]
     text = pdf_full_text(roadmap.build_pdf(_plan_view(node_rows=rows)))
     assert "confirm" in text and "before issue" in squash(text) or "beforeissue" in squash(text)
 

@@ -25,7 +25,7 @@ if str(REPO) not in sys.path:
 
 from backend.utilities.cbom_sources import qgrade as QG  # noqa: E402
 
-PINNED_TEXT_SHA256 = "a26e0a6f635fd2691db80aef1cdaa7b344bed1eae01135ed3fadac38fd13126e"  # SOW D12: defaults, deprecated
+PINNED_TEXT_SHA256 = "22b3d0a7deb7034b36adb65f158e963318cd04328c85d49cb1b7f8465a9bab83"  # D12: defaults, deprecated + cap, rule 6, Z to 2035
 CB = REPO / "backend" / "utilities" / "cbom_sources"
 
 
@@ -159,8 +159,20 @@ def reference(i: QG.GradeInput) -> tuple[str | None, str, int]:
             reasons = rule["reasons"]
             reason = reasons[0] if len(reasons) == 1 else i.scope_reason
             assert reason in reasons, (rule, i)
-            return rule["grade"], reason, rule["n"]
+            return _cap(i, rule, rule["grade"], reason)
     raise AssertionError(f"no rule of FORMULA_TEXT matches {i}")
+
+
+def _cap(i: QG.GradeInput, rule: dict, grade: str | None, reason: str) -> tuple[str | None, str, int]:
+    """FORMULA_TEXT "Disallowed cap, after the rules": a disallowed asset graded by rules 7-23 takes the worse of that
+    grade and rules 24-25; a Q0 "mosca_missing" is replaced; on a tie the "deprecated" reason."""
+    if not i.disallowed or not 7 <= rule["n"] <= 23:
+        return grade, reason, rule["n"]
+    cap = ("Q1", "deprecated_internet") if i.exposure == "internet" else ("Q2", "deprecated")
+    rank = {"Q1": 1, "Q2": 2, "Q3": 3, "Q4": 4}
+    if grade not in rank or rank[cap[0]] <= rank[grade]:
+        return cap[0], cap[1], rule["n"]
+    return grade, reason, rule["n"]
 
 
 def _gen(rng: random.Random) -> QG.GradeInput:
@@ -181,7 +193,7 @@ def _gen(rng: random.Random) -> QG.GradeInput:
         item=item, scope_reason=rng.choice(QG.SCOPE_REASONS) if item == "scope" else None, cls=cls,
         fallback=rng.random() < 0.3, exposure=rng.choice(["internet", "internal", "unknown"]),
         anchor=rng.random() < 0.25, x=mosca(), y=mosca(), z=mosca(), provenance=provenance, level=level,
-        correlation_missing=rng.random() < 0.05)
+        correlation_missing=rng.random() < 0.05, disallowed=rng.random() < 0.15)
 
 
 def test_decision_table_matches_the_signed_text_on_2000_inputs():

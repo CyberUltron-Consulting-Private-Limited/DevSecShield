@@ -118,15 +118,31 @@ def _assignments(session: Session, team_id: int, keys: Iterable[str]) -> dict[st
     return out
 
 
-def _with_assignment(items: list[dict[str, Any]], found: dict[str, CbomRemediationAssignment]) -> list[dict[str, Any]]:
+def fix_windows(session: Session, team_id: int) -> dict[int, int]:
+    """The team's days-to-fix per wave for classical weaknesses (``risk_model`` wave1..3_fix_days, else the KB's)."""
+    from backend.new_models import CbomCollectionSettings
+
+    settings = session.exec(select(CbomCollectionSettings).where(CbomCollectionSettings.team_id == team_id)).first()
+    return PQT.fix_windows((settings.risk_model if settings is not None else None) or {})
+
+
+def _with_assignment(items: list[dict[str, Any]], found: dict[str, CbomRemediationAssignment],
+                     windows: dict[int, int] | None = None, as_of: _dt.date | None = None) -> list[dict[str, Any]]:
+    as_of = as_of or _dt.datetime.utcnow().date()
     for item in items:
         a = found.get(item["asset_key"])
         item["assignment"] = public_assignment(a)
         item["wave"] = a.wave if a is not None and a.wave is not None else item["suggested_wave"]
         item["wave_source"] = "assigned" if a is not None and a.wave is not None else "suggested"
-        # D13: the wave's proposed completion date (NIST IR 8547 / CNSA 2.0 milestones, crypto KB) unless the team set one
-        milestone = PQT.wave_milestone(item["wave"]) if item["wave"] else None
-        item["proposed_date"] = milestone["date"] if milestone else None
+        # D13: the proposed dates unless the team set one: a classical weakness of waves 1-3 is due within the wave's
+        # window from today (SP 800-131A disallows it now); the post-quantum migration by the wave's IR 8547 / CNSA 2.0
+        # milestone (``pqc_targets.proposed_dates``)
+        dates = PQT.proposed_dates(item["wave"], item.get("finding_codes") or (), item.get("quantum_vulnerable"),
+                                   as_of, windows) if item["wave"] else {}
+        item["proposed_date"] = dates.get("date")
+        item["proposed_date_kind"] = dates.get("kind")  # fix | pq
+        item["fix_by"] = dates.get("fix_by")
+        item["pq_by"] = dates.get("pq_by")
     return items
 
 
@@ -181,7 +197,8 @@ def node_items(session: Session, team_id: int, run: CbomCollectionRun, *,
             "suggested_wave": suggested_wave(view["impact"], codes, row.quantum_vulnerable,
                                              internet=exposure == "internet", hndl=in_transit),
         })
-    return _with_assignment(items, _assignments(session, team_id, (i["asset_key"] for i in items)))
+    return _with_assignment(items, _assignments(session, team_id, (i["asset_key"] for i in items)),
+                            fix_windows(session, team_id))
 
 
 # ----------------------------------------------------------------------------- code scans
@@ -215,7 +232,8 @@ def code_items(session: Session, team_id: int, scan: Scan) -> list[dict[str, Any
     items = list(seen.values())
     for item in items:
         item["suggested_wave"] = suggested_wave(item["impact"], item["finding_codes"], item["quantum_vulnerable"])
-    return _with_assignment(items, _assignments(session, team_id, (i["asset_key"] for i in items)))
+    return _with_assignment(items, _assignments(session, team_id, (i["asset_key"] for i in items)),
+                            fix_windows(session, team_id))
 
 
 # ----------------------------------------------------------------------------- write
@@ -339,7 +357,8 @@ def roadmap_extras(session: Session, team_id: int, view: Any = None) -> dict[str
             continue
         code_plans[plan_key(asset)] = {
             "assigned": assignments.get(code_asset_key(asset)) or {},
-            "suggested": suggested_wave(asset.impact, asset.finding_codes, asset.quantum_vulnerable)}
+            "suggested": suggested_wave(asset.impact, asset.finding_codes, asset.quantum_vulnerable),
+            "finding_codes": list(asset.finding_codes or ()), "quantum_vulnerable": asset.quantum_vulnerable}
     # the same collections every CBOM view counts: each source's latest completed collection (collections_view)
     from backend.utilities.cbom_sources.collections_view import latest_jobs
 
@@ -368,8 +387,10 @@ def roadmap_extras(session: Session, team_id: int, view: Any = None) -> dict[str
     order = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
     node_rows.sort(key=lambda r: (r["wave"] or 9, order.get(r["impact"] or "", 8), str(r["source_name"]), r["label"]))
     return {"code_plans": code_plans, "node_rows": node_rows[:ROADMAP_NODE_CAP],
-            "node_rows_omitted": max(len(node_rows) - ROADMAP_NODE_CAP, 0)}
+            "node_rows_omitted": max(len(node_rows) - ROADMAP_NODE_CAP, 0),
+            # the days-to-fix per wave the PDF dates classical weaknesses with, from the document's as-of date
+            "fix_windows": fix_windows(session, team_id)}
 
 
 __all__ = ["AssignmentBulk", "STATUSES", "WAVES", "WAVE_LABEL", "WAVE_RULE", "WAVE_RULES", "WaveRule", "code_asset_key",
-           "code_items", "node_items", "matching_rule", "roadmap_extras", "suggested_wave", "upsert"]
+           "code_items", "fix_windows", "node_items", "matching_rule", "roadmap_extras", "suggested_wave", "upsert"]

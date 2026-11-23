@@ -27,6 +27,7 @@ from backend.new_models import (  # noqa: E402
     CbomCollectionRun,
     CbomCollectionSource,
 )
+from backend.utilities.cbom_sources import qgrade as QG  # noqa: E402
 from backend.utilities.cbom_sources.classify import classify  # noqa: E402
 from backend.utilities.cbom_sources.settings import get_or_create_settings  # noqa: E402
 
@@ -196,15 +197,15 @@ def test_ssh_with_a_pq_and_a_classical_kex_is_graded_on_the_classical_one(api, w
 
 def test_da4_mosca_unset(api, world):
     """SOW D12 (audit A-03): with the team's Mosca unset, quantum-vulnerable assets are graded on the documented
-    defaults (X 7, Y 5, Z 10) and marked "default assumptions" (``q_assumed``), never parked at Q0 mosca_missing."""
+    defaults (X 7, Y 5, Z the years left until 2035) and marked "default assumptions" (``q_assumed``), never parked at Q0 mosca_missing."""
     w = seed(world[0], mosca={}, sources=[{"name": "S", "assets": [_asset("tls_endpoint", "10.20.0.1:443", facts=QV_TLS),
                                                                   _asset("certificate", "/etc/ssl/ca.pem", facts=CA)]}])
     aid = w["S"]["assets"]["10.20.0.1:443"]
     d = detail(api, aid)
     assert g(d) == ("Q2", "qv_exceeds") and d["q_item_key"] is None and d["q_assumed"] is True
     assert d["q_explain"]["missing"] == [] and d["q_explain"]["assumed"] == ["x", "y", "z"]
-    assert (d["q_explain"]["x"], d["q_explain"]["y"], d["q_explain"]["z"]) == (7, 5, 10)
-    assert d["q_explain"]["x_basis"] == "default" and d["q_explain"]["inequality"] == "7 + 5 > 10"
+    assert (d["q_explain"]["x"], d["q_explain"]["y"], d["q_explain"]["z"]) == (7, 5, QG.default_z())
+    assert d["q_explain"]["x_basis"] == "default" and d["q_explain"]["inequality"] == f"7 + 5 > {QG.default_z()}"
     p = posture(api, w["run"])
     assert p["q_grades"]["Q0"] == 0 and p["q_grades"]["Q2"] + p["q_grades"]["Q1"] == 2
     assert not [i for i in p["q0_items"] if i["reason"] == "mosca_missing"]

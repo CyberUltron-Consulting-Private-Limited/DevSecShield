@@ -208,10 +208,16 @@ class PortItem(_Body):
 
 
 class RiskModel(_Body):
-    """Mosca inputs, in years. All three are needed for a verdict; null clears one."""
+    """Mosca inputs, in years (all three are needed for a verdict; null clears one), and the roadmap's days-to-fix
+    per wave for classical weaknesses."""
     data_shelf_life_years: int | None = Field(default=None, ge=0, le=100, strict=True)
     migration_years: int | None = Field(default=None, ge=0, le=100, strict=True)
     threat_years: int | None = Field(default=None, ge=0, le=100, strict=True)
+    # D13: days from the assessment to fix a wave's CLASSICAL weaknesses (SP 800-131A disallowed today); null: the
+    # crypto KB's default (90 / 180 / 365). The post-quantum dates stay the NIST IR 8547 / CNSA 2.0 milestones.
+    wave1_fix_days: int | None = Field(default=None, ge=1, le=3650, strict=True)
+    wave2_fix_days: int | None = Field(default=None, ge=1, le=3650, strict=True)
+    wave3_fix_days: int | None = Field(default=None, ge=1, le=3650, strict=True)
 
 
 class SettingsUpdate(_Body):

@@ -24,8 +24,10 @@ the common table helpers, which sanitise and escape it.
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
+from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.platypus import Flowable, Paragraph, Spacer
 
 from backend.utilities.dashboard.cbom_team_rollup import TeamCbomView
@@ -46,6 +48,9 @@ TITLE = "Quantum Risk Register"
 GRADES = ("Q1", "Q2", "Q3", "Q4")
 WORD = {"Q0": "Unknown", "Q1": "Critical", "Q2": "High", "Q3": "Medium", "Q4": "Low"}
 TONE = {"Q0": "unknown", "Q1": "critical", "Q2": "high", "Q3": "medium", "Q4": "low"}
+NO_GRADE_NOTE = ("No grade: the asset has no public-key cryptography to grade. An algorithm NIST SP 800-131A disallows "
+                 "today (DES, Triple DES, RC4, MD5, RSA or DSA below 2048 bits ...) is graded: Q1 when internet-facing, "
+                 "else Q2, or worse when its quantum grade is worse.")
 NOT_LOADED = "The register could not be loaded for this document; download it again in a few minutes."
 EMPTY = ("The register has no assets yet: it fills from the estate store after the team's first CBOM Sources run "
          "(and from the background re-grade for runs recorded before it).")
@@ -59,8 +64,8 @@ def _chip(grade: str | None) -> Any:
     return status_chip(grade_text(grade), TONE.get(grade or "", "unknown"))
 
 
-def _note(text: str, styles: Styles) -> Paragraph:
-    return Paragraph(pdf_text(text, limit=600), styles["box_text"])
+def _note(text: str, styles: Styles, limit: int = 600) -> Paragraph:
+    return Paragraph(pdf_text(text, limit=limit), styles["box_text"])
 
 
 def _summary(reg: dict[str, Any], width: float) -> list[Flowable]:
@@ -69,9 +74,77 @@ def _summary(reg: dict[str, Any], width: float) -> list[Flowable]:
     cards = [("Assets", str(s.get("total", 0)), "distinct assets across sources")]
     cards += [(grade_text(g), str(q.get(g, 0)), "", TONE[g]) for g in GRADES]
     cards += [("Q0 Unknown", str(q.get("Q0", 0)), "assets the product could not grade", "unknown"),
-              ("No grade", str(q.get("none", 0)), "no public-key or disallowed cryptography"),
+              ("No grade", str(q.get("none", 0)),
+               "no public-key cryptography (disallowed items are graded)"),
               ("Still to re-grade", str(s.get("pending_regrade", 0)), "after an input or model change")]
     return [kpi_strip(cards, width, max_per_row=8)]
+
+
+# What X, Y and Z mean and where each default comes from (``qgrade.MOSCA_DEFINITION``, served in the register report:
+# the PDF repeats it, never paraphrases it)
+def mosca_definition(reg: dict[str, Any] | None) -> str:
+    return str((reg or {}).get("mosca_definition") or "")
+
+
+# Readable labels for the values the register stores as codes (a client document never prints ``not_compliant``)
+_STATUS_WORDS = {"not_applicable": "n/a", "not_compliant": "not compliant", "compliant": "compliant",
+                 "acceptable": "acceptable", "disallowed": "disallowed", "deprecated": "deprecated",
+                 "legacy_use": "legacy use only", "unknown": "unknown", "approved": "approved"}
+_CLASS_WORDS = {"quantum-vulnerable": "quantum-vulnerable", "quantum-safe": "quantum-safe", "hybrid": "hybrid",
+                "grover-weakened": "Grover-weakened", "unknown": "unknown", "not-applicable": "n/a",
+                "deprecated": "SP 800-131A disallowed"}
+_STANDARD_SHORT = (("fips_203_204_205", "FIPS"), ("cnsa_2_0", "CNSA"), ("sp800_131a", "800-131A"))
+
+
+def status_word(value: Any) -> str:
+    """A standards status as words (``not_compliant`` -> ``not compliant``; ``approved (FIPS 203 category 3)``
+    kept as is)."""
+    text = str(value or "").strip()
+    if not text:
+        return "\u2014"
+    return _STATUS_WORDS.get(text, text.replace("_", " "))
+
+
+def class_word(value: Any) -> str:
+    text = str(value or "").strip()
+    return _CLASS_WORDS.get(text, text.replace("_", " ")) if text else "\u2014"
+
+
+def reason_word(code: Any, texts: dict[str, str] | None = None) -> str:
+    """A grade reason in words (``qgrade.REASONS``, served as the report's ``reason_text``), never the raw code."""
+    text = (texts or {}).get(str(code or ""))
+    return text or str(code or "").replace("_", " ")
+
+
+_PIECE = re.compile(r"[^@./_\-:\s]*[@./_\-:]?|\s+")
+_CELL_FONT, _CELL_SIZE, _CELL_PAD = "Helvetica", 7, 3
+
+
+def breakable(value: Any, width: float) -> str:
+    """``value`` with line breaks after ``@ . - / _ :`` where a word is wider than the column (``width`` points), so
+    reportlab never cuts it mid-token ("quantum-vulnerabl/e", "ops@chola.exampl/e"). A piece wider than the column on
+    its own is left whole. The text is unchanged but for the ``\\n``."""
+    usable = max(float(width) - 2 * _CELL_PAD - 1, 10.0)
+    out_lines: list[str] = []
+    for raw in str(value if value is not None else "").split("\n"):
+        words = raw.split(" ")
+        rebuilt: list[str] = []
+        for word in words:
+            if stringWidth(word, _CELL_FONT, _CELL_SIZE) <= usable:
+                rebuilt.append(word)
+                continue
+            lines, line = [], ""
+            for piece in (p for p in _PIECE.findall(word) if p):
+                if line and stringWidth(line + piece, _CELL_FONT, _CELL_SIZE) > usable:
+                    lines.append(line)
+                    line = piece
+                else:
+                    line += piece
+            if line:
+                lines.append(line)
+            rebuilt.append("\n".join(lines))
+        out_lines.append(" ".join(rebuilt))
+    return "\n".join(out_lines)
 
 
 def assumptions_text(summary: dict[str, Any]) -> str | None:
@@ -90,7 +163,15 @@ def assumptions_text(summary: dict[str, Any]) -> str | None:
 # Q0 gap reasons as the Quantum risk tab heads them (frontend components/cbom/grade/model.ts q0ReasonHeading)
 _REASON_WORDS = {"evidence_e0": "evidence at E0", "mosca_missing": "Mosca inputs missing",
                  "deprecated": "disallowed by SP 800-131A",
-                 "unknown_verdict": "PQC class unknown", "coverage_gap": "scope not read"}
+                 "unknown_verdict": "PQC class unknown", "coverage_gap": "scope not read",
+                 "not_correlated": "not correlated across sources", "source_not_read": "source not read",
+                 "source_truncated": "source cut at the asset limit", "excluded_by_choice": "left out by choice"}
+
+
+def gap_reason(code: Any) -> str:
+    """A Q0 gap reason in words (never the raw code)."""
+    text = str(code or "")
+    return _REASON_WORDS.get(text, text.replace("_", " "))
 
 
 def heat_cell_text(cell: dict[str, Any]) -> str:
@@ -159,11 +240,13 @@ def _top_q1(reg: dict[str, Any], styles: Styles, width: float) -> list[Flowable]
     total = int(reg.get("top_q1_total") or 0)
     if not items:
         return [_note("No asset grades Q1 Critical.", styles)]
-    rows = [[_chip(i["q_grade"]), i.get("label") or i["item_key"], i.get("asset_type"), i.get("family"),
-             i.get("exposure"), i.get("source_name"), i.get("q_reason"), inputs_cell(i)] for i in items]
+    widths = [62, width - 62 - 72 - 60 - 52 - 96 - 130 - 130, 72, 60, 52, 96, 130, 130]
+    rows = [[_chip(i["q_grade"]), breakable(i.get("label") or i["item_key"], widths[1]),
+             breakable(i.get("asset_type"), widths[2]), i.get("family"), i.get("exposure"),
+             breakable(i.get("source_name"), widths[5]), reason_word(i.get("q_reason"), reg.get("reason_text")),
+             inputs_cell(i)] for i in items]
     out: list[Flowable] = [dense_table(
-        ["Grade", "Asset", "Type", "Family", "Exposure", "Source", "Reason", "Inputs used"], rows,
-        [62, width - 62 - 72 - 60 - 52 - 96 - 100 - 130, 72, 60, 52, 96, 100, 130])]
+        ["Grade", "Asset", "Type", "Family", "Exposure", "Source", "Reason", "Inputs used"], rows, widths)]
     if total > len(items):
         out.append(_note(f"{total - len(items)} further Q1 Critical assets are omitted here; the register list and "
                          "its CSV hold every row.", styles))
@@ -177,7 +260,8 @@ def _q0(reg: dict[str, Any], styles: Styles, width: float) -> list[Flowable]:
     if not gaps:
         return [_note("No open Q0 gap.", styles)]
     out: list[Flowable] = [_note(reason_line(open_by_reason), styles), Spacer(1, 4)]
-    rows = [[g["reason"], g.get("sub_reason"), g["item_kind"], gap_item(g), g.get("source_name"),
+    rows = [[gap_reason(g["reason"]), str(g.get("sub_reason") or "").replace("_", " "), g["item_kind"], gap_item(g),
+             g.get("source_name"),
              (g.get("opened_at") or "")[:10], f"{g.get('age_days', 0)} d"] for g in gaps]
     out.append(dense_table(["Reason", "Why", "Kind", "Item", "Source", "Opened", "Age"], rows,
                            [90, 100, 55, width - 90 - 100 - 55 - 110 - 70 - 40, 110, 70, 40]))
@@ -191,7 +275,7 @@ def trend_weeks(weeks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """The weeks the trend prints: from the first week with a gap open, opened or closed (weeks before the
     engagement had no gap and would only print zeros); the numbers are the API's, never recomputed."""
     for i, w in enumerate(weeks):
-        if w.get("total") or w.get("opened") or w.get("open_end"):
+        if w.get("total") or w.get("q0_gaps_opened") or w.get("q0_gaps_open_at_week_end"):
             return weeks[i:]
     return []
 
@@ -200,12 +284,14 @@ def _trend(reg: dict[str, Any], styles: Styles, width: float) -> list[Flowable]:
     weeks = trend_weeks(reg["summary"].get("closures_by_week") or [])
     if not weeks:
         return [_note("No Q0 gap opened or closed in the last 12 weeks.", styles)]
-    rows = [[w["week"], w.get("opened", ""), w["total"], w.get("open_end", ""),
+    rows = [[w["week"], w.get("q0_gaps_opened", ""), w["total"], w.get("q0_gaps_open_at_week_end", ""),
              ", ".join(f"{k} {v}" for k, v in sorted((w.get("by_cause") or {}).items()))] for w in weeks]
-    return [_note("Q0 gaps opened and closed each week (Monday to Sunday, UTC) and the gaps still open at the end "
-                  "of the week, from the gap lifecycle the runs recorded.", styles), Spacer(1, 3),
-            dense_table(["Week of", "Opened", "Closed", "Open at week end", "Closed by cause"], rows,
-                        [90, 60, 60, 90, width - 300])]
+    return [_note("Quantum gaps opened / closed per week: Q0 (unknown) gaps opened and closed each week (Monday to "
+                  "Sunday, UTC) and the Q0 gaps still open at the end of the week, from the gap lifecycle the runs "
+                  "recorded. This is the one weekly closure series of this register; it counts Q0 gaps, not drift "
+                  "findings.", styles), Spacer(1, 3),
+            dense_table(["Week of", "Q0 gaps opened", "Q0 gaps closed", "Q0 gaps open at week end",
+                         "Closed by cause"], rows, [80, 70, 70, 100, width - 320])]
 
 
 _ASSET_HEADERS = ["Grade", "Asset", "Type", "PQC class", "Algorithm", "Exposure",
@@ -220,12 +306,14 @@ def _assets(reg: dict[str, Any], styles: Styles, width: float) -> list[Flowable]
     rows = []
     for i in items:
         algorithm = " ".join(str(x) for x in (i.get("algorithm"), i.get("key_size")) if x not in (None, ""))
-        verdicts = "\n".join(str(i.get(k) or "\u2014") for k in ("fips_203_204_205", "cnsa_2_0", "sp800_131a"))
-        rows.append([_chip(i["q_grade"]), i.get("label") or i["item_key"], i.get("asset_type"), i.get("pqc_class"),
-                     algorithm, i.get("exposure"), verdicts, i.get("fix_class"), i.get("nist_pq_target"),
-                     inputs_cell(i), i.get("owner")])
-    fixed = [48, 0, 50, 64, 50, 40, 88, 48, 92, 86, 56]
+        verdicts = "\n".join(f"{short}: {status_word(i.get(k))}" for k, short in _STANDARD_SHORT)
+        rows.append([_chip(i["q_grade"]), i.get("label") or i["item_key"], i.get("asset_type"),
+                     class_word(i.get("pqc_class")), algorithm, i.get("exposure"), verdicts,
+                     str(i.get("fix_class") or "").replace("_", " "), i.get("nist_pq_target"), inputs_cell(i),
+                     i.get("owner")])
+    fixed = [48, 0, 52, 72, 60, 42, 92, 54, 90, 80, 64]
     fixed[1] = width - sum(fixed)
+    rows = [[row[0], *(breakable(cell, w) for cell, w in zip(row[1:], fixed[1:]))] for row in rows]
     out: list[Flowable] = [
         _note("Every register row, worst grade first, with the columns of the register CSV (the CSV is the full "
               "per-asset list).", styles), Spacer(1, 3), dense_table(_ASSET_HEADERS, rows, fixed)]
@@ -245,6 +333,8 @@ def build_body(view: TeamCbomView, styles: Styles, width: float) -> list[Flowabl
     assumed = assumptions_text(reg.get("summary") or {})
     if assumed:
         out += [Spacer(1, 4), _note(assumed, styles)]
+    out += [Spacer(1, 4), _note(mosca_definition(reg), styles, limit=1200),
+            Spacer(1, 2), _note(NO_GRADE_NOTE, styles)]
     if not (reg.get("summary") or {}).get("total"):
         out += [Spacer(1, 6), _note(EMPTY, styles)]
     out += section_heading("B. Heat-map: algorithm family x source (worst known grade; Q0 counted apart)", styles)
@@ -253,7 +343,7 @@ def build_body(view: TeamCbomView, styles: Styles, width: float) -> list[Flowabl
     out += _top_q1(reg, styles, width)
     out += section_heading("D. Q0 Unknown gaps (open)", styles)
     out += _q0(reg, styles, width)
-    out += section_heading("E. Q0 gaps opened, closed and open per week", styles)
+    out += section_heading("E. Quantum gaps opened / closed per week", styles)
     out += _trend(reg, styles, width)
     out += section_heading("F. Every asset with its grade", styles)
     out += _assets(reg, styles, width)

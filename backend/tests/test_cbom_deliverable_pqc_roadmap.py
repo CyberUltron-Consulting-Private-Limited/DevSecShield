@@ -102,9 +102,12 @@ TIMELINE_HEADERS = ["When", "Milestone", "Status", "Source", "Source URL"]
 FAMILY_HEADERS = ["Function", "NIST PQ target", "CNSA 2.0", "Reference", "Assets", "Sources"]
 LEVEL_HEADERS = ["NIST quantum security level", "Occurrences", "Of which hybrid"]
 URL_PQC = "https://www.nist.gov/pqcrypto"
-URL_IR8547 = "https://csrc.nist.gov/pubs/ir/8547/ipd"
+# PR #490 review M4: every IR 8547 status, date and URL comes from the ONE KB entry (pqc_context.nist_ir_8547), final
+_IR = PQT.ir8547()
+URL_IR8547 = _IR["url"]
 URL_CNSA = "https://media.defense.gov/2025/May/30/2003728741/-1/-1/0/CSA_CNSA_2.0_ALGORITHMS.PDF"
-IR8547 = "NIST IR 8547 (initial public draft)"
+IR8547 = _IR["citation"]
+IR_STATUS = "FINAL" if _IR["status"] == "final" else "DRAFT"
 TIMELINE_ROWS = [
     (
         "Aug 2024",
@@ -114,27 +117,28 @@ TIMELINE_ROWS = [
         "NIST post-quantum cryptography project",
         URL_PQC,
     ),
+    *(
+        [(
+            roadmap._month(str(_IR["published"])),
+            f"{IR8547} published: the transition timeline for quantum-vulnerable public-key algorithms (RSA, ECDSA, "
+            "EdDSA, finite-field and elliptic-curve Diffie-Hellman and MQV).",
+            IR_STATUS,
+            IR8547,
+            URL_IR8547,
+        )] if len(str(_IR.get("published") or "")) >= 7 else []
+    ),
     (
-        "Nov 2024",
-        "NIST IR 8547 initial public draft published: proposed transition timeline for "
-        "quantum-vulnerable public-key algorithms.",
-        "DRAFT",
+        f"After {_IR['deprecated_after']}",
+        f"Under {IR8547}, quantum-vulnerable public-key algorithms are deprecated from 112 bits of security strength "
+        "upward (for example RSA-2048, ECDSA P-256 and Ed25519).",
+        IR_STATUS,
         IR8547,
         URL_IR8547,
     ),
     (
-        "After 2030",
-        "Quantum-vulnerable public-key algorithms with 112 bits of security strength (for "
-        "example RSA-2048) are deprecated (NIST IR 8547 initial public draft).",
-        "DRAFT",
-        IR8547,
-        URL_IR8547,
-    ),
-    (
-        "After 2035",
-        "All quantum-vulnerable public-key algorithms are disallowed (NIST IR 8547 initial "
-        "public draft).",
-        "DRAFT",
+        f"After {_IR['disallowed_after']}",
+        f"Under {IR8547}, all quantum-vulnerable public-key algorithms are disallowed.",
+        IR_STATUS,
         IR8547,
         URL_IR8547,
     ),
@@ -147,10 +151,7 @@ TIMELINE_ROWS = [
         URL_CNSA,
     ),
 ]
-TIMELINE_FOOTNOTE = (
-    "NIST IR 8547 remains an initial public draft and its dates may change in the final "
-    "publication. FIPS 203, 204 and 205 are final."
-)
+TIMELINE_FOOTNOTE = roadmap.timeline_footnote()
 # (algorithm, key, strength, source, path, impact, sized): the 5 rows of team 1, in print order
 # (impact rank, key size, name, then source label).
 FIXTURE_ROWS = [
@@ -177,6 +178,7 @@ FIXTURE_KPIS = {
     "Distinct kinds": "2",
     # round 5 (G3): 3DES-CBC, AES-ECB, MD5, RC4 (x2 repos) are "Broken today", not quantum-safe: 23 / (23 + 8 + 5)
     "Quantum readiness": "63.9%",  # was 86.1% (31 / 36) while broken algorithms counted as safe
+    "Broken today": "8",  # PR #490 review: the readiness formula's third operand is printed
     "Quantum-safe": "23",
     "Hybrid": "2",
     "Not gradeable": "0",
@@ -1007,16 +1009,21 @@ def test_every_timeline_url_stays_on_one_line_and_is_not_a_link_annotation(
 
 def test_timeline_covers_every_authored_row(team_body):
     (table,) = find_tables(team_body, TIMELINE_HEADERS)
-    assert len(data_rows(table)) == len(text.PQC_TIMELINE_ROWS) == 5
+    # the authored non-IR-8547 rows plus the IR 8547 rows the KB entry gives (PR #490 review M4)
+    assert len(data_rows(table)) == len(roadmap.timeline_rows()) == len(TIMELINE_ROWS)
+    assert sum(1 for r in text.PQC_TIMELINE_ROWS if "8547" not in r.source) == 2
 
 
-def test_ir_8547_is_always_draft_qualified_and_the_engine_sentence_is_never_printed(team_text):
+def test_ir_8547_is_always_the_kb_status_and_the_engine_sentence_is_never_printed(team_text):
+    # PR #490 review M4: NIST IR 8547 is final; no mention is a draft or the /ipd URL
     flat = norm(team_text)
     mentions = list(re.finditer(r"NIST IR 8547", flat))
-    assert len(mentions) >= 5  # four timeline rows + the footnote
+    assert len(mentions) >= 4  # timeline rows + the footnote
+    assert _IR["status"] == "final"
     for mention in mentions:
-        window = flat[mention.start() : mention.start() + 60]
-        assert "draft" in window, window
+        window = flat[max(0, mention.start() - 60) : mention.start() + 80]
+        assert "draft" not in window.lower() and "/ipd" not in window, window
+    assert "initial public draft" not in flat
     # the engine constant over-simplifies (RSA/ECC/DH after 2030) and rows embed it (D-06)
     assert "RSA/ECC/DH" not in team_text
     assert "SP 1800-38" not in team_text
@@ -1035,7 +1042,7 @@ def test_order_note_is_printed_inside_the_roadmap_section(team_text):
 
 def test_notes_explain_readiness_and_the_dash_and_the_manual_fields(team_text):
     flat = norm(team_text)
-    assert "Readiness = quantum-safe / (quantum-safe + quantum-vulnerable)" in flat
+    assert "Readiness = quantum-safe / (quantum-safe + broken today + quantum-vulnerable)" in flat
     assert "A dash (\u2014) means the value is not recorded" in flat
     assert "it does not sequence the migration" in flat
     assert "not de-duplicated across sources" in flat

@@ -67,6 +67,7 @@ class TeamInputs:
     risk_model: dict[str, Any]
     by_source: dict[int, dict[str, Any]]  # source id -> {x, exposure, segment, application, name, uid}
     digest: str
+    year: int = 0  # the UTC year the default Z counts from (qgrade.default_z); 0: this year
 
 
 def team_inputs(session: Session, team_id: int) -> TeamInputs:
@@ -90,11 +91,14 @@ def team_inputs(session: Session, team_id: int) -> TeamInputs:
             "application": (str(cfg.get("application"))[:128] if cfg.get("application") else None),
             "name": s.name, "uid": s.source_uid}
     mosca = QG.mosca_of(risk_model)
+    year = utcnow().year
+    # the default Z is in the digest: on 1 January the years left until 2035 drop by one and the register re-grades
     doc = {"mosca": mosca, "sources": sorted([v["uid"] or str(k), v["x"], v["exposure"], v["segment"],
-                                              v["criticality"]] for k, v in by_source.items())}
+                                              v["criticality"]] for k, v in by_source.items()),
+           "z_default": QG.default_z(year)}
     digest = hashlib.sha256(json.dumps(doc, sort_keys=True, separators=(",", ":"), default=str)
                             .encode()).hexdigest()[:16]
-    return TeamInputs(mosca=mosca, risk_model=risk_model, by_source=by_source, digest=digest)
+    return TeamInputs(mosca=mosca, risk_model=risk_model, by_source=by_source, digest=digest, year=year)
 
 
 # ----------------------------------------------------------------------------- grading one key
@@ -544,9 +548,16 @@ def _add_business(session: Session, team_id: int, items: list[dict[str, Any]]) -
         item["business_criticality"] = b.get("criticality", [])
 
 
-def _inputs_text(assumed: tuple[str, ...] | list[str], reads_mosca: bool) -> str:
+# grades whose rule decides before Mosca is read (qg-1 rules 1-6, the deprecated rules): why no input was used
+_NOT_READ = {"not_correlated": "not used (Q0 before Mosca: not correlated across sources)",
+             "unknown_verdict": "not used (Q0 before Mosca: PQC class unknown)",
+             "deprecated": "not used (SP 800-131A disallowed: graded on exposure)",
+             "deprecated_internet": "not used (SP 800-131A disallowed: graded on exposure)"}
+
+
+def _inputs_text(assumed: tuple[str, ...] | list[str], reads_mosca: bool, reason: str | None = None) -> str:
     if not reads_mosca:
-        return "not used (the class needs no Mosca inputs)"
+        return _NOT_READ.get(str(reason or ""), "not used (the class needs no Mosca inputs)")
     if assumed:
         return "default assumptions: " + ", ".join(k.upper() for k in assumed)
     return "team / source inputs"
@@ -590,6 +601,7 @@ def add_detail(session: Session, team_id: int, items: list[dict[str, Any]], now:
         CbomCollectionSource.team_id == team_id)).all()}
     contexts: dict[tuple, dict[str, Any]] = {}
     m = inputs.mosca
+    grader = Grader(session, team_id, inputs, now)  # the grade's own context per run: its read-elsewhere rule (m1)
     for item in items:
         row = rows.get(pick.get(item["item_key"], -1))
         out: dict[str, Any] = {k: None for k in DETAIL_FIELDS}
@@ -599,7 +611,9 @@ def add_detail(session: Session, team_id: int, items: list[dict[str, Any]], now:
         if row is not None:
             facts = row.facts if isinstance(row.facts, dict) else {}
             codes = [c for c in shown(row, now)["finding_codes"] if not c.startswith("COVERAGE_")]
-            cls = QG.graded_pqc_class(P.classify_pqc(row, codes)[0], row)
+            # the class the grade read: the same JudgedElsewhere as ``Grader.grade`` (a row another job of the run read
+            # with a verdict is not "unknown"), so the CSV never prints a class the grade did not use
+            cls = QG.graded_pqc_class(P.classify_pqc(row, codes, elsewhere=grader._context(row).elsewhere)[0], row)
             graded = standards_of(row.asset_type, row.algorithm, row.key_size, facts)
             if not graded and row.algorithm:
                 try:
@@ -615,7 +629,7 @@ def add_detail(session: Session, team_id: int, items: list[dict[str, Any]], now:
             target = PQT.asset_target(row.asset_type, row.algorithm, facts)
             src_in = inputs.by_source.get(row.source_id or 0) or {}
             x, y, z, basis, assumed = QG.effective_mosca(src_in.get("x"), m["x"], m["y"], m["z"],
-                                                         src_in.get("criticality"))
+                                                         src_in.get("criticality"), inputs.year)
             reads = str(item.get("q_reason") or "").startswith("qv_")
             out.update({
                 "pqc_class": cls, "algorithm": row.algorithm, "key_size": row.key_size,
@@ -625,7 +639,7 @@ def add_detail(session: Session, team_id: int, items: list[dict[str, Any]], now:
                 "nist_pq_target": target["target_text"] if target else None,
                 "nist_pq_reference": target["reference"] if target else None,
                 "data_lifetime_years": x, "data_lifetime_basis": basis, "migration_years": y, "crqc_years": z,
-                "grade_inputs": _inputs_text(assumed, reads),
+                "grade_inputs": _inputs_text(assumed, reads, item.get("q_reason")),
             })
             if not out["criticality"] and src_in.get("criticality"):
                 out["criticality"] = src_in["criticality"]
@@ -735,8 +749,10 @@ def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 1
         "q0_reasons": {k: int(v) for k, v in sorted(q0_reasons.items())},
         "q0_gaps_open": {k: int(v) for k, v in sorted(gaps_open.items())},
         "families": dict(sorted(families.items())),
+        # Q0 GAP lifecycle per week (not drift events: drift_report.weekly_drift() counts findings opened / closed by
+        # run comparison, a different series): total = Q0 gaps closed, q0_gaps_opened, q0_gaps_open_at_week_end
         "closures_by_week": [{"week": w, "total": sum(c.values()), "by_cause": dict(sorted(c.items())),
-                              "opened": opened[w], "open_end": open_end[w]}
+                              "q0_gaps_opened": opened[w], "q0_gaps_open_at_week_end": open_end[w]}
                              for w, c in sorted(weekly.items())],
         "default_assumptions": default_assumptions(session, team_id),
         "pending_regrade": pending(session, team_id, graded_live=live), "estate": E.stale_status(session, team_id),
@@ -759,7 +775,7 @@ def default_assumptions(session: Session, team_id: int, inputs: TeamInputs | Non
             _RT.c.team_id == team_id, _RT.c.q_reason.like("qv\\_%", escape="\\"), _RT.c.presence != "removed")
             .group_by(_RT.c.source_ref)).all():
         src = by_ref.get(ref or "") or {}
-        assumed = QG.effective_mosca(src.get("x"), m["x"], m["y"], m["z"], src.get("criticality"))[4]
+        assumed = QG.effective_mosca(src.get("x"), m["x"], m["y"], m["z"], src.get("criticality"), inputs.year)[4]
         if assumed:
             count += int(n)
             for k in assumed:
@@ -833,6 +849,7 @@ def report(session: Session, team_id: int, now: _dt.datetime) -> dict[str, Any]:
     """What the register PDF prints (deliverable #2): the summary, the heat-map, the top Q1 Critical items and the
     open Q0 gaps by reason, read in one place so the PDF and the API cannot disagree."""
     from backend.new_models import CbomQ0Gap
+    from backend.utilities.cbom_sources import qgrade as QG
     from backend.utilities.cbom_sources.q0register import public_gap
 
     top = list_register(session, team_id, {"grade": "Q1"}, after=None, limit=REPORT_TOP, detail=True, now=now)
@@ -843,7 +860,10 @@ def report(session: Session, team_id: int, now: _dt.datetime) -> dict[str, Any]:
             "top_q1": top["items"], "top_q1_total": top["total"],
             "q0_gaps": [public_gap(g, now) for g in gaps],
             # SOW D12 "every asset with its grade": worst first, the same rows and columns as the CSV
-            "assets": every["items"], "assets_total": every["total"]}
+            "assets": every["items"], "assets_total": every["total"],
+            # what X, Y and Z mean, the defaults' sources, and each reason in words (the PDF prints these, never codes)
+            "mosca_definition": QG.MOSCA_DEFINITION,
+            "reason_text": {code: meta["text"] for code, meta in QG.REASONS.items()}}
 
 
 def get_item(session: Session, team_id: int, key: str) -> dict[str, Any] | None:

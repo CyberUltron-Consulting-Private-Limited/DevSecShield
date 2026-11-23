@@ -3,8 +3,8 @@ not set Mosca X/Y/Z, on documented defaults marked "default assumptions", and an
 (Triple DES, DES, RC4, MD5 ...) gets a grade of its own instead of "no grade".
 
 * Defaults: X = the source's data lifetime, else the team's X, else 7 years (10 for a high / critical source);
-  Y 5 years; Z 10 years (FORMULA_TEXT "Inputs"). ``explain["assumed"]`` names the inputs a default filled, and
-  ``RowGrade.q_assumed`` / ``fields()["q_assumed"]`` mark the grade.
+  Y 5 years; Z the years left until 2035 (FORMULA_TEXT "Inputs"). ``explain["assumed"]`` names the inputs a default
+  filled, and ``RowGrade.q_assumed`` / ``fields()["q_assumed"]`` mark the grade.
 * The pure function keeps Q0 ``mosca_missing`` for a caller that passes unset inputs (rules 7-8).
 
     cd backend && PYTHONPATH=.. python -m pytest tests/test_cbom_d12_grades.py -q
@@ -27,7 +27,8 @@ from backend.utilities.cbom_sources import qgrade as QG  # noqa: E402
 def _ctx(*, x=None, y=None, z=None, source_x=None, criticality=None, exposure=None):
     job = QG._JobInfo(x=source_x, exposure=exposure, segment=None, source_uid="src-1", source_id=1,
                       source_name="lab", network=False, criticality=criticality)
-    return QG.GradeContext(team_x=x, y=y, z=z, jobs={1: job}, run=None, job_rows=[], sources={})
+    # graded in 2025: the default Z is the years left until 2035 (10), so the inequalities below are fixed
+    return QG.GradeContext(team_x=x, y=y, z=z, jobs={1: job}, run=None, job_rows=[], sources={}, year=2025)
 
 
 def _row(asset_type="certificate", algorithm="RSA", qv=True, facts=None, key_size=2048, target="10.0.0.5:443"):
@@ -48,7 +49,7 @@ def test_a_quantum_vulnerable_asset_is_graded_on_defaults_when_mosca_is_unset(ex
 def test_internet_exposure_on_defaults_is_q1():
     out = _ctx(exposure="internet").grade_row(_row(), [], explain=True)
     assert (out.q_grade, out.q_reason) == ("Q1", "qv_exceeds_internet")
-    assert (out.explain["x"], out.explain["y"], out.explain["z"]) == (QG.DEFAULT_X, QG.DEFAULT_Y, QG.DEFAULT_Z)
+    assert (out.explain["x"], out.explain["y"], out.explain["z"]) == (QG.DEFAULT_X, QG.DEFAULT_Y, QG.default_z(2025))
     assert out.explain["x_basis"] == "default" and out.explain["y_basis"] == out.explain["z_basis"] == "default"
     assert out.explain["inequality"] == "7 + 5 > 10"
 
@@ -94,6 +95,6 @@ def test_the_pure_function_keeps_q0_with_a_reason_for_unset_inputs():
 def test_the_formula_text_documents_the_defaults_and_the_deprecated_rules():
     text = QG.FORMULA_TEXT
     assert "default: 7 years, 10 when the source's business criticality is high or critical" in text
-    assert "Y 5 years; Z 10 years" in text and "default assumptions" in text
+    assert "Y 5 years; Z the years from the grade's year to 2035" in text and "default assumptions" in text
     assert '-> Q2 "deprecated"' in text and '-> Q1 "deprecated_internet"' in text
     assert QG.REASONS["deprecated"]["grade"] == "Q2" and QG.REASONS["deprecated_internet"]["grade"] == "Q1"

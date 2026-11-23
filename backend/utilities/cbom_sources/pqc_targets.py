@@ -8,12 +8,23 @@ module resolves it against algid's rows, the single source of post-quantum names
 (``tests/test_algid_single_source.py``). So the names printed in a PDF, a CSV or an API response are algid's.
 
 ``usage_of`` derives an asset's function from what was collected (its type, the code lane's primitive, its facts and
-algorithm); ``target_for`` gives the row; ``asset_target`` is both in one call. Pure and memoised; no database.
+algorithm); ``target_for`` gives the row; ``asset_target`` is both in one call. The KB table and the selectors are
+memoised per KB version; ``usage_of`` is a cheap pure function. No database.
+
+Dates (D13, the wave API): a wave's CLASSICAL weaknesses (anything SP 800-131A disallows today: TLS 1.0, RSA-1024,
+Triple DES ...) are dated from the assessment (``fix_within_days``, a team setting), never from a post-quantum milestone;
+the IR 8547 / CNSA 2.0 dates (``pq_date``) are for the post-quantum migration only (``proposed_dates``).
+
+NIST IR 8547: every status, date and URL a deliverable prints comes from the ONE knowledge-base entry
+``pqc_context.nist_ir_8547`` (``ir8547``), so a document cannot cite it as final in one place and as a draft in another.
 """
 from __future__ import annotations
 
+import datetime as _dt
 import functools
+import logging
 import re
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from backend.utilities.cbom_sources import algid as A
@@ -119,6 +130,7 @@ def _select(items: tuple[tuple[str, Any], ...]) -> str:
     """The name(s) a KB selector stands for. Rows of status ``standard`` only; a pure parameter set prints as its
     FIPS parameter set name (one name for its pre-hash twin); ``all`` joins every match."""
     sel = dict(items)
+    only = set(sel.get("names") or ())
     registry = {"tls_group": set(A._TLS_GROUPS.values()), "ssh_kex": set(A._SSH_KEX.values())}.get(
         sel.get("registry"))
     names: list[str] = []
@@ -135,6 +147,8 @@ def _select(items: tuple[tuple[str, Any], ...]) -> str:
             continue
         if registry is not None and name not in registry:
             continue
+        if only and name not in only:
+            continue
         label = parameter_set if construction == "pure" and parameter_set else name
         if sel.get("variant") and not label.endswith(sel["variant"]):
             continue
@@ -142,9 +156,24 @@ def _select(items: tuple[tuple[str, Any], ...]) -> str:
             names.append(label)
     if not names:
         raise LookupError(f"no standard algid row for selector {sel}")
+    if only and len(names) != len(only):
+        raise LookupError(f"selector {sel}: names not standard algid rows of its standard: {sorted(only)}")
     if len(names) > 1 and not sel.get("all"):
         raise LookupError(f"selector {sel} is ambiguous: {names}")
     return " / ".join(sorted(names)) if sel.get("all") else names[0]
+
+
+def _key(sel: Mapping[str, Any]) -> tuple[tuple[str, Any], ...]:
+    return tuple(sorted((k, tuple(v) if isinstance(v, list) else v) for k, v in sel.items()))
+
+
+def excluded(sel: Mapping[str, Any]) -> list[str]:
+    """The names a ``names``-restricted selector leaves out of its standard (CNSA 2.0: the multi-tree SP 800-208
+    schemes), from algid, for the note that says so."""
+    if not sel.get("names"):
+        return []
+    full = _select(_key({**{k: v for k, v in sel.items() if k != "names"}, "all": True}))
+    return [n for n in full.split(" / ") if n not in set(sel["names"])]
 
 
 def render(parts: Any) -> str:
@@ -152,7 +181,7 @@ def render(parts: Any) -> str:
     out = []
     for part in parts or ():
         if "select" in part:
-            out.append(_select(tuple(sorted(part["select"].items()))) + part.get("suffix", ""))
+            out.append(_select(_key(part["select"])) + part.get("suffix", ""))
         else:
             out.append(str(part.get("text") or ""))
     return "".join(out)
@@ -164,12 +193,19 @@ def _table(kb_version: str) -> dict[str, dict[str, Any]]:
     ctx = crypto_kb.pqc_context()
     out: dict[str, dict[str, Any]] = {}
     for row in ctx.get("migration_targets") or ():
-        target = render(row["target"])
-        then = render(row.get("then"))
+        try:
+            target = render(row["target"])
+            then = render(row.get("then"))
+            cnsa = render(row.get("cnsa"))
+        except LookupError:  # a KB row algid cannot resolve: logged, the row is left out (never a crash)
+            _LOG.exception("pqc_targets: KB migration target %s does not resolve against algid", row.get("usage"))
+            continue
+        cnsa_excluded = [n for part in row.get("cnsa") or () if "select" in part for n in excluded(part["select"])]
         out[row["usage"]] = {
             "usage": row["usage"], "usage_label": row["label"], "target": target, "then": then or None,
             "target_text": f"{target}, then {then}" if then else target,
-            "cnsa_target": render(row.get("cnsa")), "reference": row["reference"], "note": row.get("note") or "",
+            "cnsa_target": cnsa, "cnsa_excluded": cnsa_excluded, "reference": row["reference"],
+            "note": row.get("note") or "",
         }
     return out
 
@@ -199,14 +235,48 @@ def cell_text(target: dict[str, Any] | None) -> str:
     return f"{text}\n({target['reference']})"
 
 
+# --------------------------------------------------------------------------------------------- NIST IR 8547
+# Only for a knowledge base without the entry's own fields; never printed over a value the KB records.
+_IR_DEFAULT = {"citation": "NIST IR 8547", "deprecated_after": 2030, "disallowed_after": 2035}
+
+
+def ir8547() -> dict[str, Any]:
+    """NIST IR 8547 as the knowledge base records it (``pqc_context.nist_ir_8547``): citation, status ("final" |
+    "draft"), url, published, deprecated_after, disallowed_after. The status is the entry's own; a KB that does not
+    record one is read from its URL (``/ipd`` is the initial public draft), so the status and the URL never disagree."""
+    found = (crypto_kb.pqc_context() or {}).get("nist_ir_8547") or {}
+    out = {**_IR_DEFAULT, **{k: v for k, v in found.items() if v not in (None, "")}}
+    out["url"] = str(out.get("landing") or out.get("source") or "")
+    if not out.get("status"):
+        out["status"] = "draft" if re.search(r"(/ipd\b|\.ipd\.)", out["url"]) else "final"
+    out["status"] = str(out["status"]).lower()
+    return out
+
+
+def _cite_url(key: str) -> str:
+    if key == "nist_ir_8547":
+        return ir8547()["url"]
+    entry = (crypto_kb.pqc_context() or {}).get(key) or {}
+    return str(entry.get("source") or "")
+
+
 # --------------------------------------------------------------------------------------------- wave dates
 @functools.lru_cache(maxsize=4)
 def _milestones(kb_version: str) -> dict[int, dict[str, Any]]:
-    return {int(m["wave"]): dict(m) for m in crypto_kb.pqc_context().get("wave_milestones") or ()}
+    out = {}
+    for m in crypto_kb.pqc_context().get("wave_milestones") or ():
+        row = dict(m)
+        row["sources"] = [u for u in (_cite_url(k) for k in row.get("cites") or ()) if u] or list(
+            row.get("sources") or [])
+        row["basis"] = row.get("pq_basis") or row.get("basis") or ""
+        row["pq_date"] = row.get("pq_date") or row.get("date")
+        out[int(m["wave"])] = row
+    return out
 
 
 def wave_milestone(wave: Any) -> dict[str, Any] | None:
-    """{wave, date (YYYY-MM-DD), basis, sources} of a remediation wave (1-4), or None."""
+    """{wave, pq_date (YYYY-MM-DD), pq_basis, fix_within_days, fix_basis, date (= pq_date), basis, sources} of a
+    remediation wave (1-4), or None."""
     try:
         return _milestones(crypto_kb.version()).get(int(wave))
     except (TypeError, ValueError):
@@ -217,10 +287,62 @@ def milestones() -> list[dict[str, Any]]:
     return [m for _w, m in sorted(_milestones(crypto_kb.version()).items())]
 
 
+# the team setting (``risk_model``) that replaces a wave's classical window; 1..3650 days
+FIX_DAYS_KEYS = {1: "wave1_fix_days", 2: "wave2_fix_days", 3: "wave3_fix_days"}
+
+
+def fix_windows(risk_model: Mapping[str, Any] | None = None) -> dict[int, int]:
+    """Days from the assessment to fix each wave's classical weaknesses: the team's setting, else the KB default."""
+    model = risk_model if isinstance(risk_model, Mapping) else {}
+    out: dict[int, int] = {}
+    for wave, key in FIX_DAYS_KEYS.items():
+        value = model.get(key)
+        if isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 3650:
+            out[wave] = value
+        else:
+            default = (wave_milestone(wave) or {}).get("fix_within_days")
+            if isinstance(default, int):
+                out[wave] = default
+    return out
+
+
+def _quantum_code(code: str) -> bool:
+    """A finding that is only the quantum verdict (KB category ``pqc``: QUANTUM_VULNERABLE, NO_PQ_KEX ...)."""
+    if code == "QUANTUM_VULNERABLE":
+        return True
+    entry = crypto_kb.entry("node", code) or crypto_kb.entry("code", code) or {}
+    return entry.get("category") == "pqc"
+
+
+def classical_weakness(codes: Iterable[Any]) -> bool:
+    """The asset has a weakness a classical attacker can use today (a finding that is not a coverage note and not
+    the quantum verdict): its fix is dated from the assessment, not from a post-quantum milestone."""
+    return any(isinstance(c, str) and c and not c.startswith("COVERAGE_") and not _quantum_code(c) for c in codes)
+
+
+def proposed_dates(wave: Any, codes: Iterable[Any], quantum_vulnerable: Any, as_of: _dt.date,
+                   windows: Mapping[int, int] | None = None) -> dict[str, Any]:
+    """The proposed dates of one asset in ``wave``: ``fix_by`` (its classical weakness, ``as_of`` + the wave's window;
+    waves 1-3 only), ``pq_by`` (its post-quantum migration, the wave's IR 8547 / CNSA 2.0 milestone; quantum-vulnerable
+    assets, and any asset with no classical weakness), and ``date`` / ``kind``, the one the asset is due by first."""
+    milestone = wave_milestone(wave)
+    if milestone is None:
+        return {"date": None, "kind": None, "fix_by": None, "pq_by": None}
+    windows = fix_windows() if windows is None else windows
+    classical = classical_weakness(codes or ())
+    days = windows.get(int(milestone["wave"])) if classical else None
+    fix_by = (as_of + _dt.timedelta(days=int(days))).isoformat() if days else None
+    pq_by = milestone.get("pq_date") if (quantum_vulnerable is True or not fix_by) else None
+    kind = "fix" if fix_by else ("pq" if pq_by else None)
+    return {"date": fix_by or pq_by, "kind": kind, "fix_by": fix_by, "pq_by": pq_by}
+
+
+_LOG = logging.getLogger(__name__)
 UNASSIGNED_OWNER = "unassigned — confirm with owner"
 # the waves of ``waves.WAVE_RULES`` (waves.WAVE_LABEL is this table)
 WAVE_LABEL = {1: "Wave 1: urgent (exposed or HNDL)", 2: "Wave 2: high", 3: "Wave 3: other weaknesses",
               4: "Wave 4: post-quantum migration"}
 
-__all__ = ["UNASSIGNED_OWNER", "WAVE_LABEL", "asset_target", "cell_text", "milestones", "render", "table", "target_for", "usage_of",
-           "wave_milestone"]
+__all__ = ["FIX_DAYS_KEYS", "UNASSIGNED_OWNER", "WAVE_LABEL", "asset_target", "cell_text", "classical_weakness",
+           "excluded", "fix_windows", "ir8547", "milestones", "proposed_dates", "render", "table", "target_for",
+           "usage_of", "wave_milestone"]
