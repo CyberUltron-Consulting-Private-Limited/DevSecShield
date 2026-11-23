@@ -235,11 +235,11 @@
      "evidence": "all 5 related-crypto-material asset(s) carry name",
      "id": "T9-Keys-Name",
      "refs": [
-      "crypto-material-initialization-vector-app-kdf-py-l28",
-      "crypto-material-salt-app-encryption-py-l12",
-      "crypto-material-salt-app-kdf-py-l13",
-      "crypto-material-salt-app-kdf-py-l21",
-      "crypto-material-salt-app-kdf-py-l9"
+      "crypto-material-initialization-vector-app-kdf-py-l28c49",
+      "crypto-material-salt-app-encryption-py-l12c14",
+      "crypto-material-salt-app-kdf-py-l13c52",
+      "crypto-material-salt-app-kdf-py-l21c60",
+      "crypto-material-salt-app-kdf-py-l9c15"
      ],
      "source": "Table 9 / Keys / Name",
      "title": "Key Name",
@@ -250,11 +250,11 @@
      "evidence": "all 5 related-crypto-material asset(s) carry crypto:assetType",
      "id": "T9-Keys-AssetType",
      "refs": [
-      "crypto-material-initialization-vector-app-kdf-py-l28",
-      "crypto-material-salt-app-encryption-py-l12",
-      "crypto-material-salt-app-kdf-py-l13",
-      "crypto-material-salt-app-kdf-py-l21",
-      "crypto-material-salt-app-kdf-py-l9"
+      "crypto-material-initialization-vector-app-kdf-py-l28c49",
+      "crypto-material-salt-app-encryption-py-l12c14",
+      "crypto-material-salt-app-kdf-py-l13c52",
+      "crypto-material-salt-app-kdf-py-l21c60",
+      "crypto-material-salt-app-kdf-py-l9c15"
      ],
      "source": "Table 9 / Keys / Asset Type",
      "title": "Key Asset Type",
@@ -265,11 +265,11 @@
      "evidence": "T9-Keys-Id: crypto:id not present on related-crypto-material assets; unknown \u2192 not BOM-evidenceable (Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification.)",
      "id": "T9-Keys-Id",
      "refs": [
-      "crypto-material-initialization-vector-app-kdf-py-l28",
-      "crypto-material-salt-app-encryption-py-l12",
-      "crypto-material-salt-app-kdf-py-l13",
-      "crypto-material-salt-app-kdf-py-l21",
-      "crypto-material-salt-app-kdf-py-l9"
+      "crypto-material-initialization-vector-app-kdf-py-l28c49",
+      "crypto-material-salt-app-encryption-py-l12c14",
+      "crypto-material-salt-app-kdf-py-l13c52",
+      "crypto-material-salt-app-kdf-py-l21c60",
+      "crypto-material-salt-app-kdf-py-l9c15"
      ],
      "source": "Table 9 / Keys / id",
      "title": "Key id",
@@ -280,11 +280,11 @@
      "evidence": "T9-Keys-State: crypto:state not present on related-crypto-material assets; unknown \u2192 not BOM-evidenceable (Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification.)",
      "id": "T9-Keys-State",
      "refs": [
-      "crypto-material-initialization-vector-app-kdf-py-l28",
-      "crypto-material-salt-app-encryption-py-l12",
-      "crypto-material-salt-app-kdf-py-l13",
-      "crypto-material-salt-app-kdf-py-l21",
-      "crypto-material-salt-app-kdf-py-l9"
+      "crypto-material-initialization-vector-app-kdf-py-l28c49",
+      "crypto-material-salt-app-encryption-py-l12c14",
+      "crypto-material-salt-app-kdf-py-l13c52",
+      "crypto-material-salt-app-kdf-py-l21c60",
+      "crypto-material-salt-app-kdf-py-l9c15"
      ],
      "source": "Table 9 / Keys / state",
      "title": "Key state",
@@ -295,11 +295,11 @@
      "evidence": "T9-Keys-Size: 5/5 related-crypto-material asset(s) lack crypto:keySize",
      "id": "T9-Keys-Size",
      "refs": [
-      "crypto-material-initialization-vector-app-kdf-py-l28",
-      "crypto-material-salt-app-encryption-py-l12",
-      "crypto-material-salt-app-kdf-py-l13",
-      "crypto-material-salt-app-kdf-py-l21",
-      "crypto-material-salt-app-kdf-py-l9"
+      "crypto-material-initialization-vector-app-kdf-py-l28c49",
+      "crypto-material-salt-app-encryption-py-l12c14",
+      "crypto-material-salt-app-kdf-py-l13c52",
+      "crypto-material-salt-app-kdf-py-l21c60",
+      "crypto-material-salt-app-kdf-py-l9c15"
      ],
      "source": "Table 9 / Keys / size",
      "title": "Key size",
@@ -310,11 +310,11 @@
      "evidence": "T9-Keys-Creation-Date: crypto:creationDate not present on related-crypto-material assets; unknown \u2192 not BOM-evidenceable (Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification.)",
      "id": "T9-Keys-Creation-Date",
      "refs": [
-      "crypto-material-initialization-vector-app-kdf-py-l28",
-      "crypto-material-salt-app-encryption-py-l12",
-      "crypto-material-salt-app-kdf-py-l13",
-      "crypto-material-salt-app-kdf-py-l21",
-      "crypto-material-salt-app-kdf-py-l9"
+      "crypto-material-initialization-vector-app-kdf-py-l28c49",
+      "crypto-material-salt-app-encryption-py-l12c14",
+      "crypto-material-salt-app-kdf-py-l13c52",
+      "crypto-material-salt-app-kdf-py-l21c60",
+      "crypto-material-salt-app-kdf-py-l9c15"
      ],
      "source": "Table 9 / Keys / Creation Date",
      "title": "Key Creation Date",
@@ -325,11 +325,11 @@
      "evidence": "T9-Keys-Activation-Date: crypto:activationDate not present on related-crypto-material assets; unknown \u2192 not BOM-evidenceable (Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification.)",
      "id": "T9-Keys-Activation-Date",
      "refs": [
-      "crypto-material-initialization-vector-app-kdf-py-l28",
-      "crypto-material-salt-app-encryption-py-l12",
-      "crypto-material-salt-app-kdf-py-l13",
-      "crypto-material-salt-app-kdf-py-l21",
-      "crypto-material-salt-app-kdf-py-l9"
+      "crypto-material-initialization-vector-app-kdf-py-l28c49",
+      "crypto-material-salt-app-encryption-py-l12c14",
+      "crypto-material-salt-app-kdf-py-l13c52",
+      "crypto-material-salt-app-kdf-py-l21c60",
+      "crypto-material-salt-app-kdf-py-l9c15"
      ],
      "source": "Table 9 / Keys / Activation Date",
      "title": "Key Activation Date",
@@ -1208,11 +1208,11 @@
       "crypto-algo-sha-256-app-encryption-py",
       "crypto-algo-sha-256-app-kdf-py",
       "crypto-algo-sha-512-app-kdf-py",
-      "crypto-material-initialization-vector-app-kdf-py-l28",
-      "crypto-material-salt-app-encryption-py-l12",
-      "crypto-material-salt-app-kdf-py-l13",
-      "crypto-material-salt-app-kdf-py-l21",
-      "crypto-material-salt-app-kdf-py-l9"
+      "crypto-material-initialization-vector-app-kdf-py-l28c49",
+      "crypto-material-salt-app-encryption-py-l12c14",
+      "crypto-material-salt-app-kdf-py-l13c52",
+      "crypto-material-salt-app-kdf-py-l21c60",
+      "crypto-material-salt-app-kdf-py-l9c15"
      ],
      "source": "SEBI CSCRF CIR/2024/113 Box Item 7 #1",
      "title": "Cryptographic asset inventory present",
@@ -1302,11 +1302,11 @@
       "crypto-algo-sha-256-app-encryption-py",
       "crypto-algo-sha-256-app-kdf-py",
       "crypto-algo-sha-512-app-kdf-py",
-      "crypto-material-initialization-vector-app-kdf-py-l28",
-      "crypto-material-salt-app-encryption-py-l12",
-      "crypto-material-salt-app-kdf-py-l13",
-      "crypto-material-salt-app-kdf-py-l21",
-      "crypto-material-salt-app-kdf-py-l9"
+      "crypto-material-initialization-vector-app-kdf-py-l28c49",
+      "crypto-material-salt-app-encryption-py-l12c14",
+      "crypto-material-salt-app-kdf-py-l13c52",
+      "crypto-material-salt-app-kdf-py-l21c60",
+      "crypto-material-salt-app-kdf-py-l9c15"
      ],
      "source": "SEBI CSCRF CIR/2024/113 GV.SC.S5(d)",
      "title": "Encryption used evidenced in crypto BOM",
@@ -1449,18 +1449,8 @@
    },
    {
     "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
-    "target": "crypto-algo-aes-cbc-app-kdf-py"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
+    "source": "crypto-lib-argon2-cffi",
     "target": "crypto-algo-argon2-app-kdf-py"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
-    "target": "crypto-algo-hkdf-app-kdf-py"
    },
    {
     "rel": "provides",
@@ -1475,32 +1465,7 @@
    {
     "rel": "provides",
     "source": "crypto-lib-hashlib-stdlib",
-    "target": "crypto-algo-sha-256-app-kdf-py"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
     "target": "crypto-algo-sha-512-app-kdf-py"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
-    "target": "crypto-material-initialization-vector-app-kdf-py-l28"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
-    "target": "crypto-material-salt-app-kdf-py-l13"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
-    "target": "crypto-material-salt-app-kdf-py-l21"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
-    "target": "crypto-material-salt-app-kdf-py-l9"
    },
    {
     "rel": "provides",
@@ -1511,11 +1476,6 @@
     "rel": "provides",
     "source": "crypto-lib-pyca-cryptography",
     "target": "crypto-algo-aes-cbc-app-kdf-py"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-algo-argon2-app-kdf-py"
    },
    {
     "rel": "provides",
@@ -1540,16 +1500,6 @@
    {
     "rel": "provides",
     "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-algo-pbkdf2-app-kdf-py"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-algo-scrypt-app-kdf-py"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
     "target": "crypto-algo-sha-256-app-encryption-py"
    },
    {
@@ -1563,33 +1513,8 @@
     "target": "crypto-algo-sha-512-app-kdf-py"
    },
    {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-material-initialization-vector-app-kdf-py-l28"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-material-salt-app-encryption-py-l12"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-material-salt-app-kdf-py-l13"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-material-salt-app-kdf-py-l21"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-material-salt-app-kdf-py-l9"
-   },
-   {
     "rel": "used_by",
-    "source": "crypto-material-salt-app-kdf-py-l9",
+    "source": "crypto-material-salt-app-kdf-py-l9c15",
     "target": "crypto-algo-aes-cbc-app-kdf-py"
    }
   ],
@@ -1816,7 +1741,7 @@
    },
    {
     "asset_type": "related-crypto-material",
-    "id": "crypto-material-initialization-vector-app-kdf-py-l28",
+    "id": "crypto-material-initialization-vector-app-kdf-py-l28c49",
     "impact": "High",
     "kind": "crypto_asset",
     "label": "initialization-vector (app/kdf.py:28)",
@@ -1827,7 +1752,7 @@
    },
    {
     "asset_type": "related-crypto-material",
-    "id": "crypto-material-salt-app-encryption-py-l12",
+    "id": "crypto-material-salt-app-encryption-py-l12c14",
     "impact": "Medium",
     "kind": "crypto_asset",
     "label": "salt (app/encryption.py:12)",
@@ -1838,7 +1763,7 @@
    },
    {
     "asset_type": "related-crypto-material",
-    "id": "crypto-material-salt-app-kdf-py-l13",
+    "id": "crypto-material-salt-app-kdf-py-l13c52",
     "impact": "Medium",
     "kind": "crypto_asset",
     "label": "salt (app/kdf.py:13)",
@@ -1849,7 +1774,7 @@
    },
    {
     "asset_type": "related-crypto-material",
-    "id": "crypto-material-salt-app-kdf-py-l21",
+    "id": "crypto-material-salt-app-kdf-py-l21c60",
     "impact": null,
     "kind": "crypto_asset",
     "label": "salt (app/kdf.py:21)",
@@ -1860,7 +1785,7 @@
    },
    {
     "asset_type": "related-crypto-material",
-    "id": "crypto-material-salt-app-kdf-py-l9",
+    "id": "crypto-material-salt-app-kdf-py-l9c15",
     "impact": "Medium",
     "kind": "crypto_asset",
     "label": "salt (SCRYPT_SALT, kdf.py)",
@@ -1945,18 +1870,8 @@
    },
    {
     "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
-    "target": "crypto-algo-aes-cbc-app-kdf-py"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
+    "source": "crypto-lib-argon2-cffi",
     "target": "crypto-algo-argon2-app-kdf-py"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
-    "target": "crypto-algo-hkdf-app-kdf-py"
    },
    {
     "rel": "provides",
@@ -1971,32 +1886,7 @@
    {
     "rel": "provides",
     "source": "crypto-lib-hashlib-stdlib",
-    "target": "crypto-algo-sha-256-app-kdf-py"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
     "target": "crypto-algo-sha-512-app-kdf-py"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
-    "target": "crypto-material-initialization-vector-app-kdf-py-l28"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
-    "target": "crypto-material-salt-app-kdf-py-l13"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
-    "target": "crypto-material-salt-app-kdf-py-l21"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
-    "target": "crypto-material-salt-app-kdf-py-l9"
    },
    {
     "rel": "provides",
@@ -2007,11 +1897,6 @@
     "rel": "provides",
     "source": "crypto-lib-pyca-cryptography",
     "target": "crypto-algo-aes-cbc-app-kdf-py"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-algo-argon2-app-kdf-py"
    },
    {
     "rel": "provides",
@@ -2036,16 +1921,6 @@
    {
     "rel": "provides",
     "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-algo-pbkdf2-app-kdf-py"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-algo-scrypt-app-kdf-py"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
     "target": "crypto-algo-sha-256-app-encryption-py"
    },
    {
@@ -2059,58 +1934,33 @@
     "target": "crypto-algo-sha-512-app-kdf-py"
    },
    {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-material-initialization-vector-app-kdf-py-l28"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-material-salt-app-encryption-py-l12"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-material-salt-app-kdf-py-l13"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-material-salt-app-kdf-py-l21"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-material-salt-app-kdf-py-l9"
-   },
-   {
     "rel": "is_a",
-    "source": "crypto-material-initialization-vector-app-kdf-py-l28",
+    "source": "crypto-material-initialization-vector-app-kdf-py-l28c49",
     "target": "family:related-crypto-material"
    },
    {
     "rel": "is_a",
-    "source": "crypto-material-salt-app-encryption-py-l12",
+    "source": "crypto-material-salt-app-encryption-py-l12c14",
     "target": "family:related-crypto-material"
    },
    {
     "rel": "is_a",
-    "source": "crypto-material-salt-app-kdf-py-l13",
+    "source": "crypto-material-salt-app-kdf-py-l13c52",
     "target": "family:related-crypto-material"
    },
    {
     "rel": "is_a",
-    "source": "crypto-material-salt-app-kdf-py-l21",
+    "source": "crypto-material-salt-app-kdf-py-l21c60",
     "target": "family:related-crypto-material"
    },
    {
     "rel": "is_a",
-    "source": "crypto-material-salt-app-kdf-py-l9",
+    "source": "crypto-material-salt-app-kdf-py-l9c15",
     "target": "family:related-crypto-material"
    },
    {
     "rel": "used_by",
-    "source": "crypto-material-salt-app-kdf-py-l9",
+    "source": "crypto-material-salt-app-kdf-py-l9c15",
     "target": "crypto-algo-aes-cbc-app-kdf-py"
    },
    {
@@ -2181,27 +2031,27 @@
    {
     "rel": "contains",
     "source": "folder:app/",
-    "target": "crypto-material-initialization-vector-app-kdf-py-l28"
+    "target": "crypto-material-initialization-vector-app-kdf-py-l28c49"
    },
    {
     "rel": "contains",
     "source": "folder:app/",
-    "target": "crypto-material-salt-app-encryption-py-l12"
+    "target": "crypto-material-salt-app-encryption-py-l12c14"
    },
    {
     "rel": "contains",
     "source": "folder:app/",
-    "target": "crypto-material-salt-app-kdf-py-l13"
+    "target": "crypto-material-salt-app-kdf-py-l13c52"
    },
    {
     "rel": "contains",
     "source": "folder:app/",
-    "target": "crypto-material-salt-app-kdf-py-l21"
+    "target": "crypto-material-salt-app-kdf-py-l21c60"
    },
    {
     "rel": "contains",
     "source": "folder:app/",
-    "target": "crypto-material-salt-app-kdf-py-l9"
+    "target": "crypto-material-salt-app-kdf-py-l9c15"
    }
   ],
   "meta": {
@@ -2217,12 +2067,11 @@
    {
     "asset_type": "library",
     "cluster": true,
-    "cluster_count": 5,
+    "cluster_count": 4,
     "id": "cluster:libraries",
     "kind": "framework",
-    "label": "5 more libraries",
+    "label": "4 more libraries",
     "member_ids": [
-     "crypto-lib-argon2-cffi",
      "container-image-gcr-io-distroless-python3-debian12-sha256-0f1f7d2c4b3a6e5d8c9b0a1f2e3d4c5b6a7980716253443526170819a0b1c2d3",
      "container-image-ghcr-io-acme-bank-router-1-4-2",
      "container-image-python-3-11-slim",
@@ -2375,6 +2224,17 @@
    },
    {
     "asset_type": null,
+    "id": "crypto-lib-argon2-cffi",
+    "impact": null,
+    "kind": "framework",
+    "label": "argon2-cffi",
+    "location": "requirements.txt",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": null,
     "id": "crypto-lib-hashlib-stdlib",
     "impact": null,
     "kind": "framework",
@@ -2397,7 +2257,7 @@
    },
    {
     "asset_type": "related-crypto-material",
-    "id": "crypto-material-initialization-vector-app-kdf-py-l28",
+    "id": "crypto-material-initialization-vector-app-kdf-py-l28c49",
     "impact": "High",
     "kind": "crypto_asset",
     "label": "initialization-vector (app/kdf.py:28)",
@@ -2408,7 +2268,7 @@
    },
    {
     "asset_type": "related-crypto-material",
-    "id": "crypto-material-salt-app-encryption-py-l12",
+    "id": "crypto-material-salt-app-encryption-py-l12c14",
     "impact": "Medium",
     "kind": "crypto_asset",
     "label": "salt (app/encryption.py:12)",
@@ -2419,7 +2279,7 @@
    },
    {
     "asset_type": "related-crypto-material",
-    "id": "crypto-material-salt-app-kdf-py-l13",
+    "id": "crypto-material-salt-app-kdf-py-l13c52",
     "impact": "Medium",
     "kind": "crypto_asset",
     "label": "salt (app/kdf.py:13)",
@@ -2430,7 +2290,7 @@
    },
    {
     "asset_type": "related-crypto-material",
-    "id": "crypto-material-salt-app-kdf-py-l21",
+    "id": "crypto-material-salt-app-kdf-py-l21c60",
     "impact": null,
     "kind": "crypto_asset",
     "label": "salt (app/kdf.py:21)",
@@ -2441,7 +2301,7 @@
    },
    {
     "asset_type": "related-crypto-material",
-    "id": "crypto-material-salt-app-kdf-py-l9",
+    "id": "crypto-material-salt-app-kdf-py-l9c15",
     "impact": "Medium",
     "kind": "crypto_asset",
     "label": "salt (SCRYPT_SALT, kdf.py)",
@@ -2594,18 +2454,8 @@
    },
    {
     "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
-    "target": "crypto-algo-aes-cbc-app-kdf-py"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
+    "source": "crypto-lib-argon2-cffi",
     "target": "crypto-algo-argon2-app-kdf-py"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
-    "target": "crypto-algo-hkdf-app-kdf-py"
    },
    {
     "rel": "provides",
@@ -2620,32 +2470,7 @@
    {
     "rel": "provides",
     "source": "crypto-lib-hashlib-stdlib",
-    "target": "crypto-algo-sha-256-app-kdf-py"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
     "target": "crypto-algo-sha-512-app-kdf-py"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
-    "target": "crypto-material-initialization-vector-app-kdf-py-l28"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
-    "target": "crypto-material-salt-app-kdf-py-l13"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
-    "target": "crypto-material-salt-app-kdf-py-l21"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
-    "target": "crypto-material-salt-app-kdf-py-l9"
    },
    {
     "rel": "provides",
@@ -2656,11 +2481,6 @@
     "rel": "provides",
     "source": "crypto-lib-pyca-cryptography",
     "target": "crypto-algo-aes-cbc-app-kdf-py"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-algo-argon2-app-kdf-py"
    },
    {
     "rel": "provides",
@@ -2685,16 +2505,6 @@
    {
     "rel": "provides",
     "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-algo-pbkdf2-app-kdf-py"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-algo-scrypt-app-kdf-py"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
     "target": "crypto-algo-sha-256-app-encryption-py"
    },
    {
@@ -2708,58 +2518,33 @@
     "target": "crypto-algo-sha-512-app-kdf-py"
    },
    {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-material-initialization-vector-app-kdf-py-l28"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-material-salt-app-encryption-py-l12"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-material-salt-app-kdf-py-l13"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-material-salt-app-kdf-py-l21"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-material-salt-app-kdf-py-l9"
-   },
-   {
     "rel": "is_a",
-    "source": "crypto-material-initialization-vector-app-kdf-py-l28",
+    "source": "crypto-material-initialization-vector-app-kdf-py-l28c49",
     "target": "family:related-crypto-material"
    },
    {
     "rel": "is_a",
-    "source": "crypto-material-salt-app-encryption-py-l12",
+    "source": "crypto-material-salt-app-encryption-py-l12c14",
     "target": "family:related-crypto-material"
    },
    {
     "rel": "is_a",
-    "source": "crypto-material-salt-app-kdf-py-l13",
+    "source": "crypto-material-salt-app-kdf-py-l13c52",
     "target": "family:related-crypto-material"
    },
    {
     "rel": "is_a",
-    "source": "crypto-material-salt-app-kdf-py-l21",
+    "source": "crypto-material-salt-app-kdf-py-l21c60",
     "target": "family:related-crypto-material"
    },
    {
     "rel": "is_a",
-    "source": "crypto-material-salt-app-kdf-py-l9",
+    "source": "crypto-material-salt-app-kdf-py-l9c15",
     "target": "family:related-crypto-material"
    },
    {
     "rel": "used_by",
-    "source": "crypto-material-salt-app-kdf-py-l9",
+    "source": "crypto-material-salt-app-kdf-py-l9c15",
     "target": "crypto-algo-aes-cbc-app-kdf-py"
    },
    {
@@ -2830,27 +2615,27 @@
    {
     "rel": "contains",
     "source": "folder:app/",
-    "target": "crypto-material-initialization-vector-app-kdf-py-l28"
+    "target": "crypto-material-initialization-vector-app-kdf-py-l28c49"
    },
    {
     "rel": "contains",
     "source": "folder:app/",
-    "target": "crypto-material-salt-app-encryption-py-l12"
+    "target": "crypto-material-salt-app-encryption-py-l12c14"
    },
    {
     "rel": "contains",
     "source": "folder:app/",
-    "target": "crypto-material-salt-app-kdf-py-l13"
+    "target": "crypto-material-salt-app-kdf-py-l13c52"
    },
    {
     "rel": "contains",
     "source": "folder:app/",
-    "target": "crypto-material-salt-app-kdf-py-l21"
+    "target": "crypto-material-salt-app-kdf-py-l21c60"
    },
    {
     "rel": "contains",
     "source": "folder:app/",
-    "target": "crypto-material-salt-app-kdf-py-l9"
+    "target": "crypto-material-salt-app-kdf-py-l9c15"
    }
   ],
   "meta": {
@@ -2866,12 +2651,11 @@
    {
     "asset_type": "library",
     "cluster": true,
-    "cluster_count": 5,
+    "cluster_count": 4,
     "id": "cluster:libraries",
     "kind": "framework",
-    "label": "5 more libraries",
+    "label": "4 more libraries",
     "member_ids": [
-     "crypto-lib-argon2-cffi",
      "container-image-gcr-io-distroless-python3-debian12-sha256-0f1f7d2c4b3a6e5d8c9b0a1f2e3d4c5b6a7980716253443526170819a0b1c2d3",
      "container-image-ghcr-io-acme-bank-router-1-4-2",
      "container-image-python-3-11-slim",
@@ -3024,6 +2808,17 @@
    },
    {
     "asset_type": null,
+    "id": "crypto-lib-argon2-cffi",
+    "impact": null,
+    "kind": "framework",
+    "label": "argon2-cffi",
+    "location": "requirements.txt",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": null,
     "id": "crypto-lib-hashlib-stdlib",
     "impact": null,
     "kind": "framework",
@@ -3046,7 +2841,7 @@
    },
    {
     "asset_type": "related-crypto-material",
-    "id": "crypto-material-initialization-vector-app-kdf-py-l28",
+    "id": "crypto-material-initialization-vector-app-kdf-py-l28c49",
     "impact": "High",
     "kind": "crypto_asset",
     "label": "initialization-vector (app/kdf.py:28)",
@@ -3057,7 +2852,7 @@
    },
    {
     "asset_type": "related-crypto-material",
-    "id": "crypto-material-salt-app-encryption-py-l12",
+    "id": "crypto-material-salt-app-encryption-py-l12c14",
     "impact": "Medium",
     "kind": "crypto_asset",
     "label": "salt (app/encryption.py:12)",
@@ -3068,7 +2863,7 @@
    },
    {
     "asset_type": "related-crypto-material",
-    "id": "crypto-material-salt-app-kdf-py-l13",
+    "id": "crypto-material-salt-app-kdf-py-l13c52",
     "impact": "Medium",
     "kind": "crypto_asset",
     "label": "salt (app/kdf.py:13)",
@@ -3079,7 +2874,7 @@
    },
    {
     "asset_type": "related-crypto-material",
-    "id": "crypto-material-salt-app-kdf-py-l21",
+    "id": "crypto-material-salt-app-kdf-py-l21c60",
     "impact": null,
     "kind": "crypto_asset",
     "label": "salt (app/kdf.py:21)",
@@ -3090,7 +2885,7 @@
    },
    {
     "asset_type": "related-crypto-material",
-    "id": "crypto-material-salt-app-kdf-py-l9",
+    "id": "crypto-material-salt-app-kdf-py-l9c15",
     "impact": "Medium",
     "kind": "crypto_asset",
     "label": "salt (SCRYPT_SALT, kdf.py)",
@@ -3183,18 +2978,8 @@
    },
    {
     "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
-    "target": "crypto-algo-aes-cbc-app-kdf-py"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
+    "source": "crypto-lib-argon2-cffi",
     "target": "crypto-algo-argon2-app-kdf-py"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
-    "target": "crypto-algo-hkdf-app-kdf-py"
    },
    {
     "rel": "provides",
@@ -3209,32 +2994,7 @@
    {
     "rel": "provides",
     "source": "crypto-lib-hashlib-stdlib",
-    "target": "crypto-algo-sha-256-app-kdf-py"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
     "target": "crypto-algo-sha-512-app-kdf-py"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
-    "target": "crypto-material-initialization-vector-app-kdf-py-l28"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
-    "target": "crypto-material-salt-app-kdf-py-l13"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
-    "target": "crypto-material-salt-app-kdf-py-l21"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-hashlib-stdlib",
-    "target": "crypto-material-salt-app-kdf-py-l9"
    },
    {
     "rel": "provides",
@@ -3245,11 +3005,6 @@
     "rel": "provides",
     "source": "crypto-lib-pyca-cryptography",
     "target": "crypto-algo-aes-cbc-app-kdf-py"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-algo-argon2-app-kdf-py"
    },
    {
     "rel": "provides",
@@ -3274,16 +3029,6 @@
    {
     "rel": "provides",
     "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-algo-pbkdf2-app-kdf-py"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-algo-scrypt-app-kdf-py"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
     "target": "crypto-algo-sha-256-app-encryption-py"
    },
    {
@@ -3297,44 +3042,19 @@
     "target": "crypto-algo-sha-512-app-kdf-py"
    },
    {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-material-initialization-vector-app-kdf-py-l28"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-material-salt-app-encryption-py-l12"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-material-salt-app-kdf-py-l13"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-material-salt-app-kdf-py-l21"
-   },
-   {
-    "rel": "provides",
-    "source": "crypto-lib-pyca-cryptography",
-    "target": "crypto-material-salt-app-kdf-py-l9"
-   },
-   {
     "rel": "used_by",
-    "source": "crypto-material-salt-app-kdf-py-l9",
+    "source": "crypto-material-salt-app-kdf-py-l9c15",
     "target": "crypto-algo-aes-cbc-app-kdf-py"
    }
   ],
   "meta": {
-   "clustered_members": 6,
+   "clustered_members": 9,
    "lane": "cbom",
    "max_nodes": 40,
-   "raw_edge_count": 31,
+   "raw_edge_count": 16,
    "raw_node_count": 25,
-   "view_edge_count": 31,
-   "view_node_count": 21
+   "view_edge_count": 16,
+   "view_node_count": 19
   },
   "nodes": [
    {
@@ -3360,16 +3080,35 @@
    {
     "asset_type": null,
     "cluster": true,
-    "cluster_count": 2,
-    "clustered_count": 2,
+    "cluster_count": 1,
+    "clustered_count": 1,
     "id": "cluster:orphan:library",
-    "impact": null,
+    "impact": "High",
     "is_cluster": true,
     "kind": "framework",
-    "label": "Unlinked library (2)",
+    "label": "Unlinked library (1)",
     "member_ids": [
-     "crypto-lib-argon2-cffi",
      "crypto-advisory-pypi-cryptography-41-0"
+    ],
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": true
+   },
+   {
+    "asset_type": "related-crypto-material",
+    "cluster": true,
+    "cluster_count": 4,
+    "clustered_count": 4,
+    "id": "cluster:orphan:related-crypto-material",
+    "impact": "High",
+    "is_cluster": true,
+    "kind": "crypto_asset",
+    "label": "Unlinked related-crypto-material (4)",
+    "member_ids": [
+     "crypto-material-initialization-vector-app-kdf-py-l28c49",
+     "crypto-material-salt-app-encryption-py-l12c14",
+     "crypto-material-salt-app-kdf-py-l13c52",
+     "crypto-material-salt-app-kdf-py-l21c60"
     ],
     "primitive": null,
     "quantum_vulnerable": false,
@@ -3509,6 +3248,17 @@
    },
    {
     "asset_type": null,
+    "id": "crypto-lib-argon2-cffi",
+    "impact": null,
+    "kind": "framework",
+    "label": "argon2-cffi",
+    "location": "requirements.txt",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": null,
     "id": "crypto-lib-hashlib-stdlib",
     "impact": null,
     "kind": "framework",
@@ -3531,51 +3281,7 @@
    },
    {
     "asset_type": "related-crypto-material",
-    "id": "crypto-material-initialization-vector-app-kdf-py-l28",
-    "impact": "High",
-    "kind": "crypto_asset",
-    "label": "initialization-vector (app/kdf.py:28)",
-    "location": "app/kdf.py",
-    "primitive": null,
-    "quantum_vulnerable": false,
-    "weak": true
-   },
-   {
-    "asset_type": "related-crypto-material",
-    "id": "crypto-material-salt-app-encryption-py-l12",
-    "impact": "Medium",
-    "kind": "crypto_asset",
-    "label": "salt (app/encryption.py:12)",
-    "location": "app/encryption.py",
-    "primitive": null,
-    "quantum_vulnerable": false,
-    "weak": true
-   },
-   {
-    "asset_type": "related-crypto-material",
-    "id": "crypto-material-salt-app-kdf-py-l13",
-    "impact": "Medium",
-    "kind": "crypto_asset",
-    "label": "salt (app/kdf.py:13)",
-    "location": "app/kdf.py",
-    "primitive": null,
-    "quantum_vulnerable": false,
-    "weak": true
-   },
-   {
-    "asset_type": "related-crypto-material",
-    "id": "crypto-material-salt-app-kdf-py-l21",
-    "impact": null,
-    "kind": "crypto_asset",
-    "label": "salt (app/kdf.py:21)",
-    "location": "app/kdf.py",
-    "primitive": null,
-    "quantum_vulnerable": false,
-    "weak": false
-   },
-   {
-    "asset_type": "related-crypto-material",
-    "id": "crypto-material-salt-app-kdf-py-l9",
+    "id": "crypto-material-salt-app-kdf-py-l9c15",
     "impact": "Medium",
     "kind": "crypto_asset",
     "label": "salt (SCRYPT_SALT, kdf.py)",
@@ -4812,7 +4518,7 @@
     "type": "cryptographic-asset"
    },
    {
-    "bom-ref": "crypto-material-initialization-vector-app-kdf-py-l28",
+    "bom-ref": "crypto-material-initialization-vector-app-kdf-py-l28c49",
     "cryptoProperties": {
      "assetType": "related-crypto-material",
      "relatedCryptoMaterialProperties": {
@@ -4889,7 +4595,7 @@
     "type": "cryptographic-asset"
    },
    {
-    "bom-ref": "crypto-material-salt-app-encryption-py-l12",
+    "bom-ref": "crypto-material-salt-app-encryption-py-l12c14",
     "cryptoProperties": {
      "assetType": "related-crypto-material",
      "relatedCryptoMaterialProperties": {
@@ -4966,7 +4672,7 @@
     "type": "cryptographic-asset"
    },
    {
-    "bom-ref": "crypto-material-salt-app-kdf-py-l13",
+    "bom-ref": "crypto-material-salt-app-kdf-py-l13c52",
     "cryptoProperties": {
      "assetType": "related-crypto-material",
      "relatedCryptoMaterialProperties": {
@@ -5043,7 +4749,7 @@
     "type": "cryptographic-asset"
    },
    {
-    "bom-ref": "crypto-material-salt-app-kdf-py-l21",
+    "bom-ref": "crypto-material-salt-app-kdf-py-l21c60",
     "cryptoProperties": {
      "assetType": "related-crypto-material",
      "relatedCryptoMaterialProperties": {
@@ -5104,7 +4810,7 @@
     "type": "cryptographic-asset"
    },
    {
-    "bom-ref": "crypto-material-salt-app-kdf-py-l9",
+    "bom-ref": "crypto-material-salt-app-kdf-py-l9c15",
     "cryptoProperties": {
      "assetType": "related-crypto-material",
      "relatedCryptoMaterialProperties": {
@@ -5515,7 +5221,7 @@
   "dependencies": [
    {
     "dependsOn": [
-     "crypto-material-initialization-vector-app-kdf-py-l28"
+     "crypto-material-initialization-vector-app-kdf-py-l28c49"
     ],
     "ref": "crypto-algo-aes-cbc-app-kdf-py"
    },
@@ -5535,20 +5241,20 @@
    {
     "dependsOn": [
      "crypto-algo-sha-256-app-encryption-py",
-     "crypto-material-salt-app-encryption-py-l12"
+     "crypto-material-salt-app-encryption-py-l12c14"
     ],
     "ref": "crypto-algo-pbkdf2-app-encryption-py"
    },
    {
     "dependsOn": [
      "crypto-algo-sha-512-app-kdf-py",
-     "crypto-material-salt-app-kdf-py-l13"
+     "crypto-material-salt-app-kdf-py-l13c52"
     ],
     "ref": "crypto-algo-pbkdf2-app-kdf-py"
    },
    {
     "dependsOn": [
-     "crypto-material-salt-app-kdf-py-l9"
+     "crypto-material-salt-app-kdf-py-l9c15"
     ],
     "ref": "crypto-algo-scrypt-app-kdf-py"
    },
@@ -5584,7 +5290,7 @@
     "dependsOn": [
      "crypto-algo-aes-cbc-app-kdf-py"
     ],
-    "ref": "crypto-material-salt-app-kdf-py-l9"
+    "ref": "crypto-material-salt-app-kdf-py-l9c15"
    }
   ],
   "metadata": {
@@ -5636,7 +5342,7 @@
     ]
    }
   },
-  "serialNumber": "urn:uuid:0ee9da48-2850-549d-95de-f0aa2d3a935a",
+  "serialNumber": "urn:uuid:4b50d636-b44f-5926-847d-0ac2f30aebb9",
   "specVersion": "1.6",
   "version": 1
  },
@@ -5688,10 +5394,10 @@
    "crypto-advisory-pypi-cryptography-41-0": 8.0,
    "crypto-algo-pbkdf2-app-encryption-py": 1.0,
    "crypto-algo-scrypt-app-kdf-py": 1.0,
-   "crypto-material-initialization-vector-app-kdf-py-l28": 8.0,
-   "crypto-material-salt-app-encryption-py-l12": 4.0,
-   "crypto-material-salt-app-kdf-py-l13": 4.0,
-   "crypto-material-salt-app-kdf-py-l9": 4.0
+   "crypto-material-initialization-vector-app-kdf-py-l28c49": 8.0,
+   "crypto-material-salt-app-encryption-py-l12c14": 4.0,
+   "crypto-material-salt-app-kdf-py-l13c52": 4.0,
+   "crypto-material-salt-app-kdf-py-l9c15": 4.0
   },
   "by_flag": {
    "STATIC_IV": 8.0,
@@ -5703,10 +5409,10 @@
    "crypto-advisory-pypi-cryptography-41-0": "high",
    "crypto-algo-pbkdf2-app-encryption-py": "low",
    "crypto-algo-scrypt-app-kdf-py": "low",
-   "crypto-material-initialization-vector-app-kdf-py-l28": "high",
-   "crypto-material-salt-app-encryption-py-l12": "medium",
-   "crypto-material-salt-app-kdf-py-l13": "medium",
-   "crypto-material-salt-app-kdf-py-l9": "medium"
+   "crypto-material-initialization-vector-app-kdf-py-l28c49": "high",
+   "crypto-material-salt-app-encryption-py-l12c14": "medium",
+   "crypto-material-salt-app-kdf-py-l13c52": "medium",
+   "crypto-material-salt-app-kdf-py-l9c15": "medium"
   },
   "flag_count": 7,
   "risk_band": "low",
@@ -5785,7 +5491,7 @@
    "algorithm_name": "initialization-vector (app/kdf.py:28)",
    "algorithm_type": "key",
    "asset_type": "related-crypto-material",
-   "bom_ref": "crypto-material-initialization-vector-app-kdf-py-l28",
+   "bom_ref": "crypto-material-initialization-vector-app-kdf-py-l28c49",
    "compliance_controls": {
     "ISO27001_A10_CRYPTOGRAPHY": "ISO 27001 - A.10 Cryptography",
     "NIST80053_SC": "NIST 800-53 - System and Communications Protection"
@@ -5843,7 +5549,7 @@
    "algorithm_name": "salt (SCRYPT_SALT, kdf.py)",
    "algorithm_type": "key",
    "asset_type": "related-crypto-material",
-   "bom_ref": "crypto-material-salt-app-kdf-py-l9",
+   "bom_ref": "crypto-material-salt-app-kdf-py-l9c15",
    "compliance_controls": {
     "ISO27001_A10_CRYPTOGRAPHY": "ISO 27001 - A.10 Cryptography",
     "NIST80053_SC": "NIST 800-53 - System and Communications Protection"
@@ -5900,7 +5606,7 @@
    "algorithm_name": "salt (app/encryption.py:12)",
    "algorithm_type": "key",
    "asset_type": "related-crypto-material",
-   "bom_ref": "crypto-material-salt-app-encryption-py-l12",
+   "bom_ref": "crypto-material-salt-app-encryption-py-l12c14",
    "compliance_controls": {
     "ISO27001_A10_CRYPTOGRAPHY": "ISO 27001 - A.10 Cryptography",
     "NIST80053_SC": "NIST 800-53 - System and Communications Protection"
@@ -5957,7 +5663,7 @@
    "algorithm_name": "salt (app/kdf.py:13)",
    "algorithm_type": "key",
    "asset_type": "related-crypto-material",
-   "bom_ref": "crypto-material-salt-app-kdf-py-l13",
+   "bom_ref": "crypto-material-salt-app-kdf-py-l13c52",
    "compliance_controls": {
     "ISO27001_A10_CRYPTOGRAPHY": "ISO 27001 - A.10 Cryptography",
     "NIST80053_SC": "NIST 800-53 - System and Communications Protection"
@@ -6083,7 +5789,7 @@
    "cwe": [
     "CWE-916"
    ],
-   "description": "scrypt cost scrypt (line 17): N = 16,384, below the OWASP Password Storage minimum N = 2^17 (131,072) with r = 8, p = 1 (CWE-916).",
+   "description": "scrypt cost scrypt (line 17): N = 16,384, r = 8, p = 1, below the OWASP Password Storage minimum (N = 2^17 with r = 8, p = 1, or an equal-strength pair: 2^16 / p 2, 2^15 / p 3, 2^14 / p 5, 2^13 / p 10) (CWE-916).",
    "expired": false,
    "finding_codes": [
     "WEAK_KDF_ITERATIONS"
@@ -6120,7 +5826,7 @@
    "snippet_redactions": 0,
    "snippet_start": 14,
    "source_encoding": "utf-8",
-   "suggested_fix": "Raise the scrypt cost to at least N = 2^17 with r = 8 and p = 1 (OWASP), or use Argon2id, and keep the cost in configuration so it can rise.",
+   "suggested_fix": "Raise the scrypt cost to at least N = 2^17 with r = 8 and p = 1 (OWASP; or an equal-strength pair such as N = 2^16 with p = 2), or use Argon2id, and keep the cost in configuration so it can rise.",
    "title": "scrypt",
    "weak": false
   },
@@ -6608,7 +6314,7 @@
    "algorithm_name": "salt (app/kdf.py:21)",
    "algorithm_type": "key",
    "asset_type": "related-crypto-material",
-   "bom_ref": "crypto-material-salt-app-kdf-py-l21",
+   "bom_ref": "crypto-material-salt-app-kdf-py-l21c60",
    "compliance_controls": {},
    "container_format": null,
    "crypto_strength": "strong",
