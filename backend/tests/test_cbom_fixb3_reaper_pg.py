@@ -12,6 +12,7 @@ import datetime as dt
 import os
 import sys
 import threading
+import time
 import uuid
 from pathlib import Path
 
@@ -137,7 +138,8 @@ def _race(fn, n=THREADS) -> list[str]:
             barrier.wait()
             fn()
         except Exception as exc:  # pragma: no cover - what the test counts
-            errors.append("deadlock" if "deadlock" in str(exc).lower() else f"{type(exc).__name__}: {str(exc)[:120]}")
+            text = " ".join(str(exc).split())
+            errors.append(f"deadlock: {text[:400]}" if "deadlock" in text.lower() else f"{type(exc).__name__}: {text[:200]}")
 
     threads = [threading.Thread(target=one) for _ in range(n)]
     [t.start() for t in threads]
@@ -226,3 +228,51 @@ def test_m1_concurrent_passes_after_a_long_outage_keep_live_nodes_jobs(api, worl
         since = dt.datetime(1970, 1, 1) + dt.timedelta(seconds=int(mark.value))
         assert errors == [] and s.get(CbomCollectionJob, job_id).status == "pending"
         assert restart - dt.timedelta(seconds=1) <= since <= _now()
+
+
+def test_m4_a_closer_holding_the_run_row_and_the_reapers_settle_never_deadlock(api, world):  # noqa: F811
+    """The interleaving behind the one deadlock CI still saw after the advisory lock (run 1, node_offline round 0): a
+    run closer takes the run row (FOR UPDATE SKIP LOCKED), then settles its jobs; the reaper's whole-table settle
+    used to update the jobs first, then the run row.  Run row first in both, the settle leaves a held run to its
+    closer."""
+    engine, _ = world
+    node_id, _token, _src, run, job_id = _queue(api, engine, "fixb3-pg-order-0001")
+    with Session(engine) as s:
+        before = s.get(Team, 1).credit_balance
+    _age(engine, job_id, node_id, queued_ago=dt.timedelta(hours=7), seen_ago=dt.timedelta(hours=7))
+    with Session(engine) as s:  # expire it, refund due, without the after-commit closer settling it
+        J.defer_closers(s)
+        assert J.reap(s, _now()) >= 1
+        s.commit()
+    with Session(engine) as s:
+        assert s.get(CbomCollectionJob, job_id).refunded is False
+    held, errors = threading.Event(), []
+
+    def closer() -> None:
+        try:
+            with Session(engine) as s:
+                assert J._take_run_row(s, run["id"])
+                held.set()
+                time.sleep(0.5)  # the reaper's settle starts meanwhile
+                J.settle_refunds(s, [run["id"]])
+                s.commit()
+        except Exception as exc:  # pragma: no cover - what the test counts
+            errors.append(" ".join(str(exc).split())[:300])
+
+    def reaper_settle() -> None:
+        try:
+            held.wait(5)
+            with Session(engine) as s:
+                J.settle_refunds(s)
+                s.commit()
+        except Exception as exc:  # pragma: no cover - what the test counts
+            errors.append(" ".join(str(exc).split())[:300])
+
+    threads = [threading.Thread(target=closer), threading.Thread(target=reaper_settle)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    with Session(engine) as s:
+        job, run_row, team = s.get(CbomCollectionJob, job_id), s.get(CbomCollectionRun, run["id"]), s.get(Team, 1)
+        assert errors == []
+        assert job.refunded is True and run_row.credits_refunded_c == run_row.credits_charged_c
+        assert round(team.credit_balance, 2) == round(before + run_row.credits_charged_c / 100, 2)

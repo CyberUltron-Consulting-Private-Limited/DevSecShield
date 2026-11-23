@@ -86,6 +86,7 @@ _SERVING_SINCE: list[_dt.datetime | None] = [None]  # this process's last readin
 # One reaper at a time on PostgreSQL (m4): overlapping passes (each cloud worker, ``safe_reap`` on read paths) locked
 # job, run and team rows in different orders and deadlocked.  Transaction-scoped, so a commit releases it.
 REAPER_LOCK = (0x43424F4D, 0x52454150)  # "CBOM", "REAP"
+_REAPER_SESSION = "cbom_reaper_session"  # session.info: this session reaps; its after-commit closers take the lock too
 
 
 def serving_gap() -> _dt.timedelta:
@@ -242,13 +243,16 @@ def _settle_one(session: Session, run_id: int | None, team_id: int | None) -> tu
 def settle_refunds(session: Session, run_ids: Any = None, *, team_ids: Any = None) -> dict[str, int]:
     """Move the money for every refund-due job: per run, one UPDATE flags its jobs refunded exactly once and one raises
     the run's ``credits_refunded_c`` by their owed sum (``refunded_c``) under the charged guard; then one UPDATE per
-    team.  Lock order: jobs, runs by id, then teams by id.  ``run_ids`` None = every run with a refund due (the partial
-    index), plus jobs that belong to no run, under the reaper lock (skipped while another pass holds it); otherwise
-    those runs plus the run-less jobs of ``team_ids``.  The caller commits.  Returns {"runs", "jobs", "centi"}."""
+    team.  Lock order: the run row, its jobs, the run's credit, then teams by id.  ``run_ids`` None = every run with a
+    refund due (the partial index), plus jobs that belong to no run, under the reaper lock (skipped while another pass
+    holds it), each run's row taken first like the closers do (``_take_run_row``; a run whose row a closer holds is
+    left to that closer); otherwise those runs (whose rows the caller holds) plus the run-less jobs of ``team_ids``.
+    The caller commits.  Returns {"runs", "jobs", "centi"}."""
     J_ = CbomCollectionJob.__table__
     due = (J_.c.refund_due == True) & (J_.c.refunded == False)  # noqa: E712
     if run_ids is None and not reaper_lock(session):
         return {"runs": 0, "jobs": 0, "centi": 0}  # another reaper pass holds the lock and settles (m4)
+    whole_table = run_ids is None
     if run_ids is None:
         runs = sorted(int(r) for r in session.exec(  # type: ignore[call-overload]
             select(J_.c.run_id).where(due, J_.c.run_id.is_not(None)).distinct()).all())
@@ -260,6 +264,8 @@ def settle_refunds(session: Session, run_ids: Any = None, *, team_ids: Any = Non
     credit: dict[int, int] = {}
     total_jobs = total = 0
     for run_id in runs:
+        if whole_table and not _take_run_row(session, run_id):
+            continue  # a closer holds the run row: it settles this run (the closers' lock order, run before jobs)
         amount, jobs, team = _settle_one(session, run_id, None)
         total_jobs += jobs
         if team is not None and amount > 0:
@@ -468,9 +474,18 @@ def run_closers(session: Session, now: _dt.datetime | None = None) -> list[tuple
         return []
     now = now or _dt.datetime.utcnow()
     closed: list[tuple[int, str]] = []
+    # m4: a reaper pass's own closers run after its commit, outside its transaction: they take the reaper lock again,
+    # so they never interleave with the next pass (which locks job rows before the run row); held: the holder's
+    # reconcile and settle close and settle these runs
+    reaper = bool(session.info.get(_REAPER_SESSION))
     for run_id in sorted(set(runs) | settle):
         if run_id not in settle and _run_open(session, run_id):
             continue  # nothing to close yet and no money to move: the run row is not even read (DA C1)
+        if reaper and not reaper_lock(session):
+            log("run closer skipped: another reaper pass holds the reaper lock (it closes and settles the run)",
+                run=run_id)
+            settle_teams = set()
+            break
         if not _take_run_row(session, run_id):
             log("run closer skipped: the run row stays held (the reaper closes and settles it)", run=run_id)
             continue
@@ -479,7 +494,7 @@ def run_closers(session: Session, now: _dt.datetime | None = None) -> list[tuple
             closed.append((run_id, status))
         settle_refunds(session, [run_id])  # the row is ours: no other settler moves this run's money now
         session.commit()
-    if settle_teams:
+    if settle_teams and (not reaper or reaper_lock(session)):
         settle_refunds(session, [], team_ids=settle_teams)
     session.info.pop(_AFTER, None)
     session.commit()
@@ -621,6 +636,7 @@ def reap(session: Session, now: _dt.datetime, *, team_id: int | None = None, nod
 
     if not reaper_lock(session):  # another pass is reaping (m4): it does this work
         return 0
+    session.info[_REAPER_SESSION] = True
     serving_since = note_reaper_pass(session, now)
     moved = 0
     parents: set[int] = set()
@@ -883,6 +899,8 @@ def safe_reap(session: Session, now: _dt.datetime, **kwargs: Any) -> None:
     except Exception as exc:  # pragma: no cover - defensive
         session.rollback()
         log("reap FAILED", error=type(exc).__name__, **{k: v for k, v in kwargs.items() if v is not None})
+    finally:
+        session.info.pop(_REAPER_SESSION, None)  # the read path's own writes after this are not a reaper's
 
 
 # ----------------------------------------------------------------------------- versions
