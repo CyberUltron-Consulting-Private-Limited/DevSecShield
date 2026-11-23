@@ -47,7 +47,8 @@ def test_plain_ai_bom_is_neutral_healthcare_only_with_clinical_metadata() -> Non
     text = _disclaimer(emit_cyclonedx(plain))
     assert text == AIBOM_DISCLAIMER and "FDA" not in text and "HIPAA" not in text
     assert disclaimer_for(crypto=False, healthcare=True) == HEALTHCARE_AIBOM_DISCLAIMER
-    assert "FDA" in HEALTHCARE_AIBOM_DISCLAIMER and "HIPAA" in HEALTHCARE_AIBOM_DISCLAIMER
+    healthcare = HEALTHCARE_AIBOM_DISCLAIMER
+    assert "FDA" in healthcare and "HIPAA" in healthcare
 
 
 def test_an_empty_cbom_scan_is_still_a_cbom() -> None:
