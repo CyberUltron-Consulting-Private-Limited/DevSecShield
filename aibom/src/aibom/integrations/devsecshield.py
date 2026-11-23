@@ -192,6 +192,11 @@ def _provider(
         ("deepseek", "deepseek"),
         ("api.x.ai", "xai"),
         ("xai api", "xai"),
+        # Alibaba Cloud: Qwen's publisher node, DashScope; a local Qwen weight file
+        # names none of these and stays ``local`` (second review of #487, n-a)
+        ("alibaba", "alibaba"),
+        ("dashscope", "alibaba"),
+        ("aliyun", "alibaba"),
         ("openai", "openai"),
         # after vertex: the Gemini API (generativelanguage.googleapis.com) and
         # Google's models are Google's SaaS, never ``local`` (review of #487 m7)
