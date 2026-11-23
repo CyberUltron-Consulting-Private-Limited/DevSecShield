@@ -31,29 +31,11 @@ const TEXT = {
     why: "Expired or unaccepted invitations may need resending or revoking.",
     example: "dev@acme.com · pending · expires 18 Nov.",
   },
-  // src: backend/utilities/db/schemas.py:24-37, backend/utilities/integrations/jira.py:111-208 — Jira Cloud REST v3 with email + API token
+  // src: backend/routers/integrations_ticketing.py:153-196, frontend/app/[team_id]/settings/page.tsx:454-470 — Jira moved to Settings > Integrations (SOW S2)
   "settings.jira": {
-    what: "Connects the team to Jira (REST API v3, as used by Jira Cloud) so scans can create Jira issues from findings. Each scan chooses its project and whether tickets are created automatically.",
-    why: "Findings reach your team's normal work queue instead of staying in a dashboard.",
-    example: "https://acme.atlassian.net with a bot account's API token.",
-  },
-  // src: backend/utilities/integrations/jira.py:111-121 — basic auth email + token
-  "settings.jira.email": {
-    what: "The email of the Jira account the tickets are created as. It needs access to the projects you will pick.",
-    why: "Tickets are created as this account, so it needs access to the projects.",
-    example: "security-bot@acme.com.",
-  },
-  // src: backend/utilities/db/schemas.py:27, backend/utilities/integrations/jira.py:118 — the site URL; REST paths are added to it
-  "settings.jira.url": {
-    what: "The address of your Jira site, without a path.",
-    why: "Tickets are created on this site only.",
-    example: "https://acme.atlassian.net.",
-  },
-  // src: backend/utilities/db/schemas.py:26, backend/utilities/integrations/jira.py:111-121 — secret field, never printed; basic auth with the email
-  "settings.jira.token": {
-    what: "An API token of that Jira account (Atlassian account settings > Security > API tokens). It is stored for the team and never printed in logs.",
-    why: "Without a valid token no ticket can be created.",
-    example: "A token created for the security-bot account.",
+    what: "Jira is now set up in Settings > Integrations, next to ServiceNow: the Jira site, account and API token, the project for CBOM tickets, a connection test and a test ticket. Code-scan, CI/CD and CBOM tickets all use that one connection.",
+    why: "One place to connect, test and prove ticketing works, instead of two pages with different rules.",
+    example: "Open Jira in Integrations, save the site and token, then Raise test ticket.",
   },
   // src: backend/utilities/db/schemas.py:20-22, backend/routers/team.py:193-215 — admin only
   "settings.team.name": {

@@ -1264,3 +1264,6 @@ from backend.access_models import *  # noqa: E402,F401,F403  (registers them on 
 
 # ========================================= PDF reports: the team's report logo lives in backend/branding_models.py
 from backend.branding_models import *  # noqa: E402,F401,F403  (registers it on SQLModel.metadata with the rest)
+
+# ========================================= SOW S1 / S2: CBOM gate policy and test tickets live in backend/cbom_gate_models.py
+from backend.cbom_gate_models import *  # noqa: E402,F401,F403  (registers them on SQLModel.metadata with the rest)

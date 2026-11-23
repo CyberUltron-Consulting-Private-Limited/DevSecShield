@@ -66,10 +66,16 @@ class DeliverableSpec:
     # True when the document is meaningless without a completed scan (certificates, post-quantum
     # roadmap, board report).  The registers and the methodology still render their manual forms.
     data_dependent: bool = False
+    # a CSV rendering of the same rows (SOW Table 7: D8 is "PDF, CSV"); None = PDF only
+    build_csv: Callable[[TeamCbomView], bytes] | None = None
+
+    @property
+    def formats(self) -> tuple[str, ...]:
+        return ("pdf", "csv") if self.build_csv is not None else ("pdf",)
 
 
 def _spec(
-    slug: str, number: int, module: ModuleType, *, data_dependent: bool = False
+    slug: str, number: int, module: ModuleType, *, data_dependent: bool = False, csv: bool = False
 ) -> DeliverableSpec:
     meta = REPORT_META[module.REPORT_KEY]
     return DeliverableSpec(
@@ -80,10 +86,12 @@ def _spec(
         report_key=module.REPORT_KEY,
         build=module.build_pdf,
         data_dependent=data_dependent,
+        build_csv=module.build_csv if csv else None,
     )
 
 
-# Menu order: documents #1, #2, #3, #5, #6, #7, #9, #10, #15, #16.
+# Menu order: documents #1, #2, #3, #5, #7, #8, #9, #10, #15, #16 (network and certificates carry their SOW Table 7
+# numbers D7 and D8, FIX-B2).
 _SPECS = (
     _spec("scope-baseline-register", 1, cbom_scope_register_pdf),
     # the quantum risk register (CB-23): reads the register, not the scans, so it renders for every team
@@ -97,11 +105,11 @@ _SPECS = (
     ),
     _spec(
         "network-tls-protocol-assessment",
-        6,
+        7,
         cbom_network_tls_pdf,
         data_dependent=True,
     ),
-    _spec("certificate-estate-register", 7, cbom_cert_register_pdf, data_dependent=True),
+    _spec("certificate-estate-register", 8, cbom_cert_register_pdf, data_dependent=True, csv=True),
     _spec(
         "data-at-rest-encryption-assessment",
         9,
@@ -115,9 +123,9 @@ _SPECS = (
 DELIVERABLES: dict[str, DeliverableSpec] = {spec.slug: spec for spec in _SPECS}
 
 
-def deliverable_filename(spec: DeliverableSpec, team_id: int, as_of: date) -> str:
-    """``cbom-<slug>-team<id>-<YYYYMMDD>.pdf``; the frontend builds the same name (UTC date)."""
-    return f"cbom-{spec.slug}-team{int(team_id)}-{as_of:%Y%m%d}.pdf"
+def deliverable_filename(spec: DeliverableSpec, team_id: int, as_of: date, fmt: str = "pdf") -> str:
+    """``cbom-<slug>-team<id>-<YYYYMMDD>.<pdf|csv>``; the frontend builds the same name (UTC date)."""
+    return f"cbom-{spec.slug}-team{int(team_id)}-{as_of:%Y%m%d}.{'csv' if fmt == 'csv' else 'pdf'}"
 
 
 # ---------------------------------------------------------------------------------------------
@@ -207,6 +215,7 @@ def build_manifest(team_id: int, generated_at: datetime, summary: HeadsSummary) 
                 "title": spec.title,
                 "description": spec.description,
                 "format": "pdf",
+                "formats": list(spec.formats),
                 "available": not unavailable,
                 "reason": REASON_NO_SCANS if unavailable else None,
             }
