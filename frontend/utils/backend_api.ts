@@ -2349,7 +2349,8 @@ export interface RunListRow {
   linked_scan_id: number | null
   /** the severity counts are those judged when the run collected the assets */
   counts_basis: "as_collected"
-  /** FIX-B3: why the run is partial / failed / cancelled (null when done or still running) */
+  /** FIX-B3: why the run is partial / failed / cancelled, or what an open run waits for (offline scan nodes); the
+   *  same text as GET /runs and GET /runs/{id} (#480 review m3); null when done */
   status_reason?: string | null
 }
 

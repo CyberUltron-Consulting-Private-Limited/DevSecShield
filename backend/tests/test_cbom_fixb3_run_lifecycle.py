@@ -21,6 +21,7 @@ from backend.new_models import (
     CbomCollectionAuditEvent,
     CbomCollectionJob,
     CbomCollectionRun,
+    CbomOpsCounter,
     CbomScanNode,
     Team,
 )
@@ -37,6 +38,16 @@ from test_cbom_sources_api import (  # noqa: F401
 )
 
 HOURS_6 = dt.timedelta(hours=6)
+_REAL_NOTE = J.note_reaper_pass
+LONG_AGO = dt.datetime(2000, 1, 1)
+
+
+@pytest.fixture(autouse=True)
+def _backend_served_all_along(monkeypatch):
+    """These tests move the node's and the job's clocks, not the reaper's: the backend served throughout.  The
+    restart tests (review 6028153035 M1) put the real bookkeeping back."""
+    monkeypatch.setattr(J, "note_reaper_pass", lambda _session, _now: LONG_AGO)
+    monkeypatch.setattr(J, "_SERVING_SINCE", [None])
 
 
 def _now() -> dt.datetime:
@@ -358,3 +369,197 @@ def test_status_reason_names_three_and_counts_the_rest():
     out = status_reason("partial", jobs)
     assert out["status_reason"].startswith("1 of 6 jobs read everything; 5 failed. s0: no_route; s1: no_route; s2")
     assert out["status_reason"].endswith("; and 2 more") and len(out["status_reason_jobs"]) == 5
+
+
+# ----------------------------------------------------------------------------- review 6028153035 (#480)
+def _mark(engine, *, since: dt.datetime, last_pass: dt.datetime) -> None:
+    """The reaper's bookkeeping row: serving without a gap since ``since``, last pass at ``last_pass``."""
+    with Session(engine) as s:
+        s.merge(CbomOpsCounter(name=J.SERVING_MARK, value=int((since - dt.datetime(1970, 1, 1)).total_seconds()),
+                               updated_at=last_pass))
+        s.commit()
+
+
+def test_m1_a_backend_outage_longer_than_the_deadline_does_not_expire_a_live_nodes_job(api, world, monkeypatch):  # noqa: F811
+    """M1: the node heartbeated normally until the BACKEND went away for 6 h 5 min.  The first reaper pass after the
+    restart runs before the node's next heartbeat; the job must survive and the node then claims it."""
+    monkeypatch.setattr(J, "note_reaper_pass", _REAL_NOTE)
+    engine, _ = world
+    node_id, token, _src, run, job_id = _queue_run(api, engine, "fixb3-outage-00001")
+    now = _now()
+    _age(engine, job_id, node_id, queued_ago=dt.timedelta(hours=6, minutes=10), seen_ago=dt.timedelta(hours=6, minutes=5))
+    _mark(engine, since=now - dt.timedelta(days=30), last_pass=now - dt.timedelta(hours=6, minutes=5))
+    with Session(engine) as s:
+        assert J.reap(s, now) == 0
+        s.commit()
+    assert _job(engine, job_id).status == "pending" and _run_row(engine, run["id"]).status == "queued"
+    hdr = {"X-ZS-Node-Token": token}
+    assert api("POST", "/cbom/node/heartbeat", None, headers=hdr, json={"version": "1.1"}).status_code == 200
+    assert api("POST", "/cbom/node/jobs/claim", None, headers=hdr).status_code == 200
+    assert _job(engine, job_id).status == "claimed"
+
+
+def test_m1_after_a_restart_the_offline_window_counts_from_the_restart(api, world, monkeypatch):  # noqa: F811
+    """The node stays silent after the backend is back: the job expires once the backend has served a full deadline
+    without hearing from it, and the reason still names the last heartbeat."""
+    monkeypatch.setattr(J, "note_reaper_pass", _REAL_NOTE)
+    engine, _ = world
+    node_id, _t, _src, run, job_id = _queue_run(api, engine, "fixb3-outage-00002")
+    now = _now()
+    seen = _age(engine, job_id, node_id, queued_ago=dt.timedelta(hours=6, minutes=10),
+                seen_ago=dt.timedelta(hours=6, minutes=5))
+    _mark(engine, since=now - dt.timedelta(days=30), last_pass=now - dt.timedelta(hours=6, minutes=5))
+    with Session(engine) as s:
+        assert J.reap(s, now) == 0  # the restart: serving since now
+        tick = now
+        while tick < now + HOURS_6 - dt.timedelta(seconds=60):  # a pass every 30 s, as the worker's reaper does
+            tick += dt.timedelta(seconds=30)
+            assert J.note_reaper_pass(s, tick) == now.replace(microsecond=0)
+        s.commit()
+        assert J.reap(s, now + HOURS_6 - dt.timedelta(seconds=1)) == 0
+        s.commit()
+        assert J.reap(s, now + HOURS_6 + dt.timedelta(seconds=1)) >= 1
+        s.commit()
+    job = _job(engine, job_id)
+    assert job.status == "expired" and job.refunded is True
+    assert job.error.startswith(f"Scan node cbom-lab-2-worker offline since {seen.strftime('%Y-%m-%d %H:%M UTC')}")
+    assert _run_row(engine, run["id"]).status == "failed"
+
+
+def test_m1_the_first_pass_of_a_new_deploy_waits_and_a_serving_backend_expires_at_once(api, world, monkeypatch):  # noqa: F811
+    monkeypatch.setattr(J, "note_reaper_pass", _REAL_NOTE)
+    engine, _ = world
+    node_id, _t, _src, _run, job_id = _queue_run(api, engine, "fixb3-outage-00003")
+    now = _now()
+    _age(engine, job_id, node_id, queued_ago=dt.timedelta(hours=7), seen_ago=dt.timedelta(hours=7))
+    with Session(engine) as s:  # no bookkeeping row yet (first deploy of this rule): serving since now
+        s.exec(CbomOpsCounter.__table__.delete())  # type: ignore[call-overload]
+        s.commit()
+        assert J.reap(s, now) == 0
+        s.commit()
+    assert _job(engine, job_id).status == "pending"
+    _mark(engine, since=now - dt.timedelta(days=30), last_pass=now - dt.timedelta(seconds=30))  # serving all along
+    with Session(engine) as s:
+        assert J.reap(s, now + dt.timedelta(seconds=30)) >= 1
+        s.commit()
+    assert _job(engine, job_id).status == "expired"
+
+
+def test_m1_a_short_gap_between_passes_keeps_the_serving_run():
+    from sqlmodel import SQLModel, create_engine
+
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+    t0 = dt.datetime(2026, 11, 24, 8, 0, 0)
+    with Session(engine) as s:
+        assert _REAL_NOTE(s, t0) == t0
+        assert _REAL_NOTE(s, t0 + J.serving_gap()) == t0  # exactly the gap: still the same run
+        assert _REAL_NOTE(s, t0 + 2 * J.serving_gap() + dt.timedelta(seconds=1)) == t0 + 2 * J.serving_gap() + dt.timedelta(seconds=1)
+        s.commit()
+
+
+def test_m1_a_heartbeat_between_the_read_and_the_update_saves_the_job(api, world, monkeypatch):  # noqa: F811
+    """m1 (TOCTOU): the node's heartbeat commits after the offline rule read the node but before the guarded UPDATE."""
+    engine, _ = world
+    node_id, _t, _src, run, job_id = _queue_run(api, engine, "fixb3-toctou-00001")
+    _age(engine, job_id, node_id, queued_ago=dt.timedelta(hours=7), seen_ago=dt.timedelta(hours=7))
+    real = J._expire_open
+
+    def heartbeat_then_expire(*a, **k):
+        with Session(engine) as other:
+            node = other.get(CbomScanNode, node_id)
+            node.last_heartbeat_at = _now()
+            other.add(node)
+            other.commit()
+        return real(*a, **k)
+
+    monkeypatch.setattr(J, "_expire_open", heartbeat_then_expire)
+    with Session(engine) as s:
+        stats: dict[str, int] = {}
+        J.reap(s, _now(), stats=stats)
+        s.commit()
+    assert "node_offline" not in stats
+    job = _job(engine, job_id)
+    assert job.status == "pending" and job.refunded is False and _run_row(engine, run["id"]).status == "queued"
+
+
+def _segment_node(s: Session, name: str, *, mode: str = "agentless", signed: bool = True,
+                  seen: dt.datetime | None) -> CbomScanNode:
+    node = CbomScanNode(team_id=1, owner_user_id=1, name=name, segment="Branch", mode=mode,
+                        node_token_hash=(name + "-token-hash")[:64] if signed else None,
+                        signing_public_key="A" * 43 + "=" if signed else None, last_heartbeat_at=seen)
+    s.add(node)
+    return node
+
+
+@pytest.mark.parametrize("live", ["agent", "unsigned"])
+def test_m2_a_segment_whose_only_live_node_cannot_take_the_job_is_expired(world, live):  # noqa: F811
+    """m2: the reaper's candidate query counted an agent-mode (or unsigned) node's heartbeat for the segment, the
+    rule did not, so the segment job waited out the 7 d queue TTL (the run #50 symptom)."""
+    engine, _ = world
+    now = _now()
+    with Session(engine) as s:
+        _segment_node(s, "branch-agentless", seen=now - dt.timedelta(hours=7))
+        if live == "agent":
+            _segment_node(s, "branch-host-agent", mode="agent", seen=now)
+        else:
+            _segment_node(s, "branch-unsigned", signed=False, seen=now)
+        job = CbomCollectionJob(team_id=1, node_segment="Branch", kind="collect", status="pending",
+                                created_at=now - dt.timedelta(hours=7), params={"source_name": "branch"})
+        s.add(job)
+        s.commit()
+        job_id = job.id
+    with Session(engine) as s:
+        stats: dict[str, int] = {}
+        J.reap(s, now, stats=stats)
+        s.commit()
+    assert stats.get("node_offline") == 1
+    job = _job(engine, job_id)
+    assert job.status == "expired" and job.error.startswith("Every scan node of segment Branch offline since ")
+
+
+def test_m2_a_live_signed_agentless_member_keeps_the_segment_job(world):  # noqa: F811
+    engine, _ = world
+    now = _now()
+    with Session(engine) as s:
+        _segment_node(s, "branch-old", seen=now - dt.timedelta(hours=7))
+        _segment_node(s, "branch-live", seen=now)
+        job = CbomCollectionJob(team_id=1, node_segment="Branch", kind="collect", status="pending",
+                                created_at=now - dt.timedelta(hours=7))
+        s.add(job)
+        s.commit()
+        job_id = job.id
+    with Session(engine) as s:
+        J.reap(s, now)
+        s.commit()
+    assert _job(engine, job_id).status == "pending"
+
+
+def test_m3_the_scans_table_row_says_what_the_run_detail_says(api, world):  # noqa: F811
+    """m3: runs_list_data[].status_reason was built without the job summary and the waiting reason, so an open run
+    waiting for an offline node said nothing and a partial run lost "(1 of 1 targets read (1 with gaps))"."""
+    from backend.utilities.cbom_sources import run_list as RUN_LIST
+
+    engine, _ = world
+    node_id, _t, _src, run, job_id = _queue_run(api, engine, "fixb3-list-0000001")
+    _age(engine, job_id, node_id, queued_ago=dt.timedelta(hours=2), seen_ago=dt.timedelta(hours=2))
+    detail = api("GET", f"/1/cbom/sources/runs/{run['id']}").json()["run"]
+    assert detail["status"] == "queued" and "wait for an offline scan node" in detail["status_reason"]
+    with Session(engine) as s:
+        row = next(r for r in RUN_LIST.list_run_rows(s, 1)["runs_list_data"] if r["id"] == run["id"])
+    assert row["status_reason"] == detail["status_reason"]
+
+    now = _now()
+    with Session(engine) as s:  # now the run #52 case: finished partial, the job read its targets with gaps
+        job = s.get(CbomCollectionJob, job_id)
+        job.status, job.outcome, job.finished_at = "success", "partial", now
+        job.result = {"summary": targets_summary([{"status": "partial"}]), "counts": {"total": 1, "partial": 1}}
+        s.add(job)
+        s.commit()
+        assert J.close_run(s, run["id"], now) == "partial"
+        s.commit()
+    detail = api("GET", f"/1/cbom/sources/runs/{run['id']}").json()["run"]
+    with Session(engine) as s:
+        row = next(r for r in RUN_LIST.list_run_rows(s, 1)["runs_list_data"] if r["id"] == run["id"])
+    assert "(1 of 1 targets read (1 with gaps))" in detail["status_reason"]
+    assert row["status_reason"] == detail["status_reason"]

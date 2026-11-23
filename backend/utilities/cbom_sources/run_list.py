@@ -35,7 +35,7 @@ from backend.utilities.cbom_sources.run_status import status_reason
 from backend.utilities.cbom_sources.cbom_metrics import average_risk
 from backend.utilities.cbom_sources.collections_view import NETWORK_TYPES, REMEDIATION_BUCKET
 from backend.utilities.build_info import utc_timestamp
-from backend.utilities.cbom_sources.common import console, iso_z
+from backend.utilities.cbom_sources.common import console, iso_z, utcnow
 
 LIST_LIMIT = 200
 CACHE_SIZE = 4_096
@@ -187,16 +187,26 @@ def _jobs_by_run(session: Session, team_id: int, run_ids: list[int]) -> dict[int
         .where(CbomCollectionSource.team_id == team_id)).all()}
     orphans: list[int] = []
     rows = session.exec(select(CbomCollectionJob.id, CbomCollectionJob.run_id, CbomCollectionJob.status,
-                               CbomCollectionJob.source_id, CbomCollectionJob.outcome, CbomCollectionJob.error)
+                               CbomCollectionJob.source_id, CbomCollectionJob.outcome, CbomCollectionJob.error,
+                               CbomCollectionJob.node_id, CbomCollectionJob.node_segment)
                         .where(CbomCollectionJob.team_id == team_id,
                                CbomCollectionJob.run_id.in_(run_ids))  # type: ignore[union-attr]
                         .order_by(CbomCollectionJob.id)).all()
-    for job_id, run_id, job_status, source_id, outcome, error in rows:
+    by_id: dict[int, dict[str, Any]] = {}
+    partly_read: list[int] = []
+    waiting: list[int] = []
+    for job_id, run_id, job_status, source_id, outcome, error, node_id, segment in rows:
         entry = out[int(run_id)]
         entry["jobs_total"] += 1
-        # FIX-B3: what the run's status_reason is built from (no result JSON is read for the list)
-        entry["rows"].append({"id": job_id, "status": job_status, "outcome": outcome, "error": error,
-                              "source_name": sources.get(source_id, (None, None))[0] if source_id else None})
+        # FIX-B3: what the run's status_reason is built from (the run detail's job fields, #480 review m3)
+        row = {"id": job_id, "status": job_status, "outcome": outcome, "error": error,
+               "source_name": sources.get(source_id, (None, None))[0] if source_id else None}
+        entry["rows"].append(row)
+        by_id[int(job_id)] = row
+        if job_status == "success" and outcome in ("partial", "failed"):
+            partly_read.append(int(job_id))
+        elif job_status == "pending" and node_id is not None and not segment:
+            waiting.append(int(job_id))
         if job_status in JOB_DONE:
             entry["jobs_done"] += 1
         if source_id is not None and source_id in sources:
@@ -204,6 +214,7 @@ def _jobs_by_run(session: Session, team_id: int, run_ids: list[int]) -> dict[int
             entry["sources"].setdefault(("id", source_id), {"id": source_id, "name": name, "kind": kind})
         else:
             orphans.append(job_id)
+    _reason_details(session, team_id, by_id, partly_read, waiting)
     if orphans:  # a deleted source keeps its name (and, on newer jobs, its kind) on the job's params
         for job_id, run_id, source_id, params in session.exec(
                 select(CbomCollectionJob.id, CbomCollectionJob.run_id, CbomCollectionJob.source_id,
@@ -216,6 +227,33 @@ def _jobs_by_run(session: Session, team_id: int, run_ids: list[int]) -> dict[int
             out[int(run_id)]["sources"].setdefault(key, {
                 "id": source_id, "name": str(name or "Deleted source"), "kind": str(params.get("source_kind") or "")})
     return out
+
+
+def _reason_details(session: Session, team_id: int, by_id: dict[int, dict[str, Any]], partly_read: list[int],
+                    waiting: list[int]) -> None:
+    """The two job fields ``status_reason`` reads beyond the job row, as the run detail has them (#480 review m3):
+    the ``summary`` of a job that read its targets with gaps (its result is read only for those jobs), and the
+    ``waiting_reason`` of a pending job pinned to an offline scan node (one query for those jobs, one for their
+    nodes)."""
+    if partly_read:
+        for job_id, result in session.exec(select(CbomCollectionJob.id, CbomCollectionJob.result)
+                                           .where(CbomCollectionJob.id.in_(partly_read))).all():  # type: ignore[union-attr]
+            by_id[int(job_id)]["summary"] = (result or {}).get("summary") if isinstance(result, dict) else None
+    if not waiting:
+        return
+    from backend.new_models import CbomScanNode
+    from backend.utilities.cbom_sources.jobs import offline_wait_reason
+    from backend.utilities.cbom_sources.planning import node_status
+
+    jobs = session.exec(select(CbomCollectionJob).where(CbomCollectionJob.id.in_(waiting))).all()  # type: ignore[union-attr]
+    node_ids = sorted({int(j.node_id) for j in jobs if j.node_id is not None})
+    nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(
+        CbomScanNode.team_id == team_id, CbomScanNode.id.in_(node_ids))).all()}  # type: ignore[union-attr]
+    now = utcnow()
+    for job in jobs:
+        node = nodes.get(job.node_id)
+        if node is not None and node_status(node, now) == "offline":
+            by_id[int(job.id)]["waiting_reason"] = offline_wait_reason(job, node, now)
 
 
 def _owners(session: Session, user_ids: Iterable[int]) -> dict[int, tuple[str | None, str | None]]:
@@ -247,7 +285,7 @@ def run_row(run: CbomCollectionRun, counts: dict[str, Any], jobs: dict[str, Any]
         "finished_at": iso_z(run.finished_at),
         "scan_status": unified_run_status(run.status),
         "run_status": run.status,
-        # FIX-B3: why the run is partial / failed / cancelled (null when done or still running)
+        # FIX-B3: why the run is partial / failed / cancelled, or what an open run waits for (as GET /runs/{id})
         "status_reason": status_reason(run.status, jobs.get("rows") or [])["status_reason"],
         "risk_data": risk,
         "average_risk_score": average_risk(severity),
