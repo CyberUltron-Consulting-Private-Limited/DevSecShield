@@ -357,6 +357,19 @@ export function changedRunStatuses(rows: readonly ResultRow[], live: ReadonlyMap
 }
 
 /** "36 assets · 2 endpoints" under a run's sources (the counts the old Sources runs block showed). */
+/**
+ * S4: "Scheduled: <schedule name>", "Scheduled (schedule #<id>, deleted)" or "Manual" for a run; null when the
+ * backend does not say (an older deploy), so nothing is guessed.
+ */
+export function runTriggerLabel(run: { trigger?: string | null; schedule_id?: number | null;
+                                       schedule_name?: string | null } | null | undefined): string | null {
+  if (!run || (run.trigger !== "scheduled" && run.trigger !== "manual")) return null;
+  if (run.trigger === "manual") return "Manual";
+  const name = (run.schedule_name ?? "").trim();
+  if (name) return `Scheduled: ${name}`;
+  return run.schedule_id != null ? `Scheduled (schedule #${run.schedule_id}, deleted)` : "Scheduled";
+}
+
 export function runCountsLine(row: Pick<RunResultRow, "asset_count" | "endpoints_probed">): string | null {
   if (row.asset_count == null && row.endpoints_probed == null) return null;
   const part = (n: number | null, one: string, many: string) => (n == null ? null : `${n} ${n === 1 ? one : many}`);

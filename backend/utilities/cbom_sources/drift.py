@@ -441,6 +441,22 @@ def rule_only_changes(stored: Mapping[str, list[dict[str, Any]]], current: Mappi
     return out
 
 
+def q0_counts(changed: Iterable[Mapping[str, Any]], added: Iterable[Mapping[str, Any]],
+              removed: Iterable[Mapping[str, Any]]) -> dict[str, int]:
+    """Assets graded Q0 Unknown on one side and not the other: ``closed`` (Q0 before, Q1-Q4 now), ``opened`` (graded
+    before and Q0 now, or a new asset at Q0), ``removed`` (a Q0 asset no longer collected)."""
+    closed = opened = 0
+    for entry in changed:
+        grade = (entry.get("changes") or {}).get("q_grade")
+        if isinstance(grade, list) and len(grade) == 2 and (grade[0] == "Q0") != (grade[1] == "Q0"):
+            if grade[0] == "Q0":
+                closed += 1
+            else:
+                opened += 1
+    opened += sum(1 for entry in added if entry.get("q_grade") == "Q0")
+    return {"closed": closed, "opened": opened, "removed": sum(1 for e in removed if e.get("q_grade") == "Q0")}
+
+
 def _cap(items: list[Any]) -> tuple[list[Any], bool]:
     return items[:LIST_CAP], len(items) > LIST_CAP
 
@@ -955,6 +971,9 @@ def run_diff(session: Session, run: CbomCollectionRun, base: CbomCollectionRun) 
         truncated = truncated or cut
     out["rule_changes"], cut = _cap(rule_changes)
     out["counts"] = {**{k: len(v) for k, v in totals.items()}, "rule_changes": len(rule_changes),
+                     # Q0 Unknown transitions over the whole lists, before the LIST_CAP cut (review #486 minor 1)
+                     **{f"q0_{k}": n for k, n in q0_counts(totals["changed"], totals["added"],
+                                                            totals["removed"]).items()},
                      "compared_sources": sum(1 for s in per_source if s["status"] == "compared"),
                      "not_compared_sources": sum(1 for s in per_source if s["status"] != "compared")}
     rb, ra = readiness(before_all), readiness(after_all)
@@ -1127,6 +1146,44 @@ def record_run_drift(session: Session, run: CbomCollectionRun, now: _dt.datetime
         "assets": sum(int(j.asset_count or 0) for j in jobs), "events": _kind_counts(rows[:EVENT_CAP])})
     record_estate(session, run, now, loaded)
     return stored
+
+
+SUMMARY_LIMIT = 2  # runs whose drift document a scheduler tick stores (newest first; about 23 s each at 50k assets)
+SUMMARY_WINDOW_DAYS = 7  # runs recorded longer ago are not backfilled: a download computes theirs once per process
+
+
+def store_pending_summaries(engine, now: _dt.datetime, *, limit: int = SUMMARY_LIMIT) -> int:
+    """S4 (review #486 minor 8): store the drift document (``drift_report.run_drift``: counts, readiness, top items
+    against the baseline) of runs whose drift is recorded, once, each in its own transaction, for report.pdf and
+    drift.json. Run by the scheduler tick last, after the drift recording and outside it: schedules fire first, and the
+    recording (and the route that records a run the tick has not reached, cbom_ops) never pays for the comparison. A failure stores a marker
+    without a document (a download then computes it), so one bad run never takes a slot every tick."""
+    from backend.utilities.cbom_sources import drift_report
+
+    since = now.replace(tzinfo=None) - _dt.timedelta(days=SUMMARY_WINDOW_DAYS)
+    with Session(engine) as session:
+        ids = session.exec(select(CbomCollectionRun.id).where(
+            CbomCollectionRun.drift_at.is_not(None), CbomCollectionRun.drift_at >= since,  # type: ignore[union-attr,operator]
+            CbomCollectionRun.drift_summary.is_(None),  # type: ignore[union-attr]
+            CbomCollectionRun.status.in_(FINISHED))  # type: ignore[attr-defined]
+            .order_by(CbomCollectionRun.id.desc()).limit(limit)).all()  # type: ignore[union-attr]
+    done = 0
+    for run_id in ids:
+        with Session(engine) as session:
+            run = session.get(CbomCollectionRun, run_id)
+            if run is None:
+                continue
+            try:
+                drift_report.run_drift(session, run, store=True)
+                session.commit()
+                done += 1
+            except Exception as exc:  # noqa: BLE001 - logged; the marker keeps the run out of the next ticks
+                session.rollback()
+                log("drift summary FAILED", team=run.team_id, run=run_id, error=type(exc).__name__)
+                session.exec(update(CbomCollectionRun).where(CbomCollectionRun.id == run_id)  # type: ignore[call-overload]
+                             .values(drift_summary={"v": drift_report.STORED_VERSION, "failed": True}))
+                session.commit()
+    return done
 
 
 def record_estate(session: Session, run: CbomCollectionRun, now: _dt.datetime,

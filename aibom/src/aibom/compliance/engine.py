@@ -12,11 +12,11 @@ from __future__ import annotations
 from typing import Any
 
 from aibom.compliance.base import (
-    ADVISORY_DISCLAIMER,
     CheckResult,
     applicability_for,
     checks_for,
 )
+from aibom.emit._disclaimer import disclaimer_of
 from aibom.model.result import ScanResult
 
 # Canonical framework keys (must match Requirement.framework) + CLI aliases.
@@ -95,8 +95,8 @@ def run_framework(
         requirements.append(
             {
                 "id": requirement.id,
-                "title": requirement.title,
-                "source": requirement.source,
+                "title": requirement.title_for(result),
+                "source": requirement.source_for(result),
                 "verdict": cr.verdict,
                 "evidence": cr.evidence,
                 "refs": list(cr.refs),
@@ -133,7 +133,8 @@ def run_all(
     report: dict[str, Any] = {
         fw: run_framework(result, fw, evidence.get(fw)) for fw in FRAMEWORKS
     }
-    report["disclaimer"] = ADVISORY_DISCLAIMER
+    # healthcare text only for a clinical scan
+    report["disclaimer"] = disclaimer_of(result)
     result.compliance = report
     return report
 

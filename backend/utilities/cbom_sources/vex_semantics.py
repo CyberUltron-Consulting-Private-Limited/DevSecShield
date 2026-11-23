@@ -525,9 +525,14 @@ def code_scan_vex(findings: list[Any], *, scan_id: int | None = None, now: _dt.d
     }
 
 
+# The rules of utilities/compliance/cert_in/vex.py (SBOM / AI BOM VEX): "certin-4" lists real vulnerability ids only
+# (no per-component not_affected stubs). Pinned to that module by backend/tests/test_vex_real_statements.py.
+CERTIN_VEX_RULES = "certin-4"
+
+
 def is_current(scan_type: str, vex: Any) -> bool:
-    """A stored CBOM code-scan VEX written by older rules is rebuilt (other scan types keep theirs)."""
-    if scan_type != "cbom":
-        return True
+    """A stored VEX written by older rules is rebuilt: a CBOM code-scan VEX by these rules, an SBOM / AI BOM VEX by
+    cert_in/vex.py's (the earlier ones asserted not_affected for every component with a made-up id)."""
+    want = VEX_RULES if scan_type == "cbom" else CERTIN_VEX_RULES
     props = ((vex.get("metadata") or {}).get("properties") or []) if isinstance(vex, dict) else []
-    return any(isinstance(p, dict) and p.get("name") == "zs:vex_rules" and p.get("value") == VEX_RULES for p in props)
+    return any(isinstance(p, dict) and p.get("name") == "zs:vex_rules" and p.get("value") == want for p in props)

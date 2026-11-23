@@ -201,4 +201,12 @@ ARG DSS_BUILD_VERSION=""
 ENV DSS_BUILD_SHA=${DSS_BUILD_SHA} \
     DSS_BUILD_VERSION=${DSS_BUILD_VERSION}
 
+# Build identity: the release the AI BOM / CBOM documents name as their tool version (aibom/src/aibom/emit/identity.py,
+# "DevSecShield AI BOM <version>"). scripts/deploy/build_images.sh passes both, as for the backend. Declared last, so a
+# new commit with the same source reuses every layer above.
+ARG DSS_BUILD_SHA=""
+ARG DSS_BUILD_VERSION=""
+ENV DSS_BUILD_SHA=${DSS_BUILD_SHA} \
+    DSS_BUILD_VERSION=${DSS_BUILD_VERSION}
+
 CMD ["uv", "run", "celery", "-A", "scan_worker", "worker", "-P", "threads", "--loglevel=info"]

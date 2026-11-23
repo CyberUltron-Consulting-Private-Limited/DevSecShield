@@ -143,6 +143,12 @@ def test_scan_metadata_surfaces_phase4_keys_cbom() -> None:
     assert get_scan_metadata("cbom", scan)["vex_json"] is None
 
 
+# a VEX written by the current cert_in/vex.py rules (the one value vex_semantics pins)
+from backend.utilities.cbom_sources.vex_semantics import CERTIN_VEX_RULES as _CERTIN_VEX_RULES  # noqa: E402
+
+_CURRENT_VEX_RULES = {"metadata": {"properties": [{"name": "zs:vex_rules", "value": _CERTIN_VEX_RULES}]}}
+
+
 def test_scan_metadata_surfaces_phase4_keys_ai_bom_and_sbom() -> None:
     ai = types.SimpleNamespace(
         scan_metadata={},
@@ -150,7 +156,7 @@ def test_scan_metadata_surfaces_phase4_keys_ai_bom_and_sbom() -> None:
             "ai_bom_compliance": {"cert_in_aibom": {}},
             "attestations": {"cert_in_aibom": {"x": {"filename": "f"}}},
             "bom_signature": {"digest": "d"},
-            "vex_json": {"vulnerabilities": []},
+            "vex_json": {"vulnerabilities": [], **_CURRENT_VEX_RULES},
         },
     )
     out_ai = get_scan_metadata("ai_bom", ai)
@@ -164,9 +170,12 @@ def test_scan_metadata_surfaces_phase4_keys_ai_bom_and_sbom() -> None:
             "sbom_compliance": {"cert_in_sbom": {}},
             "attestations": {},
             "bom_signature": None,
-            "vex_json": {"vulnerabilities": [{"id": "CVE-1"}]},
+            "vex_json": {"vulnerabilities": [{"id": "CVE-1"}], **_CURRENT_VEX_RULES},
         },
     )
     out_sb = get_scan_metadata("sbom_sca", sb)
     assert out_sb["vex_json"]["vulnerabilities"][0]["id"] == "CVE-1"
+    # a VEX stored by the old rules (per-component not_affected stubs) is not served: the page refetches /vex
+    sb.scan_data["vex_json"] = {"vulnerabilities": [{"id": "not-affected:x"}]}
+    assert get_scan_metadata("sbom_sca", sb)["vex_json"] is None
     assert out_sb["attestations"] == {}

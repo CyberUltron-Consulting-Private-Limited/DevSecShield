@@ -16,6 +16,7 @@ from typing import Any
 
 import yaml
 
+from aibom.model.component import is_model_mention
 from aibom.model.result import ScanResult
 
 
@@ -135,6 +136,19 @@ def _calibration_cap(weights: dict[str, float], scale: dict[str, Any]) -> float:
     return float(catalog) if catalog > 0 else 1.0
 
 
+# The one 0-100 posture score and its grade live in ``score/posture.py`` (standard
+# library only), which the backend PDF reports load by path: one formula, one cap
+# table and one band word for the dashboard and the PDF.
+from aibom.score.posture import (  # noqa: E402
+    POSTURE_CAPS,
+    POSTURE_MULTIPLIER,
+    POSTURE_WEIGHTS,
+    posture_grade,
+    posture_label,
+    posture_score,
+)
+
+
 def normalize_score(raw: float, weights_path: str | None = None) -> float:
     """Scale a raw flag-weight sum to a 0-100 risk score (capped at 100)."""
     weights = dict(load_weights(weights_path))
@@ -187,8 +201,17 @@ def component_severity(raw: float, weights_path: str | None = None) -> str:
     return "low"
 
 
-def score_result(result: ScanResult, weights_path: str | None = None) -> ScanResult:
-    """Compute ``result.scores`` from ``result.flags`` (in place) and return it."""
+def score_result(
+    result: ScanResult, weights_path: str | None = None, *, posture: bool = True
+) -> ScanResult:
+    """Compute ``result.scores`` from ``result.flags`` (in place) and return it.
+
+    ``posture`` True (the AI BOM): the headline ``risk_normalized`` is
+    :func:`posture_score` over every counted component's severity, with its grade
+    and band from the one table in ``score/posture.py``. ``posture`` False (the
+    CBOM, ``cbom/scorer.py``): the CBOM's own flag-weight scale, unchanged by the AI
+    BOM work (``normalize_score`` + the YAML ``scale.bands``).
+    """
     weights = dict(load_weights(weights_path))
     by_flag: dict[str, float] = {}
     by_component: dict[str, float] = {}
@@ -202,21 +225,45 @@ def score_result(result: ScanResult, weights_path: str | None = None) -> ScanRes
             by_component[flag.target] = by_component.get(flag.target, 0.0) + w
         total += w
 
-    normalized = normalize_score(total, weights_path)
     # Per-component severity from the STACKED weight (flags stack per component).
     component_severity_map = {
         ref: component_severity(raw, weights_path) for ref, raw in by_component.items()
     }
-    scores: dict[str, Any] = {
-        "risk_total": total,  # raw internal sum
-        "risk_normalized": normalized,  # 0-100 (Trusera-style), defined scale
-        "risk_band": risk_band(normalized, weights_path),  # low / medium / high
+    if not posture:
+        normalized = normalize_score(total, weights_path)
+        scores: dict[str, Any] = {
+            "risk_total": total,  # raw internal sum
+            "risk_normalized": normalized,  # 0-100, raw sum / calibration cap
+            "risk_band": risk_band(normalized, weights_path),  # low / medium / high
+        }
+    else:
+        # The headline 0-100 score counts every inventoried component at its
+        # stacked severity (an unflagged component is low), exactly the rows the
+        # dashboard and the PDF count, through the one posture_score function. A
+        # model only mentioned in a catalog or a test is in the BOM, not counted.
+        sev_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+        for comp in result.components:
+            if is_model_mention(comp):
+                continue
+            sev_counts[component_severity_map.get(comp.bom_ref, "low")] += 1
+        score = posture_score(**sev_counts)
+        grade, band = posture_grade(score)
+        scores = {
+            "risk_total": total,  # raw internal sum
+            "risk_normalized": float(score),  # 0-100 posture_score
+            "severity_counts": sev_counts,
+            # critical / high / elevated / moderate / low: the PDF grade's word
+            "risk_band": band,
+            "risk_grade": grade,
+            "risk_label": posture_label(band),
+        }
+    scores.update({
         "by_flag": dict(sorted(by_flag.items())),
         "by_component": dict(sorted(by_component.items())),
         # bom_ref -> critical/high/medium/low (stacked); absent ref -> low (no flags)
         "component_severity": dict(sorted(component_severity_map.items())),
         "flag_count": len(result.flags),
-    }
+    })
     result.scores = scores
     return result
 
@@ -227,5 +274,10 @@ __all__ = [
     "normalize_score",
     "risk_band",
     "component_severity",
+    "posture_score",
+    "posture_grade",
+    "POSTURE_CAPS",
+    "POSTURE_MULTIPLIER",
+    "POSTURE_WEIGHTS",
     "_DEFAULT_WEIGHTS_PATH",
 ]

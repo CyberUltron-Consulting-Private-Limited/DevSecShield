@@ -25,6 +25,7 @@ from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectedAsset, CbomCollectionRun
 from backend.utilities.cbom_sources import cdx_xml as CDX_XML
+from backend.utilities.cbom_sources import drift_report as DRIFT_REPORT
 from backend.utilities.cbom_sources import export_slots as EXPORT_SLOTS
 from backend.utilities.cbom_sources import heatmap as HEAT
 from backend.utilities.cbom_sources import posture as POSTURE
@@ -124,8 +125,20 @@ def _report_context(session: Session, team_id: int, options: ReportOptions = DEF
     return ReportContext(options=options, branding=load_report_branding(session, team_id))
 
 
+def _drift(session: Session, run: CbomCollectionRun) -> dict[str, Any]:
+    """S4: the run against its previous comparable run (``drift_report.run_drift``, the ``/diff`` numbers). A failure
+    is logged and printed as "not available": it never costs the customer the report or the pack."""
+    try:
+        return DRIFT_REPORT.run_drift(session, run)
+    except Exception as exc:  # noqa: BLE001 - the report and the pack must survive a drift failure
+        session.rollback()
+        log("run drift failed", team=run.team_id, run=run.id, error=type(exc).__name__)
+        return DRIFT_REPORT.summarise(run, None, None, message="Drift could not be computed for this report; the "
+                                                              "run page's Changes shows it")
+
+
 def _pdf(session: Session, run: CbomCollectionRun, data: RD.Summary, vex: dict[str, Any], cbom_sha256: str,
-         at: _dt.datetime, ctx: ReportContext | None = None) -> bytes:
+         at: _dt.datetime, ctx: ReportContext | None = None, drift: dict[str, Any] | None = None) -> bytes:
     settings = get_or_create_settings(session, run.team_id)
     posture = POSTURE.run_posture(session, team_id=run.team_id, run_id=run.id, risk_model=settings.risk_model)
     heatmap = HEAT.run_heatmap(session, run.team_id, run.id, by="source")
@@ -140,7 +153,7 @@ def _pdf(session: Session, run: CbomCollectionRun, data: RD.Summary, vex: dict[s
                         head=data.head, findings=data.findings, vex_states=RD.vex_states(vex),
                         provenance=RD.provenance(session, run), at=at, as_of_note=RD.as_of_note(run, at),
                         findings_cap=RD.PDF_FINDINGS_CAP, export_cap=RD.INV.EXPORT_CAP, cbom_sha256=cbom_sha256,
-                        ctx=used)
+                        ctx=used, drift=drift if drift is not None else _drift(session, run))
     if ctx is not None and used is not ctx:
         ctx.shown, ctx.total = used.shown, used.total
     return pdf
@@ -227,7 +240,8 @@ def _evidence_pack(engine, team_id: int, run_id: int) -> tuple[IO[bytes], Report
                 temps.append(xml_file)
                 signature = RD.run_signature(run, data.head, json_tee, at)
                 vex = _vex(session, run, data, at)
-                pdf = _pdf(session, run, data, vex, json_tee.sha.hexdigest(), at, ctx)
+                drift = _drift(session, run)  # S4: once, for report.pdf and drift.json
+                pdf = _pdf(session, run, data, vex, json_tee.sha.hexdigest(), at, ctx, drift)
                 sources = RD.run_sources(session, run)
                 oscal = _oscal(session, run, at)
                 files: list[Any] = [
@@ -243,6 +257,7 @@ def _evidence_pack(engine, team_id: int, run_id: int) -> tuple[IO[bytes], Report
                 files += [("vex.json", RD.vex_bytes(vex), VEX_MEDIA, f"{base}/vex"),
                           ("bom_signature.json", RD.signature_bytes(signature), JSON_MEDIA, f"{base}/signature"),
                           ("report.pdf", pdf, "application/pdf", f"{base}/report.pdf")]
+                files.append(("drift.json", DRIFT_REPORT.drift_bytes(drift), JSON_MEDIA, f"{base}/diff"))
                 return RD.evidence_pack(run=run, sources=sources, at=at, files=files, omitted=omitted,
                                         head=data.head, signature=signature,
                                         logo_sha256=ctx.branding.sha256 if ctx.branding.applied else None), ctx
