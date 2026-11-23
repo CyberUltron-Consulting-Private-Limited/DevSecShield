@@ -976,6 +976,40 @@ def _crypto_refs(node: Any) -> list[str]:
     return out
 
 
+def crypto_provides(result: ScanResult) -> list[tuple[str, str]]:
+    """``(library bom-ref, algorithm bom-ref)``: which crypto library "provides"
+    (implements) which algorithm. The one rule for CycloneDX ``dependencies`` and the
+    crypto graph (``normalize._crypto_graph``), so the two never disagree (second
+    review of #491, M-C).
+
+    An algorithm is provided by the library its ``crypto:detectedBy`` names (the API
+    call that fixed it: hashlib's ``scrypt`` is never pyca's, argon2-cffi's Argon2
+    never pyca's); only an algorithm whose detector names no library in the BOM (a
+    literal-only sighting) falls back to every crypto library its file imports
+    (``crypto:libraries``). A library never provides a salt, an IV, a key or a
+    certificate."""
+    libraries = {
+        (c.name or "").lower(): c.bom_ref
+        for c in result.components
+        if c.kind == "framework"
+        and (c.properties or {}).get("crypto:role") == "library"
+    }
+    out: list[tuple[str, str]] = []
+    for c in result.components:
+        props = c.properties or {}
+        if c.kind != "crypto_asset" or props.get("crypto:assetType") != "algorithm":
+            continue
+        named = libraries.get((props.get("crypto:detectedBy") or "").strip().lower())
+        labels = [named] if named else [
+            libraries.get(label.strip().lower())
+            for label in (props.get("crypto:libraries") or "").split(",")
+        ]
+        for lib in labels:
+            if lib and lib != c.bom_ref and (lib, c.bom_ref) not in out:
+                out.append((lib, c.bom_ref))
+    return out
+
+
 def _dependencies(
     result: ScanResult, components: list[dict[str, Any]] | None = None
 ) -> list[dict[str, Any]]:
@@ -1020,12 +1054,6 @@ def _dependencies(
         c.bom_ref
         for c in crypto
     }
-    libraries = {
-        (c.name or "").lower(): c.bom_ref
-        for c in result.components
-        if c.kind == "framework"
-        and (c.properties or {}).get("crypto:role") == "library"
-    }
     for c in crypto:
         props = c.properties or {}
         parent = props.get("crypto:derivedFrom")
@@ -1043,19 +1071,8 @@ def _dependencies(
             hit = by_name_file.get((used_by.strip().lower(), source))
             if hit:
                 add(uses, hit, c.bom_ref)
-        if props.get("crypto:assetType") != "algorithm":
-            continue  # a library implements algorithms, not a salt or a certificate
-        # the library whose API call fixed the algorithm; else every crypto library
-        # the file imports (a literal-only sighting names no API)
-        detected = (props.get("crypto:detectedBy") or "").strip().lower()
-        named = libraries.get(detected)
-        labels = [named] if named else [
-            libraries.get(label.strip().lower())
-            for label in (props.get("crypto:libraries") or "").split(",")
-        ]
-        for lib in labels:
-            if lib:
-                add(provides, lib, c.bom_ref)
+    for lib, algorithm in crypto_provides(result):
+        add(provides, lib, algorithm)
     deps = []
     for ref in sorted(set(uses) | set(provides)):
         entry: dict[str, Any] = {"ref": ref}

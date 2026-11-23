@@ -42,13 +42,13 @@ from __future__ import annotations
 import ast
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
 
 from aibom.cbom.files import FileWalk, decode_text, file_walk, read_bytes
 from aibom.cbom.project import project_index
 from aibom.cbom.registry import cbom_register
 from aibom.cbom.rules import ALGORITHM_NORMALIZE, algo_info
 from aibom.cbom.scanners.algorithm_scan import _display_name, _refine_key, _slug
+from aibom.cbom.weakness import kdf_call_grade
 from aibom.model.component import CryptoAssetComponent
 from aibom.scan.registry import ScanContext, Scanner
 
@@ -278,11 +278,24 @@ def _in(func: ast.expr, names) -> bool:
     return any(sym in names for sym in _symbols(func))
 
 
-def _literal_value(node: ast.expr | None, consts: dict[str, object]) -> object | None:
+# Constant folding is bounded by what it may BUILD, not only by its operands (second
+# review of #491, M-A): one line of a scanned file must never make the scanner allocate
+# a huge value. Nothing larger than these is folded (the expression stays unresolved).
+_FOLD_INT_LIMIT = 1 << 64  # every folded int: abs(value) < 2**64
+_FOLD_TEXT_LIMIT = 4096  # every folded str / bytes: at most 4096 characters (no salt,
+# IV or key literal is longer)
+_FOLD_MAX_DEPTH = 32  # nested operators per expression
+
+
+def _literal_value(
+    node: ast.expr | None, consts: dict[str, object], depth: int = 0
+) -> object | None:
     """Resolve a node to a constant value, following simple ``b"x" * n`` /
-    ``a + b`` literal arithmetic and module/function-level name bindings (the
-    cross-statement following a line-regex cannot do). Returns None if not a
-    compile-time literal."""
+    ``a + b`` / ``2**14`` / ``1 << 14`` literal arithmetic and module/function-level
+    name bindings (the cross-statement following a line-regex cannot do). Returns
+    None if not a compile-time literal, or when folding would exceed the bounds above
+    (an int of 64 bits or more, text over 4096 characters, operators nested deeper
+    than 32)."""
     if node is None:
         return None
     if isinstance(node, ast.Constant):
@@ -294,29 +307,56 @@ def _literal_value(node: ast.expr | None, consts: dict[str, object]) -> object |
     if isinstance(node, ast.BinOp) and isinstance(
         node.op, (ast.Mult, ast.Add, ast.Pow, ast.LShift)
     ):
-        left: Any = _literal_value(node.left, consts)
-        right: Any = _literal_value(node.right, consts)
+        if depth >= _FOLD_MAX_DEPTH:
+            return None
+        left = _literal_value(node.left, consts, depth + 1)
+        right = _literal_value(node.right, consts, depth + 1)
         if left is None or right is None:
             return None
-        if isinstance(node.op, (ast.Pow, ast.LShift)):
-            # ``n=2**14`` / ``1 << 14`` (the cryptography docs' scrypt cost), bounded so
-            # a hostile file cannot make the scanner build a huge number
-            if not (_small_int(left) and _small_int(right) and 0 <= right <= 64):
-                return None
-            return left**right if isinstance(node.op, ast.Pow) else left << right
-        try:
-            return left * right if isinstance(node.op, ast.Mult) else left + right
-        except (TypeError, ValueError):
-            return None
+        return _fold(node.op, left, right)
     return None
 
 
-def _small_int(value: object) -> bool:
+def _fold_int(value: object) -> bool:
     return (
         isinstance(value, int)
         and not isinstance(value, bool)
-        and abs(value) <= 1 << 16
+        and abs(value) < _FOLD_INT_LIMIT
     )
+
+
+def _fold_text(value: object) -> bool:
+    return isinstance(value, (str, bytes)) and len(value) <= _FOLD_TEXT_LIMIT
+
+
+def _fold(op: ast.operator, left: object, right: object) -> object | None:
+    """``left <op> right`` for an int or a str / bytes, only when the result stays
+    within the folding bounds; every size is checked BEFORE the value is built."""
+    if _fold_int(left) and _fold_int(right):
+        a, b = int(left), int(right)  # type: ignore[call-overload]
+        if isinstance(op, (ast.Pow, ast.LShift)):
+            # ``n=2**14`` / ``1 << 14`` (the cryptography docs' scrypt cost): a shift
+            # or exponent of 0..64 on a base below 2**64 is at most 4,096 bits
+            if not 0 <= b <= 64:
+                return None
+            result = a**b if isinstance(op, ast.Pow) else a << b
+        else:
+            result = a * b if isinstance(op, ast.Mult) else a + b
+        return result if abs(result) < _FOLD_INT_LIMIT else None
+    if isinstance(op, ast.Mult):
+        text, count = (left, right) if _fold_text(left) else (right, left)
+        if not (_fold_text(text) and _fold_int(count)):
+            return None
+        if len(text) * max(int(count), 0) > _FOLD_TEXT_LIMIT:  # type: ignore[arg-type,call-overload]
+            return None
+        return text * int(count)  # type: ignore[operator,call-overload]
+    if isinstance(op, ast.Add):
+        if not (_fold_text(left) and _fold_text(right) and type(left) is type(right)):
+            return None
+        if len(left) + len(right) > _FOLD_TEXT_LIMIT:  # type: ignore[arg-type]
+            return None
+        return left + right  # type: ignore[operator]
+    return None
 
 
 def _kwarg(call: ast.Call, name: str) -> ast.expr | None:
@@ -346,10 +386,10 @@ def _has_crypto_import(tree: ast.AST) -> bool:
 
 
 def _collect_consts(
-    tree: ast.AST, lines: dict[str, int] | None = None
+    tree: ast.AST, lines: dict[str, tuple[int, int]] | None = None
 ) -> dict[str, object]:
     """Module + function-level ``name = <literal>`` bindings, flattened; ``lines``
-    (when given) receives the line each name was bound on."""
+    (when given) receives where each name's literal was written: (line, column)."""
     consts: dict[str, object] = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign) and len(node.targets) == 1:
@@ -359,19 +399,27 @@ def _collect_consts(
                 if value is not None:
                     consts[target.id] = value
                     if lines is not None:
-                        lines[target.id] = node.lineno
+                        lines[target.id] = (node.lineno, node.value.col_offset)
     return consts
 
 
 def _collect_calls(node: ast.AST, scope: tuple[str, ...], out: list) -> None:
-    """Every Call in the tree, tagged with its enclosing-function scope key."""
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            _collect_calls(child, scope + (child.name,), out)
-        else:
-            if isinstance(child, ast.Call):
-                out.append((child, scope))
-            _collect_calls(child, scope, out)
+    """Every Call in the tree, in source (pre-)order, tagged with its
+    enclosing-function scope key. Iterative: a deeply nested expression the parser
+    accepts (a 2,000-term ``1+1+...``) must not overflow the Python stack."""
+    stack: list[tuple[ast.AST, tuple[str, ...]]] = [
+        (child, scope) for child in reversed(list(ast.iter_child_nodes(node)))
+    ]
+    while stack:
+        current, current_scope = stack.pop()
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            current_scope = current_scope + (current.name,)
+        elif isinstance(current, ast.Call):
+            out.append((current, current_scope))
+        stack.extend(
+            (child, current_scope)
+            for child in reversed(list(ast.iter_child_nodes(current)))
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -397,24 +445,26 @@ class _Asset:
         self.iterations: int | None = None
         self.params: dict[str, str] = {}  # KDF parameters as crypto:* properties
         self.symbol: str | None = None  # the callee that fixed it: its library
-        # KDF call sites: (line, that call's crypto:* parameters), one per call
-        self.calls: list[tuple[int, dict[str, str]]] = []
+        # KDF call sites, one per call: (line, its crypto:* parameters, its callee)
+        self.calls: list[tuple[int, dict[str, str], str | None]] = []
         self.scope = scope
         self.location = location
 
 
 class _Material:
-    __slots__ = ("kind", "location", "props", "line")
+    __slots__ = ("kind", "location", "props", "line", "col")
 
-    def __init__(self, kind, location, line=None):
+    def __init__(self, kind, location, line=None, col=None):
         self.kind = kind
         self.location = location
         self.line: int | None = line  # a literal salt: the line that wrote it
+        self.col: int | None = col  # ... and its 1-based column on that line
         # a static literal: crypto:staticSalt / staticIv, its length, usedBy
         self.props: dict[str, str] = {}
 
 
 _LIBRARY = "pyca/cryptography"
+SKIPPED_TOO_DEEP = "crypto:coverage:skippedPythonTooDeep"
 _HASHLIB = "hashlib (stdlib)"
 _HMAC = "hmac (stdlib)"
 
@@ -441,6 +491,11 @@ def _make_asset(key, key_size, mode, curve, context, scope, rel) -> _Asset | Non
                   scope, rel)
 
 
+class TooDeepToParse(Exception):
+    """A Python file whose syntax tree is too deep (or too large) to build: skipped and
+    counted (``crypto:coverage:skippedPythonTooDeep``), never a failed scan."""
+
+
 def _scan_file(
     path: Path, rel: str, text: str | None = None, external: dict | None = None
 ) -> tuple[list[_Asset], list[_Material]]:
@@ -452,12 +507,14 @@ def _scan_file(
         tree = ast.parse(text)
     except (SyntaxError, ValueError):
         return [], []
+    except (RecursionError, MemoryError) as exc:  # a 50,000-term ``1+1+...``
+        raise TooDeepToParse(rel) from exc
     if not _has_crypto_import(tree):
         return [], []
 
     # constants imported from other project modules (``from .consts import ALG``), then this file's own
     consts = {name: d.value for name, d in (external or {}).items()}
-    const_lines: dict[str, int] = {}
+    const_lines: dict[str, tuple[int, int]] = {}
     consts.update(_collect_consts(tree, const_lines))
     calls: list[tuple[ast.Call, tuple[str, ...]]] = []
     _collect_calls(tree, (), calls)
@@ -482,13 +539,14 @@ def _scan_file(
             pad_by_scope[scope].append(pad)
 
     assets: dict[tuple[str, str], _Asset] = {}
-    materials: dict[tuple[str, str, int], _Material] = {}
+    materials: dict[tuple[str, str, int, int], _Material] = {}
 
-    def _emit_material(kind: str, line: int = 0) -> _Material:
-        """One material row per (kind, file); a literal salt gets a row per line it
-        was written on, so two salts in one file are two rows, each with its line."""
+    def _emit_material(kind: str, line: int = 0, col: int = 0) -> _Material:
+        """One material row per (kind, file); a literal salt gets a row per place it
+        was written (line and column), so two salts in one file, even on one line,
+        are two rows, each with its line."""
         return materials.setdefault(
-            (kind, rel, line), _Material(kind, rel, line or None)
+            (kind, rel, line, col), _Material(kind, rel, line or None, col or None)
         )
 
     def _add_asset(asset: _Asset | None) -> _Asset | None:
@@ -526,6 +584,7 @@ def _scan_file(
                     material = _emit_material(
                         "nonce" if mode in _NONCE_MODES else "initialization-vector",
                         iv_node.lineno if static and iv_node is not None else 0,
+                        iv_node.col_offset + 1 if static and iv_node is not None else 0,
                     )
                     # an IV written into the call is static (a named constant is
                     # the misuse lane's: no double finding); its value is never
@@ -577,11 +636,12 @@ def _scan_file(
             asset = _add_asset(
                 _make_asset(base_key, None, None, None, context, scope, rel))
             if asset is not None:
-                asset.symbol = asset.symbol or (_symbols(func) or (None,))[0]
+                symbol = (_symbols(func) or (None,))[0]
+                asset.symbol = asset.symbol or symbol
                 params = _kdf_parameters(
                     call, func, base_key, asset, consts, const_lines, _emit_material
                 )
-                asset.calls.append((call.lineno, params))
+                asset.calls.append((call.lineno, params, symbol))
             continue
 
         mac = _rule(func, _MAC)
@@ -606,7 +666,10 @@ def _scan_file(
 
     return (
         sorted(assets.values(), key=lambda a: (a.name, a.location)),
-        sorted(materials.values(), key=lambda m: (m.kind, m.location, m.line or 0)),
+        sorted(
+            materials.values(),
+            key=lambda m: (m.kind, m.location, m.line or 0, m.col or 0),
+        ),
     )
 
 
@@ -658,14 +721,14 @@ def _kdf_parameters(
         if name == "salt":
             if isinstance(value, (bytes, str)):
                 params["crypto:saltLength"] = str(len(value))
-                # the line the literal is written on: the constant's binding, else
-                # the argument itself
-                line = (
-                    const_lines.get(node.id, node.lineno)
+                # where the literal is written: the constant's binding, else the
+                # argument itself (line, 1-based column)
+                line, col = (
+                    const_lines.get(node.id, (node.lineno, node.col_offset))
                     if isinstance(node, ast.Name)
-                    else node.lineno
+                    else (node.lineno, node.col_offset)
                 )
-                material = emit_material("salt", line)
+                material = emit_material("salt", line, col + 1)
                 if base_key in _PASSWORD_KDFS:
                     material.props["crypto:staticSalt"] = "true"
                     _add_to_list(material.props, "crypto:usedBy", asset.name)
@@ -684,8 +747,8 @@ def _kdf_parameters(
 
 
 def _kdf_cost(key: str, params: dict[str, str]) -> float:
-    """How expensive one call makes a guess (lower = weaker); a call whose cost the
-    scan cannot read (library defaults, a value from configuration) ranks last."""
+    """Raw cost of one call (lower = weaker), the tie-break between calls the OWASP
+    tables cannot grade (e.g. only Argon2's memory is known); unreadable ranks last."""
 
     def num(prop: str) -> float | None:
         raw = params.get(prop, "")
@@ -703,12 +766,30 @@ def _kdf_cost(key: str, params: dict[str, str]) -> float:
     return float("inf") if cost is None else cost
 
 
+def _weakness_rank(key: str, line: int, params: dict[str, str]) -> tuple:
+    """Sort key of one KDF call, weakest first (second review of #491, M-B): its grade
+    (below NIST, below OWASP, compliant; ungraded last), then its cost as a fraction
+    of the OWASP minimum for its OWN PRF / pair (``weakness.kdf_call_grade``, the one
+    table the finding also uses), then the raw cost, then the line. So SHA-256 at
+    300,000 iterations ranks below SHA-512 at 210,000, and SHA-1 at 1,000,000 below
+    SHA-256 at 600,000."""
+    graded = kdf_call_grade(key, params)
+    if graded is None:
+        return (1, float("inf"), _kdf_cost(key, params), line)
+    grade, ratio = graded
+    return (-grade, ratio, _kdf_cost(key, params), line)
+
+
 def _settle_kdf(asset: _Asset) -> None:
-    """The asset's parameters are its weakest call's (ties: the first call); with
-    several calls every call's parameters are listed by line
+    """The asset's parameters and library are its weakest call's (ties: the first
+    call); with several calls every call's parameters are listed by line
     (``crypto:kdfCalls``)."""
-    line, weakest = min(asset.calls, key=lambda c: (_kdf_cost(asset.key, c[1]), c[0]))
+    line, weakest, symbol = min(
+        asset.calls, key=lambda c: _weakness_rank(asset.key, c[0], c[1])
+    )
     asset.params = dict(weakest)
+    # the row names the library of the call it reports (second review n-a)
+    asset.symbol = symbol or asset.symbol
     raw = weakest.get("crypto:iterations", "")
     asset.iterations = int(raw) if raw.isdigit() else None
     if len(asset.calls) > 1:
@@ -721,7 +802,7 @@ def _settle_kdf(asset: _Asset) -> None:
                 )
                 or "library defaults"
             )
-            for n, params in sorted(asset.calls, key=lambda c: c[0])
+            for n, params, _symbol in sorted(asset.calls, key=lambda c: c[0])
         )
 
 
@@ -758,89 +839,110 @@ class AstCryptoScanner(Scanner):
 
     def scan(self, ctx: ScanContext) -> None:
         walk = file_walk(ctx)
+        too_deep: list[str] = []
         for path in _iter_py_files(walk):
             rel = walk.rel(path)
             text = walk.read_text(path)
             if text is None:
                 continue
             external = project_index(ctx).scope_for(rel, "python", text)
-            assets, materials = _scan_file(path, rel, text, external)
+            try:
+                assets, materials = _scan_file(path, rel, text, external)
+            except (TooDeepToParse, RecursionError):
+                # one pathological file never fails the scan: it is skipped and named
+                too_deep.append(rel)
+                continue
+            self._emit(ctx, assets, materials)
+        if too_deep:
+            ctx.properties[SKIPPED_TOO_DEEP] = str(len(too_deep))
+            ctx.properties[SKIPPED_TOO_DEEP + "Files"] = ",".join(sorted(too_deep)[:20])
 
-            for asset in assets:
-                props: dict[str, str] = {
-                    "crypto:assetType": "algorithm",
-                    "crypto:primitive": asset.primitive,
-                    "crypto:detectedBy": _library_for(
-                        asset.context, asset.key, asset.symbol
+    @staticmethod
+    def _emit(
+        ctx: ScanContext, assets: list[_Asset], materials: list[_Material]
+    ) -> None:
+        """One file's components: its algorithm rows, then its material rows."""
+        for asset in assets:
+            props: dict[str, str] = {
+                "crypto:assetType": "algorithm",
+                "crypto:primitive": asset.primitive,
+                "crypto:detectedBy": _library_for(
+                    asset.context, asset.key, asset.symbol
+                ),
+                "crypto:detectionContext": asset.context,
+                "crypto:detectionMethod": "ast",
+                "crypto:confidence": "high",
+                "discovery:source": asset.location,
+            }
+            info = algo_info(asset.key) or {}
+            if "strength" in info:
+                props["crypto:strength"] = info["strength"]
+            props["crypto:quantumVulnerable"] = str(
+                bool(info.get("quantum_vulnerable", False))
+            ).lower()
+            if asset.key_size:
+                props["crypto:keySize"] = str(asset.key_size)
+            if asset.mode:
+                props["crypto:mode"] = asset.mode
+            if asset.curve:
+                props["crypto:curve"] = asset.curve
+            if asset.padding:
+                props["crypto:padding"] = asset.padding
+            if asset.iterations:
+                props["crypto:iterations"] = str(asset.iterations)
+            props.update(asset.params)
+            if asset.calls:
+                # located at its calls (the occurrence pass would take the first
+                # line naming it, e.g. an ``except ImportError: PBKDF2HMAC = None``)
+                lines = sorted({n for n, _params, _symbol in asset.calls})
+                # several calls: the row points at the weakest one (its parameters)
+                props["crypto:line"] = asset.params.get(
+                    "crypto:kdfWeakestLine", str(lines[0])
+                )
+                props["crypto:occurrences"] = ",".join(str(n) for n in lines)
+            ctx.add_component(
+                CryptoAssetComponent(
+                    bom_ref=f"crypto-algo-{_slug(asset.name)}-{_slug(asset.location)}",
+                    name=asset.name,
+                    properties=props,
+                )
+            )
+
+        shared = defaultdict(int)  # literals of one kind written on one line
+        for material in materials:
+            if material.line:
+                shared[(material.kind, material.location, material.line)] += 1
+        for material in materials:
+            mprops = {
+                "crypto:assetType": "related-crypto-material",
+                "crypto:materialKind": material.kind,
+                "crypto:detectionMethod": "ast",
+                "discovery:source": material.location,
+                **material.props,
+            }
+            suffix = ""
+            where = material.location
+            if material.line:  # a literal salt: its own row, at its own place
+                suffix = f"-l{material.line}c{material.col or 0}"
+                mprops["crypto:line"] = str(material.line)
+                mprops["crypto:occurrences"] = str(material.line)
+                where = f"{material.location}:{material.line}"
+                if shared[(material.kind, material.location, material.line)] > 1:
+                    # two literals on one line: the column tells them apart
+                    mprops["crypto:column"] = str(material.col)
+                    where += f":{material.col}"
+            ctx.add_component(
+                CryptoAssetComponent(
+                    bom_ref=(
+                        f"crypto-material-{_slug(material.kind)}-"
+                        f"{_slug(material.location)}{suffix}"
                     ),
-                    "crypto:detectionContext": asset.context,
-                    "crypto:detectionMethod": "ast",
-                    "crypto:confidence": "high",
-                    "discovery:source": asset.location,
-                }
-                info = algo_info(asset.key) or {}
-                if "strength" in info:
-                    props["crypto:strength"] = info["strength"]
-                props["crypto:quantumVulnerable"] = str(
-                    bool(info.get("quantum_vulnerable", False))
-                ).lower()
-                if asset.key_size:
-                    props["crypto:keySize"] = str(asset.key_size)
-                if asset.mode:
-                    props["crypto:mode"] = asset.mode
-                if asset.curve:
-                    props["crypto:curve"] = asset.curve
-                if asset.padding:
-                    props["crypto:padding"] = asset.padding
-                if asset.iterations:
-                    props["crypto:iterations"] = str(asset.iterations)
-                props.update(asset.params)
-                if asset.calls:
-                    # located at its calls (the occurrence pass would take the first
-                    # line naming it, e.g. an ``except ImportError: PBKDF2HMAC = None``)
-                    lines = sorted({n for n, _ in asset.calls})
-                    # several calls: the row points at the weakest one (its parameters)
-                    props["crypto:line"] = asset.params.get(
-                        "crypto:kdfWeakestLine", str(lines[0])
-                    )
-                    props["crypto:occurrences"] = ",".join(str(n) for n in lines)
-                ctx.add_component(
-                    CryptoAssetComponent(
-                        bom_ref=f"crypto-algo-{_slug(asset.name)}-{_slug(asset.location)}",
-                        name=asset.name,
-                        properties=props,
-                    )
+                    # a literal's row names its line (and column when another
+                    # literal shares it): rows a reader can tell apart
+                    name=f"{material.kind} ({where})",
+                    properties=mprops,
                 )
-
-            for material in materials:
-                mprops = {
-                    "crypto:assetType": "related-crypto-material",
-                    "crypto:materialKind": material.kind,
-                    "crypto:detectionMethod": "ast",
-                    "discovery:source": material.location,
-                    **material.props,
-                }
-                suffix = ""
-                if material.line:  # a literal salt: its own row, at its own line
-                    suffix = f"-l{material.line}"
-                    mprops["crypto:line"] = str(material.line)
-                    mprops["crypto:occurrences"] = str(material.line)
-                ctx.add_component(
-                    CryptoAssetComponent(
-                        bom_ref=(
-                            f"crypto-material-{_slug(material.kind)}-"
-                            f"{_slug(material.location)}{suffix}"
-                        ),
-                        # a literal's row names its line: two salts in one file are
-                        # two rows a reader can tell apart
-                        name=(
-                            f"{material.kind} ({material.location}:{material.line})"
-                            if material.line
-                            else f"{material.kind} ({material.location})"
-                        ),
-                        properties=mprops,
-                    )
-                )
+            )
 
 
 __all__ = ["AstCryptoScanner"]

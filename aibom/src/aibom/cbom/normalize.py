@@ -32,6 +32,7 @@ from aibom.cbom.weakness import (
     WEAK_CRYPTO_CODES,
 )
 from aibom.emit import get_reporter
+from aibom.emit.cyclonedx import crypto_provides
 from aibom.graph_view import (
     COMPACT_MAX_NODES,
     EXPANDED_MAX_NODES,
@@ -524,16 +525,10 @@ def _crypto_graph(
                 _add(src, rel, target)
     for e in result.edges:  # native scanner edges (misuse used_by, certificate signed_by, ...)
         _add(e.src, e.rel, e.dst)
-    # library -> algorithm: the crypto libraries each asset's file imports (occurrence pass) "provide" it.
-    lib_by_label = {str(n["label"]).lower(): n["id"] for n in nodes if n["kind"] == "framework"}
-    for c in result.components:
-        libs = (c.properties or {}).get("crypto:libraries")
-        if c.kind != "crypto_asset" or not libs:
-            continue
-        for label in libs.split(","):
-            lib_id = lib_by_label.get(label.strip().lower())
-            if lib_id:
-                _add(lib_id, "provides", c.bom_ref)
+    # library -> algorithm "provides": the emitter's one rule (the library the algorithm's API call names, not every
+    # library its file imports), so a merge of these edges into CycloneDX ``dependencies`` adds nothing it lacks
+    for lib_id, algorithm in crypto_provides(result):
+        _add(lib_id, "provides", algorithm)
 
     nodes.sort(key=lambda n: str(n["id"]))
     edges.sort(key=lambda e: (str(e["source"]), str(e["rel"]), str(e["target"])))

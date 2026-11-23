@@ -48,7 +48,9 @@ entry(
         "Rfc2898DeriveBytes, whose constructors without a count use 1,000 (Microsoft rule CA5387). For a Python "
         "KDF call the captured cost is graded against NIST SP 800-132 (below 1,000 PBKDF2 iterations: Medium) and "
         "the OWASP Password Storage minimums (PBKDF2-HMAC-SHA256 600,000, -SHA512 210,000, -SHA1 1,300,000; scrypt "
-        "N 2^17; Argon2id 19 MiB with 2 passes or an equivalent pair: Low)."
+        "N 2^17 with r 8 and p 1, or an equal-strength pair: 2^16 / p 2, 2^15 / p 3, 2^14 / p 5, 2^13 / p 10; Argon2id "
+        "19 MiB with 2 passes or an equivalent pair: Low). A file with several calls of one KDF is graded by its worst "
+        "call, each against the minimum for its own hash."
     ),
     attack=(
         "Each password guess costs the attacker only as many hash computations as the iteration count, so an "
@@ -74,8 +76,9 @@ entry(
         ],
     },
     summary_rules=[
-        {"match": r"^scrypt", "summary": "Raise the scrypt cost to at least N = 2^17 with r = 8 and p = 1 (OWASP), "
-         "or use Argon2id, and keep the cost in configuration so it can rise.",
+        {"match": r"^scrypt", "summary": "Raise the scrypt cost to at least N = 2^17 with r = 8 and p = 1 (OWASP; "
+         "or an equal-strength pair such as N = 2^16 with p = 2), or use Argon2id, and keep the cost in configuration "
+         "so it can rise.",
          "steps": [{"platform": "Python", "how": "hashlib.scrypt(password, salt=os.urandom(16), n=2**17, r=8, p=1, "
                     "dklen=32)"}]},
         {"match": r"^argon2", "summary": "Use Argon2id with at least 19 MiB of memory and 2 passes (OWASP: m=19456, "
