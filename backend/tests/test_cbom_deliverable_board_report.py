@@ -1157,7 +1157,9 @@ def test_resolved_findings_and_certificates_do_not_count_in_the_headline_or_the_
     assert "No current asset carries a finding." in joined(sections[H2])
     assert value_after(sections[H4], "Unique certificates in the estate") == "0"
     assert value_after(sections[H4], "Key and secret material occurrences") == "0"
-    assert "0 unique certificates" in joined(sections[H8])
+    # FIX-A3 (SOW audit A-12): a governance action with nothing to decide is left out ("... each of the 0 unique
+    # certificates")
+    assert "unique certificate" not in joined(sections[H8])
     assert value_after(sections[H3], "Quantum-vulnerable") == "0"
     assert family not in sections[H7]  # the RSA-2048 left the source with the rescan
     assert norm(authored.PQC_NO_VULNERABLE_TEXT) in joined(sections[H7])
