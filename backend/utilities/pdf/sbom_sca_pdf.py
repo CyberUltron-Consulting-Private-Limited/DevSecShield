@@ -168,7 +168,23 @@ def _append_package_panels(
         story.append(Spacer(1, 0.08 * inch))
 
 
-def _append_inventory_sections(story: List[Any], inventory: List[Dict[str, Any]], styles: Dict[str, Any]) -> None:
+def _bom_licences(bom: Optional[Dict[str, Any]]) -> Dict[tuple, str]:
+    """(name, version) -> licence of the downloaded SBOM (registry-resolved there; the rows may say not declared)."""
+    out: Dict[tuple, str] = {}
+    for comp in (bom or {}).get("components") or []:
+        if not isinstance(comp, dict):
+            continue
+        for item in comp.get("licenses") or []:
+            lic = item.get("license") if isinstance(item, dict) and isinstance(item.get("license"), dict) else {}
+            token = str(lic.get("id") or lic.get("name") or (item or {}).get("expression") or "").strip()
+            if token and token.lower() not in _UNKNOWN_LICENSES:
+                out[(str(comp.get("name") or "").strip().lower(), str(comp.get("version") or "").strip())] = token
+                break
+    return out
+
+
+def _append_inventory_sections(story: List[Any], inventory: List[Dict[str, Any]], styles: Dict[str, Any],
+                               bom_licences: Optional[Dict[tuple, str]] = None) -> None:
     """#46: the inventoried packages are the bill of materials, not vulnerabilities. Those with no known vulnerability
     are listed one line each; an inventory row Grype matched to CVE ids (parser.apply_grype_cves) is not "no known
     vulnerability", so it is listed with its CVE ids instead. Neither is counted in the totals above."""
@@ -176,8 +192,9 @@ def _append_inventory_sections(story: List[Any], inventory: List[Dict[str, Any]]
     with_cves: dict[tuple[str, str, str], set[str]] = {}
     for item in inventory:
         name, version, ecosystem, licence = _package_line(item)
-        if not name:
+        if not name or (name.startswith("/") and not item.get("purl")):  # a file path is not a package (G-D4-6)
             continue
+        licence = licence or (bom_licences or {}).get((name.lower(), version), "")
         cve_ids = {str(k or v) for k, v in mapping_entries(item.get("cves") or {}) if (k or v)}
         if cve_ids:
             with_cves.setdefault((name, version, ecosystem), set()).update(cve_ids)
@@ -207,6 +224,94 @@ def _append_inventory_sections(story: List[Any], inventory: List[Dict[str, Any]]
                    for key, ids in sorted(with_cves.items(), key=lambda kv: (kv[0][0].lower(), kv[0][1], kv[0][2]))],
             styles=styles,
         )
+
+
+_FRAMEWORK_LABELS = (
+    ("ntia_minimum_elements", "NTIA minimum elements"),
+    ("cert_in_sbom", "CERT-In SBOM (TG v2.0, Table 5)"),
+    ("sebi_cscrf_sbom", "SEBI CSCRF (SBOM)"),
+    ("rbi_free_ai_supply", "RBI FREE-AI (supply chain)"),
+    ("nist_ssdf", "NIST SSDF (SP 800-218)"),
+)
+_STATUS_LABEL = {"pass": "Pass", "partial": "Partial", "missing": "Missing"}
+
+
+def _downloaded_bom(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The scan's SBOM as ``/bom`` serves it (the same builder; the subject name comes from the stored document)."""
+    if not isinstance(raw, dict) or not isinstance(raw.get("sbom_json"), dict):
+        return None
+    try:
+        from backend.utilities.compliance.certin_attest import bom_dict_from_scan_data
+
+        return bom_dict_from_scan_data("sbom_sca", raw)
+    except Exception:
+        return None
+
+
+def _framework_results(raw: Dict[str, Any], bom: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Framework results computed from the downloaded SBOM's fields (aibom.sbom.compliance), with the scan's
+    attestations; the stored result when the engine is not importable."""
+    stored = raw.get("sbom_compliance") if isinstance(raw.get("sbom_compliance"), dict) else {}
+    if bom is None:
+        return stored
+    try:
+        from backend.utilities.cbom_sources.run_parity import engine
+        from backend.utilities.compliance.certin_attest import evidence_map_from_attestations
+
+        engine()  # puts the aibom engine on the path (image: /opt/aibom/src; checkout: aibom/src)
+        from aibom.sbom.compliance import run_sbom_compliance
+
+        rows = raw.get("results") if isinstance(raw.get("results"), list) else []
+        evidence = evidence_map_from_attestations(raw.get("attestations") or {})
+        return run_sbom_compliance(rows, evidence=evidence, sbom_json=bom)
+    except Exception:
+        return stored
+
+
+def _append_sbom_elements_section(story: List[Any], raw: Dict[str, Any], styles: Dict[str, Any]) -> None:
+    """FIX-C1 (SOW D4): NTIA minimum elements / CERT-In fields counted in the CycloneDX file, then the SBOM
+    frameworks' results (NTIA, CERT-In, SEBI CSCRF, RBI FREE-AI, NIST SSDF) computed from those same fields."""
+    from backend.utilities.compliance.sbom_minimum_elements import minimum_elements
+
+    bom = _downloaded_bom(raw)
+    if bom is None:
+        return
+    report = minimum_elements(bom)
+    story.append(PageBreak())
+    story.append(Paragraph("SBOM minimum elements (NTIA / CERT-In)", styles["title"]))
+    story.append(Paragraph(escape_html(
+        f"Counted in the CycloneDX {report['spec_version']} file this scan downloads "
+        f"({report['components']} components, {report['vulnerabilities']} linked vulnerabilities). Present: "
+        "components (or document fields) carrying the element. Hashes are listed when the package source "
+        "publishes one."), styles["muted"]))
+    story.append(Spacer(1, 0.1 * inch))
+    lines = [[r["element"], r["ntia"], r["cert_in"], f"{r['present']}/{r['total']}", _STATUS_LABEL[r["status"]]]
+             for r in report["rows"]]
+    cells = [[Paragraph(escape_html(c), styles["table_cell"]) for c in row] for row in lines]
+    story.append(styled_data_table(["Element", "NTIA", "CERT-In field", "Present", "Status"], cells, styles=styles,
+                                   col_widths=[2.6 * inch, 0.7 * inch, 1.9 * inch, 0.8 * inch, 0.9 * inch]))
+    results = _framework_results(raw, bom)
+    fw_lines = []
+    for key, label in _FRAMEWORK_LABELS:
+        block = results.get(key) if isinstance(results, dict) else None
+        if not isinstance(block, dict):
+            continue
+        cov = block.get("coverage")
+        fw_lines.append([label, str(int(block.get("pass", 0)) + int(block.get("pass_with_evidence", 0) or 0)),
+                         str(block.get("fail", 0)), str(block.get("not_bom_evidenceable", 0)),
+                         "n/a" if cov is None else f"{round(float(cov) * 100)}%"])
+    if fw_lines:
+        story.append(Spacer(1, 0.18 * inch))
+        story.append(Paragraph("SBOM compliance checks", styles["heading"]))
+        story.append(Paragraph(escape_html(
+            "Each requirement is checked against the fields above (advisory mapping, not a certification). "
+            "Not evidenceable: the SBOM cannot show it (process evidence, or a field the sources do not publish)."),
+            styles["muted"]))
+        story.append(Spacer(1, 0.08 * inch))
+        fw_cells = [[Paragraph(escape_html(c), styles["table_cell"]) for c in row] for row in fw_lines]
+        story.append(styled_data_table(["Framework", "Pass", "Fail", "Not evidenceable", "Coverage"], fw_cells,
+                                       styles=styles,
+                                       col_widths=[2.8 * inch, 0.7 * inch, 0.7 * inch, 1.4 * inch, 1.0 * inch]))
 
 
 def _normalize_sbom_results(scan_results: Union[dict, list]) -> List[Dict[str, Any]]:
@@ -444,10 +549,11 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     # Both appendices keep today's flow: the inventory opens with its own page break and the
     # compliance appendix follows on the same page.
     if ctx.has("inventory"):
-        _append_inventory_sections(story, inventory, styles)
+        _append_inventory_sections(story, inventory, styles, _bom_licences(_downloaded_bom(raw or {})))
 
     if ctx.has("compliance"):
         appendix_payload = raw if raw else (scan_results if isinstance(scan_results, dict) else {})
+        _append_sbom_elements_section(story, appendix_payload, styles)
         append_bom_compliance_sections(story, appendix_payload, styles)
 
     doc.build(

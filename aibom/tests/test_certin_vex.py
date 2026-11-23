@@ -1,4 +1,6 @@
-"""Hermetic tests for CERT-In VEX (default not_affected; CVE → affected)."""
+"""Hermetic tests for CERT-In VEX (FIX-C1: a statement per matched advisory, in_triage;
+none without one).
+"""
 
 from __future__ import annotations
 
@@ -23,10 +25,13 @@ def test_sbom_cve_proven_affected() -> None:
     vulns = doc["vulnerabilities"]
     assert any(v["id"] == "CVE-2023-0001" for v in vulns)
     cve = next(v for v in vulns if v["id"] == "CVE-2023-0001")
-    assert cve["analysis"]["state"] == "exploitable"
+    # a version match is not proof of exploitability: under investigation until a person
+    # triages it
+    assert cve["analysis"]["state"] == "in_triage"
+    assert cve["affects"] == [{"ref": "requests"}]
 
 
-def test_sbom_no_cve_not_affected() -> None:
+def test_sbom_no_cve_has_no_statement() -> None:
     findings = [
         {
             "dependency": "urllib3==1.26.0",
@@ -35,8 +40,9 @@ def test_sbom_no_cve_not_affected() -> None:
         }
     ]
     doc = build_vex(findings=findings, scan_type="sbom_sca")
-    assert len(doc["vulnerabilities"]) == 1
-    assert doc["vulnerabilities"][0]["analysis"]["state"] == "not_affected"
+    assert (
+        doc["vulnerabilities"] == []
+    )  # never a blanket not_affected under a made-up id
 
 
 def test_cbom_bom_components_default_not_affected() -> None:
@@ -59,14 +65,35 @@ def test_disclaimer_present() -> None:
 
 def test_cbom_findings_with_cves_are_never_not_affected() -> None:
     findings = [
-        {"bom_ref": "algo-3des", "finding_codes": ["WEAK_ALGORITHM"], "cves": ["CVE-2016-2183"], "impact": "High"},
-        {"bom_ref": "algo-md5", "finding_codes": ["WEAK_ALGORITHM"], "cves": ["CVE-2004-2761"], "impact": "High"},
+        {
+            "bom_ref": "algo-3des",
+            "finding_codes": ["WEAK_ALGORITHM"],
+            "cves": ["CVE-2016-2183"],
+            "impact": "High",
+        },
+        {
+            "bom_ref": "algo-md5",
+            "finding_codes": ["WEAK_ALGORITHM"],
+            "cves": ["CVE-2004-2761"],
+            "impact": "High",
+        },
         {"bom_ref": "algo-aes", "finding_codes": [], "cves": [], "impact": "Info"},
     ]
-    doc = build_vex(bom={"components": [{"bom-ref": f["bom_ref"]} for f in findings]}, findings=findings, scan_type="cbom")
+    doc = build_vex(
+        bom={"components": [{"bom-ref": f["bom_ref"]} for f in findings]},
+        findings=findings,
+        scan_type="cbom",
+    )
     by_id = {v["id"]: v for v in doc["vulnerabilities"]}
     assert by_id["CVE-2016-2183"]["analysis"]["state"] == "in_triage"
-    assert by_id["ZS-CBOM-WEAK_ALGORITHM"]["affects"] == [{"ref": "algo-3des"}, {"ref": "algo-md5"}]
-    not_affected = {v["affects"][0]["ref"] for v in doc["vulnerabilities"] if v["analysis"]["state"] == "not_affected"}
+    assert by_id["ZS-CBOM-WEAK_ALGORITHM"]["affects"] == [
+        {"ref": "algo-3des"},
+        {"ref": "algo-md5"},
+    ]
+    not_affected = {
+        v["affects"][0]["ref"]
+        for v in doc["vulnerabilities"]
+        if v["analysis"]["state"] == "not_affected"
+    }
     assert not_affected == {"algo-aes"}
     assert {"name": "zs:vex_rules", "value": "2"} in doc["metadata"]["properties"]

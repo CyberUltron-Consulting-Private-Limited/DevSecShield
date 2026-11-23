@@ -41,6 +41,7 @@ from backend.utilities.compliance.certin_attest import (
     delete_attestation,
     recompute_compliance_for_scan,
     requirement_ids_in_compliance,
+    subject_name_for,
     upsert_attestation,
 )
 from backend.utilities.pdf import generate_pdf_for_type
@@ -97,7 +98,10 @@ def _certin_module_candidates(name: str) -> list[Path]:
 
 
 def _vex_is_current(scan_type: str, vex: dict) -> bool:
-    """A CBOM VEX stored by older rules (rules 2: everything in triage; before: everything not affected) is rebuilt."""
+    """A VEX stored by older rules is rebuilt: CBOM (rules 2: everything in triage; before: everything not
+    affected), SBOM and AI BOM (before FIX-C1: a blanket not_affected per component, cert_in/vex.py)."""
+    if scan_type != "cbom":
+        return bool(_load_certin_module("vex").is_current(vex))
     from backend.utilities.cbom_sources.vex_semantics import is_current
 
     return is_current(scan_type, vex)
@@ -214,6 +218,17 @@ def _save_scan_data(engine, scan_id: int, team_id: int, scan_type: str, data: di
         scan.scan_data = data
         session.add(scan)
         session.commit()
+
+
+def _signature_covers(sign_mod, signature: Any, bom: dict) -> bool:
+    """A stored signature is reused only when its digest is the digest of the BOM served now (FIX-C1 re-emits older
+    scans' SBOMs as CycloneDX 1.6, so their stored signatures no longer match). Signing hook for the shared
+    asymmetric signing module (FIX-A1): it replaces ``sign_mod.sign_bom`` and this check, not the callers."""
+    if not isinstance(signature, dict) or not signature.get("digest"):
+        return False
+    import hashlib
+
+    return signature["digest"] == hashlib.sha256(sign_mod.canonical_bom_bytes(bom)).hexdigest()
 
 
 def _hmac_secret() -> bytes:
@@ -341,7 +356,7 @@ async def sign_scan_bom(
     check_if_user_is_in_team(user.id, team_id, engine)
     scan = _load_success_scan(engine, team_id, type, scan_id)
     data = scan.scan_data if isinstance(scan.scan_data, dict) else {}
-    bom = bom_dict_from_scan_data(type, data)
+    bom = bom_dict_from_scan_data(type, data, subject_name=subject_name_for(scan.scan_metadata))
     if not bom:
         raise HTTPException(status_code=409, detail="No BOM JSON available to sign")
     secret = _hmac_secret()
@@ -372,7 +387,7 @@ async def get_scan_vex(
     data = scan.scan_data if isinstance(scan.scan_data, dict) else {}
     if not refresh and isinstance(data.get("vex_json"), dict) and _vex_is_current(type, data["vex_json"]):
         return JSONResponse(data["vex_json"])
-    bom = bom_dict_from_scan_data(type, data)
+    bom = bom_dict_from_scan_data(type, data, subject_name=subject_name_for(scan.scan_metadata))
     findings = data.get("results") if type in ("sbom_sca", "cbom") else None
     if not isinstance(findings, list):
         findings = None
@@ -402,7 +417,8 @@ async def download_scan_bom(
     user = await get_user_from_header_or_raise_exception(engine, Authorization)
     check_if_user_is_in_team(user.id, team_id, engine)
     scan = _load_success_scan(engine, team_id, type, scan_id)
-    bom = bom_dict_from_scan_data(type, scan.scan_data if isinstance(scan.scan_data, dict) else {})
+    bom = bom_dict_from_scan_data(type, scan.scan_data if isinstance(scan.scan_data, dict) else {},
+                                  subject_name=subject_name_for(scan.scan_metadata))
     if not bom:
         raise HTTPException(status_code=409, detail="No CycloneDX document is stored for this scan")
     if format == "json":
@@ -443,7 +459,7 @@ def _build_evidence_pack(engine, team_id: int, scan_type: str, scan_id: int) -> 
     data = scan.scan_data if isinstance(scan.scan_data, dict) else {}
 
     # Ensure vex + signature exist when possible
-    bom = bom_dict_from_scan_data(scan_type, data)
+    bom = bom_dict_from_scan_data(scan_type, data, subject_name=subject_name_for(scan.scan_metadata))
     try:
         vex_mod = _load_certin_module("vex")
         sign_mod = _load_certin_module("sign")
@@ -452,7 +468,7 @@ def _build_evidence_pack(engine, team_id: int, scan_type: str, scan_id: int) -> 
             findings = data.get("results") if scan_type in ("sbom_sca", "cbom") else None
             data["vex_json"] = _build_vex(engine, scan, scan_type, bom,
                                           findings if isinstance(findings, list) else None, vex_mod)
-        if bom and not isinstance(data.get("bom_signature"), dict):
+        if bom and not _signature_covers(sign_mod, data.get("bom_signature"), bom):
             try:
                 data["bom_signature"] = sign_mod.sign_bom(bom, secret=_hmac_secret())
             except HTTPException:

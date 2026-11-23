@@ -160,15 +160,10 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             attestations = scan.scan_data.get("attestations")
             bom_signature = scan.scan_data.get("bom_signature")
             vex_json = scan.scan_data.get("vex_json")
-            from backend.utilities.compliance.certin_attest import bom_dict_from_scan_data
+            from backend.utilities.compliance.certin_attest import bom_dict_from_scan_data, subject_name_for
 
-            subject_name = None
-            if repo_url:
-                subject_name = str(repo_url).rstrip("/").rsplit("/", 1)[-1]
-                if subject_name.endswith(".git"):
-                    subject_name = subject_name[:-4]
             sbom_json = bom_dict_from_scan_data(
-                "sbom_sca", scan.scan_data, subject_name=subject_name
+                "sbom_sca", scan.scan_data, subject_name=subject_name_for(_meta)
             )
         if sbom_compliance:
             from backend.utilities.dashboard.rbi_posture import build_rbi_csf_rollup

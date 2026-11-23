@@ -1,5 +1,7 @@
 import json
 import os
+import re
+from pathlib import Path
 import shutil
 from langchain_core.documents import Document
 from helpers.context.codebase_context import CodebaseContext
@@ -12,23 +14,63 @@ from helpers.tools.sca_sbom_agent.grype import run_sbom_scan
 from helpers.context.schema import * 
 from helpers.tools.iac_agent.summary_manager import IACSummaryManager , FinalIACVulnerabilities
 from helpers.tools.iac_agent.context import IACTypeContext
-from helpers.tools.sca_sbom_agent.summary_manager import FinalDependencyVulnerabilities, SBOMSCASummaryManager , SBOMSCASummaryManagerForSBOMFile
+from helpers.tools.sca_sbom_agent.summary_manager import SBOMSCASummaryManager
 from helpers.context.progress_writer import StateUpdateWriter
 from langchain.text_splitter import CharacterTextSplitter
 from helpers.tools.sca_sbom_agent.parser import parse_sbom_results_to_strings
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 from helpers.tools.sca_sbom_agent.syft import run_syft
 from helpers.tools.sca_sbom_agent.cdxgen_run import run_cdxgen
+from helpers.tools.sca_sbom_agent.syft import version_constraints
+from helpers.tools.sca_sbom_agent.grype_findings import finding_rows, merge_llm_enrichment
 from helpers.tools.sca_sbom_agent.merge_inventory import (
     assemble_cyclonedx,
     inventory_to_finding_rows,
     load_cdx_json,
     merge_cdx_components,
+    subject_from_repo,
 )
+import tempfile
 
 
 console = Console()
 
+_OFF = {"0", "false", "no", "off"}
+
+
+def llm_enrichment_enabled() -> bool:
+    """``SBOM_LLM_ENRICHMENT`` (default on): the optional LLM pass that adds OWASP / compliance mappings and a summary
+    to the Grype findings. Off, failing or slow, the findings are the same (SOW D4: deterministic, air-gappable)."""
+    return (os.environ.get("SBOM_LLM_ENRICHMENT") or "1").strip().lower() not in _OFF
+
+
+def combine_rows(inventory: list[dict], vuln_rows: list[dict]) -> list[dict]:
+    """The scan's result rows: every vulnerability row (one per advisory, package and version), then the inventory
+    rows of packages that have no vulnerability. Keying by package (the old ``_finalize_sbom``) kept only one
+    advisory per package."""
+    vulnerable = {str(r.get("dependency") or "").strip().lower() for r in vuln_rows if isinstance(r, dict)}
+    out = [r for r in vuln_rows if isinstance(r, dict)]
+    seen: set[str] = set()
+    for row in inventory:
+        dep = str((row or {}).get("dependency") or "").strip().lower()
+        if not dep or dep in vulnerable or dep in seen:
+            continue
+        seen.add(dep)
+        out.append(row)
+    return out
+
+
+def _license_index(inventory: list[dict]) -> dict[str, tuple[str, str]]:
+    out: dict[str, tuple[str, str]] = {}
+    for row in inventory:
+        lic = (str(row.get("license") or ""), str(row.get("license_type") or "not_declared"))
+        purl = str(row.get("purl") or "").split("?", 1)[0]
+        if purl:
+            out[purl] = lic
+        dep = str(row.get("dependency") or "")
+        if "==" in dep:
+            name, _, ver = dep.partition("==")
+            out[f"{re.sub(r'[-_.]+', '-', name.strip().lower())}@{ver.strip()}"] = lic
+    return out
 
 
 
@@ -55,11 +97,14 @@ class SCASBOMAgent(BaseAgent):
             
             self.directory = directory # SET directory ⭐
             self.sbom_json_file = file  # SET sbom_json_file ⭐
+            # the SBOM subject (metadata.component): repository and branch; the clone URL's credentials are dropped
+            self.repo_info = {"repo_url": getattr(context, "repo_url", None), "branch": getattr(context, "branch", None)}
 
             self.state_update_writer : StateUpdateWriter | None = state_update_writer
 
             #initializing
-            self.vulnerabilities : list[type[DependencyVulnerability]] | None = None
+            self.vulnerabilities : list[dict] | None = None
+            self.vulnerability_rows: list[dict] = []
             self.inventory_rows: list[dict] = []
             self.bom_properties: dict[str, str] = {}
             self.sbom_json: dict | None = None
@@ -67,12 +112,57 @@ class SCASBOMAgent(BaseAgent):
         except Exception as e:
             raise ValueError(f"Error in initializing SCASBOMAgent: {e}")
     
-    
-    
+    def _set_findings(self, grype_document, constraints: dict[str, str] | None = None) -> None:
+        """Findings from Grype (deterministic), then the optional LLM enrichment (never fatal)."""
+        self.grype_document = grype_document if isinstance(grype_document, dict) else None
+        direct = None
+        if isinstance(self.sbom_json, dict):
+            deps = self.sbom_json.get("dependencies") or []
+            if len(deps) > 1:  # the source tools gave a graph: the subject's own edges are the direct dependencies
+                root = str(((self.sbom_json.get("metadata") or {}).get("component") or {}).get("bom-ref") or "")
+                direct = {k for d in deps if d.get("ref") == root for k in d.get("dependsOn") or []}
+        rows = finding_rows(
+            self.grype_document,
+            licenses=_license_index(self.inventory_rows),
+            guessed_versions=constraints,
+            direct=direct,
+        )
+        self.vulnerability_rows = rows
+        self.vulnerabilities = rows
+        self.bom_properties["sbom:vuln_source"] = "grype"
+        self.bom_properties["sbom:llm_enrichment"] = self._enrich(rows)
+        descriptor = (self.grype_document or {}).get("descriptor") or {}
+        if isinstance(self.sbom_json, dict) and descriptor.get("version"):
+            tools = ((self.sbom_json.get("metadata") or {}).get("tools") or {}).get("components")
+            if isinstance(tools, list) and not any(str(t.get("name")).lower() == "grype" for t in tools):
+                tools.append({"type": "application", "name": "grype", "version": str(descriptor["version"]),
+                              "publisher": "anchore"})
+        console.print(f"Vulnerabilities (Grype): {len(rows)}", style="bold yellow")
+
+    def _enrich(self, rows: list[dict]) -> str:
+        """LLM map-reduce over the Grype matches: adds mappings to ``rows`` and returns applied / failed / disabled /
+        skipped. Any error (an invalid Bedrock token on staging scan #14) is logged and the scan goes on."""
+        if not llm_enrichment_enabled():
+            return "disabled"
+        parsed = parse_sbom_results_to_strings(self.grype_document)
+        if not rows or not parsed:
+            return "skipped"
+        try:
+            ctx = OpenSourceContext(open_source_tool=run_sbom_scan, argument="enrichment")
+            ctx.documents = [Document(page_content=" ".join(parsed[i : i + 10])) for i in range(0, len(parsed), 10)]
+            summary = ctx.generate_map_reduce_summary(summary_manager=SBOMSCASummaryManager())
+            vulns = summary.vulnerabilities if hasattr(summary, "vulnerabilities") else []
+            enriched = self.to_dict_list(list(vulns or []))
+            touched = merge_llm_enrichment(rows, enriched)
+            console.print(f"LLM enrichment applied to {touched} finding(s)", style="bold green")
+            return "applied"
+        except Exception as e:  # enrichment only: the Grype findings stand on their own
+            console.print(f"LLM enrichment skipped ({e.__class__.__name__}): {str(e)[:300]}", style="bold yellow")
+            return "failed"
+
     def populate_opensource_context(self)->None:
         """
-        Multi-engine SBOM path: Syft + cdxgen inventory → merge → Grype vulns.
-        Map-reduce runs only over Grype matches; inventory rows are projected separately.
+        Multi-engine SBOM path: Syft + cdxgen inventory → one CycloneDX 1.6 document → Grype matches → findings.
         """
         try:
             console.print(f"Populating open source context ...",style="bold yellow")
@@ -89,17 +179,20 @@ class SCASBOMAgent(BaseAgent):
                 tools.append("cdxgen")
 
             merged_comps = merge_cdx_components(syft_path, cdxgen_path)
-            preferred_sbom = cdxgen_path or syft_path
-            base_sbom = load_cdx_json(preferred_sbom)
-            if merged_comps:
-                self.sbom_json = assemble_cyclonedx(
-                    merged_comps,
-                    base=base_sbom,
-                    tools=tools,
-                    subject_name=os.path.basename(str(self.directory).rstrip("/")),
-                )
-            else:
-                self.sbom_json = base_sbom
+            source_docs = [d for d in (load_cdx_json(syft_path), load_cdx_json(cdxgen_path)) if d]
+            constraints = version_constraints(syft_path)
+            info = getattr(self, "repo_info", None) or {}
+            subject = subject_from_repo(
+                info.get("repo_url"), info.get("branch"), self.directory,
+                fallback_name="uploaded-archive",  # never the temp directory's name (audit G-D4-4)
+            )
+            self.sbom_json = assemble_cyclonedx(
+                merged_comps,
+                tools=tools,
+                subject=subject,
+                source_docs=source_docs,
+                constraints=constraints,
+            ) if (merged_comps or source_docs) else None
 
             bom_props: dict[str, str] = {
                 "sbom:author": "DevSecShield",
@@ -110,19 +203,31 @@ class SCASBOMAgent(BaseAgent):
             if self.sbom_json is not None:
                 bom_props["sbom:automation_cyclonedx"] = "true"
                 bom_props["sbom:multi_format_emit"] = "true"
+                bom_props["sbom:timestamp"] = str(self.sbom_json["metadata"]["timestamp"])
+            if constraints:
+                bom_props["sbom:versions_from_ranges"] = str(len(constraints))
             self.bom_properties = bom_props
 
-            # --- Grype vuln lane (prefer inventory SBOM) ---
+            # --- Grype on the merged inventory (both tools' packages), dir: when there is none ---
+            grype_input = None
+            if self.sbom_json is not None and self.sbom_json.get("components"):
+                handle = tempfile.NamedTemporaryFile("w", suffix=".merged.cdx.json", delete=False)
+                with handle:
+                    json.dump(self.sbom_json, handle)
+                grype_input = handle.name
+
             def _grype_tool(directory):
-                return run_sbom_scan(directory=directory, sbom_file=preferred_sbom)
+                return run_sbom_scan(directory=directory, sbom_file=grype_input)
 
             open_source_context = OpenSourceContext(
                 open_source_tool=_grype_tool,
                 directory=self.directory,
             )
-            open_source_context.run_open_source_tool()
-            results = open_source_context.results
-            self.grype_document = results if isinstance(results, dict) else None
+            try:
+                open_source_context.run_open_source_tool()
+            finally:
+                if grype_input:
+                    os.unlink(grype_input)
 
             # Inventory rows: Grype ran → mark assessed even when match count is 0.
             self.inventory_rows = inventory_to_finding_rows(
@@ -130,70 +235,28 @@ class SCASBOMAgent(BaseAgent):
             )
             console.print(
                 f"Inventory components: {len(self.inventory_rows)} "
-                f"(tools={tools or ['none']})",
+                f"(tools={tools or ['none']}, versions from ranges={len(constraints)})",
                 style="bold yellow",
             )
-
-            parsed_results = parse_sbom_results_to_strings(results)
-
-            # Zero Grype matches → empty docs → base_context raises "Documents are not set".
-            # Mirror AIBOM: skip map-reduce and return empty vuln findings.
-            if not parsed_results:
-                console.print(
-                    "No SBOM/SCA matches found, skipping map-reduce",
-                    style="bold yellow",
-                )
-                self.vulnerabilities = []
-                return
-
-            docs = []
-            for i in range(0, len(parsed_results), 10):
-                concatenated_strings = " ".join(parsed_results[i : i + 10])
-                document = Document(page_content=concatenated_strings)
-                docs.append(document)
-
-            open_source_context.documents = docs
-            summary = open_source_context.generate_map_reduce_summary(
-                summary_manager=SBOMSCASummaryManager()
-            )
-
-            if hasattr(summary, "vulnerabilities"):
-                vulnerabilities = summary.vulnerabilities
-            else:
-                console.print(
-                    "SBOM map-reduce returned no structured vulnerabilities "
-                    "(raw/empty result); treating as empty",
-                    style="bold yellow",
-                )
-                vulnerabilities = []
-
-            console.print(
-                f"Vulnerabilities length : {len(vulnerabilities)}", style="bold yellow"
-            )
-            for index, vulnerability in enumerate(vulnerabilities):
-                console.print(
-                    f" 🔧 Vulnerability # {index + 1} : {vulnerability.title}",
-                    style="bold yellow",
-                )
-
-            self.vulnerabilities = vulnerabilities
+            self._set_findings(open_source_context.results, constraints)
 
         except Exception as e:
             raise ValueError(f"Error in populating open source context: {e}")
     
 
-    def analyze_sbom_file(self)->None: #TODO : Implement this
+    def analyze_sbom_file(self)->None:
         """
-        Analyzes the SBOM file and sets self.vulnerabilities
+        An uploaded SBOM (CycloneDX or SPDX JSON): Grype matches its packages (deterministic, no LLM needed); a
+        CycloneDX upload is normalised to CycloneDX 1.6 with the same metadata as a repository scan.
         """
         try:
-            # STEP [ 1 ] ================================ Load SBOM file =====================================================================
             console.print(f"Analyzing SBOM file ...",style="bold yellow")
             if not self.sbom_json_file:
                 raise ValueError(f"SBOM file not found")
             with open(self.sbom_json_file, "r",errors="ignore") as f:
-                sbom_json = json.load(f)
-            self.sbom_json = sbom_json if isinstance(sbom_json, dict) else None
+                uploaded = json.load(f)
+            if not isinstance(uploaded, dict):
+                raise ValueError("The uploaded SBOM is not a JSON object")
             self.bom_properties = {
                 "sbom:author": "DevSecShield",
                 "sbom:vuln_scanner": "grype",
@@ -201,35 +264,24 @@ class SCASBOMAgent(BaseAgent):
                 "sbom:multi_format_emit": "true",
                 "sbom:inventory_tools": "uploaded-sbom",
             }
-            
-            # STEP [ 2 ] ================================ Parse SBOM file  to documents =====================================================================
-            splitter = RecursiveCharacterTextSplitter(chunk_size=10000)
-            split_json_documents = splitter.create_documents(texts=[str(sbom_json)])
-            if not split_json_documents:
-                raise ValueError(f"No split json documents found")
-            docs = split_json_documents # SET documents ⭐
-            
-            # STEP [ 3 ] ================================ Generate Map Reduce Summary =====================================================================
-            mock_open_source_context = OpenSourceContext(
-                open_source_tool=run_sbom_scan,
-                argument="mock"
-            )
-            mock_open_source_context.documents = docs # SET documents ⭐    
-            summary = mock_open_source_context.generate_map_reduce_summary(
-                summary_manager=SBOMSCASummaryManagerForSBOMFile()
-            )
-            output : type[FinalDependencyVulnerabilities] = summary 
-
-
-
-            vulnerabilities = output.vulnerabilities # GET vulnerabilities ⭐
-
-            console.print(f"Vulnerabilities length : {len(vulnerabilities)}",style="bold yellow")
-            for index , vulnerability in enumerate(vulnerabilities):
-                console.print(f" 🔧 Vulnerability # {index + 1} : {vulnerability.title}",style="bold yellow")
-
-            self.vulnerabilities = vulnerabilities # SET vulnerabilities ⭐            
-
+            components = []
+            if uploaded.get("bomFormat") == "CycloneDX":
+                components = merge_cdx_components(Path(self.sbom_json_file))
+                meta = uploaded.get("metadata") if isinstance(uploaded.get("metadata"), dict) else {}
+                subject = meta.get("component") if isinstance(meta.get("component"), dict) else None
+                self.sbom_json = assemble_cyclonedx(
+                    components,
+                    tools=["uploaded-sbom"],
+                    subject=dict(subject) if subject and subject.get("name") else None,
+                    subject_name="uploaded-sbom",
+                    source_docs=[uploaded],
+                )
+                self.bom_properties["sbom:timestamp"] = str(self.sbom_json["metadata"]["timestamp"])
+            else:
+                self.sbom_json = uploaded  # SPDX: kept as uploaded; Grype reads it directly
+            self.inventory_rows = inventory_to_finding_rows(components, vuln_assessed=True)
+            grype_document = run_sbom_scan(sbom_file=self.sbom_json_file)
+            self._set_findings(grype_document)
 
         except Exception as e:
             raise ValueError(f"Error in analyzing SBOM file: {e}")
@@ -300,8 +352,8 @@ class SCASBOMAgent(BaseAgent):
             if self.state_update_writer:
                 self.state_update_writer.write_progress_percentage(100)
 
-            # STEP [ 6 ] ================================ Return Vulnerabilities model =================================================================
-            return self.vulnerabilities
+            # STEP [ 6 ] ================================ Return the finding rows (dicts) =================================================================
+            return self.vulnerability_rows
 
 
         except Exception as e:

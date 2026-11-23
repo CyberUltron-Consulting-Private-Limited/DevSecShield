@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Download, Search } from "lucide-react";
+import { DEFAULT_BOM_VIEW, emptyBomMessage, filterBomRows, isVulnerableRow, type BomView } from "./bomTableFilter";
 import {
   inventoryRowsFromCycloneDx,
   overallComplianceFromBom,
@@ -59,26 +60,12 @@ export default function SbomBillOfMaterialsTable({
   onDownload?: () => void;
 }) {
   const [query, setQuery] = useState("");
-  const [vulnerableOnly, setVulnerableOnly] = useState(true);
+  // every component by default (an SBOM with no known vulnerability must not look empty); the filter stays visible
+  const [view, setView] = useState<BomView>(DEFAULT_BOM_VIEW);
   const rows = useMemo(() => inventoryRowsFromCycloneDx(bom), [bom]);
   const overall = useMemo(() => overallComplianceFromBom(bom), [bom]);
-  const vulnerableCount = useMemo(
-    () => rows.filter((row) => row.cves !== "None" && row.cves !== "N/A" && row.cves !== "—").length,
-    [rows],
-  );
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return rows.filter((row) => {
-      if (vulnerableOnly && (row.cves === "None" || row.cves === "N/A" || row.cves === "—")) {
-        return false;
-      }
-      if (!q) return true;
-      return [row.name, row.supplier, row.version, row.uniqueId, row.cves, row.relationship, row.author]
-        .join(" ")
-        .toLowerCase()
-        .includes(q);
-    });
-  }, [rows, query, vulnerableOnly]);
+  const vulnerableCount = useMemo(() => rows.filter(isVulnerableRow).length, [rows]);
+  const filtered = useMemo(() => filterBomRows(rows, query, view), [rows, query, view]);
 
   if (!rows.length) return null;
 
@@ -126,15 +113,28 @@ export default function SbomBillOfMaterialsTable({
               aria-label="Search software bill of materials"
             />
           </div>
-          <Button
-            type="button"
-            variant={vulnerableOnly ? "default" : "outline"}
-            className="h-9 cursor-pointer"
-            onClick={() => setVulnerableOnly((v) => !v)}
-            data-testid="sbom-vulnerable-only"
-          >
-            {vulnerableOnly ? "Vulnerable only" : "Show all components"}
-          </Button>
+          <div role="group" aria-label="Components shown" className="inline-flex overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-800">
+            <Button
+              type="button"
+              variant={view === "all" ? "default" : "ghost"}
+              className="h-9 cursor-pointer rounded-none"
+              aria-pressed={view === "all"}
+              onClick={() => setView("all")}
+              data-testid="sbom-view-all"
+            >
+              All components ({rows.length})
+            </Button>
+            <Button
+              type="button"
+              variant={view === "vulnerable" ? "default" : "ghost"}
+              className="h-9 cursor-pointer rounded-none"
+              aria-pressed={view === "vulnerable"}
+              onClick={() => setView("vulnerable")}
+              data-testid="sbom-view-vulnerable"
+            >
+              Vulnerable only ({vulnerableCount})
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -156,7 +156,7 @@ export default function SbomBillOfMaterialsTable({
               {filtered.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={COLUMNS.length} className="py-8 text-center text-zinc-500">
-                    No components match this search
+                    {emptyBomMessage(view, query, rows.length)}
                   </TableCell>
                 </TableRow>
               ) : (

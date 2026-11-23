@@ -28,9 +28,22 @@ def test_worker_images_take_the_base_image_build_arguments():
     # #69 (#335) pins the scan worker's base images by digest; the defaults stay build arguments a proxy build overrides
     assert re.search(r"^ARG UV_BASE_IMAGE=ghcr\.io/astral-sh/uv:python3\.12-bookworm-slim@sha256:[0-9a-f]{64}$", WORKER, re.M)
     assert re.search(r"^ARG GO_BASE_IMAGE=golang:1\.26(\.\d+)?-bookworm@sha256:[0-9a-f]{64}$", WORKER, re.M)
-    assert froms(WORKER) == ["${UV_BASE_IMAGE}", "${GO_BASE_IMAGE}", "${UV_BASE_IMAGE}"]
+    # builder, cbomkit-theia, cdxgen (FIX-C1), runtime
+    assert froms(WORKER) == ["${UV_BASE_IMAGE}", "${GO_BASE_IMAGE}", "${UV_BASE_IMAGE}", "${UV_BASE_IMAGE}"]
     assert re.search(r"^ARG UV_BASE_IMAGE=ghcr\.io/astral-sh/uv:python3\.12-bookworm-slim$", DAST, re.M)
     assert froms(DAST) == ["${UV_BASE_IMAGE}", "${UV_BASE_IMAGE}"]
+
+
+def test_worker_node_and_cdxgen_are_pinned_and_verified():
+    """FIX-C1: cdxgen (SBOM inventory) runs from the image, never ``npx --yes`` at scan time: Node.js by version and
+    SHA-256, cdxgen and its dependencies by the committed lockfile (npm ci), no install scripts."""
+    assert re.search(r"^ARG NODE_VERSION=\d+\.\d+\.\d+$", WORKER, re.M)
+    assert re.search(r"^ARG NODE_SHA256_AMD64=[0-9a-f]{64}$", WORKER, re.M)
+    assert re.search(r"^ARG NODE_SHA256_ARM64=[0-9a-f]{64}$", WORKER, re.M)
+    step = WORKER[WORKER.index("ARG NODE_VERSION"):WORKER.index("Stage 2: Runtime")]
+    assert "curl -sSfL" in step and "sha256sum -c /tmp/node.sha256" in step
+    assert "npm ci --omit=dev --omit=optional --ignore-scripts" in step
+    assert "npm install" not in WORKER and "npx" not in WORKER
 
 
 def test_build_script_passes_the_go_base_image_to_the_scan_worker_only():

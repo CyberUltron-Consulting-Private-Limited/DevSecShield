@@ -1,0 +1,21 @@
+# Syft configuration for the SBOM / SCA scan (helpers/tools/sca_sbom_agent/syft.py passes it with -c).
+# Offline only: nothing here makes Syft reach a network (the scan worker must work air-gapped).
+check-for-app-update: false
+
+python:
+  # requirements.txt / setup.py entries with a range (fastapi>=0.109.0) instead of a pin: without this Syft drops
+  # them and an unpinned repo's SBOM loses its Python dependencies (audit G-D4-1: peva3/SmarterRouter showed 0 of
+  # 17). The version recorded is the range's lower bound; syft.py marks each such component with its constraint
+  # (dss:version_source=range_lower_bound) so the SBOM and the findings say the version is a guess.
+  guess-unpinned-requirements: true
+
+# The other ecosystems have no "guess unpinned" switch in Syft; their unpinned manifests are covered by cdxgen
+# (cdxgen_run.py: package.json ranges, pom.xml, build.gradle, go.mod ... read without installing anything).
+java:
+  use-network: false
+  resolve-transitive-dependencies: false
+javascript:
+  search-remote-licenses: false
+golang:
+  search-remote-licenses: false
+  search-local-mod-cache-licenses: false

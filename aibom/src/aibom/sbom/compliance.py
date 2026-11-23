@@ -38,7 +38,9 @@ _HIGH_LICENSE = frozenset(
         "Source Available",
     }
 )
-_REACHABLE = frozenset({"reachable", "Reachable", "potentially_reachable", "Potentially Reachable"})
+_REACHABLE = frozenset(
+    {"reachable", "Reachable", "potentially_reachable", "Potentially Reachable"}
+)
 
 
 def _impact(f: dict[str, Any]) -> str:
@@ -119,6 +121,207 @@ def _inventory_bom_ref(
     return ref
 
 
+def _bom_license(comp: dict[str, Any]) -> str:
+    for item in comp.get("licenses") or []:
+        if not isinstance(item, dict):
+            continue
+        lic = item.get("license") if isinstance(item.get("license"), dict) else {}
+        token = str(
+            lic.get("id") or lic.get("name") or item.get("expression") or ""
+        ).strip()
+        if token and token.lower() not in {
+            "noassertion",
+            "none",
+            "unknown",
+            "not_declared",
+            "licenseref-not-declared",
+        }:
+            return token
+    return ""
+
+
+def _bom_hash(comp: dict[str, Any]) -> str:
+    for h in comp.get("hashes") or []:
+        if isinstance(h, dict) and str(h.get("content") or "").strip():
+            return f"{h.get('alg') or 'hash'}:{str(h['content']).strip()}"
+    return ""
+
+
+def _bom_supplier(comp: dict[str, Any]) -> str:
+    sup = comp.get("supplier")
+    if isinstance(sup, dict) and str(sup.get("name") or "").strip():
+        return str(sup["name"]).strip()
+    return str(comp.get("publisher") or "").strip()
+
+
+def _reachable(edges: dict[str, list[str]], root: str) -> set[str]:
+    seen: set[str] = set()
+    todo = [root]
+    while todo:
+        for kid in edges.get(todo.pop(), []):
+            if kid not in seen:
+                seen.add(kid)
+                todo.append(kid)
+    return seen
+
+
+def bom_to_scan_result(
+    sbom_json: dict[str, Any],
+    findings: list[dict[str, Any]] | None = None,
+    *,
+    bom_properties: dict[str, str] | None = None,
+) -> ScanResult:
+    """Project the CycloneDX SBOM itself (FIX-C1, SOW D4: "computed from the actual
+    fields").
+
+    Every NTIA / CERT-In element is read off the document a customer downloads:
+    supplier, version, purl, hashes, licences and description per component; author,
+    timestamp and tools from ``metadata``; the dependency relationship from
+    ``dependencies`` (a component counts only when it is reachable from the subject).
+    Finding rows add only what the BOM does not carry: severity, reachability, CVE
+    linkage and patch status.
+    """
+    meta = (
+        sbom_json.get("metadata") if isinstance(sbom_json.get("metadata"), dict) else {}
+    )
+    root = meta.get("component") if isinstance(meta.get("component"), dict) else {}
+    subject_ref = str(root.get("bom-ref") or "sbom-subject")
+    rows_by_key: dict[str, list[dict[str, Any]]] = {}
+    for row in findings or []:
+        if not isinstance(row, dict):
+            continue
+        purl = str(row.get("purl") or "").split("?", 1)[0].lower()
+        name, version = _parse_name_version(_dependency(row))
+        for key in (purl, f"{name.lower()}@{version}" if name else ""):
+            if key:
+                rows_by_key.setdefault(key, []).append(row)
+
+    graph: dict[str, list[str]] = {}
+    for dep in sbom_json.get("dependencies") or []:
+        if isinstance(dep, dict) and dep.get("ref"):
+            graph.setdefault(str(dep["ref"]), []).extend(
+                str(k) for k in dep.get("dependsOn") or []
+            )
+    reachable = _reachable(graph, subject_ref)
+
+    components: list[FrameworkComponent] = []
+    edges: list[Edge] = []
+    for i, comp in enumerate(sbom_json.get("components") or []):
+        if not isinstance(comp, dict) or not str(comp.get("name") or "").strip():
+            continue
+        ref = str(comp.get("bom-ref") or comp.get("purl") or f"component-{i}")
+        purl = str(comp.get("purl") or "").split("?", 1)[0]
+        name = str(comp["name"]).strip()
+        version = str(comp.get("version") or "").strip()
+        rows = (
+            rows_by_key.get(purl.lower())
+            or rows_by_key.get(f"{name.lower()}@{version}")
+            or []
+        )
+        vuln_rows = [r for r in rows if not r.get("inventory_only")]
+        worst = max(
+            vuln_rows,
+            key=lambda r: {"critical": 4, "high": 3, "medium": 2, "low": 1}.get(
+                _impact(r).lower(), 0
+            ),
+            default=None,
+        )
+        props: dict[str, str] = {
+            "sbom:impact": _impact(worst) if worst else "",
+            "sbom:reachability": _reachability(worst) if worst else "",
+            "sbom:has_cves": "true"
+            if any(_has_cves(r) for r in vuln_rows)
+            else "false",
+            "sbom:vuln_assessed": "true"
+            if (rows and any(r.get("vuln_assessed") for r in rows))
+            or isinstance(sbom_json.get("vulnerabilities"), list)
+            else "false",
+            "sbom:in_dependency_graph": "true" if ref in reachable else "false",
+        }
+        lic = _bom_license(comp)
+        if lic:
+            props["sbom:license"] = lic
+        lic_type = next((_license(r) for r in rows if _license(r)), "")
+        if lic_type:
+            props["sbom:license_type"] = lic_type
+        for key, val in (
+            ("sbom:purl", purl),
+            ("sbom:hash", _bom_hash(comp)),
+            ("sbom:supplier", _bom_supplier(comp)),
+            ("sbom:description", str(comp.get("description") or "").strip()),
+            ("sbom:component_author", str(comp.get("author") or "").strip()),
+            ("sbom:cve_ids", ",".join(_cve_ids(r) for r in vuln_rows if _cve_ids(r))),
+        ):
+            if val:
+                props[key] = val
+        fix_states = sorted(
+            {str(r.get("fix_state")) for r in vuln_rows if r.get("fix_state")}
+        )
+        if fix_states:
+            props["sbom:fix_state"] = ",".join(fix_states)
+        elif rows and all(r.get("inventory_only") for r in rows):
+            props["sbom:patch_status"] = "no known vulnerability"
+        components.append(
+            FrameworkComponent(
+                bom_ref=ref,
+                name=name,
+                version=version or None,
+                publisher=props.get("sbom:supplier"),
+                purl=purl or None,
+                properties=props,
+            )
+        )
+    for src, kids in graph.items():
+        for kid in kids:
+            edges.append(Edge(src=src, rel=REL_DEPENDS_ON, dst=kid))
+
+    tools = meta.get("tools") if isinstance(meta.get("tools"), dict) else {}
+    tool_names = [
+        str(t.get("name") or "").strip()
+        for t in tools.get("components") or []
+        if isinstance(t, dict)
+    ]
+    inventory = [
+        t for t in tool_names if t and t.lower() not in {"devsecshield", "grype"}
+    ]
+    authors = [
+        str(a.get("name") or "").strip()
+        for a in meta.get("authors") or []
+        if isinstance(a, dict)
+    ]
+    in_graph = sum(
+        1
+        for c in components
+        if (c.properties or {}).get("sbom:in_dependency_graph") == "true"
+    )
+    bom_props: dict[str, str] = {
+        "sbom:automation_cyclonedx": "true",
+        "sbom:spec_version": str(sbom_json.get("specVersion") or ""),
+        "sbom:dependency_graph": "complete"
+        if components and in_graph == len(components)
+        else ("partial" if in_graph else "absent"),
+    }
+    if any(authors):
+        bom_props["sbom:author"] = ", ".join(a for a in authors if a)
+    if meta.get("timestamp"):
+        bom_props["sbom:timestamp"] = str(meta["timestamp"])
+    if inventory:
+        bom_props["sbom:inventory_tools"] = ",".join(inventory)
+    if "grype" in {t.lower() for t in tool_names}:
+        bom_props["sbom:vuln_scanner"] = "grype"
+    for key, val in (bom_properties or {}).items():
+        if (
+            isinstance(val, str)
+            and val.strip()
+            and key not in {"sbom:author", "sbom:timestamp"}
+        ):
+            bom_props.setdefault(str(key), val.strip())
+    subject = MetadataComponent(name=str(root.get("name") or "sbom-scan"))
+    return ScanResult(
+        subject=subject, components=components, edges=edges, properties=bom_props
+    )
+
+
 def findings_to_scan_result(
     findings: list[dict[str, Any]],
     *,
@@ -142,7 +345,11 @@ def findings_to_scan_result(
             continue
         name, version = _parse_name_version(dep)
         purl_raw = row.get("purl")
-        purl = str(purl_raw).strip() if isinstance(purl_raw, str) and purl_raw.strip() else None
+        purl = (
+            str(purl_raw).strip()
+            if isinstance(purl_raw, str) and purl_raw.strip()
+            else None
+        )
         bom_ref = _inventory_bom_ref(name, version, purl, i, used_refs)
         # Legacy vuln rows default to assessed; inventory-only rows must opt in.
         vuln_assessed = row.get("vuln_assessed")
@@ -268,7 +475,10 @@ def _supply1(r: ScanResult, req: Requirement) -> CheckResult:
     bad = [c.bom_ref for c in comps if not (c.name and c.version)]
     if bad:
         return FAIL(f"{len(bad)} dependenc(ies) lack name or version", bad)
-    return PASS(f"{len(comps)} dependenc(ies) inventoried with name + version", [c.bom_ref for c in comps])
+    return PASS(
+        f"{len(comps)} dependenc(ies) inventoried with name + version",
+        [c.bom_ref for c in comps],
+    )
 
 
 @register_check(R_S2)
@@ -333,9 +543,7 @@ _CRYPTO_DEP_HINTS = (
 def _supply5(r: ScanResult, req: Requirement) -> CheckResult:
     comps = _sbom_components(r)
     crypto = [
-        c
-        for c in comps
-        if any(h in (c.name or "").lower() for h in _CRYPTO_DEP_HINTS)
+        c for c in comps if any(h in (c.name or "").lower() for h in _CRYPTO_DEP_HINTS)
     ]
     if not crypto:
         return PASS("no crypto-related dependencies in inventory")
@@ -350,7 +558,10 @@ def _supply5(r: ScanResult, req: Requirement) -> CheckResult:
             f"{len(bad)} crypto-related dependenc(ies) with critical/high CVEs",
             bad,
         )
-    return PASS("crypto-related dependencies have no critical/high CVEs", [c.bom_ref for c in crypto])
+    return PASS(
+        "crypto-related dependencies have no critical/high CVEs",
+        [c.bom_ref for c in crypto],
+    )
 
 
 register_manual(
@@ -365,10 +576,19 @@ def run_sbom_compliance(
     evidence: dict[str, dict[str, Any]] | None = None,
     *,
     bom_properties: dict[str, str] | None = None,
+    sbom_json: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Run SBOM supply-chain frameworks; return ``sbom_compliance`` run-object slice."""
+    """Run SBOM supply-chain frameworks; return ``sbom_compliance`` run-object slice.
+
+    With ``sbom_json`` (a CycloneDX SBOM with components) the checks read the document's
+    own fields (:func:`bom_to_scan_result`); without one, the finding rows (older
+    scans).
+    """
     evidence = evidence or {}
-    result = findings_to_scan_result(findings, bom_properties=bom_properties)
+    if isinstance(sbom_json, dict) and sbom_json.get("components"):
+        result = bom_to_scan_result(sbom_json, findings, bom_properties=bom_properties)
+    else:
+        result = findings_to_scan_result(findings, bom_properties=bom_properties)
     report: dict[str, Any] = {
         fw: run_framework(result, fw, evidence.get(fw)) for fw in SBOM_FRAMEWORKS
     }
@@ -382,4 +602,9 @@ from aibom.sbom import frameworks_supply as _sbom_supply  # noqa: E402,F401
 from aibom.compliance.cert_in import sbom as _cert_in_sbom  # noqa: E402,F401
 from aibom.compliance.sebi_cscrf import sbom as _sebi_cscrf_sbom  # noqa: E402,F401
 
-__all__ = ["SBOM_FRAMEWORKS", "findings_to_scan_result", "run_sbom_compliance"]
+__all__ = [
+    "SBOM_FRAMEWORKS",
+    "bom_to_scan_result",
+    "findings_to_scan_result",
+    "run_sbom_compliance",
+]

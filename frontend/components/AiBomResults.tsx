@@ -487,8 +487,8 @@ export default function AiBomResults({
 
   const handleDownloadVex = async () => {
     try {
-      const cached = (scanMetadata as AiBomScanMetadata | null)?.vex_json;
-      const vex = cached ?? (await getCertInVex(tid, "ai_bom", sid));
+      // always the API: it rebuilds a VEX stored by older rules (a blanket not_affected per component)
+      const vex = await getCertInVex(tid, "ai_bom", sid);
       downloadBlob(
         new Blob([JSON.stringify(vex, null, 2)], { type: "application/json" }),
         `ai-bom-vex-${scan_id}.json`,

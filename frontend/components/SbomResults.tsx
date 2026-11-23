@@ -768,8 +768,8 @@ function SbomResultsView({
     const tid = parseInt(teamId ?? "0", 10);
     if (!conversationId || Number.isNaN(tid)) return;
     try {
-      const cached = (scanMetadata as SbomScanMetadata | null)?.vex_json;
-      const vex = cached ?? (await getCertInVex(tid, "sbom_sca", conversationId));
+      // always the API: it rebuilds a VEX stored by older rules (a blanket not_affected per component)
+      const vex = await getCertInVex(tid, "sbom_sca", conversationId);
       downloadBlob(
         new Blob([JSON.stringify(vex, null, 2)], { type: "application/json" }),
         `sbom-vex-${conversationId}.json`,

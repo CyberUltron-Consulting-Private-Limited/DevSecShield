@@ -152,7 +152,26 @@ def _ntia_deps(r: ScanResult, req: Requirement) -> CheckResult:
     comps = _sbom_components(r)
     if not comps:
         return NA("no dependencies")
-    # Projected inventory + depends_on edges IS the dependency relationship set.
+    if _bom_prop(r, "sbom:dependency_graph") is not None:
+        # read off the CycloneDX document: a component counts when the subject reaches
+        # it through `dependencies`
+        missing = [
+            c.bom_ref for c in comps if _prop(c, "sbom:in_dependency_graph") != "true"
+        ]
+        if missing:
+            return FAIL(
+                f"{len(missing)}/{len(comps)} component(s) not reachable from the "
+                "subject in the SBOM's "
+                "dependency graph",
+                missing,
+            )
+        return PASS(
+            f"all {len(comps)} component(s) reachable from the subject "
+            f"({len(r.edges)} dependency edge(s))",
+            [c.bom_ref for c in comps],
+        )
+    # Older scans with no SBOM document: the projected inventory is the relationship
+    # set.
     if r.edges:
         return PASS(
             f"{len(comps)} dependenc(ies) with {len(r.edges)} relationship edge(s)",
@@ -232,9 +251,7 @@ def _ntia_vuln(r: ScanResult, req: Requirement) -> CheckResult:
             [c.bom_ref for c in comps],
         )
     assessed = [
-        c
-        for c in comps
-        if (c.properties or {}).get("sbom:vuln_assessed") == "true"
+        c for c in comps if (c.properties or {}).get("sbom:vuln_assessed") == "true"
     ]
     if assessed:
         return PASS(
@@ -269,7 +286,9 @@ R_SSDF_REACH = _ssdf(
     "SSDF-RV-1.2", "No reachable critical/high vulnerabilities without triage"
 )
 
-R_SSDF_PO = _ssdf("SSDF-PO-1.1", "Define security requirements for software development")
+R_SSDF_PO = _ssdf(
+    "SSDF-PO-1.1", "Define security requirements for software development"
+)
 R_SSDF_PS = _ssdf("SSDF-PS-1.1", "Protect all forms of code from unauthorized access")
 R_SSDF_PW = _ssdf("SSDF-PW-1.1", "Use well-secured design / architecture review")
 R_SSDF_RV = _ssdf("SSDF-RV-3.1", "Analyze vulnerabilities to identify root causes")

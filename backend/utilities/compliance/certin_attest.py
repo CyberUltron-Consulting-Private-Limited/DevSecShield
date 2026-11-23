@@ -143,7 +143,8 @@ def recompute_compliance_for_scan(
             try:
                 from aibom.sbom.compliance import run_sbom_compliance
 
-                data[ckey] = run_sbom_compliance(results, evidence=evidence)
+                bom = data.get("sbom_json") if isinstance(data.get("sbom_json"), dict) else None
+                data[ckey] = run_sbom_compliance(results, evidence=evidence, sbom_json=bom)
                 return data
             except Exception:
                 pass  # fall through to in-place flip
@@ -353,6 +354,21 @@ def overlay_compliance_on_bom(
     )
 
 
+def subject_name_for(scan_metadata: Any) -> str | None:
+    """The SBOM subject's name for a repository scan: ``owner/repo`` from its URL (no credentials, no ``.git``).
+    The UI's SBOM (dashboard/scan_metadata.py) and every certin route use this, so both documents are the same."""
+    meta = scan_metadata if isinstance(scan_metadata, dict) else {}
+    raw = str(meta.get("repo_url") or "").strip()
+    if not raw:
+        return None
+    from urllib.parse import urlparse
+
+    path = (urlparse(raw).path or "").strip("/")
+    if path.endswith(".git"):
+        path = path[:-4]
+    return path or None
+
+
 def bom_dict_from_scan_data(
     scan_type: str,
     scan_data: dict[str, Any],
@@ -388,6 +404,7 @@ def bom_dict_from_scan_data(
 
 
 __all__ = [
+    "subject_name_for",
     "apply_evidence_to_compliance",
     "bom_dict_from_scan_data",
     "compliance_key_for",

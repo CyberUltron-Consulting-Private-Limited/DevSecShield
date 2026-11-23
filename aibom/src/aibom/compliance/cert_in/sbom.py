@@ -73,7 +73,13 @@ def _field_value(r: ScanResult, c: FrameworkComponent, rid: str) -> str | None:
     if rid == "T5-Component-Origin":
         return prop(c, "sbom:origin")
     if rid == "T5-Component-Dependencies":
-        # Inventory of projected deps IS the dependency set of the scanned artifact.
+        graph = _bom_prop(r, "sbom:dependency_graph")
+        if (
+            graph is not None
+        ):  # the CycloneDX document's `dependencies` reach every component (FIX-C1)
+            return "yes" if graph == "complete" else None
+        # Older scans with no SBOM document: the projected inventory is the dependency
+        # set.
         return "yes" if _sbom_components(r) else None
     if rid == "T5-Vulnerabilities":
         return "yes" if props.get("sbom:vuln_assessed") == "true" else None
@@ -186,8 +192,7 @@ def _make_auto_check(
                     _refs(absent),
                 )
             return NOT_EVIDENCEABLE(
-                f"{rid}: not BOM-evidenceable from SBOM findings "
-                f"({CERTIN_DISCLAIMER})",
+                f"{rid}: not BOM-evidenceable from SBOM findings ({CERTIN_DISCLAIMER})",
                 _refs(comps),
             )
 
