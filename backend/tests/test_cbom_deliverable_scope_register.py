@@ -221,7 +221,7 @@ SOURCES = (
     Expect("github.com/e2e-demo/vendor-sdk-manifests (main)", "Repository",
            "https://github.com/e2e-demo/vendor-sdk-manifests", "main", 1,
            "2026-10-17", "2026-10-17", "2 days ago", 7, "FULL",
-           (0, 0, 0, 0), 19, (0, 1, 0, 0), other=1),  # + x/crypto@v0.24.0 (WP3a)
+           (0, 0, 0, 0), 18, (0, 1, 0, 0), other=1),  # x/crypto@v0.24.0 (WP3a) = x/crypto (FIX-B1)
     Expect("Zip upload: cert-lifecycle-lab", "Zip upload", None, None, 1,
            "2026-10-16", "2026-10-16", "3 days ago", 6, "FULL",
            (0, 2, 0, 0), 0, (0, 1, 1, 0)),
@@ -236,8 +236,9 @@ HEADLINE_BY_KIND = (36, 17, 12, 2, 2, 0)  # algorithms, certificates, keys, prot
 HEADLINE_OTHER = 2  # the two advisory library rows (no crypto assetType)
 HEADLINE_BY_IMPACT = (1, 25, 5, 38)  # Critical, High, Medium, clean inventory (Info)
 UNIQUE_CERTIFICATES = 14
-UNIQUE_LIBRARIES = 26  # + Node.js crypto (stdlib), cryptography@42.0.5, golang.org/x/crypto@v0.24.0
-SOURCE_LEVEL_LIBRARIES = 31  # 3 + 0 + 4 + 5 + 0 + 19 + 0
+# + Node.js crypto (stdlib), cryptography@42.0.5; golang.org/x/crypto@v0.24.0 is golang.org/x/crypto (FIX-B1 review)
+UNIQUE_LIBRARIES = 25
+SOURCE_LEVEL_LIBRARIES = 30  # 3 + 0 + 4 + 5 + 0 + 18 + 0
 CROSS_TAB = (
     ("Algorithms", (0, 10, 3, 23)),
     ("Certificates", (1, 5, 2, 9)),

@@ -65,6 +65,7 @@ import {
   liveRunFromDetail,
   refundedHint,
   runCountsLine,
+  runTriggerLabel,
   withLiveProgress,
   RUNS_LIST_ERROR_NOTICE,
   type LiveRun,
@@ -1192,6 +1193,9 @@ export default function CBOMPage() {
                                     ) : "—"}
                                     {runCountsLine(run) && (
                                       <span className="block text-xs text-zinc-500 dark:text-zinc-500 mt-0.5" data-testid={`cbom-result-run-counts-${run.id}`}>{runCountsLine(run)}</span>
+                                    )}
+                                    {runTriggerLabel(run.run) && (
+                                      <span className="block text-xs text-zinc-500 dark:text-zinc-500 truncate" data-testid={`cbom-result-run-trigger-${run.id}`}>{runTriggerLabel(run.run)}</span>
                                     )}
                                   </>
                                 ) : conversation?.zip_file_used ? (

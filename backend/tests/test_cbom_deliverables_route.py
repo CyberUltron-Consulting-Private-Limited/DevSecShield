@@ -412,6 +412,7 @@ def test_each_slug_returns_its_own_pdf_with_the_contract_headers(api, world, slu
     text = squash(full_text(body))  # cells wrap differently in portrait and landscape
     for needle in (
         # the right document: its own number, the data fingerprint and its own footer label
+        # (every deliverable prints its SOW identifier as two digits, D2 included: CBOM-D02-...)
         f"CBOM-D{NUMBERS[slug]:02d}-T1-20261019-{fingerprint[:8]}",
         fingerprint,
         REPORT_META[DELIVERABLES[slug].report_key]["footer_label"],

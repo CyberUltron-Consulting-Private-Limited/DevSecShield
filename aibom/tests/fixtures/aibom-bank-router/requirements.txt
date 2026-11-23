@@ -1,0 +1,13 @@
+# AI libraries -> in the AI BOM
+openai>=1.30.0
+transformers==4.40.0
+pandas>=2.2.0
+# ordinary runtime dependencies -> SBOM only, counted (aibom:dependencies_excluded_non_ai)
+fastapi>=0.109.0
+sqlalchemy>=2.0.25
+redis>=5.0.0
+# development and test tools -> never AI components
+pytest>=7.4.0
+pytest-asyncio>=0.23.0
+mypy>=1.8.0
+ruff>=0.1.0

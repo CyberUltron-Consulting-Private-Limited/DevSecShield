@@ -1,6 +1,8 @@
 """Data-at-rest encryption assessment (SOW D9, CBOM-D09).
 
-Declared configuration only. The document states that stored data was not inspected.
+Declared encryption settings only (SOW 7.2): repository configuration and what the team's cloud accounts, databases
+and hosts report about their own encryption (CBOM Sources, ``cbom_sources.posture_mapper``).  The document states
+that stored data was not read.  Every count is taken from the rows it lists (``_stores``, ``_by_kind``).
 """
 
 from __future__ import annotations
@@ -111,6 +113,7 @@ def _store_register(view: object, styles: Styles, width: float) -> list[Flowable
                 common.linkage_cell(fact, "owner_hint"),
                 common.linkage_cell(fact, "classification"),
                 common.linkage_cell(fact, "data_lifetime"),
+                str(fact.get("source") or ""),
                 common.location_of(fact),
             ]
         )
@@ -129,15 +132,18 @@ def _store_register(view: object, styles: Styles, width: float) -> list[Flowable
                 "Owner hint",
                 "Classification",
                 "Data lifetime",
+                "Source",
                 "Location",
             ),
             rows,
-            (90, 55, 55, 110, 70, 60, 55, 55, 60, 50, 60),
+            (85, 50, 45, 100, 75, 50, 45, 45, 50, 45, 70, 80),
             width,
             styles,
             manual=(5, 6, 7, 8, 9),
             view=view,
             cap_key="stores",
+            cap=text.REGISTER_ROW_CAP,
+            more=text.FULL_LIST_POINTER,
             noun="stores",
         ),
     ]
@@ -166,6 +172,8 @@ def _backups(view: object, styles: Styles, width: float) -> list[Flowable]:
             styles,
             view=view,
             cap_key="backups",
+            cap=text.REGISTER_ROW_CAP,
+            more=text.FULL_LIST_POINTER,
             noun="backups",
         ),
     ]
@@ -202,6 +210,8 @@ def _retention(view: object, styles: Styles, width: float) -> list[Flowable]:
             styles,
             view=view,
             cap_key="retention",
+            cap=text.REGISTER_ROW_CAP,
+            more=text.FULL_LIST_POINTER,
             noun="retention rows",
         )
     )
@@ -230,6 +240,8 @@ def _k8s(view: object, styles: Styles, width: float) -> list[Flowable]:
             styles,
             view=view,
             cap_key="k8s_secrets",
+            cap=text.REGISTER_ROW_CAP,
+            more=text.FULL_LIST_POINTER,
             noun="cluster rows",
         ),
     ]
@@ -244,7 +256,7 @@ def _disk(view: object, styles: Styles, width: float) -> list[Flowable]:
             rows.append(
                 [
                     common.address_of(fact) or attrs.get("device") or "",
-                    kind or attrs.get("engine") or "",
+                    fact.get("native_type") or kind or attrs.get("engine") or "",
                     attrs.get("directive") or attrs.get("cipher") or fact.get("native_type") or "",
                     attrs.get("value_class") or attrs.get("key_source") or "",
                     common.location_of(fact),
@@ -261,6 +273,8 @@ def _disk(view: object, styles: Styles, width: float) -> list[Flowable]:
             styles,
             view=view,
             cap_key="disk",
+            cap=text.REGISTER_ROW_CAP,
+            more=text.FULL_LIST_POINTER,
             noun="disk rows",
         ),
     ]
@@ -293,6 +307,8 @@ def _capability(view: object, styles: Styles, width: float) -> list[Flowable]:
             width,
             styles,
             noun="capability rows",
+            cap=text.REGISTER_ROW_CAP,
+            more=text.FULL_LIST_POINTER,
         ),
     ]
 
@@ -334,6 +350,7 @@ def build_story(view: TeamCbomView, styles: Styles, width: float) -> list[Flowab
     """Document body for SOW deliverable D9."""
     return [
         common.note(REPORT_META[REPORT_KEY]["how_to_read"], styles),
+        common.note(text.DECLARED_SETTINGS_NOTE, styles),
         common.gap(),
         _kpi(view, width),
         common.gap(),
