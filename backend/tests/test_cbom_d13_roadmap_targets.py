@@ -25,13 +25,13 @@ for p in (REPO, TESTS):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 
-from backend.utilities.cbom_sources import algid as A
-from backend.utilities.cbom_sources import crypto_kb
-from backend.utilities.cbom_sources import pqc_targets as T
-from backend.utilities.cbom_sources import waves as W
-from backend.utilities.dashboard.cbom_team_rollup import AssetAgg
-from backend.utilities.pdf import cbom_pqc_roadmap_pdf as roadmap
-from test_cbom_deliverable_pqc_roadmap import (
+from backend.utilities.cbom_sources import algid as A  # noqa: E402
+from backend.utilities.cbom_sources import crypto_kb  # noqa: E402
+from backend.utilities.cbom_sources import pqc_targets as T  # noqa: E402
+from backend.utilities.cbom_sources import waves as W  # noqa: E402
+from backend.utilities.dashboard.cbom_team_rollup import AssetAgg  # noqa: E402
+from backend.utilities.pdf import cbom_pqc_roadmap_pdf as roadmap  # noqa: E402
+from test_cbom_deliverable_pqc_roadmap import (  # noqa: E402
     algo,
     body_of,
     make_view,

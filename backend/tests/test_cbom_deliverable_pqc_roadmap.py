@@ -39,7 +39,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from backend.utilities.cbom_sources import pqc_targets as PQT
+from backend.utilities.cbom_sources import pqc_targets as PQT  # noqa: E402
 from backend.utilities.dashboard.cbom_team_rollup import (  # noqa: E402
     AssetAgg,
     ScanHead,

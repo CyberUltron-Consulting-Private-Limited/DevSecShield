@@ -354,7 +354,7 @@ def roadmap_extras(session: Session, team_id: int, view: Any = None) -> dict[str
         runs[run.id] = run
         ids = [r for r in session.exec(select(CbomCollectedAsset.id).where(
             CbomCollectedAsset.job_id == job.id, CbomCollectedAsset.attempt == job.attempts,
-            CbomCollectedAsset.quantum_vulnerable == True)).all()]
+            CbomCollectedAsset.quantum_vulnerable == True)).all()]  # noqa: E712
         if not ids:
             continue
         for item in node_items(session, team_id, run, asset_ids=ids):

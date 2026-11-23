@@ -21,7 +21,7 @@ REPO = Path(__file__).resolve().parents[2]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
-from backend.utilities.cbom_sources import qgrade as QG
+from backend.utilities.cbom_sources import qgrade as QG  # noqa: E402
 
 
 def _ctx(*, x=None, y=None, z=None, source_x=None, criticality=None, exposure=None):
