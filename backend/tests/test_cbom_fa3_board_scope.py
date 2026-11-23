@@ -237,7 +237,8 @@ def test_printed_readiness_formula_reproduces_the_printed_figure():
 # ---------------------------------------------------------------------------------------------- A-11 coverage + RBI
 def test_compliance_rows_state_their_source_basis_and_are_not_estate_compliance():
     text = board_text(staging_like_view())
-    assert "EU CRA 0.0% 0 2 0 0 1 of 5 sources" in text
+    # PR #485 M4: EU CRA does not bind an Indian NBFC, so it is named as not applicable instead of tabled
+    assert "EU CRA 0.0% 0 2 0 0 1 of 5 sources" not in text and "not shown (NBFC in India" in text
     assert "CNSA 2.0 80.0% 4 1 0 0 5 of 5 sources" in text
     assert "not a measure of estate-wide compliance" in text
 
@@ -327,10 +328,13 @@ def test_authored_text_refers_to_documents_by_sow_id():
 # ---------------------------------------------------------------------------------------------- A-09 reconciliation
 def test_population_reconciliation_line_in_d1_and_d14():
     view = staging_like_view()
-    expected = ("Population reconciliation: 12 asset occurrences (one per source that observed the asset: 2 in code "
-                "scans, 10 in CBOM Sources collections); 10 distinct assets in the quantum risk register (D12)")
+    # PR #485 M6: an occurrence is one per source, except a certificate (counted once); D1 prints the arithmetic
+    expected = ("Population reconciliation: 12 asset occurrences (2 in code scans, 10 in CBOM Sources collections; an "
+                "asset that two sources observe is one occurrence in each, except a certificate, which is counted "
+                "once); 10 distinct assets in the quantum risk register (D12)")
     assert expected in board_text(view)
-    assert expected in scope_text(view)
+    assert "Code scans: 2 occurrences. Total: 12 asset occurrences in this document." in scope_text(view)
+    assert "holds 10 distinct assets" in scope_text(view)
 
 
 # ---------------------------------------------------------------------------------------------- A-10 D1 population

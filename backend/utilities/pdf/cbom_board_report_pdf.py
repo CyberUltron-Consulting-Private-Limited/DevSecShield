@@ -18,13 +18,18 @@ Design decisions, in one place:
   legacy-format scans without any finding data all give "NOT ASSESSED" with the reason; none of
   them prints a band name.  A genuinely clean inventory (assets, no findings) is grade A.
 * **Material risks** are the issue assets, not the whole inventory (a Low inventory-only row
-  has no finding to report).  Order: impact rank, then scanner risk score (absent last), then
-  name.  Nothing here derives weakness from ``weak`` / ``crypto_strength`` (plan F-04).
-* **Regulatory exposure** prints the pooled counts of the view as they are; "Pass" includes
-  requirements passed on attached evidence (that is what the coverage definition counts). Each row says on how
-  many of the team's sources it is based, and the lead says the percentages are not estate-wide compliance
-  (SOW audit A-11). The collected-infrastructure clauses cite only the RBI instrument of the team's regulated-entity
-  type (NBFC by default).
+  has no finding to report), each asset once across sources (``population.asset_identity``).  Order: impact rank,
+  then scanner risk score (absent last), then name.  Nothing here derives weakness from ``weak`` /
+  ``crypto_strength`` (plan F-04).
+* **Trend**: the headline figures against the previous issue of this report (``view.previous_issue``, recorded by
+  the route), or "first issue" when none is recorded.
+* **Post-quantum roadmap summary**: every current quantum-vulnerable asset (algorithms, certificates, keys,
+  protocols) grouped by the target its usage calls for, so the total equals section 3 (review M5).
+* **Regulatory exposure** prints the pooled counts of the frameworks that bind the team (its regulatory profile:
+  jurisdiction, entity type, card data, SEBI, government; ``crypto_kb.applies``) and names the others as not
+  applicable; "Pass" includes requirements passed on attached evidence. Each row says on how many of the team's
+  sources it is based, and the lead prints the counts the rows use (SOW audit A-11, review M3/M4). The
+  collected-infrastructure clauses are the run API's, filtered the same way.
 * **Readiness** prints the formula with the very numbers of the view (Rule P): safe / (safe + quantum-vulnerable +
   broken today), the rule of ``cbom_metrics.quantum_readiness_pct`` (SOW audit A-07).
 * **Remediation** rows name each finding by the knowledge base's title and fix (SOW audit A-12); the quantum risk
@@ -78,6 +83,7 @@ from backend.utilities.pdf.cbom_deliverable_common import (
     Styles,
     build_document,
     dense_table,
+    document_id,
     fmt_date_utc,
     kpi_strip,
     pdf_text,
@@ -161,7 +167,10 @@ EXPOSURE_LEGACY_NOTE = (
     "No compliance results are available: {pooled} of {sources} sources pooled "
     "({legacy} legacy excluded). Re-scan the legacy-format sources to include them."
 )
-EXPOSURE_POOLED = "{pooled} of {sources} sources pooled ({legacy} legacy excluded)."
+EXPOSURE_POOLED = "Rows are based on {pooled} of {sources} sources{legacy}; each row shows its own count."
+EXPOSURE_NOT_APPLICABLE = (
+    "Not applicable to this team and not shown ({profile}): {frameworks}."
+)
 EXPOSURE_BASIS = (
     "Each row is computed only over the sources whose results that framework's checks can read, shown in the last "
     "column as N of {sources} sources. A percentage is therefore not a measure of estate-wide compliance: a row "
@@ -171,16 +180,14 @@ EXPOSURE_ENTITY = (
     "Regulated entity: {label} (team setting). RBI clauses are cited from {instrument}; RBI directions for other "
     "entity types are not applied."
 )
-ENTITY_INSTRUMENTS = {
-    "nbfc": "the RBI NBFC Cybersecurity, Technology: Risk, Resilience and Assurance Framework Directions 2026",
-    "bank": "the RBI Commercial Banks Cybersecurity, Technology: Risk, Resilience and Assurance Framework "
-            "Directions 2026",
-    "other": "the RBI Master Direction on IT Governance, Risk, Controls and Assurance Practices (2023)",
-}
+EXPOSURE_ENTITY_NONE = (
+    "Regulated entity: {label} (team setting). No RBI cybersecurity direction binds this entity type, so no RBI "
+    "clause is cited."
+)
 EXPOSURE_COLLECTED_LEAD = (
-    "Collected infrastructure (CBOM Sources): the regulatory clauses that the findings of each "
-    "source's latest collection touch, with the number of assets concerned (knowledge-base "
-    "mapping, the same as the run's compliance view; a clause listed here is not a verdict)."
+    "Collected infrastructure (CBOM Sources): the regulatory clauses that bind the team and that the findings of "
+    "each source's latest collection touch, with the number of assets concerned (knowledge-base mapping, the same "
+    "as the run's compliance view; a clause listed here is not a verdict)."
 )
 PQC_COLLECTED_ONLY = (
     "{count} quantum-vulnerable public-key occurrences were found on certificates, endpoints and "
@@ -193,15 +200,26 @@ REMEDIATION_NOTE = (
 NO_ISSUES_RISKS = "No current asset carries a finding."
 NO_ISSUES_REMEDIATION = "No findings to remediate."
 PQC_FAMILIES_LEAD = (
-    "Quantum-vulnerable public-key algorithms in the current assets, grouped by the NIST "
-    "post-quantum standard they should migrate to."
+    "Every current quantum-vulnerable asset ({total}, as in section 3: algorithms, certificates, keys and "
+    "protocols), grouped by the post-quantum target its use calls for: key establishment moves to {kem}, "
+    "signatures, certificates and signing keys to {sig} (national security systems under CNSA 2.0: {kem5} and "
+    "{sig5}). A code-scan algorithm keeps the target its scan recorded."
+)
+TREND_HEADING = "Trend against the previous issue"
+TREND_LEAD = "Previous issue: {document} (as of {as_of}). Change = this issue minus the previous one."
+TREND_FIRST = (
+    "First issue: no earlier issue of this report is recorded for the team, so there is no trend yet. The next "
+    "issue will compare its figures with this one ({document})."
 )
 PQC_DETAIL_POINTER = (
     "Per-asset detail, with wave, owner and target-date columns for the assessor, is in the "
     "PQC Migration Roadmap. {order_note}"
 )
 TARGET_NOT_RECORDED = "Target not recorded (legacy scan)"
-SCANS_NOTE = "The Basis box on page 1 counts the scans excluded from this report."
+SCANS_NOTE = (
+    "Every result this report includes: code scans and the latest collection of each CBOM Sources source. The "
+    "Basis box on page 1 counts the scans excluded from this report."
+)
 SCANS_OMITTED = "{omitted} further scans omitted from this list."
 GRADE_NOT_ASSIGNED = "No grade was assigned. {reason}"
 GRADE_WORKED = (
@@ -226,6 +244,18 @@ _UNRANKED = len(IMPACT_LEVELS)
 # "1 sources" -> "1 source": the authored governance templates are written in the plural
 _SINGULAR = re.compile(
     r"\b1 (unique certificate|requirement|quantum-vulnerable asset occurrence|source|quantum-vulnerable asset)s\b"
+)
+_TREND_ROWS = (  # (snapshot field, label, lower is better)
+    ("grade", "Posture grade", True),
+    ("score", "Risk score", True),
+    ("issues", "Issue assets", True),
+    ("critical", "Critical issue assets", True),
+    ("high", "High issue assets", True),
+    ("quantum_vulnerable", "Quantum-vulnerable occurrences", True),
+    ("readiness", "Quantum readiness (%)", False),
+    ("q1", "Q1 Critical (register)", True),
+    ("q0", "Q0 Unknown (register)", True),
+    ("expired", "Expired certificates", True),
 )
 # grade box colours for A and B mirror report_branding.build_kpi_grid
 _GRADE_OK_BG = colors.HexColor("#ECFDF5")
@@ -284,7 +314,7 @@ def configuration_posture_line(view: TeamCbomView) -> str | None:
     )
     return (
         f"Configuration posture findings: {findings} "
-        f"({resources} resources, {sources} sources not assessed)"
+        f"({_count(resources, 'resource')}, {_count(sources, 'source')} not assessed)"
     )
 
 
@@ -334,12 +364,27 @@ def _risk_key(asset: AssetAgg):
 
 
 def issue_assets(view: TeamCbomView) -> list[AssetAgg]:
-    """Current assets with at least one finding code, most material first."""
-    return sorted((a for a in view.assets if a.current and a.finding_codes), key=_risk_key)
+    """Current assets with at least one finding code, most material first; an asset observed by several sources
+    is listed once, by its most material observation (review M7b)."""
+    ordered = sorted((a for a in view.assets if a.current and a.finding_codes), key=_risk_key)
+    seen: set[tuple[str, ...]] = set()
+    out = []
+    for asset in ordered:
+        key = population.asset_identity(asset)
+        if key not in seen:
+            seen.add(key)
+            out.append(asset)
+    return out
+
+
+def observed_by(view: TeamCbomView, asset: AssetAgg) -> int:
+    """How many current sources observed the asset (1 for an asset only its own source holds)."""
+    key = population.asset_identity(asset)
+    return len({a.source_key for a in view.assets if a.current and population.asset_identity(a) == key})
 
 
 def material_risks(view: TeamCbomView, limit: int = TOP_RISKS) -> list[AssetAgg]:
-    """The ``limit`` most material issue assets (Critical first)."""
+    """The ``limit`` most material issue assets (Critical first), each asset once."""
     return issue_assets(view)[: max(0, int(limit))]
 
 
@@ -386,17 +431,15 @@ class FamilyRow:
 
 
 def pqc_families(view: TeamCbomView) -> list[FamilyRow]:
-    """Current quantum-vulnerable algorithm occurrences grouped by NIST target family."""
-    groups: dict[str, list[AssetAgg]] = {}
-    for asset in view.assets:
-        if asset.current and asset.asset_type == ASSET_ALGORITHM and asset.quantum_vulnerable:
-            groups.setdefault(asset.pqc_migration_target or TARGET_NOT_RECORDED, []).append(asset)
-    rows = [
-        FamilyRow(family, len(items), len({a.source_key for a in items}))
-        for family, items in groups.items()
-    ]
-    rows.sort(key=lambda r: (-r.occurrences, r.family.casefold()))
-    return rows
+    """Every current quantum-vulnerable asset grouped by its migration target (``population.pqc_target_groups``):
+    the occurrences add up to ``view.pqc_vulnerable`` (section 3)."""
+    return [FamilyRow(group["target"], group["occurrences"], group["sources"])
+            for group in population.pqc_target_groups(view)]
+
+
+def _kinds_text(kinds: Counter) -> str:
+    return ", ".join(f"{population.KIND_LABELS[k].lower()} {n}" for k, n in sorted(
+        kinds.items(), key=lambda kv: (-kv[1], population.KINDS.index(kv[0]))))
 
 
 @dataclass(frozen=True)
@@ -497,9 +540,46 @@ def _percent(ratio: float | None) -> str:
     return "n/a" if ratio is None else f"{ratio * 100:.1f}%"
 
 
+def binding_frameworks(view: TeamCbomView) -> list:
+    """The pooled frameworks that bind the team (its regulatory profile; review M4), engine order."""
+    return [pool for pool in view.frameworks if kb_text.framework_binds(pool.framework, view)]
+
+
+def not_applicable_frameworks(view: TeamCbomView) -> list[str]:
+    """Labels of the pooled frameworks that do not bind the team (named, never silently dropped)."""
+    return [authored.framework_label(pool.framework) for pool in view.frameworks
+            if not kb_text.framework_binds(pool.framework, view)]
+
+
+def profile_text(view: TeamCbomView) -> str:
+    """"NBFC in India, no payment-card data, not SEBI-regulated, not a government entity"."""
+    profile = kb_text.view_profile(view)
+    flags = set(profile.get("flags") or ())
+    return (f"{kb_text.entity_label(profile['entity'])} in India, "
+            + ("payment-card data processed" if "processes_card_data" in flags else "no payment-card data") + ", "
+            + ("SEBI-regulated" if "sebi_regulated" in flags else "not SEBI-regulated") + ", "
+            + ("a government entity" if "government_entity" in flags else "not a government entity"))
+
+
+def exposure_basis(view: TeamCbomView) -> str:
+    """The lead of the framework table: the source counts the rows use (review M3), never a different count."""
+    shown = binding_frameworks(view)
+    total = len(view.sources)
+    counts = sorted({int(pool.sources_pooled) for pool in shown})
+    if not counts:
+        pooled = "0"
+    elif len(counts) == 1:
+        pooled = str(counts[0])
+    else:
+        pooled = f"{counts[0]} to {counts[-1]}"
+    legacy = int(view.compliance_legacy_excluded or 0)
+    return EXPOSURE_POOLED.format(pooled=pooled, sources=total,
+                                  legacy=f" ({legacy} in legacy format excluded)" if legacy else "")
+
+
 def exposure_rows(view: TeamCbomView) -> list[list[str]]:
-    """One row per pooled framework (engine order): label, coverage, pass, fail, NBE, OOS, and the basis "N of M
-    sources" (M = every source of the report, so a row pooled from one repository says so)."""
+    """One row per pooled framework that binds the team (engine order): label, coverage, pass, fail, NBE, OOS, and
+    the basis "N of M sources" (M = every source of the report, so a row pooled from one repository says so)."""
     total = len(view.sources)
     return [
         [
@@ -511,7 +591,7 @@ def exposure_rows(view: TeamCbomView) -> list[list[str]]:
             str(pool.out_of_scope),
             f"{pool.sources_pooled} of {total} source{'' if total == 1 else 's'}",
         ]
-        for pool in view.frameworks
+        for pool in binding_frameworks(view)
     ]
 
 
@@ -550,14 +630,15 @@ def q0_reason_text(view: TeamCbomView) -> str:
 
 
 def scan_rows(view: TeamCbomView) -> list[list[str]]:
-    """Included scans grouped by source (newest first inside a source) for Appendix B."""
+    """Every included result for Appendix B (review M7a): the code scans grouped by source (newest first inside a
+    source), then each CBOM Sources source's latest collection (its run)."""
     labels = {source.key: source.label for source in view.sources}
     included = [scan for scan in view.scans if scan.exclusion is None]
     included.sort(key=lambda s: (s.created_at, s.scan_id), reverse=True)
     included.sort(key=lambda s: (labels.get(s.source_key, s.source_label).casefold(), s.source_key))
-    return [
+    rows = [
         [
-            f"#{scan.scan_id}",
+            f"Scan #{scan.scan_id}",
             labels.get(scan.source_key, scan.source_label),
             fmt_date_utc(scan.created_at),
             "Full" if scan.fidelity == FIDELITY_FULL else "Legacy format",
@@ -565,6 +646,66 @@ def scan_rows(view: TeamCbomView) -> list[list[str]]:
         ]
         for scan in included
     ]
+    for found in sorted(view.collections or (), key=lambda c: (c.label.casefold(), c.key)):
+        rows.append([f"Run #{found.run_id}", f"{labels.get(found.key, found.label)}\nCBOM Sources collection",
+                     fmt_date_utc(found.observed_at), "Full", "Current"])
+    return rows
+
+
+# ---------------------------------------------------------------------------------------------
+# Trend against the previous issue (review M7c)
+# ---------------------------------------------------------------------------------------------
+def issue_snapshot(view: TeamCbomView) -> dict[str, Any]:
+    """The headline figures this issue prints, as ``cbom_board_issues`` records them for the next issue."""
+    posture = posture_grade(view)
+    total, _breakdown = _issue_breakdown(view)
+    grades = (_register_summary(view) or {}).get("q_grades") or {}
+    return {
+        "document_id": document_id(view, DELIVERABLE_NUMBER),
+        "as_of": view.as_of.isoformat(),
+        "grade": posture.grade if posture.assessed else authored.GRADE_NOT_ASSESSED,
+        "score": posture.score,
+        "issues": total,
+        "critical": posture.critical,
+        "high": posture.high,
+        "quantum_vulnerable": int(view.pqc_vulnerable),
+        "readiness": None if view.readiness_pct is None else round(float(view.readiness_pct), 1),
+        "q1": int(grades.get("Q1", 0) or 0) if isinstance(grades, dict) and _register_summary(view) else None,
+        "q0": int(grades.get("Q0", 0) or 0) if isinstance(grades, dict) and _register_summary(view) else None,
+        "expired": certificate_posture(view).expired,
+    }
+
+
+def _change(name: str, before: Any, now: Any, lower_better: bool) -> str:
+    if before is None or now is None:
+        return "n/a"
+    if name == "grade":
+        if before == now:
+            return "no change"
+        ranks = "ABCDEF"
+        if before in ranks and now in ranks:
+            return "better" if ranks.index(now) < ranks.index(before) else "worse"
+        return "changed"
+    delta = round(float(now) - float(before), 1)
+    if delta == 0:
+        return "no change"
+    better = (delta < 0) == lower_better
+    number = f"{delta:+.1f}" if name == "readiness" else f"{int(delta):+d}"
+    return f"{number} ({'better' if better else 'worse'})"
+
+
+def trend_rows(view: TeamCbomView) -> list[list[str]] | None:
+    """``[measure, previous, now, change]`` against ``view.previous_issue``; None for the first issue."""
+    before = getattr(view, "previous_issue", None)
+    if not isinstance(before, dict) or not before.get("document_id"):
+        return None
+    now = issue_snapshot(view)
+
+    def shown(value: Any) -> str:
+        return "n/a" if value is None else (f"{value:.1f}" if isinstance(value, float) else str(value))
+
+    return [[label, shown(before.get(name)), shown(now.get(name)), _change(name, before.get(name), now.get(name), low)]
+            for name, label, low in _TREND_ROWS]
 
 
 # ---------------------------------------------------------------------------------------------
@@ -708,12 +849,13 @@ def _quantum_sentence(view: TeamCbomView) -> str:
     graded = view.pqc_safe + view.pqc_vulnerable + view.pqc_broken_today
     if view.readiness_pct is None:
         return (
-            "Quantum readiness cannot be computed because no algorithm occurrence could be graded."
+            "Quantum readiness cannot be computed because no asset occurrence could be graded."
         )
     verb = "uses" if view.pqc_vulnerable == 1 else "use"
     return (
         f"Quantum readiness is {view.readiness_pct:.1f}%: {view.pqc_vulnerable} of {graded} "
-        f"gradeable algorithm occurrences {verb} quantum-vulnerable public-key cryptography"
+        f"gradeable asset occurrences (algorithms, keys, certificates and protocols) {verb} quantum-vulnerable "
+        "public-key cryptography"
         + (f" and {view.pqc_broken_today} {'is' if view.pqc_broken_today == 1 else 'are'} broken today (MD5, DES and "
            "the like)." if view.pqc_broken_today else ".")
     )
@@ -727,12 +869,16 @@ def _scope_counts(view: TeamCbomView) -> tuple[int, int, int]:
     return code_sources, max(int(view.included) - collections, 0), collections
 
 
+def _repos(number: int) -> str:
+    return f"{number} {'repository or upload' if number == 1 else 'repositories and uploads'}"
+
+
 def scope_captions(view: TeamCbomView) -> tuple[str, str]:
     """Captions of the "Sources" and "Scans included" summary cards."""
     code_sources, code_scans, collections = _scope_counts(view)
     if not collections:
         return "repositories and uploads assessed", f"of {view.eligible} eligible completed scans"
-    return (f"{code_sources} repositories and uploads, {collections} CBOM Sources",
+    return (f"{_repos(code_sources)}, {collections} CBOM Sources",
             f"of {view.eligible} eligible: {_count(code_scans, 'code scan')}, "
             f"{_count(collections, 'Sources collection')}")
 
@@ -742,7 +888,7 @@ def scope_sentence(view: TeamCbomView) -> str:
     code_sources, code_scans, collections = _scope_counts(view)
     if not collections:
         return f"Across {_count(len(view.sources), 'source')} and {_count(view.included, 'completed scan')}"
-    return (f"Across {_count(len(view.sources), 'source')} ({code_sources} repositories and uploads, "
+    return (f"Across {_count(len(view.sources), 'source')} ({_repos(code_sources)}, "
             f"{collections} CBOM Sources) and {_count(view.included, 'completed result')} "
             f"({_count(code_scans, 'code scan')}, {_count(collections, 'Sources collection')})")
 
@@ -804,10 +950,10 @@ def _summary_section(view: TeamCbomView, posture: PostureGrade, styles: Styles, 
     )
     first.setStyle(_flat())
     detail = (
-        f"{view.pqc_vulnerable} of {view.pqc_safe + view.pqc_vulnerable + view.pqc_broken_today} algorithm occurrences "
-        "quantum-vulnerable"
+        f"{view.pqc_vulnerable} of {view.pqc_safe + view.pqc_vulnerable + view.pqc_broken_today} gradeable asset "
+        "occurrences quantum-vulnerable"
         if view.readiness_pct is not None
-        else "no algorithm occurrence could be graded"
+        else "no asset occurrence could be graded"
     )
     sources_caption, scans_caption = scope_captions(view)
     second = kpi_strip(
@@ -823,7 +969,20 @@ def _summary_section(view: TeamCbomView, posture: PostureGrade, styles: Styles, 
     story: list[Flowable] = [*section_heading(H_SUMMARY, styles), first, _gap(), second, _gap(8)]
     for text in _summary_paragraphs(view, posture):
         story += [_para(text, styles), _gap(4)]
-    return story
+    return [*story, *_trend_block(view, styles)]
+
+
+def _trend_block(view: TeamCbomView, styles: Styles) -> list[Flowable]:
+    if view.is_empty:
+        return []
+    story: list[Flowable] = [_gap(2), _para(TREND_HEADING, styles, "box_title")]
+    rows = trend_rows(view)
+    if rows is None:
+        return [*story, _para(TREND_FIRST.format(document=document_id(view, DELIVERABLE_NUMBER)), styles, "muted")]
+    before = view.previous_issue or {}
+    return [*story, _para(TREND_LEAD.format(document=before.get("document_id"), as_of=before.get("as_of") or "n/a"),
+                          styles, "muted"), _gap(3),
+            dense_table(["Measure", "Previous issue", "This issue", "Change"], rows, [200, 100, 100, 140])]
 
 
 def _risks_section(view: TeamCbomView, styles: Styles):
@@ -838,6 +997,9 @@ def _risks_section(view: TeamCbomView, styles: Styles):
         # what the asset is (a library, an encryption setting ...), never "Other" (SOW audit A-10)
         kind = _ASSET_TYPE_LABEL.get(asset.asset_type) or _KIND_LABEL[population.asset_kind(asset)]
         where = f"{asset.source_label}\n{asset.location}" if asset.location else asset.source_label
+        others = observed_by(view, asset) - 1
+        if others > 0:
+            where += f"\nalso observed by {_count(others, 'other source')}"
         rows.append(
             [
                 str(rank),
@@ -871,7 +1033,7 @@ def _quantum_section(view: TeamCbomView, styles: Styles, w: float):
         return [*story, _para(NO_DATA_NOTE, styles, "muted")]
     strip = kpi_strip(
         [
-            ("Readiness", _pct_or_na(view), "share of gradeable algorithm occurrences"),
+            ("Readiness", _pct_or_na(view), "share of gradeable asset occurrences"),
             ("Quantum-vulnerable", str(view.pqc_vulnerable), "public-key occurrences to migrate"),
             ("Quantum-safe", str(view.pqc_safe), f"of which {view.pqc_hybrid} hybrid"),
             ("Not gradeable", str(view.pqc_ungraded), "excluded from readiness"),
@@ -932,10 +1094,20 @@ def _exposure_section(view: TeamCbomView, styles: Styles):
         "legacy": view.compliance_legacy_excluded,
     }
     collected = _collected_exposure(view, styles)
-    if not view.frameworks:
+    hidden = not_applicable_frameworks(view)
+    hidden_note = ([_gap(3), _para(EXPOSURE_NOT_APPLICABLE.format(profile=profile_text(view),
+                                                                   frameworks=", ".join(hidden)), styles, "muted")]
+                   if hidden else [])
+    shown = binding_frameworks(view)
+    if not shown:
         if collected:
-            return [*story, *collected]
+            return [*story, *collected, *hidden_note]
+        if hidden:
+            return [*story, *hidden_note]
         return [*story, _para(EXPOSURE_LEGACY_NOTE.format(**basis), styles, "muted")]
+    rbi_row = any(pool.framework == "rbi_free_ai_protection" for pool in shown)
+    rbi_note = ([_gap(4), _para(authored.rbi_mapping_note(kb_text.view_profile(view)["entity"]), styles, "muted")]
+                if rbi_row else [])
     headers = [
         "Framework",
         "Coverage",
@@ -948,33 +1120,47 @@ def _exposure_section(view: TeamCbomView, styles: Styles):
     table = dense_table(headers, exposure_rows(view), [190, 56, 44, 44, 70, 66, 70])
     return [
         *story,
-        _para(EXPOSURE_POOLED.format(**basis), styles),
+        _para(exposure_basis(view), styles),
         _gap(2),
         _para(EXPOSURE_BASIS.format(sources=len(view.sources)), styles, "muted"),
         _gap(3),
         table,
-        _gap(4),
-        _para(authored.RBI_MAPPING_NOTE, styles, "muted"),
+        *rbi_note,
         _gap(3),
         _para(authored.METHOD_COVERAGE, styles, "muted"),
+        *hidden_note,
         *([_gap(6), *collected] if collected else []),
     ]
+
+
+def clause_title(framework: str, clause: str) -> str:
+    """"NSA CNSA 2.0 FAQ (April 2024)", never "NSA CNSA 2.0 CNSA 2.0 FAQ ..." (the clause may repeat the framework)."""
+    words = framework.split()
+    for start in range(len(words)):
+        tail = " ".join(words[start:])
+        if tail and clause.startswith(tail):
+            return " ".join([*words[:start], clause]).strip()
+    return f"{framework} {clause}"
 
 
 def _collected_exposure(view: TeamCbomView, styles: Styles) -> list[Flowable]:
     rows = collected_clauses(view)
     if not rows:
         return []
-    body = [[f"{r.framework} {r.clause}", str(r.assets), ", ".join(r.codes)
+    # board-readable finding names (the knowledge base's titles), never raw codes (review M7d)
+    body = [[clause_title(r.framework, r.clause), str(r.assets),
+             "; ".join(dict.fromkeys(authored.finding_label(code) for code in r.codes))
              + (f" (algorithm not recorded for {r.unrecorded}: verify)" if r.unrecorded else "")] for r in rows]
-    entity = getattr(view, "regulated_entity", None) or kb_text.DEFAULT_ENTITY
-    instrument = ENTITY_INSTRUMENTS.get(entity, ENTITY_INSTRUMENTS[kb_text.DEFAULT_ENTITY])
+    entity = kb_text.view_profile(view)["entity"]
+    found = authored.entity_instrument(entity)
+    entity_line = (EXPOSURE_ENTITY.format(label=kb_text.entity_label(entity), instrument=f"{found[0]}, {found[1]}")
+                   if found else EXPOSURE_ENTITY_NONE.format(label=kb_text.entity_label(entity)))
     return [
         _para(EXPOSURE_COLLECTED_LEAD, styles),
         _gap(2),
-        _para(EXPOSURE_ENTITY.format(label=kb_text.entity_label(entity), instrument=instrument), styles, "muted"),
+        _para(entity_line, styles, "muted"),
         _gap(3),
-        dense_table(["Framework and clause", "Assets", "Finding codes"], body, [300, 50, 190]),
+        dense_table(["Framework and clause", "Assets", "Findings"], body, [260, 50, 230]),
     ]
 
 
@@ -1009,19 +1195,23 @@ def _pqc_section(view: TeamCbomView, styles: Styles):
     if view.is_empty:
         story.append(_para(NO_DATA_NOTE, styles, "muted"))
     else:
-        families = pqc_families(view)
-        if families:
+        groups = population.pqc_target_groups(view)
+        if groups:
+            total = sum(g["occurrences"] for g in groups)
+            lead = PQC_FAMILIES_LEAD.format(
+                total=total, kem=population.pq_target(population.USAGE_KEM),
+                sig=population.pq_target(population.USAGE_SIGNATURE),
+                kem5=population.pq_target(population.USAGE_KEM, 5),
+                sig5=population.pq_target(population.USAGE_SIGNATURE, 5))
+            rows = [[g["target"], population.USAGE_LABELS[g["usage"]], _kinds_text(g["kinds"]),
+                     str(g["occurrences"]), str(g["sources"])] for g in groups]
+            rows.append(["Total", "", "", str(total), str(len({a.source_key for a in
+                                                                population.quantum_vulnerable_assets(view)}))])
             story += [
-                _para(PQC_FAMILIES_LEAD, styles),
+                _para(lead, styles),
                 _gap(3),
-                dense_table(
-                    ["Target family", "Occurrences", "Sources"],
-                    [[f.family, str(f.occurrences), str(f.sources)] for f in families],
-                    [380, 80, 80],
-                ),
+                dense_table(["Target", "Use", "What", "Occurrences", "Sources"], rows, [96, 190, 154, 56, 44]),
             ]
-        elif view.pqc_vulnerable:
-            story.append(_para(PQC_COLLECTED_ONLY.format(count=view.pqc_vulnerable), styles))
         else:
             story.append(_para(authored.PQC_NO_VULNERABLE_TEXT, styles))
     timeline = [
@@ -1113,9 +1303,9 @@ def _scans_appendix(view: TeamCbomView, styles: Styles):
     story += [_para(SCANS_NOTE, styles, "muted"), _gap(3)]
     story.append(
         dense_table(
-            ["Scan", "Source", "Scanned (UTC)", "Fidelity", "Role"],
+            ["Result", "Source", "Scanned (UTC)", "Fidelity", "Role"],
             rows[:MAX_SCAN_ROWS],
-            [40, 250, 80, 80, 90],
+            [56, 234, 80, 80, 90],
         )
     )
     if len(rows) > MAX_SCAN_ROWS:
@@ -1174,13 +1364,20 @@ __all__ = [
     "RemediationRow",
     "build_pdf",
     "certificate_posture",
+    "binding_frameworks",
+    "clause_title",
+    "exposure_basis",
     "exposure_rows",
     "governance_metrics",
     "governance_rows",
+    "issue_snapshot",
     "issue_assets",
     "material_risks",
+    "not_applicable_frameworks",
+    "observed_by",
     "pqc_families",
     "posture_grade",
     "remediation_rows",
     "scan_rows",
+    "trend_rows",
 ]

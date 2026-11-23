@@ -967,7 +967,8 @@
    "source": "https://www.rbi.org.in/Scripts/NotificationUser.aspx?Id=12562",
    "applicability": "SCBs (excl. RRBs), SFBs, Payments Banks, NBFCs (Top/Upper/Middle layer), CICs, AIFIs",
    "para_16_cryptographic_controls": "The key length, algorithms, cipher suites and applicable protocols used in transmission channels, processing of data and authentication purpose shall be strong. REs shall adopt internationally accepted and published standards that are not deprecated/ demonstrated to be insecure/ vulnerable and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions.",
-   "status_note": "Repealed for Commercial Banks by the Commercial Banks Directions 2026 (para 230) and for NBFCs by the NBFC Directions 2026 (para 155: 'the existing directions, instructions, and guidelines relating to Information Technology Framework and IT Governance as applicable to Non-Banking Financial Companies stand repealed'); status for other RE classes not verified."
+   "status_note": "Superseded for every entity type it covered (SCBs, SFBs, Payments Banks, NBFCs of the Top, Upper and Middle layers, Credit Information Companies, AIFIs) by the entity-wise Cybersecurity, Technology: Risk, Resilience and Assurance Framework Directions 2026 of 31 July 2026 (commercial banks para 230, NBFCs para 155, SFBs and Payments Banks para 229, AIFIs and CICs para 224); checked on rbi.org.in 2026-11-24.",
+   "superseded": true
   },
   "commercial_banks_directions_2026": {
    "title": "Reserve Bank of India (Commercial Banks – Cybersecurity, Technology: Risk, Resilience and Assurance Framework) Directions, 2026 (Updated as on October 01, 2026)",
@@ -999,6 +1000,56 @@
    "para_118_cryptographic_controls": "The key length, algorithms, cipher suites, and applicable protocols used in transmission channels, processing of data, and authentication purposes shall be strong. The NBFC shall adopt internationally accepted and published standards that are not deprecated / demonstrated to be insecure / vulnerable, and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions.",
    "para_155_repeal": "With the issue of these Directions, the existing directions, instructions, and guidelines relating to Information Technology Framework and IT Governance as applicable to Non-Banking Financial Companies stand repealed, as communicated vide circular no.DoS.CO.PPG.66/11.01.005/2026-27 dated July 31, 2026 .",
    "at_rest_note": "No paragraph on encryption of data at rest (the Commercial Banks Directions' para 106 has no NBFC counterpart; Chapter IV para 33 asks end-to-end encryption for mobile services only)."
+  },
+  "small_finance_banks_directions_2026": {
+   "title": "Reserve Bank of India (Small Finance Banks - Cybersecurity, Technology: Risk, Resilience and Assurance Framework) Directions, 2026",
+   "ref": "RBI/DoS/2026-27/419; DoS.CO.CSITEG.13/31.01.015/2026-27; July 31, 2026",
+   "applicability": "Small Finance Banks (para 3)",
+   "source": "https://www.rbi.org.in/Scripts/BS_ViewMasDirections.aspx?id=13634",
+   "fetched": "2026-11-24",
+   "para_139_cryptographic_controls": "The key length, algorithms, cipher suites and applicable protocols used in transmission channels, processing of data and authentication purpose shall be strong. The bank shall adopt internationally accepted and published standards that are not deprecated / demonstrated to be insecure / vulnerable, and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions.",
+   "repeal": "para 229 repeals the existing Cybersecurity Framework and IT Governance instructions for SFBs",
+   "note": "Same sentence as the Commercial Banks Directions para 140 (checked on rbi.org.in 2026-11-24)."
+  },
+  "payments_banks_directions_2026": {
+   "title": "Reserve Bank of India (Payments Banks - Cybersecurity, Technology: Risk, Resilience and Assurance Framework) Directions, 2026",
+   "ref": "RBI/DoS/2026-27/428; DoS.CO.CSITEG.22/31.01.015/2026-27; July 31, 2026",
+   "applicability": "Payments Banks (para 3)",
+   "source": "https://www.rbi.org.in/Scripts/BS_ViewMasDirections.aspx?id=13625",
+   "fetched": "2026-11-24",
+   "para_139_cryptographic_controls": "The key length, algorithms, cipher suites and applicable protocols used in transmission channels, processing of data and authentication purpose shall be strong. The bank shall adopt internationally accepted and published standards that are not deprecated / demonstrated to be insecure / vulnerable, and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions.",
+   "repeal": "para 229 repeals the existing Cybersecurity Framework and IT Governance instructions for Payments Banks",
+   "note": "Same sentence as the Commercial Banks Directions para 140 (checked on rbi.org.in 2026-11-24)."
+  },
+  "ucb_directions_2026": {
+   "title": "Reserve Bank of India (Urban Co-operative Banks - Cybersecurity, Technology: Risk, Resilience and Assurance Framework) Directions, 2026",
+   "ref": "RBI/DoS/2026-27/437; DoS.CO.CSITEG.31/31.01.015/2026-27; July 31, 2026",
+   "applicability": "Urban Co-operative Banks (para 3); levels I-IV (para 4); Chapter III, which holds para 25, binds every level",
+   "source": "https://www.rbi.org.in/Scripts/BS_ViewMasDirections.aspx?id=13616",
+   "fetched": "2026-11-24",
+   "para_25_cryptographic_controls": "The UCB shall adopt internationally accepted encryption algorithms that are not deprecated / demonstrated to be insecure",
+   "repeal": "para 180 repeals the existing Cybersecurity Framework instructions for UCBs",
+   "note": "Section H Cryptographic Controls; the rest of para 25 asks that the configurations comply with extant laws and regulatory instructions."
+  },
+  "aifi_directions_2026": {
+   "title": "Reserve Bank of India (All India Financial Institutions - Cybersecurity, Technology: Risk, Resilience and Assurance Framework) Directions, 2026",
+   "ref": "RBI/DoS/2026-27/456; DoS.CO.CSITEG.50/31.01.015/2026-27; July 31, 2026",
+   "applicability": "EXIM Bank, NABARD, SIDBI, NHB and NaBFID (para 3)",
+   "source": "https://www.rbi.org.in/Scripts/BS_ViewMasDirections.aspx?id=13597",
+   "fetched": "2026-11-24",
+   "para_135_cryptographic_controls": "The key length, algorithms, cipher suites and applicable protocols used in transmission channels, processing of data and authentication purpose shall be strong. The bank shall adopt internationally accepted and published standards that are not deprecated / demonstrated to be insecure / vulnerable, and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions.",
+   "repeal": "para 224 repeals the existing Cybersecurity Framework and IT Governance instructions for AIFIs",
+   "note": "Same sentence as the Commercial Banks Directions para 140 (checked on rbi.org.in 2026-11-24)."
+  },
+  "credit_information_companies_directions_2026": {
+   "title": "Reserve Bank of India (Credit Information Companies - Cybersecurity, Technology: Risk, Resilience and Assurance Framework) Directions, 2026",
+   "ref": "RBI/DoS/2026-27/470; DoS.CO.CSITEG.64/31.01.015/2026-27; July 31, 2026",
+   "applicability": "Credit Information Companies under section 2(e) of the CIC (Regulation) Act, 2005 (para 3)",
+   "source": "https://www.rbi.org.in/Scripts/BS_ViewMasDirections.aspx?id=13583",
+   "fetched": "2026-11-24",
+   "para_135_cryptographic_controls": "The key length, algorithms, cipher suites and applicable protocols used in transmission channels, processing of data and authentication purpose shall be strong. The bank shall adopt internationally accepted and published standards that are not deprecated / demonstrated to be insecure / vulnerable, and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions.",
+   "repeal": "para 224 repeals the existing Cybersecurity Framework and IT Governance instructions for CICs",
+   "note": "Same sentence as the Commercial Banks Directions para 140 (checked on rbi.org.in 2026-11-24)."
   }
  },
  "mosca": {

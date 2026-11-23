@@ -152,7 +152,7 @@ def test_the_board_counts_facts_that_carry_findings_and_prints_the_line():
         ]
     )
     assert configuration_posture_line(view) == (
-        "Configuration posture findings: 3 (2 resources, 1 sources not assessed)"
+        "Configuration posture findings: 3 (2 resources, 1 source not assessed)"
     )
     grade = posture_grade(view)
     assert grade.assessed is True

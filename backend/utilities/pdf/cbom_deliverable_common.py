@@ -294,10 +294,13 @@ def sow_number(report_key: str) -> int | None:
 def document_id(view: TeamCbomView, number: int) -> str:
     """``CBOM-D08-T1-20261019-ab12cd34``: SOW deliverable ID (two digits, D01 ... D14), team, as-of day, fingerprint.
 
-    The fingerprint part is the first 8 hex characters of ``view.fingerprint`` (padded with
-    zeros when it is shorter or empty), so the same scan set always yields the same ID.
+    The fingerprint part is the first 8 hex characters of ``view.document_digest`` (padded with
+    zeros when it is shorter or empty): the scans and collections, plus the team settings and register
+    inputs the documents print (regulatory profile, source metadata, grade inputs). The same content
+    always yields the same ID, and different content never shares one (SOW review M1).
     """
-    fingerprint = re.sub(r"[^0-9a-f]", "", str(view.fingerprint or "").lower())[:8]
+    digest = getattr(view, "document_digest", None) or view.fingerprint
+    fingerprint = re.sub(r"[^0-9a-f]", "", str(digest or "").lower())[:8]
     day = view.as_of
     stamp = f"{day.year:04d}{day.month:02d}{day.day:02d}"
     return f"CBOM-D{int(number):02d}-T{int(view.team_id)}-{stamp}-{fingerprint.ljust(8, '0')}"
@@ -832,7 +835,8 @@ def _control_table(
         (labels["window"], pdf_text(_window_text(view)), value),
         (labels["basis"], pdf_text(authored.BASIS_CONTROL_SUMMARY), value),
         (labels["template"], pdf_text(f"{TEMPLATE_VERSION} \u00b7 {authored.TOOL_NAME}"), value),
-        (labels["fingerprint"], pdf_text(view.fingerprint or "n/a", limit=40), mono),
+        (labels["fingerprint"], pdf_text(getattr(view, "document_digest", None) or view.fingerprint or "n/a",
+                                         limit=40), mono),
     ]
     presentation = presentation_text(ctx)
     if presentation is not None:

@@ -70,10 +70,14 @@ class Collection:
     # the source's metadata (kinds.METADATA_FIELDS: owner, application, data classification, data lifetime,
     # criticality, exposure, environment): the source's current values, else the run's snapshot of them
     metadata: dict[str, Any] = field(default_factory=dict, compare=False, repr=False)
+    # how the collection was made (``collection_info``: method, window, credential reference by name only); D1 prints it
+    info: dict[str, Any] = field(default_factory=dict, compare=False, repr=False)
 
     @property
     def label(self) -> str:
-        return f"Sources run #{self.run_id} · {self.source_name}"
+        """The source's name: a document names a source by the source, never by the run (SOW audit A-18); the run
+        number is printed where the documents give provenance (``run_id``)."""
+        return self.source_name
 
     @property
     def key(self) -> str:
@@ -229,6 +233,65 @@ class SourcesResult:
         return sum(c.endpoints_probed for c in self.collections)
 
 
+# Product text: how each kind collects (cbom_sources.kinds KINDS; SOW audit A-10 d)
+_AGENTLESS = "Agentless: remote read from a scan node"
+_API = "API: the provider's management interface"
+COLLECTION_METHODS = {
+    "host_agent": "Agent: installed on the host",
+    "network_range": "Agentless: live TLS and SSH handshakes from a scan node",
+    "ct_logs": "API: public Certificate Transparency logs",
+    "container_images": "Agentless: image pulled from the registry and analysed offline",
+    "kubernetes": "API: the Kubernetes API server",
+    **{kind: _API for kind in ("aws_account", "azure_subscription", "gcp_project", "oci_tenancy", "key_manager",
+                               "ca_connector", "idp")},
+}
+_CREDENTIAL_TYPES = {
+    "node_key": "the scan node's own key", "ssh_cert": "an SSH certificate", "ssh_ca": "a team SSH CA certificate",
+    "password": "a stored password", "vault": "a vault secret", "kubeconfig": "a stored kubeconfig",
+    "client_secret": "a client secret", "certificate": "a client certificate",
+}
+
+
+def collection_info(session: Any, source: Any, job: Any) -> dict[str, Any]:
+    """How a collection was made, for D1 (SOW audit A-10 d): the method, the window it ran in (UTC) and a reference
+    to the credential it used. The reference names the credential (its type, a team credential's name, a vault path,
+    an IAM role, the NAMES of the stored secret fields), never a secret value."""
+    kind = str(getattr(source, "kind", "") or "")
+    started = getattr(job, "first_claimed_at", None) or getattr(job, "claimed_at", None) or getattr(job, "created_at",
+                                                                                                   None)
+    return {"method": COLLECTION_METHODS.get(kind, _AGENTLESS if kind else "Not known (the source was deleted)"),
+            "started": _aware(started).isoformat() if started else None,
+            # when it ended, as the documents date the collection (``Collection.observed_at``: finished, else created)
+            "finished": (_aware(job.finished_at or job.created_at).isoformat()
+                         if getattr(job, "finished_at", None) or getattr(job, "created_at", None) else None),
+            "credential": credential_reference(session, source)}
+
+
+def credential_reference(session: Any, source: Any) -> str:
+    if source is None:
+        return "not known (the source was deleted)"
+    cfg = source.config if isinstance(source.config, dict) else {}
+    parts: list[str] = []
+    if getattr(source, "credential_id", None):
+        from backend.utilities.cbom_sources.fleet.models import CbomCredential
+
+        found = session.get(CbomCredential, source.credential_id) if session is not None else None
+        if found is not None and found.team_id == source.team_id:
+            parts.append(f'team credential "{found.name}"')
+    ctype = cfg.get("credential_type")
+    if isinstance(ctype, str) and ctype:
+        parts.append(_CREDENTIAL_TYPES.get(ctype, ctype.replace("_", " ")))
+    vault = cfg.get("vault") if isinstance(cfg.get("vault"), dict) else None
+    if vault and vault.get("path"):
+        parts.append(f"{str(vault.get('provider') or 'vault').replace('_', ' ')} path {vault['path']}")
+    if isinstance(cfg.get("role_arn"), str) and cfg["role_arn"]:
+        parts.append(f"IAM role {cfg['role_arn']}")
+    names = sorted(str(f) for f in (source.secret_fields or []) if isinstance(f, str))
+    if names:
+        parts.append("stored secrets (names): " + ", ".join(names))
+    return "; ".join(parts) if parts else "none recorded"
+
+
 def load_sources_result(session: Any, team_id: int, now: _dt.datetime | None = None) -> SourcesResult:
     from sqlmodel import select
 
@@ -253,7 +316,7 @@ def load_sources_result(session: Any, team_id: int, now: _dt.datetime | None = N
             source_name=ID.job_source_name(job, source), source_kind=(source.kind if source is not None else ""),
             observed_at=_aware(job.finished_at or job.created_at), asset_count=len(assets),
             endpoints_probed=sum(1 for a in assets if a.asset_type in NETWORK_TYPES),
-            metadata=_source_metadata(source, job))
+            metadata=_source_metadata(source, job), info=collection_info(session, source, job))
         out.collections.append(collection)
         for asset in assets:
             # its identity in its own source; link_certificates gives certificates their cross-source asset key

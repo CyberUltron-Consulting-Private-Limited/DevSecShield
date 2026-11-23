@@ -25,11 +25,11 @@ Conventions for renderers.
 * Documents are named by their SOW Table 7 IDs (D1 ... D14), never by an internal number (SOW audit A-04).
 * Templates use ``str.format`` named fields; the renderer supplies the numbers.
 
-Which document uses what: ``#1`` scope register: ``SCOPE_*``, ``MANUAL_DISCOVERY_ITEMS``;
-``#3`` methodology: ``METHOD_*``, ``CBOM_SCANNERS``, ``MANUAL_DISCOVERY_ITEMS``, ``RACI_*``;
-``#7`` certificate register: ``CERT_*``, ``EXPIRY_BAND_*``; ``#10`` assurance register:
-``ASSURANCE_*``, ``VERDICT_LABELS``; ``#15`` PQC roadmap: ``PQC_*``, ``CNSA_*``;
-``#16`` board report: ``GRADE_*``, ``GOVERNANCE_ACTIONS``, ``FRAMEWORK_LABELS``,
+Which document uses what (SOW Table 7 IDs): ``D1`` scope register: ``SCOPE_*``, ``MANUAL_DISCOVERY_ITEMS``;
+``D2`` methodology: ``METHOD_*``, ``CBOM_SCANNERS``, ``MANUAL_DISCOVERY_ITEMS``, ``RACI_*``;
+``D8`` certificate register: ``CERT_*``, ``EXPIRY_BAND_*``; ``D10`` assurance register:
+``ASSURANCE_*``, ``VERDICT_LABELS``; ``D13`` PQC roadmap: ``PQC_*``, ``CNSA_*``;
+``D14`` board report: ``GRADE_*``, ``GOVERNANCE_ACTIONS``, ``FRAMEWORK_LABELS``,
 ``RBI_MAPPING_NOTE``, ``finding_label`` / ``finding_action``.
 """
 
@@ -204,7 +204,7 @@ def disclaimer_paragraphs(view: object) -> tuple[str, ...]:
     return (CERTIN_DISCLAIMER, RBI_BOM_DISCLAIMER, scope_of_method(view))
 
 # ---------------------------------------------------------------------------------------------
-# Compliance framework labels (#16 regulatory exposure, #10 ledger)
+# Compliance framework labels (D14 regulatory exposure, D10 ledger)
 # ---------------------------------------------------------------------------------------------
 # Product text: mirrors frontend/components/compliance/frameworkLabels.ts (pinned by T-CON-3);
 # keys are aibom CBOM_FRAMEWORKS in engine order.
@@ -230,6 +230,38 @@ RBI_MAPPING_NOTE = (
     "RBI rows show the RBI FREE-AI protection mapping only (Rec 19 and the RBI Cyber Security "
     "Framework, 2016). They are not an assessment against any other RBI directive."
 )
+# Product text: the RBI cybersecurity instrument each regulated-entity type is bound by (regulated_entity.py; the
+# knowledge base's RBI clauses, quoted from rbi.org.in, 31 July 2026 Directions). None: no RBI 2026 direction.
+ENTITY_INSTRUMENTS = {
+    "nbfc": ("the RBI NBFC Cybersecurity, Technology: Risk, Resilience and Assurance Framework Directions 2026",
+             "para 118, which binds NBFCs of the Middle Layer and above"),
+    "bank": ("the RBI Commercial Banks Cybersecurity, Technology: Risk, Resilience and Assurance Framework "
+             "Directions 2026", "para 140"),
+    "sfb": ("the RBI Small Finance Banks Cybersecurity, Technology: Risk, Resilience and Assurance Framework "
+            "Directions 2026", "para 139"),
+    "payments_bank": ("the RBI Payments Banks Cybersecurity, Technology: Risk, Resilience and Assurance Framework "
+                      "Directions 2026", "para 139"),
+    "ucb": ("the RBI Urban Co-operative Banks Cybersecurity, Technology: Risk, Resilience and Assurance Framework "
+            "Directions 2026", "para 25"),
+    "aifi": ("the RBI All India Financial Institutions Cybersecurity, Technology: Risk, Resilience and Assurance "
+             "Framework Directions 2026", "para 135"),
+    "credit_info_company": ("the RBI Credit Information Companies Cybersecurity, Technology: Risk, Resilience and "
+                            "Assurance Framework Directions 2026", "para 135"),
+    "other": None,
+}
+
+
+def entity_instrument(entity: object) -> tuple[str, str] | None:
+    """(instrument, its cryptographic-controls paragraph) binding the entity type; None for "other"."""
+    return ENTITY_INSTRUMENTS.get(kb_text.entity_types.normalise(entity))
+
+
+def rbi_mapping_note(entity: object) -> str:
+    """What the code-scan engine's RBI row (FREE-AI) is, worded for the team's entity type (SOW review M3)."""
+    found = entity_instrument(entity)
+    against = (f"{found[0]} ({found[1]})" if found else "an RBI cybersecurity direction (none binds this entity type)")
+    return ("The RBI row is the code-scan engine's RBI FREE-AI protection mapping (Recommendation 19). It is not an "
+            f"assessment against {against}.")
 # Product text: aibom compliance verdicts (aibom/src/aibom/compliance/base.py Verdict).
 VERDICT_LABELS = {
     "fail": "Fail",
@@ -250,7 +282,7 @@ def framework_label(key: object) -> str:
 
 
 # ---------------------------------------------------------------------------------------------
-# Finding codes: label + recommended action (#7, #15, #16)
+# Finding codes: label + recommended action (D8, D13, D14)
 # ---------------------------------------------------------------------------------------------
 GENERIC_FINDING_ACTION = (
     "Review this finding and remediate it in line with your cryptographic policy."
@@ -408,7 +440,7 @@ FINDING_ACTIONS = {
         "algorithm (for example AES-GCM from the platform's crypto library)."
     ),
 }
-# Product text: codes that describe a certificate (#7 labels them; #16 groups them).
+# Product text: codes that describe a certificate (D8 labels them; D14 groups them).
 CERT_FINDING_CODES = (
     "WEAK_CERTIFICATE_SIGNATURE",
     "WEAK_CERTIFICATE_KEY",
@@ -451,11 +483,11 @@ def finding_action(code: object) -> str:
 
 
 # ---------------------------------------------------------------------------------------------
-# Post-quantum timeline and target families (#15, #16)
+# Post-quantum timeline and target families (D13, D14)
 # ---------------------------------------------------------------------------------------------
 @dataclass(frozen=True)
 class TimelineRow:
-    """One printed row of the regulatory timeline (#15 section 2)."""
+    """One printed row of the regulatory timeline (D13 section 2)."""
 
     when: str
     milestone: str
@@ -561,7 +593,7 @@ PQC_PRIMITIVE_LABELS = {
 }
 
 # ---------------------------------------------------------------------------------------------
-# Board report: posture grade (#16) - pinned to report_branding.compute_risk_score
+# Board report: posture grade (D14) - pinned to report_branding.compute_risk_score
 # ---------------------------------------------------------------------------------------------
 GRADE_NOT_ASSESSED = "NOT ASSESSED"
 # Product text: formula of backend/utilities/pdf/report_branding.py compute_risk_score; the
@@ -623,7 +655,7 @@ GOVERNANCE_ACTIONS = (
 GOVERNANCE_HIDE_WHEN_ZERO = ("owners", "legacy", "mosca", "attestations")
 
 # ---------------------------------------------------------------------------------------------
-# Discovery methodology (#3) and the manual-discovery checklist (#1 section E, #3 section 3)
+# Discovery methodology (D2) and the manual-discovery checklist (D1 section E, D2 section 3)
 # ---------------------------------------------------------------------------------------------
 @dataclass(frozen=True)
 class ScannerSpec:
@@ -956,6 +988,33 @@ def _kinds(view: object) -> set[str]:
     return {str(getattr(c, "source_kind", "") or "") for c in collections_in_scope(view)}
 
 
+# Product text: what each CBOM Sources kind (cbom_sources.kinds KINDS) reads, for the limits of the method (m6)
+_KIND_NOUNS = (
+    (frozenset({"linux_servers", "windows_servers", "host_agent", "awx_hosts", "salt_hosts", "ssm_hosts"}), "servers"),
+    (frozenset({"active_directory"}), "directory services"),
+    (frozenset({"kubernetes"}), "Kubernetes clusters"),
+    (frozenset({"container_images"}), "container images"),
+    (frozenset({"database"}), "databases"),
+    (frozenset({"aws_account", "azure_subscription", "gcp_project", "oci_tenancy"}), "cloud accounts"),
+    (frozenset({"key_manager"}), "key managers"),
+    (frozenset({"ca_connector"}), "certificate authorities"),
+    (frozenset({"idp"}), "identity providers"),
+    (frozenset({"ct_logs"}), "Certificate Transparency logs"),
+    (frozenset({"network_range"}), "network endpoints"),
+    (frozenset({"appliance"}), "network appliances"),
+)
+
+
+def collected_kinds_text(view: object) -> str:
+    """"servers, cloud accounts and network endpoints": what the collections in scope read, never a kind that was
+    not collected ("systems" when no kind is known, e.g. a deleted source)."""
+    kinds = _kinds(view)
+    nouns = [noun for members, noun in _KIND_NOUNS if kinds & members]
+    if not nouns:
+        return "systems"
+    return nouns[0] if len(nouns) == 1 else ", ".join(nouns[:-1]) + " and " + nouns[-1]
+
+
 def method_limits(view: object) -> tuple[str, ...]:
     """``METHOD_LIMITS`` for a code-scan-only view; with CBOM Sources collections, limits that state what the
     collections did and did not read (never "no live-network discovery" when an endpoint was probed)."""
@@ -965,9 +1024,8 @@ def method_limits(view: object) -> tuple[str, ...]:
     kinds, probed = _kinds(view), endpoints_probed(view)
     noun = "collection" if len(found) == 1 else "collections"
     out = [
-        (f"Running systems were read by {len(found)} CBOM Sources {noun} (servers, cloud accounts, key managers, "
-         "identity providers and network endpoints, each through its own interface). Collection reads metadata and "
-         "configuration only; stored data is never read."),
+        (f"Running systems were read by {len(found)} CBOM Sources {noun} ({collected_kinds_text(view)}, each "
+         "through its own interface). Collection reads metadata and configuration only; stored data is never read."),
         (f"Live-network discovery covered the configured ranges and ports: {probed} "
          f"endpoint{'' if probed == 1 else 's'} {'was' if probed == 1 else 'were'} probed with live TLS or SSH "
          "handshakes. Endpoints outside those ranges and ports were not probed.")
@@ -1014,7 +1072,7 @@ def discovery_columns(view: object) -> tuple[str, ...]:
     return COLLECTED_DISCOVERY_COLUMNS if collections_in_scope(view) else MANUAL_DISCOVERY_COLUMNS
 
 # ---------------------------------------------------------------------------------------------
-# Scope baseline register (#1) and third-party assurance register (#10)
+# Scope baseline register (D1) and third-party assurance register (D10)
 # ---------------------------------------------------------------------------------------------
 SCOPE_BOUNDARY_ITEMS = (
     "In-scope applications",
@@ -1042,7 +1100,7 @@ ASSURANCE_VENDOR_COLUMNS = (
 ATTESTED_TEMPLATE = "Attested {attested}/{attestable}"
 
 # ---------------------------------------------------------------------------------------------
-# Certificate estate register (#7)
+# Certificate estate register (D8)
 # ---------------------------------------------------------------------------------------------
 # Product text: validity bands (cbom_team_rollup EXPIRY_BANDS).  Labels avoid characters
 # outside WinAnsi, so "<=" stands in for the less-than-or-equal sign.
@@ -1168,7 +1226,11 @@ __all__ = [
     "RACI_ACTIVITIES",
     "RACI_COLUMNS",
     "RBI_BOM_DISCLAIMER",
+    "ENTITY_INSTRUMENTS",
     "RBI_MAPPING_NOTE",
+    "collected_kinds_text",
+    "entity_instrument",
+    "rbi_mapping_note",
     "SCOPE_BOUNDARY_COLUMNS",
     "SCOPE_BOUNDARY_ITEMS",
     "SCOPE_BOUNDARY_STATEMENT",

@@ -97,6 +97,8 @@ def _clauses(posture):
 # ------------------------------------------------------------------------------------------ N1 / N2: the verdict
 def test_n1_unrecorded_only_clause_needs_evidence_and_framework_too(api, world, no_mongo):
     engine, ids = world
+    # a SEBI-regulated team: SEBI CSCRF binds it (PR #485 M4 filters every surface by the team's profile)
+    assert api("PATCH", "/1/cbom/sources/settings", json={"sebi_regulated": True}).status_code == 200
     run_id, _ = _seed(engine, ids, "n1a", [("legacy", "tls_endpoint", ["WEAK_CIPHER"], TLS_PLAIN),
                                            ("hk", "ssh_host_key", [], {})])
     posture = _get(api, f"/1/cbom/sources/runs/{run_id}/posture")["posture"]

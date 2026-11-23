@@ -592,9 +592,10 @@ def _raci(styles: Styles) -> list[Flowable]:
 def _versioning_text(view: TeamCbomView) -> str:
     return (
         f"Versioning: this edition is Document ID {document_id(view, NUMBER)} with data "
-        f"fingerprint {view.fingerprint or 'n/a'} and template version {TEMPLATE_VERSION}. "
-        "Regenerating it from the same scans gives the same fingerprint; a new successful scan "
-        "or an attestation upload changes it. The roll-up reads up to "
+        f"fingerprint {view.document_digest or 'n/a'} and template version {TEMPLATE_VERSION}. "
+        "Regenerating it from the same scans and settings gives the same fingerprint; a new successful scan, "
+        "an attestation upload or a change to the regulatory profile, source metadata or quantum risk inputs "
+        "changes it. The roll-up reads up to "
         f"{HISTORY_WINDOW} of the newest successful scans for first-seen and last-seen history, "
         "plus the latest scan of every source."
     )
@@ -713,7 +714,7 @@ def build_body(view: TeamCbomView, styles: Styles, width: float) -> list[Flowabl
 
 
 def build_pdf(view: TeamCbomView, *, ctx: Any = None) -> bytes:
-    """Render deliverable #3 for ``view`` and return the PDF bytes (byte-stable for a view)."""
+    """Render SOW deliverable D2 for ``view`` and return the PDF bytes (byte-stable for a view)."""
     return build_document(ctx=ctx, 
         view=view,
         number=NUMBER,

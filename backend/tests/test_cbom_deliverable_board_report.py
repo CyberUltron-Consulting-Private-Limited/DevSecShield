@@ -91,6 +91,8 @@ EXPOSURE = (
     ("CERT-In CBOM (Guidelines v2.0)", 114, 4, 97, 43, "96.6%"),
     ("SEBI CSCRF (CBOM)", 36, 4, 50, 18, "90.0%"),
 )
+# PR #485 review M4: frameworks that do not bind the team (an Indian NBFC, the default profile) are named, not tabled
+NOT_BINDING_NBFC = ("OMB M-23-02", "EU CRA", "EU DORA", "PCI-DSS 4.0", "BSI TR-02102", "SEBI CSCRF (CBOM)")
 
 FINDING_LABELS = {
     "EXPIRED_CERTIFICATE": "Expired certificate",
@@ -623,7 +625,7 @@ def test_executive_sentences_carry_the_live_numbers(sec):
     assert "Findings were raised on 31 of them: Critical 1, High 25, Medium 5, Low 0." in text
     assert "Posture grade F (Critical risk, score 100 of 100)" in text
     assert "not a regulatory rating" in text
-    assert "Quantum readiness is 63.9%: 5 of 36 gradeable algorithm occurrences" in text
+    assert "Quantum readiness is 63.9%: 5 of 36 gradeable asset occurrences (algorithms, keys, certificates" in text
     assert "and 8 are broken today (MD5, DES and the like)." in text
     assert "1 certificate has expired and 1 expires within 90 days." in text
 
@@ -745,10 +747,15 @@ def test_certificate_bands_follow_the_view_date_not_the_wall_clock(raw):
 # =============================================================================================
 # 5. Regulatory exposure
 # =============================================================================================
-def test_regulatory_exposure_has_all_13_frameworks_with_pooled_numbers(sec):
+def test_regulatory_exposure_has_the_binding_frameworks_with_pooled_numbers(sec):
     block = sec[H5]
+    text = joined(block)
+    note = text[text.index("Not applicable to this team and not shown"):]
     at = -1
     for label, passed, failed, nbe, oos, coverage in EXPOSURE:
+        if label in NOT_BINDING_NBFC:  # named once in the not-applicable sentence, never a table row
+            assert block.count(label) == 0 and label in note, label
+            continue
         assert block.count(label) == 1, label
         index = block.index(label)
         assert index > at, f"{label} is out of engine order"
@@ -763,17 +770,19 @@ def test_regulatory_exposure_uses_the_labels_the_plan_names(sec):
     for label in (
         "CERT-In CBOM (Guidelines v2.0)",
         "RBI FREE-AI (Protection)",
-        "SEBI CSCRF (CBOM)",
     ):
         assert label in block
+    assert "SEBI CSCRF (CBOM)" in joined(block)  # not SEBI-regulated: named among the frameworks not applicable
 
 
 def test_pooling_basis_sentence(sec):
-    assert "6 of 7 sources pooled (1 legacy excluded)" in joined(sec[H5])
+    assert "Rows are based on 6 of 7 sources (1 in legacy format excluded); each row shows its own count." in joined(
+        sec[H5])
 
 
 def test_rbi_mapping_note_present_and_no_q_safe_anywhere(pdf, sec):
-    assert norm(authored.RBI_MAPPING_NOTE) in joined(sec[H5])
+    assert norm(authored.rbi_mapping_note("nbfc")) in joined(sec[H5])  # the RBI row exists; worded for an NBFC
+    assert "Cyber Security Framework, 2016" not in joined(sec[H5])
     assert "q-safe" not in full_text(pdf).lower()
 
 
@@ -866,13 +875,13 @@ def test_unknown_finding_code_gets_a_label_and_the_generic_action():
 # =============================================================================================
 # 7. Post-quantum roadmap summary
 # =============================================================================================
-def test_pqc_summary_families_and_timeline(sec):
+def test_pqc_summary_families_and_timeline(sec, view):
     block = sec[H7]
-    family = "ML-KEM (FIPS 203) / ML-DSA (FIPS 204)"
-    index = block.index(family)
-    # Appendix B: 5 quantum-vulnerable occurrences (payments 2, pqc-pilot 1, legacy 2) in 3 sources
-    assert block[index + 1 : index + 3] == ["5", "3"]
     text = joined(block)
+    # the code scans recorded their target family; every quantum-vulnerable occurrence is grouped (PR #485 M5)
+    assert "ML-KEM (FIPS 203) / ML-DSA (FIPS 204)" in text
+    total = block.index("Total")
+    assert block[total + 1] == str(view.pqc_vulnerable)
     for when, status in (  # FIX-A3: NIST IR 8547 is final (27 Oct 2026)
         ("Aug 2024", "Final"),
         ("Oct 2026", "Final"),
@@ -988,13 +997,13 @@ def test_appendix_a_prints_the_formula_and_the_worked_calculation(sec):
 
 def test_appendix_b_lists_exactly_the_included_scans(raw, sec):
     block = sec[HB]
-    marks = [i for i, line in enumerate(block) if re.fullmatch(r"#\d+", line)]
-    ids = sorted(int(block[i][1:]) for i in marks)
+    marks = [i for i, line in enumerate(block) if re.fullmatch(r"Scan #\d+", line)]
+    ids = sorted(int(block[i][6:]) for i in marks)
     assert ids == [1, 2, 3, 4, 5, 6, 7, 8]  # 9 failed, 10/11 not completed, 13 no data: absent
     bounds = [*marks, len(block)]
     chunks = {}
     for start, end in zip(bounds, bounds[1:], strict=False):
-        chunks[int(block[start][1:])] = joined(block[start + 1 : end])
+        chunks[int(block[start][6:])] = joined(block[start + 1 : end])
     for sid in ids:
         assert scan_by_id(raw, sid)["created_at"][:10] in chunks[sid], sid
     assert "Current" in chunks[2] and "History" in chunks[1]
@@ -1003,7 +1012,7 @@ def test_appendix_b_lists_exactly_the_included_scans(raw, sec):
     assert block.count("github.com/e2e-demo/payments-service (main)") == 2
     assert "E2E-Demo" not in joined(block)
     # grouped by source, newest first inside a source: #2 (7 days old) before #1 (21 days old)
-    assert [block[i] for i in marks].index("#2") + 1 == [block[i] for i in marks].index("#1")
+    assert [block[i] for i in marks].index("Scan #2") + 1 == [block[i] for i in marks].index("Scan #1")
     # roles: exactly one Current row per source (7 sources)
     assert sum(1 for line in block if line == "Current") == 7
 
@@ -1034,7 +1043,7 @@ def test_no_forbidden_or_placeholder_text(pdf):
 def test_authored_text_is_not_clamped(lines):
     text = joined(lines)  # page chrome removed, so a paragraph that crosses a page is whole again
     assert "\u2026" not in text  # the sanitiser's ellipsis would mark a cut sentence
-    for paragraph in (authored.METHOD_COVERAGE, authored.GRADE_FORMULA, authored.RBI_MAPPING_NOTE):
+    for paragraph in (authored.METHOD_COVERAGE, authored.GRADE_FORMULA, authored.rbi_mapping_note("nbfc")):
         assert norm(paragraph) in text
 
 

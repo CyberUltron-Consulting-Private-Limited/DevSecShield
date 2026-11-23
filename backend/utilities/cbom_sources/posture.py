@@ -29,6 +29,7 @@ from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollec
 from backend.utilities.cbom_sources import agility as AGILITY
 from backend.utilities.cbom_sources import algid, crypto_kb
 from backend.utilities.cbom_sources import clause_evidence as CE
+from backend.utilities.cbom_sources import regulated_entity as REG_ENTITY
 from backend.utilities.cbom_sources import standards as STD
 from backend.utilities.cbom_sources.cbom_metrics import quantum_readiness_pct
 from backend.utilities.cbom_sources.classify import (
@@ -531,6 +532,7 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
     agility = AGILITY.RunAgility(session, team_id, run_id, sources)  # CB-24: fix class per asset, at view time
     grades = RunGrades(session, team_id=team_id, run_id=run_id, risk_model=risk_model)  # quantum risk grade (CB-19)
     elsewhere = JudgedElsewhere(rows)  # CB-18 EC-3: an object another job of this run read is not "unknown"
+    team = REG_ENTITY.profile_of(risk_model)  # the clauses that bind the team (SOW audit A-11), as every surface cites
     bases: Counter[str] = Counter()
     exposure_counts: Counter[str] = Counter()
     classes: Counter[str] = Counter()
@@ -579,7 +581,7 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
                           "hndl": hndl(a_type, qv), "finding": finding})
         # each code's own clauses; algorithm-specific ones decided on the algorithms the classifier flagged, never on
         # the asset's name or sentence (#269, #289); clause_evidence is also the run assets filter's (clause=)
-        for code, ref in CE.asset_clauses(row, a_codes):
+        for code, ref in CE.asset_clauses(row, a_codes, team):
             clause = (ref["framework"], ref["id"])
             clause_assets[clause].add(aid)
             if ref.get("evidence") != "not_recorded":
@@ -661,13 +663,18 @@ def _host_port(value: str) -> tuple[str | None, str | None]:
 
 def asset_detail(row: CbomCollectedAsset, source: CbomCollectionSource | None, *,
                  job: CbomCollectionJob | None = None, node: CbomScanNode | None = None,
-                 today: _dt.date | None = None, session: Session | None = None) -> dict[str, Any]:
+                 today: _dt.date | None = None, session: Session | None = None,
+                 team: dict[str, Any] | None = None) -> dict[str, Any]:
     """Everything known about one collected asset: the knowledge-base explanation of each finding code (with commands
     filled in for this host), library CVEs and end-of-life (as of the run, and today when that differs), PQC class,
-    HNDL and internet exposure."""
+    HNDL and internet exposure. ``team``: the team's regulatory profile (``regulated_entity``); read from the
+    session when not given, the default profile without either, so the clauses match the run page's."""
     from backend.utilities.cbom_sources.classify import classify, shown
 
     facts = row.facts or {}
+    if team is None:
+        team = (REG_ENTITY.team_profile(session, row.team_id) if session is not None
+                else dict(REG_ENTITY.DEFAULT_PROFILE))
     now = _dt.datetime.combine(today, _dt.time()) if today else _dt.datetime.utcnow()
     view = shown(row, now)  # the finding as every other view shows it: date-based rules judged today
     codes = view["finding_codes"]
@@ -731,7 +738,7 @@ def asset_detail(row: CbomCollectedAsset, source: CbomCollectionSource | None, *
         "details": [{**d, "impact": verdict["impacts"].get(d["code"]) or d["impact"]}
                     for d in crypto_kb.render("node", ordered, context=ctx, evidence=view["finding"] or "", texts=texts,
                                               title=str(row.algorithm or row.name or ""),
-                                              clause_evidence=CE.evidence_by_code(row, ordered))],
+                                              clause_evidence=CE.evidence_by_code(row, ordered), team=team)],
         "library": library,
         "kb_version": crypto_kb.version(),
     }

@@ -2315,7 +2315,7 @@ FROZEN_FIELDS = {
         "nist_quantum_security_level pqc_migration_target pqc_migration_roadmap tier current "
         # row_kind / node_type: FIX-A3 (D1 counts libraries and encryption settings, never "other"; not compared)
         "first_seen last_seen scan_count scan_ids latest_scan_id broken_today collector_codes clause_evidence "
-        "row_kind node_type"
+        "row_kind node_type asset_key"
     ),
     "CertAgg": (
         "key identity_strong name file_names subject_cn issuer_cn not_before not_after "
@@ -2343,8 +2343,10 @@ FROZEN_FIELDS = {
         "pqc_hybrid pqc_broken_today pqc_ungraded readiness_pct compliance_sources_pooled "
         # remediation: WP10 (loader only, not compared); collections: M1x (CBOM Sources results, merge_collections);
         # register: CB-23 (the quantum risk register for deliverable #2; loader only, not compared)
-        # regulated_entity: FIX-A3; estate: FIX-B2 (loader only, not compared)
-        "compliance_legacy_excluded warnings posture collections remediation register regulated_entity estate"
+        # regulated_entity: FIX-A3; estate: FIX-B2 (loader only, not compared); regulatory_profile, grade_inputs,
+        # cross_scope, previous_issue: PR #485 review M1 / M4 / M6 / M7 (loader only, not compared)
+        "compliance_legacy_excluded warnings posture collections remediation register regulated_entity "
+        "regulatory_profile grade_inputs cross_scope previous_issue estate"
     ),
 }
 

@@ -1382,6 +1382,10 @@ async def generate_finding_remediation(
             scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id).where(Scan.scan_type == type)).first()
             if not scan:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found for this team")
+            # the regulatory clauses cited are the ones that bind the team (SOW audit A-11), as on its CBOM Sources pages
+            from backend.utilities.cbom_sources.regulated_entity import team_profile
+
+            team_regulation = team_profile(session, team_id) if type == "cbom" else None
 
         try:
             finding_oid = ObjectId(finding_id)
@@ -1405,7 +1409,8 @@ async def generate_finding_remediation(
             from starlette.concurrency import run_in_threadpool
 
             # code fix + exploit demo are CPU work: keep them off the event loop
-            remediation_result = await run_in_threadpool(kb_remediation, finding.get("finding_data") or {}, "code")
+            remediation_result = await run_in_threadpool(kb_remediation, finding.get("finding_data") or {}, "code",
+                                                          team_regulation)
             scan_findings_collection.update_one({"_id": finding_oid}, {"$set": {"remediation": remediation_result}})
             return remediation_result
 

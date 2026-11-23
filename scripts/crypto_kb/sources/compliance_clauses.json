@@ -9,7 +9,11 @@
   "CA_ALLOWS_WEAK_KEY": {
    "clauses": [
     "nist-800-131a-below-112-bit",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -29,7 +33,11 @@
   "CA_WEAK_SIGNING": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -48,7 +56,11 @@
   "CBC_ACCEPTED": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -58,7 +70,11 @@
   "CBC_ONLY": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -135,7 +151,11 @@
   },
   "DB_10G_VERIFIER": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -167,7 +187,11 @@
   },
   "DB_LEGACY_PW_HASH": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -181,7 +205,11 @@
   },
   "DB_MD5_ACCEPTED": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -190,7 +218,11 @@
   },
   "DB_MD5_DEFAULT": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -199,7 +231,11 @@
   },
   "DB_NATIVE_PW": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -229,7 +265,11 @@
   },
   "DB_OLD_PASSWORD": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -280,7 +320,11 @@
   },
   "DB_WEAK_HASH": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -290,7 +334,11 @@
   "DH_LT_2048": {
    "clauses": [
     "nist-800-131a-below-112-bit",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -332,7 +380,11 @@
   "DOTNET_WEAK_TLS": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118",
     "sebi-annexure-i"
@@ -349,7 +401,11 @@
   },
   "DSA": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -364,7 +420,11 @@
   "EC_LT_224": {
    "clauses": [
     "nist-800-131a-below-112-bit",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -405,7 +465,11 @@
   "IKEV1_ENABLED": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -415,7 +479,11 @@
   "IKE_AGGRESSIVE": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -436,7 +504,11 @@
   "IKE_WEAK_DH": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -455,7 +527,11 @@
   "IKE_WEAK_ENCR": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -489,7 +565,11 @@
      "match": "md5|des-mac",
      "clauses": [
       "certin-bom-8.4.2.2",
-      "rbi-md-2023-para-16",
+      "rbi-sfb-2026-para-139",
+      "rbi-pb-2026-para-139",
+      "rbi-ucb-2026-para-25",
+      "rbi-aifi-2026-para-135",
+      "rbi-cic-2026-para-135",
       "rbi-cb-2026-para-140",
       "rbi-nbfc-2026-para-118"
      ],
@@ -506,7 +586,11 @@
      "match_from": "classify_ext/node_net.py:WEAK_ENCR",
      "clauses": [
       "certin-bom-8.4.2.2",
-      "rbi-md-2023-para-16",
+      "rbi-sfb-2026-para-139",
+      "rbi-pb-2026-para-139",
+      "rbi-ucb-2026-para-25",
+      "rbi-aifi-2026-para-135",
+      "rbi-cic-2026-para-135",
       "rbi-cb-2026-para-140",
       "rbi-nbfc-2026-para-118"
      ],
@@ -517,7 +601,11 @@
      "match": "md5|des-mac",
      "clauses": [
       "certin-bom-8.4.2.2",
-      "rbi-md-2023-para-16",
+      "rbi-sfb-2026-para-139",
+      "rbi-pb-2026-para-139",
+      "rbi-ucb-2026-para-25",
+      "rbi-aifi-2026-para-135",
+      "rbi-cic-2026-para-135",
       "rbi-cb-2026-para-140",
       "rbi-nbfc-2026-para-118"
      ],
@@ -528,7 +616,11 @@
      "match_from": "classify_ext/node_net.py:WEAK_GROUPS",
      "clauses": [
       "certin-bom-8.4.2.2",
-      "rbi-md-2023-para-16",
+      "rbi-sfb-2026-para-139",
+      "rbi-pb-2026-para-139",
+      "rbi-ucb-2026-para-25",
+      "rbi-aifi-2026-para-135",
+      "rbi-cic-2026-para-135",
       "rbi-cb-2026-para-140",
       "rbi-nbfc-2026-para-118"
      ],
@@ -617,7 +709,11 @@
   },
   "KEY_WEAK_SYMMETRIC": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118",
     "sebi-annexure-h-5"
@@ -751,7 +847,11 @@
   "MIN_SSLv2": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118",
     "sebi-annexure-i"
@@ -762,7 +862,11 @@
   "MIN_SSLv3": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118",
     "sebi-annexure-i"
@@ -773,7 +877,11 @@
   "MIN_TLS10": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118",
     "sebi-annexure-i"
@@ -784,7 +892,11 @@
   "MIN_TLS11": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118",
     "sebi-annexure-i"
@@ -835,7 +947,11 @@
   "NO_TLS12": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118",
     "sebi-annexure-i"
@@ -851,7 +967,11 @@
   "OPCUA_DEPRECATED_POLICY": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118",
     "nist-800-131a-sha1-signatures"
@@ -892,7 +1012,11 @@
   },
   "OPENSSL_ENC_WEAK_KDF": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -913,7 +1037,11 @@
   "POLICY_LEGACY": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118",
     "nist-800-131a-sha1-signatures"
@@ -924,7 +1052,11 @@
   "PROTO_SSLv2": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118",
     "sebi-annexure-i"
@@ -935,7 +1067,11 @@
   "PROTO_SSLv3": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118",
     "sebi-annexure-i"
@@ -946,7 +1082,11 @@
   "PROTO_TLS10": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118",
     "sebi-annexure-i"
@@ -957,7 +1097,11 @@
   "PROTO_TLS11": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118",
     "sebi-annexure-i"
@@ -996,7 +1140,11 @@
   "RSA_LT_1024": {
    "clauses": [
     "nist-800-131a-below-112-bit",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -1006,7 +1154,11 @@
   "RSA_LT_2048": {
    "clauses": [
     "nist-800-131a-below-112-bit",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -1043,7 +1195,11 @@
   "SIG_MD5": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118",
     "certin-gov-6.1.7"
@@ -1054,7 +1210,11 @@
   "SIG_SHA1": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118",
     "certin-gov-6.1.7",
@@ -1066,7 +1226,11 @@
   "SSH_CBC_CIPHER": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -1086,7 +1250,11 @@
   "SSH_DH_GROUP1": {
    "clauses": [
     "nist-800-131a-below-112-bit",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118",
     "certin-bom-8.4.2.2",
@@ -1101,7 +1269,11 @@
   "SSH_DH_SHA1": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118",
     "nist-800-131a-sha1-signatures"
@@ -1115,7 +1287,11 @@
   "SSH_DSS": {
    "clauses": [
     "nist-800-131a-below-112-bit",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118",
     "certin-bom-8.4.2.2"
@@ -1142,7 +1318,11 @@
   "SSH_RSA_SHA1": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118",
     "nist-800-131a-sha1-signatures"
@@ -1158,7 +1338,11 @@
   "SSH_V1_ENABLED": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118",
     "certin-gov-4.5.7"
@@ -1169,7 +1353,11 @@
   "SSH_WEAK_CIPHER": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118",
     "sebi-annexure-h-5"
@@ -1190,7 +1378,11 @@
   "SSH_WEAK_MAC": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -1200,7 +1392,11 @@
   "STATIC_RSA_KEX": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118",
     "nist-800-131a-pkcs1-v1_5",
@@ -1237,7 +1433,11 @@
   "TLS_ANON_CIPHER": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -1247,7 +1447,11 @@
   "TLS_EXPORT_CIPHER": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118",
     "sebi-annexure-h-5"
@@ -1258,7 +1462,11 @@
   "TLS_NULL_CIPHER": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118",
     "sebi-annexure-h-5"
@@ -1269,7 +1477,11 @@
   "TLS_POLICY_OVERRIDE": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118",
     "sebi-annexure-i"
@@ -1280,7 +1492,11 @@
   "WEAK_CIPHER": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -1331,7 +1547,11 @@
   },
   "CUSTOM_CRYPTO": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118",
     "sebi-annexure-h-5"
@@ -1392,7 +1612,11 @@
    "clauses": [
     "certin-bom-8.4.1.6",
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -1435,7 +1659,10 @@
   },
   "REUSED_NONCE": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -1451,7 +1678,10 @@
   },
   "STATIC_IV": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -1460,7 +1690,10 @@
   },
   "STATIC_SALT": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -1505,7 +1738,11 @@
   },
   "WEAK_ALGORITHM": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -1549,7 +1786,11 @@
   "WEAK_CERTIFICATE_KEY": {
    "clauses": [
     "nist-800-131a-below-112-bit",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -1558,7 +1799,11 @@
   },
   "WEAK_CERTIFICATE_SIGNATURE": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118",
     "certin-gov-6.1.7"
@@ -1577,7 +1822,11 @@
   },
   "WEAK_CIPHER_MODE": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -1587,7 +1836,11 @@
   "WEAK_CIPHER_SUITE": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -1614,7 +1867,10 @@
   },
   "WEAK_KDF_ITERATIONS": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -1623,7 +1879,11 @@
   },
   "WEAK_KEY_SIZE": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -1641,7 +1901,11 @@
   },
   "WEAK_PADDING": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118",
     "nist-800-131a-pkcs1-v1_5"
@@ -1652,7 +1916,11 @@
   "WEAK_PROTOCOL": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -1670,7 +1938,10 @@
   },
   "WEAK_RNG": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],
@@ -1679,7 +1950,11 @@
   },
   "WEAK_RSA_EXPONENT": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
     "rbi-nbfc-2026-para-118"
    ],

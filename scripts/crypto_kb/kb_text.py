@@ -333,7 +333,7 @@ entry("QUANTUM_VULNERABLE", title="Quantum-vulnerable algorithm", category="pqc"
       description="The asset relies on RSA, elliptic-curve or Diffie-Hellman cryptography, which Shor's algorithm breaks on a large quantum computer.",
       attack="Data encrypted with these keys can be recorded now and decrypted later (harvest now, decrypt later); signatures can be forged once such a computer exists.",
       cwe=["CWE-327"], owasp=["crypto"], cves=[], pqc="quantum-broken", standards=["NIST IR 8547", "FIPS 203/204/205"], compliance=["pqc"],
-      remediation={"summary": "Add it to the PQC migration plan; prioritise by the Mosca score.", "steps": PQC_HYBRID}, verify=[], references=["https://csrc.nist.gov/pubs/ir/8547/ipd"])
+      remediation={"summary": "Add it to the PQC migration plan; prioritise by the Mosca score.", "steps": PQC_HYBRID}, verify=[], references=["https://csrc.nist.gov/pubs/ir/8547/final"])
 
 # --- host crypto configuration
 entry("POLICY_LEGACY", title="System crypto policy is LEGACY", category="host", default_impact="High",

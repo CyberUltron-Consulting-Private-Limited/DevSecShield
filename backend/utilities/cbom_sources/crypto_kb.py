@@ -175,8 +175,44 @@ def has_clause_rules(namespace: str, code: str) -> bool:
     return bool((entry(namespace, code) or {}).get("clause_rules"))
 
 
+def applies(ref: dict[str, Any], team: dict[str, Any] | None) -> bool:
+    """Whether a clause (or a framework's applicability entry) binds a team (A-11).
+
+    ``team``: the team's profile, {"jurisdiction": "IN", "entity": "nbfc", "flags":
+    [...]} (the backend's ``regulated_entity.profile_of``). The clause's
+    ``applies_to`` must name the entity type, its ``applicability.jurisdiction``
+    must be the team's (or "*", a technical standard cited everywhere) and its
+    ``applicability.requires`` must be one of the team's flags. A superseded
+    clause binds nobody. None (the code-scan engine, which grades a repository
+    with no team) keeps every clause."""
+    if team is None:
+        return True
+    if ref.get("superseded"):
+        return False
+    scope = ref.get("applies_to") or ref.get("entities")
+    if scope and team.get("entity") not in scope:
+        return False
+    rule = ref.get("applicability")
+    rule = rule if isinstance(rule, dict) else ref
+    place = rule.get("jurisdiction")
+    if place and place != "*" and place != team.get("jurisdiction"):
+        return False
+    need = rule.get("requires")
+    return not need or need in (team.get("flags") or ())
+
+
+def framework_applicability(key: str) -> dict[str, Any] | None:
+    """Who a pooled framework (``aibom.cbom.compliance`` key) or a clause
+    framework ("RBI") binds; None if unknown."""
+    section = load().get("applicability") or {}
+    found = (section.get("frameworks") or {}).get(key)
+    found = found or (section.get("clause_frameworks") or {}).get(key)
+    return dict(found) if isinstance(found, dict) else None
+
+
 def clauses_for(
-    namespace: str, code: str, evidence: Any = None
+    namespace: str, code: str, evidence: Any = None, *,
+    team: dict[str, Any] | None = None
 ) -> list[dict[str, Any]]:
     """The regulatory clauses one finding breaks (or whose obligation it triggers),
     as {key, framework, id, text, source, note?, evidence?}: the entry's own
@@ -191,7 +227,11 @@ def clauses_for(
 
     Never a whole compliance area: an area groups clauses for the NIST SP 800-53
     control families, and a finding does not inherit the other clauses of its area
-    (#269: an SSH CBC cipher is not "PKCS#1 v1.5 padding disallowed")."""
+    (#269: an SSH CBC cipher is not "PKCS#1 v1.5 padding disallowed").
+
+    ``team``: only the clauses that bind the team (``applies``); every surface of a
+    team (run page, asset detail, OSCAL, the PDFs) passes it, so they cite the same
+    clauses. None keeps every clause (the code-scan engine has no team)."""
     e = entry(namespace, code)
     if not e:
         return []
@@ -208,6 +248,8 @@ def clauses_for(
     out = []
     for key in dict.fromkeys(keys + unrecorded):
         if key not in catalog:
+            continue
+        if not applies(catalog[key], team):
             continue
         ref = {**catalog[key], "key": key}
         if notes.get(key):
@@ -337,7 +379,8 @@ def _clause_names(code: str, given: dict[str, Any] | None, fields: tuple) -> Any
 
 def render(namespace: str, codes: list[str], *, context: dict[str, Any] | None = None, evidence: str = "",
            texts: dict[str, str] | None = None, title: str = "",
-           clause_evidence: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+           clause_evidence: dict[str, Any] | None = None,
+           team: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Full explanation for each finding code on one asset, with commands filled in from the asset's context.
 
     context: host / port / path / name / location / resource / line of the asset. texts: the asset-specific sentence
@@ -346,6 +389,7 @@ def render(namespace: str, codes: list[str], *, context: dict[str, Any] | None =
     on (``clauses_for``). A collected asset passes it: its name and sentences never
     decide a clause (#289). Without it, the code-scan finding's title, evidence and
     texts are used.
+    team: only the clauses that bind the team (``clauses_for``).
     Unknown codes are skipped (coverage notes are not findings).
     """
     context = context or {}
@@ -372,7 +416,8 @@ def render(namespace: str, codes: list[str], *, context: dict[str, Any] | None =
             "cves": cves_for(namespace, code, evidence),
             "standards": e.get("standards") or [],
             "compliance": clauses_for(namespace, code, _clause_names(
-                code, clause_evidence, (title, evidence, (texts or {}).get(code)))),
+                code, clause_evidence, (title, evidence, (texts or {}).get(code))),
+                team=team),
             "remediation": _remediation_for(e, title),
             "verify": [{"label": v["label"], "command": _fill(v["command"], context)} for v in e.get("verify") or []],
             "references": e.get("references") or [],

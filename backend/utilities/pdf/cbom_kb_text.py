@@ -51,11 +51,26 @@ ENTITY_LABELS = entity_types.LABELS
 
 
 def clause_applies(clause: Mapping[str, Any], entity: object) -> bool:
-    return entity_types.applies(clause, str(entity or ""))
+    """Whether a clause binds a team; ``entity`` is a profile (``regulated_entity.profile``) or an entity type."""
+    return entity_types.applies(clause, entity if isinstance(entity, Mapping) else str(entity or ""))
 
 
 def entity_label(entity: object) -> str:
     return ENTITY_LABELS[entity_types.normalise(entity)]
 
 
-__all__ = ["DEFAULT_ENTITY", "ENTITY_LABELS", "ENTITY_TYPES", "clause_applies", "entity_label", "finding", "ir8547"]
+def view_profile(view: object) -> dict[str, Any]:
+    """The team's regulatory profile as the view carries it (the default NBFC profile for a hand-made view)."""
+    found = getattr(view, "regulatory_profile", None)
+    if isinstance(found, Mapping):
+        return entity_types.profile(found.get("entity"), found.get("flags") or ())
+    return entity_types.profile(getattr(view, "regulated_entity", None))
+
+
+def framework_binds(key: str, view: object) -> bool:
+    """Whether a framework (a pooled key such as ``eu_dora``, or a clause framework such as "RBI") binds the team."""
+    return entity_types.framework_binds(key, view_profile(view))
+
+
+__all__ = ["DEFAULT_ENTITY", "ENTITY_LABELS", "ENTITY_TYPES", "clause_applies", "entity_label", "finding",
+           "framework_binds", "ir8547", "view_profile"]

@@ -1,4 +1,4 @@
-"""Infrastructure & Cloud Encryption Posture (#5, CBOM-D05).
+"""Infrastructure & Cloud Encryption Posture (SOW D6, CBOM-D06).
 
 Reads a team view. A view with no posture block still renders the shell, empty
 registers and the limits sentence.
@@ -414,7 +414,7 @@ def _findings(view: object, styles: Styles, width: float) -> list[Flowable]:
 
 
 def build_story(view: TeamCbomView, styles: Styles, width: float) -> list[Flowable]:
-    """Document body for deliverable #5."""
+    """Document body for SOW deliverable D6."""
     return [
         common.note(REPORT_META[REPORT_KEY]["how_to_read"], styles),
         common.gap(),
@@ -478,7 +478,7 @@ def build_story(view: TeamCbomView, styles: Styles, width: float) -> list[Flowab
 
 
 def build_pdf(view: TeamCbomView, *, ctx: Any = None) -> bytes:
-    """Render deliverable #5. Returns PDF bytes."""
+    """Render SOW deliverable D6. Returns PDF bytes."""
     return build_document(ctx=ctx, 
         view=view,
         number=DOCUMENT_NUMBER,

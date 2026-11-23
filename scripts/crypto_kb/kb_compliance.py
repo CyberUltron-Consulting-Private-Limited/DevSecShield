@@ -19,6 +19,53 @@ def owasp_tables(r: dict) -> dict:
     return out
 
 
+# Who each framework binds (SOW audit A-11): a team sees only what binds it (crypto_kb.applies). "jurisdiction": the
+# country the framework is law or regulation in ("*": a technical standard the platform grades against, cited
+# everywhere as a reference); "entities": the regulated-entity types it binds (team setting); "requires": a team
+# attribute it needs (team setting: processes_card_data, sebi_regulated, government_entity). Product decisions from
+# each framework's own scope statement.
+CLAUSE_FRAMEWORKS = {
+    "NIST": {"jurisdiction": "*", "basis": "reference"},
+    "NSA CNSA 2.0": {"jurisdiction": "*", "basis": "reference"},
+    "CERT-In": {"jurisdiction": "IN", "basis": "binding"},
+    "RBI": {"jurisdiction": "IN", "basis": "binding"},
+    "SEBI CSCRF": {"jurisdiction": "IN", "basis": "binding", "requires": "sebi_regulated"},
+}
+# the code-scan engine's pooled frameworks (aibom.cbom.compliance.CBOM_FRAMEWORKS keys)
+POOLED_FRAMEWORKS = {
+    "nist_1800_38b": {"jurisdiction": "*", "basis": "reference"},
+    "nist_800_57": {"jurisdiction": "*", "basis": "reference"},
+    "omb_m_23_02": {"jurisdiction": "US", "basis": "binding", "note": "US federal agencies"},
+    "eu_cra": {"jurisdiction": "EU", "basis": "binding", "note": "products placed on the EU market"},
+    "eu_dora": {"jurisdiction": "EU", "basis": "binding", "note": "EU financial entities"},
+    "pci_dss_4": {"jurisdiction": "*", "basis": "binding", "requires": "processes_card_data",
+                  "note": "entities that store, process or transmit payment-card data"},
+    "fips_140_3": {"jurisdiction": "*", "basis": "reference"},
+    "bsi_tr_02102": {"jurisdiction": "DE", "basis": "binding", "note": "German federal guidance"},
+    "nist_1800_38c": {"jurisdiction": "*", "basis": "reference"},
+    "cnsa_2_0": {"jurisdiction": "*", "basis": "reference"},
+    "rbi_free_ai_protection": {"jurisdiction": "IN", "basis": "binding",
+                               "entities": ["nbfc", "bank", "sfb", "payments_bank", "ucb", "aifi",
+                                            "credit_info_company", "other"]},
+    "cert_in_cbom": {"jurisdiction": "IN", "basis": "binding"},
+    "sebi_cscrf_cbom": {"jurisdiction": "IN", "basis": "binding", "requires": "sebi_regulated"},
+}
+
+
+def clause_applicability(framework: str, rid: str) -> dict:
+    out = dict(CLAUSE_FRAMEWORKS[framework])
+    if framework == "CERT-In" and rid.startswith("Guidelines for Government Entities"):
+        # "Guidelines on Information Security Practices for Government Entities" (June 2023): ministries, departments,
+        # their offices and government institutions, public sector enterprises and agencies; nobody else
+        out["requires"] = "government_entity"
+    return out
+
+
+def applicability() -> dict:
+    """The KB's ``applicability`` section: who each clause framework and each pooled framework binds."""
+    return {"clause_frameworks": CLAUSE_FRAMEWORKS, "frameworks": POOLED_FRAMEWORKS}
+
+
 def refs(r: dict) -> dict:
     """``_clauses``: every clause by stable key; and the compliance areas, each a list of clause keys."""
     n, c, ci, s, rb = r["nist"], r["cnsa2"], r["certin"], r["sebi_cscrf"], r["rbi"]
@@ -27,29 +74,49 @@ def refs(r: dict) -> dict:
     gov = ci["govt_entities_guidelines"]
     sc = s["clauses"]
     md, d26, nb = rb["md_itgrca_2023"], rb["commercial_banks_directions_2026"], rb["nbfc_directions_2026"]
+    sfb, pb, ucb = rb["small_finance_banks_directions_2026"], rb["payments_banks_directions_2026"], rb["ucb_directions_2026"]
+    aifi, cic = rb["aifi_directions_2026"], rb["credit_information_companies_directions_2026"]
 
-    def ref(framework, rid, text, source, note=None, applies_to=None):
+    def ref(framework, rid, text, source, note=None, applies_to=None, superseded=False):
         out = {"framework": framework, "id": rid, "text": text, "source": source}
         if note:
             out["note"] = note
         if applies_to:
-            # the regulated-entity types (team setting: bank / nbfc / other) an RBI instrument binds; a clause without
-            # it applies whatever the entity type
+            # the regulated-entity types (team setting, ENTITY_TYPES) an RBI instrument binds; a clause without it
+            # applies whatever the entity type
             out["applies_to"] = list(applies_to)
+        # who the clause binds (jurisdiction, and a team attribute it needs): crypto_kb.applies reads it (A-11)
+        out["applicability"] = clause_applicability(framework, rid)
+        if superseded:
+            out["superseded"] = True  # cited for no team (crypto_kb.applies); kept so an old clause= link resolves
         return out
 
     rbi_md = ref("RBI", "Master Direction on IT Governance (2023), para 16 Cryptographic controls",
                  md["para_16_cryptographic_controls"], md["source"],
-                 "Repealed for commercial banks and for NBFCs by their 2026 Directions; kept for other regulated "
-                 "entities.", applies_to=("other",))
+                 "Superseded on 31 July 2026 for every entity type it covered by the entity-wise Cybersecurity, "
+                 "Technology: Risk, Resilience and Assurance Framework Directions 2026.", superseded=True)
     rbi_26 = ref("RBI", "Commercial Banks Cybersecurity Directions 2026, para 140", d26["para_140_cryptographic_controls"],
                  d26["source"], "Commercial banks (from 31 July 2026).", applies_to=("bank",))
     rbi_26_106 = ref("RBI", "Commercial Banks Cybersecurity Directions 2026, para 106", d26["para_106"], d26["source"],
                      applies_to=("bank",))
     rbi_nbfc = ref("RBI", "NBFC Cybersecurity, Technology: Risk, Resilience and Assurance Framework Directions 2026, "
                    "para 118", nb["para_118_cryptographic_controls"], nb["source"],
-                   "NBFCs, Middle Layer and above (from 31 July 2026); replaces the Master Direction on IT Governance "
-                   "(2023) for NBFCs (para 155).", applies_to=("nbfc",))
+                   "Binds NBFCs of the Middle Layer and above (Chapter V; not Base Layer NBFCs, not CICs), from 31 July "
+                   "2026; replaces the Master Direction on IT Governance (2023) for NBFCs (para 155).", applies_to=("nbfc",))
+    rbi_sfb = ref("RBI", "Small Finance Banks Cybersecurity Directions 2026, para 139",
+                  sfb["para_139_cryptographic_controls"], sfb["source"], "Small finance banks (from 31 July 2026).",
+                  applies_to=("sfb",))
+    rbi_pb = ref("RBI", "Payments Banks Cybersecurity Directions 2026, para 139", pb["para_139_cryptographic_controls"],
+                 pb["source"], "Payments banks (from 31 July 2026).", applies_to=("payments_bank",))
+    rbi_ucb = ref("RBI", "Urban Co-operative Banks Cybersecurity Directions 2026, para 25",
+                  ucb["para_25_cryptographic_controls"], ucb["source"],
+                  "Urban co-operative banks of every level (Chapter III), from 31 July 2026: encryption algorithms that "
+                  "are not deprecated or demonstrated to be insecure.", applies_to=("ucb",))
+    rbi_aifi = ref("RBI", "AIFI Cybersecurity Directions 2026, para 135", aifi["para_135_cryptographic_controls"],
+                   aifi["source"], "EXIM Bank, NABARD, SIDBI, NHB and NaBFID (from 31 July 2026).", applies_to=("aifi",))
+    rbi_cic = ref("RBI", "Credit Information Companies Cybersecurity Directions 2026, para 135",
+                  cic["para_135_cryptographic_controls"], cic["source"], "Credit information companies (from 31 July 2026).",
+                  applies_to=("credit_info_company",))
     certin_tls = ref("CERT-In", "BOM Guidelines v2.0, 8.4.2.2", bom["key_recommendations"]["8.4.2.2"], bom["source"])
     certin_vex = ref("CERT-In", "BOM Guidelines v2.0, 8.4.1.6", bom["key_recommendations"]["8.4.1.6"], bom["source"])
     certin_shor = ref("CERT-In", "BOM Guidelines v2.0, 8.5.1", bom["key_recommendations"]["8.5.1"], bom["source"])
@@ -89,6 +156,8 @@ def refs(r: dict) -> dict:
         "certin-bom-8.5.1": certin_shor, "certin-gov-6.1.7": certin_617, "certin-gov-6.2.7": certin_627,
         "certin-gov-7.1": certin_71, "certin-gov-4.5.7": certin_457, "rbi-md-2023-para-16": rbi_md,
         "rbi-cb-2026-para-140": rbi_26, "rbi-cb-2026-para-106": rbi_26_106, "rbi-nbfc-2026-para-118": rbi_nbfc,
+        "rbi-sfb-2026-para-139": rbi_sfb, "rbi-pb-2026-para-139": rbi_pb, "rbi-ucb-2026-para-25": rbi_ucb,
+        "rbi-aifi-2026-para-135": rbi_aifi, "rbi-cic-2026-para-135": rbi_cic,
         "sebi-pr-ds-standard-1": sebi_prds,
         "sebi-pr-ds-s1-s3-1a": sebi_prds13, "sebi-pr-ds-s4-item-5": sebi_cert, "sebi-annexure-h-5": sebi_h,
         "sebi-annexure-i": sebi_i, "sebi-box-item-7": sebi_pqc, "sebi-id-ra-standard-2": sebi_ra,
@@ -97,15 +166,16 @@ def refs(r: dict) -> dict:
     # compliance areas: groups of clause keys, kept for the NIST SP 800-53 control families (OSCAL); a finding's cited
     # clauses come from its own "clauses" / "clause_rules", never from a whole area. Keys, not copies: each clause's
     # text is stored once (the catalog).
+    rbi_crypto = [rbi_26, rbi_nbfc, rbi_sfb, rbi_pb, rbi_ucb, rbi_aifi, rbi_cic]  # one per entity type
     areas = {
-        "tls_min": [certin_tls, sebi_i, rbi_md, rbi_26, rbi_nbfc, certin_617],
-        "algorithms": [nist_sha1, nist_tdea, nist_pkcs1, certin_tls, rbi_md, rbi_26, rbi_nbfc, sebi_h],
-        "keysize": [nist_112, rbi_md, rbi_26, rbi_nbfc],
+        "tls_min": [certin_tls, sebi_i, *rbi_crypto, certin_617],
+        "algorithms": [nist_sha1, nist_tdea, nist_pkcs1, certin_tls, *rbi_crypto, sebi_h],
+        "keysize": [nist_112, *rbi_crypto],
         "certificates": [sebi_cert, certin_617],
         "key_mgmt": [sebi_h],
         "at_rest": [sebi_prds, sebi_prds13, rbi_26_106, certin_71],
         "in_transit": [sebi_prds, sebi_i, rbi_26_106, rbi_nbfc, certin_627, certin_457],
-        "auth": [rbi_md, rbi_26, rbi_nbfc],
+        "auth": [*rbi_crypto],
         "components": [certin_vex, sebi_sbom],
         "pqc": [nist_pqc, cnsa, sebi_pqc, sebi_ra, certin_shor],
     }

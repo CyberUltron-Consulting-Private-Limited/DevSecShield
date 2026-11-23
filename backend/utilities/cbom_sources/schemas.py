@@ -230,8 +230,14 @@ class SettingsUpdate(_Body):
     soc_email: str | None = Field(default=None, max_length=254)
     emergency_contact: str | None = Field(default=None, max_length=64)
     risk_model: RiskModel | None = None
-    # which RBI instrument the regulatory mapping cites (regulated_entity.py); stored beside the Mosca inputs
-    regulated_entity: Literal["nbfc", "bank", "other"] | None = None
+    # the team's regulatory profile (regulated_entity.py), stored beside the Mosca inputs: which RBI instrument the
+    # regulatory mapping cites, and the facts that decide whether PCI DSS, SEBI CSCRF and the CERT-In Guidelines for
+    # Government Entities bind the team (SOW audit A-11). null leaves a value as it is.
+    regulated_entity: Literal["nbfc", "bank", "sfb", "payments_bank", "ucb", "aifi", "credit_info_company",
+                              "other"] | None = None
+    processes_card_data: bool | None = None
+    sebi_regulated: bool | None = None
+    government_entity: bool | None = None
     require_signed_nodes: bool | None = None
     expected_version: int | None = None
 

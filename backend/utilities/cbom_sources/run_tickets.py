@@ -190,7 +190,7 @@ def _detail(session: Session, team_id: int, row: CbomCollectedAsset) -> dict[str
     job = job if job is not None and job.team_id == team_id else None
     node = session.get(CbomScanNode, source.node_id) if source is not None and source.node_id else None
     node = node if node is not None and node.team_id == team_id else None
-    return POSTURE.asset_detail(row, source, job=job, node=node)
+    return POSTURE.asset_detail(row, source, job=job, node=node, session=session)
 
 
 def label_for(asset_key: str) -> str:

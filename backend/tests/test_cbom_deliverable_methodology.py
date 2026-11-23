@@ -588,7 +588,8 @@ def test_retention_paragraph_versioning_and_blank_retention_fields(view, text):
     assert f"Document ID CBOM-D02-T1-20261019-{view.fingerprint[:8]}" in nine
     assert f"data fingerprint {view.fingerprint}" in nine
     assert "template version 1.0" in nine
-    assert "a new successful scan or an attestation upload changes it" in nine
+    assert ("a new successful scan, an attestation upload or a change to the regulatory profile, source metadata or "
+            "quantum risk inputs changes it") in nine
     assert (
         "The roll-up reads up to 200 of the newest successful scans for first-seen and "
         "last-seen history, plus the latest scan of every source." in nine

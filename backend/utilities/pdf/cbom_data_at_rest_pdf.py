@@ -1,4 +1,4 @@
-"""Data-at-rest encryption assessment (#9, CBOM-D09).
+"""Data-at-rest encryption assessment (SOW D9, CBOM-D09).
 
 Declared configuration only. The document states that stored data was not inspected.
 """
@@ -331,7 +331,7 @@ def _classification(view: object, styles: Styles, width: float) -> list[Flowable
 
 
 def build_story(view: TeamCbomView, styles: Styles, width: float) -> list[Flowable]:
-    """Document body for deliverable #9."""
+    """Document body for SOW deliverable D9."""
     return [
         common.note(REPORT_META[REPORT_KEY]["how_to_read"], styles),
         common.gap(),
@@ -364,7 +364,7 @@ def build_story(view: TeamCbomView, styles: Styles, width: float) -> list[Flowab
 
 
 def build_pdf(view: TeamCbomView, *, ctx: Any = None) -> bytes:
-    """Render deliverable #9. Returns PDF bytes."""
+    """Render SOW deliverable D9. Returns PDF bytes."""
     return build_document(ctx=ctx, 
         view=view,
         number=DOCUMENT_NUMBER,

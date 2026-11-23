@@ -205,6 +205,8 @@ def _policy(path: Path) -> tuple[set[str], tuple[str, ...]]:
         backend += ("backend.utilities.cbom_sources.risk_register",)
         # the team's regulated-entity type (FIX-A3): one settings read, no AI
         backend += ("backend.utilities.cbom_sources.regulated_entity",)
+        # PR #485 M1: the quantum risk grade model's version (in the Document ID's content digest): a constant, no AI
+        backend += ("backend.utilities.cbom_sources.qgrade",)
     # CBOM Sources collections as CBOM results (M1x): stored assets and the latest-observation rule; database only
     backend += ("backend.utilities.cbom_sources.collections_view",)
     # cross-source asset keys (CB-21): pure, stdlib only, no AI
@@ -217,6 +219,8 @@ def _policy(path: Path) -> tuple[set[str], tuple[str, ...]]:
     if path.parent == _ROUTERS:
         roots |= {"fastapi", "starlette", "sqlmodel", "sqlalchemy", "rich"}
         backend += (
+            # PR #485 M7c: the board report's issues (one audit-event row per Document ID): database only, no AI
+            "backend.utilities.dashboard.cbom_board_issues",
             "backend.get_db",
             "backend.new_models",
             "backend.utilities.auth.auth_utils",

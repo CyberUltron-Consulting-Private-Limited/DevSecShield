@@ -18,7 +18,7 @@ import hashlib
 import json
 import threading
 from collections import OrderedDict
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 from backend.utilities.cbom_sources import crypto_kb
 
@@ -116,11 +116,15 @@ def evidence_by_code(row: Any, codes: Iterable[str]) -> dict[str, list[str] | No
     return {code: (flagged.get(code) or None) for code in codes}
 
 
-def asset_clauses(row: Any, codes: Iterable[str]) -> list[tuple[str, dict[str, Any]]]:
-    """(code, clause) for every clause the asset's finding codes break (``crypto_kb.clauses_for``)."""
+def asset_clauses(row: Any, codes: Iterable[str], team: Mapping[str, Any] | None) -> list[tuple[str, dict[str, Any]]]:
+    """(code, clause) for every clause the asset's finding codes break (``crypto_kb.clauses_for``) that binds the
+    team (``regulated_entity.profile_of``; SOW audit A-11). ``team`` has no default on purpose: a caller states the
+    team it cites for, so the run page, the asset detail, OSCAL and the PDFs cannot disagree (None: every clause,
+    used only where a clause is named explicitly)."""
     evidence = evidence_by_code(row, codes)
+    found = dict(team) if team is not None else None
     return [(code, ref) for code, names in evidence.items()
-            for ref in crypto_kb.clauses_for(NAMESPACE, code, names)]
+            for ref in crypto_kb.clauses_for(NAMESPACE, code, names, team=found)]
 
 
 # ----------------------------------------------------------------------------- the run assets filter (clause=)
@@ -178,7 +182,8 @@ def matches(row: Any, codes: Iterable[str], keys: set[str]) -> bool:
     if row.asset_type == "coverage":
         return False
     codes = [c for c in codes if isinstance(c, str) and not c.startswith("COVERAGE_")]
-    return any(ref.get("key") in keys for _code, ref in asset_clauses(row, codes))
+    # the clause is named by the caller (``clause=``), so no team filter: a clause that binds nobody matches nobody
+    return any(ref.get("key") in keys for _code, ref in asset_clauses(row, codes, None))
 
 
 def today_codes(row: Any, now: _dt.datetime) -> list[str]:

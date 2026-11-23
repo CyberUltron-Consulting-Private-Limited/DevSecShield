@@ -847,7 +847,8 @@ def test_population_by_source_total_row_reconciles_with_the_rows_and_the_headlin
 def test_population_basis_and_library_statements(text):
     flat = norm(text)
     assert "latest successful result of each source" in flat
-    assert "counted twice because each source's use is a separate exposure" in flat
+    assert "is one occurrence in each, because each source's use is a separate exposure" in flat
+    assert "A certificate is the exception" in flat  # PR #485 M6: certificates are counted once across sources
     assert (
         f"Crypto libraries: {UNIQUE_LIBRARIES} unique across sources "
         f"({SOURCE_LEVEL_LIBRARIES} source-level" in flat

@@ -4443,8 +4443,14 @@ export interface CbomSourcesSettings {
     emergency_contact: string | null
     /** Mosca inputs in years: X = how long data must stay secret, Y = migration time, Z = years until a quantum computer. */
     risk_model: CbomRiskModel
-    /** The RBI instrument the regulatory mapping cites (backend regulated_entity.py); "nbfc" when not set. */
-    regulated_entity?: "nbfc" | "bank" | "other"
+    /** The RBI instrument the regulatory mapping cites (backend regulated_entity.py); "nbfc" when not set. Absent on a
+     * backend older than the setting (the control is hidden then). */
+    regulated_entity?: "nbfc" | "bank" | "sfb" | "payments_bank" | "ucb" | "aifi" | "credit_info_company" | "other"
+    /** Regulatory profile facts (backend regulated_entity.FLAGS): PCI DSS, SEBI CSCRF and the CERT-In government
+     * guidelines bind the team only when set. Absent on an older backend. */
+    processes_card_data?: boolean
+    sebi_regulated?: boolean
+    government_entity?: boolean
     stop_all_network: boolean
     /** Refuse scan nodes that do not sign their requests (legacy nodes must be reset and enrolled again). */
     require_signed_nodes: boolean

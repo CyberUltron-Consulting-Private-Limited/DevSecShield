@@ -145,10 +145,17 @@ _ATTEMPT_NO_DATA = (
 # Product text: what the counts mean (cbom_team_rollup: assets are never merged across sources).
 _POPULATION_BASIS = (
     "Counts describe the current state: the latest successful result of each source. An asset "
-    "occurrence is one inventory row of a source's result. The same algorithm used in two sources "
-    "is counted twice because each source's use is a separate exposure; certificates are also "
-    "de-duplicated across sources in the {cert_register}."
+    "occurrence is one inventory row of a source's result: the same algorithm or key used in two sources "
+    "is one occurrence in each, because each source's use is a separate exposure. A certificate is the "
+    "exception: one observed by several sources (or by a code scan and a source) is counted once, from its "
+    "latest observation, here and in the {cert_register}. The reconciliation below shows the arithmetic."
 )
+_COLLECTION_INTRO = (
+    "How each CBOM Sources source was collected: the method, the window its latest collection ran in (UTC) and "
+    "the credential it used, named by reference only; no secret value is held in or printed by this register."
+)
+_COLLECTION_HEADERS = ("#", "Source", "Run", "Method", "Collection window (UTC)", "Credential reference")
+_COLLECTION_WIDTHS = (14, 96, 32, 118, 96, 184)
 _LAYER_INTRO = (
     "Population by SOW scope layer (SOW section 3.1, Table 4). Each source belongs to one layer; "
     "its asset occurrences are counted there by kind."
@@ -339,7 +346,8 @@ def _attempt_parts(source: SourceAgg) -> tuple[str, str, str]:
     """``(chip text, chip tone, detail)`` for a source's most recent attempt (plan 4.5)."""
     current_id, attempt_id = _num(source.current_scan_id), _num(source.last_attempt_scan_id)
     if attempt_id == current_id:
-        return "SUCCESS", "low", f"scan #{current_id}"
+        noun = "run" if source.kind == "sources" else "scan"  # a CBOM Sources collection belongs to a run
+        return "SUCCESS", "low", f"{noun} #{current_id}"
     status = str(source.last_attempt_status or "").strip().lower()
     attempt_date = fmt_date_utc(source.last_attempt_at)
     current_date = fmt_date_utc(source.last_scanned)
@@ -446,6 +454,14 @@ def _section_sources(view: TeamCbomView, styles: Styles, width: float) -> list[F
                         [_metadata_row(i, source, view, by_source) for i, source in enumerate(shown, start=1)],
                         _scaled(_METADATA_WIDTHS, width)),
         ]
+    collected = _collection_rows(view)
+    if collected:
+        story += [
+            Spacer(1, 8),
+            *_sub_with_room("Collection method, window and credential", styles),
+            _para(_COLLECTION_INTRO, styles["dense_muted"]),
+            dense_table(_COLLECTION_HEADERS, collected, _scaled(_COLLECTION_WIDTHS, width)),
+        ]
     return story
 
 
@@ -464,15 +480,37 @@ def _impact_columns(present: Iterable[str]) -> list[str]:
 
 
 def _population_kpis(view: TeamCbomView) -> list[tuple[str, str, str]]:
+    """The headline tiles; the six kind tiles add up to the asset occurrences (review m4)."""
     kinds = population.kind_counts(view)
     return [
         ("Sources", str(len(view.sources)), "with a completed result"),
-        ("Asset occurrences", str(_num(view.asset_occurrences)), "current state"),
+        ("Asset occurrences", str(_num(view.asset_occurrences)), "current state: the six kinds below"),
         ("Certificates", str(kinds["certificate"]), f"{_unique_certificates(view)} unique"),
         ("Keys and secrets", str(kinds["key"]), "occurrences"),
         ("Protocols and endpoints", str(kinds["protocol"]), "occurrences"),
         ("Algorithms", str(kinds["algorithm"]), "occurrences"),
+        ("Libraries", str(kinds["library"]), "occurrences"),
+        ("Encryption settings", str(kinds["setting"]), "occurrences"),
     ]
+
+
+def _when(value: object) -> str:
+    text = str(value or "")
+    return f"{text[:10]} {text[11:16]}" if len(text) >= 16 else (text or _DASH)
+
+
+def _collection_rows(view: TeamCbomView) -> list[list[object]]:
+    rows = []
+    by_key = population.collections_by_key(view)
+    sources = [s for s in view.sources if s.key in by_key]
+    for index, source in enumerate(sources[: max(0, MAX_SOURCE_ROWS)], start=1):
+        found = by_key[source.key]
+        info = getattr(found, "info", None) or {}
+        window = f"{_when(info.get('started'))} to\n{_when(info.get('finished'))}" if info.get("finished") else _DASH
+        rows.append([str(index), source.label or source.key, f"#{found.run_id}",
+                     info.get("method") or population.LAYER_UNKNOWN, window,
+                     info.get("credential") or population.LAYER_UNKNOWN])
+    return rows
 
 
 def _layer_table(view: TeamCbomView, width: float) -> Flowable:
@@ -549,6 +587,13 @@ def _by_source_table(view: TeamCbomView, shown: Sequence[SourceAgg], width: floa
     return dense_table(headers, rows, _scaled(widths, width))
 
 
+def _reconciliation_box(view: TeamCbomView, styles: Styles) -> list[Flowable]:
+    """The population reconciliation as arithmetic (SOW audit A-09, review M6)."""
+    lines = [_sub("Population reconciliation", styles)]
+    lines += [_para(step, styles["dense_muted"], limit=900) for step in population.reconciliation_steps(view)]
+    return [KeepTogether(lines)]
+
+
 def _section_population(view: TeamCbomView, styles: Styles, width: float) -> list[Flowable]:
     shown = list(view.sources)[: max(0, MAX_SOURCE_ROWS)]
     occurrences = sum(_num(source.library_count) for source in view.sources)
@@ -561,9 +606,9 @@ def _section_population(view: TeamCbomView, styles: Styles, width: float) -> lis
     story: list[Flowable] = [
         *section_heading("C. Asset population", styles, min_space=200),
         _para(basis, styles["muted"]),
-        kpi_strip(_population_kpis(view), width),
+        kpi_strip(_population_kpis(view), width, max_per_row=4),
         Spacer(1, 6),
-        _para(population.reconciliation_line(view), styles["dense_muted"], limit=1200),
+        *_reconciliation_box(view, styles),
         Spacer(1, 8),
         KeepTogether([_sub("Asset population by SOW layer", styles), _para(_LAYER_INTRO, styles["dense_muted"]),
                       _layer_table(view, width)]),
@@ -721,7 +766,7 @@ def build_body(view: TeamCbomView, styles: Styles, width: float) -> list[Flowabl
 
 
 def build_pdf(view: TeamCbomView, *, ctx: Any = None) -> bytes:
-    """Render deliverable #1 for ``view`` and return the PDF bytes (pure, deterministic)."""
+    """Render SOW deliverable D1 for ``view`` and return the PDF bytes (pure, deterministic)."""
     return build_document(ctx=ctx, 
         view=view,
         number=DELIVERABLE_NUMBER,
