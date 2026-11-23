@@ -229,6 +229,69 @@ def _posture_header(view: Any) -> str:
     return "none"
 
 
+@router.get(
+    "/{team_id}/cbom/deliverables/{slug}.csv",
+    summary="Download one team-wide CBOM regulatory deliverable as CSV",
+    description=(
+        "The CSV rendering of a deliverable that has one (today the Certificate Estate Register, SOW D8): the same "
+        "rows as the PDF in the same order, UTF-8 with a byte-order mark, RFC 4180, every cell safe from spreadsheet "
+        "formula injection. 404 for an unknown slug or a deliverable without a CSV."
+    ),
+    dependencies=[Depends(limiter), access.team("cbom.read")],
+    response_model=None,
+    responses={
+        200: {"description": "The CSV.", "content": {"text/csv": {"schema": {"type": "string"}}}},
+        404: {"description": "Unknown deliverable slug, or the deliverable has no CSV."},
+        **_ERRORS,
+    },
+)
+async def download_cbom_deliverable_csv(
+    team_id: TeamId,
+    slug: str,
+    Authorization: Annotated[str | None, Header()] = None,
+) -> Response:
+    started = time.perf_counter()
+    authorized = False
+    spec = DELIVERABLES.get(slug)
+    known = slug if spec is not None else "unknown"
+    try:
+        engine = await _authorize(team_id, Authorization)
+        authorized = True
+        if spec is None or spec.build_csv is None:
+            raise HTTPException(status_code=404, detail=UNKNOWN_DELIVERABLE_DETAIL)
+        view = await run_in_threadpool(load_team_cbom_view, engine, team_id, now=_utcnow())
+        body = await run_in_threadpool(spec.build_csv, view)
+        if not isinstance(body, bytes):
+            raise ValueError("the renderer did not return CSV bytes")
+    except HTTPException as exc:
+        if authorized:
+            _log_outcome(team_id, known, *failure_outcome(exc), started)
+        raise
+    except Exception as exc:
+        _log_failure("csv", team_id, exc)
+        if authorized:
+            _log_outcome(team_id, known, "error", 500, started)
+        raise HTTPException(status_code=500, detail=GENERIC_ERROR_DETAIL) from None
+    filename = deliverable_filename(spec, team_id, view.as_of, "csv")
+    console.print(
+        f"cbom deliverable team={team_id} slug={spec.slug} format=csv scans={view.included} "
+        f"sources={len(view.sources)} bytes={len(body)} ms={int((time.perf_counter() - started) * 1000)} outcome=ok",
+        markup=False,
+        highlight=False,
+        soft_wrap=True,
+    )
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            **PRIVATE,
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Content-Type-Options": "nosniff",
+            "X-Cbom-Fingerprint": view.fingerprint,
+        },
+    )
+
+
 _PDF_DESCRIPTION = (
     "Builds the document in memory from every completed CBOM scan of the team. Always 200 "
     "for a member and a known slug: a team without completed scans gets a PDF with a "

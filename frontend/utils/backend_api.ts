@@ -2521,8 +2521,9 @@ export const CBOM_DELIVERABLES = [
   { slug: "quantum-risk-register", number: 2, title: "Quantum Risk Register" },
   { slug: "methodology-evidence-plan", number: 3, title: "Cryptographic Discovery Methodology & Evidence Plan" },
   { slug: "infrastructure-cloud-encryption-posture", number: 5, title: "Infrastructure & Cloud Encryption Posture" },
-  { slug: "network-tls-protocol-assessment", number: 6, title: "Network, TLS & Crypto Protocol Assessment" },
-  { slug: "certificate-estate-register", number: 7, title: "Certificate Estate Register" },
+  { slug: "network-tls-protocol-assessment", number: 7, title: "Network, TLS & Crypto Protocol Assessment" },
+  // SOW D8 is delivered as PDF and CSV (GET /{team_id}/cbom/deliverables/certificate-estate-register.csv)
+  { slug: "certificate-estate-register", number: 8, title: "Certificate Estate Register", csv: true },
   { slug: "data-at-rest-encryption-assessment", number: 9, title: "Data-at-Rest Encryption Assessment" },
   { slug: "third-party-assurance-register", number: 10, title: "Third-Party Cryptographic Assurance & Attestation Register" },
   { slug: "pqc-migration-roadmap", number: 15, title: "PQC Migration Roadmap" },
@@ -2538,6 +2539,8 @@ export interface CbomDeliverableManifestItem {
   title: string
   description: string
   format: "pdf"
+  /** Every format the deliverable is offered in ("csv" for the Certificate Estate Register). */
+  formats: Array<"pdf" | "csv">
   /** UI hint only: the PDF route always answers 200 (with a banner when data is missing). */
   available: boolean
   /** Why the item is unavailable; used as the tooltip of the disabled menu item. */
@@ -2570,6 +2573,12 @@ const downloadCbomDeliverable = (
   options: ReportOptions,
 ): Promise<ReportDownload> => downloadDeliverable(team_id, slug, options);
 
+/** Team-scoped: GET /{team_id}/cbom/deliverables/{slug}.csv (the same rows as the PDF, UTF-8 with BOM). */
+const downloadCbomDeliverableCsv = async (team_id: number, slug: CbomDeliverableSlug): Promise<Blob> => {
+  const response = await api.get(`/${team_id}/cbom/deliverables/${slug}.csv`, { responseType: "blob" });
+  return response.data as Blob;
+};
+
 export {
   getCBOMScans,
   getCBOMScanData,
@@ -2583,6 +2592,7 @@ export {
   getCertInEvidencePack,
   getCbomDeliverables,
   downloadCbomDeliverable,
+  downloadCbomDeliverableCsv,
 }
 
 // -------------------------------------------------------------- AI BOM API Routes --------------------------------------------------------------

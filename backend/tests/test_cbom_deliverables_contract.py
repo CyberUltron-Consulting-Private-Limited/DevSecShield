@@ -75,10 +75,10 @@ EXPECTED = [
     ),
     (
         "network-tls-protocol-assessment",
-        6,
+        7,  # SOW Table 7 numbering (FIX-B2): D7 network, D8 certificates
         "Network, TLS & Crypto Protocol Assessment",
     ),
-    ("certificate-estate-register", 7, "Certificate Estate Register"),
+    ("certificate-estate-register", 8, "Certificate Estate Register"),
     (
         "data-at-rest-encryption-assessment",
         9,
@@ -223,7 +223,7 @@ _FE_API = "frontend/utils/backend_api.ts"
 _FE_PAGE = "frontend/app/[team_id]/cbom/page.tsx"
 _FE_ITEM = re.compile(
     r'\{\s*slug:\s*"(?P<slug>[^"]+)"\s*,\s*number:\s*(?P<number>\d+)\s*,'
-    r'\s*title:\s*"(?P<title>[^"]+)"\s*\}'
+    r'\s*title:\s*"(?P<title>[^"]+)"\s*(?:,\s*csv:\s*true\s*)?\}'
 )
 
 
@@ -242,11 +242,24 @@ def test_frontend_menu_equals_the_backend_registry():
 
 def test_frontend_download_name_matches_the_server_file_name():
     page = _read(_FE_PAGE, needs_frontend=True)
-    assert "`cbom-${slug}-team${teamId}-${yyyymmdd}.pdf`" in page
+    assert "`cbom-${slug}-team${teamId}-${yyyymmdd}.${ext}`" in page
+    assert 'ext: "pdf" | "csv" = "pdf"' in page
     assert "toISOString().slice(0, 10)" in page, "the client date must stay the UTC date"
     for spec in DELIVERABLES.values():
         name = deliverable_filename(spec, 7, date(2026, 10, 19))
         assert name == f"cbom-{spec.slug}-team7-20261019.pdf"
+        assert deliverable_filename(spec, 7, date(2026, 10, 19), "csv") == f"cbom-{spec.slug}-team7-20261019.csv"
+
+
+def test_frontend_offers_a_csv_item_exactly_for_the_deliverables_that_have_one():
+    """SOW Table 7: D8 Certificate Estate Register is "PDF, CSV" (FIX-B2); the others are PDF only."""
+    ts = _read(_FE_API, needs_frontend=True)
+    found = re.search(r"export const CBOM_DELIVERABLES = \[(.*?)\] as const;", ts, re.S)
+    with_csv = set(re.findall(r'slug:\s*"([^"]+)"[^}]*csv:\s*true', found.group(1)))
+    assert with_csv == {s.slug for s in DELIVERABLES.values() if "csv" in s.formats} == {"certificate-estate-register"}
+    page = _read(_FE_PAGE, needs_frontend=True)
+    assert "cbom-deliverable-${d.slug}-csv" in page and "downloadCbomDeliverableCsv" in page
+    assert "/cbom/deliverables/${slug}.csv" in ts
 
 
 def _strip_ts_comments(text: str) -> str:
@@ -291,6 +304,7 @@ def test_frontend_manifest_types_match_the_backend_manifest_shape():
     for item in manifest["deliverables"]:
         assert set(item) == item_fields
         assert item["format"] == "pdf"
+        assert item["formats"][0] == "pdf" and set(item["formats"]) <= {"pdf", "csv"}
     assert item_optional == {"reason"}, "only `reason` may be omitted by the backend contract"
 
 
@@ -619,6 +633,7 @@ def test_a_manifest_row_is_exactly_the_registry_row():
             "title": spec.title,
             "description": spec.description,
             "format": "pdf",
+            "formats": ["pdf", "csv"] if spec.slug == "certificate-estate-register" else ["pdf"],
             "available": True,
             "reason": None,
         }

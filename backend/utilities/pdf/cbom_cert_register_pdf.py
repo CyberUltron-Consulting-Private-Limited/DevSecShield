@@ -1,4 +1,4 @@
-"""Certificate Estate Register (deliverable #7): one landscape PDF row per UNIQUE certificate.
+"""Certificate Estate Register (SOW D8): one landscape PDF row per UNIQUE certificate.
 
 ``build_pdf(view)`` renders a ``TeamCbomView`` (``backend.utilities.dashboard.cbom_team_rollup``)
 into the register described in plan section 5.4:
@@ -13,8 +13,9 @@ into the register described in plan section 5.4:
 
 Rules this renderer follows (they are the point of the document, so they are tested):
 
-* Certificates are de-duplicated by the aggregator (plan 4.4); one row per ``CertAgg`` however
-  many sources, paths and scans it was seen in.  The row says how many ("3 locations",
+* Certificates are de-duplicated by ``cert_estate.unique_certificates`` (one row per SHA-256 thumbprint, Rule P:
+  the CSV and the D7 certificate count read the same list); one row however many sources, paths and scans it was
+  seen in.  The row says how many ("3 locations",
   "4 scans").  Only certificates present in their source's CURRENT scan are rows; the others
   go to the "previously seen" appendix and are excluded from every count.
 * Expiry is computed HERE from ``notAfter`` and ``view.as_of`` (plan F-03: the scanner never
@@ -71,6 +72,7 @@ from backend.utilities.dashboard.cbom_team_rollup import (
     TeamCbomView,
     classify_expiry,
 )
+from backend.utilities.cbom_sources.cert_estate import EstateCert, EstateResult, count_phrase, unique_certificates
 from backend.utilities.pdf import cbom_deliverable_text as authored
 from backend.utilities.pdf.cbom_deliverable_common import (
     Styles,
@@ -88,7 +90,7 @@ from backend.utilities.pdf.cbom_deliverable_common import (
 from backend.utilities.pdf.report_branding import COLOR_BODY, COLOR_SLATE, REPORT_META
 
 REPORT_KEY = "cbom_cert_register"
-NUMBER = 7
+NUMBER = 8  # SOW Table 7: D8 Certificate Estate Register
 TITLE = REPORT_META[REPORT_KEY]["title"]
 
 MAX_REGISTER_ROWS = 2000  # decision D-04: table cap for the certificate and PQC registers
@@ -113,29 +115,31 @@ _MIN_PIECE = 3  # a word is not broken at punctuation earlier than this many cha
 # Register columns, left to right: (header, width in points).  The widths sum to the 720 pt
 # landscape frame; ``_column_widths`` rescales them for any other frame width.
 _COLUMNS = (
-    ("#", 22),
-    ("Certificate", 91),
-    ("Issuer CN", 56),
-    ("Public key", 38),
-    ("Signature algorithm", 50),
-    ("Valid from", 43),
-    ("Valid to", 43),
-    ("Expiry", 46),
+    ("#", 18),
+    ("Certificate", 86),
+    ("SHA-256 thumbprint", 44),
+    ("Serial", 40),
+    ("Issuer CN", 52),
+    ("Public key", 36),
+    ("Signature algorithm", 42),
+    ("Valid from / Valid to", 46),
+    ("Expiry", 44),
     ("CA / self-signed / chain", 50),
-    ("Findings", 76),
-    ("Where found", 69),
+    ("Findings", 72),
+    ("Where found", 62),
     ("Seen (first -> last)", 52),
-    ("Owner (assessor)", 42),
-    ("Business system (assessor)", 42),
+    ("Owner (assessor)", 38),
+    ("Business system (assessor)", 38),
 )
 (
     _COL_NUMBER,
     _COL_CERT,
+    _COL_THUMB,
+    _COL_SERIAL,
     _COL_ISSUER,
     _COL_KEY,
     _COL_SIG,
-    _COL_FROM,
-    _COL_TO,
+    _COL_VALID,
     _COL_EXPIRY,
     _COL_CHAIN,
     _COL_FINDINGS,
@@ -241,6 +245,7 @@ class RegisterRow:
     # root_ca | self_signed_leaf | self_signed | signed_by | issuer_not_in_estate | unrecorded
     chain_kind: str
     chain_lines: tuple[str, ...]
+    estate: EstateCert | None = None  # the unique-certificate record (thumbprint, serial, SANs, sightings)
 
 
 def _fold(text: str | None) -> str:
@@ -344,7 +349,7 @@ def _flag_differs(cert: CertAgg, band: ExpiryBand) -> bool:
     return recorded is not None and recorded != (band.band == EXPIRED)
 
 
-def register_rows(view: TeamCbomView) -> list[RegisterRow]:
+def register_rows(view: TeamCbomView, estate: EstateResult | None = None) -> list[RegisterRow]:
     """The register's rows: every CURRENT unique certificate, sorted, numbered from 1.
 
     Sort key (plan 5.4): expiry urgency (EXPIRED, then <=30 days, then <=90 days; every other
@@ -352,8 +357,10 @@ def register_rows(view: TeamCbomView) -> list[RegisterRow]:
     then subject.  The certificate key is the final tie-break, so the order is total and the
     PDF byte-stable.
     """
-    current = [cert for cert in view.certs if cert.current]
-    estate = _estate_index(current)
+    found = estate if estate is not None else unique_certificates(view)
+    by_key = {item.cert.key: item for item in found.certificates}
+    current = [item.cert for item in found.certificates]
+    index = _estate_index(current)
     staged = []
     for cert in current:
         band = classify_expiry(cert.not_after, view.as_of)
@@ -368,7 +375,10 @@ def register_rows(view: TeamCbomView) -> list[RegisterRow]:
     staged.sort(key=lambda item: item[0])
     rows = []
     for number, (_key, cert, band) in enumerate(staged, start=1):
-        kind, lines = _chain(cert, estate)
+        kind, lines = _chain(cert, index)
+        record = by_key.get(cert.key)
+        if record is not None and record.issuer_thumbprint and not cert.self_signed:
+            lines = (*lines, f"Issuer SHA-256 {record.issuer_thumbprint[:16]}")
         rows.append(
             RegisterRow(
                 number=number,
@@ -379,6 +389,7 @@ def register_rows(view: TeamCbomView) -> list[RegisterRow]:
                 public_key=_public_key(cert),
                 chain_kind=kind,
                 chain_lines=lines,
+                estate=record,
             )
         )
     return rows
@@ -621,7 +632,7 @@ def _findings_cell(cert: CertAgg, usable: float) -> list[Flowable]:
             f"{authored.finding_label(code)} ({pdf_plain(code, limit=40)})",
             usable,
             limit=_FINDING_CHARS,
-            max_lines=5,
+            max_lines=7,
             bullet=many,
         )
         for code in codes[:MAX_FINDINGS_SHOWN]
@@ -654,6 +665,16 @@ def _where_cell(cert: CertAgg, usable: float) -> _TextBlock:
     return _block(*groups) if groups else _block(_lines(_DASH, usable))
 
 
+def _hex_cell(value: str, usable: float, *, keep: int) -> _TextBlock:
+    """A thumbprint or serial in groups of eight (the CSV carries the full value); a dash when not recorded."""
+    text = (value or "").strip()
+    if not text:
+        return _block(_lines(_DASH, usable))
+    shown = text[:keep] + ("\u2026" if len(text) > keep else "")
+    groups = " ".join(shown[i:i + 8] for i in range(0, len(shown), 8))
+    return _block(_lines(groups, usable, font="Courier", limit=keep + 12, max_lines=6))
+
+
 def _text_cell(text: object, usable: float, *, limit: int = _NAME_CHARS) -> _TextBlock:
     return _block(_lines(_dash_if_empty(text), usable, limit=limit))
 
@@ -672,11 +693,13 @@ def _row_cells(row: RegisterRow, usable: Sequence[float]) -> list[object]:
     return [
         _text_cell(row.number, usable[_COL_NUMBER]),
         _certificate_cell(cert, usable[_COL_CERT]),
+        _hex_cell(row.estate.thumbprint if row.estate else "", usable[_COL_THUMB], keep=16),
+        _hex_cell(row.estate.serial if row.estate else "", usable[_COL_SERIAL], keep=40),
         _text_cell(cert.issuer_cn, usable[_COL_ISSUER]),
         _text_cell(row.public_key, usable[_COL_KEY]),
         _text_cell(cert.signature_algorithm, usable[_COL_SIG], limit=40),
-        _text_cell(_date_text(cert.not_before), usable[_COL_FROM]),
-        _text_cell(_date_text(cert.not_after), usable[_COL_TO]),
+        _block(_lines(_date_text(cert.not_before), usable[_COL_VALID], max_lines=1),
+               _lines(_date_text(cert.not_after), usable[_COL_VALID], max_lines=1)),
         _expiry_cell(row, usable[_COL_EXPIRY]),
         _chain_cell(row, usable[_COL_CHAIN]),
         _findings_cell(cert, usable[_COL_FINDINGS]),
@@ -739,7 +762,7 @@ def _kpi_cards(rows: Sequence[RegisterRow]) -> list[tuple[str, ...]]:
     orphan = sum(1 for r in rows if r.chain_kind == "issuer_not_in_estate")
     # hints stay on one line (about 20 characters) so the cards of the strip are equally tall
     return [
-        ("Certificates", str(len(rows)), "Unique, all sources"),
+        ("Certificates", str(len(rows)), "Unique certificates"),
         ("Expired", str(bands[EXPIRED]), "Past notAfter date", "critical"),
         (chips[LE_30], str(bands[LE_30]), "Due in 0 to 30 days", "high"),
         (chips[LE_90], str(bands[LE_90]), "Due in 31 to 90 days", "medium"),
@@ -785,6 +808,19 @@ def _bullets(items: Sequence[str], styles: Styles) -> list[Flowable]:
     return [Paragraph(pdf_text(item, limit=700), style, bulletText=_BULLET) for item in items]
 
 
+def _scope_note(estate: EstateResult) -> str:
+    """What the unique set leaves out, and where the full detail is (the CSV has every column untruncated)."""
+    parts = ["The CSV export of this register has one row per certificate in the same order with the full "
+             "thumbprint, serial, subject alternative names and every location."]
+    if estate.deleted_only:
+        parts.append(f"{count_phrase(estate.deleted_only)} seen only by deleted sources "
+                     f"{'is' if estate.deleted_only == 1 else 'are'} not listed.")
+    if estate.bundles_skipped:
+        parts.append(f"{estate.bundles_skipped} trust-store bundle file row{'s' if estate.bundles_skipped != 1 else ''} "
+                     "(a file of CA roots, not one certificate) not counted.")
+    return " ".join(parts)
+
+
 def _omitted_notice(omitted: int, cap: int) -> str:
     noun = "row" if omitted == 1 else "rows"
     return OMITTED_NOTICE.format(omitted=omitted, noun=noun, max_rows=cap)
@@ -792,12 +828,13 @@ def _omitted_notice(omitted: int, cap: int) -> str:
 
 def _body(view: TeamCbomView, max_rows: int) -> Callable[[Styles, float], list[Flowable]]:
     def body(styles: Styles, width: float) -> list[Flowable]:
-        rows = register_rows(view)
+        estate = unique_certificates(view)
+        rows = register_rows(view, estate)
         earlier = previously_seen(view)
         cap = max(0, int(max_rows))
         shown = rows[:cap]
         as_of_text = fmt_date_utc(view.as_of)
-        unique = _count_noun(len(rows), "unique certificate")
+        unique = count_phrase(len(rows))
         story: list[Flowable] = []
         section = 0
 
@@ -832,7 +869,7 @@ def _body(view: TeamCbomView, max_rows: int) -> Callable[[Styles, float], list[F
             as_of=as_of_text,
             differs=authored.CERT_SCAN_FLAG_DIFFERS,
         )
-        story.append(Paragraph(pdf_text(f"{lead} {intro}", limit=900), styles["muted"]))
+        story.append(Paragraph(pdf_text(f"{lead} {intro} {_scope_note(estate)}", limit=1400), styles["muted"]))
         story.append(register_table(shown, width, as_of=view.as_of))
         if len(rows) > len(shown):
             story.append(Spacer(1, 4))
@@ -880,14 +917,105 @@ def build_pdf(view: TeamCbomView, *, max_rows: int = MAX_REGISTER_ROWS, ctx: Any
 
 
 __all__ = [
+    "CSV_COLUMNS",
     "MANUAL_COLUMNS",
     "MAX_REGISTER_ROWS",
     "NUMBER",
     "REPORT_KEY",
     "TITLE",
     "RegisterRow",
+    "build_csv",
     "build_pdf",
+    "csv_cell",
+    "csv_records",
     "previously_seen",
     "register_rows",
     "register_table",
 ]
+
+
+# ---------------------------------------------------------------------------------------------
+# CSV (SOW Table 7: D8 is delivered as PDF and CSV)
+# ---------------------------------------------------------------------------------------------
+CSV_COLUMNS = (
+    "row", "sha256_thumbprint", "certificate_key", "serial", "subject", "issuer", "subject_alt_names",
+    "key_algorithm", "key_size", "curve", "signature_algorithm", "not_before", "not_after", "days_to_expiry",
+    "status", "is_ca", "self_signed", "chain_position", "issuer_thumbprint", "where_seen", "sources", "seen_count",
+    "owner", "pqc_class", "impact", "finding_codes", "origin", "first_seen", "last_seen",
+)
+_FORMULA_LEAD = ("=", "+", "-", "@", "\t", "\r", "|", "%")
+
+
+def csv_cell(value: Any) -> Any:
+    """One CSV cell that a spreadsheet never runs as a formula (OWASP CSV injection): text whose first non-blank
+    character is = + - @ | % or a tab / CR gets a leading apostrophe; control characters other than tab and newline
+    are dropped. Numbers stay numbers (a negative day count is a number, not a formula)."""
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return value
+    text = "".join(ch for ch in str(value) if ch in "\t\n" or ord(ch) >= 32 and ord(ch) != 127)
+    if text[:1] in ("\t", "\r") or text.lstrip()[:1] in _FORMULA_LEAD:
+        return "'" + text
+    return text
+
+
+def _tri_text(value: bool | None) -> str:
+    return "" if value is None else ("true" if value else "false")
+
+
+def csv_records(view: TeamCbomView) -> list[dict[str, Any]]:
+    """The CSV rows: the PDF register's rows (same unique set, same order), every field untruncated."""
+    out = []
+    for row in register_rows(view):
+        cert, record = row.cert, row.estate
+        where = record.sightings if record is not None else ()
+        out.append({
+            "row": row.number,
+            "sha256_thumbprint": record.thumbprint if record else "",
+            "certificate_key": record.key if record else cert.key,
+            "serial": record.serial if record else "",
+            "subject": (record.subject if record else "") or cert.subject_cn or cert.name,
+            "issuer": (record.issuer if record else "") or cert.issuer_cn or "",
+            "subject_alt_names": "; ".join(record.sans) if record else "",
+            "key_algorithm": cert.public_key_algorithm or "",
+            "key_size": cert.key_size or "",
+            "curve": cert.curve or "",
+            "signature_algorithm": cert.signature_algorithm or "",
+            "not_before": cert.not_before or "",
+            "not_after": cert.not_after or "",
+            "days_to_expiry": row.band.days_left if row.band.days_left is not None else "",
+            "status": record.status if record else row.band.band.lower(),
+            "is_ca": _tri_text(cert.is_ca),
+            "self_signed": _tri_text(cert.self_signed),
+            "chain_position": record.chain_position if record else "unknown",
+            "issuer_thumbprint": record.issuer_thumbprint if record else "",
+            "where_seen": "; ".join(f"{s.source}: {s.location}" if s.location else s.source for s in where)
+            or "; ".join(f"{label}: {path}" for label, path in cert.locations),
+            "sources": "; ".join(record.sources) if record else "",
+            "seen_count": len(where) if where else max(int(cert.locations_total or 0), len(cert.locations)),
+            "owner": "; ".join(record.owners) if record else "",
+            "pqc_class": record.pqc_class if record else "",
+            "impact": cert.impact or "",
+            "finding_codes": " ".join(cert.finding_codes),
+            "origin": record.origin if record else "",
+            "first_seen": fmt_date_utc(cert.first_seen) if cert.first_seen else "",
+            "last_seen": fmt_date_utc(cert.last_seen) if cert.last_seen else "",
+        })
+    return out
+
+
+def build_csv(view: TeamCbomView) -> bytes:
+    """The register as CSV: UTF-8 with a byte-order mark (Excel reads the encoding), RFC 4180 (comma, double-quote
+    escaping, CRLF), one header row, one row per unique certificate in the PDF's order."""
+    import csv
+    import io
+
+    buf = io.StringIO()
+    writer = csv.writer(buf, lineterminator="\r\n", quoting=csv.QUOTE_MINIMAL)
+    writer.writerow(CSV_COLUMNS)
+    for record in csv_records(view):
+        writer.writerow([csv_cell(record[col]) for col in CSV_COLUMNS])
+    return b"\xef\xbb\xbf" + buf.getvalue().encode("utf-8")
