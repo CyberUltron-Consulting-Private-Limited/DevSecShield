@@ -113,7 +113,7 @@
       "name": "Mercy General Hospital"
     },
     {
-      "type": "ai_AIPackage",
+      "type": "software_Package",
       "spdxId": "https://zeroshield.ai/spdx/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/package/modelfile-model.safetensors",
       "creationInfo": "_:creationinfo",
       "name": "model.safetensors",
