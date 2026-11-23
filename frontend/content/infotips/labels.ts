@@ -918,6 +918,7 @@ export const INFO_TIP_LABELS = {
   "cbom.run.posture": "Post-quantum and risk posture",
   "cbom.run.mosca": "Mosca inputs",
   "cbsrc.rr.grade_inputs": "Grade inputs",
+  "cbsrc.rr.regulated_entity": "Regulated entity",
   "cbom.reg.section": "Quantum risk register",
   "cbom.reg.col.grade": "Grade",
   "cbom.reg.col.family": "Family",

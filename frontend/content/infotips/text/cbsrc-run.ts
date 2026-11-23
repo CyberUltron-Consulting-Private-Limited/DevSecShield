@@ -178,6 +178,12 @@ const TEXT = {
     why: "Without X, Y and Z, quantum-vulnerable assets grade as Unknown, and the record lets an old run's grade be explained later.",
     example: "X 10, Y 3, Z 12; Core banking DB keeps data 25 y; 2 Q0 gaps.",
   },
+  // src: backend/utilities/cbom_sources/regulated_entity.py:17-18, frontend/components/cbom/sources/RegulatedEntitySelect.tsx:41-52 — nbfc / bank / other, NBFC by default; selects the RBI clauses the deliverables cite
+  "cbsrc.rr.regulated_entity": {
+    what: "The kind of RBI-regulated entity the team is: NBFC (the default), commercial bank or other. The Board report (D14) cites the RBI directions for that kind only.",
+    why: "RBI issues separate directions per entity type; citing the Commercial Banks Directions for an NBFC would misstate its obligations.",
+    example: "NBFC: the RBI NBFC Directions 2026, para 118 (cryptographic controls).",
+  },
 } as const satisfies TipAreaText;
 
 export default TEXT;

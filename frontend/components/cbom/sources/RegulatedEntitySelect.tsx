@@ -6,6 +6,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { InfoTip } from "@/components/ui/info-tip";
 import { getCbomSourcesSettings, updateCbomSourcesSettings } from "@/utils/backend_api";
 import { handleApiError } from "@/utils/error-handler";
 
@@ -34,7 +35,9 @@ export default function RegulatedEntitySelect({ teamId, isAdmin }: { teamId: num
   return (
     <div className="space-y-1" data-testid="regulated-entity" data-entity={current}>
       <label className="flex flex-wrap items-center gap-2" htmlFor={`regulated-entity-${teamId}`}>
-        <span className="text-zinc-700 dark:text-zinc-300">Regulated entity (RBI mapping):</span>
+        <span className="text-zinc-700 dark:text-zinc-300">
+          Regulated entity (RBI mapping) <InfoTip id="cbsrc.rr.regulated_entity" />:
+        </span>
         <select
           id={`regulated-entity-${teamId}`}
           className="rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-2 py-1 text-sm"
