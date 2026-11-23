@@ -283,16 +283,18 @@ def fmt_date_utc(dt: datetime | date | None) -> str:
     return _DASH
 
 
-def document_id(view: TeamCbomView, number: int) -> str:
+def document_id(view: TeamCbomView, number: int | str) -> str:
     """``CBOM-D07-T1-20261019-ab12cd34``: deliverable number, team, as-of day, data fingerprint.
 
     The fingerprint part is the first 8 hex characters of ``view.fingerprint`` (padded with
-    zeros when it is shorter or empty), so the same scan set always yields the same ID.
+    zeros when it is shorter or empty), so the same scan set always yields the same ID.  A
+    ``str`` number is a SOW Table 7 identifier printed as given (``"D2"``: ``CBOM-D2-T1-...``).
     """
     fingerprint = re.sub(r"[^0-9a-f]", "", str(view.fingerprint or "").lower())[:8]
     day = view.as_of
     stamp = f"{day.year:04d}{day.month:02d}{day.day:02d}"
-    return f"CBOM-D{int(number):02d}-T{int(view.team_id)}-{stamp}-{fingerprint.ljust(8, '0')}"
+    code = re.sub(r"[^A-Za-z0-9]", "", number)[:8] if isinstance(number, str) else f"D{int(number):02d}"
+    return f"CBOM-{code}-T{int(view.team_id)}-{stamp}-{fingerprint.ljust(8, '0')}"
 
 
 def _pdf_date(dt: datetime) -> str:
@@ -811,7 +813,7 @@ def _window_text(view: TeamCbomView) -> str:
 
 
 def _control_table(
-    view: TeamCbomView, number: int, title: str, styles: Styles, width: float, ctx: Any = None
+    view: TeamCbomView, number: int | str, title: str, styles: Styles, width: float, ctx: Any = None
 ) -> Table:
     labels = authored.CONTROL_LABELS
     value, mono = styles["table_cell"], styles["mono_cell"]
@@ -950,7 +952,7 @@ def _disclaimer_box(
 
 def _front_matter(
     view: TeamCbomView,
-    number: int,
+    number: int | str,
     title: str,
     meta: dict[str, str],
     styles: Styles,
@@ -992,7 +994,7 @@ def _front_matter(
 def build_document(
     *,
     view: TeamCbomView,
-    number: int,
+    number: int | str,
     report_key: str,
     title: str,
     landscape: bool,
