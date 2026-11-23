@@ -11,6 +11,29 @@ from typing import Any
 
 from backend.utilities.cbom_sources import classify
 
+# Kerberos long-term key encryption types (msDS-SupportedEncryptionTypes bits, MS-KILE 2.2.7; RFC 3961/3962/4757), strongest
+# first, as CycloneDX 1.6 algorithm parts of an account's key (#488 review M4): primitive, mode, key bits, IANA etype.
+# Symmetric: algid has no row for them and no quantum verdict (classify.quantum_vulnerable gives None).
+# "AES256-CTS-HMAC-SHA1-96-SK" (0x20) is a flag (session keys may be AES), not a key type: listed, never a part.
+KERBEROS_ENCTYPES: dict[str, tuple[str, str | None, int, int]] = {
+    "AES256-CTS-HMAC-SHA1-96": ("block-cipher", "other", 256, 18),  # CBC with ciphertext stealing: no CycloneDX mode
+    "AES128-CTS-HMAC-SHA1-96": ("block-cipher", "other", 128, 17),
+    "RC4-HMAC": ("stream-cipher", None, 128, 23),
+    "DES-CBC-MD5": ("block-cipher", "cbc", 56, 3),
+    "DES-CBC-CRC": ("block-cipher", "cbc", 56, 1),
+}
+
+
+def account_enctypes(facts: dict[str, Any]) -> list[str]:
+    """The account's encryption types as read (``enc_types``), strings only, in the order stored."""
+    return _names(facts)
+
+
+def strongest_enctype(names: list[str]) -> str | None:
+    """The account's strongest key type (its ``algorithm``), never the lowest bit (the weakest)."""
+    return next((n for n in KERBEROS_ENCTYPES if n in names), None)
+
+
 KRBTGT_MAX_AGE_DAYS = 180  # Microsoft's guidance: reset the krbtgt password at least every 180 days
 LEVEL_2008 = 3  # below this the domain cannot issue AES tickets for krbtgt (MS-KILE)
 LEVEL_2016 = 7
@@ -27,18 +50,29 @@ def _names(facts: dict[str, Any]) -> list[str]:
 
 def _kerberos_account(out, facts: dict[str, Any], _algorithm, _key_size, _now) -> bool | None:
     who = facts.get("account") if isinstance(facts.get("account"), str) else "This account"
-    default = facts.get("enc_types_source") == "default"
+    if facts.get("account_type") == "krbtgt":
+        # TGTs use krbtgt's keys, decided by the domain functional level and the password age (the ad_domain row:
+        # AD_FUNCTIONAL_LEVEL_LEGACY, KRBTGT_KEY_OLD); its msDS-SupportedEncryptionTypes is not what the KDC reads
+        return None
     names = _names(facts)
     if _true(facts, "des_enabled"):
         des = [n for n in names if n.startswith("DES")] or ["DES"]
         out.add("KERBEROS_DES_ENABLED", "High",
                 f"{who} can be issued Kerberos tickets with DES" + (" (USE_DES_KEY_ONLY is set)"
                                                                     if _true(facts, "use_des_key_only") else ""), des)
+    if facts.get("enc_types_source") == "default":
+        # KB5073381 (CVE-2026-20833): a DC with the April 2026 update issues AES-SHA1 only (0x18) to an account
+        # without the attribute unless DefaultDomainSupportedEncTypes enables RC4; an older DC issues RC4.  Neither is
+        # readable over LDAP, so the encryption type is unknown: Low, with how to confirm it
+        out.add("KERBEROS_ENCTYPES_DEFAULT", "Low",
+                f"{who} has no msDS-SupportedEncryptionTypes, so it gets the domain controller's default: AES only on "
+                "a DC with the April 2026 update (KB5073381) unless DefaultDomainSupportedEncTypes enables RC4, RC4 "
+                "on an older DC; confirm the DCs' update level and that registry value with a Windows servers source "
+                "on the DCs, or set the attribute to 0x18 (AES)")
+        return None
     if _true(facts, "rc4_only"):
-        out.add("KERBEROS_RC4_ONLY", "High",
-                f"{who} gets RC4-HMAC Kerberos tickets and no AES" + (
-                    " (msDS-SupportedEncryptionTypes is not set, so the domain default applies)" if default else ""),
-                "RC4-HMAC")
+        out.add("KERBEROS_RC4_ONLY", "High", f"{who} gets RC4-HMAC Kerberos tickets and no AES "
+                "(msDS-SupportedEncryptionTypes allows RC4 and no AES)", "RC4-HMAC")
     elif _true(facts, "rc4_enabled"):
         out.add("KERBEROS_RC4_ENABLED", "Medium", f"{who} still allows RC4-HMAC Kerberos tickets beside AES",
                 "RC4-HMAC")

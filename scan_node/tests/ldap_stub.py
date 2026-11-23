@@ -85,7 +85,11 @@ def default_directory(ca_der: bytes) -> dict[tuple[str, int, str], list[tuple[st
                                                             operatingSystem="Windows Server 2016 Datacenter"))],
         (BASE, 2, "(sAMAccountName=krbtgt)"): [
             (f"CN=krbtgt,CN=Users,{BASE}", _attrs(sAMAccountName="krbtgt", pwdLastSet=FT_2024))],
-        (BASE, 2, "(&(objectCategory=person)(objectClass=user)(servicePrincipalName=*))"): [
+        (BASE, 2, "(&(objectCategory=person)(objectClass=user)(servicePrincipalName=*)(!(sAMAccountName=krbtgt)))"): [
+            # a server that ignores the (!(sAMAccountName=krbtgt)) clause: krbtgt has the SPN kadmin/changepw, and the
+            # collector must still read it once, as krbtgt (#488 review M3)
+            (f"CN=krbtgt,CN=Users,{BASE}", _attrs(sAMAccountName="krbtgt", pwdLastSet=FT_2024,
+                                                  servicePrincipalName="kadmin/changepw")),
             (f"CN=svc-sql,CN=Users,{BASE}", _attrs(sAMAccountName="svc-sql", userAccountControl="512",
                                                    # a hostile or misconfigured server sending a secret: dropped
                                                    unicodePwd=b"\x00secret-hash\x00", pwdLastSet=FT_2024)),
@@ -119,7 +123,7 @@ class Record:
 
 class LdapStub:
     def __init__(self, mode: str = "ldaps", directory=None, pki=None, page_size_cap: int = 3,
-                 stall_after_bind: bool = False) -> None:
+                 stall_after_bind: bool = False, ciphers: str | None = None) -> None:
         self.mode, self.pki = mode, pki or make_pki()
         self.directory = directory if directory is not None else default_directory(self.pki["ca_der"])
         self.page_size_cap, self.stall_after_bind = page_size_cap, stall_after_bind
@@ -129,6 +133,10 @@ class LdapStub:
         (folder / "k.pem").write_text(self.pki["key"])
         self.ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         self.ctx.load_cert_chain(str(folder / "c.pem"), str(folder / "k.pem"))
+        if ciphers:  # TLS 1.2 suites in the server's order of preference (it picks its first, accepts the rest)
+            self.ctx.maximum_version = ssl.TLSVersion.TLSv1_2
+            self.ctx.set_ciphers(ciphers)
+            self.ctx.options |= ssl.OP_CIPHER_SERVER_PREFERENCE
         self.sock = socket.socket()
         self.sock.bind(("127.0.0.1", 0))
         self.sock.listen(16)

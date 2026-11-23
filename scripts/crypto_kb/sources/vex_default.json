@@ -1016,6 +1016,16 @@
     "CycloneDX 1.6.2 impactAnalysisState"
    ]
   },
+  "KERBEROS_ENCTYPES_DEFAULT": {
+   "basis": "inferred",
+   "reason": "the account's ticket encryption follows a domain controller default that LDAP cannot read: RC4 only if the DCs predate the April 2026 update or DefaultDomainSupportedEncTypes enables it",
+   "sources": [
+    "kb:findings.node.KERBEROS_ENCTYPES_DEFAULT.attack",
+    "Microsoft KB5073381 (CVE-2026-20833)",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
   "KERBEROS_RC4_ONLY": {
    "basis": "observed",
    "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",

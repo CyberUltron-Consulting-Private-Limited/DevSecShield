@@ -72,7 +72,11 @@ def test_filters_round_trip_and_refuse_what_is_not_needed():
 
 
 @pytest.mark.parametrize("attr", ["*", "+", "unicodePwd", "msDS-ManagedPassword", "ms-Mcs-AdmPwd", "msLAPS-Password",
-                                  "supplementalCredentials", "msFVE-RecoveryPassword", ""])
+                                  "supplementalCredentials", "msFVE-RecoveryPassword", "",
+                                  # #488 review m1: options and numeric OIDs slipped past; three attributes were missing
+                                  "userPassword;binary", "UNICODEPWD;range=0-*", " userPassword ;x", "2.5.4.35",
+                                  "1.2.840.113556.1.4.90", "userPKCS12", "msSFU30Password",
+                                  "msPKI-CredentialRoamingTokens", "userPKCS12;binary"])
 def test_secret_attributes_and_wildcards_are_never_requested(attr):
     with pytest.raises(L.LdapError):
         L.search_request(1, "DC=x", 2, "(objectClass=*)", ["cn", attr])
@@ -82,10 +86,19 @@ def test_a_secret_attribute_a_server_sends_is_dropped_while_decoding():
     entry = L.seq(L.octets("CN=a"), L.seq(
         L.seq(L.octets("cn"), L.seq(L.octets("a"), tag=0x31)),
         L.seq(L.octets("unicodePwd"), L.seq(L.octets(b"\x00pw"), tag=0x31)),
-        L.seq(L.octets("msLAPS-Password;range=0-*"), L.seq(L.octets("x"), tag=0x31))), tag=0x64)
+        L.seq(L.octets("msLAPS-Password;range=0-*"), L.seq(L.octets("x"), tag=0x31)),
+        L.seq(L.octets("2.5.4.35"), L.seq(L.octets("x"), tag=0x31)),
+        L.seq(L.octets("userPKCS12;binary"), L.seq(L.octets("x"), tag=0x31))), tag=0x64)
     _t, op, _ = L.read_tlv(entry)
     dn, attrs = L.parse_entry(op)
     assert dn == "CN=a" and set(attrs) == {"cn"}
+
+
+def test_the_collector_attribute_lists_pass_the_check():
+    from zs_scan_node.collectors import active_directory as ad
+
+    for attrs in (ad.ROOT_DSE_ATTRS, ad.ACCOUNT_ATTRS, ["cn", "dNSHostName", "cACertificate", "certificateTemplates"]):
+        assert L.check_attributes(attrs) == attrs
 
 
 def test_malformed_and_oversized_answers_are_refused():
@@ -103,15 +116,27 @@ def test_the_client_has_no_write_operation():
 
 
 @pytest.mark.parametrize("value,uac,kind,expect", [
-    (None, 512, "service_account", {"rc4_only": True, "enc_types_source": "default", "weak": True}),
+    # #488 review M1: unset is the DC's default (AES only on a DC patched from April 2026, KB5073381): unknown, not RC4
+    (None, 512, "service_account", {"rc4_only": None, "rc4_enabled": None, "aes_enabled": None,
+                                    "enc_types_source": "default", "dc_default": True, "weak": False}),
+    (0, 512, "computer", {"rc4_enabled": None, "dc_default": True, "weak": False}),
+    (None, 0x200000 | 512, "service_account", {"des_enabled": True, "rc4_enabled": None, "weak": True}),
     (0x18, 512, "service_account", {"aes_enabled": True, "rc4_enabled": False, "weak": False}),
     (0x1C, 512, "domain_controller", {"aes_enabled": True, "rc4_enabled": True, "rc4_only": False}),
     (0x3, 0x200000 | 512, "service_account", {"des_enabled": True, "use_des_key_only": True}),
-    (0x4, None, "gmsa", {"rc4_only": True, "enc_types": ["RC4-HMAC"]}),
+    (0x4, None, "gmsa", {"rc4_only": True, "enc_types": ["RC4-HMAC"], "dc_default": False}),
 ])
 def test_enctype_facts(value, uac, kind, expect):
     facts = AD.enctype_facts(value, uac, kind)
     assert {k: facts[k] for k in expect} == expect
+
+
+def test_the_account_algorithm_is_its_strongest_key_type():
+    """#488 review M4: the lowest bit is the weakest type; DC1$ (0x1C) was exported as RC4-HMAC."""
+    assert AD.strongest(AD.enctypes(0x1C)) == "AES256-CTS-HMAC-SHA1-96"
+    assert AD.strongest(AD.enctypes(0x7)) == "RC4-HMAC"
+    assert AD.strongest(AD.enctypes(0x3)) == "DES-CBC-MD5"
+    assert AD.strongest(AD.enctypes(0x20)) is None and AD.strongest([]) is None
 
 
 def test_small_helpers():
@@ -131,16 +156,29 @@ def test_collects_tls_posture_kerberos_types_and_ad_cs_read_only(stub, mode, cap
     assets = _by_type(ctx)
     tls = assets["tls_endpoint"][0]
     assert tls["location"] == f"localhost:{server.port}" and tls["facts"]["ldap_tls_mode"] == mode
-    assert tls["facts"]["versions"].get("TLSv1.0") is False and tls["facts"]["protocols"]
+    assert tls["target"] == "localhost" and tls["facts"]["service"] == "ldap"
+    # the network prober's facts (#488 review M5): every suite per version, groups, the enumeration's completeness
+    assert tls["facts"]["versions"].get("TLSv1.0") is False and tls["facts"]["cipher_suites"]
+    assert "cipher_suites_complete" in tls["facts"] and "groups" in tls["facts"]
     assert tls["facts"]["leaf"]["subject"] and assets["certificate"][0]["facts"]["role"] == "domain_controller"
     domain = assets["ad_domain"][0]["facts"]
     assert domain["domain"] == "lab.test" and domain["domain_functional_level"] == 6
     assert domain["domain_functional_level_name"] == "Windows Server 2012 R2"
     assert domain["krbtgt_password_last_set"] == "2024-01-01T00:00:00Z"
-    assert domain["accounts"]["computer_total"] == 7 and domain["accounts"]["computer_rc4_enabled"] == 4  # paged
+    # paged; the 4 computers without the attribute use the DC default (unknown), the 3 with 0x18 are AES only
+    assert domain["accounts"]["computer_total"] == 7 and domain["accounts"]["computer_dc_default"] == 4
+    assert "computer_rc4_enabled" not in domain["accounts"]
+    # krbtgt is read once, as krbtgt, never as a service account (#488 review M3)
+    assert domain["accounts"]["service_account_total"] == 3 and domain["accounts"]["krbtgt_total"] == 1
+    assert any("(!(sAMAccountName=krbtgt))" in f for f in server.record.filters)
     assert domain["enrollment_services"][0]["template_count"] == 3
-    accounts = {a["name"]: a["facts"] for a in assets["kerberos_account"]}
-    assert accounts["svc-sql"]["rc4_only"] and accounts["svc-sql"]["enc_types_source"] == "default"
+    rows = assets["kerberos_account"]
+    assert sorted(a["name"] for a in rows) == ["DC1$", "gmsa-app$", "krbtgt", "svc-legacy", "svc-sql"]  # krbtgt once
+    accounts = {a["name"]: a["facts"] for a in rows}
+    algorithms = {a["name"]: a.get("algorithm") for a in rows}
+    assert algorithms["DC1$"] == "AES256-CTS-HMAC-SHA1-96" and algorithms["svc-sql"] is None
+    assert accounts["svc-sql"]["rc4_enabled"] is None and accounts["svc-sql"]["enc_types_source"] == "default"
+    assert accounts["svc-sql"]["dc_default"] is True and accounts["krbtgt"]["judged_by"].startswith("domain_functional")
     assert accounts["svc-legacy"]["des_enabled"] and accounts["svc-legacy"]["use_des_key_only"]
     assert "svc-web" not in accounts  # AES only: counted, not listed
     assert accounts["DC1$"]["account_type"] == "domain_controller" and accounts["krbtgt"]["account_type"] == "krbtgt"
@@ -232,3 +270,56 @@ def test_connection_test_reports_the_domain_and_level(stub):
     assert status == "success" and summary == "1 of 1 samples ready"
     sample = ctx.samples[0]
     assert sample["login"] is True and "lab.test" in sample["note"] and "2012 R2" in sample["note"]
+
+
+def test_a_weak_suite_the_dc_accepts_but_does_not_prefer_is_found(stub):
+    """#488 review M5: one ClientHello per legacy version saw only the suite the server preferred.  This DC (an ECDSA
+    certificate) prefers ECDHE-ECDSA-AES256-GCM-SHA384 and still accepts the CBC suite ECDHE-ECDSA-AES128-SHA; the
+    prober's enumeration lists both and names the weak one (OpenSSL 3 here serves no RC4 or 3DES at all, so the
+    accepted-not-preferred suite is a CBC one; the same enumeration finds RC4 or 3DES on a DC that accepts them)."""
+    server = stub(mode="ldaps", ciphers="ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES128-SHA")
+    ctx, status, _error = _run(server)
+    assert status == "success"
+    facts = _by_type(ctx)["tls_endpoint"][0]["facts"]
+    assert facts["negotiated_cipher"] == "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
+    names = {s["name"] for s in facts["cipher_suites"]["TLSv1.2"]}
+    assert {"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384", "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA"} <= names
+    assert "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA" in facts["weak_ciphers_accepted"]["cbc"]
+
+
+def test_timeout_s_bounds_the_whole_tls_posture_read():
+    """#488 review m2: a DC that accepts TCP and never answers, with timeout_s=5, took 20.2 s (s_client 15 s plus three
+    8 s probes, none bounded by the target's deadline)."""
+    import socket
+    import threading
+
+    silent = socket.socket()
+    silent.bind(("127.0.0.1", 0))
+    silent.listen(64)
+    held: list[socket.socket] = []
+    stop = threading.Event()
+
+    def accept() -> None:
+        silent.settimeout(0.2)
+        while not stop.is_set():
+            try:
+                held.append(silent.accept()[0])
+            except OSError:
+                continue
+
+    threading.Thread(target=accept, daemon=True).start()
+    try:
+        ctx = _ctx()
+        config = {"targets": ["127.0.0.1"], "port": silent.getsockname()[1], "login_user": BIND_NAME,
+                  "credential_type": "password", "ca_pem": make_pki()["ca"], "timeout_s": 5, "tls_mode": "ldaps"}
+        started = time.monotonic()
+        run_job(ctx, {"kind": "collect"}, {"targets": config["targets"]},
+                {"kind": "active_directory", "config": config, "secrets": {"password": PASSWORD}})
+        took = time.monotonic() - started
+    finally:
+        stop.set()
+        silent.close()
+        for c in held:
+            c.close()
+    assert took < 7.5, took
+    assert [o.status for o in ctx.outcomes] == ["timeout"]

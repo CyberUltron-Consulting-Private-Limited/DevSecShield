@@ -1262,6 +1262,11 @@
    "basis": "RC4-HMAC, a deprecated cipher, is still accepted for Kerberos authentication (RBI; SEBI strong encryption algorithms)",
    "rules": []
   },
+  "KERBEROS_ENCTYPES_DEFAULT": {
+   "clauses": [],
+   "basis": "an unknown (domain controller default) encryption type, not an observed weak cipher: no clause is cited until the default is known",
+   "rules": []
+  },
   "AD_FUNCTIONAL_LEVEL_LEGACY": {
    "clauses": [],
    "basis": "a directory feature level: no clause in the knowledge base names it, so it is not cited under a framework",

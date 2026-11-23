@@ -4,16 +4,24 @@ Per domain controller (each target line):
 
 1. the never-scan gate on the name and every address it resolves to (``check_name``), then everything connects to
    the checked address only;
-2. without credentials: the DC's TLS posture on the LDAP port (full handshake with ``openssl s_client``: negotiated
-   version, cipher, group and the certificate chain; then one ClientHello per legacy version for what it still
-   accepts): a ``tls_endpoint`` and its ``certificate`` chain;
+2. without credentials: the DC's TLS posture on the LDAP port, read by the network prober
+   (``network.NetworkScan.scan_endpoint``, protocol ``tls`` for LDAPS or ``starttls-ldap``): versions, every cipher
+   suite per version (so RC4 or 3DES that is accepted but not preferred is found), groups, PQ key exchange and the
+   chain, the same facts as every other TLS endpoint of D7, within the target's ``timeout_s``: a ``tls_endpoint`` and
+   its ``certificate`` chain;
 3. a TLS session that verifies the DC's certificate (the customer's CA, else the system store) and its name; only
    then is the read-only account's password sent (a simple bind).  A certificate that does not verify ends the
    target with ``identity_unverified`` and the password is not sent;
 4. RootDSE (functional levels, naming contexts) and, once per domain, the directory metadata that decides Kerberos
    crypto: ``msDS-SupportedEncryptionTypes`` on the domain controllers, krbtgt, service accounts (users with an SPN)
    and group managed service accounts, a count over computer accounts, the krbtgt key age, and the AD CS enrollment
-   services with their CA certificates.
+   services with their CA certificates.  Each account is read once (by DN) under the first search that finds it.
+
+An account without ``msDS-SupportedEncryptionTypes`` gets the domain controller's default, which this collector cannot
+read: Microsoft KB5073381 (CVE-2026-20833) made a DC patched from April 2026 assume AES-SHA1 only (0x18) unless the
+registry value ``DefaultDomainSupportedEncTypes`` says otherwise, while an older DC assumes RC4.  Such an account is
+recorded as "DC default" (RC4 and AES unknown), never as RC4.  krbtgt's TGT keys follow the domain functional level and
+its password age, not this attribute.
 
 Never read: any secret-bearing attribute (``ldapmini.SECRET_ATTRIBUTES`` is refused before a request is sent and
 dropped if a server returns one), and ``*``.  The client has no write operation at all.  LDAP signing and channel
@@ -31,12 +39,12 @@ from typing import Any
 from zs_scan_node import ldapmini as L
 from zs_scan_node import netutil
 from zs_scan_node import tlsprobe as T
-from zs_scan_node.certparse import cert_facts, chain_links, load_certs
+from zs_scan_node.certparse import cert_facts, load_certs
 from zs_scan_node.collectors import ConfigError, skipped_never_scan, target_error
+from zs_scan_node.collectors import network as NW
 from zs_scan_node.jobctx import JobContext, LeaseLost, register_asset_types
 from zs_scan_node.netutil import (
     Blocked,
-    NeverScan,
     Target,
     checked_ip,
     expand_targets,
@@ -53,6 +61,7 @@ MAX_ACCOUNT_ASSETS = 2000  # kerberos_account rows per domain (service accounts,
 MAX_COMPUTERS = 50_000  # computer accounts counted per domain
 SAMPLE_NAMES = 25
 CONNECT_TIMEOUT_S = 10.0
+POSTURE_HANDSHAKES = 48  # TLS handshakes for one DC's LDAP endpoint (the network prober's budget; bounded by timeout_s)
 
 # msDS-SupportedEncryptionTypes bits (MS-KILE 2.2.7)
 ENCTYPE_BITS = ((0x1, "DES-CBC-CRC"), (0x2, "DES-CBC-MD5"), (0x4, "RC4-HMAC"), (0x8, "AES128-CTS-HMAC-SHA1-96"),
@@ -65,7 +74,12 @@ ROOT_DSE_ATTRS = ["defaultNamingContext", "configurationNamingContext", "rootDom
                   "domainFunctionality", "forestFunctionality", "domainControllerFunctionality", "serverName",
                   "supportedLDAPVersion", "supportedSASLMechanisms"]
 ACCOUNT_ATTRS = ["sAMAccountName", "dNSHostName", "msDS-SupportedEncryptionTypes", "userAccountControl", "pwdLastSet",
-                 "operatingSystem", "objectClass"]
+                 "operatingSystem", "operatingSystemVersion", "objectClass"]
+# strongest first: the account's ``algorithm`` (never the lowest bit, which is the weakest); -SK is a flag, not a key
+STRENGTH = ("AES256-CTS-HMAC-SHA1-96", "AES128-CTS-HMAC-SHA1-96", "RC4-HMAC", "DES-CBC-MD5", "DES-CBC-CRC")
+DC_DEFAULT_NOTE = ("msDS-SupportedEncryptionTypes is not set, so the domain controller's default applies: AES only on a "
+                   "DC with the April 2026 update (KB5073381, CVE-2026-20833) unless DefaultDomainSupportedEncTypes "
+                   "enables RC4, RC4 on an older DC; neither is readable over LDAP")
 LDAP_POLICY_NOTE = ("LDAP signing (LDAPServerIntegrity) and channel binding (LdapEnforceChannelBinding) are set in each "
                     "domain controller's registry or Group Policy and cannot be read over LDAP; read them with a Windows "
                     "servers source on the domain controllers")
@@ -83,17 +97,30 @@ def enctypes(value: int | None) -> list[str]:
 
 
 def enctype_facts(value: int | None, uac: int | None, account_type: str) -> dict[str, Any]:
-    """What the KDC will issue for this account.  An unset attribute means the domain default: RC4 for user (service)
-    accounts, and for computers whatever DefaultDomainSupportedEncTypes says on the DCs (RC4 unless changed)."""
+    """What the KDC will issue for this account.  An explicit attribute says it.  An unset one (or 0) means the DC's
+    default, which LDAP cannot read (KB5073381: AES-SHA1 only on a DC patched from April 2026 unless
+    DefaultDomainSupportedEncTypes enables RC4; RC4 on an older DC): RC4 and AES are then unknown (None), never
+    assumed.  USE_DES_KEY_ONLY is DES whatever the attribute says."""
     names = enctypes(value)
     des_only = bool(uac and uac & USE_DES_KEY_ONLY)
     source = "attribute" if value else "default"
-    aes = any(n.startswith("AES") and not n.endswith("-SK") for n in names)
-    rc4 = "RC4-HMAC" in names or (source == "default" and not des_only)
     des = any(n.startswith("DES") for n in names) or des_only
+    rc4: bool | None
+    aes: bool | None
+    if source == "attribute":
+        aes = any(n.startswith("AES") and not n.endswith("-SK") for n in names)
+        rc4 = "RC4-HMAC" in names
+        rc4_only: bool | None = rc4 and not aes and not des
+    else:
+        aes = rc4 = rc4_only = None
     return {"account_type": account_type, "enc_types": names, "enc_types_value": value, "enc_types_source": source,
             "use_des_key_only": des_only, "des_enabled": des, "rc4_enabled": rc4, "aes_enabled": aes,
-            "rc4_only": rc4 and not aes and not des, "weak": des or rc4}
+            "rc4_only": rc4_only, "dc_default": source == "default", "weak": des or rc4 is True}
+
+
+def strongest(names: list[str]) -> str | None:
+    """The strongest Kerberos encryption type of the list (the account's ``algorithm``), or None."""
+    return next((n for n in STRENGTH if n in names), None)
 
 
 def filetime_to_iso(value: str | None) -> str | None:
@@ -197,54 +224,76 @@ def open_session(ctx: JobContext, target: Target, ip: str, config: dict, deadlin
 
 
 # ----------------------------------------------------------------------------- TLS posture (no credentials)
-_LEGACY_VERSIONS = ((T.TLS12, "TLSv1.2"), (T.TLS11, "TLSv1.1"), (T.TLS10, "TLSv1.0"))
+class _PostureScan(NW.NetworkScan):
+    """The network prober's TLS read of one LDAP endpoint (#488 review M5), every handshake bounded by the target's
+    deadline (m2: ``timeout_s`` is the whole posture read, not a per-probe allowance).  Each prober handshake takes its
+    timeout as the fifth argument (``tlsprobe.probe``/``s_client``/``python_handshake``); past the deadline a
+    handshake is not sent and reads as the prober's own "handshake budget" stop, so the enumeration ends cleanly."""
+
+    def __init__(self, ctx: Any, scope: dict, deadline: float) -> None:
+        super().__init__(ctx, scope)
+        self.deadline = deadline
+        # no SNI names: a domain controller serves its certificate to a hello without one (the verified session in
+        # ``open_session`` checks the name), and the prober never resolves the DC's name a second time
+        self._sni_order, self._sni_addresses, self._sni_reported = [], {}, True
+
+    def handshake(self, ep: NW.Endpoint, budget: Any, fn: Any, *args: Any) -> Any:
+        left = self.deadline - time.monotonic()
+        if left <= 0.05:
+            return "budget"
+        if len(args) >= 5 and isinstance(args[4], (int, float)) and not isinstance(args[4], bool):
+            args = (*args[:4], max(0.2, min(float(args[4]), left)), *args[5:])
+        return super().handshake(ep, budget, fn, *args)
 
 
-def tls_posture(ip: str, port: int, mode: str, sni: str | None, timeout: float,
-                never: NeverScan) -> tuple[dict[str, Any], list[dict]]:
-    """(tls_endpoint facts, chain facts) of the DC's LDAP TLS service, read without credentials."""
-    checked_ip(ip, never)  # raises Blocked: the caller's target ends skipped_never_scan
-    protocol = "starttls-ldap" if mode == "starttls" else "ldaps"
-    facts: dict[str, Any] = {"service": "ldap", "ldap_tls_mode": mode, "tls": True}
-    if T.have_openssl():
-        fh = T.s_client(ip, port, protocol, sni, timeout=min(15.0, timeout))
-    else:
-        fh = T.python_handshake(ip, port, protocol, sni, timeout=min(10.0, timeout))
-    versions: dict[str, bool] = {}
-    if fh.ok:
-        facts.update(negotiated_version=fh.version, negotiated_cipher=fh.cipher, negotiated_group=fh.group,
-                     group=fh.group, handshake_tool=fh.tool)
-        if fh.version:
-            versions[fh.version] = True
-    else:
-        facts["handshake_error"] = (fh.error or "handshake failed")[:200]
-    weak: list[str] = []
-    for code, name in _LEGACY_VERSIONS:
-        if name in versions:
-            continue
-        try:
-            hello = T.build_client_hello(code, list(T.LEGACY_SUITES), sni)
-            r = T.probe(ip, port, protocol, hello, timeout=min(8.0, timeout))
-        except (T.ProbeError, T.StarttlsUnavailable, OSError):
-            versions[name] = False
-            continue
-        accepted = bool(r.ok and r.version == code)
-        versions[name] = accepted
-        if accepted and r.cipher_name and any(t in r.cipher_name for t in ("RC4", "DES", "NULL", "EXPORT", "anon")):
-            weak.append(r.cipher_name)
-    facts["versions"] = versions
-    facts["protocols"] = [v for v, on in versions.items() if on]
-    facts["weak_ciphers"] = sorted(set(weak))
-    chain: list[dict[str, Any]] = []
-    for der in fh.certs_der[:20]:
-        for cert in load_certs(der):
-            chain.append(cert_facts(cert, "tls"))
-    chain_links(chain)
-    facts["chain_length"] = len(chain)
-    if chain:
-        facts["leaf"] = {k: chain[0].get(k) for k in ("subject", "issuer", "not_after", "key_alg", "key_size", "curve",
-                                                     "sig_alg", "fingerprint_sha256", "self_signed", "san")}
-    return facts, chain
+class _LdapView:
+    """The job context as the prober sees it for one domain controller: assets and coverage rows carry the DC's name
+    (as the target was written) instead of its address, the endpoint says it is LDAP (``service``,
+    ``ldap_tls_mode``) and the leaf certificate is the DC's.  Everything else is the job context itself."""
+
+    def __init__(self, ctx: JobContext, label: str, ip_where: str, where: str, mode: str) -> None:
+        self._ctx, self._label, self._ip_where, self._where, self._mode = ctx, label, ip_where, where, mode
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._ctx, name)
+
+    def _place(self, text: str) -> str:
+        return text.replace(self._ip_where, self._where, 1) if isinstance(text, str) else text
+
+    def emit(self, asset_type: str, _target: str, location: str, **kw: Any) -> Any:
+        facts = dict(kw.pop("facts", None) or {})
+        if asset_type == "tls_endpoint":
+            facts.update(service="ldap", ldap_tls_mode=self._mode, prober="network")
+            kw["name"] = f"LDAP {'StartTLS' if self._mode == 'starttls' else 'LDAPS'} {self._where}"
+        elif asset_type == "certificate" and facts.get("chain_index") == 0:
+            facts["role"] = "domain_controller"
+        elif "name" in kw:
+            kw["name"] = self._place(kw["name"])
+        return self._ctx.emit(asset_type, self._label, self._place(location), facts=facts, **kw)
+
+    def coverage(self, _target: str, check: str, status: str, detail: str = "", **kw: Any) -> Any:
+        if isinstance(kw.get("scope"), list):
+            kw["scope"] = [self._place(v) for v in kw["scope"]]
+        return self._ctx.coverage(self._label, self._place(check), status, self._place(detail), **kw)
+
+
+def tls_posture(ctx: JobContext, target: Target, ip: str, port: int, mode: str,
+                deadline: float) -> tuple[str, str | None, int]:
+    """Read the DC's LDAP TLS service without credentials with the network prober; its assets are emitted under the
+    target's name.  Returns the prober's (status, detail, assets emitted); ``skipped_never_scan`` raises Blocked."""
+    checked_ip(ip, ctx.never_scan)  # raises Blocked: the caller's target ends skipped_never_scan
+    protocol = "starttls-ldap" if mode == "starttls" else "tls"
+    label = f"LDAP {'StartTLS' if mode == 'starttls' else 'LDAPS'}"
+    endpoint = NW.Endpoint(ip, port, protocol, label)
+    where = f"{target.label}:{port}"
+    # a DC is one endpoint: a larger handshake budget than a sweep's default (12) lets the suite enumeration finish
+    scope = {"rate_limits": {"handshakes_per_endpoint": POSTURE_HANDSHAKES}}
+    view = _LdapView(ctx, target.label, endpoint.where, where, mode)
+    scan = _PostureScan(view, scope, deadline)
+    status, detail, assets = scan.scan_endpoint(endpoint, "full")  # type: ignore[arg-type]
+    if status == "skipped_never_scan":
+        raise Blocked(f"{ip} is on the never-scan list")
+    return status, detail, assets
 
 
 # ----------------------------------------------------------------------------- directory reads
@@ -274,6 +323,9 @@ def _account(attrs: dict[str, list[bytes]], account_type: str) -> dict[str, Any]
     os_name = L.first(attrs, "operatingSystem")
     if os_name:
         facts["operating_system"] = printable(os_name, 80)
+    os_version = L.first(attrs, "operatingSystemVersion")
+    if os_version:
+        facts["operating_system_version"] = printable(os_version, 40)
     last = filetime_to_iso(L.first(attrs, "pwdLastSet"))
     if last:
         facts["password_last_set"] = last
@@ -295,8 +347,8 @@ def read_domain(ctx: JobContext, client: L.LdapClient, dse: dict[str, Any], targ
 
     def tally(facts: dict[str, Any]) -> None:
         kind = facts["account_type"]
-        for flag in ("des_enabled", "rc4_enabled", "rc4_only", "aes_enabled"):
-            if facts.get(flag):
+        for flag in ("des_enabled", "rc4_enabled", "rc4_only", "aes_enabled", "dc_default"):
+            if facts.get(flag) is True:
                 counts[f"{kind}_{flag}"] = counts.get(f"{kind}_{flag}", 0) + 1
                 names = samples.setdefault(f"{kind}_{flag}", [])
                 if len(names) < SAMPLE_NAMES and facts.get("account"):
@@ -306,25 +358,36 @@ def read_domain(ctx: JobContext, client: L.LdapClient, dse: dict[str, Any], targ
     searches = (
         ("domain_controller", "(|(primaryGroupID=516)(primaryGroupID=521))", True),
         ("krbtgt", "(sAMAccountName=krbtgt)", True),
-        ("service_account", "(&(objectCategory=person)(objectClass=user)(servicePrincipalName=*))", True),
+        # krbtgt carries the SPN kadmin/changepw: it is read once, as krbtgt (#488 review M3)
+        ("service_account", "(&(objectCategory=person)(objectClass=user)(servicePrincipalName=*)"
+                            "(!(sAMAccountName=krbtgt)))", True),
         ("gmsa", "(objectClass=msDS-GroupManagedServiceAccount)", True),
         ("computer", "(&(objectCategory=computer)(!(primaryGroupID=516))(!(primaryGroupID=521)))", False),
     )
     krbtgt: dict[str, Any] | None = None
     truncated: list[str] = []
+    seen: set[str] = set()  # DNs already read: an account found by two searches is one account (M3)
     for account_type, filt, emit_each in searches:
         if ctx.should_stop():
             truncated.append(account_type)
             continue
         try:
             limit = MAX_COMPUTERS if account_type == "computer" else 20_000
-            for _dn, attrs in client.search(base, L.SCOPE_SUB, filt, ACCOUNT_ATTRS, max_entries=limit):
+            for dn, attrs in client.search(base, L.SCOPE_SUB, filt, ACCOUNT_ATTRS, max_entries=limit):
+                key = str(dn).strip().lower()
+                if key in seen:
+                    continue
+                seen.add(key)
                 facts = _account(attrs, account_type)
                 facts["domain"] = domain
-                tally(facts)
                 if account_type == "krbtgt":
+                    # TGTs are encrypted with krbtgt's keys, which the domain functional level and the password age
+                    # decide; its msDS-SupportedEncryptionTypes is not what the KDC uses for them (M2)
+                    facts["judged_by"] = "domain_functional_level_and_key_age"
                     krbtgt = facts
-                if emit_each and (facts["weak"] or account_type in ("domain_controller", "krbtgt")):
+                tally(facts)
+                if emit_each and (facts["weak"] or facts["dc_default"] or account_type in ("domain_controller",
+                                                                                           "krbtgt")):
                     accounts.append(facts)
             if client.truncated:
                 truncated.append(account_type)
@@ -334,8 +397,7 @@ def read_domain(ctx: JobContext, client: L.LdapClient, dse: dict[str, Any], targ
     for facts in accounts[:MAX_ACCOUNT_ASSETS]:
         name = str(facts.get("account") or "?")
         ctx.emit("kerberos_account", target, f"{loc}/{facts['account_type']}/{name}", name=name,
-                 algorithm=(facts["enc_types"][0] if facts["enc_types"] else ("RC4-HMAC" if facts["rc4_enabled"] else None)),
-                 protocol="kerberos", facts=facts)
+                 algorithm=strongest(facts["enc_types"]), protocol="kerberos", facts=facts)
         n += 1
     if len(accounts) > MAX_ACCOUNT_ASSETS:
         truncated.append(f"kerberos_account rows over {MAX_ACCOUNT_ASSETS}")
@@ -371,6 +433,9 @@ def read_domain(ctx: JobContext, client: L.LdapClient, dse: dict[str, Any], targ
         "forest_functional_level_name": level_name(dse.get("forest_functionality")),
         "krbtgt_password_last_set": (krbtgt or {}).get("password_last_set"),
         "krbtgt_enc_types": (krbtgt or {}).get("enc_types"),
+        "dc_operating_systems": sorted({f"{a.get('operating_system') or '?'} {a.get('operating_system_version') or ''}"
+                                        .strip() for a in accounts if a["account_type"] == "domain_controller"})[:20],
+        "dc_default_note": DC_DEFAULT_NOTE,
         "accounts": counts, "samples": samples, "enrollment_services": enrollment,
         "read_from": dse.get("dns_host_name") or target, "truncated": truncated,
         "ldap_signing": "not_readable", "ldap_channel_binding": "not_readable",
@@ -431,19 +496,17 @@ def collect_target(ctx: JobContext, target: Target, config: dict, password: str,
     deadline = time.monotonic() + timeout
     where = f"{target.label}:{port}"
     n = 0
-    sni = None if is_ip(target.label) else target.label
     try:
-        facts, chain = tls_posture(ip, port, mode, sni, timeout, ctx.never_scan)
+        status, detail, assets = tls_posture(ctx, target, ip, port, mode, deadline)
     except Blocked as exc:
         raise _Fail("skipped_never_scan", str(exc)) from None
-    top = next((v for v in ("TLSv1.3", "TLSv1.2", "TLSv1.1", "TLSv1.0") if facts["versions"].get(v)), None)
-    ctx.emit("tls_endpoint", target.label, where, name=f"LDAP {'StartTLS' if mode == 'starttls' else 'LDAPS'} {where}",
-             algorithm=facts.get("negotiated_cipher"), protocol=top, facts=facts)
-    n += 1
-    for i, c in enumerate(chain):
-        ctx.emit("certificate", target.label, f"{where}#chain[{i}]", name=c.get("subject", ""), algorithm=c.get("key_alg"),
-                 key_size=c.get("key_size"), facts={**c, "chain_index": i, "role": "domain_controller" if i == 0 else None})
-        n += 1
+    if status != "ok":
+        ctx.coverage(target.label, f"LDAP TLS posture {where}", "incomplete",
+                     f"the TLS read of {where} ended {status}" + (f": {detail}" if detail else ""), scope=[where],
+                     incomplete=True)
+    n += assets
+    if time.monotonic() >= deadline:
+        raise TimeoutError("the domain controller did not answer within timeout_s")
     client = open_session(ctx, target, ip, config, deadline)
     try:
         try:

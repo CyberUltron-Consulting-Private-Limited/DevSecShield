@@ -11,6 +11,7 @@ a hostile server cannot make the node buffer without bound.
 """
 from __future__ import annotations
 
+import re
 import socket
 import ssl
 import time
@@ -32,7 +33,23 @@ SECRET_ATTRIBUTES = frozenset(a.lower() for a in (
     "trustAuthIncoming", "trustAuthOutgoing", "initialAuthIncoming", "initialAuthOutgoing", "msPKIAccountCredentials",
     "msPKIDPAPIMasterKeys", "msPKIRoamingTimeStamp", "msDS-ExecuteScriptPassword", "unixUserPassword",
     "orclCommonAttribute", "os400-password",
+    # #488 review m1: a PKCS#12 with its private key, the SFU (NIS) password hash, credential-roaming tokens
+    "userPKCS12", "msSFU30Password", "msPKI-CredentialRoamingTokens",
 ))
+_NUMERIC_OID = re.compile(r"^\d+(?:\.\d+)+$")
+
+
+def attribute_base(name: str) -> str:
+    """The attribute's description without its options (``userPassword;binary`` -> ``userpassword``), lower-case."""
+    return str(name).split(";", 1)[0].strip().lower()
+
+
+def is_refused_attribute(name: str) -> bool:
+    """A secret-bearing attribute under any spelling the protocol allows: with options (``;binary``, ``;range=``),
+    or as a numeric OID (``2.5.4.35`` is userPassword; the collector names every attribute it needs, so an OID is
+    never needed and is refused whatever it names)."""
+    base = attribute_base(name)
+    return base in SECRET_ATTRIBUTES or bool(_NUMERIC_OID.match(base))
 RESULT_NAMES = {0: "success", 1: "operationsError", 2: "protocolError", 3: "timeLimitExceeded",
                 4: "sizeLimitExceeded", 7: "authMethodNotSupported", 8: "strongerAuthRequired", 10: "referral",
                 11: "adminLimitExceeded", 12: "unavailableCriticalExtension", 13: "confidentialityRequired",
@@ -190,7 +207,7 @@ def check_attributes(attributes: list[str]) -> list[str]:
     out = []
     for name in attributes:
         clean = str(name).strip()
-        if not clean or clean in ("*", "+") or clean.lower() in SECRET_ATTRIBUTES:
+        if not clean or clean in ("*", "+") or is_refused_attribute(clean):
             raise LdapError(f"attribute {clean or '(empty)'} is never requested")
         out.append(clean)
     return out
@@ -271,7 +288,7 @@ def parse_entry(op: bytes) -> tuple[str, dict[str, list[bytes]]]:
             if not fields:
                 continue
             name = fields[0][1].decode("utf-8", "replace")
-            if name.lower() in SECRET_ATTRIBUTES or name.split(";", 1)[0].lower() in SECRET_ATTRIBUTES:
+            if is_refused_attribute(name):
                 continue
             values = [v for _t, v in children(fields[1][1])] if len(fields) > 1 else []
             attrs[name] = values

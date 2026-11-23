@@ -1105,6 +1105,14 @@
     "kb:findings.node.KERBEROS_RC4_ENABLED.remediation"
    ]
   },
+  "KERBEROS_ENCTYPES_DEFAULT": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "account attribute (msDS-SupportedEncryptionTypes) made explicit; the DCs' update level and DefaultDomainSupportedEncTypes are registry settings",
+   "sources": [
+    "kb:findings.node.KERBEROS_ENCTYPES_DEFAULT.remediation"
+   ]
+  },
   "AD_FUNCTIONAL_LEVEL_LEGACY": {
    "class": "configurable",
    "capability": false,

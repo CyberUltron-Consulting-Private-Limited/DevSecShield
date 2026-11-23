@@ -49,9 +49,9 @@ kb_text.entry(
                 "https://learn.microsoft.com/en-us/windows/security/threat-protection/security-policy-settings/network-security-configure-encryption-types-allowed-for-kerberos"])
 kb_text.entry(
     "KERBEROS_RC4_ONLY", title="Kerberos account gets RC4 tickets and no AES", category="protocol", default_impact="High",
-    description="The account allows RC4-HMAC and no AES encryption type (msDS-SupportedEncryptionTypes is unset, so "
-                "the domain default RC4 applies, or it lists RC4 alone): every service ticket for it is encrypted "
-                "with RC4-HMAC, whose key is the account's unsalted NT hash.",
+    description="The account's msDS-SupportedEncryptionTypes lists RC4-HMAC and no AES encryption type: every service "
+                "ticket for it is encrypted with RC4-HMAC, whose key is the account's unsalted NT hash. (An account "
+                "without the attribute gets the domain controller's default instead: KERBEROS_ENCTYPES_DEFAULT.)",
     attack="Any domain user can request a service ticket for an account with an SPN and crack it offline "
            "(Kerberoasting); RC4 tickets are far cheaper to crack than AES ones because the key is the NT hash with "
            "no salt and no key-derivation iterations.",
@@ -63,6 +63,34 @@ kb_text.entry(
                             "service allows it.", "steps": ENCTYPE_STEPS},
     verify=V_ENCTYPES,
     references=["https://www.rfc-editor.org/rfc/rfc8429",
+                "https://learn.microsoft.com/en-us/windows-server/security/kerberos/detect-remediate-rc4-kerberos"])
+kb_text.entry(
+    "KERBEROS_ENCTYPES_DEFAULT", title="Kerberos account uses the domain controller's default encryption types",
+    category="protocol", default_impact="Low",
+    description="The account has no msDS-SupportedEncryptionTypes, so the domain controller decides which encryption "
+                "type its service tickets use. Since Microsoft's April 2026 update for CVE-2026-20833 (KB5073381) a "
+                "patched domain controller assumes AES-SHA1 only (0x18) for such an account unless the registry value "
+                "DefaultDomainSupportedEncTypes enables RC4; an older domain controller issues RC4-HMAC tickets. Both "
+                "are domain controller settings that LDAP cannot read, so the account's ticket encryption is unknown.",
+    attack="If the domain controllers predate the April 2026 update, or DefaultDomainSupportedEncTypes enables RC4, "
+           "any domain user can request an RC4 service ticket for the account and crack it offline (Kerberoasting); "
+           "on patched domain controllers an account whose password predates AES support gets no ticket at all.",
+    cwe=["CWE-327", "CWE-1188"], owasp=["crypto", "auth"], cves=[],
+    standards=["RFC 8429 (deprecates RC4-HMAC in Kerberos)",
+               "Microsoft KB5073381 (CVE-2026-20833): KDC default encryption types from April 2026"],
+    compliance=["algorithms", "auth"],
+    remediation={"summary": "Make the account's encryption types explicit (msDS-SupportedEncryptionTypes 0x18, AES "
+                            "only) once its service supports AES, and confirm every domain controller has the April "
+                            "2026 update and no DefaultDomainSupportedEncTypes value that enables RC4.",
+                 "steps": ENCTYPE_STEPS + [
+                     {"platform": "Domain controllers", "how": "Read HKLM\\SYSTEM\\CurrentControlSet\\Services\\Kdc "
+                                                               "DefaultDomainSupportedEncTypes on each DC (absent "
+                                                               "means the KDC default) and check the System log for "
+                                                               "KDCSVC events 201-209 (RC4 use and blocks)"}]},
+    verify=V_ENCTYPES + [{"label": "The DC's explicit default, if any (on each domain controller)",
+                          "command": "Get-ItemProperty -Path HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Kdc "
+                                     "-Name DefaultDomainSupportedEncTypes -ErrorAction SilentlyContinue"}],
+    references=["https://support.microsoft.com/en-us/topic/how-to-manage-kerberos-kdc-usage-of-rc4-for-service-account-ticket-issuance-changes-related-to-cve-2026-20833-1ebcda33-720a-4da8-93c1-b0496e1910dc",
                 "https://learn.microsoft.com/en-us/windows-server/security/kerberos/detect-remediate-rc4-kerberos"])
 kb_text.entry(
     "KERBEROS_RC4_ENABLED", title="Kerberos RC4 still allowed beside AES", category="protocol", default_impact="Medium",
@@ -114,5 +142,5 @@ kb_text.entry(
     verify=V_KRBTGT,
     references=["https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/forest-recovery-guide/ad-forest-recovery-reset-the-krbtgt-password"])
 
-NODE_CODES = ["KERBEROS_DES_ENABLED", "KERBEROS_RC4_ONLY", "KERBEROS_RC4_ENABLED", "AD_FUNCTIONAL_LEVEL_LEGACY",
+NODE_CODES = ["KERBEROS_DES_ENABLED", "KERBEROS_RC4_ONLY", "KERBEROS_RC4_ENABLED", "KERBEROS_ENCTYPES_DEFAULT", "AD_FUNCTIONAL_LEVEL_LEGACY",
               "KRBTGT_KEY_OLD"]

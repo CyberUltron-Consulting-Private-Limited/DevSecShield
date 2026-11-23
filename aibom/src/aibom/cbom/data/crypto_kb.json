@@ -9111,6 +9111,107 @@
      "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed"
     }
    },
+   "KERBEROS_ENCTYPES_DEFAULT": {
+    "attack": "If the domain controllers predate the April 2026 update, or DefaultDomainSupportedEncTypes enables RC4, any domain user can request an RC4 service ticket for the account and crack it offline (Kerberoasting); on patched domain controllers an account whose password predates AES support gets no ticket at all.",
+    "category": "protocol",
+    "clause_rules": [],
+    "clauses": [],
+    "compliance": [
+     "algorithms",
+     "auth"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-327",
+     "CWE-1188"
+    ],
+    "default_impact": "Low",
+    "description": "The account has no msDS-SupportedEncryptionTypes, so the domain controller decides which encryption type its service tickets use. Since Microsoft's April 2026 update for CVE-2026-20833 (KB5073381) a patched domain controller assumes AES-SHA1 only (0x18) for such an account unless the registry value DefaultDomainSupportedEncTypes enables RC4; an older domain controller issues RC4-HMAC tickets. Both are domain controller settings that LDAP cannot read, so the account's ticket encryption is unknown.",
+    "fix_class": {
+     "basis": "account attribute (msDS-SupportedEncryptionTypes) made explicit; the DCs' update level and DefaultDomainSupportedEncTypes are registry settings",
+     "capability": false,
+     "class": "configurable"
+    },
+    "owasp": [
+     "crypto",
+     "auth"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-327 is in OWASP's mapped CWE list",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A07:2021",
+      "label": "A07:2021 - Identification and Authentication Failures"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-327 is in OWASP's mapped CWE list",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A07:2025",
+      "label": "A07:2025 - Authentication Failures"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://support.microsoft.com/en-us/topic/how-to-manage-kerberos-kdc-usage-of-rc4-for-service-account-ticket-issuance-changes-related-to-cve-2026-20833-1ebcda33-720a-4da8-93c1-b0496e1910dc",
+     "https://learn.microsoft.com/en-us/windows-server/security/kerberos/detect-remediate-rc4-kerberos"
+    ],
+    "remediation": {
+     "steps": [
+      {
+       "how": "Find the accounts in the inventory, confirm their services support AES (Windows Server 2008 and later, current Java, MIT and Heimdal clients do), then set msDS-SupportedEncryptionTypes to 0x18 (AES128 + AES256): Set-ADUser <account> -KerberosEncryptionType AES128,AES256 (or Set-ADComputer / Set-ADServiceAccount)",
+       "platform": "Active Directory"
+      },
+      {
+       "how": "Reset the account's password once after the change, so AES keys exist for accounts whose password predates the domain's AES support",
+       "platform": "Active Directory"
+      },
+      {
+       "how": "Computer Configuration > Windows Settings > Security Settings > Local Policies > Security Options > Network security: Configure encryption types allowed for Kerberos: AES128_HMAC_SHA1, AES256_HMAC_SHA1 (and Future encryption types), first on member servers, then on the domain controllers",
+       "platform": "Group Policy"
+      },
+      {
+       "how": "Read HKLM\\SYSTEM\\CurrentControlSet\\Services\\Kdc DefaultDomainSupportedEncTypes on each DC (absent means the KDC default) and check the System log for KDCSVC events 201-209 (RC4 use and blocks)",
+       "platform": "Domain controllers"
+      }
+     ],
+     "summary": "Make the account's encryption types explicit (msDS-SupportedEncryptionTypes 0x18, AES only) once its service supports AES, and confirm every domain controller has the April 2026 update and no DefaultDomainSupportedEncTypes value that enables RC4."
+    },
+    "standards": [
+     "RFC 8429 (deprecates RC4-HMAC in Kerberos)",
+     "Microsoft KB5073381 (CVE-2026-20833): KDC default encryption types from April 2026"
+    ],
+    "summary_rules": [],
+    "title": "Kerberos account uses the domain controller's default encryption types",
+    "verify": [
+     {
+      "command": "Get-ADObject -Filter \"sAMAccountName -eq '{name}'\" -Properties msDS-SupportedEncryptionTypes,userAccountControl | Select-Object Name,msDS-SupportedEncryptionTypes,userAccountControl",
+      "label": "Encryption types set on the account (RSAT, read-only)"
+     },
+     {
+      "command": "Get-WinEvent -FilterHashtable @{LogName='Security';Id=4769} -MaxEvents 2000 | Where-Object { $_.Properties[5].Value -in 0x1,0x3,0x17,0x18 } | Select-Object TimeCreated,@{n='Service';e={$_.Properties[2].Value}}",
+      "label": "Tickets actually issued with RC4 or DES (on a domain controller: Kerberos service ticket events)"
+     },
+     {
+      "command": "Get-ItemProperty -Path HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Kdc -Name DefaultDomainSupportedEncTypes -ErrorAction SilentlyContinue",
+      "label": "The DC's explicit default, if any (on each domain controller)"
+     }
+    ],
+    "vex_default": {
+     "basis": "inferred",
+     "reason": "the account's ticket encryption follows a domain controller default that LDAP cannot read: RC4 only if the DCs predate the April 2026 update or DefaultDomainSupportedEncTypes enables it"
+    }
+   },
    "KERBEROS_RC4_ENABLED": {
     "attack": "An attacker requesting a service ticket can ask for RC4 only and receive one that is cheap to crack offline (Kerberoasting with RC4 downgrade), even though legitimate clients use AES.",
     "category": "protocol",
@@ -9227,7 +9328,7 @@
      "CWE-916"
     ],
     "default_impact": "High",
-    "description": "The account allows RC4-HMAC and no AES encryption type (msDS-SupportedEncryptionTypes is unset, so the domain default RC4 applies, or it lists RC4 alone): every service ticket for it is encrypted with RC4-HMAC, whose key is the account's unsalted NT hash.",
+    "description": "The account's msDS-SupportedEncryptionTypes lists RC4-HMAC and no AES encryption type: every service ticket for it is encrypted with RC4-HMAC, whose key is the account's unsalted NT hash. (An account without the attribute gets the domain controller's default instead: KERBEROS_ENCTYPES_DEFAULT.)",
     "fix_class": {
      "basis": "account attribute (msDS-SupportedEncryptionTypes) and a password reset; the service's own Kerberos client must support AES",
      "capability": false,
@@ -15979,7 +16080,7 @@
    }
   }
  },
- "kb_version": "2026.11.23.1",
+ "kb_version": "2026.11.24.1",
  "legacy_controls": {
   "access": {
    "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control",
