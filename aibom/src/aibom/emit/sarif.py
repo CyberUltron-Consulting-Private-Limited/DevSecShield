@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from aibom.emit._disclaimer import ADVISORY_DISCLAIMER
+from aibom.emit._disclaimer import disclaimer_of
 from aibom.emit.registry import BaseReporter, register_reporter
 from aibom.emit.validate import validate_sarif
 from aibom.model.result import SEVERITIES, ScanResult
@@ -114,7 +114,7 @@ def emit_sarif(result: ScanResult) -> dict[str, Any]:
                     }
                 },
                 # advisory-only hard rule: this report carries the disclaimer.
-                "properties": {"advisoryDisclaimer": ADVISORY_DISCLAIMER},
+                "properties": {"advisoryDisclaimer": disclaimer_of(result)},
                 "results": results,
             }
         ],

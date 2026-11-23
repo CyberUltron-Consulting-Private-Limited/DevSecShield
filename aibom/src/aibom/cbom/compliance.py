@@ -39,7 +39,7 @@ from aibom.cbom import standards as _std
 from aibom.cbom.strength import canonical_algorithm_family, is_approved_algorithm
 from aibom.cbom.weakness import WEAK_PROTOCOL, weak_finding
 from aibom.compliance.base import (
-    ADVISORY_DISCLAIMER,
+    CBOM_DISCLAIMER,
     FAIL,
     PASS,
     CheckResult,
@@ -1457,7 +1457,8 @@ def run_cbom_compliance(
     report: dict[str, Any] = {
         fw: run_framework(result, fw, evidence.get(fw)) for fw in CBOM_FRAMEWORKS
     }
-    report["disclaimer"] = ADVISORY_DISCLAIMER
+    # a crypto inventory: never the AI BOM (FDA / HIPAA) wording
+    report["disclaimer"] = CBOM_DISCLAIMER
     result.compliance = report
     return report
 

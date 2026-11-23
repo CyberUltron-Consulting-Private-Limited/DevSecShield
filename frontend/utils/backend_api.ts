@@ -5333,11 +5333,18 @@ export interface CbomRunVex {
     vulnerabilities: CbomRunVexEntry[]
 }
 
-/** HMAC-SHA256 over the exact bytes of GET /runs/{id}/cbom (format=json), with the code lane's bom_signature key and
- * fields. The key stays on the server: verify with verifyCbomRunSignature, or compare sha256(file) with ``digest``. */
+/** The run CBOM JSON's signature (D11): ES256 (base64 DER, openssl-verifiable) over the exact bytes of
+ * GET /runs/{id}/cbom (format=json) with the deployment's published key (GET /{team}/bom-signing-keys); the file
+ * also carries an embedded JSF signature. ``legacy_hmac``: the older server-held HMAC. A server without a signing
+ * key answers the HMAC fields alone (alg "HMAC-SHA256"). */
 export interface CbomRunSignature {
-    alg: "HMAC-SHA256"
+    alg: "ES256" | "HMAC-SHA256"
     key_id: string
+    public_key_pem?: string
+    fingerprint?: string
+    keys_route?: string
+    embedded?: { format: string; algorithm: string; keyId: string; covers: string } | null
+    legacy_hmac?: { alg: "HMAC-SHA256"; key_id: string; signature_b64: string }
     digest: string
     signature_b64: string
     signed_at: string
@@ -5399,14 +5406,16 @@ export interface CbomRunSignatureVerification {
     current_digest: string
     bytes: number
     key_id: string
-    alg: "HMAC-SHA256"
+    alg: "ES256" | "HMAC-SHA256"
     compared_with: string
+    /** the uploaded file's own JSF signature, when it carries one */
+    embedded_signature?: { valid?: boolean; kid?: string; reason?: string }
     run_id: number
     run_status: string
 }
 
 /** Sends a downloaded run CycloneDX JSON, as downloaded, for verification against the signature it came with
- * (``signatureB64``), else against the run's current CBOM. The HMAC key stays on the server. */
+ * (``signatureB64``: ES256 or the older HMAC), else its embedded JSF signature, else the run's current CBOM. */
 const verifyCbomRunSignature = async (team_id: number, run_id: number, file: Blob,
                                       signatureB64?: string): Promise<CbomRunSignatureVerification> => {
     const response = await api.post(`${cbomRunDeliverablePath(team_id, run_id, "signature")}/verify`, file, {

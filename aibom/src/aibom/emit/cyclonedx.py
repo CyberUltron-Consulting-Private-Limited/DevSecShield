@@ -26,6 +26,7 @@ import uuid
 from typing import Any, NamedTuple
 
 from aibom.emit._disclaimer import ADVISORY_DISCLAIMER as _ADVISORY_DISCLAIMER
+from aibom.emit._disclaimer import disclaimer_of
 from aibom.emit.crypto_oid import algorithm_oid
 from aibom.emit.registry import BaseReporter, register_reporter
 from aibom.emit.validate import validate_cyclonedx
@@ -937,7 +938,7 @@ def emit_cyclonedx(result: ScanResult) -> dict[str, Any]:
     _add(metadata["component"], "version", result.subject.version)
 
     bom_props = dict(result.properties)
-    bom_props.setdefault("regulatory:disclaimer", ADVISORY_DISCLAIMER)
+    bom_props.setdefault("regulatory:disclaimer", disclaimer_of(result))
     metadata["properties"] = _properties_list(bom_props)
 
     # C9 crypto dependency graph: index the algorithm assets once so certificate/

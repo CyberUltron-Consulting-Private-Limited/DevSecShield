@@ -72,7 +72,7 @@ OUTCOMES = ("ok", "client_gone", "busy", "refused", "error")
 # The CBOM download headers the UI reads (estate SHA-256, deliverable fidelity and logo, ...).
 CBOM_EXPOSED_HEADERS = ("X-Cbom-Assets", "X-Cbom-Fidelity", "X-Cbom-Fingerprint", "X-Cbom-Logo-Sha256",
                         "X-Cbom-Posture", "X-Cbom-Scans-Included", "X-Cbom-Sha256", "X-Cbom-Signature",
-                        "X-Cbom-Sources")
+                        "X-Cbom-Sources", "X-ZS-Signature", "X-ZS-Signature-Alg", "X-ZS-Signature-Key-Id")
 
 # Rows at or above which a code-lane PDF build takes one of the host-wide scan PDF slots (``export_slots.pdf_slot``,
 # a pool of its own: big scan PDFs never hold up CBOM exports, nor CBOM exports them; 429 when all are busy).

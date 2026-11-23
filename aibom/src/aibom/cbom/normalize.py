@@ -18,6 +18,7 @@ computes no scores and raises no flags; it only reads + reshapes.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from aibom.cbom.posture.assemble import build_posture_block
@@ -538,6 +539,77 @@ def _bom(result: ScanResult) -> dict[str, Any]:
     return json.loads(get_reporter("cyclonedx").render(result))
 
 
+def _algid_identities(bom: dict[str, Any]) -> None:
+    """D11 / A-14: algid's identity on algorithms the emitter's OID table missed.
+
+    algid is the single source of algorithm identities: an algorithm without
+    ``oid`` gets the algorithm's own OID, else, for a key-size-suffixed name
+    (RSA-2048), its family's key algorithm OID; a quantum-vulnerable algorithm
+    without a level gets ``nistQuantumSecurityLevel`` 0. Nothing is overwritten.
+    """
+    from aibom.cbom import algid
+
+    for comp in bom.get("components", []):
+        cp = comp.get("cryptoProperties")
+        if not isinstance(cp, dict) or cp.get("assetType") != "algorithm":
+            continue
+        ident = algid.resolve(comp.get("name"))
+        if ident is None:
+            continue
+        oid = ident.oid
+        sized = rf"{re.escape(ident.family_label or '')}[-_ ]?\d+"
+        if not oid and ident.family_label and ident.name and re.fullmatch(
+                sized, ident.name, re.IGNORECASE):
+            family = algid.resolve(ident.family_label)
+            oid = family.oid if family is not None else None
+        if oid and not cp.get("oid"):
+            cp["oid"] = oid
+        props = cp.setdefault("algorithmProperties", {})
+        if "nistQuantumSecurityLevel" not in props:
+            level = 0 if ident.quantum == "vulnerable" else ident.nist_category
+            if level is not None:
+                props["nistQuantumSecurityLevel"] = level
+
+
+_USES_RELS = frozenset(
+    {"subjectPublicKey", "signatureAlgorithm", "algorithm", "cipherSuite", "cryptoRef"}
+)
+
+
+def _crypto_dependencies(bom: dict[str, Any], graph: dict[str, Any]) -> None:
+    """D11 / A-14 / C G-D3-3: CycloneDX 1.6 ``dependencies`` of the crypto graph.
+
+    From ``_crypto_graph``: a certificate, key or protocol ``dependsOn`` (uses)
+    what its ``*Ref`` fields name, and a crypto library ``provides`` (implements)
+    the algorithms its files import. Merged into the emitter's own dependencies;
+    only refs of components in the BOM.
+    """
+    refs = {c.get("bom-ref") for c in bom.get("components", []) if isinstance(c, dict)}
+    uses: dict[str, set[str]] = {}
+    provides: dict[str, set[str]] = {}
+    for dep in bom.get("dependencies") or []:
+        uses.setdefault(dep["ref"], set()).update(dep.get("dependsOn") or [])
+        provides.setdefault(dep["ref"], set()).update(dep.get("provides") or [])
+    for edge in graph.get("edges", []):
+        src, dst, rel = edge["source"], edge["target"], edge["rel"]
+        if src not in refs or dst not in refs:
+            continue
+        if rel == "provides":
+            provides.setdefault(src, set()).add(dst)
+        elif rel in _USES_RELS:
+            uses.setdefault(src, set()).add(dst)
+    out = []
+    for ref in sorted(set(uses) | set(provides)):
+        entry: dict[str, Any] = {"ref": ref}
+        if uses.get(ref):
+            entry["dependsOn"] = sorted(uses[ref])
+        if provides.get(ref):
+            entry["provides"] = sorted(provides[ref])
+        out.append(entry)
+    if out:
+        bom["dependencies"] = out
+
+
 def _is_export_row(comp: AIComponent) -> bool:
     """The components the results table lists: crypto assets, crypto libraries and posture facts."""
     if comp.kind == "crypto_asset" or _is_fact_component(comp):
@@ -577,7 +649,9 @@ def normalize_crypto(result: ScanResult, *, duration_of_scan: float) -> dict[str
     )
     bom = _bom(result)  # render once; cbom_json + cbom_graph share it
     _annotate_findings(bom, result)
+    _algid_identities(bom)
     full_graph = _crypto_graph(result, bom)
+    _crypto_dependencies(bom, full_graph)
     # Additive compact/expanded projections — full ``cbom_graph`` stays intact
     # for contracts; FE prefers compact for Card, expanded for Dialog.
     payload = {

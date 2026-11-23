@@ -413,15 +413,15 @@ const TEXT = {
     example: "Safe 412, Vulnerable 168.",
   },
   // ────────────────────────────────────────────────────────────── CBOM run results on the one results template (#239, #124)
-  // src: frontend/components/cbom/results/RunDeliverablesMenu.tsx:20-45,83 — VEX, HMAC signature, evidence zip, PDF report
+  // src: frontend/components/cbom/results/RunDeliverablesMenu.tsx:20-45,83 — VEX, ES256 signature, evidence zip, PDF report
   "cbom.run.deliverables": {
-    what: "The run's CycloneDX 1.6 VEX (exploitable, in triage, resolved or will-not-fix from the remediation plan), an HMAC-SHA256 signature over the exact bytes of the CycloneDX JSON download, an evidence pack (zip of CycloneDX JSON and XML, OSCAL, VEX, signature and PDF with a sha256 manifest) and a PDF report. While the run is collecting, each file says it holds what was collected so far.",
+    what: "The run's CycloneDX 1.6 VEX (exploitable, in triage, resolved or will-not-fix from the remediation plan), an ES256 signature of the CycloneDX JSON download (published key), an evidence pack (CycloneDX JSON and XML, OSCAL, VEX, signature, PDF, a signed sha256 manifest and an offline verifier) and a PDF report. While the run is collecting, each file says it holds what was collected so far.",
     why: "The documents an auditor or a regulator asks for, built from the same data as this page.",
-    example: "Evidence pack for the RBI inspection: one zip with its sha256 manifest.",
+    example: "Evidence pack for the RBI inspection: one zip with its signed sha256 manifest.",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:163-192 — verifyCbomRunSignature; the key stays on the server
+  // src: frontend/components/cbom/results/RunSections.tsx:163-192 — verifyCbomRunSignature; ES256, key published at GET /{team}/bom-signing-keys
   "cbom.run.verify": {
-    what: "Checks a CycloneDX JSON file you downloaded from this run against the run's signature. The signing key stays on the server; the result says whether the file is unchanged.",
+    what: "Checks a CycloneDX JSON file you downloaded from this run against the run's signature. The signature is ES256 with a published public key, so the same check also works offline (openssl or the verifier in the evidence pack); the result says whether the file is unchanged.",
     why: "Proves a file someone sends you is the run's real CBOM, not an edited copy.",
     example: "Verified: this file is the run's signed CycloneDX JSON, unchanged.",
   },

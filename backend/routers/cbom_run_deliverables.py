@@ -69,6 +69,7 @@ VEX_MEDIA = "application/vnd.cyclonedx+json; version=1.6"
 # an export slot when assets x passes reaches the single export's threshold (export_slots.LARGE_ASSETS).
 PASSES = {"signature": 1, "verify": 1, "vex": 2, "report": 4, "pack": 5}
 VERIFY_MAX_BYTES = 512 * 1024 * 1024  # a 50,000-component export is far below this
+EMBEDDED_MAX_BYTES = 128 * 1024 * 1024  # an upload up to this size also gets its embedded JSF signature checked
 
 
 async def _run(what: str, team_id: int, fn, *args) -> Any:
@@ -157,7 +158,7 @@ def _vex_doc(engine, team_id: int, run_id: int) -> bytes:
 
 def _current_signature(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> dict[str, Any]:
     _out, data, tee = RD.written(session, run, now, "json", _secret(), keep=False)
-    return RD.run_signature(run, data.head, tee, RD.stamp(session, run, now))
+    return RD.run_signature(run, data.head, tee, RD.stamp(session, run, now), data.jsf)
 
 
 def _signature(engine, team_id: int, run_id: int) -> dict[str, Any]:
@@ -168,14 +169,36 @@ def _signature(engine, team_id: int, run_id: int) -> dict[str, Any]:
             return _current_signature(session, run, now)
 
 
+def _embedded(upload: RD.Digests) -> dict[str, Any] | None:
+    """The upload's own JSF signature checked against the published keys (``bom_signing.verify_bom``), with the run
+    the file says it is (``zs:run_id``); None when it is not JSON, carries no signature or no key is configured."""
+    if upload.out is None or upload.size > EMBEDDED_MAX_BYTES or not RD.SIGN.available():
+        return None
+    upload.out.seek(0)
+    body = upload.out.read()
+    try:
+        doc = json.loads(body)
+    except ValueError:
+        return None
+    if not isinstance(doc, dict) or not isinstance(doc.get("signature"), dict):
+        return None
+    result = RD.SIGN.verify_bom(body)
+    props = {p.get("name"): p.get("value") for p in (doc.get("metadata") or {}).get("properties") or []
+             if isinstance(p, dict)}
+    run = props.get("zs:run_id")
+    result["run_id"] = int(run) if isinstance(run, str) and run.isdigit() else None
+    return result
+
+
 def _verify(engine, team_id: int, run_id: int, upload: RD.Digests, sent_b64: str | None) -> dict[str, Any]:
     now = utcnow()
+    embedded = _embedded(upload) if sent_b64 is None else None
     with Session(engine) as session:
         run = _get_owned(session, run_id, team_id)
         with _export_slot(session, run, "verify"):
             current = _current_signature(session, run, now)
     out = RD.verify_upload(upload.sha.hexdigest(), upload.mac.digest(), sent_b64=sent_b64,  # type: ignore[union-attr]
-                           current=current)
+                           current=current, embedded=embedded, run_id=run_id)
     out.update({"bytes": upload.size, "run_id": run_id, "current_digest": current["digest"],
                 "run_status": current["run_status"]})
     return out
@@ -225,7 +248,7 @@ def _evidence_pack(engine, team_id: int, run_id: int) -> tuple[IO[bytes], Report
                 temps.append(json_file)
                 xml_file, _xml_data, xml_tee = RD.written(session, run, now, "xml")
                 temps.append(xml_file)
-                signature = RD.run_signature(run, data.head, json_tee, at)
+                signature = RD.run_signature(run, data.head, json_tee, at, data.jsf)
                 vex = _vex(session, run, data, at)
                 pdf = _pdf(session, run, data, vex, json_tee.sha.hexdigest(), at, ctx)
                 sources = RD.run_sources(session, run)
@@ -270,8 +293,8 @@ async def run_vex(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader =
 
 
 @router.get(RUN + "/signature", dependencies=[*WRITE, access.team("cbom.read")],
-            summary="HMAC-SHA256 signature (the code lane's bom_signature key and fields) over the exact bytes of the "
-                    "run's CycloneDX JSON download")
+            summary="ES256 signature over the exact bytes of the run's CycloneDX JSON download (also signed inside, "
+                    "JSF), with the public key; verify offline (openssl / zs_bom_verify.py) or with .../verify")
 async def run_signature(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader = None) -> Response:
     engine, _user = await authorize(team_id, Authorization)
     signature = await _run("signature", team_id, _signature, engine, team_id, run_id)
@@ -280,20 +303,24 @@ async def run_signature(team_id: TeamId, run_id: ObjectId, Authorization: AuthHe
 
 @router.post(RUN + "/signature/verify", dependencies=[*WRITE, access.team("cbom.read")],
              summary="Verify a downloaded run CycloneDX JSON (the request body, as downloaded) against the signature "
-                     "sent in X-ZS-Signature-B64, else against the run's current CBOM")
+                     "sent in X-ZS-Signature-B64 (ES256 or the older HMAC), else its embedded JSF signature, else "
+                     "the run's current CBOM")
 async def verify_run_signature(team_id: TeamId, run_id: ObjectId, request: Request,
                                Authorization: AuthHeader = None,
-                               x_zs_signature_b64: Annotated[str | None, Header(max_length=256)] = None
+                               x_zs_signature_b64: Annotated[str | None, Header(max_length=512)] = None
                                ) -> JSONResponse:
     engine, _user = await authorize(team_id, Authorization)
-    upload = RD.Digests(None, _secret())
-    async for chunk in request.stream():
-        upload.write(chunk)
-        if upload.size > VERIFY_MAX_BYTES:
-            raise HTTPException(status_code=413, detail="The file is larger than any run CBOM export")
-    if not upload.size:
-        raise HTTPException(status_code=400, detail="Send the downloaded CycloneDX JSON file as the request body")
-    result = await _run("signature verify", team_id, _verify, engine, team_id, run_id, upload, x_zs_signature_b64)
+    upload = RD.Digests(RD.spool(), _secret())  # kept (spooled) so its embedded JSF signature can be checked
+    try:
+        async for chunk in request.stream():
+            upload.write(chunk)
+            if upload.size > VERIFY_MAX_BYTES:
+                raise HTTPException(status_code=413, detail="The file is larger than any run CBOM export")
+        if not upload.size:
+            raise HTTPException(status_code=400, detail="Send the downloaded CycloneDX JSON file as the request body")
+        result = await _run("signature verify", team_id, _verify, engine, team_id, run_id, upload, x_zs_signature_b64)
+    finally:
+        upload.out.close()
     return JSONResponse(result, headers=PRIVATE)
 
 
@@ -329,7 +356,8 @@ async def run_report_pdf(team_id: TeamId, run_id: ObjectId, request: Request,
 
 
 @router.get(RUN + "/evidence-pack", dependencies=[*WRITE, access.team("cbom.read")],
-            summary="Zip of the run's CycloneDX JSON and XML, OSCAL, VEX, signature and PDF with a sha256 manifest")
+            summary="Zip of the run's CycloneDX JSON and XML, OSCAL, VEX, signature and PDF with a signed sha256 "
+                    "manifest, the public key and an offline verifier")
 async def run_evidence_pack(team_id: TeamId, run_id: ObjectId, request: Request,
                             Authorization: AuthHeader = None) -> Response:
     started = time.monotonic()

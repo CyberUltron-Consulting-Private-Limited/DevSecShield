@@ -16,6 +16,7 @@ import pathlib
 import pytest
 from pydantic import ValidationError
 
+from aibom.emit._disclaimer import HEALTHCARE_AIBOM_DISCLAIMER
 from aibom.emit.cyclonedx import (
     ADVISORY_DISCLAIMER,
     BomValidationError,
@@ -144,7 +145,8 @@ def test_healthcare_props_namespaced(allowed_component_keys: set[str]) -> None:
     assert "intended_use" not in json.dumps(model_comp["modelCard"])
 
     bom_props = {p["name"]: p["value"] for p in bom["metadata"]["properties"]}
-    assert bom_props["regulatory:disclaimer"] == ADVISORY_DISCLAIMER
+    # a healthcare AI BOM (clinical:/regulatory: metadata) keeps the FDA / HIPAA wording; the default does not (A-13)
+    assert bom_props["regulatory:disclaimer"] == HEALTHCARE_AIBOM_DISCLAIMER != ADVISORY_DISCLAIMER
 
 
 def test_deterministic_serial_and_bytes() -> None:
