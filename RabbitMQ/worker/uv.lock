@@ -482,6 +482,7 @@ provides-extras = ["scan", "imaging", "api", "report"]
 dev = [
     { name = "mypy", specifier = ">=1.10" },
     { name = "pypdf", specifier = ">=4.0" },
+    { name = "pyshacl", specifier = ">=0.26" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "ruff", specifier = ">=0.5" },
     { name = "types-jsonschema", specifier = ">=4.20" },
