@@ -388,8 +388,8 @@ EVIDENCE_CHAIN = (
      "certificate's SHA-256 or a key's public-key hash, plus where it was seen); the same item seen again or by "
      "two collectors is one asset with several observations."),
     ("4. Normalised record", "Every item is written to the CycloneDX 1.6 CBOM as an algorithm, certificate, "
-     "related crypto material or protocol, with its location, the collector's evidence and the knowledge-base, "
-     "classifier and engine versions that judged it."),
+     "related crypto material or protocol (crypto libraries as library components), with its location, the "
+     "collector's evidence and the knowledge-base, classifier and engine versions that judged it."),
     ("5. Signed deliverables", "The run's CycloneDX JSON is signed over its exact bytes; the evidence pack zips the "
      "CBOM (JSON and XML), VEX, OSCAL, the signature, the PDF report and a drift file with a SHA-256 manifest. A "
      "recipient verifies a file offline against the published key or online with the verify endpoint (D11)."),

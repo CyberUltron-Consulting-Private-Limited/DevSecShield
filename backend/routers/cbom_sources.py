@@ -50,6 +50,7 @@ from backend.utilities.cbom_sources import agents as AG
 from backend.utilities.cbom_sources import limits as LIM
 from backend.utilities.cbom_sources import held as HELD
 from backend.utilities.cbom_sources import host_key_resets as HKR  # #150
+from backend.utilities.cbom_sources import drift as DRIFT
 from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources import source_cap as SOURCE_CAP
 from backend.utilities.cbom_sources import targets as T
@@ -1667,13 +1668,14 @@ def _list_runs(engine, team_id: int, scan_id: int | None) -> dict:
         # issue #159 (Rule P): the asset count the Scans table shows too, from the one function, one query for the page
         assets = RUN_LIST.asset_counts(session, team_id, [int(run.id) for run in runs])
         # S4: the schedule's name for every run a live schedule started (one query for the page; null = deleted)
-        names = schedule_names(session, team_id, (run.schedule_id for run in runs))
+        # (named schedules_by_id, not names: #480 adds source names to this function, review 6030475121 trap C)
+        schedules_by_id = schedule_names(session, team_id, (run.schedule_id for run in runs))
         out = []
         for run in runs:
             counts: dict[str, int] = {}
             for job in session.exec(select(CbomCollectionJob).where(CbomCollectionJob.run_id == run.id)).all():
                 counts[job.status] = counts.get(job.status, 0) + 1
-            out.append({**public_run(run, schedule_name=names.get(run.schedule_id or 0)), "job_counts": counts,
+            out.append({**public_run(run, schedule_name=schedules_by_id.get(run.schedule_id or 0)), "job_counts": counts,
                         "asset_count": assets.get(int(run.id), 0)})
         return {"runs": out, "server_time": iso_z(now)}
 
@@ -2036,6 +2038,9 @@ def _cancel_run(engine, team_id: int, user_id: int, run_id: int) -> dict:
         run = _get_owned(session, CbomCollectionRun, run_id, team_id, "Run")
         require_owner_or_admin(session, user_id, team_id, run.owner_user_id, "run")
         refunded = J.cancel_run(session, run, user_id, now)
+        # a cancelled run may no longer be the baseline of a later run's stored drift document: clear those it was
+        # (review 6030475121 nit 3); the scheduler's summary pass stores them again against the new baseline
+        DRIFT.refresh_later_baselines(session, run, now)
         if refunded or run.cancelled_at == now:
             audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="run.cancel",
                   object_type="run", object_id=run.id)

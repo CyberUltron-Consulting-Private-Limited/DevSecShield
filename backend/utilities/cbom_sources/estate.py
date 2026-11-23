@@ -451,9 +451,13 @@ def _lock_source(session: Session, sql: _Sql, team_id: int, ref: str) -> Any:
 
 # ----------------------------------------------------------------------------- the per-run write
 def record_run(session: Session, run: CbomCollectionRun, now: _dt.datetime, *,
-               loaded: Mapping[int, list[Any]] | None = None, hooks: bool = True) -> EstateWrite:
+               loaded: Mapping[int, list[Any]] | None = None, hooks: bool = True,
+               replay: bool = False) -> EstateWrite:
     """Write ``run`` into the team's estate store (see the module docstring). ``loaded``: job id -> that job
-    attempt's rows already read by the caller (drift), so they are not read twice. The caller commits."""
+    attempt's rows already read by the caller (drift), so they are not read twice. ``replay`` (``backfill``): a run
+    with nothing left to write (every source already written at this job or a newer one) runs no hooks, so a replay
+    never closes register gaps in the name of a run whose own write closed its gaps long ago (review 6030475121
+    minor B: those closures would count in the run's report). The caller commits."""
     t0 = time.perf_counter()
     team_id, run_id = run.team_id, int(run.id or 0)
     sql = _Sql(session)
@@ -639,7 +643,7 @@ def record_run(session: Session, run: CbomCollectionRun, now: _dt.datetime, *,
                     "not_read": sum(1 for p in write.changed.values() if p == "not_read"),
                     "removed": sum(1 for p in write.changed.values() if p == "removed"),
                     "deleted": len(write.removed_keys)}
-    if hooks:
+    if hooks and (jobs or not replay):
         _run_hooks(session, write)
     phases, last_mark = {}, t0
     for name, at in marks.items():  # where the time went (the scale budget's evidence, CB-20)
@@ -834,7 +838,7 @@ def backfill(engine, now: _dt.datetime, *, team_id: int | None = None, hooks: bo
             run = session.get(CbomCollectionRun, run_id)
             if run is None:
                 continue
-            write = record_run(session, run, now, hooks=hooks)
+            write = record_run(session, run, now, hooks=hooks, replay=True)
             session.commit()
         out["runs"] += 1
         out["sources"] += write.counts.get("sources", 0)

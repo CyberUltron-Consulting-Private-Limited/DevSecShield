@@ -36,10 +36,12 @@ from __future__ import annotations
 import datetime as _dt
 import hashlib
 import re
+import time
+import uuid
 from dataclasses import dataclass, field, replace
 from typing import Any, Iterable, Mapping
 
-from sqlalchemy import update
+from sqlalchemy import and_, exists, func, or_, true, update
 from sqlmodel import Session, select
 
 from backend.new_models import (
@@ -1145,44 +1147,178 @@ def record_run_drift(session: Session, run: CbomCollectionRun, now: _dt.datetime
         "partial_sources": sum(1 for j in complete if j.outcome == "partial"), "not_read": not_read,
         "assets": sum(int(j.asset_count or 0) for j in jobs), "events": _kind_counts(rows[:EVENT_CAP])})
     record_estate(session, run, now, loaded)
+    refresh_later_baselines(session, run, now)
     return stored
 
 
-SUMMARY_LIMIT = 2  # runs whose drift document a scheduler tick stores (newest first; about 23 s each at 50k assets)
-SUMMARY_WINDOW_DAYS = 7  # runs recorded longer ago are not backfilled: a download computes theirs once per process
-
-
-def store_pending_summaries(engine, now: _dt.datetime, *, limit: int = SUMMARY_LIMIT) -> int:
-    """S4 (review #486 minor 8): store the drift document (``drift_report.run_drift``: counts, readiness, top items
-    against the baseline) of runs whose drift is recorded, once, each in its own transaction, for report.pdf and
-    drift.json. Run by the scheduler tick last, after the drift recording and outside it: schedules fire first, and the
-    recording (and the route that records a run the tick has not reached, cbom_ops) never pays for the comparison. A failure stores a marker
-    without a document (a download then computes it), so one bad run never takes a slot every tick."""
+def refresh_later_baselines(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> None:
+    """``run`` finished, was cancelled or otherwise changed what it can be a baseline for: clear the stored drift
+    documents of later runs that now pick another baseline (``drift_report.refresh_baselines``), so the summary pass
+    stores them again. In a savepoint: a failure here never undoes the caller's work (a download still serves the
+    right baseline: a document is served only for the baseline it was taken against)."""
     from backend.utilities.cbom_sources import drift_report
 
+    try:
+        with session.begin_nested():
+            drift_report.refresh_baselines(session, run.team_id, int(run.id or 0), now)
+    except Exception as exc:  # noqa: BLE001
+        log("drift baseline refresh FAILED", team=run.team_id, run=run.id, error=type(exc).__name__)
+
+
+SUMMARY_LIMIT = 2  # runs whose drift document one pass stores (newest first; about 8 s each at 50k assets)
+SUMMARY_WINDOW_DAYS = 7  # runs recorded longer ago are not backfilled: a download computes theirs once per process
+SUMMARY_CLAIM_TTL = _dt.timedelta(minutes=15)  # a claim older than this was left by a pass that died: free again
+SUMMARY_RETRY_AFTER = _dt.timedelta(hours=1)  # a failed run is tried again after this...
+SUMMARY_MAX_TRIES = 3  # ...up to this many tries in all (then a download computes it, as before)
+SUMMARY_LARGE_ASSETS = 50_000  # the run's assets plus its baseline's: above this, the run is the only one of its pass
+SUMMARY_BUDGET_S = 10.0  # a pass starts no run once its tick (or the pass itself) has spent this long
+_SUMMARY = CbomCollectionRun.drift_summary
+
+
+def _monotonic() -> float:
+    return time.monotonic()
+
+
+def summary_stamp(now: _dt.datetime) -> str:
+    """The ``at`` of a claim or failure marker: ISO-8601 UTC to the second, so stamps compare as strings in SQL."""
+    return str(iso_z(now))
+
+
+def _claimable(now: _dt.datetime) -> Any:
+    """SQL: the run's document may be claimed now. Nothing stored yet; a claim older than SUMMARY_CLAIM_TTL; or a
+    failure marker older than SUMMARY_RETRY_AFTER with fewer than SUMMARY_MAX_TRIES tries (a marker stored before
+    ``at`` and ``tries`` existed counts as one try made long ago). A stored document is never claimable."""
+    at, tries = _SUMMARY["at"].as_string(), _SUMMARY["tries"].as_integer()
+    return or_(
+        _SUMMARY.is_(None),  # type: ignore[union-attr]
+        and_(_SUMMARY["pending"].as_boolean() == true(), func.coalesce(tries, 0) < SUMMARY_MAX_TRIES,
+             at < summary_stamp(now - SUMMARY_CLAIM_TTL)),
+        and_(_SUMMARY["failed"].as_boolean() == true(), func.coalesce(tries, 1) < SUMMARY_MAX_TRIES,
+             or_(at.is_(None), at < summary_stamp(now - SUMMARY_RETRY_AFTER))),
+    )
+
+
+def _estate_current() -> Any:
+    """SQL: the run's estate write is in the store (its team's store is not stale from this run or an earlier one).
+    A stale team's runs wait for ``estate.repair_due``: their own register closures are written by that replay."""
+    from backend.new_models import CbomEstateTeam
+
+    return ~exists().where(CbomEstateTeam.team_id == CbomCollectionRun.team_id,
+                           CbomEstateTeam.stale.is_(True),  # type: ignore[attr-defined]
+                           func.coalesce(CbomEstateTeam.stale_run_id, 0) <= CbomCollectionRun.id)
+
+
+def _prior_tries(session: Session, run_id: int) -> int:
+    held, tries = session.exec(select(_SUMMARY.is_(None), _SUMMARY["tries"].as_integer())  # type: ignore[union-attr]
+                               .where(CbomCollectionRun.id == run_id)).first() or (True, None)
+    return int(tries) if tries is not None else (0 if held else 1)
+
+
+def claim_summary(session: Session, run_id: int, now: _dt.datetime, *, tries: int | None = None) -> str | None:
+    """Claim ``run_id``'s drift document for this pass (compare-and-set on ``_claimable``): writes
+    ``{"v", "pending": true, "at", "tries", "claim"}`` and returns the claim token, or None when another pass holds
+    it, it is stored, or its tries are spent. The caller commits before computing, so other passes see the claim."""
+    from backend.utilities.cbom_sources import drift_report
+
+    prior = _prior_tries(session, run_id) if tries is None else tries
+    token = uuid.uuid4().hex
+    won = session.exec(update(CbomCollectionRun).where(  # type: ignore[call-overload]
+        CbomCollectionRun.id == run_id, _claimable(now)).values(drift_summary={
+            "v": drift_report.STORED_VERSION, "pending": True, "at": summary_stamp(now), "tries": prior + 1,
+            "claim": token})).rowcount == 1
+    return token if won else None
+
+
+def write_summary(session: Session, run_id: int, token: str, value: dict[str, Any]) -> bool:
+    """Write the document or the failure marker only while ``token`` still holds the claim (a pass whose claim went
+    stale and was taken over writes nothing, so a marker never replaces another pass's document). The caller
+    commits."""
+    return session.exec(update(CbomCollectionRun).where(  # type: ignore[call-overload]
+        CbomCollectionRun.id == run_id, _SUMMARY["claim"].as_string() == token)
+        .values(drift_summary=value)).rowcount == 1
+
+
+_NO_BASE = object()
+
+
+def summary_assets(session: Session, run: CbomCollectionRun, base: Any = _NO_BASE) -> int:
+    """Assets the comparison reads: the run's collections plus its baseline's (``asset_count`` of their jobs)."""
+    if base is _NO_BASE:
+        base = previous_comparable_run(session, run)
+    ids = [run.id] + ([base.id] if base is not None else [])
+    total = session.exec(select(func.coalesce(func.sum(CbomCollectionJob.asset_count), 0)).where(
+        CbomCollectionJob.run_id.in_(ids))).one()  # type: ignore[union-attr]
+    return int(total or 0)
+
+
+def store_pending_summaries(engine, now: _dt.datetime, *, limit: int = SUMMARY_LIMIT,
+                            started: float | None = None) -> int:
+    """S4: store the drift document (``drift_report.stored_record``: counts, readiness, top items against the
+    baseline) of runs whose drift is recorded, for report.pdf and drift.json (review #486 minor 8, follow-up to
+    review 6030475121 minor A). Several schedulers may run this at once:
+
+    * each run is claimed first (``claim_summary``) and its document or failure marker is written only under that
+      claim (``write_summary``), so a run is computed by one pass and a marker never overwrites a document;
+    * a failure stores ``{"failed": true, "at", "tries"}``; the run is tried again after SUMMARY_RETRY_AFTER, up to
+      SUMMARY_MAX_TRIES tries (meanwhile a download computes it);
+    * bounded: no run is started once ``started`` (the tick's start, ``time.monotonic``) is SUMMARY_BUDGET_S old, and
+      a run whose comparison reads more than SUMMARY_LARGE_ASSETS assets is the only run of its pass;
+    * a run of a team whose estate store is stale from that run on waits for ``estate.repair_due``.
+
+    ``loop()`` runs this on its own thread, so it never delays schedules firing; ``tick()`` (``--once``, tests) runs
+    it last. Returns the documents stored."""
+    from backend.utilities.cbom_sources import drift_report
+
+    started = _monotonic() if started is None else started
+    if _monotonic() - started > SUMMARY_BUDGET_S:
+        log("drift summaries skipped", reason="tick budget spent", spent_s=round(_monotonic() - started, 1))
+        return 0
     since = now.replace(tzinfo=None) - _dt.timedelta(days=SUMMARY_WINDOW_DAYS)
     with Session(engine) as session:
         ids = session.exec(select(CbomCollectionRun.id).where(
             CbomCollectionRun.drift_at.is_not(None), CbomCollectionRun.drift_at >= since,  # type: ignore[union-attr,operator]
-            CbomCollectionRun.drift_summary.is_(None),  # type: ignore[union-attr]
-            CbomCollectionRun.status.in_(FINISHED))  # type: ignore[attr-defined]
+            CbomCollectionRun.status.in_(FINISHED),  # type: ignore[attr-defined]
+            _claimable(now), _estate_current())
             .order_by(CbomCollectionRun.id.desc()).limit(limit)).all()  # type: ignore[union-attr]
     done = 0
     for run_id in ids:
+        if done and _monotonic() - started > SUMMARY_BUDGET_S:
+            log("drift summaries stopped", reason="tick budget spent", stored=done)
+            break
         with Session(engine) as session:
             run = session.get(CbomCollectionRun, run_id)
             if run is None:
                 continue
+            assets = summary_assets(session, run)
+            large = assets > SUMMARY_LARGE_ASSETS
+            if large and done:
+                break  # the next pass takes it alone
+            token = claim_summary(session, run_id, now)
+            session.commit()
+        if token is None:
+            continue  # another pass holds it (or stored it meanwhile)
+        t0 = _monotonic()
+        with Session(engine) as session:
+            run = session.get(CbomCollectionRun, run_id)
+            team = run.team_id if run is not None else None
             try:
-                drift_report.run_drift(session, run, store=True)
+                if run is None:
+                    raise LookupError("run deleted")
+                ok = write_summary(session, run_id, token, drift_report.stored_record(session, run))
                 session.commit()
-                done += 1
-            except Exception as exc:  # noqa: BLE001 - logged; the marker keeps the run out of the next ticks
+                done += int(ok)
+                log("drift summary stored" if ok else "drift summary dropped (claim taken over)", team=team,
+                    run=run_id, assets=assets, ms=round(1000 * (_monotonic() - t0)))
+            except Exception as exc:  # noqa: BLE001 - logged; the marker is retried after SUMMARY_RETRY_AFTER
                 session.rollback()
-                log("drift summary FAILED", team=run.team_id, run=run_id, error=type(exc).__name__)
-                session.exec(update(CbomCollectionRun).where(CbomCollectionRun.id == run_id)  # type: ignore[call-overload]
-                             .values(drift_summary={"v": drift_report.STORED_VERSION, "failed": True}))
+                tries = _prior_tries(session, run_id)
+                log("drift summary FAILED", team=team, run=run_id,
+                    error=type(exc).__name__, tries=tries)
+                write_summary(session, run_id, token, {"v": drift_report.STORED_VERSION, "failed": True,
+                                                       "at": summary_stamp(now), "tries": tries})
                 session.commit()
+        if large:
+            break
     return done
 
 

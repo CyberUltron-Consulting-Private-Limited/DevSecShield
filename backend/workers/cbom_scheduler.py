@@ -6,7 +6,9 @@
 The cloud worker also starts it on a background thread (``start_thread``; set ``CBOM_SCHEDULER=0`` to turn that off
 when the scheduler runs as its own service). It never runs inside the cloud worker's job loop: an AWS collection can
 hold that loop for hours, and schedules must fire on time. Several schedulers may run at once (replicas, a thread in
-every cloud worker): a slot fires exactly once (see ``cbom_sources.schedules``) and drift is recorded once per run.
+every cloud worker): a slot fires exactly once (see ``cbom_sources.schedules``), drift is recorded once per run and
+a run's stored drift document is claimed by one scheduler (``drift.store_pending_summaries``). ``loop()`` stores those
+documents on a thread of its own, so a long comparison never delays the next schedule check.
 """
 from __future__ import annotations
 
@@ -14,6 +16,7 @@ import argparse
 import os
 import signal
 import threading
+import time
 from typing import Any
 
 from backend.utilities.cbom_sources.common import log, new_ref, utcnow
@@ -21,10 +24,13 @@ from backend.utilities.cbom_sources.common import log, new_ref, utcnow
 TICK_S = 30
 
 
-def tick(engine, now=None) -> dict[str, Any]:
+def tick(engine, now=None, *, summaries: bool = True) -> dict[str, Any]:
+    """One scheduler pass. ``summaries``: also store pending drift documents, last and within the tick's budget
+    (``--once`` and tests; ``loop()`` runs them on their own thread instead)."""
     from backend.utilities.cbom_sources.drift import record_pending_drift
     from backend.utilities.cbom_sources.schedules import fire_due
 
+    started = time.monotonic()
     now = now or utcnow()
     fired = fire_due(engine, now)
     drift = record_pending_drift(engine, now)
@@ -59,20 +65,36 @@ def tick(engine, now=None) -> dict[str, Any]:
         out["sshca_retention"] = purge_due(engine, now)
     except Exception as exc:
         log("ssh ca audit retention FAILED", ref=new_ref(), error=type(exc).__name__)
-    try:  # S4 (review #486 minor 8): the drift document of recently recorded runs, stored once for report and pack
+    if summaries:
+        out["drift_summaries"] = _store_summaries(engine, now, started)
+    return out
+
+
+def _store_summaries(engine, now, started: float | None = None) -> int | None:
+    """S4 (review #486 minor 8): the drift document of recently recorded runs, stored once for report and pack."""
+    try:
         from backend.utilities.cbom_sources.drift import store_pending_summaries
 
-        out["drift_summaries"] = store_pending_summaries(engine, now)
+        return store_pending_summaries(engine, now, started=started)
     except Exception as exc:  # noqa: BLE001 - a download computes the document instead
         log("drift summaries FAILED", ref=new_ref(), error=type(exc).__name__)
-    return out
+        return None
+
+
+def _summary_loop(engine, stop: threading.Event) -> None:
+    """The drift-summary pass of ``loop()``, every TICK_S on its own thread: a comparison of a large run (seconds at
+    50k assets) never holds the scheduling thread, so schedules fire on time (review 6030475121 minor A)."""
+    while not stop.is_set():
+        _store_summaries(engine, utcnow())
+        stop.wait(TICK_S)
 
 
 def loop(engine, stop: threading.Event) -> None:
     log("scheduler started", tick_s=TICK_S)
+    threading.Thread(target=_summary_loop, args=(engine, stop), name="cbom-drift-summaries", daemon=True).start()
     while not stop.is_set():
         try:
-            tick(engine)
+            tick(engine, summaries=False)
         except Exception as exc:  # a database hiccup: wait for the next tick
             log("scheduler tick FAILED", ref=new_ref(), error=type(exc).__name__)
         stop.wait(TICK_S)

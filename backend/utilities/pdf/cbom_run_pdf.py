@@ -272,6 +272,8 @@ def build_run_pdf(*, run: dict[str, Any], sources: list[dict[str, Any]], posture
 
 DRIFT_ROWS = 12  # items per drift list in the PDF (drift.json in the evidence pack carries drift_report.TOP)
 DRIFT_SOURCES = 15
+DRIFT_TABLE_W = 7.1 * inch  # the drift box and its tables share one width (review 6030475121 nit 2)
+DRIFT_LABEL_W = 1.55 * inch
 
 
 def _delta(value: Any) -> str:
@@ -313,7 +315,7 @@ def append_drift_section(story: list[Any], drift: dict[str, Any], styles: dict) 
          else ("rules changed between the runs" if rules.get("rules_changed") else "same rules")),
         *([("Compared", (f"when the run's drift was recorded, {drift['recorded_at']} (the diff endpoint compares "
                           "with the grade inputs of today)"))] if drift.get("recorded_at") else []),
-    ], styles=styles))
+    ], styles=styles, label_width=DRIFT_LABEL_W, value_width=DRIFT_TABLE_W - DRIFT_LABEL_W))
     story.append(Spacer(1, 6))
     readiness = (f"{readiness_text(ready.get('before'))} → {readiness_text(ready.get('after'))} "
                  f"({_delta(ready.get('delta'))}; {ready.get('scope') or 'compared sources only'})")
@@ -327,7 +329,7 @@ def append_drift_section(story: list[Any], drift: dict[str, Any], styles: dict) 
          ["Q0 Unknown opened", str(q0.get("opened", 0))],
          ["Risk-register Q0 gaps this run closed", str(q0.get("register_closed_total", 0))],
          ["PQC readiness", readiness]],
-        styles=styles, col_widths=[3.4 * inch, 3.7 * inch]))
+        styles=styles, col_widths=[3.4 * inch, DRIFT_TABLE_W - 3.4 * inch]))
     story.append(Spacer(1, 4))
 
     def listing(title: str, key: str, columns: list[str], row) -> None:
@@ -339,7 +341,7 @@ def append_drift_section(story: list[Any], drift: dict[str, Any], styles: dict) 
         story.append(Paragraph(escape_html(f"{title} ({total})"), styles["table_label"]))
         story.append(Spacer(1, 3))
         story.append(styled_data_table(columns, [row(i) for i in items[:DRIFT_ROWS]], styles=styles,
-                                       col_widths=[1.1 * inch, 1.9 * inch, 2.6 * inch, 1.5 * inch]))
+                                       col_widths=[1.1 * inch, 1.9 * inch, 2.6 * inch, DRIFT_TABLE_W - 5.6 * inch]))
         if total > min(len(items), DRIFT_ROWS):
             story.append(_p(f"Showing {min(len(items), DRIFT_ROWS)} of {total}; drift.json in the evidence pack "
                             "and the diff endpoint list more.", styles, "muted"))
