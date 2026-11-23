@@ -87,7 +87,7 @@ SLUGS = [
     "pqc-migration-roadmap",
     "board-executive-report",
 ]
-NUMBERS = dict(zip(SLUGS, [1, 2, 3, 5, 7, 8, 9, 10, 15, 16], strict=True))  # D7 / D8 per SOW (FIX-B2)
+NUMBERS = dict(zip(SLUGS, [1, 2, 3, 6, 7, 8, 9, 10, 15, 16], strict=True))  # 6-10: SOW Table 7 D6-D10
 GENERIC_500 = {"detail": "Error generating deliverable, please try again later"}
 
 # Strings that exist ONLY in scans a team-1 document must never read (plan Appendix B).

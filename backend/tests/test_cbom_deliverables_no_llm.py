@@ -205,6 +205,9 @@ def _policy(path: Path) -> tuple[set[str], tuple[str, ...]]:
         backend += ("backend.utilities.cbom_sources.waves",)
         # the quantum risk register (CB-23) for deliverable #2: register rows and Q0 gaps from the database, no AI
         backend += ("backend.utilities.cbom_sources.risk_register",)
+        # Sources assets as posture facts and components (SOW D6/D9/D10): pure, stdlib only, no AI; and the vendor
+        # attestation register read by the loader (the Evidence tab's questionnaires: database rows, no AI)
+        backend += ("backend.utilities.cbom_sources.posture_mapper", "backend.utilities.cbom_sources.evidence")
         # D2's live collection set-up (sources by kind, ports, window, nodes, schedules): database only, no AI
         backend += ("backend.utilities.cbom_sources.methodology_facts",)
     if path.name == "cbom_methodology_text.py":
