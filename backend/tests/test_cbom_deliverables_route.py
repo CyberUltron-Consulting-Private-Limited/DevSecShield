@@ -74,6 +74,7 @@ FIXTURE = Path(__file__).resolve().parent / "fixtures" / "cbom_team_rollup_scans
 
 MANIFEST_PATH = "/{team_id}/cbom/deliverables"
 PDF_PATH = "/{team_id}/cbom/deliverables/{slug}"
+CSV_PATH = "/{team_id}/cbom/deliverables/{slug}.csv"
 SLUGS = [
     "scope-baseline-register",
     "quantum-risk-register",
@@ -409,6 +410,43 @@ def test_each_slug_returns_its_own_pdf_with_the_contract_headers(api, world, slu
     assert (info_field(body, "Title") or "").startswith(DELIVERABLES[slug].title)
 
 
+# ---------------------------------------------------------------------------------------------
+# SOW D8 CSV (FIX-B2): same rows as the PDF, UTF-8 BOM, RFC 4180
+# ---------------------------------------------------------------------------------------------
+def test_the_certificate_register_csv_has_the_pdfs_rows_in_order(api):
+    import csv as _csv
+    import io as _io
+
+    response = api.get(pdf_url(TEAM_ONE, "certificate-estate-register") + ".csv")
+    assert response.status_code == 200, response.text[:300]
+    assert response.headers["content-type"] == "text/csv; charset=utf-8"
+    assert response.headers["content-disposition"] == (
+        'attachment; filename="cbom-certificate-estate-register-team1-20261019.csv"')
+    assert response.headers["cache-control"] == "no-store"
+    body = response.content
+    assert body.startswith(b"\xef\xbb\xbf") and b"\r\n" in body
+    rows = list(_csv.reader(_io.StringIO(body[3:].decode("utf-8"), newline="")))
+    assert rows[0][:3] == ["row", "sha256_thumbprint", "certificate_key"]
+    data = rows[1:]
+    pdf_text = squash(full_text(api.get(pdf_url(TEAM_ONE, "certificate-estate-register")).content))
+    assert squash(f"Showing all {len(data)} unique certificates") in pdf_text
+    assert [int(r[0]) for r in data] == list(range(1, len(data) + 1))
+    assert len({r[2] for r in data}) == len(data)  # one row per unique certificate
+
+
+@pytest.mark.parametrize("slug", ["network-tls-protocol-assessment", "not-a-document", "CERTIFICATE-ESTATE-REGISTER"])
+def test_a_csv_of_a_pdf_only_or_unknown_deliverable_is_404(api, slug):
+    response = api.get(pdf_url(TEAM_ONE, slug) + ".csv")
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Unknown deliverable"}
+
+
+def test_the_csv_needs_a_token_and_membership(api):
+    url = pdf_url(TEAM_ONE, "certificate-estate-register") + ".csv"
+    assert api.get(url, who=None).status_code == 401
+    assert api.get(url, who="bob").status_code == 403
+
+
 def test_the_same_request_twice_gives_byte_identical_pdfs(api):
     first = api.get(pdf_url(TEAM_ONE, "certificate-estate-register")).content
     second = api.get(pdf_url(TEAM_ONE, "certificate-estate-register")).content
@@ -523,9 +561,10 @@ def test_manifest_shape_order_and_basis_for_the_appendix_b_team(api):
     for row in rows:
         spec = DELIVERABLES[row["slug"]]
         assert set(row) == {
-            "slug", "number", "title", "description", "format", "available", "reason",
+            "slug", "number", "title", "description", "format", "formats", "available", "reason",
         }  # fmt: skip
         assert row["format"] == "pdf"
+        assert row["formats"] == (["pdf", "csv"] if row["slug"] == "certificate-estate-register" else ["pdf"])
         assert row["title"] == spec.title and row["description"] == spec.description
         assert row["available"] is True and row["reason"] is None
 
@@ -815,7 +854,8 @@ def test_the_router_alone_generates_a_warning_free_openapi_schema():
     with warnings.catch_warnings():
         warnings.simplefilter("error", UserWarning)  # PydanticJsonSchemaWarning is a UserWarning
         spec = mini.openapi()
-    assert set(spec["paths"]) == {MANIFEST_PATH, PDF_PATH}
+    assert set(spec["paths"]) == {MANIFEST_PATH, PDF_PATH, CSV_PATH}
+    assert set(spec["paths"][CSV_PATH]) == {"get"}
     assert set(spec["paths"][MANIFEST_PATH]) == {"get"}
     assert set(spec["paths"][PDF_PATH]) == {"get", "post"}
     body = spec["paths"][PDF_PATH]["post"]["requestBody"]["content"]["application/json"]["schema"]

@@ -1,17 +1,26 @@
-"""Network, TLS and crypto protocol assessment (#6, CBOM-D06).
+"""Network, TLS and crypto protocol assessment (SOW D7, CBOM-D07).
 
-Static declarations, imported result files and the endpoints the team's CBOM Sources collections
-probed (posture evidence ``probed:CBOM Sources``, ``cbom_team_rollup.merge_collections``). The
-document says the platform did not probe any endpoint only when no collection in scope probed one.
+Static declarations and imported result files (code-scan posture facts), and the evidence of the team's CBOM Sources
+collections read straight from their rows (``cbom_sources.network_estate``): TLS endpoints de-duplicated by
+``host:port`` with their full accepted-suite list, chain and an SSL Labs-style grade; SSH endpoints (host keys, key
+exchange, ciphers, MACs); network appliance configuration (Cisco IOS / ASA, FortiOS, PAN-OS, F5); IKE / IPsec;
+STARTTLS services; OPC UA endpoint security; Modbus/TCP (port open only, SOW 7.2). A source that was deleted is left
+out (and the number of its rows is stated). The certificate count is ``cert_estate.unique_certificates`` (the D8
+register's own list). The document says the platform did not probe any endpoint only when no collection in scope
+probed one.
 """
 
 from __future__ import annotations
 
+import re
+from dataclasses import dataclass, replace
 from typing import Any
 
 from reportlab.platypus import Flowable
 
-from backend.utilities.dashboard.cbom_team_rollup import TeamCbomView
+import backend.utilities.cbom_sources.network_estate as NE
+from backend.utilities.cbom_sources.cert_estate import count_phrase, inputs_of, unique_certificates
+from backend.utilities.dashboard.cbom_team_rollup import PostureFactAgg, PostureSourceAgg, TeamCbomView
 from backend.utilities.pdf import cbom_posture_common as common
 from backend.utilities.pdf import cbom_posture_text as text
 from backend.utilities.pdf.cbom_deliverable_common import (
@@ -19,12 +28,13 @@ from backend.utilities.pdf.cbom_deliverable_common import (
     build_document,
     kpi_strip,
     manual_form,
-    section_heading,
     signoff_block,
 )
+from backend.utilities.pdf.cbom_deliverable_common import section_heading as _section_heading
+from backend.utilities.pdf.cbom_pdf_outline import Bookmark
 from backend.utilities.pdf.report_branding import REPORT_META
 
-DOCUMENT_NUMBER = 7  # SOW Table 7: D7
+DOCUMENT_NUMBER = 7  # SOW Table 7: D7 Network, TLS and Crypto Protocol Assessment
 REPORT_KEY = "cbom_network_tls"
 _SIGNOFF = ("Prepared by", "Reviewed by", "Approved by")
 _OFFERED = {"offered": "offered", "not_offered": "not offered", "unknown": "unknown"}
@@ -62,24 +72,127 @@ def _weak(fact: dict[str, Any]) -> bool:
     return bool(common.as_rows(suites))
 
 
-def _kpi(view: object, width: float) -> Flowable:
+@dataclass(frozen=True)
+class _Model:
+    """Everything the document prints from the Sources rows, computed once per document."""
+
+    tls: tuple[NE.TlsEndpoint, ...] = ()
+    ssh: tuple[NE.Observed, ...] = ()
+    appliances: tuple[NE.Observed, ...] = ()
+    ike: tuple[NE.Observed, ...] = ()
+    opcua: tuple[NE.Observed, ...] = ()
+    modbus: tuple[NE.Observed, ...] = ()
+    deleted_rows: int = 0
+    deleted_sources: tuple[str, ...] = ()
+    certificates: int = 0
+    certificates_served: int = 0
+
+
+# Very large estates: a D7 table of probed evidence stops at D7_ROW_CAP rows and the per-endpoint suite appendix at
+# SUITE_ENDPOINT_CAP endpoints (lowest grade first); the document says how many were left out and where the full
+# lists are (each Sources run's CycloneDX export carries every endpoint's cipherSuites).
+D7_ROW_CAP = 1000
+SUITE_ENDPOINT_CAP = 300
+_FULL_LIST = "the full list is in each Sources run's asset list and CycloneDX export (protocolProperties.cipherSuites)"
+_GRADE_ORDER = {letter: rank for rank, letter in enumerate("FTEDCBA-")}
+
+
+def section_heading(text: str, styles: Styles, *, min_space: float = 90) -> list[Flowable]:
+    """The shared heading plus a level-0 bookmark, so every section is one click away in the PDF outline."""
+    flow = _section_heading(text, styles, min_space=min_space)
+    slug = re.sub(r"[^a-z0-9]+", "-", text.casefold()).strip("-")[:60]
+    return [flow[0], Bookmark(text, f"d7-{slug}", 0, closed=True), *flow[1:]]
+
+
+def _capped(rows: list[list[Any]], noun: str, styles: Styles,
+            cap: int = D7_ROW_CAP) -> tuple[list[list[Any]], list[Flowable]]:
+    if len(rows) <= cap:
+        return rows, []
+    return rows[:cap], [common.note(f"Showing {cap} of {len(rows)} {noun}; {_FULL_LIST}.", styles)]
+
+
+def _table(headers: tuple[str, ...], rows: list[list[Any]], weights: tuple[float, ...], width: float, styles: Styles,
+           noun: str) -> list[Flowable]:
+    shown, notes = _capped(rows, noun, styles)
+    return [*notes, *common.register(headers, shown, weights, width, styles, noun=noun)]
+
+
+_SOURCES_RENDERED = frozenset({"tls_endpoint", "ssh_service"})  # kinds this document reads from the rows themselves
+
+
+def _from_sources(item: Any) -> bool:
+    fact = common.fact_map(item)
+    ident = str(common.grab(item, "fact_id", "") or fact.get("id") or "")
+    evidence = str(fact.get("evidence") or common.net_of(fact).get("evidence") or "")
+    return (ident.startswith("sources:") or evidence.startswith("probed:")) and common.kind_of(fact) in _SOURCES_RENDERED
+
+
+def _scoped(view: TeamCbomView) -> tuple[TeamCbomView, _Model]:
+    """The view this document prints: Sources endpoints de-duplicated (one fact per ``host:port``) in place of the
+    per-collection probed facts, and sources that were deleted left out of the source table."""
+    deleted_keys = {c.key for c in view.collections if not c.source_kind}
+    estate = unique_certificates(view)
+    if not inputs_of(view).rows:  # a hand-built view, or no Sources rows loaded: print the posture as it is
+        return view, _Model(certificates=len(estate), certificates_served=estate.served,
+                            deleted_sources=tuple(sorted(c.label for c in view.collections if not c.source_kind)))
+    tls, d1 = NE.tls_endpoints(view)
+    ssh, d2 = NE.ssh_endpoints(view)
+    appliances, d3 = NE.appliance_configs(view)
+    ike, d4 = NE.ike_endpoints(view)
+    opcua, modbus, d5 = NE.ot_endpoints(view)
+    posture = view.posture
+    kept = [f for f in posture.facts if not _from_sources(f)]
+    new = [PostureFactAgg(source_key=e.observed.item.collection.key, fact_id=f"sources-endpoint:{e.key}", current=True,
+                          first_seen=e.observed.item.collection.observed_at,
+                          last_seen=e.observed.item.collection.observed_at, scan_count=1,
+                          last_scan_id=int(e.observed.item.collection.run_id),
+                          fact=NE.tls_net(e, "probed:CBOM Sources"))
+           for e in tls]
+    sources = [s for s in posture.sources if s.key not in deleted_keys]
+    listed = {s.key for s in sources}
+    for observed in [*(e.observed for e in tls), *ssh, *appliances, *ike, *opcua, *modbus]:
+        coll = observed.item.collection
+        if coll.key in listed:
+            continue
+        listed.add(coll.key)
+        sources.append(PostureSourceAgg(key=coll.key, label=coll.label, state="assessed", reason=None,
+                                        current_scan_id=int(coll.run_id), last_scanned=coll.observed_at,
+                                        zero_facts=False, truncated=False, dropped=0, lanes=("sources_network",),
+                                        failed_lanes=()))
+    sources.sort(key=lambda row: (row.label.casefold(), row.key))
+    scoped_posture = replace(posture, facts=tuple([*kept, *new]), sources=tuple(sources))
+    model = _Model(tls=tuple(tls), ssh=tuple(ssh), appliances=tuple(appliances), ike=tuple(ike), opcua=tuple(opcua),
+                   modbus=tuple(modbus), deleted_rows=d1 + d2 + d3 + d4 + d5,
+                   deleted_sources=tuple(sorted(c.label for c in view.collections if not c.source_kind)),
+                   certificates=len(estate), certificates_served=estate.served)
+    return replace(view, posture=scoped_posture), model
+
+
+def _kpi(view: object, model: _Model, width: float) -> Flowable:
     endpoints = _endpoints(view)
     legacy = sum(1 for fact in endpoints if _legacy(fact))
     weak = sum(1 for fact in endpoints if _weak(fact))
-    certs = sum(1 for fact in endpoints if common.net_of(fact).get("certificate"))
     imports = [common.as_mapping(item) for item in common.as_rows(common.grab(common.posture_block(view), "imports", ()))]
     tools = sorted({str(item.get("tool") or "unknown") for item in imports})
     assessed, total, _missing, _partial = common.coverage_numbers(view)
     tool_text = ", ".join(f"{tool}" for tool in tools) if tools else "none"
+    graded = [e.grade.letter for e in model.tls if e.grade.letter != "-"]
+    poor = sum(1 for letter in graded if letter in ("C", "D", "E", "F", "T"))
     cards = [
-        ("Endpoints", common.kpi_text(view, len(endpoints)), "Static, imported and probed"),
+        ("Endpoints", common.kpi_text(view, len(endpoints)), "Unique host:port, static, imported, probed"),
         ("Legacy protocol", common.kpi_text(view, legacy), "SSLv3, TLS 1.0 or TLS 1.1 offered"),
         ("Weak suites", common.kpi_text(view, weak), "Endpoints with a weak suite"),
-        ("Certificates", common.kpi_text(view, certs), "Seen on endpoints"),
+        ("Grade C or worse", common.kpi_text(view, poor), f"of {len(graded)} graded TLS endpoints", "high"),
+        ("Certificates", common.kpi_text(view, model.certificates),
+         f"{count_phrase(model.certificates)} (D8); {model.certificates_served} served on endpoints"),
+        ("SSH endpoints", common.kpi_text(view, len(model.ssh)), "Host keys, kex, ciphers, MACs"),
+        ("Appliance settings", common.kpi_text(view, len(model.appliances)), "TLS, SSH, IKE, IPsec configuration"),
+        ("IKE / OT", common.kpi_text(view, f"{len(model.ike)} / {len(model.opcua) + len(model.modbus)}"),
+         "IKE gateways / OPC UA + Modbus"),
         ("Import tools", common.kpi_text(view, len(tools)), tool_text),
         ("Sources", common.kpi_text(view, f"{assessed}/{total}"), "assessed of current sources"),
     ]
-    return kpi_strip(cards, width, max_per_row=3)
+    return kpi_strip(cards, width, max_per_row=5)
 
 
 def _mark(fact: dict[str, Any], label: str) -> str:
@@ -121,6 +234,7 @@ def _endpoint_register(view: object, styles: Styles, width: float) -> list[Flowa
                 common.evidence_kind(fact),
                 f"{net.get('min') or ''} / {net.get('max') or ''}".strip(" /"),
                 _protocol_word(net, "1.3"),
+                net.get("grade") or "",
                 len(weak_suites),
                 _kx(net),
                 net.get("fs") or "",
@@ -139,6 +253,7 @@ def _endpoint_register(view: object, styles: Styles, width: float) -> list[Flowa
                 "Evidence",
                 "Min / max",
                 "TLS 1.3",
+                "Grade",
                 "Weak suites",
                 "Key exchange",
                 "FS",
@@ -149,7 +264,7 @@ def _endpoint_register(view: object, styles: Styles, width: float) -> list[Flowa
                 "Location",
             ),
             rows,
-            (120, 68, 52, 48, 38, 64, 36, 62, 52, 66, 52, 52),
+            (130, 60, 46, 34, 36, 30, 60, 56, 46, 52, 56, 64, 42),
             width,
             styles,
             view=view,
@@ -304,7 +419,7 @@ def _ssh_and_db(view: object, styles: Styles, width: float) -> list[Flowable]:
             )
     rows.sort(key=lambda row: (str(row[1]), str(row[0]).casefold()))
     return [
-        *section_heading("SSH and database transport", styles),
+        *section_heading("SSH and database transport (declared in code and configuration)", styles),
         *common.register(
             ("Setting", "Kind", "Verdict", "Protocol floor", "Finding codes", "Location"),
             rows,
@@ -377,22 +492,210 @@ def _imports(view: object, styles: Styles, width: float) -> list[Flowable]:
     ]
 
 
+def _codes(codes: Any) -> str:
+    return " ".join(str(c) for c in codes or ())
+
+
+def _seen(observed: NE.Observed) -> str:
+    also = f" (also: {', '.join(observed.also_seen)})" if observed.also_seen else ""
+    return observed.source + also
+
+
+def _grade_rubric(styles: Styles, width: float) -> list[Flowable]:
+    return [
+        *section_heading("TLS grade rubric", styles),
+        common.note("Each probed TLS endpoint gets a letter computed only from what the probe observed, modelled on "
+                    "the Qualys SSL Labs SSL Server Rating Guide. It is informative: it ranks endpoints for "
+                    "remediation and does not replace a live verification.", styles),
+        *common.register(("Part", "Rule"), [list(row) for row in NE.RUBRIC], (140, 580), width, styles,
+                         noun="rubric rows"),
+    ]
+
+
+def _grades(model: _Model, styles: Styles, width: float) -> list[Flowable]:
+    rows = []
+    for e in model.tls:
+        facts = e.observed.facts
+        rows.append([
+            e.key, e.service, e.grade.text, "" if e.grade.score is None else e.grade.score,
+            "; ".join(e.grade.caps), facts.get("negotiated_version") or "",
+            facts.get("negotiated_cipher") or "", ", ".join(e.groups),
+            "complete" if not e.grade.provisional else "incomplete: " + "; ".join(e.not_read[:3]),
+            _seen(e.observed),
+        ])
+    return [
+        *section_heading("TLS endpoint grades", styles),
+        *_table(("Endpoint", "Service", "Grade", "Score", "Caps and trust", "Negotiated", "Cipher",
+                          "Groups", "Suite enumeration", "Source"), rows,
+                         (90, 50, 50, 30, 130, 45, 100, 60, 90, 75), width, styles, "graded endpoints"),
+    ]
+
+
+def _suites(model: _Model, styles: Styles, width: float) -> list[Flowable]:
+    flow: list[Flowable] = [*section_heading("Accepted cipher suites by endpoint", styles),
+                            common.note("Every suite the probe saw accepted, per protocol version. Each endpoint is a "
+                                        "collapsed entry under 'Accepted cipher suites by endpoint' in the PDF "
+                                        "bookmarks panel. 'Incomplete' means the probe's handshake budget ran out "
+                                        "before every suite was tried.", styles)]
+    rows_all = 0
+    listed = sorted((e for e in model.tls if e.suites), key=lambda e: _GRADE_ORDER.get(e.grade.letter, 9))
+    if len(listed) > SUITE_ENDPOINT_CAP:
+        flow.append(common.note(f"Showing the {SUITE_ENDPOINT_CAP} lowest-graded of {len(listed)} endpoints; "
+                                f"{_FULL_LIST}.", styles))
+        listed = listed[:SUITE_ENDPOINT_CAP]
+    for index, e in enumerate(listed):
+        rows = []
+        for version, names in e.suites.items():
+            done = e.suites_complete.get(version)
+            state = "complete" if done else ("incomplete" if done is False else "not reported")
+            for position, name in enumerate(names):  # one suite per row: a long list is never cut
+                rows.append([version if position == 0 else "", position + 1, name, state if position == 0 else ""])
+                rows_all += 1
+        flow.append(Bookmark(f"{e.key} ({e.grade.text})", f"d7-suites-{index}", 1, closed=True))
+        flow.extend(common.register((f"{e.key} · version", "#", "Accepted suite (IANA name)", "Enumeration"),
+                                    rows, (110, 30, 480, 100), width, styles, noun="suite rows"))
+    if rows_all == 0:
+        flow.extend(common.register(("Endpoint", "Version", "Accepted suites"), [], (150, 90, 480), width, styles))
+    return flow
+
+
+def _chains(model: _Model, styles: Styles, width: float) -> list[Flowable]:
+    rows = []
+    for e in model.tls:
+        for cert in e.chain:
+            rows.append([e.key, cert.index, cert.subject, cert.issuer, cert.not_after[:10], cert.key,
+                         (cert.thumbprint[:16] + "\u2026") if cert.thumbprint else ""])
+    return [
+        *section_heading("Certificate chains presented", styles),
+        *_table(("Endpoint", "#", "Subject", "Issuer", "Valid to", "Key", "SHA-256"), rows,
+                         (100, 20, 170, 170, 60, 70, 90), width, styles, "chain certificates"),
+    ]
+
+
+def _ssh(model: _Model, styles: Styles, width: float) -> list[Flowable]:
+    rows = []
+    for o in model.ssh:
+        algs = NE.ssh_algorithms(o)
+        rows.append([o.key, o.facts.get("banner") or "", "\n".join(NE.ssh_host_keys(o)), ", ".join(algs["kex"]),
+                     ", ".join(algs["ciphers"]), ", ".join(algs["macs"]), "yes" if NE.ssh_pq_kex(o) else "no",
+                     _codes(o.codes), _seen(o)])
+    return [
+        *section_heading("SSH endpoints", styles),
+        *_table(("Endpoint", "Banner", "Host keys", "Key exchange", "Ciphers", "MACs", "PQ kex",
+                          "Finding codes", "Source"), rows, (70, 70, 120, 110, 90, 70, 30, 90, 70), width, styles,
+                         "SSH endpoints"),
+    ]
+
+
+def _appliances(model: _Model, styles: Styles, width: float) -> list[Flowable]:
+    rows = []
+    for o in model.appliances:
+        f = o.facts
+        rows.append([f.get("appliance") or o.item.target or "", f.get("vendor_label") or f.get("vendor") or "",
+                     NE.APPLIANCE_KINDS.get(str(f.get("kind") or ""), str(f.get("kind") or "")),
+                     f.get("section") or "", NE.appliance_settings(o), _codes(o.codes), _seen(o)])
+    return [
+        *section_heading("Network appliance configuration (TLS, SSH, IKE, IPsec)", styles),
+        *_table(("Appliance", "Vendor", "Setting", "Section", "Configured values", "Finding codes",
+                          "Source"), rows, (70, 60, 60, 120, 220, 110, 80), width, styles, "appliance settings"),
+    ]
+
+
+def _ike(model: _Model, styles: Styles, width: float) -> list[Flowable]:
+    probed = []
+    for o in model.ike:
+        info = NE.ike_summary(o)
+        probed.append([o.key, info["versions"], info["chosen"], info["weak"], info["aggressive"], info["pq"],
+                       _codes(o.codes), _seen(o)])
+    configured = [[o.facts.get("appliance") or "", o.facts.get("vendor_label") or "", o.facts.get("section") or "",
+                   NE.appliance_settings(o), _codes(o.codes)]
+                  for o in model.appliances if o.facts.get("kind") in ("ike_policy", "ipsec_policy")]
+    return [
+        *section_heading("IKE / IPsec proposals", styles),
+        common.note("Probed: what an IKE gateway accepted when the scan node offered proposals (UDP 500 / 4500). "
+                    "Configured: the proposals and transform sets in the appliance configuration.", styles),
+        *_table(("Gateway", "Versions", "Chosen proposal", "Weak transforms accepted", "Aggressive mode",
+                          "PQ (RFC 9370)", "Finding codes", "Source"), probed,
+                         (80, 55, 140, 150, 50, 60, 100, 85), width, styles, "IKE gateways"),
+        *_table(("Appliance", "Vendor", "Proposal / transform set", "Configured values", "Finding codes"),
+                         configured, (80, 70, 170, 260, 140), width, styles, "configured proposals"),
+    ]
+
+
+def _starttls(model: _Model, styles: Styles, width: float) -> list[Flowable]:
+    rows = []
+    for e in model.tls:
+        if not e.starttls:
+            continue
+        net = NE.tls_net(e, "probed:CBOM Sources")["net"]
+        rows.append([e.key, e.service.replace(NE.STARTTLS_PREFIX, "STARTTLS "), net.get("min") or "",
+                     net.get("max") or "", e.grade.text, _codes(e.observed.codes), _seen(e.observed)])
+    return [
+        *section_heading("STARTTLS services", styles),
+        *_table(("Endpoint", "Service", "Lowest TLS", "Highest TLS", "Grade", "Finding codes", "Source"),
+                         rows, (110, 110, 60, 60, 60, 160, 160), width, styles, "STARTTLS services"),
+    ]
+
+
+def _ot(model: _Model, styles: Styles, width: float) -> list[Flowable]:
+    opc = []
+    for o in model.opcua:
+        info = NE.opcua_summary(o)
+        opc.append([o.key, info["application"], info["endpoints"], info["modes"], info["policies"], info["tokens"],
+                    _codes(o.codes), _seen(o)])
+    modbus = [[o.key, "port open (TCP connect only)", "none: Modbus/TCP has no encryption or authentication",
+               _codes(o.codes), _seen(o)] for o in model.modbus]
+    return [
+        *section_heading("OPC UA endpoint security", styles),
+        *_table(("Endpoint", "Application", "Endpoints", "Security modes", "Security policies",
+                          "User tokens", "Finding codes", "Source"), opc,
+                         (90, 100, 45, 90, 130, 90, 90, 85), width, styles, "OPC UA endpoints"),
+        *section_heading("Modbus/TCP (port open only)", styles),
+        common.note("SOW 7.2: Modbus devices are recorded from a TCP connect to the port only. No Modbus request (not "
+                    "even a read) is sent, so nothing about the device is asserted beyond the open port.", styles),
+        *_table(("Endpoint", "Evidence", "Transport security", "Finding codes", "Source"), modbus,
+                         (120, 140, 220, 110, 130), width, styles, "Modbus endpoints"),
+    ]
+
+
+def _deleted_note(model: _Model, styles: Styles) -> list[Flowable]:
+    if not model.deleted_sources and not model.deleted_rows:
+        return []
+    names = ", ".join(model.deleted_sources[:6]) + (f" and {len(model.deleted_sources) - 6} more"
+                                                    if len(model.deleted_sources) > 6 else "")
+    rows = f" ({model.deleted_rows} network row{'s' if model.deleted_rows != 1 else ''})" if model.deleted_rows else ""
+    return [common.note(f"Left out: the latest collections of {len(model.deleted_sources)} deleted source"
+                        f"{'s' if len(model.deleted_sources) != 1 else ''}{rows}: {names}. A deleted source is never "
+                        "counted as current evidence.", styles)]
+
+
 def build_story(view: TeamCbomView, styles: Styles, width: float) -> list[Flowable]:
-    """Document body for deliverable #6."""
+    """Document body for deliverable D7."""
+    view, model = _scoped(view)
     return [
         common.note(REPORT_META[REPORT_KEY]["how_to_read"], styles),
         common.gap(),
-        _kpi(view, width),
+        _kpi(view, model, width),
+        *_deleted_note(model, styles),
         common.gap(),
         *common.source_status_flow(view, styles, width),
         *_endpoint_register(view, styles, width),
+        *_grades(model, styles, width),
         *_matrix(view, styles, width),
         *_weak_suites(view, styles, width),
         *_certificates(view, styles, width),
+        *_chains(model, styles, width),
         *_downgrade(view, styles, width),
+        *_ssh(model, styles, width),
+        *_appliances(model, styles, width),
+        *_ike(model, styles, width),
+        *_starttls(model, styles, width),
+        *_ot(model, styles, width),
         *_ssh_and_db(view, styles, width),
         *_verification_disabled(view, styles, width),
         *_imports(view, styles, width),
+        *_grade_rubric(styles, width),
+        *_suites(model, styles, width),
         *common.unknown_flow(view, styles, width),
         *common.previously_seen_flow(view, styles, width),
         common.gap(),
@@ -411,7 +714,7 @@ def build_story(view: TeamCbomView, styles: Styles, width: float) -> list[Flowab
 
 
 def build_pdf(view: TeamCbomView, *, ctx: Any = None) -> bytes:
-    """Render deliverable #6. Returns PDF bytes."""
+    """Render deliverable D7. Returns PDF bytes."""
     return build_document(ctx=ctx, 
         view=view,
         number=DOCUMENT_NUMBER,

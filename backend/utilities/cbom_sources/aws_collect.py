@@ -421,6 +421,29 @@ def _kms_facts(meta: dict[str, Any]) -> dict[str, Any]:
 ACM_KEY_PAIR_ORIGINS = ["AWS_MANAGED", "CUSTOMER_PROVIDED", "ACME"]
 
 
+def _pca_certificate(client: Any, ca: dict[str, Any]) -> dict[str, Any]:
+    """X.509 facts of a Private CA's own certificate (``GetCertificateAuthorityCertificate``): subject and issuer DN,
+    serial, SHA-256 thumbprint, validity. ``{"certificate_read": <reason>}`` when it cannot be read (a CA that is
+    PENDING_CERTIFICATE or DELETED has none; a role without ``acm-pca:Get*`` is denied), never an error."""
+    if ca.get("Status") not in ("ACTIVE", "DISABLED", "EXPIRED"):
+        return {"certificate_read": "not_issued"}
+    try:
+        pem = client.get_certificate_authority_certificate(CertificateAuthorityArn=ca["Arn"]).get("Certificate") or ""
+        from cryptography import x509
+        from cryptography.hazmat.primitives.serialization import Encoding
+
+        der = x509.load_pem_x509_certificate(pem.encode("ascii", "replace")).public_bytes(Encoding.DER)
+        from backend.utilities.cbom_sources.idp_collect import cert_facts
+
+        _alg, _bits_read, read = cert_facts(der, "aws")
+    except Exception as exc:  # noqa: BLE001 - the CA row is kept with what ListCertificateAuthorities said
+        code = _code(exc) if hasattr(exc, "response") else type(exc).__name__
+        return {"certificate_read": str(code or "error")[:60]}
+    keep = ("subject", "issuer", "serial", "not_before", "not_after", "fingerprint_sha256", "self_signed", "san",
+            "key_size", "curve")
+    return {**{k: read[k] for k in keep if read.get(k) not in (None, "", [])}, "certificate_read": "ok"}
+
+
 def _cert_asset(arn: str, label: str, detail: dict[str, Any], kind: str = "certificate", *,
                 summary: dict[str, Any] | None = None) -> dict[str, Any]:
     """``summary``: the ACM ListCertificates entry, for the export facts (an exported certificate's key is used
@@ -967,6 +990,8 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
         return "truncated" if truncated else None
 
     def pca() -> str | None:
+        from backend.utilities.cbom_sources.cert_estate import dn_from_mapping
+
         client = acct.client("acm-pca", region)
         cas, truncated = _paginate(client, "list_certificate_authorities", "CertificateAuthorities")
         if truncated:
@@ -975,13 +1000,19 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
         for ca in cas:
             cfg = ca.get("CertificateAuthorityConfiguration") or {}
             key_alg = cfg.get("KeyAlgorithm") or ""
-            emit({"type": "cloud_ca", "target": label, "location": ca["Arn"],
-                  "name": json.dumps(cfg.get("Subject") or {})[:255],
+            # the Subject as an RFC 4514 DN (FIX-B2: it was printed as raw JSON), then the CA's own X.509 certificate
+            # when the role may read it: its serial and SHA-256 thumbprint make it one certificate across sources
+            subject = dn_from_mapping(cfg.get("Subject")) or ca["Arn"].rsplit("/", 1)[-1]
+            facts: dict[str, Any] = {"subject": subject, "key_alg": key_alg, "sig_alg": cfg.get("SigningAlgorithm"),
+                                     "status": ca.get("Status"), "ca_type": ca.get("Type"),
+                                     "not_after": _iso(ca.get("NotAfter")), "not_before": _iso(ca.get("NotBefore")),
+                                     "is_ca": True, "source": "aws", "identity": ca["Arn"]}
+            if ca.get("Type") == "ROOT":
+                facts["issuer"], facts["self_signed"] = subject, True
+            facts.update(_pca_certificate(client, ca))
+            emit({"type": "cloud_ca", "target": label, "location": ca["Arn"], "name": facts["subject"][:255],
                   "algorithm": _key_family(key_alg) or ("RSA" if key_alg.startswith("RSA") else "ECDSA"),
-                  "key_size": _bits(key_alg),
-                  "facts": {"key_alg": key_alg, "sig_alg": cfg.get("SigningAlgorithm"), "status": ca.get("Status"),
-                            "ca_type": ca.get("Type"), "not_after": _iso(ca.get("NotAfter")),
-                            "not_before": _iso(ca.get("NotBefore")), "is_ca": True, "source": "aws", "identity": ca["Arn"]}})
+                  "key_size": _bits(key_alg), "facts": facts})
         return "truncated" if truncated else None
 
     def secrets() -> str | None:

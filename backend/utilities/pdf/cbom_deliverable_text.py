@@ -973,13 +973,15 @@ CERT_SCAN_FLAG_DIFFERS = "scan-time flag differs"
 # Source: RFC 5280, X.509 certificate fields and validity: https://www.rfc-editor.org/rfc/rfc5280
 # Product text: fields recorded by aibom/src/aibom/cbom/x509.py (Certificate).
 CERT_DISCOVERY_LIMITS = (
-    "The engine records subject and issuer common names, validity dates, signature "
-    "algorithm, public-key algorithm, key size or curve, and the self-signed and CA flags. "
-    "It does not record serial numbers, fingerprints, subject alternative names, key usage "
-    "or extended key usage, organisation fields, or OCSP and CRL locations.",
-    "A certificate is identified across scans by a hash of its recorded attributes. Two "
-    "different certificates that agree on every recorded attribute would be shown as one; "
-    "this is not expected in practice because validity dates have one-second precision.",
+    "CBOM Sources collections record the full subject and issuer DN, serial number, SHA-256 "
+    "thumbprint, subject alternative names, validity, key and signature algorithms and the CA and "
+    "self-signed flags. Code scans record subject and issuer common names, validity, algorithms and "
+    "flags only (no serial or thumbprint). Key usage, extended key usage and OCSP / CRL locations are "
+    "not recorded.",
+    "A certificate is one row per SHA-256 thumbprint. Rows without a thumbprint are joined on the "
+    "cross-source key (serial and notAfter, else SHA-1 thumbprint, else DN and notAfter), a cloud CA "
+    "on its resource ARN, and a code-scan certificate on a hash of its recorded attributes. The same "
+    "list feeds this PDF, its CSV and the certificate count of the network assessment (D7).",
     "Expiry is computed from the notAfter date as of the generation date of this document "
     "and can differ from the flag raised when the scan ran.",
     "Whether a certificate is managed, orphaned or in production use needs an authoritative "
