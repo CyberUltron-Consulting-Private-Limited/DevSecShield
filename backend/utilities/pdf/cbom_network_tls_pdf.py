@@ -234,7 +234,7 @@ def _endpoint_register(view: object, styles: Styles, width: float) -> list[Flowa
                 "Location",
             ),
             rows,
-            (110, 62, 48, 36, 40, 34, 64, 36, 50, 52, 80, 52, 70),
+            (130, 56, 46, 34, 36, 30, 60, 34, 46, 50, 74, 52, 60),
             width,
             styles,
             view=view,
