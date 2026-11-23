@@ -36,6 +36,8 @@ _PARAMS = (
     ("crypto:argon2TimeCost", "time cost"),
     ("crypto:argon2MemoryCost", "memory KiB"),
     ("crypto:argon2Parallelism", "parallelism"),
+    # several calls in one file: the row shows the weakest call's set (the CycloneDX lists every call)
+    ("crypto:kdfWeakestLine", "weakest of its calls, line"),
 )
 _MAX_ROWS = 400  # per table; the rest are counted (the CycloneDX download lists every asset)
 
