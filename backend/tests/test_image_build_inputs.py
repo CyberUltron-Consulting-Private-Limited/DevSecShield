@@ -41,7 +41,7 @@ def test_worker_node_and_cdxgen_are_pinned_and_verified():
     assert re.search(r"^ARG NODE_SHA256_AMD64=[0-9a-f]{64}$", WORKER, re.M)
     assert re.search(r"^ARG NODE_SHA256_ARM64=[0-9a-f]{64}$", WORKER, re.M)
     step = WORKER[WORKER.index("ARG NODE_VERSION"):WORKER.index("Stage 2: Runtime")]
-    assert "curl -sSfL" in step and "sha256sum -c /tmp/node.sha256" in step
+    assert "https://nodejs.org/dist/v${NODE_VERSION}/" in step and "sha256sum -c /tmp/node.sha256" in step
     assert "npm ci --omit=dev --omit=optional --ignore-scripts" in step
     assert "npm install" not in WORKER and "npx" not in WORKER
 

@@ -4,5 +4,10 @@
   "description": "Pinned cdxgen for the scan worker image (RabbitMQ/worker/Dockerfile): npm ci verifies every package against package-lock.json.",
   "dependencies": {
     "@cyclonedx/cdxgen": "12.9.3"
+  },
+  "overrides": {
+    "body-parser": "2.4.0",
+    "glob": "14.0.2",
+    "minimatch": "11.0.1"
   }
 }

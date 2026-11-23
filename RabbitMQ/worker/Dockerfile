@@ -97,8 +97,7 @@ ARG TARGETARCH
 ARG NODE_VERSION=24.22.3
 ARG NODE_SHA256_AMD64=061ec3e3062115705b56b51fa9cc330ab50d34b6969387d4e4b1a50c6809acc2
 ARG NODE_SHA256_ARM64=261af2af250dfd7e9f25cf151d1b2713a0adf8f10a9ad116c4947f68627affe8
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+# No apt step: the base image's Python fetches the archive (an HTTP error fails the step), sha256sum checks it.
 RUN set -eu; \
     case "${TARGETARCH:-amd64}" in \
       amd64) narch=x64; sum="${NODE_SHA256_AMD64}" ;; \
@@ -106,17 +105,20 @@ RUN set -eu; \
       *) echo "no pinned Node.js for ${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
     file="node-v${NODE_VERSION}-linux-${narch}.tar.gz"; \
-    curl -sSfL -o "/tmp/${file}" "https://nodejs.org/dist/v${NODE_VERSION}/${file}"; \
+    python3 -c 'import sys, urllib.request; urllib.request.urlretrieve(sys.argv[1], sys.argv[2])' \
+      "https://nodejs.org/dist/v${NODE_VERSION}/${file}" "/tmp/${file}"; \
     printf '%s  /tmp/%s\n' "${sum}" "${file}" > /tmp/node.sha256; \
     sha256sum -c /tmp/node.sha256; \
     mkdir -p /opt/node; \
     tar -xzf "/tmp/${file}" -C /opt/node --strip-components=1; \
     rm "/tmp/${file}" /tmp/node.sha256
 ENV PATH="/opt/node/bin:${PATH}"
+WORKDIR /opt/cdxgen
 COPY RabbitMQ/worker/tools/cdxgen/package.json RabbitMQ/worker/tools/cdxgen/package-lock.json /opt/cdxgen/
-# --use-system-ca: behind a TLS-intercepting proxy the base image's trust store holds the proxy CA (see UV_BASE_IMAGE)
-RUN cd /opt/cdxgen \
-    && NODE_OPTIONS=--use-system-ca npm ci --omit=dev --omit=optional --ignore-scripts --no-audit --no-fund \
+# --use-system-ca: behind a TLS-intercepting proxy the base image's trust store holds the proxy CA (see UV_BASE_IMAGE).
+# package.json "overrides" lift cdxgen's glob / minimatch / body-parser to releases with the advisories fixed
+# (cdxgen output checked identical on peva3/SmarterRouter and ninedter/pcap-hunter).
+RUN NODE_OPTIONS=--use-system-ca npm ci --omit=dev --omit=optional --ignore-scripts --no-audit --no-fund \
     && node node_modules/@cyclonedx/cdxgen/bin/cdxgen.js --version
 
 # ============================================================
