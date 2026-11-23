@@ -422,7 +422,9 @@ PackFile = tuple[str, "bytes | tuple[BinaryIO, Digests]", str, str]  # name, bod
 # Files whose route answers with the same bytes on every request (finished run, same day, same build). OSCAL's route
 # stamps last-modified with the request time; the pack's copy carries the run's stamp instead.
 REPRODUCIBLE = {"bom.cdx.json": True, "bom.cdx.xml": True, "oscal-assessment-results.json": False, "vex.json": True,
-                "bom_signature.json": True, "report.pdf": True}
+                "bom_signature.json": True, "report.pdf": True,
+                # S4: the /diff route's answer is the full comparison (lists to 500, events); drift.json is its summary
+                "drift.json": False}
 
 
 def evidence_pack(*, run: CbomCollectionRun, sources: list[dict[str, Any]], at: _dt.datetime,

@@ -2340,9 +2340,10 @@ FROZEN_FIELDS = {
         "assets_by_type assets_by_impact issue_by_impact finding_counts pqc_vulnerable pqc_safe "
         "pqc_hybrid pqc_broken_today pqc_ungraded readiness_pct compliance_sources_pooled "
         # remediation: WP10 (loader only, not compared); collections: M1x (CBOM Sources results, merge_collections);
-        # register: CB-23 (the quantum risk register for deliverable #2; loader only, not compared)
+        # register: CB-23 (the quantum risk register for deliverable #2; loader only, not compared);
+        # methodology: D2's live collection set-up (FIX-D1; loader only, not compared);
         # estate: FIX-B2 (Sources rows with facts for D7 / D8; loader only, not compared)
-        "compliance_legacy_excluded warnings posture collections remediation register estate"
+        "compliance_legacy_excluded warnings posture collections remediation register methodology estate"
     ),
 }
 
