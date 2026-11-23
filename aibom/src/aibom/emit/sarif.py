@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from aibom.emit._disclaimer import disclaimer_for, is_healthcare
+from aibom.emit._disclaimer import HEALTHCARE_AIBOM_DISCLAIMER, disclaimer_of
 from aibom.emit.identity import SUPPLIER, SUPPLIER_URL, TOOL_NAMES, identity_for
 from aibom.emit.registry import BaseReporter, register_reporter
 from aibom.emit.validate import validate_sarif
@@ -58,7 +58,7 @@ def _rule_catalog(result: ScanResult) -> list[str]:
     clinical rules (HIPAA / §524B / EU AI Act wording) are listed only for a
     healthcare-profile scan, so a bank's SARIF never names HIPAA or FDA."""
     codes = {f.code for f in result.flags}
-    if is_healthcare(result):
+    if disclaimer_of(result) == HEALTHCARE_AIBOM_DISCLAIMER:
         codes |= set(_RULE_CATALOG)
     return sorted(codes)
 
@@ -123,7 +123,7 @@ def emit_sarif(result: ScanResult) -> dict[str, Any]:
                     {"executionSuccessful": True, "endTimeUtc": identity.timestamp}
                 ],
                 # advisory-only hard rule: this report carries the disclaimer.
-                "properties": {"advisoryDisclaimer": disclaimer_for(result)},
+                "properties": {"advisoryDisclaimer": disclaimer_of(result)},
                 "results": results,
             }
         ],

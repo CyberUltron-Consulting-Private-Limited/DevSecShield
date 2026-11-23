@@ -20,7 +20,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal
 
-from aibom.emit._disclaimer import ADVISORY_DISCLAIMER
+from aibom.emit._disclaimer import ADVISORY_DISCLAIMER, CBOM_DISCLAIMER
 from aibom.model.component import (
     DatasetComponent,
     FrameworkComponent,
@@ -39,6 +39,7 @@ from aibom.model.result import (
 
 __all__ = [
     "ADVISORY_DISCLAIMER",
+    "CBOM_DISCLAIMER",
     "Verdict",
     "Requirement",
     "CheckResult",

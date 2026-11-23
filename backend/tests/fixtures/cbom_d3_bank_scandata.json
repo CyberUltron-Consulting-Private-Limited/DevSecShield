@@ -621,7 +621,7 @@
     }
    ]
   },
-  "disclaimer": "Regulatory and standards mappings are advisory only; a bill of materials creates visibility, not assurance, and does not by itself satisfy any regulatory obligation. A qualified reviewer must confirm conformance.",
+  "disclaimer": "Regulatory mappings are advisory only; a CBOM creates visibility of cryptographic assets, not assurance, and does not by itself satisfy CERT-In, RBI, SEBI CSCRF, NIST or CNSA 2.0 obligations. A qualified reviewer must sign off.",
   "eu_cra": {
    "coverage": 1.0,
    "fail": 0,
@@ -3302,7 +3302,7 @@
    "properties": [
     {
      "name": "regulatory:disclaimer",
-     "value": "Regulatory and standards mappings are advisory only; a bill of materials creates visibility, not assurance, and does not by itself satisfy any regulatory obligation. A qualified reviewer must confirm conformance."
+     "value": "Regulatory mappings are advisory only; a CBOM creates visibility of cryptographic assets, not assurance, and does not by itself satisfy CERT-In, RBI, SEBI CSCRF, NIST or CNSA 2.0 obligations. A qualified reviewer must sign off."
     },
     {
      "name": "zs:advisory_source",
@@ -3325,7 +3325,7 @@
      "value": "6da5bf0343477d51cd203d6dea2eab899f995a8682ecfba025ef756286ca3449"
     }
    ],
-   "timestamp": "2026-11-23T16:51:09Z",
+   "timestamp": "2026-11-23T17:46:23Z",
    "tools": {
     "components": [
      {
