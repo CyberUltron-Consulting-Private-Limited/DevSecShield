@@ -12,17 +12,23 @@ const TEXT = {
     why: "Only listed targets are scanned, so a server left out is a blind spot in the CBOM.",
     example: "10.20.0.0/24, 10.20.5.17 and app-01.bank.local: 256 + 1 + 1 targets.",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:121-124 — SSH 22, WinRM over HTTPS 5986, LDAPS 636 by default
+  // src: frontend/components/cbom/sources/ServersTab.tsx:121-124 — SSH 22, WinRM over HTTPS 5986, LDAPS 636 (StartTLS 389) by default
   "cbsrc.servers.port": {
-    what: "The port the scan node connects to: SSH for Linux (default 22), WinRM over HTTPS for Windows (5986), LDAPS for Active Directory (636).",
+    what: "The port the scan node connects to: SSH for Linux (default 22), WinRM over HTTPS for Windows (5986), LDAPS for Active Directory (636, or 3269 for the global catalog; 389 / 3268 with StartTLS).",
     why: "A port that is closed or filtered from the node fails the connection test for every server.",
     example: "2222 when your Linux servers run sshd on a non-standard port.",
+  },
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1150, scan_node/zs_scan_node/collectors/active_directory.py:1 — LDAPS or StartTLS; the bind waits for a verified certificate
+  "cbsrc.servers.ad_tls_mode": {
+    what: "LDAPS (TLS from the first byte, port 636) or StartTLS (plain LDAP on 389 upgraded to TLS first). The password is sent only after the DC's certificate and name verified. Read: DC TLS and certificates, Kerberos encryption types of DCs, service accounts and gMSAs, functional level, krbtgt key age, AD CS. Never secrets.",
+    why: "RC4 and DES Kerberos tickets can be cracked offline, and an old functional level or krbtgt key widens what a stolen key allows: these are the Active Directory items a crypto inventory has to cover.",
+    example: "StartTLS on 389 for a domain whose DCs have no LDAPS listener on 636.",
   },
   // src: frontend/components/cbom/sources/ServersTab.tsx:1092-1099, backend/utilities/cbom_sources/kinds.py:27 — up to 64 characters; DOMAIN\\user accepted for Windows and AD
   "cbsrc.servers.login": {
     what: "The account the scan node logs in as, up to 64 characters. For Linux a read-only account on each server (zs-cbom by default); for Windows and Active Directory a local or domain account, DOMAIN\\user accepted.",
     why: "A dedicated read-only account limits what a leaked credential could do and makes the scan easy to spot in audit logs.",
-    example: "zs-cbom on Linux; BANK\\svc-zscbom for Active Directory.",
+    example: "zs-cbom on Linux; svc-zscbom@bank.local (or BANK\\svc-zscbom) for Active Directory.",
   },
   // src: frontend/components/cbom/sources/ServersTab.tsx:1115-1132 — trust on first use or pinned known_hosts; a password forces pinning
   "cbsrc.servers.host_key_policy": {

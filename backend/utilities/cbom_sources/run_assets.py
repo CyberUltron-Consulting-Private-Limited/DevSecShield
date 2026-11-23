@@ -71,6 +71,7 @@ TYPE_LABEL = {
     "ca_authority": "CA", "ca_template": "CA template", "ike_endpoint": "IKE/IPsec endpoint",
     "ot_endpoint": "OT endpoint", "appliance_config": "Network appliance config",
     "k8s_mesh_destination": "Mesh destination rule", "k8s_mesh_server": "Mesh server policy",
+    "ad_domain": "Active Directory domain", "kerberos_account": "Kerberos account",  # FIX-B3 (classify_ext/ad.py)
     "coverage": "Not collected",
 }
 # The same names counted ("Fix 3 CA templates"): one entry per TYPE_LABEL key (test_cbom_results_qa_r4.py keeps the
@@ -95,6 +96,7 @@ TYPE_LABEL_PLURAL = {
     "db_crypto_policy": "Database transport policies", "ca_authority": "CAs", "ca_template": "CA templates",
     "ike_endpoint": "IKE/IPsec endpoints", "ot_endpoint": "OT endpoints", "appliance_config": "Network appliance configs",
     "k8s_mesh_destination": "Mesh destination rules", "k8s_mesh_server": "Mesh server policies",
+    "ad_domain": "Active Directory domains", "kerberos_account": "Kerberos accounts",
     "coverage": "Not collected",
 }
 
