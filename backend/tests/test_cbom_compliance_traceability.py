@@ -176,11 +176,21 @@ def _deliverable_checks(api, run_id):
     # 5. regulatory exposure: every CERT-In / RBI / SEBI CSCRF / CNSA 2.0 clause the run maps, with its asset count
     exposure = _section(board, "5. Regulatory exposure", "6. Remediation priorities")
     assert "No compliance results are available" not in exposure
+    # FIX-A3 (SOW audit A-11): the board cites only the RBI instrument of the team's regulated-entity type (NBFC by
+    # default); the run API lists every clause the knowledge base maps, each with its applicability note
+    from backend.utilities.cbom_sources import crypto_kb, regulated_entity
+
+    not_binding = {(c["framework"], c["id"]) for c in crypto_kb.load()["clauses"].values()
+                   if not regulated_entity.applies(c, "nbfc")}
     for fw in posture["compliance"]:
         if fw["framework"] not in FRAMEWORKS:
             continue
         for clause in fw["clauses"]:
-            hit = re.search(re.escape(norm(f"{fw['framework']} {clause['id']}")) + r" (\d+)", exposure)
+            label = re.escape(norm(f"{fw['framework']} {clause['id']}"))
+            if (fw["framework"], clause["id"]) in not_binding:
+                assert not re.search(label + r" \d+", exposure), (fw["framework"], clause["id"])
+                continue
+            hit = re.search(label + r" (\d+)", exposure)
             assert hit and int(hit.group(1)) == clause["assets"], (fw["framework"], clause["id"], exposure[:600])
     # 7. post-quantum summary: never "none found" while the run has quantum-vulnerable assets
     pqc = _section(board, "7. Post-quantum roadmap summary", "8. Governance")

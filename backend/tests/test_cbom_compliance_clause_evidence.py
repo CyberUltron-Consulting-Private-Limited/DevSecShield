@@ -34,7 +34,7 @@ from backend.utilities.cbom_sources.classify import classify  # noqa: E402
 from backend.utilities.cbom_sources.classify_ext import node_net  # noqa: E402
 from backend.utilities.cbom_sources.kb_remediation import explain  # noqa: E402
 from test_cbom_compliance_precise_clauses import (CERTIN_8422, NIST_112, NIST_SHA1_SIG, NIST_TDEA,  # noqa: E402
-                                                  RBI_16, RBI_140, SEBI_H5)
+                                                  RBI_16, RBI_118, RBI_140, SEBI_H5)
 from test_cbom_posture import _store  # noqa: E402
 from test_cbom_sources_api import api, world  # noqa: E402,F401  (shared fixtures)
 
@@ -84,10 +84,10 @@ NAMED = [
 
 def test_e1_names_never_decide_a_clause_in_the_classifier_evidence():
     ssh = _clauses(_row("ssh_endpoint", NAMED[0]["facts"], name="des3-gw"))
-    assert _pairs(ssh["SSH_CBC_CIPHER"]) == {CERTIN_8422, RBI_16, RBI_140}
+    assert _pairs(ssh["SSH_CBC_CIPHER"]) == {CERTIN_8422, RBI_16, RBI_140, RBI_118}
     for spec in NAMED[1:3]:
         weak = _clauses(_row("tls_endpoint", spec["facts"], name=spec["name"]))["WEAK_CIPHER"]
-        assert _pairs(weak) == {CERTIN_8422, RBI_16, RBI_140}, spec["name"]
+        assert _pairs(weak) == {CERTIN_8422, RBI_16, RBI_140, RBI_118}, spec["name"]
         assert not any(r.get("evidence") for r in weak)
     # the real thing is still cited: 3des-cbc on a host whose name says nothing
     assert {NIST_TDEA, SEBI_H5} <= _pairs(_clauses(_row("ssh_endpoint", NAMED[3]["facts"]))["SSH_CBC_CIPHER"])
@@ -167,7 +167,7 @@ def test_e2_every_weak_encryption_member_is_cited(kind, code, name):
     facts = {"kind": kind, "vendor": "cisco", "section": "crypto map vpn1", "encryption": [name, "AES-256"]}
     refs = _clauses(_row("appliance_config", facts, name="vpn1"))[code]
     cited = _pairs(refs)
-    assert {CERTIN_8422, RBI_16, RBI_140} <= cited, (code, name)
+    assert {CERTIN_8422, RBI_16, RBI_140, RBI_118} <= cited, (code, name)
     assert (SEBI_H5 in cited) == (name != "NULL"), (code, name)  # NULL is no encryption algorithm
     assert (NIST_TDEA in cited) == (name == "3DES"), (code, name)
     assert not any(r.get("evidence") for r in refs)
@@ -181,23 +181,23 @@ def test_e2_every_weak_integrity_member(name):
     cited = _pairs(_clauses(_row("appliance_config", facts))["IPSEC_WEAK_TRANSFORM"])
     deprecated = node_net._md5_class([name])  # the classifier's own Medium / Low split
     assert verdict["impacts"]["IPSEC_WEAK_TRANSFORM"] == ("Medium" if deprecated else "Low")
-    assert cited == ({CERTIN_8422, RBI_16, RBI_140} if deprecated else set()), name
+    assert cited == ({CERTIN_8422, RBI_16, RBI_140, RBI_118} if deprecated else set()), name
     ike = {"kind": "ike_policy", "vendor": "cisco", "section": "isakmp 10", "integrity": [name]}
     ike_cited = _pairs(_clauses(_row("appliance_config", ike))["IKE_WEAK_INTEG"])
-    assert ike_cited == ({CERTIN_8422, RBI_16, RBI_140} if deprecated else set()), name
+    assert ike_cited == ({CERTIN_8422, RBI_16, RBI_140, RBI_118} if deprecated else set()), name
 
 
 def test_e2_weak_pfs_groups_from_the_classifier_list():
     for group in sorted(node_net.WEAK_GROUPS):
         facts = {"kind": "ipsec_policy", "vendor": "cisco", "section": "crypto map vpn1", "pfs_groups": [group]}
         cited = _pairs(_clauses(_row("appliance_config", facts))["IPSEC_WEAK_TRANSFORM"])
-        assert {CERTIN_8422, RBI_16, RBI_140} <= cited, group
+        assert {CERTIN_8422, RBI_16, RBI_140, RBI_118} <= cited, group
         assert (NIST_112 in cited) == (group in {"MODP-768", "MODP-1024", "MODP-1024-S160", "MODP-1536", "ECP-192"})
 
 
 def test_e2_review_probe_idea_cast():
     assert _pairs(crypto_kb.clauses_for("node", "IPSEC_WEAK_TRANSFORM", ["IDEA", "CAST"])) == \
-        {CERTIN_8422, RBI_16, RBI_140, SEBI_H5}
+        {CERTIN_8422, RBI_16, RBI_140, RBI_118, SEBI_H5}
 
 
 # ------------------------------------------------------------------------------------- E3: nothing recorded
@@ -236,7 +236,7 @@ def test_e3_posture_marks_a_clause_cited_without_a_recorded_algorithm():
     cited = CE.asset_clauses(row, ["WEAK_CIPHER"])
     tdea = [r for _c, r in cited if (r["framework"], r["id"]) == NIST_TDEA]
     assert tdea and tdea[0]["evidence"] == "not_recorded"
-    assert {(r["framework"], r["id"]) for _c, r in cited if not r.get("evidence")} == {CERTIN_8422, RBI_16, RBI_140}
+    assert {(r["framework"], r["id"]) for _c, r in cited if not r.get("evidence")} == {CERTIN_8422, RBI_16, RBI_140, RBI_118}
 
 
 def _code_cited(code: str, **finding) -> set[tuple[str, str]]:
@@ -263,7 +263,7 @@ def test_e3_code_scanner_key_size_wording_gets_the_112_bit_clause():
 def test_e4_nonce_and_iv_reuse_cite_rbi_like_ecb():
     ecb = _pairs(crypto_kb.clauses_for("code", "WEAK_CIPHER_MODE", "AES-128-ECB"))
     for code in ("REUSED_NONCE", "STATIC_IV"):
-        assert _pairs(crypto_kb.clauses_for("code", code, "AES-GCM")) == {RBI_16, RBI_140} == ecb, code
+        assert _pairs(crypto_kb.clauses_for("code", code, "AES-GCM")) == {RBI_16, RBI_140, RBI_118} == ecb, code
 
 
 def test_e5_ssh_sha1_exchange_hash_citation_explains_itself():

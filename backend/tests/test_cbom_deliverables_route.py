@@ -74,19 +74,19 @@ FIXTURE = Path(__file__).resolve().parent / "fixtures" / "cbom_team_rollup_scans
 
 MANIFEST_PATH = "/{team_id}/cbom/deliverables"
 PDF_PATH = "/{team_id}/cbom/deliverables/{slug}"
-SLUGS = [
+SLUGS = [  # SOW Table 7 order and IDs (FIX-A3, SOW audit A-04)
     "scope-baseline-register",
-    "quantum-risk-register",
     "methodology-evidence-plan",
     "infrastructure-cloud-encryption-posture",
     "network-tls-protocol-assessment",
     "certificate-estate-register",
     "data-at-rest-encryption-assessment",
     "third-party-assurance-register",
+    "quantum-risk-register",
     "pqc-migration-roadmap",
     "board-executive-report",
 ]
-NUMBERS = dict(zip(SLUGS, [1, 2, 3, 5, 6, 7, 9, 10, 15, 16], strict=True))
+NUMBERS = dict(zip(SLUGS, [1, 2, 6, 7, 8, 9, 10, 12, 13, 14], strict=True))
 GENERIC_500 = {"detail": "Error generating deliverable, please try again later"}
 
 # Strings that exist ONLY in scans a team-1 document must never read (plan Appendix B).
@@ -395,7 +395,7 @@ def test_each_slug_returns_its_own_pdf_with_the_contract_headers(api, world, slu
     text = squash(full_text(body))  # cells wrap differently in portrait and landscape
     for needle in (
         # the right document: its own number, the data fingerprint and its own footer label
-        f"CBOM-D{NUMBERS[slug]:02d}-T1-20261019-{fingerprint[:8]}",
+        f"CBOM-D{NUMBERS[slug]}-T1-20261019-{fingerprint[:8]}",
         fingerprint,
         REPORT_META[DELIVERABLES[slug].report_key]["footer_label"],
         "2026-10-19 12:28 UTC (17:58 IST)",

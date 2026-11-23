@@ -54,15 +54,15 @@ _PDF = _BACKEND / "utilities" / "pdf"
 _DASHBOARD = _BACKEND / "utilities" / "dashboard"
 _ROUTERS = _BACKEND / "routers"
 
-SLUGS = (
+SLUGS = (  # SOW Table 7 order (FIX-A3)
     "scope-baseline-register",
-    "quantum-risk-register",
     "methodology-evidence-plan",
     "infrastructure-cloud-encryption-posture",
     "network-tls-protocol-assessment",
     "certificate-estate-register",
     "data-at-rest-encryption-assessment",
     "third-party-assurance-register",
+    "quantum-risk-register",
     "pqc-migration-roadmap",
     "board-executive-report",
 )
@@ -203,6 +203,8 @@ def _policy(path: Path) -> tuple[set[str], tuple[str, ...]]:
         backend += ("backend.utilities.cbom_sources.waves",)
         # the quantum risk register (CB-23) for deliverable #2: register rows and Q0 gaps from the database, no AI
         backend += ("backend.utilities.cbom_sources.risk_register",)
+        # the team's regulated-entity type (FIX-A3): one settings read, no AI
+        backend += ("backend.utilities.cbom_sources.regulated_entity",)
     # CBOM Sources collections as CBOM results (M1x): stored assets and the latest-observation rule; database only
     backend += ("backend.utilities.cbom_sources.collections_view",)
     # cross-source asset keys (CB-21): pure, stdlib only, no AI
