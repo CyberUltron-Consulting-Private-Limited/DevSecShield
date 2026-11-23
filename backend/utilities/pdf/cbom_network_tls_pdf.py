@@ -121,10 +121,24 @@ _SOURCES_RENDERED = frozenset({"tls_endpoint", "ssh_service"})  # kinds this doc
 
 
 def _from_sources(item: Any) -> bool:
+    """A probed Sources endpoint fact, which ``_scoped`` swaps for its de-duplicated ``network_estate`` endpoint.
+
+    A setting the posture mapper read from a cloud account (a load balancer listener, a CDN or API domain: evidence
+    ``collected:CBOM Sources``) is not a probed row; network_estate never re-adds it, so it stays as it is."""
     fact = common.fact_map(item)
     ident = str(common.grab(item, "fact_id", "") or fact.get("id") or "")
     evidence = str(fact.get("evidence") or common.net_of(fact).get("evidence") or "")
+    if common.evidence_kind(fact).startswith("collected"):
+        return False
     return (ident.startswith("sources:") or evidence.startswith("probed:")) and common.kind_of(fact) in _SOURCES_RENDERED
+
+
+def _read_here(item: Any) -> bool:
+    """A fact one of this document's tables prints: a TLS endpoint or listener, SSH, or a database transport."""
+    fact = common.fact_map(item)
+    kind = common.kind_of(fact)
+    return (kind in _SOURCES_RENDERED or bool(common.net_of(fact))
+            or (kind in text.DATABASE_KINDS and bool(common.layer_verdict(fact, "transport"))))
 
 
 def _scoped(view: TeamCbomView) -> tuple[TeamCbomView, _Model]:
@@ -148,7 +162,12 @@ def _scoped(view: TeamCbomView) -> tuple[TeamCbomView, _Model]:
                           last_scan_id=int(e.observed.item.collection.run_id),
                           fact=NE.tls_net(e, "probed:CBOM Sources"))
            for e in tls]
-    sources = [s for s in posture.sources if s.key not in deleted_keys]
+    # a Sources collection is in the source table when it holds evidence printed here: since the posture mapper, a
+    # cloud account whose only settings are keys, storage or a private CA (D6 / D8 evidence) is in posture.sources too
+    collection_keys = {c.key for c in view.collections}
+    network_keys = {f.source_key for f in posture.facts if f.source_key in collection_keys and _read_here(f)}
+    sources = [s for s in posture.sources
+               if s.key not in deleted_keys and (s.key not in collection_keys or s.key in network_keys)]
     listed = {s.key for s in sources}
     for observed in [*(e.observed for e in tls), *ssh, *appliances, *ike, *opcua, *modbus]:
         coll = observed.item.collection

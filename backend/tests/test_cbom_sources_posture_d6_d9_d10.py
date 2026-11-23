@@ -552,3 +552,26 @@ def test_team_view_loads_the_vendor_register_and_the_collected_posture(sources_r
     assert {"payments-cmk", "imported-no-material", "LabTdes"} <= names(keys, "Key")
     stores = rows_under(story(d9, view), "Store")
     assert {"payments-ledger", "labdb"} <= names(stores, "Store")
+
+
+def test_d7_keeps_the_cloud_tls_listeners_the_mapper_collected_and_lists_their_source(sources_run):  # noqa: F811
+    """Merge of #481 into this PR: D7 replaces the probed ``sources:`` endpoint facts with its de-duplicated
+    endpoints, and that swap must not swallow the load balancer listeners the posture mapper collected from the
+    cloud account (``collected:CBOM Sources``): network_estate re-adds probed ``tls_endpoint`` rows only."""
+    from backend.utilities.cbom_sources.cert_estate import inputs_of
+    from backend.utilities.dashboard.cbom_team_rollup import load_team_cbom_view
+    from backend.utilities.pdf import cbom_network_tls_pdf as d7
+
+    engine, run_id = sources_run["engine"], sources_run["run"]["id"]
+    _store_assets(engine, run_id)
+    view = load_team_cbom_view(engine, 1)
+    assert inputs_of(view).rows  # the estate is loaded: D7 takes its de-duplicating path, not the hand-built one
+    scoped, _model = d7._scoped(view)
+    listeners = {f.fact.get("name"): f for f in scoped.posture.facts if f.fact.get("kind") == "tls_endpoint"}
+    assert {"ComplianceShield-LB:80", "ComplianceShield-LB:443"} <= set(listeners)
+    owner = listeners["ComplianceShield-LB:443"].source_key
+    assert owner in {s.key for s in scoped.posture.sources}  # its source is in the D7 source table
+    text = re.sub(r"\s+", "", pdf_text(d7.build_pdf(view)))
+    assert "ComplianceShield-LB:443" in text
+    assert "DES-CBC3-SHA" in text  # its weak suite, in the weak cipher suite table (only this listener offers it)
+    assert "RSAkeyexchangeaccepted" in text  # its forward-secrecy cell (static_rsa_kex)
