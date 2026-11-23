@@ -5654,7 +5654,7 @@ export class ReportDownloadError extends Error {
     readonly field: string | null
     /** 429: when a new build may start (ms since the epoch; 30 s when the server gave no Retry-After) */
     readonly retryAt: number | null
-    /** 429 from a full export-slot pool: its X-Export-Busy header ("pdf" | "cbom"); null for a rate-limit 429 */
+    /** 429 from a full export-slot pool: its X-Export-Busy header ("pdf" | "cbom" | "verify"); null for a rate-limit 429 */
     readonly busy: string | null
 
     constructor(message: string, init: { status: number | null; detail: string | null; retryAfter: number | null; field: string | null; busy?: string | null; cause?: unknown }) {

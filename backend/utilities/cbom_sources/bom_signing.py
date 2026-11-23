@@ -215,6 +215,20 @@ def weak_seed(secret: str) -> str | None:
     return None
 
 
+def legacy_hmac_problem() -> str | None:
+    """Why the legacy HMAC-SHA256 key (``CERTIN_HMAC_SECRET``, else ``JWT_SECRET_KEY``: ``routers/certin._hmac_secret``)
+    must not issue or accept a signature (None = it may). A key that ``weak_seed`` refuses is public (``change-me``, an
+    ``.env.example`` value), so anyone could compute an HMAC under it (review 6029745818 N3). Names the variable and the
+    rule, never the value; None when neither variable is set (``_hmac_secret`` answers 503 then)."""
+    name = "CERTIN_HMAC_SECRET" if os.environ.get("CERTIN_HMAC_SECRET") else "JWT_SECRET_KEY"
+    raw = os.environ.get(name) or ""
+    why = weak_seed(raw) if raw else None
+    if not why:
+        return None
+    return (f"the legacy HMAC key is a placeholder ({name} is {why}): HMAC-SHA256 signatures are neither issued nor "
+            "accepted; set CERTIN_HMAC_SECRET to 32+ random bytes")
+
+
 def _derive(secret: str, generation: int) -> Any:
     """A P-256 private key from a deployment secret: HKDF-SHA256 (salt and info are fixed labels), 48 bytes reduced
     into [1, n-1] (bias below 2^-128)."""
@@ -436,15 +450,17 @@ EMBEDDED_MAX_BYTES = 64 * 1024 * 1024  # a JSON upload up to this size is parsed
 
 
 @contextlib.contextmanager
-def parse_slot(size: int) -> Iterator[None]:
-    """Hold a host-wide export slot (``export_slots``; ``Busy`` when all are taken) while a large upload is parsed:
-    parsing a JSON document holds several times its size, so only a few may be parsed at once."""
+def parse_slot(size: int, team_id: int) -> Iterator[None]:
+    """Hold a verify slot (``export_slots.verify_slot``: one per team at a time, from a host-wide pool of its own;
+    ``Busy`` when either is taken) while a large upload is parsed: parsing a JSON document holds several times its
+    size, so only a few may be parsed at once. The pool is not the CBOM export pool, so uploads to the verify routes
+    never make another team's export answer 429 (review 6029745818 minor 2)."""
     if size < LARGE_PARSE_BYTES:
         yield
         return
     from backend.utilities.cbom_sources import export_slots
 
-    with export_slots.slot():
+    with export_slots.verify_slot(team_id):
         yield
 
 
@@ -501,20 +517,56 @@ def file_subject(fh: BinaryIO, size: int) -> dict[str, Any]:
     return {}
 
 
-def binding(subject: dict[str, Any], *, run_id: int | None = None, scan_id: int | None = None,
-            scan_kind: str | None = None, bom_serial: str | None = None) -> bool:
-    """Whether a file signed by this deployment is one of the target's files (D4): of a run, its ``zs:run_id`` (CBOM,
-    VEX) or its pack manifest's ``subject.run_id``; of a scan, the scan BOM's ``serialNumber``, or ``zs:scan_id``
-    (VEX) / the pack manifest's ``subject.scan_id`` with no other BOM serial named."""
+def stamp_subject(doc: dict[str, Any], facts: Sequence[tuple[str, str]], *, drop_all_zs: bool) -> dict[str, Any]:
+    """A copy of ``doc`` whose ``metadata.properties`` name its target with ``facts`` (``zs:scan_id`` ...) that the
+    server asserts, after dropping what the stored document said: every ``zs:`` property when the document may come
+    from a user (``drop_all_zs``: a scan BOM, possibly an uploaded file), else the identity properties
+    (``bom_verify.IDENTITY_PROPS``: a VEX the server built, whose other ``zs:`` properties are its own rule markers).
+    The deployment's key is shared by every team, so these server-stamped facts are what binds a signed file to a team's
+    scan or run (review 6029745818 N1); nothing a stored or uploaded document says about itself is trusted."""
+    meta = dict(doc["metadata"]) if isinstance(doc.get("metadata"), dict) else {}
+    wanted = dict(facts)
+    props: list[Any] = []
+    placed: set[str] = set()
+    for prop in meta.get("properties") if isinstance(meta.get("properties"), list) else []:
+        name = prop.get("name") if isinstance(prop, dict) else None
+        if not isinstance(prop, dict):
+            continue
+        if isinstance(name, str) and name in wanted:  # the server's value, in place (a stamped file stays as it is)
+            if name not in placed:
+                props.append({"name": name, "value": wanted[name]})
+                placed.add(name)
+            continue
+        if isinstance(name, str) and (name.startswith("zs:") if drop_all_zs else name in V.IDENTITY_PROPS):
+            continue
+        props.append(prop)
+    props += [{"name": name, "value": value} for name, value in facts if name not in placed]
+    return {**doc, "metadata": {**meta, "properties": props}}
+
+
+def scan_facts(scan_type: str, scan_id: int, team_id: int) -> list[tuple[str, str]]:
+    """What a scan's signed BOM / VEX states it is of (``stamp_subject``); ``binding`` checks all three."""
+    return [("zs:scan_id", str(scan_id)), ("zs:scan_type", scan_type), ("zs:team_id", str(team_id))]
+
+
+def binding(subject: dict[str, Any], *, team_id: int, run_id: int | None = None, scan_id: int | None = None,
+            scan_type: str | None = None) -> bool:
+    """Whether a file signed by this deployment is one of the target's files (D4, review 6029745818 N1). Every fact
+    the server stamped must match: of a run, ``zs:run_id`` and ``zs:team_id`` (CBOM, VEX) or the pack manifest's
+    ``subject`` (``kind`` cbom-sources-run, ``run_id``, ``team_id``); of a scan, ``zs:scan_id``, ``zs:scan_type`` and
+    ``zs:team_id`` (BOM, VEX) or the pack manifest's ``subject`` (``kind`` <type>-scan, ``scan_id``, ``team_id``). A
+    ``serialNumber`` alone never binds: users control it (an uploaded SBOM keeps its own), and serials are not secret.
+    A file that names a fact twice with different values (``ambiguous``) binds to nothing."""
+    if subject.get("ambiguous") or not isinstance(team_id, int) or subject.get("team_id") != team_id:
+        return False
     if run_id is not None:
         return subject.get("run_id") == run_id and (not subject.get("pack")
                                                     or subject.get("kind") == "cbom-sources-run")
+    if scan_id is None or not scan_type or subject.get("scan_id") != scan_id:
+        return False
     if subject.get("pack"):
-        return subject.get("kind") == scan_kind and subject.get("scan_id") == scan_id and \
-            subject.get("bom_serial") in (None, bom_serial)
-    if bom_serial and subject.get("serial") == bom_serial:
-        return True
-    return scan_id is not None and subject.get("scan_id") == scan_id and subject.get("bom_serial") in (None, bom_serial)
+        return subject.get("kind") == f"{scan_type}-scan"
+    return subject.get("scan_type") == scan_type
 
 
 # ----------------------------------------------------------------------------------------------- publication
@@ -548,7 +600,9 @@ Signing key: {key.kid} (ES256 = ECDSA P-256 with SHA-256), fingerprint {key.fing
 Do not verify with the copies in this pack. keys/ and verify/ came with the pack, and anyone who re-signs a pack can
 replace both, so a check against them proves nothing. Verify against the key your ZeroShield deployment publishes,
 saved OUTSIDE this folder, with a verifier you obtained independently (the "verifier" field of the same document
-gives the SHA-256 of the one ZeroShield ships; any JSF 0.82 verifier or openssl gives the same answers).
+gives the SHA-256 of the one ZeroShield ships; any JSF 0.82 verifier or openssl gives the same answers). A copy of,
+or a link to, keys/ made from this pack is still the pack's key: the verifier refuses a symbolic or hard link into an
+unpacked pack, but no tool can tell a copied file apart.
 
 Files
   keys/jwks.json, keys/{key.kid}.pem   copies of the public key(s): compare only, never verify with them
@@ -644,6 +698,18 @@ def pack_files(files: Sequence[tuple[str, "bytes | tuple[str, int]"]], *, subjec
     sums = "".join(f"{h}  {n}\n" for n, (h, _s) in hashed.items()).encode("utf-8")
     return [*extra, ("manifest.json", manifest_bytes), ("manifest.json.sig", detached(manifest_bytes, key)),
             ("SHA256SUMS", sums), ("SHA256SUMS.sig", detached(sums, key))]
+
+
+def unsigned_note(reason: str) -> str:
+    """``UNSIGNED.txt`` of an evidence pack built without a signing key (review 6029745818 minor 4): why, and what that
+    means for the files. ``reason`` is ``SigningUnavailable``'s message, which names variables and rules, never a
+    value."""
+    return ("This evidence pack is UNSIGNED.\n\n"
+            f"Why: {reason}\n\n"
+            "Its files carry no ES256 signature, and the pack holds no signed manifest, no keys/ and no verifier, so\n"
+            "nothing in it can be checked against a ZeroShield signing key. Treat its contents as unverified copies.\n"
+            "Once the deployment has a signing key (docs/security/secret-rotation.md, \"BOM signing key\"), download\n"
+            "the pack again to get a signed one.\n")
 
 
 def signature_headers(sha256_digest: bytes) -> dict[str, str]:

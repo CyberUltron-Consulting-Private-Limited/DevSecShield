@@ -536,11 +536,33 @@ require_host_files() {
 
 check_bom_signing_seed() { # <backend.env>: will the backend have a BOM signing key (bom_signing.weak_seed)? Names only.
   # The backend derives the D11 signing key from CERTIN_HMAC_SECRET (else ENCRYPTION_KEY) unless CBOM_SIGNING_KEY_PEM /
-  # _PATH is set, and refuses a seed shorter than 32 bytes or a placeholder: the BOMs are then served unsigned. Only the
-  # length and the placeholder rule are checked here; no value is printed.
-  local file="$1" name verdict
-  verdict="$(awk -F= '
-    function val(line) { sub(/^[^=]*=/, "", line); gsub(/^["'"'"']|["'"'"']$/, "", line); return line }
+  # _PATH is set, and refuses a weak seed (bom_signing.weak_seed): the BOMs are then served unsigned. The same rules,
+  # in the same order, on the bytes of the value: shorter than 32 bytes, a placeholder (exact value or fragment, after
+  # stripping whitespace and lowercasing), fewer than 8 distinct bytes (the tests-only fixture seed is a placeholder).
+  # backend/tests/test_bom_signing_review_r2.py keeps this function and weak_seed in agreement. Prints the variable
+  # name and the rule (ok, short, placeholder, few-distinct), never the value; only warns.
+  local file="$1" verdict name rule
+  if [[ ! -r "${file}" ]]; then
+    log "WARNING BOM signing: ${file} is not readable, so the BOM signing seed was not checked"
+    return 0
+  fi
+  verdict="$(LC_ALL=C awk -F= '
+    function val(line) { sub(/^[^=]*=/, "", line); sub(/\r$/, "", line); gsub(/^["'"'"']|["'"'"']$/, "", line); return line }
+    function weak(v,   low, i, c, seen, distinct) {
+      if (length(v) < 32) return "short"
+      low = tolower(v)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", low)
+      if (low in deny) return "placeholder"
+      if (low ~ /change-me|changeme|change_me|replace-me|replace_me|replaceme|placeholder|generate_a_|your-secret|your_secret|example|insecure|tests-only/) return "placeholder"
+      distinct = 0
+      for (i = 1; i <= length(v); i++) { c = substr(v, i, 1); if (!(c in seen)) { seen[c] = 1; distinct++ } }
+      if (distinct < 8) return "few-distinct"
+      return "ok"
+    }
+    BEGIN {
+      n = split("change-me changeme change_me generate_a_fernet_key secret password test x dev development default example placeholder replace-me replaceme todo none null ci ci-only-dummy your-secret-key your_secret_key insecure unsafe", words, " ")
+      for (i = 1; i <= n; i++) deny[words[i]] = 1
+    }
     /^[[:space:]]*CBOM_SIGNING_KEY_(PEM|PATH)=./ { configured = 1 }
     /^[[:space:]]*CERTIN_HMAC_SECRET=/ { certin = val($0) }
     /^[[:space:]]*ENCRYPTION_KEY=/ { enc = val($0) }
@@ -548,17 +570,15 @@ check_bom_signing_seed() { # <backend.env>: will the backend have a BOM signing 
       if (configured) { print "configured"; exit }
       if (certin != "") { name = "CERTIN_HMAC_SECRET"; v = certin } else if (enc != "") { name = "ENCRYPTION_KEY"; v = enc }
       else { print "none"; exit }
-      low = tolower(v)
-      if (length(v) < 32) print name " short"
-      else if (low ~ /change-me|changeme|change_me|replace-?me|placeholder|generate_a_|your[-_]secret|example|insecure/) print name " placeholder"
-      else print name " ok"
+      print name " " weak(v)
     }' "${file}")"
   name="${verdict%% *}"
+  rule="${verdict#* }"
   case "${verdict}" in
     configured) log "BOM signing: key from CBOM_SIGNING_KEY_PEM / CBOM_SIGNING_KEY_PATH" ;;
     none) log "WARNING BOM signing: no CERTIN_HMAC_SECRET / ENCRYPTION_KEY / CBOM_SIGNING_KEY_*: BOMs will be served unsigned" ;;
-    *" ok") log "BOM signing: key derived from ${name} (32+ bytes, not a placeholder)" ;;
-    *) log "WARNING BOM signing: ${name} is ${verdict#* } (needs 32+ random bytes): the backend refuses to derive a signing key from it and serves BOMs unsigned; see docs/security/secret-rotation.md" ;;
+    *" ok") log "BOM signing: key derived from ${name} (rule ok: 32+ bytes, 8+ distinct, not a placeholder)" ;;
+    *) log "WARNING BOM signing: ${name} fails the backend seed check (rule ${rule}): the backend refuses to derive a signing key from it and serves BOMs unsigned; set 32+ random bytes (openssl rand -hex 32), see docs/security/secret-rotation.md" ;;
   esac
 }
 

@@ -244,8 +244,9 @@ def report_headers(ctx: ReportContext, filename: str, *, findings: bool = True) 
 
 
 def busy_refusal(pool: str) -> HTTPException:
-    """The 429 of a full export-slot pool (``"pdf"``: scan PDFs, ``"cbom"``: CBOM exports), in that pool's words."""
-    detail = EXPORT_SLOTS.PDF_BUSY if pool == "pdf" else EXPORT_SLOTS.CBOM_BUSY
+    """The 429 of a full export-slot pool (``"pdf"``: scan PDFs, ``"cbom"``: CBOM exports, ``"verify"``: uploads the
+    signature verify routes parse), in that pool's words."""
+    detail = {"pdf": EXPORT_SLOTS.PDF_BUSY, "verify": EXPORT_SLOTS.VERIFY_BUSY}.get(pool, EXPORT_SLOTS.CBOM_BUSY)
     return HTTPException(status_code=429, detail=detail, headers={
         **PRIVATE, "Retry-After": str(EXPORT_SLOTS.RETRY_AFTER_S), EXPORT_SLOTS.BUSY_HEADER: pool})
 

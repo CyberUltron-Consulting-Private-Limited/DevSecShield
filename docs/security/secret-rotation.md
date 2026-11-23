@@ -83,15 +83,19 @@ keys of earlier generations stay published without a bundle. With a configured k
 `_PATH`), put the old public key in the `CBOM_SIGNING_RETIRED_PUBLIC_KEYS` bundle the same way and prefer a new
 `CBOM_SIGNING_KEY_ID`; a reused id still works, since the verifier matches keys by their bytes (RFC 7638 thumbprint).
 
-A seed must be at least 32 bytes and not a placeholder (`change-me`, an `.env.example` value, one character
-repeated): the backend refuses to derive a key from it, logs `BOM signing unavailable` with the rule (never the
+A seed must be at least 32 bytes, hold at least 8 distinct bytes and not be a placeholder (`change-me`, an
+`.env.example` value, the tests-only fixture seed): the backend refuses to derive a key from it, logs `BOM signing unavailable` with the rule (never the
 value), and serves BOMs unsigned; `scripts/deploy/staging.sh` reports the same check before a staging deploy. If the
 signing key or its seed was **exposed**, do not add the exposed public key to the retired bundle: files signed with it
 can no longer be trusted, so tell the teams that rely on them and re-issue their exports.
 
-`CERTIN_HMAC_SECRET` also keys the legacy HMAC (`bom_signature`, the run signature's `legacy_hmac`), which only
-verifies files signed before the ES256 key; unset, that HMAC still falls back to `JWT_SECRET_KEY` (read-only
-verification of old files), as described under the JWT secrets above.
+`CERTIN_HMAC_SECRET` also keys the legacy HMAC (`bom_signing.legacy_hmac_problem`; `bom_signature`, the run
+signature's `legacy_hmac`), which only verifies files signed before the ES256 key; unset, that HMAC still falls back to
+`JWT_SECRET_KEY` (read-only verification of old files), as described under the JWT secrets above. The same seed rules
+apply to it: while that key is a placeholder, the run routes neither issue an HMAC (`GET .../runs/{id}/signature`
+answers 503 when there is no ES256 key either) nor accept one sent with a file (`valid: false`, "the legacy HMAC key is
+a placeholder"), since anyone could compute it. A scan's stored `bom_signature` is still checked: its value is fixed in
+the database, so it cannot be forged with the key.
 
 ### PostgreSQL: `PG_USER_PASS`
 `ALTER ROLE <PG_USER> WITH PASSWORD '<new>';` (with `password_encryption = scram-sha-256`), then update

@@ -107,10 +107,33 @@ def _bounded_int(text: str) -> int:
     return value
 
 
+# Node density (review 6029745818 minor 2): parsing holds a Python object per JSON node, so 64 MB of ``[{},{},...]``
+# (one container per 3 bytes) peaked at 1.7 GB. A real BOM is far sparser: compact CycloneDX JSON measured one
+# ``{`` / ``[`` per 46-120 bytes and one ``,`` per 27-63 bytes. A document denser than one container per
+# ``NODE_BYTES`` bytes or one comma per ``VALUE_BYTES`` bytes (plus ``NODE_FLOOR`` of each, for small documents) is
+# refused before it is parsed. The counts include characters inside strings, so they only ever over-count. Depth needs
+# no count of its own: the parser stops at the interpreter's recursion limit ("nested too deeply").
+NODE_BYTES, VALUE_BYTES, NODE_FLOOR = 24, 12, 4096
+
+
+def density_problem(containers: int, commas: int, size: int) -> str | None:
+    """Why a JSON body of ``size`` bytes with this many ``{``/``[`` and ``,`` is not parsed (None = it may be)."""
+    if containers > size // NODE_BYTES + NODE_FLOOR or commas > size // VALUE_BYTES + NODE_FLOOR:
+        return (f"more JSON nodes than any BOM of {size} bytes holds ({containers} objects/arrays, {commas} commas): "
+                "refused before parsing")
+    return None
+
+
 def loads(data: "bytes | str") -> Any:
     """Parse JSON as I-JSON (RFC 7493): UTF-8, no duplicate member names, no NaN / Infinity, numbers inside the double
-    range, integers inside +-(2^53 - 1). Raises ``InputError`` otherwise (the strict reading every check here uses)."""
+    range, integers inside +-(2^53 - 1). Raises ``InputError`` otherwise (the strict reading every check here uses),
+    also for a document far denser than any BOM (``density_problem``), before it is parsed."""
     try:
+        dense = density_problem(data.count("{") + data.count("["), data.count(","), len(data)) \
+            if isinstance(data, str) else \
+            density_problem(data.count(b"{") + data.count(b"["), data.count(b","), len(data))
+        if dense:  # counted on what was given: a refused body is never decoded or parsed
+            raise InputError(dense)
         text = data.decode("utf-8") if isinstance(data, (bytes, bytearray)) else data
         return json.loads(text, object_pairs_hook=_no_duplicates, parse_constant=_no_constant, parse_float=_finite,
                           parse_int=_bounded_int)
@@ -499,10 +522,19 @@ def verify_detached_digest(digest: bytes, der_signature: bytes, keys: Dict[str, 
     return {"valid": False, "sha256": digest.hex(), "reason": "no trusted key verifies this signature"}
 
 
+# The metadata properties a ZeroShield BOM or VEX names its target with. The server stamps them on every file it signs
+# (after dropping any the stored or uploaded document carried), so a signed file states whose it is.
+IDENTITY_PROPS = {"zs:run_id": "run_id", "zs:scan_id": "scan_id", "zs:team_id": "team_id",
+                  "zs:scan_type": "scan_type", "zs:bom_serial": "bom_serial"}
+_INT_IDENTITY = frozenset({"run_id", "scan_id", "team_id"})
+
+
 def subject_of(doc: Any) -> Dict[str, Any]:
     """What a ZeroShield document says it belongs to: ``serial`` (CycloneDX ``serialNumber``), ``run_id`` /
-    ``scan_id`` / ``bom_serial`` (``zs:`` metadata properties of a BOM or VEX) and, for an evidence pack's
-    ``manifest.json``, its ``subject`` (``kind``, ``run_id`` / ``scan_id``). Missing parts are left out."""
+    ``scan_id`` / ``team_id`` / ``scan_type`` / ``bom_serial`` (``zs:`` metadata properties of a BOM or VEX) and, for
+    an evidence pack's ``manifest.json``, its ``subject`` (``kind``, ``run_id`` / ``scan_id``, ``team_id``). Missing
+    parts are left out. ``ambiguous``: one of these is named twice with different values, or an id is not a number
+    (such a file names no target)."""
     out: Dict[str, Any] = {}
     if not isinstance(doc, dict):
         return out
@@ -511,19 +543,22 @@ def subject_of(doc: Any) -> Dict[str, Any]:
     meta = doc.get("metadata")
     props = meta.get("properties") if isinstance(meta, dict) else None
     for prop in props if isinstance(props, list) else []:
-        if not isinstance(prop, dict) or not isinstance(prop.get("value"), str):
+        if not isinstance(prop, dict) or prop.get("name") not in IDENTITY_PROPS:
             continue
-        name, value = prop.get("name"), prop["value"]
-        if name in ("zs:run_id", "zs:scan_id") and value.isdigit() and name[3:] not in out:
-            out[name[3:]] = int(value)
-        elif name == "zs:bom_serial" and "bom_serial" not in out:
-            out["bom_serial"] = value
+        key, value = IDENTITY_PROPS[prop["name"]], prop.get("value")
+        if not isinstance(value, str) or (key in _INT_IDENTITY and not (value.isascii() and value.isdigit())):
+            out["ambiguous"] = True
+            continue
+        parsed: Any = int(value) if key in _INT_IDENTITY else value
+        if key in out and out[key] != parsed:
+            out["ambiguous"] = True
+        out.setdefault(key, parsed)
     subject = doc.get("subject")
     if isinstance(doc.get("format"), str) and "evidence-pack" in doc["format"] and isinstance(subject, dict):
         out["pack"] = True
         if isinstance(subject.get("kind"), str):
             out["kind"] = subject["kind"]
-        for name in ("run_id", "scan_id"):
+        for name in ("run_id", "scan_id", "team_id"):
             if isinstance(subject.get(name), int) and not isinstance(subject.get(name), bool):
                 out[name] = subject[name]
         if isinstance(subject.get("bom_serial"), str):
@@ -541,6 +576,10 @@ def _bad_name(name: str) -> Optional[str]:
     return None
 
 
+MAX_ENTRY_BYTES = 64 * 1024 * 1024  # the largest pack entry read whole (a JSON BOM / VEX checked for its JSF)
+MAX_SMALL_BYTES = 1024 * 1024  # keys, signatures and SHA256SUMS are never larger
+
+
 class _Pack:
     """A pack as a zip file or an unpacked directory."""
 
@@ -550,10 +589,22 @@ class _Pack:
 
     def problems(self) -> List[Dict[str, Any]]:
         """Entries a first-wins and a last-wins reader would disagree on (two entries of one name, names equal but
-        for case) or that point outside the pack (absolute, ``..``, a symbolic link): each one fails the pack."""
+        for case) or that point outside the pack (absolute, ``..``, a symbolic link), and zip directory entries
+        (``name/``) that hold data or carry the name of a file of the pack (an extractor makes a directory there and
+        extracts no file, or reads the data, review 6029745818 minor 1): each one fails the pack."""
         out: List[Dict[str, Any]] = []
         if self.zip is not None:
             names = self.zip.namelist()
+            files = {n.casefold() for n in names if not n.endswith("/")}
+            for info in self.zip.infolist():
+                if not info.filename.endswith("/"):
+                    continue
+                if info.file_size or info.compress_size > 2:  # an empty deflate stream is 2 bytes
+                    out.append({"check": f"entry {info.filename[:200]}", "valid": False,
+                                "reason": "a directory entry that holds data"})
+                elif info.filename.rstrip("/").casefold() in files:
+                    out.append({"check": f"entry {info.filename[:200]}", "valid": False,
+                                "reason": "a directory entry with the name of a file of the pack"})
         else:
             names = []
             for root, dirs, files in os.walk(self.path):
@@ -586,11 +637,21 @@ class _Pack:
             out += [os.path.relpath(os.path.join(root, f), self.path).replace(os.sep, "/") for f in files]
         return sorted(out)
 
-    def read(self, name: str) -> bytes:
+    def size(self, name: str) -> int:
+        """The entry's size as the zip declares it (reads stop there) or the file's size."""
+        if self.zip is not None:
+            return self.zip.getinfo(name).file_size
+        return os.path.getsize(os.path.join(self.path, *name.split("/")))
+
+    def read(self, name: str, limit: int = MAX_ENTRY_BYTES) -> bytes:
+        """The whole entry, refused (``InputError``) when it is larger than ``limit``: only small, already hashed
+        entries are read whole (a zip bomb is never decompressed into memory)."""
+        if self.size(name) > limit:
+            raise InputError(f"{name[:200]} is larger than {limit} bytes: not read")
         if self.zip is not None:
             return self.zip.read(name)
         with open(os.path.join(self.path, *name.split("/")), "rb") as fh:
-            return fh.read()
+            return fh.read(limit + 1)
 
     def chunks(self, name: str) -> Iterable[bytes]:
         if self.zip is not None:
@@ -623,15 +684,18 @@ def verify_pack(path: str, keys: Optional[Dict[str, Dict[str, Any]]] = None, *,
             return {"valid": False, "checks": [{"check": "keys", "valid": False,
                                                 "reason": "no keys/jwks.json in the pack and no --keys given"}]}
         try:
-            keys = load_keys(pack.read("keys/jwks.json").decode("utf-8"))
+            keys = load_keys(pack.read("keys/jwks.json", MAX_SMALL_BYTES).decode("utf-8"))
         except (InputError, UnicodeDecodeError) as exc:
             return {"valid": False, "checks": [{"check": "keys", "valid": False, "reason": str(exc)}]}
     assert keys is not None
     if "manifest.json" not in names or "manifest.json.sig" not in names:
         return {"valid": False, "checks": [{"check": "manifest", "valid": False,
                                             "reason": "manifest.json or manifest.json.sig is missing"}]}
-    manifest_bytes = pack.read("manifest.json")
-    res = verify_detached(manifest_bytes, pack.read("manifest.json.sig"), keys)
+    try:
+        manifest_bytes = pack.read("manifest.json")
+        res = verify_detached(manifest_bytes, pack.read("manifest.json.sig", MAX_SMALL_BYTES), keys)
+    except InputError as exc:
+        return {"valid": False, "checks": [{"check": "manifest", "valid": False, "reason": str(exc)}]}
     checks.append({"check": "manifest.json.sig", **res})
     try:
         manifest = loads(manifest_bytes)
@@ -640,6 +704,7 @@ def verify_pack(path: str, keys: Optional[Dict[str, Dict[str, Any]]] = None, *,
     listed = manifest.get("files") if isinstance(manifest, dict) else None
     listed = [e for e in listed if isinstance(e, dict) and isinstance(e.get("name"), str)] \
         if isinstance(listed, list) else []
+    hashed: dict[str, bytes] = {}  # name -> sha256 digest, for the listed entries whose hash and size check out
     for entry in listed:
         name = entry["name"]
         if name not in names:
@@ -651,10 +716,17 @@ def verify_pack(path: str, keys: Optional[Dict[str, Dict[str, Any]]] = None, *,
             size += len(block)
         ok = sha.hexdigest() == entry.get("sha256") and (entry.get("bytes") is None or entry.get("bytes") == size)
         checks.append({"check": f"sha256 {name}", "valid": ok, **({} if ok else {"reason": "hash or size differs"})})
+        if ok:
+            hashed[name] = sha.digest()
     covered = {e["name"] for e in listed} | {"manifest.json", "manifest.json.sig", "SHA256SUMS", "SHA256SUMS.sig"}
     for name in sorted(names - covered):
         checks.append({"check": f"listed {name}", "valid": False, "reason": "in the pack but not in the manifest"})
-    for name in sorted(names):
+    # Only entries that already passed are opened again (an unlisted or altered entry has failed the pack above and is
+    # never read whole: a zip bomb ends as a failed check, not a MemoryError); SHA256SUMS and its .sig are small.
+    for extra in ("SHA256SUMS", "SHA256SUMS.sig"):
+        if extra in names and pack.size(extra) <= MAX_SMALL_BYTES:
+            hashed[extra] = hashlib.sha256(pack.read(extra, MAX_SMALL_BYTES)).digest()
+    for name in sorted(hashed):
         if name.endswith(".json") and name != "manifest.json" and not name.startswith("keys/"):
             try:
                 doc = loads(pack.read(name))
@@ -670,7 +742,16 @@ def verify_pack(path: str, keys: Optional[Dict[str, Dict[str, Any]]] = None, *,
                                "reason": "a CycloneDX JSON BOM of a signed pack without its JSF signature"})
             del doc
         if name.endswith(".sig") and name != "manifest.json.sig" and name[:-4] in names:
-            checks.append({"check": f"detached {name}", **verify_detached(pack.read(name[:-4]), pack.read(name), keys)})
+            if name[:-4] not in hashed:  # its file failed (or is unlisted) above
+                continue
+            try:
+                sig = pack.read(name, MAX_SMALL_BYTES)
+                data = None if _have_cryptography() else pack.read(name[:-4])  # the openssl CLI hashes the file itself
+            except InputError as exc:
+                checks.append({"check": f"detached {name}", "valid": False, "reason": str(exc)})
+                continue
+            checks.append({"check": f"detached {name}",
+                           **verify_detached_digest(hashed[name[:-4]], sig, keys, None, data)})
     out: Dict[str, Any] = {"valid": all(c.get("valid") for c in checks), "checks": checks,
                            "trusted_keys": not (own or keys_from_pack)}
     if own or keys_from_pack:
@@ -686,12 +767,19 @@ def _looks_like_pack(directory: str) -> bool:
 
 
 def keys_inside_pack(keys_path: str, pack_path: Optional[str] = None) -> bool:
-    """The ``--keys`` file lies inside the pack being checked (an unpacked one, or any unpacked pack around it)."""
+    """The ``--keys`` file lies inside the pack being checked (an unpacked one, or any unpacked pack around it), or is
+    a hard link to one of an unpacked pack's own key files (same device and inode: no path check can see that)."""
     real = os.path.realpath(keys_path)
     if pack_path is not None and os.path.isdir(pack_path):
         root = os.path.realpath(pack_path)
         if os.path.commonpath([root, real]) == root:
             return True
+        mine = os.stat(real)
+        for parent, _dirs, files in os.walk(os.path.join(root, "keys")):
+            for entry in files:
+                theirs = os.stat(os.path.join(parent, entry))
+                if (theirs.st_dev, theirs.st_ino) == (mine.st_dev, mine.st_ino):
+                    return True
     directory = os.path.dirname(real)
     while True:
         if _looks_like_pack(directory):

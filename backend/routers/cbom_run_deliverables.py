@@ -89,10 +89,13 @@ def _get_owned(session: Session, run_id: int, team_id: int) -> CbomCollectionRun
     return run
 
 
-def _secret() -> bytes:
-    from backend.routers.certin import _hmac_secret  # the code lane's key (CERTIN_HMAC_SECRET), same key id
+def _secret() -> bytes | None:
+    """The code lane's legacy HMAC key (CERTIN_HMAC_SECRET, same key id), or None while it is a placeholder
+    (``bom_signing.legacy_hmac_problem``): then no HMAC is issued or accepted (review 6029745818 N3)."""
+    from backend.routers.certin import _hmac_secret
 
-    return _hmac_secret()
+    secret = _hmac_secret()  # 503 when neither variable is set, as before
+    return None if RD.SIGN.legacy_hmac_problem() else secret
 
 
 def _attachment(body: bytes, media: str, filename: str) -> Response:
@@ -193,26 +196,37 @@ def _embedded(upload: RD.Digests) -> dict[str, Any] | None:
     result = RD.SIGN.verify_document(doc)
     if result.get("malformed"):
         raise HTTPException(status_code=400, detail=f"Not verified: {result['reason']}")
-    result["run_id"] = RD.BV.subject_of(doc).get("run_id")
+    result["subject"] = RD.BV.subject_of(doc)  # zs:run_id + zs:team_id (bom_signing.binding)
+    result["run_id"] = result["subject"].get("run_id")
     return result
 
 
 def _verify(engine, team_id: int, run_id: int, upload: RD.Digests, sent_b64: str | None) -> dict[str, Any]:
     now = utcnow()
+    mac = upload.mac.digest() if upload.mac is not None else None  # None: the legacy key is a placeholder (N3)
     with Session(engine) as session:
         run = _get_owned(session, run_id, team_id)
-        with _export_slot(session, run, "verify", large=upload.size >= RD.SIGN.LARGE_PARSE_BYTES):
-            embedded = _embedded(upload) if sent_b64 is None else None
-            current = _current_signature(session, run, now)
-            # D4: a file whose detached signature is good but that is not the run's current CBOM must say it is this
-            # run's (zs:run_id of the CBOM / VEX, the pack manifest's subject): read only then, after the signature
-            subject = None
-            digest = upload.sha.hexdigest()
-            if sent_b64 is not None and digest != current["digest"] and \
-                    RD.sent_signature(digest, upload.mac.digest(), sent_b64) is not None:  # type: ignore[union-attr]
-                subject = RD.SIGN.file_subject(upload.out, upload.size)
-    out = RD.verify_upload(upload.sha.hexdigest(), upload.mac.digest(), sent_b64=sent_b64,  # type: ignore[union-attr]
-                           current=current, embedded=embedded, run_id=run_id, subject=subject)
+        # the run's current CBOM is rebuilt (an export slot for a large run); a large upload is parsed in a verify
+        # slot of its own (one per team, never an export slot: review 6029745818 minor 2)
+        with _export_slot(session, run, "verify"):
+            try:
+                with RD.SIGN.parse_slot(upload.size, team_id):
+                    embedded = _embedded(upload) if sent_b64 is None else None
+                    current = _current_signature(session, run, now)
+                    # D4: a file whose detached signature is good but that is not the run's current CBOM must say it
+                    # is this team's run's (zs:run_id + zs:team_id of the CBOM / VEX, the pack manifest's subject):
+                    # read only then, after the signature
+                    subject = None
+                    digest = upload.sha.hexdigest()
+                    if sent_b64 is not None and digest != current["digest"] and \
+                            RD.sent_signature(digest, mac, sent_b64) is not None:
+                        subject = RD.SIGN.file_subject(upload.out, upload.size)
+            except EXPORT_SLOTS.Busy:
+                log("run verify busy", team=team_id, run=run_id, bytes=upload.size)
+                raise busy_refusal("verify") from None
+    out = RD.verify_upload(upload.sha.hexdigest(), mac, sent_b64=sent_b64, current=current, embedded=embedded,
+                           run_id=run_id, team_id=team_id, subject=subject,
+                           legacy_problem=RD.SIGN.legacy_hmac_problem())
     out.update({"bytes": upload.size, "run_id": run_id, "current_digest": current["digest"],
                 "run_status": current["run_status"]})
     return out
@@ -262,7 +276,7 @@ def _evidence_pack(engine, team_id: int, run_id: int) -> tuple[IO[bytes], Report
                 temps.append(json_file)
                 xml_file, _xml_data, xml_tee = RD.written(session, run, now, "xml")
                 temps.append(xml_file)
-                signature = RD.run_signature(run, data.head, json_tee, at, data.jsf)
+                signature: dict[str, Any] | None = RD.run_signature(run, data.head, json_tee, at, data.jsf)
                 vex = _vex(session, run, data, at)
                 pdf = _pdf(session, run, data, vex, json_tee.sha.hexdigest(), at, ctx)
                 sources = RD.run_sources(session, run)
@@ -277,9 +291,14 @@ def _evidence_pack(engine, team_id: int, run_id: int) -> tuple[IO[bytes], Report
                     omitted.append({"name": "oscal-assessment-results.json",
                                     "reason": "OSCAL assessment results are written for finished runs; "
                                               f"run is {run.status}."})
-                files += [("vex.json", RD.vex_bytes(vex), VEX_MEDIA, f"{base}/vex"),
-                          ("bom_signature.json", RD.signature_bytes(signature), JSON_MEDIA, f"{base}/signature"),
-                          ("report.pdf", pdf, "application/pdf", f"{base}/report.pdf")]
+                files.append(("vex.json", RD.vex_bytes(vex), VEX_MEDIA, f"{base}/vex"))
+                if signature is not None and signature.get("unsigned"):  # N3: nothing signed, nothing claimed
+                    omitted.append({"name": "bom_signature.json", "reason": str(signature["reason"])})
+                    signature = None
+                else:
+                    files.append(("bom_signature.json", RD.signature_bytes(signature), JSON_MEDIA,  # type: ignore
+                                  f"{base}/signature"))
+                files.append(("report.pdf", pdf, "application/pdf", f"{base}/report.pdf"))
                 return RD.evidence_pack(run=run, sources=sources, at=at, files=files, omitted=omitted,
                                         head=data.head, signature=signature,
                                         logo_sha256=ctx.branding.sha256 if ctx.branding.applied else None), ctx
@@ -314,6 +333,8 @@ async def run_vex(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader =
 async def run_signature(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader = None) -> Response:
     engine, _user = await authorize(team_id, Authorization)
     signature = await _run("signature", team_id, _signature, engine, team_id, run_id)
+    if signature.get("unsigned"):  # no ES256 key and a placeholder legacy key: nothing to hand out (N3)
+        raise HTTPException(status_code=503, detail=signature["reason"])
     return _attachment(RD.signature_bytes(signature), JSON_MEDIA, f"cbom-sources-run-{run_id}-signature.json")
 
 
@@ -326,12 +347,17 @@ async def verify_run_signature(team_id: TeamId, run_id: ObjectId, request: Reque
                                x_zs_signature_b64: Annotated[str | None, Header(max_length=512)] = None
                                ) -> JSONResponse:
     engine, _user = await authorize(team_id, Authorization)
-    upload = RD.Digests(RD.spool(), _secret())  # kept (spooled) so its embedded JSF signature can be checked
+    # kept (spooled) so its embedded JSF signature can be checked; nodes counted so a body far denser than any BOM is
+    # refused while it arrives (review 6029745818 minor 2)
+    upload = RD.Digests(RD.spool(), _secret(), count_nodes=True)
     try:
         async for chunk in request.stream():
             upload.write(chunk)
             if upload.size > VERIFY_MAX_BYTES:
                 raise HTTPException(status_code=413, detail="The file is larger than any run CBOM export")
+            dense = upload.dense()
+            if dense:
+                raise HTTPException(status_code=400, detail=f"Not verified: {dense}")
         if not upload.size:
             raise HTTPException(status_code=400, detail="Send the downloaded CycloneDX JSON file as the request body")
         result = await _run("signature verify", team_id, _verify, engine, team_id, run_id, upload, x_zs_signature_b64)

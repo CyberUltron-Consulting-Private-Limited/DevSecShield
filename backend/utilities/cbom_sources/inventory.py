@@ -1019,7 +1019,9 @@ def _document(session: Session, run: CbomCollectionRun, now: _dt.datetime
             # the build that wrote this file; the run's own judge is zs:engine_version (CB-03)
             "tools": {"components": [{"type": "application", "name": "ZeroShield CBOM Sources", "version": build_version()}]},
             "properties": [
-                {"name": "zs:run_id", "value": str(run.id)}, {"name": "zs:run_status", "value": run.status},
+                {"name": "zs:run_id", "value": str(run.id)},
+                {"name": "zs:team_id", "value": str(run.team_id)},  # with zs:run_id, what binds a signed file (D11)
+                {"name": "zs:run_status", "value": run.status},
                 {"name": "zs:asset_count", "value": str(len(rows))}, {"name": "zs:truncated", "value": str(truncated).lower()},
                 {"name": "zs:kb_version", "value": kb_version}, {"name": "zs:build", "value": build_sha()},
                 {"name": "zs:vex_rules", "value": VEX.VEX_RULES},
