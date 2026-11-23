@@ -54,9 +54,21 @@ def _is_at_rest(fact: Mapping[str, Any]) -> bool:
     return common.kind_of(fact) in text.AT_REST_KINDS and not common.is_evidence_only(fact)
 
 
+# (the view's posture fact tuple, its scope facts): one document reads the scope seven times; at 50k facts the
+# conversion (``facts_of``) dominated the build.  Keyed by the tuple object itself (held here, so its id is never
+# reused); a different view or a new fold misses the cache.
+_SCOPE_CACHE: tuple[object, list[dict[str, Any]]] = ((), [])
+
+
 def scope_facts(view: object) -> list[dict[str, Any]]:
-    """The facts this document reports on, in view order.  Every KPI and register below reads this list."""
-    return [
+    """The facts this document reports on, in view order.  Every KPI and register below reads this list (a fresh
+    list each call; the fact dicts are shared and read only)."""
+    global _SCOPE_CACHE
+    raw = common.grab(common.posture_block(view), "facts", ())
+    held, cached = _SCOPE_CACHE
+    if raw is held and isinstance(raw, tuple) and raw:
+        return list(cached)
+    found = [
         fact
         for fact in _facts(view)
         if common.kind_of(fact) in _KEY_KINDS
@@ -65,6 +77,9 @@ def scope_facts(view: object) -> list[dict[str, Any]]:
         or _is_at_rest(fact)
         or _is_managed_tls(fact)
     ]
+    if isinstance(raw, tuple) and raw:
+        _SCOPE_CACHE = (raw, found)
+    return list(found)
 
 
 def _at_rest_counts(facts: Sequence[Mapping[str, Any]]) -> dict[str, int]:
@@ -316,6 +331,8 @@ def _key_stores(view: object, styles: Styles, width: float) -> list[Flowable]:
             styles,
             view=view,
             cap_key="key_stores",
+            cap=text.REGISTER_ROW_CAP,
+            more=text.FULL_LIST_POINTER,
             noun="key stores",
         ),
     ]
@@ -339,7 +356,12 @@ def _resource_rows(facts: Sequence[Mapping[str, Any]]) -> list[list[Any]]:
 
 
 def _resources(view: object, styles: Styles, width: float) -> list[Flowable]:
+    """At-rest resources grouped by provider and kind.  One cap for the whole register (not per group): the
+    ``REGISTER_ROW_CAP`` worst rows are printed and the note above says exactly how many are left out."""
     facts = [fact for fact in scope_facts(view) if _is_at_rest(fact)]
+    total = len(facts)
+    if total > text.REGISTER_ROW_CAP:
+        facts = sorted(facts, key=common.impact_key)[: text.REGISTER_ROW_CAP]
     facts.sort(
         key=lambda fact: (
             common.provider_of(fact).casefold(),
@@ -363,32 +385,20 @@ def _resources(view: object, styles: Styles, width: float) -> list[Flowable]:
     if not facts:
         flow.extend(common.register(headers, [], weights, width, styles))
         return flow
-    group: list[Mapping[str, Any]] = []
-    current = None
-    for fact in facts:
-        key = (common.provider_of(fact), common.kind_of(fact))
-        if current is None:
-            current = key
-        if key != current:
-            flow.append(common.note(f"{current[0]} / {current[1]}", styles))
-            flow.extend(common.register(headers, _resource_rows(group), weights, width, styles))
-            group = []
-            current = key
-        group.append(fact)
-    if current is not None:
-        flow.append(common.note(f"{current[0]} / {current[1]}", styles))
-        flow.extend(
-            common.register(
-                headers,
-                _resource_rows(group),
-                weights,
-                width,
+    if total > len(facts):
+        flow.append(
+            common.note(
+                f"{total - len(facts)} further rows omitted: showing the {len(facts)} highest-impact of the "
+                f"{total} resources (cap {text.REGISTER_ROW_CAP} rows). {text.FULL_LIST_POINTER}",
                 styles,
-                view=view,
-                cap_key="resources",
-                noun="resources",
             )
         )
+    groups: dict[tuple[str, str], list[Mapping[str, Any]]] = {}
+    for fact in facts:
+        groups.setdefault((common.provider_of(fact), common.kind_of(fact)), []).append(fact)
+    for (provider, kind), group in groups.items():
+        flow.append(common.note(f"{provider} / {kind}", styles))
+        flow.extend(common.register(headers, _resource_rows(group), weights, width, styles))
     return flow
 
 
@@ -429,6 +439,8 @@ def _managed_tls(view: object, styles: Styles, width: float) -> list[Flowable]:
             styles,
             view=view,
             cap_key="managed_tls",
+            cap=text.REGISTER_ROW_CAP,
+            more=text.FULL_LIST_POINTER,
             noun="endpoints",
         ),
     ]
@@ -436,8 +448,8 @@ def _managed_tls(view: object, styles: Styles, width: float) -> list[Flowable]:
 
 def _secrets(view: object, styles: Styles, width: float) -> list[Flowable]:
     facts = [fact for fact in scope_facts(view) if common.kind_of(fact) in _SECRET_KINDS]
-    facts.sort(
-        key=lambda fact: (common.kind_of(fact), common.impact_key(fact)[0], common.address_of(fact).casefold())
+    facts.sort(  # worst first, so a capped register keeps the findings
+        key=lambda fact: (common.impact_key(fact)[0], common.kind_of(fact), common.address_of(fact).casefold())
     )
     rows = [
         [
@@ -475,6 +487,8 @@ def _secrets(view: object, styles: Styles, width: float) -> list[Flowable]:
             styles,
             view=view,
             cap_key="secrets",
+            cap=text.REGISTER_ROW_CAP,
+            more=text.FULL_LIST_POINTER,
             noun="secrets",
         ),
     ]
@@ -553,6 +567,8 @@ def build_story(view: TeamCbomView, styles: Styles, width: float) -> list[Flowab
             manual=(12, 13),
             view=view,
             cap_key="kms",
+            cap=text.REGISTER_ROW_CAP,
+            more=text.FULL_LIST_POINTER,
             noun="keys",
         ),
         *_key_stores(view, styles, width),

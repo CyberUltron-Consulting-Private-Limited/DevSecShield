@@ -189,6 +189,14 @@ INFRA_FINDINGS_NOTE = (
     "listed in this document. Probed and server-configured TLS endpoints are assessed in SOW D7 (TLS and crypto "
     "protocol assessment)."
 )
+# Rows printed per posture register of D6 / D9, worst impact first.  A team with tens of thousands of collected
+# resources would otherwise get a document of thousands of pages; the note above a cut register gives the exact
+# number left out and where the complete list is.
+REGISTER_ROW_CAP = 500
+FULL_LIST_POINTER = (
+    "The complete list is in the team's estate CBOM export (CycloneDX JSON or XML, /cbom/estate-export, filter by "
+    "asset type) and in each Sources run's asset table."
+)
 # Source: SOW v2.3 section 7.2, HSM coverage is limited to PKCS#11 and KMIP metadata
 KEY_STORE_NOTE = (
     "PKCS#11 tokens, KMIP servers, Vault transit mounts and cloud custom key stores as their own interfaces report "

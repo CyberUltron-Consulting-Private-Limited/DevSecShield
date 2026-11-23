@@ -7,6 +7,7 @@ each fact may be either.
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Mapping, Sequence
 from datetime import date, datetime
 from typing import Any
@@ -36,6 +37,9 @@ def grab(obj: object, key: str, default: object = None) -> object:
 def as_mapping(obj: object) -> dict[str, Any]:
     if isinstance(obj, Mapping):
         return dict(obj)
+    if dataclasses.is_dataclass(obj) and not isinstance(obj, type) and not hasattr(obj, "__dict__"):
+        # a slots dataclass (PostureFactAgg, AssetAgg) has no __dict__: read its declared fields
+        return {f.name: getattr(obj, f.name) for f in dataclasses.fields(obj) if not f.name.startswith("_")}
     data = getattr(obj, "__dict__", None)
     if isinstance(data, dict):
         return {key: value for key, value in data.items() if not str(key).startswith("_")}
@@ -388,6 +392,13 @@ def fit_widths(weights: Sequence[float], width: float) -> list[float]:
     return scaled
 
 
+# Registers whose rows the VIEW already cut (``posture.previously_seen`` keeps POSTURE_REGISTER_CAP rows); their
+# ``posture.omitted`` count is the rows not handed to the renderer.  Every other register receives all of its rows
+# (current facts are never dropped), so its omitted count is what ``register`` itself cuts - adding the view's count
+# too would count the same rows twice (FIX-B1 review: "28980 omitted" for 19,148 facts).
+VIEW_CAPPED_REGISTERS = frozenset({"previously_seen"})
+
+
 def register(
     headers: Sequence[str],
     rows: Sequence[Sequence[Any]],
@@ -399,18 +410,28 @@ def register(
     view: object = None,
     cap_key: str = "",
     noun: str = "rows",
+    cap: int = MAX_ROWS,
+    more: str = "",
 ) -> list[Flowable]:
+    """A register table.  Above ``cap`` rows only the first ``cap`` are printed, after a note giving the exact number
+    left out (shown + omitted == rows, plus the view's own cut for a VIEW_CAPPED_REGISTERS key); ``more`` says where
+    the full list is."""
     body = [list(row) for row in rows]
-    dropped = as_int(omitted_of(view).get(cap_key)) if view is not None and cap_key else 0
-    if len(body) > MAX_ROWS:
-        dropped += len(body) - MAX_ROWS
-        body = body[:MAX_ROWS]
+    limit = max(1, int(cap))
+    dropped = (
+        as_int(omitted_of(view).get(cap_key))
+        if view is not None and cap_key in VIEW_CAPPED_REGISTERS
+        else 0
+    )
+    if len(body) > limit:
+        dropped += len(body) - limit
+        body = body[:limit]
     flow: list[Flowable] = []
     if dropped:
         flow.append(
             note(
                 f"{dropped} further rows omitted: showing the first {len(body)} of the "
-                f"{noun} (cap {MAX_ROWS} rows).",
+                f"{noun} (cap {limit} rows).{(' ' + more) if more else ''}",
                 styles,
             )
         )

@@ -142,6 +142,8 @@ def _store_register(view: object, styles: Styles, width: float) -> list[Flowable
             manual=(5, 6, 7, 8, 9),
             view=view,
             cap_key="stores",
+            cap=text.REGISTER_ROW_CAP,
+            more=text.FULL_LIST_POINTER,
             noun="stores",
         ),
     ]
@@ -170,6 +172,8 @@ def _backups(view: object, styles: Styles, width: float) -> list[Flowable]:
             styles,
             view=view,
             cap_key="backups",
+            cap=text.REGISTER_ROW_CAP,
+            more=text.FULL_LIST_POINTER,
             noun="backups",
         ),
     ]
@@ -206,6 +210,8 @@ def _retention(view: object, styles: Styles, width: float) -> list[Flowable]:
             styles,
             view=view,
             cap_key="retention",
+            cap=text.REGISTER_ROW_CAP,
+            more=text.FULL_LIST_POINTER,
             noun="retention rows",
         )
     )
@@ -234,6 +240,8 @@ def _k8s(view: object, styles: Styles, width: float) -> list[Flowable]:
             styles,
             view=view,
             cap_key="k8s_secrets",
+            cap=text.REGISTER_ROW_CAP,
+            more=text.FULL_LIST_POINTER,
             noun="cluster rows",
         ),
     ]
@@ -265,6 +273,8 @@ def _disk(view: object, styles: Styles, width: float) -> list[Flowable]:
             styles,
             view=view,
             cap_key="disk",
+            cap=text.REGISTER_ROW_CAP,
+            more=text.FULL_LIST_POINTER,
             noun="disk rows",
         ),
     ]
@@ -297,6 +307,8 @@ def _capability(view: object, styles: Styles, width: float) -> list[Flowable]:
             width,
             styles,
             noun="capability rows",
+            cap=text.REGISTER_ROW_CAP,
+            more=text.FULL_LIST_POINTER,
         ),
     ]
 

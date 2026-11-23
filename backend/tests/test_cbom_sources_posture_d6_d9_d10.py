@@ -125,7 +125,7 @@ def test_every_mapped_asset_type_becomes_a_posture_fact(source, kind, asset):
     fact = M.posture_fact(asset["type"], asset["facts"], fact_id="f1", name=asset["name"],
                           location=asset["location"], algorithm=asset.get("algorithm"),
                           key_size=asset.get("key_size"), impact="High", finding_codes=["X_CODE"],
-                          finding="sentence", source_label=f"Sources run #52 · {source}", source_kind=kind)
+                          source_label=f"Sources run #52 · {source}", source_kind=kind)
     assert fact is not None
     if asset["type"] in FX.MAPPED_KIND:
         assert fact["kind"] == FX.MAPPED_KIND[asset["type"]]
@@ -137,22 +137,23 @@ def test_every_mapped_asset_type_becomes_a_posture_fact(source, kind, asset):
 @pytest.mark.parametrize("asset_type,name,expected", [
     # (kind, provider, at-rest verdict, key management)
     ("storage_encryption", "payments-ledger", ("object_store", "aws", "ENCRYPTED_DECLARED", "customer-managed")),
-    ("storage_encryption", "public-assets", ("object_store", "aws", "NOT_ENCRYPTED", "")),
-    ("storage_encryption", "vol-09d6979c2af92f0e5", ("block_volume", "aws", "NOT_ENCRYPTED", "")),
+    # review minor: a store that is not encrypted says "none", never a blank key management cell
+    ("storage_encryption", "public-assets", ("object_store", "aws", "NOT_ENCRYPTED", "none")),
+    ("storage_encryption", "vol-09d6979c2af92f0e5", ("block_volume", "aws", "NOT_ENCRYPTED", "none")),
     ("storage_encryption", "EBS encryption by default (ap-south-1)", ("disk_encryption", "aws", "NOT_ENCRYPTED",
-                                                                      "account default key")),
+                                                                      "none")),
     ("storage_encryption", "proxy-platform-postgres", ("relational_db", "aws", "ENCRYPTED_DECLARED",
                                                        "customer-managed")),
-    ("storage_encryption", "EKS payments secrets", ("k8s_secrets_etcd", "aws", "NOT_ENCRYPTED", "")),
+    ("storage_encryption", "EKS payments secrets", ("k8s_secrets_etcd", "aws", "NOT_ENCRYPTED", "none")),
     ("storage_encryption", "acme-exports", ("object_store", "gcp", "ENCRYPTED_PROVIDER_DEFAULT", "provider-managed")),
     ("storage_encryption", "acmelogs", ("object_store", "azure", "ENCRYPTED_PROVIDER_DEFAULT", "provider-managed")),
     ("storage_encryption", "oci-backups", ("object_store", "oci", "ENCRYPTED_PROVIDER_DEFAULT", "provider-managed")),
     ("glue_catalog", "Glue Data Catalog (ap-south-1)", ("data_warehouse", "aws", "NOT_ENCRYPTED", "none")),
     ("db_encryption", "labdb", ("relational_db", "self_hosted", "ENCRYPTED_DECLARED", "CERTIFICATE")),
-    ("db_encryption", "USERS", ("relational_db", "self_hosted", "NOT_ENCRYPTED", "")),
+    ("db_encryption", "USERS", ("relational_db", "self_hosted", "NOT_ENCRYPTED", "none")),
     ("database_config", "MySQL 8.4.13", ("relational_db", "self_hosted", "NOT_ENCRYPTED", "keyring: none")),
     ("database_config", "PostgreSQL 16.15", ("relational_db", "self_hosted", "UNKNOWN", "")),
-    ("database_config", "MongoDB 7.0.12", ("nosql_db", "self_hosted", "NOT_ENCRYPTED", "")),
+    ("database_config", "MongoDB 7.0.12", ("nosql_db", "self_hosted", "NOT_ENCRYPTED", "none")),
     ("database_config", "Redis 7.2.4", ("cache", "self_hosted", "UNKNOWN", "")),
     ("disk_encryption", "data_crypt", ("disk_encryption", "self_hosted", "ENCRYPTED_DECLARED", "LUKS2")),
     ("disk_encryption", "D:", ("disk_encryption", "self_hosted", "ENCRYPTED_DECLARED", "BitLocker protection On")),
@@ -166,7 +167,9 @@ def test_at_rest_verdicts_are_the_declared_settings(asset_type, name, expected):
                           source_label=source, source_kind=kind)
     management = str(fact.get("key_management") or "")
     assert (fact["kind"], fact["provider"], fact["at_rest"]) == expected[:3]
-    assert management.startswith(expected[3]) if expected[3] else management in ("", "none", "keyring: none")
+    assert management.startswith(expected[3]) if expected[3] else management == ""
+    if fact["at_rest"] == "NOT_ENCRYPTED":
+        assert management in ("none", "keyring: none")
 
 
 @pytest.mark.parametrize("name,expected", [
@@ -194,6 +197,18 @@ def test_kms_keys_carry_type_size_algorithm_rotation_and_state(name, expected):
            fact["rotation"])
     assert got == expected
     assert fact["attrs"]["rotation"] == fact["rotation"]  # what the posture counts read (_rotation_of)
+
+
+def test_gcp_asymmetric_key_rotation_is_not_applicable():
+    """Review minor: Cloud KMS rotates symmetric ENCRYPT_DECRYPT keys only; gcp_collect stores rotation_enabled=None
+    for an ASYMMETRIC_SIGN key, which must read "not applicable", not "unknown"."""
+    from backend.utilities.cbom_sources import posture_mapper as M
+
+    fact = M.posture_fact("kms_key", {"provider": "gcp", "purpose": "ASYMMETRIC_SIGN", "key_spec": "EC_SIGN_P256_SHA256",
+                                      "rotation_enabled": None, "key_state": "Enabled"},
+                          fact_id="g", name="signer", location="projects/p/locations/l/keyRings/r/cryptoKeys/signer",
+                          algorithm="ECDSA", key_size=256, source_label="Sources run #52 · GCP project")
+    assert (fact["rotation"], fact["attrs"]["rotation"]) == ("not_applicable", "not_applicable")
 
 
 def test_probed_endpoints_certificates_and_host_keys_are_not_posture_facts_of_this_mapper():
@@ -364,6 +379,100 @@ def test_d10_vendor_register_is_built_from_the_evidence_tab():
     assert vendors[0]["Evidence ref"] == "https://acme.example/security"
 
 
+def test_d10_prints_the_name_without_the_version_and_merges_the_unversioned_row_of_the_same_source():
+    """Review major 2: ``golang.org/x/crypto`` (import rule) and ``golang.org/x/crypto@v0.24.0`` (go.mod advisory) of
+    one source were two rows and the name kept "@v0.24.0".  Now: one row, name ``golang.org/x/crypto``, version
+    v0.24.0.  An unversioned row from a source that does not list that version stays its own row."""
+    from backend.utilities.dashboard.cbom_team_rollup import LibAgg
+
+    def lib(name, keys, version=""):
+        return LibAgg(key=name.casefold(), name=name, source_keys=keys, source_labels=keys, current_source_keys=keys,
+                      current=True, first_seen=NOW, last_seen=NOW, scan_count=1, scan_ids=(1,), latest_scan_id=1,
+                      version=version)
+
+    code = (lib("golang.org/x/crypto", ("repo:a",)), lib("golang.org/x/crypto@v0.24.0", ("repo:a",), "v0.24.0"),
+            lib("PyJWT", ("repo:b",)), lib("pyjwt@2.3.0", ("repo:a",), "2.3.0"))
+    rows, collections = FX.build()
+    merged = merge_collections(dataclasses.replace(_empty_view(), libs=code), rows, collections)
+    by_name = {}
+    for item in merged.libs:
+        by_name.setdefault(item.name.casefold(), []).append(item)
+    assert [(x.name, x.version) for x in by_name["golang.org/x/crypto"]] == [("golang.org/x/crypto", "v0.24.0")]
+    # PyJWT of repo:b is not known to be 2.3.0 (only repo:a pins it): two rows, both without "@" in the name
+    assert sorted((x.name, x.version) for x in by_name["pyjwt"]) == [("PyJWT", ""), ("pyjwt", "2.3.0")]
+    assert not any("@" in x.name for x in merged.libs)
+    table = [r for r in rows_under(story(d10, merged), "Library") if "Version" in r]
+    assert [r["Version"] for r in table if r["Library"] == "golang.org/x/crypto"] == ["v0.24.0"]
+
+
+# ------------------------------------------------------------------------------------------------ scale (review)
+def _many(count: int):
+    """``count`` Sources rows: the fixture repeated with distinct identities (the review's 50k load, smaller)."""
+    rows, collections = FX.build()
+    out = []
+    copy = 0
+    while len(out) < count:
+        for item in rows:
+            if len(out) == count:
+                break
+            row = dict(item.row, title=f"{item.row['title']}-{copy}", location=f"{item.row['location']}-{copy}")
+            out.append(dataclasses.replace(item, row=row, identity=f"{item.identity}|{copy}",
+                                           asset_key=f"{item.asset_key}-{copy}"))
+        copy += 1
+    return out, collections
+
+
+@pytest.fixture(scope="module")
+def big_view() -> TeamCbomView:
+    rows, collections = _many(8000)
+    return merge_collections(_empty_view(), rows, collections)
+
+
+def _notes(body: list[Flowable]) -> list[str]:
+    return [cell_text(item) for item in body if isinstance(item, Paragraph) and "further rows omitted" in cell_text(item)]
+
+
+def test_above_the_cap_shown_plus_omitted_equals_the_facts_of_each_register(big_view):
+    """Review blocker (Rule P): with 19,148 at-rest facts D6 said "28980 further rows omitted", and D6 / D9 said
+    "127 further rows omitted: showing the first 1 of the unknown facts".  The merge drops no fact, so the only
+    omitted rows are the ones a register cuts; shown + omitted must equal the facts of that register exactly."""
+    from backend.utilities.pdf import cbom_posture_text as T
+
+    assert big_view.posture.omitted == {}  # the merge kept every fact: nothing was cut before the renderer
+    facts = d6.scope_facts(big_view)
+    at_rest = [f for f in facts if d6._is_at_rest(f)]
+    secrets = [f for f in facts if f["kind"] in ("secret_store", "certificate_policy")]
+    assert len(at_rest) > 2000 and len(secrets) > T.REGISTER_ROW_CAP
+    body = story(d6, big_view)
+    shown = [r for r in rows_under(body, "Resource") if "At rest" in r]
+    shown_secrets = [r for r in rows_under(body, "Resource") if "Service" in r]
+    notes = _notes(body)
+    assert len(shown) == T.REGISTER_ROW_CAP
+    assert (f"{len(at_rest) - len(shown)} further rows omitted: showing the {len(shown)} highest-impact of the "
+            f"{len(at_rest)} resources") in " ".join(notes)
+    assert len(shown_secrets) == T.REGISTER_ROW_CAP
+    assert f"{len(secrets) - len(shown_secrets)} further rows omitted: showing the first {len(shown_secrets)} of " \
+           "the secrets" in " ".join(notes)
+    assert all(T.FULL_LIST_POINTER in note for note in notes)
+    assert not any("unknown facts" in note for note in notes)  # grouped by reason: nothing is cut
+    # the worst rows are the ones kept: every High at-rest fact of the cut register is printed while it fits
+    highs = sum(1 for f in at_rest if f.get("impact") == "High")
+    assert sum(1 for r in shown if r["Finding codes"]) >= min(highs, T.REGISTER_ROW_CAP)
+    stores = rows_under(story(d9, big_view), "Store")
+    all_stores = d9._stores(big_view)
+    assert len(stores) == T.REGISTER_ROW_CAP and len(all_stores) > T.REGISTER_ROW_CAP
+    assert f"{len(all_stores) - len(stores)} further rows omitted" in " ".join(_notes(story(d9, big_view)))
+    assert kpi_cards(story(d9, big_view))["Data stores"] == str(len(all_stores))  # the KPI counts every store
+
+
+def test_d6_page_count_is_bounded_however_many_resources_were_collected(big_view):
+    """Review major 1: 50k collected assets made a 1,882-page D6 (each provider / kind group was capped on its own).
+    One cap per register keeps the document bounded; 8,000 assets give the same register sizes as 50,000."""
+    raw = d6.build_pdf(big_view)
+    pages = len(re.findall(rb"/Type\s*/Page[^s]", raw))
+    assert pages < 300, pages
+
+
 # ------------------------------------------------------------------------------------------------ Document IDs
 @pytest.mark.parametrize("module,number", [(d6, "D06"), (d9, "D09"), (d10, "D10")])
 def test_document_ids_are_the_sow_numbers(view, module, number):
@@ -411,29 +520,6 @@ def _store_assets(engine, run_id: int) -> None:
         s.commit()
 
 
-def test_sources_posture_facts_reads_a_teams_runs_and_nothing_else(sources_run):  # noqa: F811
-    from sqlmodel import Session
-
-    from backend.utilities.cbom_sources.posture_mapper import sources_posture_facts
-
-    engine, run_id = sources_run["engine"], sources_run["run"]["id"]
-    _store_assets(engine, run_id)
-    with Session(engine) as s:
-        by_run = sources_posture_facts(s, 1, [run_id])
-        latest = sources_posture_facts(s, 1)
-        other_team = sources_posture_facts(s, 2, [run_id])
-        no_runs = sources_posture_facts(s, 1, [])
-    kinds = sorted(f["kind"] for f in by_run)
-    assert kinds.count("kms_key") == 3  # two AWS KMS keys and the SQL Server symmetric key
-    assert {f["name"] for f in by_run if f["kind"] == "object_store"} == {"payments-ledger", "public-assets"}
-    assert {f["name"] for f in by_run} == {f["name"] for f in latest}  # the run is each source's latest collection
-    assert other_team == [] and no_runs == []
-    unencrypted = next(f for f in by_run if f["name"] == "public-assets")
-    assert (unencrypted["at_rest"], unencrypted["impact"]) == ("NOT_ENCRYPTED", "High")
-    assert "STORAGE_UNENCRYPTED" in unencrypted["finding_codes"]
-    assert all(f["source"].startswith(f"Sources run #{run_id} · ") for f in by_run)
-
-
 def test_team_view_loads_the_vendor_register_and_the_collected_posture(sources_run):  # noqa: F811
     from sqlmodel import Session
 
@@ -451,7 +537,15 @@ def test_team_view_loads_the_vendor_register_and_the_collected_posture(sources_r
         s.add(CbomEvidenceVendor(team_id=2, name="Other team vendor"))
         s.commit()
     view = load_team_cbom_view(engine, 1)
+    other = load_team_cbom_view(engine, 2)
     assert [v["name"] for v in view.vendors] == ["Acme Payments Gateway"]
+    assert [v["name"] for v in other.vendors] == ["Other team vendor"]  # team-scoped
+    assert not [a for a in other.posture.facts if a.source_key.startswith("sources:")]  # team 1's run stays team 1's
+    unencrypted = next(f.fact for f in view.posture.facts if f.fact.get("name") == "public-assets")
+    assert (unencrypted["at_rest"], unencrypted["impact"], unencrypted["key_management"]) == (
+        "NOT_ENCRYPTED", "High", "none")
+    assert "STORAGE_UNENCRYPTED" in unencrypted["finding_codes"]
+    assert unencrypted["source"] == f"Sources run #{run_id} · " + unencrypted["source"].split(" · ", 1)[1]
     assert (view.vendors[0]["attested_on"], view.vendors[0]["evidence_ref"]) == (
         "2026-11-12", "https://acme.example/security")
     keys = [r for r in rows_under(story(d6, view), "Key")]

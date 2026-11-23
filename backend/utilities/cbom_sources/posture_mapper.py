@@ -11,13 +11,14 @@ Entry points
 * ``posture_fact(...)``   one stored asset -> one posture fact dict, or ``None`` for an asset type no posture register
                           reads (certificates, host keys, probed TLS endpoints: those have their own converters).  PURE.
 * ``library_component(...)`` one ``crypto_library`` / ``process_library`` asset -> a third-party component.  PURE.
-* ``sources_posture_facts(session, team_id, run_ids=None)`` the posture facts of a team's runs (``None``: each
-  source's latest completed collection, as the team deliverables count them).  The only DB read here.
+
+Callers: ``cbom_team_rollup.merge_collections`` (every team deliverable reads the facts on ``view.posture.facts``, so a
+lane that needs Sources posture reads the view; a new asset type is one branch here plus a ``_LANES`` entry).
 
 Verdicts use the code lane's words (``ENCRYPTED_DECLARED`` / ``ENCRYPTED_PROVIDER_DEFAULT`` / ``NOT_ENCRYPTED`` /
 ``UNKNOWN``).  What a Sources row says is a declared setting read from the system's own configuration (a cloud API, a
 database catalog, ``dmsetup``), never a reading of stored data (SOW 7.2).  Every fact keeps the asset's own impact,
-finding codes and sentence, so a register row and the run page agree on the finding.
+and finding codes, so a register row and the run page agree on the finding.
 
 Standard library only at import time (the team roll-up keeps its import closure small).
 """
@@ -33,7 +34,7 @@ __all__ = [
     "LIBRARY_TYPES",
     "library_component",
     "posture_fact",
-    "sources_posture_facts",
+    "purl_identity",
 ]
 
 EVIDENCE = "collected:CBOM Sources"  # posture ``evidence`` of a fact read from a system's own configuration
@@ -83,6 +84,8 @@ _OBSOLETE_SUITE = re.compile(r"RC4|3DES|DES-CBC3|_DES_|DES_CBC|NULL|EXPORT|anon|
 def _text(value: Any, limit: int = _MAX_TEXT) -> str:
     if value is None or isinstance(value, (dict, list, tuple, set)):
         return ""
+    if type(value) is str and len(value) <= limit and "  " not in value and value.isprintable():
+        return value.strip()  # the common case: already one clean line (no copy)
     return " ".join(str(value).split())[:limit]
 
 
@@ -157,6 +160,10 @@ def _rotation(facts: Mapping[str, Any]) -> tuple[str, str]:
         if isinstance(seconds, (int, float)) and seconds > 0:
             return "enabled", f"every {int(seconds) // 86400 or 1} days"
         return "disabled", "auto_rotate_period 0"
+    purpose = str(facts.get("purpose") or "")
+    if str(facts.get("provider") or "") == "gcp" and purpose and purpose != "ENCRYPT_DECRYPT":
+        # Cloud KMS rotates symmetric ENCRYPT_DECRYPT keys only; gcp_collect stores None for the others
+        return "not_applicable", "automatic rotation exists for symmetric keys only"
     enabled = _tri(facts.get("rotation_enabled"))
     if status in ("on",) or enabled is True:
         return "enabled", period
@@ -188,8 +195,9 @@ def _algorithm_size(algorithm: Any, key_size: Any) -> str:
 
 
 def _base(node_type: str, *, fact_id: str, kind: str, provider: str, native: str, name: str, location: str,
-          source_label: str, impact: Any, codes: Sequence[str], finding: Any, facts: Mapping[str, Any],
+          source_label: str, impact: Any, codes: Sequence[str], facts: Mapping[str, Any],
           lane: str) -> dict[str, Any]:
+    # a fact carries codes, not the asset's sentence (the asset row keeps it; memory at 50k assets)
     return {
         "id": fact_id,
         "kind": kind,
@@ -202,7 +210,6 @@ def _base(node_type: str, *, fact_id: str, kind: str, provider: str, native: str
         "source": source_label,  # "Sources run #52 · AWS production": the collection that read it
         "impact": impact if impact in ("Critical", "High", "Medium", "Low") else None,
         "finding_codes": [str(c) for c in codes if isinstance(c, str) and c],
-        "finding": _text(finding, 500),
         "exposure": _exposure(facts),
         "source_asset_type": node_type,
         "lane": lane,
@@ -302,6 +309,8 @@ def _storage(base: dict[str, Any], facts: dict[str, Any]) -> dict[str, Any]:
             management, customer = "provider-managed (Microsoft.Storage)", False
     if encrypted is True and not management:
         management = "not stated"
+    elif encrypted is False:
+        management = "none"  # nothing is encrypted, so no key manages it
     verdict = _at_rest(encrypted, customer)
     layer = {"object_store": "service", "block_volume": "volume", "relational_db": "service",
              "k8s_secrets_etcd": "service", "data_warehouse": "service", "disk_encryption": "volume",
@@ -318,7 +327,7 @@ def _storage(base: dict[str, Any], facts: dict[str, Any]) -> dict[str, Any]:
         base.update({"first_provider": "KMS envelope encryption" if encrypted else (
                          "identity (no envelope encryption)" if encrypted is False else "not read"),
                      "custody": management or ("none" if encrypted is False else ""),
-                     "weakness": "" if encrypted else _text(base.get("finding"), 120)})
+                     "weakness": "" if encrypted else "Kubernetes secrets not envelope-encrypted with a KMS key"})
     base.update({"kind": kind, "native_type": native, "address": base["name"] or resource, "verdict": verdict,
                  "at_rest": verdict, "layers": layers, "key_management": management, "basis": "; ".join(basis),
                  "attrs": {"resource": resource, "kms_key_id": _text(facts.get("kms_key_id"), 200),
@@ -351,8 +360,8 @@ def _db_encryption(base: dict[str, Any], facts: dict[str, Any], algorithm: Any, 
     base.update({"kind": _DB_KIND.get(engine, "relational_db"), "provider": base["provider"],
                  "native_type": f"{label} {what}", "verdict": verdict, "at_rest": verdict,
                  "layers": {"database": verdict},
-                 "key_management": _text(facts.get("encryptor_type"), 40) or (
-                     _algorithm_size(algorithm or facts.get("algorithm_desc"), key_size) if encrypted else ""),
+                 "key_management": "none" if encrypted is False else (_text(facts.get("encryptor_type"), 40) or (
+                     _algorithm_size(algorithm or facts.get("algorithm_desc"), key_size) if encrypted else "")),
                  "basis": directive,
                  "attrs": {"engine": label, "directive": directive,
                            "cipher": _algorithm_size(algorithm or facts.get("algorithm_desc"), key_size),
@@ -415,6 +424,8 @@ def _database_config(base: dict[str, Any], facts: dict[str, Any]) -> dict[str, A
     layers = {"database": verdict}
     if transport:
         layers["transport"] = transport
+    if verdict == NOT_ENCRYPTED and not management:
+        management = "none"
     base.update({"kind": _DB_KIND.get(engine, "relational_db"), "native_type": f"{label} server settings",
                  "verdict": verdict, "at_rest": verdict, "layers": layers, "key_management": management,
                  "basis": directive, "unknown_reason": unknown_reason if verdict == UNKNOWN else "",
@@ -438,7 +449,7 @@ def _disk(base: dict[str, Any], facts: dict[str, Any], algorithm: Any, key_size:
     verdict = ENCRYPTED if encrypted else (NOT_ENCRYPTED if encrypted is False else UNKNOWN)
     base.update({"kind": "disk_encryption", "native_type": "BitLocker volume" if bitlocker else "dm-crypt / LUKS volume",
                  "verdict": verdict, "at_rest": verdict, "layers": {"volume": verdict},
-                 "key_management": source, "basis": f"cipher {cipher or 'not read'}",
+                 "key_management": "none" if encrypted is False else source, "basis": f"cipher {cipher or 'not read'}",
                  "attrs": {"device": _text(facts.get("mount") or facts.get("device") or base["name"], 80),
                            "cipher": _algorithm_size(cipher, key_size if not bitlocker else None),
                            "key_source": source}})
@@ -538,7 +549,7 @@ MAPPED_TYPES = frozenset(_LANES)
 
 def posture_fact(node_type: str, facts: Any, *, fact_id: str, name: Any = None, location: Any = None,
                  algorithm: Any = None, key_size: Any = None, impact: Any = None, finding_codes: Iterable[Any] = (),
-                 finding: Any = None, source_label: str = "", source_kind: str = "") -> dict[str, Any] | None:
+                 source_label: str = "", source_kind: str = "") -> dict[str, Any] | None:
     """One stored Sources asset as a posture fact, or ``None`` when no posture register reads its type.  PURE.
 
     ``fact_id`` must be unique within the team view (``sources:<job>:<identity>``); ``source_label`` is printed in the
@@ -551,7 +562,7 @@ def posture_fact(node_type: str, facts: Any, *, fact_id: str, name: Any = None, 
     provider = provider_of(node_type, data, where, source_kind)
     base = _base(node_type, fact_id=fact_id, kind=node_type, provider=provider, native=node_type, name=title,
                  location=where, source_label=source_label, impact=impact, codes=list(finding_codes or ()),
-                 finding=finding, facts=data, lane=_LANES[node_type])
+                 facts=data, lane=_LANES[node_type])
     if node_type in ("kms_key", "managed_key"):
         base["kind"] = "kms_key"
         return _key(node_type, base, data, algorithm, key_size)
@@ -588,7 +599,7 @@ def purl_identity(purl: Any) -> str:
 
 
 def library_component(node_type: str, facts: Any, *, name: Any = None, location: Any = None,
-                      finding_codes: Iterable[Any] = (), finding: Any = None) -> dict[str, Any] | None:
+                      finding_codes: Iterable[Any] = ()) -> dict[str, Any] | None:
     """A ``crypto_library`` (an installed package) or ``process_library`` (a library a process maps) as a third-party
     component: ``{name, version, purl, ecosystem, status, codes, where}``.  PURE.  ``None`` for any other type."""
     if node_type not in LIBRARY_TYPES:
@@ -610,70 +621,4 @@ def library_component(node_type: str, facts: Any, *, name: Any = None, location:
         return None
     status = [label for code, label in _STATUS if code in codes]
     return {"name": title, "version": version, "purl": _text(data.get("purl"), 300), "ecosystem": ecosystem,
-            "status": "; ".join(status), "codes": tuple(codes), "where": where,
-            "finding": _text(finding, 300)}
-
-
-# ----------------------------------------------------------------------------------------------- the DB read
-def sources_posture_facts(session: Any, team_id: int, run_ids: Iterable[int] | None = None, *,
-                          now: Any = None) -> list[dict[str, Any]]:
-    """The posture facts of a team's Sources runs, in the vocabulary of the D6 / D9 registers.
-
-    ``run_ids`` None: each source's latest completed collection (``collections_view.load_sources_result``, the rule
-    every team deliverable counts by).  Otherwise every successful collect job of those runs (team-scoped: another
-    team's run id yields nothing).  Each fact carries ``finding_codes`` / ``impact`` exactly as the run page judges
-    the asset today (``classify.shown``).  Probed TLS endpoints are not returned (``cbom_team_rollup`` converts those)."""
-    from backend.utilities.cbom_sources.collections_view import load_sources_result
-
-    if run_ids is None:
-        found = load_sources_result(session, team_id, now)
-        return [fact for fact in (_fact_of_row(item) for item in found.rows) if fact is not None]
-    return [fact for fact in _facts_of_runs(session, team_id, list(run_ids), now) if fact is not None]
-
-
-def _fact_of_row(item: Any) -> dict[str, Any] | None:
-    row = item.row if isinstance(item.row, Mapping) else {}
-    collection = item.collection
-    return posture_fact(item.node_type, item.facts, fact_id=f"sources:{collection.job_id}:{item.identity}",
-                        name=row.get("title"), location=row.get("location"), algorithm=row.get("algorithm_name"),
-                        key_size=row.get("key_size"), impact=row.get("impact"),
-                        finding_codes=row.get("finding_codes") or (),
-                        finding=row.get("description"), source_label=collection.label,
-                        source_kind=collection.source_kind)
-
-
-def _facts_of_runs(session: Any, team_id: int, run_ids: list[int], now: Any) -> Iterable[dict[str, Any] | None]:
-    import datetime as _dt
-
-    from sqlmodel import col, select
-
-    from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionSource
-    from backend.utilities.cbom_sources import identity as ID
-    from backend.utilities.cbom_sources.classify import shown
-
-    if not run_ids:
-        return
-    today = (now or _dt.datetime.now(_dt.timezone.utc)).replace(tzinfo=None)
-    sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
-        CbomCollectionSource.team_id == team_id)).all()}
-    jobs = session.exec(select(CbomCollectionJob).where(
-        CbomCollectionJob.team_id == team_id, col(CbomCollectionJob.run_id).in_(run_ids),
-        CbomCollectionJob.kind == "collect", CbomCollectionJob.status == "success")
-        .order_by(CbomCollectionJob.id)).all()
-    for job in jobs:
-        source = sources.get(job.source_id or 0)
-        label = f"Sources run #{job.run_id} · {ID.job_source_name(job, source)}"
-        assets = session.exec(select(CbomCollectedAsset).where(
-            CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.job_id == job.id,
-            CbomCollectedAsset.attempt == job.attempts).order_by(CbomCollectedAsset.id)).all()
-        for asset in assets:
-            if asset.asset_type not in MAPPED_TYPES:
-                continue
-            view = shown(asset, today)
-            yield posture_fact(asset.asset_type, asset.facts, fact_id=f"sources:{job.id}:{ID.node_identity(asset)}",
-                               name=asset.name, location=asset.location, algorithm=asset.algorithm,
-                               key_size=asset.key_size, impact=view.get("impact"),
-                               # an asset without an impact is inventory, not a finding (collections_view.node_row)
-                               finding_codes=(view.get("finding_codes") or ()) if view.get("impact") else (),
-                               finding=view.get("finding"),
-                               source_label=label, source_kind=source.kind if source is not None else "")
+            "status": "; ".join(status), "codes": tuple(codes), "where": where}

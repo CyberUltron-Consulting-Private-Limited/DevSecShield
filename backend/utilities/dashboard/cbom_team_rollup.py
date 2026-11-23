@@ -274,7 +274,7 @@ class SourceAgg:
     library_count: int = 0  # current library components
 
 
-@dataclass
+@dataclass(slots=True)  # no per-instance __dict__: a team of 50k collected assets holds 50k of these
 class AssetAgg:
     """One crypto asset occurrence: a ``results[]`` row of one source.
 
@@ -576,7 +576,7 @@ class PostureScan:
     dropped: dict[str, int] = field(default_factory=dict)
 
 
-@dataclass
+@dataclass(slots=True)  # one per posture fact (45k for a 50k-asset team)
 class PostureFactAgg:
     """One fact of one source.  ``fact`` is compact when the fact is not current."""
 
@@ -1106,8 +1106,9 @@ def _asset_from_row(row: Mapping[str, Any], facts: ScanFacts) -> AssetAgg:
     location = _text(row.get("location")) or ""
     bom_ref = _text(row.get("bom_ref"))
     quantum_safe = _tri(row.get("quantum_safe"))
-    quantum_vulnerable = code_row_quantum_vulnerable(dict(row))
-    severity = finding_severity(dict(row))
+    plain = dict(row)  # one copy for the three cbom_metrics readers
+    quantum_vulnerable = code_row_quantum_vulnerable(plain)
+    severity = finding_severity(plain)
     primitive = _text(row.get("primitive"))
     if primitive is None and asset_type == ASSET_ALGORITHM:
         primitive = _text(row.get("algorithm_type"))
@@ -1134,7 +1135,7 @@ def _asset_from_row(row: Mapping[str, Any], facts: ScanFacts) -> AssetAgg:
         security_strength_bits=_int(row.get("security_strength_bits")),
         risk_score=_float(row.get("risk_score")),
         quantum_vulnerable=quantum_vulnerable,
-        broken_today=quantum_vulnerable is False and code_row_broken_today(dict(row)),
+        broken_today=quantum_vulnerable is False and code_row_broken_today(plain),
         quantum_safe=quantum_safe,
         hybrid=_tri(row.get("hybrid")),
         nist_quantum_security_level=_int(row.get("nist_quantum_security_level")),
@@ -3151,11 +3152,17 @@ def _merge_sources_libs(libs: Sequence[LibAgg], components: Sequence[tuple[Colle
                         ) -> tuple[LibAgg, ...]:
     """Code-scan libraries plus the Sources collections' packages and mapped libraries, one row per component.
 
-    Identity: the package URL without qualifiers when known, else ``name@version`` (case-folded; the engine's
-    ``pyjwt@2.3.0`` component name counts as name ``pyjwt`` version ``2.3.0``), else the name alone.  Two versions of
-    a name stay two rows; a name without a version is not merged into a versioned one.  Each Sources collection is a
-    current source of what it found."""
-    observed: list[LibAgg] = list(libs)
+    Names are normalised first: the engine's advisory component ``pyjwt@2.3.0`` is name ``pyjwt``, version ``2.3.0``
+    (the version is its own column, never part of the name).  Identity: the package URL without qualifiers when
+    known, else ``name@version`` (case-folded), else the name alone.  Two versions of a name stay two rows.  A row
+    without a version (an import-rule ``golang.org/x/crypto``) joins the versioned row of the same name when that is
+    the only version of the name seen in its sources (every source of the unversioned row also lists that version);
+    otherwise it stays its own row.  Each Sources collection is a current source of what it found."""
+    observed: list[LibAgg] = []
+    for lib in libs:
+        name, version = _lib_name_version(lib.name, lib.version)
+        observed.append(lib if (name, version) == (lib.name, lib.version) else replace(
+            lib, name=name, version=version, key=(f"{name}@{version}" if version else name).casefold()))
     for agg, comp in components:
         version = str(comp.get("version") or "")
         name = str(comp["name"])
@@ -3178,6 +3185,20 @@ def _merge_sources_libs(libs: Sequence[LibAgg], components: Sequence[tuple[Colle
         groups[hit].append(lib)
         for alias in aliases:
             by_alias.setdefault(alias, hit)
+    # an unversioned name joins the one version of that name its sources list
+    versioned: dict[str, list[int]] = {}
+    for index, group in enumerate(groups):
+        if any(lib.version for lib in group):
+            versioned.setdefault(group[0].name.casefold(), []).append(index)
+    for index, group in enumerate(groups):
+        if not group or any(lib.version for lib in group):
+            continue
+        sources = {key for lib in group for key in lib.source_keys}
+        fits = [i for i in versioned.get(group[0].name.casefold(), [])
+                if sources <= {key for lib in groups[i] for key in lib.source_keys}]
+        if len(fits) == 1:
+            groups[fits[0]].extend(group)
+            groups[index] = []
     return tuple(sorted((_fold_lib_group(group) for group in groups if group), key=lambda lib: lib.key))
 
 
@@ -3253,13 +3274,18 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
     # 2. Sources assets (and their certificates, probed endpoints, posture facts and library components)
     facts_of: dict[str, list[dict[str, Any]]] = {}
     components: list[tuple[CollectionAgg, dict[str, Any]]] = []
+    shells: dict[str, ScanFacts] = {}  # one per collection (50k rows: built once, not per row)
     for item in resolution.sources_rows:
         agg = aggs[item.collection.key]
-        shell = ScanFacts(scan_id=agg.run_id, title=agg.label, status=STATUS_SUCCESS, created_at=agg.observed_at,
-                          last_updated=agg.observed_at, source_key=agg.key, source_label=agg.label,
-                          source_kind=SOURCE_SOURCES, tier=TIER_A, fidelity=FIDELITY_FULL)
-        asset = replace(_asset_from_row(item.row, shell), current=True, tier=TIER_A, latest_scan_id=None,
-                        scan_ids=(), clause_evidence=getattr(item, "clause_evidence", None) or None)
+        shell = shells.get(agg.key)
+        if shell is None:
+            shell = shells[agg.key] = ScanFacts(
+                scan_id=agg.run_id, title=agg.label, status=STATUS_SUCCESS, created_at=agg.observed_at,
+                last_updated=agg.observed_at, source_key=agg.key, source_label=agg.label, source_kind=SOURCE_SOURCES,
+                tier=TIER_A, fidelity=FIDELITY_FULL)
+        asset = _asset_from_row(item.row, shell)  # a fresh object: set in place (dataclasses.replace copies it)
+        asset.current, asset.tier, asset.latest_scan_id, asset.scan_ids = True, TIER_A, None, ()
+        asset.clause_evidence = getattr(item, "clause_evidence", None) or None
         assets.append(asset)
         if asset.asset_type == ASSET_CERTIFICATE:
             f = item.facts if isinstance(item.facts, Mapping) else {}
@@ -3289,7 +3315,7 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
             item.node_type, item.facts, fact_id=f"sources:{agg.job_id}:{asset.ident}", name=item.row.get("title"),
             location=item.row.get("location"), algorithm=item.row.get("algorithm_name"),
             key_size=item.row.get("key_size"), impact=asset.impact if asset.impact != INFO else None,
-            finding_codes=asset.finding_codes, finding=item.row.get("description"), source_label=agg.label,
+            finding_codes=asset.finding_codes, source_label=agg.label,
             source_kind=agg.source_kind)
         if fact is not None:
             facts_of.setdefault(agg.key, []).append(fact)
@@ -3337,9 +3363,10 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
         facts_all = sorted([*posture.facts, *new_facts], key=lambda f: (f.source_key, f.fact_id))
         assessed_scans = [scan for scan in view.scans if scan.is_current and scan.posture is not None
                           and scan.posture.state in ("assessed", "partial")]
+        # ``omitted`` stays the fold's: the merge drops no fact (every collected fact is current and kept), so a
+        # register's "further rows omitted" is what its renderer cuts, counted there (common.register)
         posture = replace(posture, state=state, sources=tuple(rows_all), facts=tuple(facts_all),
-                          counts=_posture_counts(facts_all, assessed_scans),
-                          omitted=_omitted_counts(facts_all, posture.previously_seen_total))
+                          counts=_posture_counts(facts_all, assessed_scans))
     # 5. compliance: each collection's CNSA 2.0 / FIPS 140-3 verdicts (CB-16), pooled with the code scans'
     frameworks, requirements = _pool_sources_compliance(view.frameworks, view.requirements, resolution.sources_rows,
                                                         aggs)

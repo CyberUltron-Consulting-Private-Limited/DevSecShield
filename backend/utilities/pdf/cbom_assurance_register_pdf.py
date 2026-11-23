@@ -251,9 +251,20 @@ def _ledger_sort_key(req: RequirementAgg) -> tuple:
     return (rank, framework, _natural_key(req_id), req_id)
 
 
+# Frameworks whose attestable controls are not third-party cryptographic assurance: the RBI FREE-AI protection
+# mapping's attestation-only controls are AI governance (AI incident response, adversarial / red-team testing) and
+# belong to the AIBOM documents, not to this register (audit B-08).  Its algorithm checks pass or fail on the BOM and
+# never reach the ledger anyway.
+LEDGER_EXCLUDED_FRAMEWORKS = frozenset({"rbi_free_ai_protection"})
+
+
 def _attestable(view: TeamCbomView) -> list[RequirementAgg]:
     """Ledger rows: controls with at least one source needing (or already holding) attestation."""
-    rows = [req for req in view.requirements if _attested_counts(req)[1] > 0]
+    rows = [
+        req
+        for req in view.requirements
+        if _attested_counts(req)[1] > 0 and str(req.framework) not in LEDGER_EXCLUDED_FRAMEWORKS
+    ]
     return sorted(rows, key=_ledger_sort_key)
 
 

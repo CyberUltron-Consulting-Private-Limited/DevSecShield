@@ -1012,7 +1012,7 @@ EXPECTED_SOURCES = {
     ZIPLAB: ("Zip upload: cert-lifecycle-lab", "zip", (6,), TIER_A, "full",
              (6, "success"), {"certificate": 2}, {"High": 1, "Medium": 1}, 0),
     MANIFESTS: ("github.com/e2e-demo/vendor-sdk-manifests (main)", "repo", (7,), TIER_A, "full",
-                (7, "success"), {"other": 1}, {"High": 1}, 19),  # + x/crypto advisory (WP3a)
+                (7, "success"), {"other": 1}, {"High": 1}, 18),  # x/crypto advisory = x/crypto (FIX-B1)
     LEGACY: ("github.com/e2e-demo/legacy-billing (main)", "repo", (8,), TIER_B, "reduced",
              (8, "success"), {"algorithm": 9, "certificate": 1, "protocol": 1,
                               "related-crypto-material": 1},
@@ -1217,9 +1217,13 @@ def test_assets_are_never_merged_across_sources_but_are_across_a_sources_scans(v
 
 
 def test_libraries_dedupe_by_casefolded_name_across_sources(view):
-    # 23 + Node.js crypto (stdlib) (ab0a446) + cryptography@42.0.5 + golang.org/x/crypto@v0.24.0
-    # (WP3a: an advisory row is its own library component named <package>@<version>)
-    assert len(view.libs) == 26 and all(lib.current for lib in view.libs)
+    # 23 + Node.js crypto (stdlib) (ab0a446) + cryptography@42.0.5 (WP3a advisory component, printed as name
+    # "cryptography", version 42.0.5); golang.org/x/crypto@v0.24.0 is the import-rule golang.org/x/crypto of the
+    # same source, so one component with its version (FIX-B1 review)
+    assert len(view.libs) == 25 and all(lib.current for lib in view.libs)
+    gox = only(lib for lib in view.libs if lib.name == "golang.org/x/crypto")
+    assert (gox.version, gox.source_keys) == ("v0.24.0", (MANIFESTS,))
+    assert not any("@" in lib.name for lib in view.libs)
     shared = sorted(lib.key for lib in view.libs if len(lib.source_keys) > 1)
     assert shared == ["hashlib (stdlib)", "pyca/cryptography", "pyopenssl", "ssl (stdlib)"]
     crypto = only(lib for lib in view.libs if lib.key == "pyca/cryptography")
@@ -1230,7 +1234,7 @@ def test_libraries_dedupe_by_casefolded_name_across_sources(view):
     )
     assert only(lib for lib in view.libs if lib.key == "pyopenssl").name == "pyOpenSSL"
     manifests = [lib for lib in view.libs if MANIFESTS in lib.source_keys]
-    assert len(manifests) == 19 and all(lib.source_keys == (MANIFESTS,) for lib in manifests)
+    assert len(manifests) == 18 and all(lib.source_keys == (MANIFESTS,) for lib in manifests)
     assert [lib.key for lib in view.libs] == sorted(lib.key for lib in view.libs)
 
 
@@ -1468,7 +1472,7 @@ def test_the_manifest_only_source_is_in_scope_with_its_advisory_row_and_its_libr
     src = only(s for s in view.sources if s.key == MANIFESTS)
     # the only row is the golang.org/x/crypto v0.24.0 advisory (WP3a data): a library row with no
     # crypto assetType by design, typed "other", and the scan stays full fidelity (tier A)
-    assert (src.asset_counts, src.impact_counts, src.library_count) == ({"other": 1}, {"High": 1}, 19)
+    assert (src.asset_counts, src.impact_counts, src.library_count) == ({"other": 1}, {"High": 1}, 18)
     assert (src.current_tier, src.current_fidelity) == (TIER_A, FIDELITY_FULL)
     rows = [a for a in view.assets if a.source_key == MANIFESTS]
     assert [(a.title, a.asset_type, a.finding_codes) for a in rows] == [
