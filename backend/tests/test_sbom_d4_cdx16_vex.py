@@ -1,4 +1,4 @@
-"""FIX-C1 (SOW D4): the downloadable SBOM is CycloneDX 1.6 with a complete dependency graph and the Grype findings
+"""FIX-C1 (SOW D4): the downloadable SBOM is CycloneDX 1.6 with the declared dependency graph and the Grype findings
 as vulnerabilities; the VEX states only vulnerabilities that exist.
 
 Audit evidence (qa/sow/C): SBOM #8 ``/bom`` was specVersion 1.7, ``dependencies`` absent (NTIA dependency
@@ -97,15 +97,19 @@ def test_tools_name_devsecshield_with_its_version_and_keep_syft(bom):
     assert bom["metadata"]["component"]["type"] == "application"
 
 
-def test_every_component_is_reachable_from_the_subject(bom):
+def test_dependency_graph_keeps_declared_edges_and_marks_the_rest_incomplete(bom):
+    """Review 6028132826 M1: the subject is never made to depend on every component; the graph says it is
+    incomplete instead (CycloneDX compositions)."""
     refs = {c["bom-ref"] for c in bom["components"]}
     assert refs == {"pkg:github/actions/checkout@v4", "pkg:pypi/flask@0.12.2", "pkg:pypi/jinja2@2.9.6"}
-    assert _reachable(bom) == refs
+    assert _reachable(bom) == set()
     deps = {d["ref"]: d.get("dependsOn") for d in bom["dependencies"]}
-    # Syft's ref a2 -> a3 survives the purl renaming; jinja2 stays transitive (not a direct child of the subject)
+    # Syft's ref a2 -> a3 survives the purl renaming
     assert deps["pkg:pypi/flask@0.12.2"] == ["pkg:pypi/jinja2@2.9.6"]
     root = bom["metadata"]["component"]["bom-ref"]
-    assert set(deps[root]) == {"pkg:github/actions/checkout@v4", "pkg:pypi/flask@0.12.2"}
+    assert root not in deps
+    assert {c["aggregate"] for c in bom["compositions"]} == {"incomplete", "unknown"}
+    assert {p["name"]: p["value"] for p in bom["metadata"]["properties"]}["dss:dependency_graph"] == "none"
 
 
 def test_grype_rows_become_one_vulnerability_per_advisory(bom):

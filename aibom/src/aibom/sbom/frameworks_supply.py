@@ -158,6 +158,20 @@ def _ntia_deps(r: ScanResult, req: Requirement) -> CheckResult:
         missing = [
             c.bom_ref for c in comps if _prop(c, "sbom:in_dependency_graph") != "true"
         ]
+        if (
+            _bom_prop(r, "sbom:dependency_graph") != "complete"
+            and _bom_prop(r, "sbom:dependency_graph_source") == "declared"
+        ):
+            # review 6028132826 M1: the tools declared edges for only part of the
+            # inventory and none are made up, so the element is PARTIAL — reported
+            # as not BOM-evidenceable (attestable), never as a pass or a fail
+            return NOT_EVIDENCEABLE(
+                f"partial: {len(comps) - len(missing)}/{len(comps)} component(s) "
+                "reachable from the subject through dependency edges the inventory "
+                "tools declared; the others' relationships are unknown (CycloneDX "
+                "compositions: incomplete)",
+                missing,
+            )
         if missing:
             return FAIL(
                 f"{len(missing)}/{len(comps)} component(s) not reachable from the "

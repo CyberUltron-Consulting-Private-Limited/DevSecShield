@@ -20,7 +20,13 @@ from backend.utilities.dashboard.sbom_license import (
     resolve_sbom_license_category,
     resolve_sbom_reachability,
 )
-from backend.utilities.dashboard.sbom_rows import vulnerability_findings, vulnerability_rows
+from backend.utilities.dashboard.sbom_rows import (
+    component_licence_categories,
+    severity_findings,
+    severity_rows,
+    unverified_version_rows,
+    vulnerability_findings,
+)
 from backend.utilities.dashboard.bom_risk_score import (
     aibom_finding_risk_score,
     cbom_finding_risk_score,
@@ -823,7 +829,11 @@ def generate_scan_dashboard(
                     "unknown" : average_risk_score_unknown,
                 }
             """
-            results_list = vulnerability_rows(results if isinstance(results, list) else [])  # no inventory rows (#46)
+            all_rows = results if isinstance(results, list) else []
+            # no inventory rows (#46); no match on a version guessed from a range (review 6028132826 M2): those are
+            # the separate "unverified version" count
+            results_list = severity_rows(all_rows)
+            unverified = unverified_version_rows(all_rows)
             severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
             reachability_counts: dict[str, int] = defaultdict(int)
             license_counts: dict[str, int] = defaultdict(int)
@@ -842,8 +852,6 @@ def generate_scan_dashboard(
                 reachability_counts[reach] += 1
                 if reach == "reachable":
                     total_reachable += 1
-                lic = resolve_sbom_license_category(item)
-                license_counts[lic] += 1
                 cc = item.get("compliance_controls") or {}
                 if isinstance(cc, dict):
                     total_policy_violations += len(cc)
@@ -857,16 +865,12 @@ def generate_scan_dashboard(
             total_vulnerabilities = len(results_list)
             total_critical = severity_counts["critical"]
             average_risk_score = round(risk_score_weighted_sum / total_vulnerabilities, 1) if total_vulnerabilities else None  # — (#46)
-            total_license_risks = sum(
-                1
-                for item in results_list
-                if resolve_sbom_license_category(item) in LICENSE_MEDIUM_RISK | LICENSE_HIGH_RISK
-            )
-            total_high_risk_licenses = sum(
-                1
-                for item in results_list
-                if resolve_sbom_license_category(item) in LICENSE_HIGH_RISK
-            )
+            # licences over the SBOM's components (review 6028132826 M4), the licences /bom serves
+            for lic in component_licence_categories((scan.scan_data or {}) if scan else (scan_results or {})):
+                license_counts[lic] += 1
+            total_license_risks = sum(v for k, v in license_counts.items()
+                                      if k in LICENSE_MEDIUM_RISK | LICENSE_HIGH_RISK)
+            total_high_risk_licenses = sum(v for k, v in license_counts.items() if k in LICENSE_HIGH_RISK)
 
             findings = vulnerability_findings(get_findings_for_scan_id(scan_id))
             status_metrics = get_issue_status_metrics(findings) if findings else {"fixed": 0, "in_progress": 0, "not_started": 0, "ignored": 0}
@@ -897,7 +901,7 @@ def generate_scan_dashboard(
             # Vulnerability trends: date key = created_at (discovery); buckets by impact severity
             vulnerability_trends_over_time: dict[str, dict[str, int]] = {}
             severity_keys = ("critical", "high", "medium", "low")
-            for f in findings or []:
+            for f in severity_findings(findings):
                 date_key = _to_date_key(f.get("created_at"))
                 if not date_key:
                     continue
@@ -947,6 +951,7 @@ def generate_scan_dashboard(
                     "total_high_risk_licenses": total_high_risk_licenses,
                     "average_risk_score": average_risk_score,
                     "total_reachable_issues": total_reachable,
+                    "total_unverified_version_findings": len(unverified),
                 },
                 "remediation_actions_required": remediation_actions_required,
                 "severity_distribution": severity_counts,

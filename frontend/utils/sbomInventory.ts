@@ -88,6 +88,18 @@ export function formatComponentVersion(version: string | undefined): string {
   return v.split("/")[0].trim() || v;
 }
 
+/**
+ * The version cell: a version the scanner guessed from a manifest range (dss:version_source=range_lower_bound,
+ * review 6028132826 B2) reads "≥ 10.0 (range >=10.0,<11)", never as a pin.
+ */
+export function componentVersionText(comp: { version?: string; properties?: { name?: string; value?: string }[] }): string {
+  const base = formatComponentVersion(comp.version);
+  const prop = (name: string) => (comp.properties || []).find((p) => p.name === name)?.value || "";
+  if (prop("dss:version_source") !== "range_lower_bound" || base === "—") return base;
+  const constraint = prop("dss:version_constraint").trim();
+  return constraint ? `≥ ${base} (range ${constraint})` : `≥ ${base} (range)`;
+}
+
 const GITHUB_MIT_ORGS = new Set(["actions", "github", "pypa"]);
 
 function licenseText(comp: CdxComponent): string {
@@ -333,7 +345,7 @@ export function inventoryRowsFromCycloneDx(bom: unknown): SbomInventoryRow[] {
     return {
       name: c.name!.trim(),
       supplier: dash(supplierText(c)),
-      version: formatComponentVersion(c.version),
+      version: componentVersionText(c),
       uniqueId: dash(uniqueIdText(c)),
       relationship: relationshipText(c, doc, names, parents),
       subDependencies: joinList(direct, knownLeaf ? "None" : "—"),

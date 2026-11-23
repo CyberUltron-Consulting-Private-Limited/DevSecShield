@@ -81,8 +81,15 @@ def _ids(rows):
     return {(r["vuln_id"], r["dependency"]) for r in rows}
 
 
-def test_llm_failure_keeps_every_grype_finding(monkeypatch):
+def _llm_on(monkeypatch):
+    """The LLM pass is off by default and needs AWS credentials (review 6028132826 m4)."""
     monkeypatch.setenv("SBOM_LLM_ENRICHMENT", "1")
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "ci-only-dummy")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "ci-only-dummy")
+
+
+def test_llm_failure_keeps_every_grype_finding(monkeypatch):
+    _llm_on(monkeypatch)
     agent = _agent()
     _run(agent, llm_side_effect=RuntimeError(
         "An error occurred (UnrecognizedClientException) when calling the InvokeModel operation: "
@@ -125,7 +132,7 @@ def test_row_fields_come_from_grype():
 
 
 def test_llm_enrichment_adds_mappings_but_never_findings(monkeypatch):
-    monkeypatch.setenv("SBOM_LLM_ENRICHMENT", "1")
+    _llm_on(monkeypatch)
     summary = MagicMock()
     hallucinated = MagicMock()
     summary.vulnerabilities = [hallucinated]
@@ -149,7 +156,7 @@ def test_llm_enrichment_adds_mappings_but_never_findings(monkeypatch):
 
 
 def test_uploaded_sbom_file_is_matched_by_grype_not_the_llm(monkeypatch):
-    monkeypatch.setenv("SBOM_LLM_ENRICHMENT", "1")
+    _llm_on(monkeypatch)
     from helpers.tools.sca_sbom_agent.main import SCASBOMAgent
 
     tmp = Path(tempfile.mkdtemp())

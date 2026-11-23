@@ -5,6 +5,7 @@ Human-readable enterprise report with tabular summary and detailed findings.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from datetime import datetime
@@ -15,7 +16,7 @@ from reportlab.lib.units import inch
 from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, TableStyle
 
 from backend.utilities.dashboard.risk_scale import average_risk_of
-from backend.utilities.dashboard.sbom_rows import is_inventory_row
+from backend.utilities.dashboard.sbom_rows import is_inventory_row, is_unverified_version
 from backend.utilities.pdf.report_context import ReportContext, details_note, join_parts
 from backend.utilities.pdf.report_branding import (
     report_generated,
@@ -142,7 +143,15 @@ def _package_line(item: Dict[str, Any]) -> tuple[str, str, str, str]:
     licence = _license_label(item.get("license"))
     if licence.lower() in _UNKNOWN_LICENSES:
         licence = ""
-    return name, version.strip(), ecosystem, licence
+    return name, version_label(version.strip(), item.get("version_guessed_from")), ecosystem, licence
+
+
+def version_label(version: str, guessed_from: Any = None) -> str:
+    """A version guessed from a manifest range reads "≥ 10.0 (range >=10.0,<11)", never as a pin (review B2)."""
+    if not guessed_from or not version:
+        return version
+    constraint = str(guessed_from).strip()
+    return f"≥ {version} (range {constraint})" if constraint and constraint != "range" else f"≥ {version} (range)"
 
 
 # The height a package panel may fill: a panel is one flowable, so it must fit on a page whole (frame 672 pt, less
@@ -217,7 +226,8 @@ def _append_inventory_sections(story: List[Any], inventory: List[Dict[str, Any]]
         name, version, ecosystem, licence = _package_line(item)
         if not name or (name.startswith("/") and not item.get("purl")):  # a file path is not a package (G-D4-6)
             continue
-        licence = licence or (bom_licences or {}).get((name.lower(), version), "")
+        raw_version = str(item.get("dependency") or "").rpartition("==")[2].strip()
+        licence = licence or (bom_licences or {}).get((name.lower(), raw_version), "")
         cve_ids = {str(k or v) for k, v in mapping_entries(item.get("cves") or {}) if (k or v)}
         if cve_ids:
             with_cves.setdefault((name, version, ecosystem), set()).update(cve_ids)
@@ -259,16 +269,35 @@ _FRAMEWORK_LABELS = (
 _STATUS_LABEL = {"pass": "Pass", "partial": "Partial", "missing": "Missing"}
 
 
+# the export routes put the scan's subject name here (certin_attest.subject_name_for(scan.scan_metadata)), so the
+# PDF's SBOM is the very document ``/bom`` serves (review 6028132826 M6 / m1)
+SUBJECT_NAME_KEY = "sbom_subject_name"
+
+
 def _downloaded_bom(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """The scan's SBOM as ``/bom`` serves it (the same builder; the subject name comes from the stored document)."""
+    """The scan's SBOM as ``/bom`` serves it: the same builder with the same subject name."""
     if not isinstance(raw, dict) or not isinstance(raw.get("sbom_json"), dict):
         return None
     try:
         from backend.utilities.compliance.certin_attest import bom_dict_from_scan_data
 
-        return bom_dict_from_scan_data("sbom_sca", raw)
+        subject = raw.get(SUBJECT_NAME_KEY)
+        return bom_dict_from_scan_data("sbom_sca", raw, subject_name=subject if isinstance(subject, str) else None)
     except Exception:
         return None
+
+
+def bom_sha256(bom: Dict[str, Any]) -> str:
+    """SHA-256 of the canonical JSON (sorted keys, compact) of the SBOM: the digest a ``bom_signature.json`` names."""
+    return hashlib.sha256(json.dumps(bom, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+                          .encode("utf-8")).hexdigest()
+
+
+def _meta_prop(bom: Dict[str, Any], name: str) -> str:
+    for prop in (bom.get("metadata") or {}).get("properties") or []:
+        if isinstance(prop, dict) and prop.get("name") == name:
+            return str(prop.get("value") or "")
+    return ""
 
 
 def _framework_results(raw: Dict[str, Any], bom: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -306,7 +335,20 @@ def _append_sbom_elements_section(story: List[Any], raw: Dict[str, Any], styles:
         f"Counted in the CycloneDX {report['spec_version']} file this scan downloads "
         f"({report['components']} components, {report['vulnerabilities']} linked vulnerabilities). Present: "
         "components (or document fields) carrying the element. Hashes are listed when the package source "
-        "publishes one."), styles["muted"]))
+        "publishes one; a version guessed from a range gets none."), styles["muted"]))
+    facts = [f"SBOM file: serial {bom.get('serialNumber') or '—'}, SHA-256 (canonical JSON) {bom_sha256(bom)}"]
+    graph = _meta_prop(bom, "dss:dependency_graph")
+    if graph and graph != "declared":
+        facts.append(f"Dependency graph: {graph} — only edges the inventory tools declared are listed; the "
+                     "relationships of the other components are unknown (CycloneDX compositions: incomplete).")
+    db_built = _meta_prop(bom, "dss:grype_db_built")
+    if db_built:
+        facts.append(f"Vulnerability database: Grype database built {db_built}.")
+    note = _meta_prop(bom, "dss:coverage_note")
+    if note:
+        facts.append(f"Coverage: {note}.")
+    for fact in facts:
+        story.append(Paragraph(escape_html(fact), styles["muted"]))
     story.append(Spacer(1, 0.1 * inch))
     lines = [[r["element"], r["ntia"], r["cert_in"], f"{r['present']}/{r['total']}", _STATUS_LABEL[r["status"]]]
              for r in report["rows"]]
@@ -378,6 +420,7 @@ def _normalize_sbom_results(scan_results: Union[dict, list]) -> List[Dict[str, A
                     "purl": item.get("purl") or "",
                     "license": _license_label(item.get("license") or item.get("licenses")),
                     "inventory_only": bool(item.get("inventory_only")),
+                    "version_guessed_from": item.get("version_guessed_from") or None,
                     "_raw": item,
                     "_pos": position,  # index of the stored finding row (finding_rows.mongo_rows)
                 }
@@ -430,7 +473,10 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     # #46: the inventoried packages are the bill of materials, listed after the findings; only vulnerabilities count
     vulnerabilities = [v for v in rows if not is_inventory_row(v)]
     inventory = [v for v in rows if is_inventory_row(v)]
-    total = len(vulnerabilities)
+    # a match on a version guessed from a range is listed but not counted (review 6028132826 M2), as on the dashboard
+    counted = [v for v in vulnerabilities if not is_unverified_version(v)]
+    unverified = len(vulnerabilities) - len(counted)
+    total = len(counted)
     ctx = ctx or ReportContext()
     shown = ctx.select(vulnerabilities, lambda v: count_label(v.get("impact") or "Unknown"),
                        lambda _i, v: v.get("_pos"))
@@ -438,7 +484,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     unique_packages: set = set()
     fixable_count = 0
 
-    for v in vulnerabilities:
+    for v in counted:
         impact = count_label(v.get("impact") or "Unknown")
         by_severity[impact] = by_severity.get(impact, 0) + 1
         dep = v.get("dependency") or ""
@@ -451,7 +497,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
             fixable_count += 1
 
     # the app's one 0-10 scale (#35): the same number as the dashboards' Avg risk score card
-    avg_risk = average_risk_of(v.get("impact") for v in vulnerabilities)
+    avg_risk = average_risk_of(v.get("impact") for v in counted)
     styles = get_report_styles()
     scan_time = format_scan_duration(duration)
 
@@ -468,6 +514,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     overview = [
         ("Scan type", "SBOM / Software Composition Analysis (SCA)"),
         ("Total vulnerabilities", str(total)),
+        ("Unverified version (not counted)", str(unverified)),
         ("Packages affected", str(len(unique_packages))),
         ("Likely fixable via upgrade/update", str(fixable_count)),
         ("Average risk score (0–10)", f"{avg_risk:.1f}" if avg_risk is not None else "N/A"),
@@ -540,6 +587,9 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
             detail_rows = [("Severity", impact), ("Where it was found", loc)]
             if dependency:
                 detail_rows.append(("Affected package", dependency))
+            if v.get("version_guessed_from"):
+                detail_rows.append(("Version", "unverified: guessed from the manifest range "
+                                    f"{v.get('version_guessed_from')} (its lower bound); not counted in the totals"))
             if purl:
                 detail_rows.append(("PURL", purl))
             if license_val:

@@ -15,6 +15,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from backend.utilities.compliance.sbom_identity import parse_pkg
 from backend.utilities.compliance import sbom_advisory, sbom_registry
+from backend.utilities.compliance.spdx_license import licence_choice, sanitize_licenses
 
 _CVE_RE = re.compile(r"CVE-\d{4}-\d+", re.I)
 _LICENSE_REF = re.compile(r"^LicenseRef-", re.I)
@@ -22,7 +23,6 @@ _HIGH_IMPACT = frozenset({"critical", "high"})
 _HIGH_LICENSE = frozenset(
     {"strong_copyleft", "network_copyleft", "source_available"}
 )
-_SPDX_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.+-]*$")
 _HASH_ALG = {
     "sha256": "SHA-256",
     "sha-256": "SHA-256",
@@ -51,8 +51,15 @@ _GIT_SHA = re.compile(r"^[0-9a-f]{40}$", re.I)
 CDX_SCHEMA_16 = "http://cyclonedx.org/schema/bom-1.6.schema.json"
 _IMPACT_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1}
 _CVSS_METHOD = {"2.0": "CVSSv2", "3.0": "CVSSv3", "3.1": "CVSSv31", "4.0": "CVSSv4"}
-# component properties a downloaded SBOM keeps (FIX-C1: a version guessed from a manifest range says so)
-_KEEP_PROPS = frozenset({"declared:depends", "dss:version_source", "dss:version_constraint"})
+# component properties a downloaded SBOM keeps (FIX-C1: a version guessed from a manifest range says so; the
+# action tag a SHA-pinned GitHub Action was named by)
+_KEEP_PROPS = frozenset({"declared:depends", "dss:version_source", "dss:version_constraint", "dss:version_tag"})
+# metadata properties the worker writes and the download keeps (review 6028132826: graph state M1, registry M4,
+# Grype database build date and coverage note m3, SPDX conversion M5)
+_KEEP_META_PROPS = frozenset({"dss:inventory_tools", "dss:dependency_graph", "dss:registry", "dss:grype_db_built",
+                              "dss:grype_db_schema", "dss:coverage_note", "dss:converted_from",
+                              "dss:spdx_relationships_unmapped"})
+_GUESSED = "range_lower_bound"
 _SYFT_LOC = re.compile(r"^syft:location:\d+:path$")
 
 
@@ -273,7 +280,7 @@ def _usable_license_list(existing: Any) -> list[dict[str, Any]] | None:
         if _LICENSE_REF.match(token):
             continue
         out.append(copy.deepcopy(item))
-    return out or None
+    return sanitize_licenses(out) if out else None
 
 
 def _license_objects(comp: dict[str, Any], row: dict[str, Any] | None) -> list[dict[str, Any]] | None:
@@ -282,12 +289,10 @@ def _license_objects(comp: dict[str, Any], row: dict[str, Any] | None) -> list[d
         return existing
     lic = str((row or {}).get("license") or "").strip()
     if lic and not _LICENSE_REF.match(lic) and lic.lower() not in {"not_declared", "noassertion", "none", "unknown"}:
-        if _SPDX_ID.match(lic):
-            return [{"license": {"id": lic}}]
-        return [{"license": {"name": lic[:200]}}]
+        return licence_choice(lic)  # review 6028132826 B1: license.id only for a listed SPDX id
     mapped = _curated_spdx(str(comp.get("name") or ""))
     if mapped:
-        return [{"license": {"id": mapped}}]
+        return licence_choice(mapped)
     org = _github_org(str(comp.get("purl") or ""))
     if org in {"actions", "github", "pypa"}:
         return [{"license": {"id": "MIT"}}]
@@ -638,9 +643,11 @@ def _apply_registry(comp: dict[str, Any]) -> None:
     if meta.get("author") and not comp.get("author"):
         comp["author"] = str(meta["author"])
     if meta.get("license") and not _usable_license_list(comp.get("licenses")):
-        comp["licenses"] = [{"license": {"id": str(meta["license"])}}]
+        choice = licence_choice(str(meta["license"]))  # "LGPL" is not an SPDX id: license.name (B1)
+        if choice:
+            comp["licenses"] = choice
     hashed = meta.get("hash")
-    if hashed and not comp.get("hashes"):
+    if hashed and not comp.get("hashes") and not _is_guessed(comp):  # never a hash for a guessed version (B2)
         alg, content = hashed
         if content:
             comp["hashes"] = [{"alg": str(alg), "content": str(content)}]
@@ -649,6 +656,42 @@ def _apply_registry(comp: dict[str, Any]) -> None:
         props = list(comp.get("properties") or [])
         props.append({"name": "declared:depends", "value": ", ".join(depends)})
         comp["properties"] = props
+
+
+def _is_guessed(comp: dict[str, Any]) -> bool:
+    return any(isinstance(p, dict) and p.get("name") == "dss:version_source" and p.get("value") == _GUESSED
+               for p in comp.get("properties") or [])
+
+
+def _meta_prop(meta: dict[str, Any], name: str) -> str | None:
+    for prop in meta.get("properties") or [] if isinstance(meta, dict) else []:
+        if isinstance(prop, dict) and prop.get("name") == name:
+            return str(prop.get("value") or "")
+    return None
+
+
+def _graph_completeness(root_ref: str, refs: list[str], deps: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
+    """``(declared | partial | none, compositions)``: the subject's dependencies are ``incomplete`` when a component
+    is not reachable through the edges the document holds, and a component with no entry has ``unknown`` ones. The
+    worker's ``merge_inventory.graph_completeness`` writes the same for a new scan (review 6028132826 M1)."""
+    graph = {str(d.get("ref")): [str(k) for k in d.get("dependsOn") or []] for d in deps if d.get("ref")}
+    seen: set[str] = set()
+    todo = [root_ref]
+    while todo:
+        for kid in graph.get(todo.pop(), []):
+            if kid not in seen:
+                seen.add(kid)
+                todo.append(kid)
+    if not refs:
+        return "none", []
+    reached = sum(1 for r in refs if r in seen)
+    if reached == len(refs):
+        return "declared", []
+    comps: list[dict[str, Any]] = [{"aggregate": "incomplete", "dependencies": [root_ref]}]
+    unknown = [r for r in refs if r not in graph]
+    if unknown:
+        comps.append({"aggregate": "unknown", "dependencies": unknown})
+    return ("partial" if reached else "none"), comps
 
 
 def _graph_from_declared(comps: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -748,57 +791,6 @@ def _remap_dependencies(deps: Any, ref_map: dict[str, str]) -> Any:
         if kids or "dependsOn" in item:
             row["dependsOn"] = list(dict.fromkeys(kids))
         out.append(row)
-    return out
-
-
-def _complete_graph(deps: list[dict[str, Any]], root_ref: str, comp_refs: list[str]) -> list[dict[str, Any]]:
-    """One entry per ref; the subject depends on every component nothing else reaches (NTIA dependency
-    relationship: each component is reachable from the subject)."""
-    merged: dict[str, list[str]] = {}
-    declared: set[str] = set()
-    for d in deps:
-        ref = str(d.get("ref") or "")
-        if not ref:
-            continue
-        bucket = merged.setdefault(ref, [])
-        if "dependsOn" in d:
-            declared.add(ref)
-        for kid in d.get("dependsOn") or []:
-            if kid != ref and kid not in bucket:
-                bucket.append(kid)
-    seen: set[str] = set()
-    todo = [root_ref]
-    while todo:
-        for kid in merged.get(todo.pop(), []):
-            if kid not in seen:
-                seen.add(kid)
-                todo.append(kid)
-    missing = [r for r in comp_refs if r not in seen and r != root_ref]
-    children = {k for kids in merged.values() for k in kids}
-    top = [r for r in missing if r not in children] or missing
-    root_kids = merged.setdefault(root_ref, [])
-    for ref in top:
-        if ref not in root_kids:
-            root_kids.append(ref)
-    # a ref added for the root may still leave a cycle-only island unreachable: add what is left
-    seen = set()
-    todo = [root_ref]
-    while todo:
-        for kid in merged.get(todo.pop(), []):
-            if kid not in seen:
-                seen.add(kid)
-                todo.append(kid)
-    for ref in comp_refs:
-        if ref not in seen and ref != root_ref and ref not in root_kids:
-            root_kids.append(ref)
-    out = [{"ref": root_ref, "dependsOn": root_kids}]
-    for ref, kids in merged.items():
-        if ref == root_ref:
-            continue
-        if kids:
-            out.append({"ref": ref, "dependsOn": kids})
-        elif ref in declared:
-            out.append({"ref": ref, "dependsOn": []})
     return out
 
 
@@ -921,7 +913,12 @@ def sanitize_industry_sbom(
             cleaned_subject["type"] = "application"
         cleaned_subject.setdefault("bom-ref", f"urn:dss:subject:{cleaned_subject.get('name') or 'application'}")
         meta["component"] = cleaned_subject
-    meta["properties"] = [{"name": "dss:compliance", "value": verdict}]
+    meta["properties"] = [{"name": "dss:compliance", "value": verdict}] + [
+        {"name": str(p["name"]), "value": str(p.get("value") or "")} for p in meta_in.get("properties") or []
+        if isinstance(p, dict) and str(p.get("name") or "") in _KEEP_META_PROPS]
+    # a scan the worker resolved (licences, authors, hashes once, review 6028132826 M4) is served as stored: no
+    # registry lookup at download time, so /bom, the findings, the dashboard and the stored compliance agree
+    worker_resolved = _meta_prop(meta_in, "dss:registry") is not None
 
     components: list[dict[str, Any]] = []
     renamed: list[tuple[str, dict[str, Any]]] = []
@@ -934,7 +931,7 @@ def sanitize_industry_sbom(
         renamed.append((str(raw.get("bom-ref") or "").split("?", 1)[0], cleaned))
 
     components = _dedupe_components(components)
-    need = [c for c in components if _needs_registry(c)]
+    need = [] if worker_resolved else [c for c in components if _needs_registry(c)]
     if need:
         workers = min(8, len(need))
         if workers == 1:
@@ -967,16 +964,28 @@ def sanitize_industry_sbom(
         "components": components,
     }
     deps = _clean_dependencies(_remap_dependencies(src.get("dependencies"), ref_map), valid_refs) or []
-    seen_refs = {d.get("ref") for d in deps}
-    for extra in _graph_from_declared(components):
-        if extra.get("ref") not in seen_refs:
-            deps.append(extra)
-            seen_refs.add(extra.get("ref"))
-    if cleaned_subject and cleaned_subject.get("bom-ref"):
-        deps = _complete_graph(deps, str(cleaned_subject["bom-ref"]),
-                               [str(c.get("bom-ref")) for c in components if c.get("bom-ref")])
+    if not worker_resolved:
+        # an older scan: edges from the packages' registry metadata, matched by name, marked as such (M1)
+        seen_refs = {d.get("ref") for d in deps}
+        inferred = 0
+        for extra in _graph_from_declared(components):
+            if extra.get("ref") not in seen_refs:
+                deps.append(extra)
+                seen_refs.add(extra.get("ref"))
+                inferred += 1
+        if inferred:
+            meta["properties"].append({"name": "dss:dependency_edges_inferred",
+                                       "value": f"{inferred} entries from package registry metadata (by name)"})
+    # review 6028132826 M1: no edge is made up to reach a component; an incomplete graph says so (compositions)
     if deps:
         out["dependencies"] = deps
+    if cleaned_subject and cleaned_subject.get("bom-ref"):
+        state, compositions = _graph_completeness(
+            str(cleaned_subject["bom-ref"]), [str(c.get("bom-ref")) for c in components if c.get("bom-ref")], deps)
+        if compositions:
+            out["compositions"] = compositions
+        if _meta_prop(meta, "dss:dependency_graph") is None:
+            meta["properties"].append({"name": "dss:dependency_graph", "value": state})
     grype_rows = [r for r in findings or [] if isinstance(r, dict) and r.get("detected_by") == "grype"]
     if grype_rows or _matched_by_grype(meta_in):
         # the scan's own Grype result is the vulnerability list (also when empty): no lookup at download time, so

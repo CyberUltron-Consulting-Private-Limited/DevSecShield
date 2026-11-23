@@ -188,6 +188,11 @@ COPY --from=builder /build/aibom /build/aibom
 # The CBOM SSRF guard's address rule (#53): MCP and LLM scans check every address they connect to with the file the API
 # runs. Standard library only; helpers/net/guard.py loads it from this path (the same path as in a checkout).
 COPY backend/utilities/cbom_sources/address_rule.py /build/backend/utilities/cbom_sources/address_rule.py
+# The SBOM scan resolves licences, authors and hashes once with the API's own files (sca_sbom_agent/registry_enrich.py
+# loads them from these paths; standard library only): the package-registry lookup, the SPDX licence-id rules (they read
+# /build/aibom/src/aibom/schemas/spdx.schema.json) and the licence risk categories the dashboard counts.
+COPY backend/utilities/compliance/sbom_registry.py backend/utilities/compliance/spdx_license.py /build/backend/utilities/compliance/
+COPY backend/utilities/dashboard/sbom_license.py /build/backend/utilities/dashboard/sbom_license.py
 
 # Build identity: the SBOM's metadata.tools names DevSecShield with this version (sca_sbom_agent/merge_inventory.py).
 # scripts/deploy/build_images.sh passes both, as for the backend. Declared last so a new commit reuses every layer.

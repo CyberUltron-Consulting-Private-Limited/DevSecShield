@@ -32,10 +32,14 @@ __all__ = ["SBOM_VEX_RULES", "build_vex", "is_current"]
 # Stored SBOM / AI BOM VEX documents written by older rules (no or another value) are
 # rebuilt (routers/certin.py).
 SBOM_VEX_RULES = "sbom-2"
+# Any OSV-schema advisory id Grype or an OSV source reports (review 6028132826 m3):
+# CVE, GHSA, PYSEC, GO, RUSTSEC, OSV, GMS, CGA, DLA, DSA, ALSA, RHSA, MAL, USN, SUSE-SU,
+# BIT ...: a letter-and-digit prefix, then dash-separated parts, at least one digit;
+# ':' may appear inside (ALSA-2023:1234, SUSE-SU-2023:0001-1).
 _ADVISORY = re.compile(
-    r"^(CVE-\d{4}-\d{4,}|GHSA(?:-[0-9a-z]{4}){3}|PYSEC-\d{4}-\d+|GO-\d{4}-\d+|RUSTSEC-\d{4}-\d+|OSV-\d{4}-\d+)$",
-    re.I,
+    r"^(?=.*\d)[A-Za-z][A-Za-z0-9]{1,15}(?:-[A-Za-z0-9][A-Za-z0-9.:_]*){1,6}$"
 )
+_UPPER_PREFIXES = frozenset({"CVE", "PYSEC", "GO", "RUSTSEC", "OSV"})
 _UUID = re.compile(
     r"^urn:uuid:([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$",
     re.I,
@@ -169,10 +173,12 @@ def _product_version() -> str:
 
 def normalise_advisory_id(raw: Any) -> str | None:
     text = str(raw or "").strip()
-    if not _ADVISORY.match(text):
+    if len(text) > 80 or not _ADVISORY.match(text):
         return None
     head, _, body = text.partition("-")
-    return f"GHSA-{body.lower()}" if head.upper() == "GHSA" else text.upper()
+    if head.upper() == "GHSA":
+        return f"GHSA-{body.lower()}"
+    return text.upper() if head.upper() in _UPPER_PREFIXES else text
 
 
 def _bom_link(bom: dict[str, Any] | None, ref: str) -> str:

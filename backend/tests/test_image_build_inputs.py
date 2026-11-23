@@ -69,3 +69,27 @@ def test_backend_image_secret_check_covers_every_copied_tree():
     line = re.search(r"^\s+assert_no_secrets backend (.+)$", BUILD, re.MULTILINE)
     assert line, "build_images.sh does not check the backend image"
     assert set(line.group(1).split()) == {"/backend", "/prod_database_migrations", "/opt/aibom"}
+
+
+def test_worker_image_copies_the_files_the_sbom_scan_loads_by_path():
+    """Review 6028132826 M4: the SBOM scan resolves licences once with the API's own files, loaded by path
+    (RabbitMQ/worker/helpers/tools/sca_sbom_agent/registry_enrich.py); the image must hold them at the same paths."""
+    loader = (REPO / "RabbitMQ/worker/helpers/tools/sca_sbom_agent/registry_enrich.py").read_text()
+    for rel in ("backend/utilities/compliance/sbom_registry.py", "backend/utilities/compliance/spdx_license.py",
+                "backend/utilities/dashboard/sbom_license.py"):
+        assert f'"{rel}"' in loader
+        name = rel.rsplit("/", 1)[1]
+        assert re.search(rf"^COPY .*\b{re.escape(rel)}\b.* /build/{re.escape(rel.rsplit('/', 1)[0])}/(?:{re.escape(name)})?$",
+                         WORKER, re.M), rel
+
+
+def test_ci_installs_the_syft_and_grype_the_worker_image_ships():
+    """Review 6028132826 M3: CI's Syft / Grype are the Dockerfile's versions and checksums, never a second pin."""
+    script = (REPO / ".github/ci/install-sbom-tools.sh").read_text()
+    ci = (REPO / ".github/workflows/ci.yml").read_text()
+    assert 'RabbitMQ/worker/Dockerfile' in script and 'sha256sum -c' in script
+    assert re.search(r"[0-9a-f]{64}", script) is None and re.search(r"\d+\.\d+\.\d+_linux", script) is None
+    assert 'setup-command: bash "$GITHUB_WORKSPACE/.github/ci/install-sbom-tools.sh"' in ci
+    for tool in ("GRYPE", "SYFT"):
+        assert re.search(rf"^ARG {tool}_VERSION=\d+\.\d+\.\d+$", WORKER, re.M)
+        assert re.search(rf"^ARG {tool}_SHA256_AMD64=[0-9a-f]{{64}}$", WORKER, re.M)

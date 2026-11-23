@@ -325,6 +325,7 @@ export const INFO_TIP_LABELS = {
   "sbom.res.kpi.high_risk_licenses": "High-risk licenses",
   "sbom.res.kpi.avg_risk": "Avg risk score",
   "sbom.res.kpi.reachable": "Reachable issues",
+  "sbom.res.kpi.unverified": "Unverified version",
   "sbom.res.remediation": "Remediation actions",
   "sbom.res.severity": "Severity distribution",
   "sbom.res.reachability": "Reachability distribution",

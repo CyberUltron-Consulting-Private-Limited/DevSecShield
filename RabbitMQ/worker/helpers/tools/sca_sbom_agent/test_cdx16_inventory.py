@@ -5,7 +5,7 @@
 * cdxgen runs from the pinned binary in the image, never ``npx --yes`` (a download at scan time), never installs
   the scanned project's dependencies, and is not limited to Python.
 * The assembled SBOM is CycloneDX 1.6, valid against the official 1.6.2 JSON schema, with the dependency graph
-  (every component reachable from the subject), DevSecShield and its version in ``metadata.tools``, the real scan
+  (declared edges only, compositions where incomplete), DevSecShield and its version in ``metadata.tools``, the real scan
   time, and the repository (never its clone credentials) as the subject.
 """
 from __future__ import annotations
@@ -230,17 +230,22 @@ def test_assembled_sbom_metadata_names_devsecshield_and_the_repository(monkeypat
     assert meta["lifecycles"] == [{"phase": "pre-build"}]
 
 
-def test_assembled_sbom_dependency_graph_reaches_every_component(monkeypatch, tmp_path):
+def test_assembled_sbom_dependency_graph_holds_only_declared_edges(monkeypatch, tmp_path):
+    """Review 6028132826 M1: the declared edges only; what they do not reach is marked, never linked to the subject."""
     doc = _assemble(monkeypatch, tmp_path)
     refs = {c["bom-ref"] for c in doc["components"]}
     assert refs == {"pkg:pypi/fastapi@0.109.0", "pkg:pypi/starlette@0.35.1", "pkg:github/actions/checkout@v4"}
-    assert _reachable(doc) == refs
+    assert _reachable(doc) == {"pkg:pypi/fastapi@0.109.0", "pkg:pypi/starlette@0.35.1"}
     deps = {d["ref"]: d.get("dependsOn") for d in doc["dependencies"]}
     root = doc["metadata"]["component"]["bom-ref"]
     # cdxgen's edges survive the join with Syft's (differently named) bom-refs; starlette is transitive
     assert deps["pkg:pypi/fastapi@0.109.0"] == ["pkg:pypi/starlette@0.35.1"]
-    assert set(deps[root]) == {"pkg:pypi/fastapi@0.109.0", "pkg:github/actions/checkout@v4"}
+    assert deps[root] == ["pkg:pypi/fastapi@0.109.0"]  # the action is not made a dependency of the subject
     assert "pkg:github/actions/checkout@v4" not in deps  # its own dependencies are unknown: no entry
+    assert doc["compositions"] == [{"aggregate": "incomplete", "dependencies": [root]},
+                                   {"aggregate": "unknown", "dependencies": ["pkg:github/actions/checkout@v4"]}]
+    props = {p["name"]: p["value"] for p in doc["metadata"]["properties"]}
+    assert props["dss:dependency_graph"] == "partial"
 
 
 def test_guessed_versions_are_marked(monkeypatch, tmp_path):

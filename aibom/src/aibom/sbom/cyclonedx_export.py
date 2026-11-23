@@ -34,8 +34,27 @@ def _overall_verdict(compliance: dict[str, Any] | None) -> str:
     return "unknown"
 
 
+# dss: properties the stored and downloaded SBOM keep (review 6028132826 B2: a version
+# guessed from a range says so in the delivered file; M1: whether the dependency graph
+# is complete; m3: the Grype database build date)
+KEEP_DSS_PROPS = frozenset({
+    "dss:compliance",
+    "dss:version_source",
+    "dss:version_constraint",
+    "dss:version_tag",
+    "dss:inventory_tools",
+    "dss:dependency_graph",
+    "dss:registry",
+    "dss:grype_db_built",
+    "dss:grype_db_schema",
+    "dss:coverage_note",
+    "dss:converted_from",
+    "dss:spdx_relationships_unmapped",
+})
+
+
 def _keep_prop(name: str) -> bool:
-    if name == "dss:compliance":
+    if name in KEEP_DSS_PROPS:
         return True
     if name.startswith("dss:") or name.startswith("syft:"):
         return False
@@ -138,4 +157,4 @@ def stamp_component_compliance(
     return bom
 
 
-__all__ = ["overlay_sbom_document", "stamp_component_compliance"]
+__all__ = ["KEEP_DSS_PROPS", "overlay_sbom_document", "stamp_component_compliance"]

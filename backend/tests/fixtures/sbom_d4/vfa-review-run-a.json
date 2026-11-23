@@ -1,0 +1,3406 @@
+{
+"registry": {
+"pkg:github/actions/checkout@v2": {
+"author": "actions",
+"depends": [],
+"license": "MIT"
+},
+"pkg:github/actions/setup-python@v1": {
+"author": "actions",
+"depends": [],
+"license": "MIT"
+},
+"pkg:github/actions/upload-artifact@v1": {
+"author": "actions",
+"depends": [],
+"license": "MIT"
+},
+"pkg:github/jakejarvis/wait-action@master": {
+"author": "jakejarvis",
+"depends": []
+},
+"pkg:pypi/backports-abc@0.5": {
+"author": "Stefan Behnel et al.",
+"depends": [],
+"hash": [
+"SHA-256",
+"52089f97fe7a9aa0d3277b220c1d730a85aefd64e1b2664696fe35317c5470a7"
+],
+"license": "PSF-2.0"
+},
+"pkg:pypi/certifi@2017.4.17": {
+"author": "Kenneth Reitz",
+"depends": [],
+"hash": [
+"SHA-256",
+"f4318671072f030a33c7ca6acaef720ddd50ff124d1388e50c1bda4cbd6d7010"
+],
+"license": "MPL-2.0"
+},
+"pkg:pypi/chardet@3.0.4": {
+"author": "Daniel Blanchard",
+"depends": [],
+"hash": [
+"SHA-256",
+"fc323ffcaeaed0e0a02bf4d117757b98aed530d9ed4531e3e15460124c106691"
+],
+"license": "LGPL"
+},
+"pkg:pypi/click@6.7": {
+"author": "Armin Ronacher",
+"depends": [],
+"hash": [
+"SHA-256",
+"29f99fc6125fbc931b758dc053b3114e55c77a6e4c6c3a2674a2dc986016381d"
+],
+"license": "BSD-3-Clause"
+},
+"pkg:pypi/faker@0.7.17": {
+"author": "joke2k",
+"depends": [
+"six",
+"python-dateutil",
+"ipaddress",
+"importlib"
+],
+"hash": [
+"SHA-256",
+"1236c6dd61d1914d4972a1a1ffd3dba989f37d81b4ecb27c66fd2d241cfbf220"
+],
+"license": "MIT"
+},
+"pkg:pypi/flask-sqlalchemy@2.2": {
+"author": "Phil Howell",
+"depends": [
+"Flask",
+"SQLAlchemy"
+],
+"hash": [
+"SHA-256",
+"fa3bd6343de231b2b3376a276df6d331c63c766449b660fc04d375a1c21312ac"
+],
+"license": "BSD-3-Clause"
+},
+"pkg:pypi/flask@0.12.2": {
+"author": "Armin Ronacher",
+"depends": [],
+"hash": [
+"SHA-256",
+"0749df235e3ff61ac108f69ac178c9770caeaccad2509cb762ce1f65570a8856"
+],
+"license": "BSD-3-Clause"
+},
+"pkg:pypi/gevent@1.2.2": {
+"author": "Jason Madden",
+"depends": [
+"greenlet"
+],
+"hash": [
+"SHA-256",
+"9b492bb1a043540abb6e54fdb5537531e24962ca49c09f3b47dc4f9c37f6297c"
+],
+"license": "MIT"
+},
+"pkg:pypi/greenlet@0.4.12": {
+"author": "Alexey Borzenkov",
+"depends": [],
+"hash": [
+"SHA-256",
+"96888e47898a471073b394ea641b7d675c1d054c580dd4a04a382bd34e67d89e"
+],
+"license": "MIT"
+},
+"pkg:pypi/grequests@0.3.0": {
+"author": "Kenneth Reitz",
+"depends": [],
+"hash": [
+"SHA-256",
+"0f41c4eee83bab39f5543af49665c08681637a0562a5704a3f7b2e4a996531c9"
+],
+"license": "BSD-3-Clause"
+},
+"pkg:pypi/idna@2.5": {
+"author": "Kim Davies",
+"depends": [],
+"hash": [
+"SHA-256",
+"cc19709fd6d0cbfed39ea875d29ba6d4e22c0cebc510a76d6302a28385e8bb70"
+],
+"license": "BSD-3-Clause"
+},
+"pkg:pypi/ipaddress@1.0.18": {
+"author": "Philipp Hagemeister",
+"depends": [],
+"hash": [
+"SHA-256",
+"d34cf15d95ce9a734560f7400a8bd2ac2606f378e2a1d0eadbf1c98707e7c74a"
+],
+"license": "PSF-2.0"
+},
+"pkg:pypi/itsdangerous@0.24": {
+"author": "Armin Ronacher",
+"depends": [],
+"hash": [
+"SHA-256",
+"cbb3fcf8d3e33df861709ecaf89d9e6629cff0a217bc2848f1b41cd30d360519"
+],
+"license": "BSD-3-Clause"
+},
+"pkg:pypi/jinja2@2.9.6": {
+"author": "Armin Ronacher",
+"depends": [],
+"hash": [
+"SHA-256",
+"2231bace0dfd8d2bf1e5d7e41239c06c9e0ded46e70cc1094a0aa64b0afeb054"
+],
+"license": "BSD-3-Clause"
+},
+"pkg:pypi/lxml@4.2.1": {
+"author": "lxml dev team",
+"depends": [],
+"hash": [
+"SHA-256",
+"65a272821d5d8194358d6b46f3ca727fa56a6b63981606eac737c86d27309cdd"
+],
+"license": "BSD-3-Clause"
+},
+"pkg:pypi/markupsafe@1.0": {
+"author": "Armin Ronacher",
+"depends": [],
+"hash": [
+"SHA-256",
+"a6be69091dac236ea9c6bc7d012beab42010fa914c459791d627dad4910eb665"
+],
+"license": "BSD-3-Clause"
+},
+"pkg:pypi/mysql-python@1.2.5": {
+"author": "Andy Dustman",
+"depends": [],
+"hash": [
+"SHA-256",
+"ab22d1322099098730a57fd59d610f60738f95a1cb68dacca2d1c47cb0cbe8ee"
+],
+"license": "GPL"
+},
+"pkg:pypi/pyjwt@1.5.2": {
+"author": "Jose Padilla",
+"depends": [],
+"hash": [
+"SHA-256",
+"9e7d780c30cd03bb0d29510b03e09caa95c6d880b3897450eb0f2d1678d3e5b1"
+],
+"license": "MIT"
+},
+"pkg:pypi/python-dateutil@2.6.0": {
+"author": "Paul Ganssle, Yaron de Leeuw",
+"depends": [],
+"hash": [
+"SHA-256",
+"537bf2a8f8ce6f6862ad705cd68f9e405c0b5db014aa40fa29eab4335d4b1716"
+],
+"license": "BSD-3-Clause"
+},
+"pkg:pypi/python-docx@0.8.5": {
+"author": "Steve Canny",
+"depends": [],
+"hash": [
+"SHA-256",
+"190ee604bd8c4ac9b8f97d665ff162c847e1f7ca8f5a49291fdbcaf272e8abd7"
+],
+"license": "MIT"
+},
+"pkg:pypi/pyyaml@3.12": {
+"author": "Kirill Simonov",
+"depends": [],
+"hash": [
+"SHA-256",
+"3262c96a1ca437e7e4763e2843746588a965426550f3797a79fca9c6199c431f"
+],
+"license": "MIT"
+},
+"pkg:pypi/requests@2.18.1": {
+"author": "Kenneth Reitz",
+"depends": [
+"certifi",
+"chardet",
+"idna",
+"urllib3"
+],
+"hash": [
+"SHA-256",
+"6afd3371c1f4c1970497cdcace5c5ecbbe58267bf05ca1abd93d99d170803ab7"
+],
+"license": "Apache-2.0"
+},
+"pkg:pypi/singledispatch@3.4.0.3": {
+"author": "\u0141ukasz Langa",
+"depends": [],
+"hash": [
+"SHA-256",
+"833b46966687b3de7f438c761ac475213e53b306740f1abfaa86e1d1aae56aa8"
+],
+"license": "MIT"
+},
+"pkg:pypi/six@1.10.0": {
+"author": "Benjamin Peterson",
+"depends": [],
+"hash": [
+"SHA-256",
+"0ff78c403d9bccf5a425a6d31a12aa6b47f1c21ca4dc2573a7e2f32a97335eb1"
+],
+"license": "MIT"
+},
+"pkg:pypi/sqlalchemy@1.1.11": {
+"author": "Mike Bayer",
+"depends": [],
+"hash": [
+"SHA-256",
+"76f76965e9a968ba3aecd2a8bc0d991cea04fd9a182e6c95c81f1551487b0211"
+],
+"license": "MIT"
+},
+"pkg:pypi/tornado@4.5.1": {
+"author": "Facebook",
+"depends": [],
+"hash": [
+"SHA-256",
+"2b4618010625bcf01f187eec3148c6a3db76a2a900f7dde416330fc413274df1"
+],
+"license": "Apache-2.0"
+},
+"pkg:pypi/urllib3@1.21.1": {
+"author": "Andrey Petrov",
+"depends": [],
+"hash": [
+"SHA-256",
+"8ed6d5c1ff9d6ba84677310060d6a3a78ca3072ce0684cb3c645023009c114b1"
+],
+"license": "MIT"
+},
+"pkg:pypi/werkzeug@0.14.1": {
+"author": "Armin Ronacher",
+"depends": [],
+"hash": [
+"SHA-256",
+"d5da73735293558eb1651ee2fddc4d0dedcfa06538b8813a2e20011583c9e49b"
+],
+"license": "BSD-3-Clause"
+}
+},
+"scan_data": {
+"duration_of_scan": 3.173034906387329,
+"results": [
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2023-41419"
+],
+"cves": {
+"CVE-2023-41419": "Gevent allows remote attacker to escalate privileges",
+"GHSA-x7m3-jprg-wc5g": "Gevent allows remote attacker to escalate privileges"
+},
+"cvss_score": 9.8,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+"cvss_version": "3.1",
+"dependency": "gevent==1.2.2",
+"dependency_type": "direct",
+"description": "Gevent allows remote attacker to escalate privileges",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"23.9.0"
+],
+"grype_severity": "Critical",
+"impact": "Critical",
+"inventory_only": false,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/gevent@1.2.2",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade gevent from 1.2.2 to 23.9.0 or later.",
+"title": "GHSA-x7m3-jprg-wc5g in gevent 1.2.2",
+"vuln_aliases": [
+"CVE-2023-41419"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-x7m3-jprg-wc5g",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-x7m3-jprg-wc5g"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2020-14343"
+],
+"cves": {
+"CVE-2020-14343": "Improper Input Validation in PyYAML",
+"GHSA-8q59-q68h-6hv4": "Improper Input Validation in PyYAML"
+},
+"cvss_score": 9.8,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+"cvss_version": "3.1",
+"dependency": "pyyaml==3.12",
+"dependency_type": "direct",
+"description": "Improper Input Validation in PyYAML",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"5.4"
+],
+"grype_severity": "Critical",
+"impact": "Critical",
+"inventory_only": false,
+"license": "MIT",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/pyyaml@3.12",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade pyyaml from 3.12 to 5.4 or later.",
+"title": "GHSA-8q59-q68h-6hv4 in pyyaml 3.12",
+"vuln_aliases": [
+"CVE-2020-14343"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-8q59-q68h-6hv4",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-8q59-q68h-6hv4"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2017-18342"
+],
+"cves": {
+"CVE-2017-18342": "PyYAML insecurely deserializes YAML strings leading to arbitrary code execution",
+"GHSA-rprw-h62v-c2w7": "PyYAML insecurely deserializes YAML strings leading to arbitrary code execution"
+},
+"cvss_score": 9.8,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+"cvss_version": "3.1",
+"dependency": "pyyaml==3.12",
+"dependency_type": "direct",
+"description": "PyYAML insecurely deserializes YAML strings leading to arbitrary code execution",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"4.1"
+],
+"grype_severity": "Critical",
+"impact": "Critical",
+"inventory_only": false,
+"license": "MIT",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/pyyaml@3.12",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade pyyaml from 3.12 to 4.1 or later.",
+"title": "GHSA-rprw-h62v-c2w7 in pyyaml 3.12",
+"vuln_aliases": [
+"CVE-2017-18342"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-rprw-h62v-c2w7",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-rprw-h62v-c2w7"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2019-7548"
+],
+"cves": {
+"CVE-2019-7548": "SQLAlchemy is vulnerable to SQL Injection via group_by parameter",
+"GHSA-38fc-9xqv-7f7q": "SQLAlchemy is vulnerable to SQL Injection via group_by parameter"
+},
+"cvss_score": 7.8,
+"cvss_vector": "CVSS:3.0/AV:L/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:H",
+"cvss_version": "3.0",
+"dependency": "sqlalchemy==1.1.11",
+"dependency_type": "direct",
+"description": "SQLAlchemy is vulnerable to SQL Injection via group_by parameter",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"1.2.19"
+],
+"grype_severity": "Critical",
+"impact": "Critical",
+"inventory_only": false,
+"license": "MIT",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/sqlalchemy@1.1.11",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade sqlalchemy from 1.1.11 to 1.2.19 or later.",
+"title": "GHSA-38fc-9xqv-7f7q in sqlalchemy 1.1.11",
+"vuln_aliases": [
+"CVE-2019-7548"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-38fc-9xqv-7f7q",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-38fc-9xqv-7f7q"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2019-7164"
+],
+"cves": {
+"CVE-2019-7164": "SQLAlchemy vulnerable to SQL Injection via order_by parameter",
+"GHSA-887w-45rq-vxgf": "SQLAlchemy vulnerable to SQL Injection via order_by parameter"
+},
+"cvss_score": 9.8,
+"cvss_vector": "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+"cvss_version": "3.0",
+"dependency": "sqlalchemy==1.1.11",
+"dependency_type": "direct",
+"description": "SQLAlchemy vulnerable to SQL Injection via order_by parameter",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"1.2.18"
+],
+"grype_severity": "Critical",
+"impact": "Critical",
+"inventory_only": false,
+"license": "MIT",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/sqlalchemy@1.1.11",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade sqlalchemy from 1.1.11 to 1.2.18 or later.",
+"title": "GHSA-887w-45rq-vxgf in sqlalchemy 1.1.11",
+"vuln_aliases": [
+"CVE-2019-7164"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-887w-45rq-vxgf",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-887w-45rq-vxgf"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2018-20060"
+],
+"cves": {
+"CVE-2018-20060": "Exposure of Sensitive Information to an Unauthorized Actor in urllib3",
+"GHSA-www2-v7xj-xrc6": "Exposure of Sensitive Information to an Unauthorized Actor in urllib3"
+},
+"cvss_score": 9.8,
+"cvss_vector": "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+"cvss_version": "3.0",
+"dependency": "urllib3==1.21.1",
+"dependency_type": "direct",
+"description": "Exposure of Sensitive Information to an Unauthorized Actor in urllib3",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"1.23"
+],
+"grype_severity": "Critical",
+"impact": "Critical",
+"inventory_only": false,
+"license": "MIT",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/urllib3@1.21.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade urllib3 from 1.21.1 to 1.23 or later.",
+"title": "GHSA-www2-v7xj-xrc6 in urllib3 1.21.1",
+"vuln_aliases": [
+"CVE-2018-20060"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-www2-v7xj-xrc6",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-www2-v7xj-xrc6"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2023-37920"
+],
+"cves": {
+"CVE-2023-37920": "Removal of e-Tugra root certificate",
+"GHSA-xqr8-7jwr-rhp7": "Removal of e-Tugra root certificate"
+},
+"cvss_score": 7.5,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N",
+"cvss_version": "3.1",
+"dependency": "certifi==2017.4.17",
+"dependency_type": "direct",
+"description": "Removal of e-Tugra root certificate",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"2023.7.22"
+],
+"grype_severity": "High",
+"impact": "High",
+"inventory_only": false,
+"license": "MPL-2.0",
+"license_type": "weak_copyleft",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/certifi@2017.4.17",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade certifi from 2017.4.17 to 2023.7.22 or later.",
+"title": "GHSA-xqr8-7jwr-rhp7 in certifi 2017.4.17",
+"vuln_aliases": [
+"CVE-2023-37920"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-xqr8-7jwr-rhp7",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-xqr8-7jwr-rhp7"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2018-1000656"
+],
+"cves": {
+"CVE-2018-1000656": "Flask is vulnerable to Denial of Service via incorrect encoding of JSON data",
+"GHSA-562c-5r94-xh97": "Flask is vulnerable to Denial of Service via incorrect encoding of JSON data"
+},
+"cvss_score": 7.5,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+"cvss_version": "3.1",
+"dependency": "flask==0.12.2",
+"dependency_type": "direct",
+"description": "Flask is vulnerable to Denial of Service via incorrect encoding of JSON data",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"0.12.3"
+],
+"grype_severity": "High",
+"impact": "High",
+"inventory_only": false,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/flask@0.12.2",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade flask from 0.12.2 to 0.12.3 or later.",
+"title": "GHSA-562c-5r94-xh97 in flask 0.12.2",
+"vuln_aliases": [
+"CVE-2018-1000656"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-562c-5r94-xh97",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-562c-5r94-xh97"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2019-1010083"
+],
+"cves": {
+"CVE-2019-1010083": "Pallets Project Flask is vulnerable to Denial of Service via Unexpected memory usage",
+"GHSA-5wv5-4vpf-pj6m": "Pallets Project Flask is vulnerable to Denial of Service via Unexpected memory usage"
+},
+"cvss_score": 7.5,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+"cvss_version": "3.1",
+"dependency": "flask==0.12.2",
+"dependency_type": "direct",
+"description": "Pallets Project Flask is vulnerable to Denial of Service via Unexpected memory usage",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"1.0"
+],
+"grype_severity": "High",
+"impact": "High",
+"inventory_only": false,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/flask@0.12.2",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade flask from 0.12.2 to 1.0 or later.",
+"title": "GHSA-5wv5-4vpf-pj6m in flask 0.12.2",
+"vuln_aliases": [
+"CVE-2019-1010083"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-5wv5-4vpf-pj6m",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-5wv5-4vpf-pj6m"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2023-30861"
+],
+"cves": {
+"CVE-2023-30861": "Flask vulnerable to possible disclosure of permanent session cookie due to missing Vary: Cookie header",
+"GHSA-m2qf-hxjv-5gpq": "Flask vulnerable to possible disclosure of permanent session cookie due to missing Vary: Cookie header"
+},
+"cvss_score": 7.5,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+"cvss_version": "3.1",
+"dependency": "flask==0.12.2",
+"dependency_type": "direct",
+"description": "Flask vulnerable to possible disclosure of permanent session cookie due to missing Vary: Cookie header",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"2.2.5"
+],
+"grype_severity": "High",
+"impact": "High",
+"inventory_only": false,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/flask@0.12.2",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade flask from 0.12.2 to 2.2.5 or later.",
+"title": "GHSA-m2qf-hxjv-5gpq in flask 0.12.2",
+"vuln_aliases": [
+"CVE-2023-30861"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-m2qf-hxjv-5gpq",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-m2qf-hxjv-5gpq"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2019-10906"
+],
+"cves": {
+"CVE-2019-10906": "Jinja2 sandbox escape via string formatting",
+"GHSA-462w-v97r-4m45": "Jinja2 sandbox escape via string formatting"
+},
+"cvss_score": 8.6,
+"cvss_vector": "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:N/A:N",
+"cvss_version": "3.0",
+"dependency": "jinja2==2.9.6",
+"dependency_type": "direct",
+"description": "Jinja2 sandbox escape via string formatting",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"2.10.1"
+],
+"grype_severity": "High",
+"impact": "High",
+"inventory_only": false,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/jinja2@2.9.6",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade jinja2 from 2.9.6 to 2.10.1 or later.",
+"title": "GHSA-462w-v97r-4m45 in jinja2 2.9.6",
+"vuln_aliases": [
+"CVE-2019-10906"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-462w-v97r-4m45",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-462w-v97r-4m45"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2022-29217"
+],
+"cves": {
+"CVE-2022-29217": "Key confusion through non-blocklisted public key formats",
+"GHSA-ffqj-6fqr-9h24": "Key confusion through non-blocklisted public key formats"
+},
+"cvss_score": 7.4,
+"cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N",
+"cvss_version": "3.1",
+"dependency": "pyjwt==1.5.2",
+"dependency_type": "direct",
+"description": "Key confusion through non-blocklisted public key formats",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"2.4.0"
+],
+"grype_severity": "High",
+"impact": "High",
+"inventory_only": false,
+"license": "MIT",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/pyjwt@1.5.2",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade pyjwt from 1.5.2 to 2.4.0 or later.",
+"title": "GHSA-ffqj-6fqr-9h24 in pyjwt 1.5.2",
+"vuln_aliases": [
+"CVE-2022-29217"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-ffqj-6fqr-9h24",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-ffqj-6fqr-9h24"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2016-5851"
+],
+"cves": {
+"CVE-2016-5851": "Improper Restriction of XML External Entity Reference in python-docx",
+"GHSA-34wj-p5jm-2p96": "Improper Restriction of XML External Entity Reference in python-docx"
+},
+"cvss_score": 8.8,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:H",
+"cvss_version": "3.1",
+"dependency": "python-docx==0.8.5",
+"dependency_type": "direct",
+"description": "Improper Restriction of XML External Entity Reference in python-docx",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"0.8.6"
+],
+"grype_severity": "High",
+"impact": "High",
+"inventory_only": false,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/python-docx@0.8.5",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade python-docx from 0.8.5 to 0.8.6 or later.",
+"title": "GHSA-34wj-p5jm-2p96 in python-docx 0.8.5",
+"vuln_aliases": [
+"CVE-2016-5851"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-34wj-p5jm-2p96",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-34wj-p5jm-2p96"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2018-18074"
+],
+"cves": {
+"CVE-2018-18074": "Insufficiently Protected Credentials in Requests",
+"GHSA-x84v-xcm2-53pg": "Insufficiently Protected Credentials in Requests"
+},
+"cvss_score": 7.5,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+"cvss_version": "3.1",
+"dependency": "requests==2.18.1",
+"dependency_type": "direct",
+"description": "Insufficiently Protected Credentials in Requests",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"2.20.0"
+],
+"grype_severity": "High",
+"impact": "High",
+"inventory_only": false,
+"license": "Apache-2.0",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/requests@2.18.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade requests from 2.18.1 to 2.20.0 or later.",
+"title": "GHSA-x84v-xcm2-53pg in requests 2.18.1",
+"vuln_aliases": [
+"CVE-2018-18074"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-x84v-xcm2-53pg",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-x84v-xcm2-53pg"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2025-47287"
+],
+"cves": {
+"CVE-2025-47287": "Tornado vulnerable to excessive logging caused by malformed multipart form data",
+"GHSA-7cx3-6m66-7c5m": "Tornado vulnerable to excessive logging caused by malformed multipart form data"
+},
+"cvss_score": 7.5,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+"cvss_version": "3.1",
+"dependency": "tornado==4.5.1",
+"dependency_type": "direct",
+"description": "Tornado vulnerable to excessive logging caused by malformed multipart form data",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"6.5"
+],
+"grype_severity": "High",
+"impact": "High",
+"inventory_only": false,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/tornado@4.5.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade tornado from 4.5.1 to 6.5 or later.",
+"title": "GHSA-7cx3-6m66-7c5m in tornado 4.5.1",
+"vuln_aliases": [
+"CVE-2025-47287"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-7cx3-6m66-7c5m",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-7cx3-6m66-7c5m"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2024-52804"
+],
+"cves": {
+"CVE-2024-52804": "Tornado has an HTTP cookie parsing DoS vulnerability",
+"GHSA-8w49-h785-mj3c": "Tornado has an HTTP cookie parsing DoS vulnerability"
+},
+"cvss_score": 7.5,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+"cvss_version": "3.1",
+"dependency": "tornado==4.5.1",
+"dependency_type": "direct",
+"description": "Tornado has an HTTP cookie parsing DoS vulnerability",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"6.4.2"
+],
+"grype_severity": "High",
+"impact": "High",
+"inventory_only": false,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/tornado@4.5.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade tornado from 4.5.1 to 6.4.2 or later.",
+"title": "GHSA-8w49-h785-mj3c in tornado 4.5.1",
+"vuln_aliases": [
+"CVE-2024-52804"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-8w49-h785-mj3c",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-8w49-h785-mj3c"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2025-66471"
+],
+"cves": {
+"CVE-2025-66471": "urllib3 streaming API improperly handles highly compressed data",
+"GHSA-2xpw-w6gg-jr37": "urllib3 streaming API improperly handles highly compressed data"
+},
+"cvss_score": 8.9,
+"cvss_vector": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:N/VI:N/VA:H/SC:N/SI:N/SA:H/E:X/CR:X/IR:X/AR:X/MAV:X/MAC:X/MAT:X/MPR:X/MUI:X/MVC:X/MVI:X/MVA:X/MSC:X/MSI:X/MSA:X/S:X/AU:X/R:X/V:X/RE:X/U:X",
+"cvss_version": "4.0",
+"dependency": "urllib3==1.21.1",
+"dependency_type": "direct",
+"description": "urllib3 streaming API improperly handles highly compressed data",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"2.6.0"
+],
+"grype_severity": "High",
+"impact": "High",
+"inventory_only": false,
+"license": "MIT",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/urllib3@1.21.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade urllib3 from 1.21.1 to 2.6.0 or later.",
+"title": "GHSA-2xpw-w6gg-jr37 in urllib3 1.21.1",
+"vuln_aliases": [
+"CVE-2025-66471"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-2xpw-w6gg-jr37",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-2xpw-w6gg-jr37"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2019-11324"
+],
+"cves": {
+"CVE-2019-11324": "Improper Certificate Validation in urllib3",
+"GHSA-mh33-7rrq-662w": "Improper Certificate Validation in urllib3"
+},
+"cvss_score": 7.5,
+"cvss_vector": "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N",
+"cvss_version": "3.0",
+"dependency": "urllib3==1.21.1",
+"dependency_type": "direct",
+"description": "Improper Certificate Validation in urllib3",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"1.24.2"
+],
+"grype_severity": "High",
+"impact": "High",
+"inventory_only": false,
+"license": "MIT",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/urllib3@1.21.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade urllib3 from 1.21.1 to 1.24.2 or later.",
+"title": "GHSA-mh33-7rrq-662w in urllib3 1.21.1",
+"vuln_aliases": [
+"CVE-2019-11324"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-mh33-7rrq-662w",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-mh33-7rrq-662w"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2023-43804"
+],
+"cves": {
+"CVE-2023-43804": "`Cookie` HTTP header isn't stripped on cross-origin redirects",
+"GHSA-v845-jxx5-vc9f": "`Cookie` HTTP header isn't stripped on cross-origin redirects"
+},
+"cvss_score": 5.9,
+"cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:H/UI:N/S:U/C:H/I:H/A:N",
+"cvss_version": "3.1",
+"dependency": "urllib3==1.21.1",
+"dependency_type": "direct",
+"description": "`Cookie` HTTP header isn't stripped on cross-origin redirects",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"1.26.17"
+],
+"grype_severity": "High",
+"impact": "High",
+"inventory_only": false,
+"license": "MIT",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/urllib3@1.21.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade urllib3 from 1.21.1 to 1.26.17 or later.",
+"title": "GHSA-v845-jxx5-vc9f in urllib3 1.21.1",
+"vuln_aliases": [
+"CVE-2023-43804"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-v845-jxx5-vc9f",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-v845-jxx5-vc9f"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2024-34069"
+],
+"cves": {
+"CVE-2024-34069": "Werkzeug debugger vulnerable to remote execution when interacting with attacker controlled domain",
+"GHSA-2g68-c3qc-8985": "Werkzeug debugger vulnerable to remote execution when interacting with attacker controlled domain"
+},
+"cvss_score": 7.5,
+"cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:H/A:H",
+"cvss_version": "3.1",
+"dependency": "werkzeug==0.14.1",
+"dependency_type": "direct",
+"description": "Werkzeug debugger vulnerable to remote execution when interacting with attacker controlled domain",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"3.0.3"
+],
+"grype_severity": "High",
+"impact": "High",
+"inventory_only": false,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/werkzeug@0.14.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade werkzeug from 0.14.1 to 3.0.3 or later.",
+"title": "GHSA-2g68-c3qc-8985 in werkzeug 0.14.1",
+"vuln_aliases": [
+"CVE-2024-34069"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-2g68-c3qc-8985",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-2g68-c3qc-8985"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2019-14806"
+],
+"cves": {
+"CVE-2019-14806": "Pallets Werkzeug Insufficient Entropy",
+"GHSA-gq9m-qvpx-68hc": "Pallets Werkzeug Insufficient Entropy"
+},
+"cvss_score": 7.5,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+"cvss_version": "3.1",
+"dependency": "werkzeug==0.14.1",
+"dependency_type": "direct",
+"description": "Pallets Werkzeug Insufficient Entropy",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"0.15.3"
+],
+"grype_severity": "High",
+"impact": "High",
+"inventory_only": false,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/werkzeug@0.14.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade werkzeug from 0.14.1 to 0.15.3 or later.",
+"title": "GHSA-gq9m-qvpx-68hc in werkzeug 0.14.1",
+"vuln_aliases": [
+"CVE-2019-14806"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-gq9m-qvpx-68hc",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-gq9m-qvpx-68hc"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2019-14322"
+],
+"cves": {
+"CVE-2019-14322": "Pallets Werkzeug vulnerable to Path Traversal",
+"GHSA-j544-7q9p-6xp8": "Pallets Werkzeug vulnerable to Path Traversal"
+},
+"cvss_score": 7.5,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+"cvss_version": "3.1",
+"dependency": "werkzeug==0.14.1",
+"dependency_type": "direct",
+"description": "Pallets Werkzeug vulnerable to Path Traversal",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"0.15.5"
+],
+"grype_severity": "High",
+"impact": "High",
+"inventory_only": false,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/werkzeug@0.14.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade werkzeug from 0.14.1 to 0.15.5 or later.",
+"title": "GHSA-j544-7q9p-6xp8 in werkzeug 0.14.1",
+"vuln_aliases": [
+"CVE-2019-14322"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-j544-7q9p-6xp8",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-j544-7q9p-6xp8"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2023-25577"
+],
+"cves": {
+"CVE-2023-25577": "High resource usage when parsing multipart form data with many fields",
+"GHSA-xg9f-g7g7-2323": "High resource usage when parsing multipart form data with many fields"
+},
+"cvss_score": 7.5,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+"cvss_version": "3.1",
+"dependency": "werkzeug==0.14.1",
+"dependency_type": "direct",
+"description": "High resource usage when parsing multipart form data with many fields",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"2.2.3"
+],
+"grype_severity": "High",
+"impact": "High",
+"inventory_only": false,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/werkzeug@0.14.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade werkzeug from 0.14.1 to 2.2.3 or later.",
+"title": "GHSA-xg9f-g7g7-2323 in werkzeug 0.14.1",
+"vuln_aliases": [
+"CVE-2023-25577"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-xg9f-g7g7-2323",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-xg9f-g7g7-2323"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2024-3651"
+],
+"cves": {
+"CVE-2024-3651": "Internationalized Domain Names in Applications (IDNA) vulnerable to denial of service from specially crafted inputs to i",
+"GHSA-jjg7-2v4v-x38h": "Internationalized Domain Names in Applications (IDNA) vulnerable to denial of service from specially crafted inputs to i"
+},
+"cvss_score": 6.2,
+"cvss_vector": "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+"cvss_version": "3.1",
+"dependency": "idna==2.5",
+"dependency_type": "direct",
+"description": "Internationalized Domain Names in Applications (IDNA) vulnerable to denial of service from specially crafted inputs to idna.encode",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"3.7"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/idna@2.5",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade idna from 2.5 to 3.7 or later.",
+"title": "GHSA-jjg7-2v4v-x38h in idna 2.5",
+"vuln_aliases": [
+"CVE-2024-3651"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-jjg7-2v4v-x38h",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-jjg7-2v4v-x38h"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2025-27516"
+],
+"cves": {
+"CVE-2025-27516": "Jinja2 vulnerable to sandbox breakout through attr filter selecting format method",
+"GHSA-cpwx-vrp4-4pq7": "Jinja2 vulnerable to sandbox breakout through attr filter selecting format method"
+},
+"cvss_score": 8.8,
+"cvss_vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H",
+"cvss_version": "3.1",
+"dependency": "jinja2==2.9.6",
+"dependency_type": "direct",
+"description": "Jinja2 vulnerable to sandbox breakout through attr filter selecting format method",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"3.1.6"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/jinja2@2.9.6",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade jinja2 from 2.9.6 to 3.1.6 or later.",
+"title": "GHSA-cpwx-vrp4-4pq7 in jinja2 2.9.6",
+"vuln_aliases": [
+"CVE-2025-27516"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-cpwx-vrp4-4pq7",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-cpwx-vrp4-4pq7"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2020-28493"
+],
+"cves": {
+"CVE-2020-28493": "Regular Expression Denial of Service (ReDoS) in Jinja2",
+"GHSA-g3rq-g295-4j3m": "Regular Expression Denial of Service (ReDoS) in Jinja2"
+},
+"cvss_score": 5.3,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L",
+"cvss_version": "3.1",
+"dependency": "jinja2==2.9.6",
+"dependency_type": "direct",
+"description": "Regular Expression Denial of Service (ReDoS) in Jinja2",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"2.11.3"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/jinja2@2.9.6",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade jinja2 from 2.9.6 to 2.11.3 or later.",
+"title": "GHSA-g3rq-g295-4j3m in jinja2 2.9.6",
+"vuln_aliases": [
+"CVE-2020-28493"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-g3rq-g295-4j3m",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-g3rq-g295-4j3m"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2024-22195"
+],
+"cves": {
+"CVE-2024-22195": "Jinja vulnerable to HTML attribute injection when passing user input as keys to xmlattr filter",
+"GHSA-h5c8-rqwp-cp95": "Jinja vulnerable to HTML attribute injection when passing user input as keys to xmlattr filter"
+},
+"cvss_score": 5.4,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:L/A:N",
+"cvss_version": "3.1",
+"dependency": "jinja2==2.9.6",
+"dependency_type": "direct",
+"description": "Jinja vulnerable to HTML attribute injection when passing user input as keys to xmlattr filter",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"3.1.3"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/jinja2@2.9.6",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade jinja2 from 2.9.6 to 3.1.3 or later.",
+"title": "GHSA-h5c8-rqwp-cp95 in jinja2 2.9.6",
+"vuln_aliases": [
+"CVE-2024-22195"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-h5c8-rqwp-cp95",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-h5c8-rqwp-cp95"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2024-34064"
+],
+"cves": {
+"CVE-2024-34064": "Jinja vulnerable to HTML attribute injection when passing user input as keys to xmlattr filter",
+"GHSA-h75v-3vvj-5mfj": "Jinja vulnerable to HTML attribute injection when passing user input as keys to xmlattr filter"
+},
+"cvss_score": 5.4,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:L/A:N",
+"cvss_version": "3.1",
+"dependency": "jinja2==2.9.6",
+"dependency_type": "direct",
+"description": "Jinja vulnerable to HTML attribute injection when passing user input as keys to xmlattr filter",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"3.1.4"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/jinja2@2.9.6",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade jinja2 from 2.9.6 to 3.1.4 or later.",
+"title": "GHSA-h75v-3vvj-5mfj in jinja2 2.9.6",
+"vuln_aliases": [
+"CVE-2024-34064"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-h75v-3vvj-5mfj",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-h75v-3vvj-5mfj"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2024-56326"
+],
+"cves": {
+"CVE-2024-56326": "Jinja has a sandbox breakout through indirect reference to format method",
+"GHSA-q2x7-8rv6-6q7h": "Jinja has a sandbox breakout through indirect reference to format method"
+},
+"cvss_score": 7.8,
+"cvss_vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H",
+"cvss_version": "3.1",
+"dependency": "jinja2==2.9.6",
+"dependency_type": "direct",
+"description": "Jinja has a sandbox breakout through indirect reference to format method",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"3.1.5"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/jinja2@2.9.6",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade jinja2 from 2.9.6 to 3.1.5 or later.",
+"title": "GHSA-q2x7-8rv6-6q7h in jinja2 2.9.6",
+"vuln_aliases": [
+"CVE-2024-56326"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-q2x7-8rv6-6q7h",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-q2x7-8rv6-6q7h"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2021-43818"
+],
+"cves": {
+"CVE-2021-43818": "lxml's HTML Cleaner allows crafted and SVG embedded scripts to pass through",
+"GHSA-55x5-fj6c-h6m8": "lxml's HTML Cleaner allows crafted and SVG embedded scripts to pass through"
+},
+"cvss_score": 8.2,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:H/A:N",
+"cvss_version": "3.1",
+"dependency": "lxml==4.2.1",
+"dependency_type": "direct",
+"description": "lxml's HTML Cleaner allows crafted and SVG embedded scripts to pass through",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"4.6.5"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/lxml@4.2.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade lxml from 4.2.1 to 4.6.5 or later.",
+"title": "GHSA-55x5-fj6c-h6m8 in lxml 4.2.1",
+"vuln_aliases": [
+"CVE-2021-43818"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-55x5-fj6c-h6m8",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-55x5-fj6c-h6m8"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2021-28957"
+],
+"cves": {
+"CVE-2021-28957": "lxml vulnerable to Cross-Site Scripting",
+"GHSA-jq4v-f5q6-mjqq": "lxml vulnerable to Cross-Site Scripting"
+},
+"cvss_score": 6.1,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
+"cvss_version": "3.1",
+"dependency": "lxml==4.2.1",
+"dependency_type": "direct",
+"description": "lxml vulnerable to Cross-Site Scripting",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"4.6.3"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/lxml@4.2.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade lxml from 4.2.1 to 4.6.3 or later.",
+"title": "GHSA-jq4v-f5q6-mjqq in lxml 4.2.1",
+"vuln_aliases": [
+"CVE-2021-28957"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-jq4v-f5q6-mjqq",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-jq4v-f5q6-mjqq"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2020-27783"
+],
+"cves": {
+"CVE-2020-27783": "lxml vulnerable to Cross-site Scripting",
+"GHSA-pgww-xf46-h92r": "lxml vulnerable to Cross-site Scripting"
+},
+"cvss_score": 6.1,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
+"cvss_version": "3.1",
+"dependency": "lxml==4.2.1",
+"dependency_type": "direct",
+"description": "lxml vulnerable to Cross-site Scripting",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"4.6.2"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/lxml@4.2.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade lxml from 4.2.1 to 4.6.2 or later.",
+"title": "GHSA-pgww-xf46-h92r in lxml 4.2.1",
+"vuln_aliases": [
+"CVE-2020-27783"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-pgww-xf46-h92r",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-pgww-xf46-h92r"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2022-2309"
+],
+"cves": {
+"CVE-2022-2309": "lxml NULL Pointer Dereference allows attackers to cause a denial of service",
+"GHSA-wrxv-2j5q-m38w": "lxml NULL Pointer Dereference allows attackers to cause a denial of service"
+},
+"cvss_score": 5.3,
+"cvss_vector": "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L",
+"cvss_version": "3.0",
+"dependency": "lxml==4.2.1",
+"dependency_type": "direct",
+"description": "lxml NULL Pointer Dereference allows attackers to cause a denial of service",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"4.9.1"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/lxml@4.2.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade lxml from 4.2.1 to 4.9.1 or later.",
+"title": "GHSA-wrxv-2j5q-m38w in lxml 4.2.1",
+"vuln_aliases": [
+"CVE-2022-2309"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-wrxv-2j5q-m38w",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-wrxv-2j5q-m38w"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2018-19787"
+],
+"cves": {
+"CVE-2018-19787": "Improper Neutralization of Input During Web Page Generation in LXML",
+"GHSA-xp26-p53h-6h2p": "Improper Neutralization of Input During Web Page Generation in LXML"
+},
+"cvss_score": 6.1,
+"cvss_vector": "CVSS:3.0/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
+"cvss_version": "3.0",
+"dependency": "lxml==4.2.1",
+"dependency_type": "direct",
+"description": "Improper Neutralization of Input During Web Page Generation in LXML",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"4.2.5"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/lxml@4.2.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade lxml from 4.2.1 to 4.2.5 or later.",
+"title": "GHSA-xp26-p53h-6h2p in lxml 4.2.1",
+"vuln_aliases": [
+"CVE-2018-19787"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-xp26-p53h-6h2p",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-xp26-p53h-6h2p"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2024-47081"
+],
+"cves": {
+"CVE-2024-47081": "Requests vulnerable to .netrc credentials leak via malicious URLs",
+"GHSA-9hjg-9r4m-mvj7": "Requests vulnerable to .netrc credentials leak via malicious URLs"
+},
+"cvss_score": 5.3,
+"cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:N/A:N",
+"cvss_version": "3.1",
+"dependency": "requests==2.18.1",
+"dependency_type": "direct",
+"description": "Requests vulnerable to .netrc credentials leak via malicious URLs",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"2.32.4"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "Apache-2.0",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/requests@2.18.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade requests from 2.18.1 to 2.32.4 or later.",
+"title": "GHSA-9hjg-9r4m-mvj7 in requests 2.18.1",
+"vuln_aliases": [
+"CVE-2024-47081"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-9hjg-9r4m-mvj7",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-9hjg-9r4m-mvj7"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2024-35195"
+],
+"cves": {
+"CVE-2024-35195": "Requests `Session` object does not verify requests after making first request with verify=False",
+"GHSA-9wx4-h78v-vm56": "Requests `Session` object does not verify requests after making first request with verify=False"
+},
+"cvss_score": 5.6,
+"cvss_vector": "CVSS:3.1/AV:L/AC:H/PR:H/UI:R/S:U/C:H/I:H/A:N",
+"cvss_version": "3.1",
+"dependency": "requests==2.18.1",
+"dependency_type": "direct",
+"description": "Requests `Session` object does not verify requests after making first request with verify=False",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"2.32.0"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "Apache-2.0",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/requests@2.18.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade requests from 2.18.1 to 2.32.0 or later.",
+"title": "GHSA-9wx4-h78v-vm56 in requests 2.18.1",
+"vuln_aliases": [
+"CVE-2024-35195"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-9wx4-h78v-vm56",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-9wx4-h78v-vm56"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2023-32681"
+],
+"cves": {
+"CVE-2023-32681": "Unintended leak of Proxy-Authorization header in requests",
+"GHSA-j8r2-6x86-q33q": "Unintended leak of Proxy-Authorization header in requests"
+},
+"cvss_score": 6.1,
+"cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:C/C:H/I:N/A:N",
+"cvss_version": "3.1",
+"dependency": "requests==2.18.1",
+"dependency_type": "direct",
+"description": "Unintended leak of Proxy-Authorization header in requests",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"2.31.0"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "Apache-2.0",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/requests@2.18.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade requests from 2.18.1 to 2.31.0 or later.",
+"title": "GHSA-j8r2-6x86-q33q in requests 2.18.1",
+"vuln_aliases": [
+"CVE-2023-32681"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-j8r2-6x86-q33q",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-j8r2-6x86-q33q"
+},
+{
+"compliance_controls": {},
+"cve_ids": [],
+"cves": {
+"GHSA-753j-mpmx-qq6g": "Inconsistent Interpretation of HTTP Requests ('HTTP Request/Response Smuggling') in tornado"
+},
+"cvss_score": 5.3,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:N",
+"cvss_version": "3.1",
+"dependency": "tornado==4.5.1",
+"dependency_type": "direct",
+"description": "Inconsistent Interpretation of HTTP Requests ('HTTP Request/Response Smuggling') in tornado",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"6.4.1"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/tornado@4.5.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade tornado from 4.5.1 to 6.4.1 or later.",
+"title": "GHSA-753j-mpmx-qq6g in tornado 4.5.1",
+"vuln_aliases": [],
+"vuln_assessed": true,
+"vuln_id": "GHSA-753j-mpmx-qq6g",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-753j-mpmx-qq6g"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2023-28370"
+],
+"cves": {
+"CVE-2023-28370": "Open redirect in Tornado",
+"GHSA-hj3f-6gcp-jg8j": "Open redirect in Tornado"
+},
+"cvss_score": 6.1,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
+"cvss_version": "3.1",
+"dependency": "tornado==4.5.1",
+"dependency_type": "direct",
+"description": "Open redirect in Tornado",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"6.3.2"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/tornado@4.5.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade tornado from 4.5.1 to 6.3.2 or later.",
+"title": "GHSA-hj3f-6gcp-jg8j in tornado 4.5.1",
+"vuln_aliases": [
+"CVE-2023-28370"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-hj3f-6gcp-jg8j",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-hj3f-6gcp-jg8j"
+},
+{
+"compliance_controls": {},
+"cve_ids": [],
+"cves": {
+"GHSA-qppv-j76h-2rpx": "Tornado vulnerable to HTTP request smuggling via improper parsing of `Content-Length` fields and chunk lengths"
+},
+"dependency": "tornado==4.5.1",
+"dependency_type": "direct",
+"description": "Tornado vulnerable to HTTP request smuggling via improper parsing of `Content-Length` fields and chunk lengths",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"6.3.3"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/tornado@4.5.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade tornado from 4.5.1 to 6.3.3 or later.",
+"title": "GHSA-qppv-j76h-2rpx in tornado 4.5.1",
+"vuln_aliases": [],
+"vuln_assessed": true,
+"vuln_id": "GHSA-qppv-j76h-2rpx",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-qppv-j76h-2rpx"
+},
+{
+"compliance_controls": {},
+"cve_ids": [],
+"cves": {
+"GHSA-w235-7p84-xx57": "Tornado has a CRLF injection in CurlAsyncHTTPClient headers"
+},
+"cvss_score": 6.5,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:N",
+"cvss_version": "3.1",
+"dependency": "tornado==4.5.1",
+"dependency_type": "direct",
+"description": "Tornado has a CRLF injection in CurlAsyncHTTPClient headers",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"6.4.1"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/tornado@4.5.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade tornado from 4.5.1 to 6.4.1 or later.",
+"title": "GHSA-w235-7p84-xx57 in tornado 4.5.1",
+"vuln_aliases": [],
+"vuln_assessed": true,
+"vuln_id": "GHSA-w235-7p84-xx57",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-w235-7p84-xx57"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2024-37891"
+],
+"cves": {
+"CVE-2024-37891": "urllib3's Proxy-Authorization request header isn't stripped during cross-origin redirects",
+"GHSA-34jh-p97f-mpxf": "urllib3's Proxy-Authorization request header isn't stripped during cross-origin redirects"
+},
+"cvss_score": 4.4,
+"cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:H/UI:N/S:U/C:H/I:N/A:N",
+"cvss_version": "3.1",
+"dependency": "urllib3==1.21.1",
+"dependency_type": "direct",
+"description": "urllib3's Proxy-Authorization request header isn't stripped during cross-origin redirects",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"1.26.19"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "MIT",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/urllib3@1.21.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade urllib3 from 1.21.1 to 1.26.19 or later.",
+"title": "GHSA-34jh-p97f-mpxf in urllib3 1.21.1",
+"vuln_aliases": [
+"CVE-2024-37891"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-34jh-p97f-mpxf",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-34jh-p97f-mpxf"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2023-45803"
+],
+"cves": {
+"CVE-2023-45803": "urllib3's request body not stripped after redirect from 303 status changes request method to GET",
+"GHSA-g4mx-q9vg-27p4": "urllib3's request body not stripped after redirect from 303 status changes request method to GET"
+},
+"cvss_score": 4.2,
+"cvss_vector": "CVSS:3.1/AV:A/AC:H/PR:H/UI:N/S:U/C:H/I:N/A:N",
+"cvss_version": "3.1",
+"dependency": "urllib3==1.21.1",
+"dependency_type": "direct",
+"description": "urllib3's request body not stripped after redirect from 303 status changes request method to GET",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"1.26.18"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "MIT",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/urllib3@1.21.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade urllib3 from 1.21.1 to 1.26.18 or later.",
+"title": "GHSA-g4mx-q9vg-27p4 in urllib3 1.21.1",
+"vuln_aliases": [
+"CVE-2023-45803"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-g4mx-q9vg-27p4",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-g4mx-q9vg-27p4"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2018-25091"
+],
+"cves": {
+"CVE-2018-25091": "Authorization Header forwarded on redirect",
+"GHSA-gwvm-45gx-3cf8": "Authorization Header forwarded on redirect"
+},
+"cvss_score": 6.1,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
+"cvss_version": "3.1",
+"dependency": "urllib3==1.21.1",
+"dependency_type": "direct",
+"description": "Authorization Header forwarded on redirect",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"1.24.2"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "MIT",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/urllib3@1.21.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade urllib3 from 1.21.1 to 1.24.2 or later.",
+"title": "GHSA-gwvm-45gx-3cf8 in urllib3 1.21.1",
+"vuln_aliases": [
+"CVE-2018-25091"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-gwvm-45gx-3cf8",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-gwvm-45gx-3cf8"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2025-50181"
+],
+"cves": {
+"CVE-2025-50181": "urllib3 redirects are not disabled when retries are disabled on PoolManager instantiation",
+"GHSA-pq67-6m6q-mj2v": "urllib3 redirects are not disabled when retries are disabled on PoolManager instantiation"
+},
+"cvss_score": 5.3,
+"cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:N/A:N",
+"cvss_version": "3.1",
+"dependency": "urllib3==1.21.1",
+"dependency_type": "direct",
+"description": "urllib3 redirects are not disabled when retries are disabled on PoolManager instantiation",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"2.5.0"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "MIT",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/urllib3@1.21.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade urllib3 from 1.21.1 to 2.5.0 or later.",
+"title": "GHSA-pq67-6m6q-mj2v in urllib3 1.21.1",
+"vuln_aliases": [
+"CVE-2025-50181"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-pq67-6m6q-mj2v",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-pq67-6m6q-mj2v"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2019-11236"
+],
+"cves": {
+"CVE-2019-11236": "Improper Neutralization of CRLF Sequences in urllib3 library for Python",
+"GHSA-r64q-w8jr-g9qp": "Improper Neutralization of CRLF Sequences in urllib3 library for Python"
+},
+"cvss_score": 6.1,
+"cvss_vector": "CVSS:3.0/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
+"cvss_version": "3.0",
+"dependency": "urllib3==1.21.1",
+"dependency_type": "direct",
+"description": "Improper Neutralization of CRLF Sequences in urllib3 library for Python",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"1.24.3"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "MIT",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/urllib3@1.21.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade urllib3 from 1.21.1 to 1.24.3 or later.",
+"title": "GHSA-r64q-w8jr-g9qp in urllib3 1.21.1",
+"vuln_aliases": [
+"CVE-2019-11236"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-r64q-w8jr-g9qp",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-r64q-w8jr-g9qp"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2020-26137"
+],
+"cves": {
+"CVE-2020-26137": "CRLF injection in urllib3",
+"GHSA-wqvq-5m8c-6g24": "CRLF injection in urllib3"
+},
+"cvss_score": 6.5,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:N",
+"cvss_version": "3.1",
+"dependency": "urllib3==1.21.1",
+"dependency_type": "direct",
+"description": "CRLF injection in urllib3",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"1.25.9"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "MIT",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/urllib3@1.21.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade urllib3 from 1.21.1 to 1.25.9 or later.",
+"title": "GHSA-wqvq-5m8c-6g24 in urllib3 1.21.1",
+"vuln_aliases": [
+"CVE-2020-26137"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-wqvq-5m8c-6g24",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-wqvq-5m8c-6g24"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2026-27199"
+],
+"cves": {
+"CVE-2026-27199": "Werkzeug safe_join() allows Windows special device names",
+"GHSA-29vq-49wr-vm6x": "Werkzeug safe_join() allows Windows special device names"
+},
+"cvss_score": 6.3,
+"cvss_vector": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:N/VI:N/VA:L/SC:N/SI:N/SA:N/E:X/CR:X/IR:X/AR:X/MAV:X/MAC:X/MAT:X/MPR:X/MUI:X/MVC:X/MVI:X/MVA:X/MSC:X/MSI:X/MSA:X/S:X/AU:X/R:X/V:X/RE:X/U:X",
+"cvss_version": "4.0",
+"dependency": "werkzeug==0.14.1",
+"dependency_type": "direct",
+"description": "Werkzeug safe_join() allows Windows special device names",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"3.1.6"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/werkzeug@0.14.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade werkzeug from 0.14.1 to 3.1.6 or later.",
+"title": "GHSA-29vq-49wr-vm6x in werkzeug 0.14.1",
+"vuln_aliases": [
+"CVE-2026-27199"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-29vq-49wr-vm6x",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-29vq-49wr-vm6x"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2026-21860"
+],
+"cves": {
+"CVE-2026-21860": "Werkzeug safe_join() allows Windows special device names with compound extensions",
+"GHSA-87hc-h4r5-73f7": "Werkzeug safe_join() allows Windows special device names with compound extensions"
+},
+"cvss_score": 5.3,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L",
+"cvss_version": "3.1",
+"dependency": "werkzeug==0.14.1",
+"dependency_type": "direct",
+"description": "Werkzeug safe_join() allows Windows special device names with compound extensions",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"3.1.5"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/werkzeug@0.14.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade werkzeug from 0.14.1 to 3.1.5 or later.",
+"title": "GHSA-87hc-h4r5-73f7 in werkzeug 0.14.1",
+"vuln_aliases": [
+"CVE-2026-21860"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-87hc-h4r5-73f7",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-87hc-h4r5-73f7"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2024-49766"
+],
+"cves": {
+"CVE-2024-49766": "Werkzeug safe_join not safe on Windows",
+"GHSA-f9vj-2wh5-fj8j": "Werkzeug safe_join not safe on Windows"
+},
+"cvss_score": 6.3,
+"cvss_vector": "CVSS:4.0/AV:N/AC:H/AT:N/PR:N/UI:N/VC:L/VI:N/VA:N/SC:N/SI:N/SA:N/E:X/CR:X/IR:X/AR:X/MAV:X/MAC:X/MAT:X/MPR:X/MUI:X/MVC:X/MVI:X/MVA:X/MSC:X/MSI:X/MSA:X/S:X/AU:X/R:X/V:X/RE:X/U:X",
+"cvss_version": "4.0",
+"dependency": "werkzeug==0.14.1",
+"dependency_type": "direct",
+"description": "Werkzeug safe_join not safe on Windows",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"3.0.6"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/werkzeug@0.14.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade werkzeug from 0.14.1 to 3.0.6 or later.",
+"title": "GHSA-f9vj-2wh5-fj8j in werkzeug 0.14.1",
+"vuln_aliases": [
+"CVE-2024-49766"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-f9vj-2wh5-fj8j",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-f9vj-2wh5-fj8j"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2025-66221"
+],
+"cves": {
+"CVE-2025-66221": "Werkzeug safe_join() allows Windows special device names",
+"GHSA-hgf8-39gv-g3f2": "Werkzeug safe_join() allows Windows special device names"
+},
+"cvss_score": 6.3,
+"cvss_vector": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:N/VI:N/VA:L/SC:N/SI:N/SA:N/E:X/CR:X/IR:X/AR:X/MAV:X/MAC:X/MAT:X/MPR:X/MUI:X/MVC:X/MVI:X/MVA:X/MSC:X/MSI:X/MSA:X/S:X/AU:X/R:X/V:X/RE:X/U:X",
+"cvss_version": "4.0",
+"dependency": "werkzeug==0.14.1",
+"dependency_type": "direct",
+"description": "Werkzeug safe_join() allows Windows special device names",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"3.1.4"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/werkzeug@0.14.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade werkzeug from 0.14.1 to 3.1.4 or later.",
+"title": "GHSA-hgf8-39gv-g3f2 in werkzeug 0.14.1",
+"vuln_aliases": [
+"CVE-2025-66221"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-hgf8-39gv-g3f2",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-hgf8-39gv-g3f2"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2023-46136"
+],
+"cves": {
+"CVE-2023-46136": "Werkzeug DoS: High resource usage when parsing multipart/form-data containing a large part with CR/LF character at the b",
+"GHSA-hrfv-mqp8-q5rw": "Werkzeug DoS: High resource usage when parsing multipart/form-data containing a large part with CR/LF character at the b"
+},
+"cvss_score": 5.7,
+"cvss_vector": "CVSS:3.1/AV:A/AC:L/PR:L/UI:N/S:U/C:N/I:N/A:H",
+"cvss_version": "3.1",
+"dependency": "werkzeug==0.14.1",
+"dependency_type": "direct",
+"description": "Werkzeug DoS: High resource usage when parsing multipart/form-data containing a large part with CR/LF character at the beginning",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"2.3.8"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/werkzeug@0.14.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade werkzeug from 0.14.1 to 2.3.8 or later.",
+"title": "GHSA-hrfv-mqp8-q5rw in werkzeug 0.14.1",
+"vuln_aliases": [
+"CVE-2023-46136"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-hrfv-mqp8-q5rw",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-hrfv-mqp8-q5rw"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2024-49767"
+],
+"cves": {
+"CVE-2024-49767": "Werkzeug possible resource exhaustion when parsing file data in forms",
+"GHSA-q34m-jh98-gwm2": "Werkzeug possible resource exhaustion when parsing file data in forms"
+},
+"cvss_score": 7.5,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+"cvss_version": "3.1",
+"dependency": "werkzeug==0.14.1",
+"dependency_type": "direct",
+"description": "Werkzeug possible resource exhaustion when parsing file data in forms",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"3.0.6"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/werkzeug@0.14.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade werkzeug from 0.14.1 to 3.0.6 or later.",
+"title": "GHSA-q34m-jh98-gwm2 in werkzeug 0.14.1",
+"vuln_aliases": [
+"CVE-2024-49767"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-q34m-jh98-gwm2",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-q34m-jh98-gwm2"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2026-27205"
+],
+"cves": {
+"CVE-2026-27205": "Flask session does not add `Vary: Cookie` header when accessed in some ways",
+"GHSA-68rp-wp8r-4726": "Flask session does not add `Vary: Cookie` header when accessed in some ways"
+},
+"cvss_score": 4.3,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:N/A:N",
+"cvss_version": "3.1",
+"dependency": "flask==0.12.2",
+"dependency_type": "direct",
+"description": "Flask session does not add `Vary: Cookie` header when accessed in some ways",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"3.1.3"
+],
+"grype_severity": "Low",
+"impact": "Low",
+"inventory_only": false,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/flask@0.12.2",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade flask from 0.12.2 to 3.1.3 or later.",
+"title": "GHSA-68rp-wp8r-4726 in flask 0.12.2",
+"vuln_aliases": [
+"CVE-2026-27205"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-68rp-wp8r-4726",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-68rp-wp8r-4726"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2023-23934"
+],
+"cves": {
+"CVE-2023-23934": "Incorrect parsing of nameless cookies leads to __Host- cookies bypass",
+"GHSA-px8h-6qxv-m22q": "Incorrect parsing of nameless cookies leads to __Host- cookies bypass"
+},
+"cvss_score": 2.6,
+"cvss_vector": "CVSS:3.1/AV:A/AC:H/PR:N/UI:R/S:U/C:N/I:L/A:N",
+"cvss_version": "3.1",
+"dependency": "werkzeug==0.14.1",
+"dependency_type": "direct",
+"description": "Incorrect parsing of nameless cookies leads to __Host- cookies bypass",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"2.2.3"
+],
+"grype_severity": "Low",
+"impact": "Low",
+"inventory_only": false,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"location": "/app/requirements.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/werkzeug@0.14.1",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade werkzeug from 0.14.1 to 2.2.3 or later.",
+"title": "GHSA-px8h-6qxv-m22q in werkzeug 0.14.1",
+"vuln_aliases": [
+"CVE-2023-23934"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-px8h-6qxv-m22q",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-px8h-6qxv-m22q"
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "actions/checkout==v2",
+"dependency_type": "direct",
+"description": "Inventoried component actions/checkout==v2",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:github/actions/checkout@v2",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: actions/checkout",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "actions/setup-python==v1",
+"dependency_type": "direct",
+"description": "Inventoried component actions/setup-python==v1",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:github/actions/setup-python@v1",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: actions/setup-python",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "actions/upload-artifact==v1",
+"dependency_type": "direct",
+"description": "Inventoried component actions/upload-artifact==v1",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:github/actions/upload-artifact@v1",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: actions/upload-artifact",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "backports-abc==0.5",
+"dependency_type": "direct",
+"description": "Inventoried component backports-abc==0.5",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/backports-abc@0.5",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: backports-abc",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "chardet==3.0.4",
+"dependency_type": "direct",
+"description": "Inventoried component chardet==3.0.4",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/chardet@3.0.4",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: chardet",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "click==6.7",
+"dependency_type": "direct",
+"description": "Inventoried component click==6.7",
+"impact": "Low",
+"inventory_only": true,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"owasp_top_10": {},
+"purl": "pkg:pypi/click@6.7",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: click",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "faker==0.7.17",
+"dependency_type": "direct",
+"description": "Inventoried component faker==0.7.17",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/faker@0.7.17",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: faker",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "flask-sqlalchemy==2.2",
+"dependency_type": "direct",
+"description": "Inventoried component flask-sqlalchemy==2.2",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/flask-sqlalchemy@2.2",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: flask-sqlalchemy",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "greenlet==0.4.12",
+"dependency_type": "direct",
+"description": "Inventoried component greenlet==0.4.12",
+"impact": "Low",
+"inventory_only": true,
+"license": "MIT",
+"license_type": "permissive",
+"owasp_top_10": {},
+"purl": "pkg:pypi/greenlet@0.4.12",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: greenlet",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "grequests==0.3.0",
+"dependency_type": "direct",
+"description": "Inventoried component grequests==0.3.0",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/grequests@0.3.0",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: grequests",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "ipaddress==1.0.18",
+"dependency_type": "direct",
+"description": "Inventoried component ipaddress==1.0.18",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/ipaddress@1.0.18",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: ipaddress",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "itsdangerous==0.24",
+"dependency_type": "direct",
+"description": "Inventoried component itsdangerous==0.24",
+"impact": "Low",
+"inventory_only": true,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"owasp_top_10": {},
+"purl": "pkg:pypi/itsdangerous@0.24",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: itsdangerous",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "jakejarvis/wait-action==master",
+"dependency_type": "direct",
+"description": "Inventoried component jakejarvis/wait-action==master",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:github/jakejarvis/wait-action@master",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: jakejarvis/wait-action",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "markupsafe==1.0",
+"dependency_type": "direct",
+"description": "Inventoried component markupsafe==1.0",
+"impact": "Low",
+"inventory_only": true,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"owasp_top_10": {},
+"purl": "pkg:pypi/markupsafe@1.0",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: markupsafe",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "mysql-python==1.2.5",
+"dependency_type": "direct",
+"description": "Inventoried component mysql-python==1.2.5",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/mysql-python@1.2.5",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: mysql-python",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "python-dateutil==2.6.0",
+"dependency_type": "direct",
+"description": "Inventoried component python-dateutil==2.6.0",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/python-dateutil@2.6.0",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: python-dateutil",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "singledispatch==3.4.0.3",
+"dependency_type": "direct",
+"description": "Inventoried component singledispatch==3.4.0.3",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/singledispatch@3.4.0.3",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: singledispatch",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "six==1.10.0",
+"dependency_type": "direct",
+"description": "Inventoried component six==1.10.0",
+"impact": "Low",
+"inventory_only": true,
+"license": "MIT",
+"license_type": "permissive",
+"owasp_top_10": {},
+"purl": "pkg:pypi/six@1.10.0",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: six",
+"vuln_assessed": true
+}
+],
+"sbom_json": {
+"$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
+"bomFormat": "CycloneDX",
+"components": [
+{
+"bom-ref": "pkg:github/actions/checkout@v2",
+"cpe": "cpe:2.3:a:actions\\/checkout:actions\\/checkout:v2:*:*:*:*:*:*:*",
+"name": "actions/checkout",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "pass"
+}
+],
+"purl": "pkg:github/actions/checkout@v2",
+"type": "library",
+"version": "v2"
+},
+{
+"bom-ref": "pkg:github/actions/setup-python@v1",
+"cpe": "cpe:2.3:a:actions\\/setup-python:actions\\/setup-python:v1:*:*:*:*:*:*:*",
+"name": "actions/setup-python",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "pass"
+}
+],
+"purl": "pkg:github/actions/setup-python@v1",
+"type": "library",
+"version": "v1"
+},
+{
+"bom-ref": "pkg:github/actions/upload-artifact@v1",
+"cpe": "cpe:2.3:a:actions\\/upload-artifact:actions\\/upload-artifact:v1:*:*:*:*:*:*:*",
+"name": "actions/upload-artifact",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "pass"
+}
+],
+"purl": "pkg:github/actions/upload-artifact@v1",
+"type": "library",
+"version": "v1"
+},
+{
+"bom-ref": "pkg:pypi/backports-abc@0.5",
+"cpe": "cpe:2.3:a:python-backports-abc:python-backports-abc:0.5:*:*:*:*:*:*:*",
+"name": "backports-abc",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "pass"
+}
+],
+"purl": "pkg:pypi/backports-abc@0.5",
+"type": "library",
+"version": "0.5"
+},
+{
+"bom-ref": "pkg:pypi/certifi@2017.4.17",
+"cpe": "cpe:2.3:a:kennethreitz:certifi:2017.4.17:*:*:*:*:python:*:*",
+"name": "certifi",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "fail"
+}
+],
+"purl": "pkg:pypi/certifi@2017.4.17",
+"type": "library",
+"version": "2017.4.17"
+},
+{
+"bom-ref": "pkg:pypi/chardet@3.0.4",
+"cpe": "cpe:2.3:a:python-chardet:python-chardet:3.0.4:*:*:*:*:*:*:*",
+"name": "chardet",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "pass"
+}
+],
+"purl": "pkg:pypi/chardet@3.0.4",
+"type": "library",
+"version": "3.0.4"
+},
+{
+"bom-ref": "pkg:pypi/click@6.7",
+"cpe": "cpe:2.3:a:python-click:python-click:6.7:*:*:*:*:*:*:*",
+"name": "click",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "pass"
+}
+],
+"purl": "pkg:pypi/click@6.7",
+"type": "library",
+"version": "6.7"
+},
+{
+"bom-ref": "pkg:pypi/faker@0.7.17",
+"cpe": "cpe:2.3:a:python-faker:python-faker:0.7.17:*:*:*:*:*:*:*",
+"name": "faker",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "pass"
+}
+],
+"purl": "pkg:pypi/faker@0.7.17",
+"type": "library",
+"version": "0.7.17"
+},
+{
+"bom-ref": "pkg:pypi/flask@0.12.2",
+"cpe": "cpe:2.3:a:python-flask:python-flask:0.12.2:*:*:*:*:*:*:*",
+"name": "flask",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "pass"
+}
+],
+"purl": "pkg:pypi/flask@0.12.2",
+"type": "library",
+"version": "0.12.2"
+},
+{
+"bom-ref": "pkg:pypi/flask-sqlalchemy@2.2",
+"cpe": "cpe:2.3:a:python-flask-sqlalchemy:python-flask-sqlalchemy:2.2:*:*:*:*:*:*:*",
+"name": "flask-sqlalchemy",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "pass"
+}
+],
+"purl": "pkg:pypi/flask-sqlalchemy@2.2",
+"type": "library",
+"version": "2.2"
+},
+{
+"bom-ref": "pkg:pypi/gevent@1.2.2",
+"cpe": "cpe:2.3:a:python-gevent:python-gevent:1.2.2:*:*:*:*:*:*:*",
+"name": "gevent",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "fail"
+}
+],
+"purl": "pkg:pypi/gevent@1.2.2",
+"type": "library",
+"version": "1.2.2"
+},
+{
+"bom-ref": "pkg:pypi/greenlet@0.4.12",
+"cpe": "cpe:2.3:a:python-greenlet:python-greenlet:0.4.12:*:*:*:*:*:*:*",
+"name": "greenlet",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "pass"
+}
+],
+"purl": "pkg:pypi/greenlet@0.4.12",
+"type": "library",
+"version": "0.4.12"
+},
+{
+"bom-ref": "pkg:pypi/grequests@0.3.0",
+"cpe": "cpe:2.3:a:python-grequests:python-grequests:0.3.0:*:*:*:*:*:*:*",
+"name": "grequests",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "pass"
+}
+],
+"purl": "pkg:pypi/grequests@0.3.0",
+"type": "library",
+"version": "0.3.0"
+},
+{
+"bom-ref": "pkg:pypi/idna@2.5",
+"cpe": "cpe:2.3:a:python-idna:python-idna:2.5:*:*:*:*:*:*:*",
+"name": "idna",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "pass"
+}
+],
+"purl": "pkg:pypi/idna@2.5",
+"type": "library",
+"version": "2.5"
+},
+{
+"bom-ref": "pkg:pypi/ipaddress@1.0.18",
+"cpe": "cpe:2.3:a:python-ipaddress:python-ipaddress:1.0.18:*:*:*:*:*:*:*",
+"name": "ipaddress",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "pass"
+}
+],
+"purl": "pkg:pypi/ipaddress@1.0.18",
+"type": "library",
+"version": "1.0.18"
+},
+{
+"bom-ref": "pkg:pypi/itsdangerous@0.24",
+"cpe": "cpe:2.3:a:python-itsdangerous:python-itsdangerous:0.24:*:*:*:*:*:*:*",
+"name": "itsdangerous",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "pass"
+}
+],
+"purl": "pkg:pypi/itsdangerous@0.24",
+"type": "library",
+"version": "0.24"
+},
+{
+"bom-ref": "pkg:github/jakejarvis/wait-action@master",
+"cpe": "cpe:2.3:a:jakejarvis\\/wait-action:jakejarvis\\/wait-action:master:*:*:*:*:*:*:*",
+"name": "jakejarvis/wait-action",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "pass"
+}
+],
+"purl": "pkg:github/jakejarvis/wait-action@master",
+"type": "library",
+"version": "master"
+},
+{
+"bom-ref": "pkg:pypi/jinja2@2.9.6",
+"cpe": "cpe:2.3:a:python-jinja2:python-jinja2:2.9.6:*:*:*:*:*:*:*",
+"name": "jinja2",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "pass"
+}
+],
+"purl": "pkg:pypi/jinja2@2.9.6",
+"type": "library",
+"version": "2.9.6"
+},
+{
+"bom-ref": "pkg:pypi/lxml@4.2.1",
+"cpe": "cpe:2.3:a:lxml:lxml:4.2.1:*:*:*:*:*:*:*",
+"name": "lxml",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "pass"
+}
+],
+"purl": "pkg:pypi/lxml@4.2.1",
+"type": "library",
+"version": "4.2.1"
+},
+{
+"bom-ref": "pkg:pypi/markupsafe@1.0",
+"cpe": "cpe:2.3:a:python-markupsafe:python-markupsafe:1.0:*:*:*:*:*:*:*",
+"name": "markupsafe",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "pass"
+}
+],
+"purl": "pkg:pypi/markupsafe@1.0",
+"type": "library",
+"version": "1.0"
+},
+{
+"bom-ref": "pkg:pypi/mysql-python@1.2.5",
+"cpe": "cpe:2.3:a:python-mysql-python:python-mysql-python:1.2.5:*:*:*:*:*:*:*",
+"name": "mysql-python",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "pass"
+}
+],
+"purl": "pkg:pypi/mysql-python@1.2.5",
+"type": "library",
+"version": "1.2.5"
+},
+{
+"bom-ref": "pkg:pypi/pyjwt@1.5.2",
+"cpe": "cpe:2.3:a:python-pyjwt:python-pyjwt:1.5.2:*:*:*:*:*:*:*",
+"name": "pyjwt",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "fail"
+}
+],
+"purl": "pkg:pypi/pyjwt@1.5.2",
+"type": "library",
+"version": "1.5.2"
+},
+{
+"bom-ref": "pkg:pypi/python-dateutil@2.6.0",
+"cpe": "cpe:2.3:a:python-dateutil:python-dateutil:2.6.0:*:*:*:*:*:*:*",
+"name": "python-dateutil",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "pass"
+}
+],
+"purl": "pkg:pypi/python-dateutil@2.6.0",
+"type": "library",
+"version": "2.6.0"
+},
+{
+"bom-ref": "pkg:pypi/python-docx@0.8.5",
+"cpe": "cpe:2.3:a:python-docx:python-docx:0.8.5:*:*:*:*:*:*:*",
+"name": "python-docx",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "fail"
+}
+],
+"purl": "pkg:pypi/python-docx@0.8.5",
+"type": "library",
+"version": "0.8.5"
+},
+{
+"bom-ref": "pkg:pypi/pyyaml@3.12",
+"cpe": "cpe:2.3:a:python-pyyaml:python-pyyaml:3.12:*:*:*:*:*:*:*",
+"name": "pyyaml",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "fail"
+}
+],
+"purl": "pkg:pypi/pyyaml@3.12",
+"type": "library",
+"version": "3.12"
+},
+{
+"bom-ref": "pkg:pypi/requests@2.18.1",
+"cpe": "cpe:2.3:a:python:requests:2.18.1:*:*:*:*:*:*:*",
+"name": "requests",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "pass"
+}
+],
+"purl": "pkg:pypi/requests@2.18.1",
+"type": "library",
+"version": "2.18.1"
+},
+{
+"bom-ref": "pkg:pypi/singledispatch@3.4.0.3",
+"cpe": "cpe:2.3:a:python-singledispatch:python-singledispatch:3.4.0.3:*:*:*:*:*:*:*",
+"name": "singledispatch",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "pass"
+}
+],
+"purl": "pkg:pypi/singledispatch@3.4.0.3",
+"type": "library",
+"version": "3.4.0.3"
+},
+{
+"bom-ref": "pkg:pypi/six@1.10.0",
+"cpe": "cpe:2.3:a:python-six:python-six:1.10.0:*:*:*:*:*:*:*",
+"name": "six",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "pass"
+}
+],
+"purl": "pkg:pypi/six@1.10.0",
+"type": "library",
+"version": "1.10.0"
+},
+{
+"bom-ref": "pkg:pypi/sqlalchemy@1.1.11",
+"cpe": "cpe:2.3:a:python-sqlalchemy:python-sqlalchemy:1.1.11:*:*:*:*:*:*:*",
+"name": "sqlalchemy",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "fail"
+}
+],
+"purl": "pkg:pypi/sqlalchemy@1.1.11",
+"type": "library",
+"version": "1.1.11"
+},
+{
+"bom-ref": "pkg:pypi/tornado@4.5.1",
+"cpe": "cpe:2.3:a:python-tornado:python-tornado:4.5.1:*:*:*:*:*:*:*",
+"name": "tornado",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "pass"
+}
+],
+"purl": "pkg:pypi/tornado@4.5.1",
+"type": "library",
+"version": "4.5.1"
+},
+{
+"bom-ref": "pkg:pypi/urllib3@1.21.1",
+"cpe": "cpe:2.3:a:python:urllib3:1.21.1:*:*:*:*:*:*:*",
+"name": "urllib3",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "pass"
+}
+],
+"purl": "pkg:pypi/urllib3@1.21.1",
+"type": "library",
+"version": "1.21.1"
+},
+{
+"bom-ref": "pkg:pypi/werkzeug@0.14.1",
+"cpe": "cpe:2.3:a:python-werkzeug:python-werkzeug:0.14.1:*:*:*:*:*:*:*",
+"name": "werkzeug",
+"properties": [
+{
+"name": "dss:compliance",
+"value": "pass"
+}
+],
+"purl": "pkg:pypi/werkzeug@0.14.1",
+"type": "library",
+"version": "0.14.1"
+}
+],
+"dependencies": [
+{
+"dependsOn": [
+"pkg:github/actions/checkout@v2",
+"pkg:github/actions/setup-python@v1",
+"pkg:github/actions/upload-artifact@v1",
+"pkg:pypi/backports-abc@0.5",
+"pkg:pypi/certifi@2017.4.17",
+"pkg:pypi/chardet@3.0.4",
+"pkg:pypi/click@6.7",
+"pkg:pypi/faker@0.7.17",
+"pkg:pypi/flask@0.12.2",
+"pkg:pypi/flask-sqlalchemy@2.2",
+"pkg:pypi/gevent@1.2.2",
+"pkg:pypi/greenlet@0.4.12",
+"pkg:pypi/grequests@0.3.0",
+"pkg:pypi/idna@2.5",
+"pkg:pypi/ipaddress@1.0.18",
+"pkg:pypi/itsdangerous@0.24",
+"pkg:github/jakejarvis/wait-action@master",
+"pkg:pypi/jinja2@2.9.6",
+"pkg:pypi/lxml@4.2.1",
+"pkg:pypi/markupsafe@1.0",
+"pkg:pypi/mysql-python@1.2.5",
+"pkg:pypi/pyjwt@1.5.2",
+"pkg:pypi/python-dateutil@2.6.0",
+"pkg:pypi/python-docx@0.8.5",
+"pkg:pypi/pyyaml@3.12",
+"pkg:pypi/requests@2.18.1",
+"pkg:pypi/singledispatch@3.4.0.3",
+"pkg:pypi/six@1.10.0",
+"pkg:pypi/sqlalchemy@1.1.11",
+"pkg:pypi/tornado@4.5.1",
+"pkg:pypi/urllib3@1.21.1",
+"pkg:pypi/werkzeug@0.14.1"
+],
+"ref": "pkg:github/we45/Vulnerable-Flask-App@b6a4f97afd466e83e1f60781494252dec1c37039"
+}
+],
+"metadata": {
+"authors": [
+{
+"name": "DevSecShield"
+}
+],
+"component": {
+"bom-ref": "pkg:github/we45/Vulnerable-Flask-App@b6a4f97afd466e83e1f60781494252dec1c37039",
+"externalReferences": [
+{
+"type": "vcs",
+"url": "https://github.com/we45/Vulnerable-Flask-App"
+}
+],
+"name": "we45/Vulnerable-Flask-App",
+"properties": [
+{
+"name": "dss:vcs_branch",
+"value": "main"
+},
+{
+"name": "dss:vcs_commit",
+"value": "b6a4f97afd466e83e1f60781494252dec1c37039"
+}
+],
+"purl": "pkg:github/we45/Vulnerable-Flask-App@b6a4f97afd466e83e1f60781494252dec1c37039",
+"type": "application",
+"version": "b6a4f97afd466e83e1f60781494252dec1c37039"
+},
+"lifecycles": [
+{
+"phase": "pre-build"
+}
+],
+"properties": [
+{
+"name": "dss:compliance",
+"value": "fail"
+}
+],
+"timestamp": "2026-11-23T18:46:11Z",
+"tools": {
+"components": [
+{
+"description": "SBOM / SCA scan: Syft and cdxgen inventory, Grype vulnerability matching",
+"name": "DevSecShield",
+"publisher": "DevSecShield",
+"type": "application",
+"version": "rev489-local"
+},
+{
+"name": "syft",
+"publisher": "anchore",
+"type": "application",
+"version": "1.18.1"
+},
+{
+"name": "cdxgen",
+"publisher": "OWASP Foundation",
+"type": "application",
+"version": "12.9.3"
+},
+{
+"name": "grype",
+"publisher": "anchore",
+"type": "application",
+"version": "0.87.0"
+}
+]
+}
+},
+"serialNumber": "urn:uuid:b7c693c4-bf38-4dcb-b69d-8e873ff6659d",
+"specVersion": "1.6",
+"version": 1
+}
+},
+"source": "review 6028132826 run A: we45/Vulnerable-Flask-App@b6a4f97, PR #489 head 9d3696d3c (worker output) and the registry answers its /bom download got"
+}

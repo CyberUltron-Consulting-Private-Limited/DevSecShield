@@ -19,15 +19,16 @@ def _norm_name(name: str) -> str:
     return re.sub(r"[-_.]+", "-", (name or "").strip().lower())
 
 
-def _load_components(path: Path | None) -> list[dict[str, Any]]:
-    if path is None or not path.is_file():
-        return []
-    try:
-        data = json.loads(path.read_text(encoding="utf-8", errors="ignore"))
-    except Exception:
-        return []
-    comps = data.get("components")
+def _load_components(source: Path | dict[str, Any] | None) -> list[dict[str, Any]]:
+    data = source if isinstance(source, dict) else load_cdx_json(source)
+    comps = (data or {}).get("components")
     return comps if isinstance(comps, list) else []
+
+
+def is_package(c: dict[str, Any]) -> bool:
+    """A file Syft lists (``/requirements.txt``, ``/.github/workflows/x.yml``, ``/model.gguf``) is not a package: it
+    has no purl. Kept out of the SBOM, the finding rows and the compliance counts alike (review 6028132826 M3)."""
+    return not (str(c.get("type") or "").lower() == "file" and not c.get("purl"))
 
 
 def _comp_key(c: dict[str, Any]) -> str:
@@ -64,12 +65,12 @@ def _hash_str(c: dict[str, Any]) -> str:
     return ""
 
 
-def merge_cdx_components(*paths: Path | None) -> list[dict[str, Any]]:
-    """Dedupe CycloneDX components by purl / name@version (later sources fill gaps)."""
+def merge_cdx_components(*sources: Path | dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Dedupe CycloneDX components by purl / name@version (later sources fill gaps). Files are not packages."""
     by_key: dict[str, dict[str, Any]] = {}
-    for path in paths:
-        for c in _load_components(path):
-            if not isinstance(c, dict):
+    for source in sources:
+        for c in _load_components(source):
+            if not isinstance(c, dict) or not is_package(c):
                 continue
             name = str(c.get("name") or "").strip()
             if not name:
@@ -87,21 +88,115 @@ def merge_cdx_components(*paths: Path | None) -> list[dict[str, Any]]:
                     existing["licenses"] = c["licenses"]
                 if not existing.get("hashes") and c.get("hashes"):
                     existing["hashes"] = c["hashes"]
+                _merge_extras(existing, c)
     return list(by_key.values())
+
+
+def _merge_extras(dst: dict[str, Any], src: dict[str, Any]) -> None:
+    """Union of evidence locations; properties the first source does not have (e.g. ``dss:version_source``)."""
+    names = {str(p.get("name")) for p in dst.get("properties") or [] if isinstance(p, dict)}
+    extra = [p for p in src.get("properties") or [] if isinstance(p, dict) and str(p.get("name")) not in names
+             and str(p.get("name") or "").startswith("dss:")]
+    if extra:
+        dst["properties"] = [*(dst.get("properties") or []), *extra]
+    occ = ((src.get("evidence") or {}).get("occurrences") if isinstance(src.get("evidence"), dict) else None) or []
+    if occ:
+        have = list(((dst.get("evidence") or {}).get("occurrences") if isinstance(dst.get("evidence"), dict)
+                     else None) or [])
+        seen = {str(o.get("location")) for o in have if isinstance(o, dict)}
+        for o in occ:
+            if isinstance(o, dict) and o.get("location") and str(o["location"]) not in seen:
+                seen.add(str(o["location"]))
+                have.append({"location": str(o["location"])})
+        dst["evidence"] = {**(dst.get("evidence") if isinstance(dst.get("evidence"), dict) else {}),
+                           "occurrences": have}
+
+
+def pin_actions(doc: dict[str, Any] | None, pins: dict[str, dict[str, str]]) -> int:
+    """Rename Syft's tag-named GitHub Actions to the commit SHA the workflow pins (``syft.action_pins``), keeping the
+    tag as ``dss:version_tag``; cdxgen's SHA-named entry then merges into the same component. In place."""
+    if not isinstance(doc, dict) or not pins:
+        return 0
+    n = 0
+    for c in doc.get("components") or []:
+        if not isinstance(c, dict):
+            continue
+        pin = pins.get(str(c.get("purl") or "").split("?", 1)[0])
+        if not pin:
+            continue
+        c["purl"] = pin["purl"]
+        c["version"] = pin["version"]
+        c["properties"] = [*(p for p in c.get("properties") or [] if not str((p or {}).get("name") or "")
+                             .startswith("syft:cpe23")), {"name": "dss:version_tag", "value": pin["tag"]}]
+        c.pop("cpe", None)  # the tag's CPE no longer names this version
+        n += 1
+    return n
+
+
+def _eco_name(c: dict[str, Any]) -> tuple[str, str] | None:
+    purl = str(c.get("purl") or "").split("?", 1)[0]
+    if not purl.startswith("pkg:") or "@" not in purl:
+        return None
+    body = purl[4:].rsplit("@", 1)[0]
+    eco, _, path = body.partition("/")
+    return eco.lower(), _norm_name(path)
+
+
+def prefer_pinned(
+    components: list[dict[str, Any]], constraints: dict[str, str]
+) -> tuple[list[dict[str, Any]], dict[str, str], list[str]]:
+    """Drop a version guessed from a range when a lock file or a pin names the same package (review M2).
+
+    Returns ``(components, constraints, dropped purls)``; the guessed component's manifest location moves to the
+    pinned one, so the SBOM still says which manifest asked for the package.
+    """
+    pinned: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for c in components:
+        key = _eco_name(c)
+        purl = str(c.get("purl") or "").split("?", 1)[0]
+        if key and purl not in constraints:
+            pinned.setdefault(key, []).append(c)
+    kept: list[dict[str, Any]] = []
+    dropped: list[str] = []
+    for c in components:
+        purl = str(c.get("purl") or "").split("?", 1)[0]
+        key = _eco_name(c)
+        if purl in constraints and key in pinned:
+            dropped.append(purl)
+            for target in pinned[key]:
+                _merge_extras(target, {"evidence": c.get("evidence") or {}})
+            continue
+        kept.append(c)
+    left = {k: v for k, v in constraints.items() if k not in set(dropped)}
+    return kept, left, dropped
+
+
+def drop_own_modules(components: list[dict[str, Any]], own: set[str]) -> list[dict[str, Any]]:
+    """The scanned project's own module (``pkg:golang/<module from go.mod>``) is the subject, not a component."""
+    if not own:
+        return components
+    return [c for c in components
+            if str(c.get("purl") or "").split("?", 1)[0].split("@", 1)[0] not in own]
 
 
 def inventory_to_finding_rows(
     components: list[dict[str, Any]],
     *,
     vuln_assessed: bool = False,
+    dependency_types: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Project merged inventory components into enrich_sbom_scan finding rows."""
+    """Project merged inventory components into enrich_sbom_scan finding rows.
+
+    ``dependency_types`` (``dependency_types()``) says direct / transitive per purl from the edges the tools
+    declared; without an edge the row says "unknown", never "direct" (review 6028132826 M1).
+    """
+    types = dependency_types or {}
     rows: list[dict[str, Any]] = []
     for c in components:
         name = str(c.get("name") or "").strip()
         if not name:
             continue
-        if str(c.get("type") or "").lower() == "file" and not c.get("purl"):
+        if not is_package(c):
             continue  # a file Syft listed (/.github/workflows/x.yml, /model.gguf) is not a package (G-D4-6)
         version = str(c.get("version") or "").strip()
         dep = f"{name}=={version}" if version else name
@@ -123,7 +218,7 @@ def inventory_to_finding_rows(
             "owasp_top_10": {},
             "compliance_controls": {},
             "suggested_fix": "n/a — inventory row",
-            "dependency_type": "direct",
+            "dependency_type": types.get(str(purl or "").split("?", 1)[0], "unknown"),
             "inventory_only": True,
             "vuln_assessed": bool(vuln_assessed),
         }
@@ -133,8 +228,43 @@ def inventory_to_finding_rows(
             row["hash"] = h
         if supplier:
             row["supplier"] = supplier
+        source = next((str(p.get("value")) for p in c.get("properties") or []
+                       if isinstance(p, dict) and p.get("name") == "dss:version_source"), "")
+        if source == "range_lower_bound":
+            constraint = next((str(p.get("value")) for p in c.get("properties") or []
+                               if isinstance(p, dict) and p.get("name") == "dss:version_constraint"), "")
+            row["version_guessed_from"] = constraint or "range"
         rows.append(row)
     return rows
+
+
+def dependency_types(bom: dict[str, Any] | None) -> dict[str, str]:
+    """``purl -> direct | transitive`` from the declared graph: the subject's own edges are direct, anything else
+    the subject reaches is transitive. A package nothing declares an edge to is left out (unknown)."""
+    if not isinstance(bom, dict):
+        return {}
+    root = str(((bom.get("metadata") or {}).get("component") or {}).get("bom-ref") or "")
+    graph: dict[str, list[str]] = {}
+    for d in bom.get("dependencies") or []:
+        if isinstance(d, dict) and d.get("ref"):
+            graph.setdefault(str(d["ref"]), []).extend(str(k) for k in d.get("dependsOn") or [])
+    purl_of = {str(c.get("bom-ref")): str(c.get("purl") or "").split("?", 1)[0]
+               for c in bom.get("components") or [] if isinstance(c, dict) and c.get("purl")}
+    out: dict[str, str] = {}
+    direct = graph.get(root, [])
+    for ref in direct:
+        if purl_of.get(ref):
+            out[purl_of[ref]] = "direct"
+    seen = set(direct)
+    todo = list(direct)
+    while todo:
+        for kid in graph.get(todo.pop(), []):
+            if kid not in seen:
+                seen.add(kid)
+                todo.append(kid)
+                if purl_of.get(kid) and purl_of[kid] not in out:
+                    out[purl_of[kid]] = "transitive"
+    return out
 
 
 def load_cdx_json(path: Path | None) -> dict[str, Any] | None:
@@ -327,10 +457,14 @@ def assemble_cyclonedx(
     * ``metadata``: the real scan time, DevSecShield (with its build version) plus every inventory tool and its
       version in ``tools``, the scanned repository as ``component`` (name, commit, purl), lifecycle ``pre-build``.
     * Every component's ``bom-ref`` is its purl (else ``name@version``), so the source tools' graphs can be joined.
-    * ``dependencies``: the source tools' edges (cdxgen reads lock files), plus the subject's edges to every
-      component no other component depends on, so each component is reachable from the subject (NTIA "dependency
-      relationship"). A component whose own dependencies are unknown gets no entry (CycloneDX: unknown, not none).
+    * ``dependencies``: only the edges a source declared (cdxgen from lock files, Syft, the ``# via`` lines of a pip
+      lock); the subject's entry holds the packages a source named as the project's own (review 6028132826 M1:
+      edges are never made up). A component whose own dependencies are unknown gets no entry (CycloneDX: unknown).
+    * ``compositions``: ``incomplete`` for the subject's dependencies when a component is not reachable through the
+      declared edges, ``unknown`` for the components with no graph entry; ``dss:dependency_graph`` in
+      ``metadata.properties`` is ``declared``, ``partial`` or ``none`` (NTIA-5 / CERT-In T5 read it).
     * A version Syft guessed from a range carries ``dss:version_source=range_lower_bound`` and the constraint.
+    * Files (``type: file`` without a purl) are not components.
 
     Never emits ``sbom-dep-N`` placeholders.
     """
@@ -350,7 +484,7 @@ def assemble_cyclonedx(
         if not isinstance(raw, dict):
             continue
         name = str(raw.get("name") or "").strip()
-        if not name or _is_placeholder(name):
+        if not name or _is_placeholder(name) or not is_package(raw):
             continue
         item = {k: v for k, v in raw.items() if k not in {"bom-ref", "components"}}
         item["name"] = name
@@ -372,13 +506,15 @@ def assemble_cyclonedx(
         cleaned.append(item)
 
     edges, root_kids = _graph_edges(docs, ref_of)
-    children = {k for kids in edges.values() for k in kids}
-    direct = [c["bom-ref"] for c in cleaned if c["bom-ref"] in root_kids or c["bom-ref"] not in children]
-    dependencies: list[dict[str, Any]] = [{"ref": root_ref, "dependsOn": direct}] if direct else [{"ref": root_ref}]
+    refs = [c["bom-ref"] for c in cleaned]
+    direct = [r for r in refs if r in root_kids]
+    # no source named the project's own dependencies: the subject gets no entry (unknown), not an empty one ("none")
+    dependencies: list[dict[str, Any]] = [{"ref": root_ref, "dependsOn": direct}] if direct else []
     for c in cleaned:
         kids = edges.get(c["bom-ref"])
         if kids is not None:
             dependencies.append({"ref": c["bom-ref"], "dependsOn": kids} if kids else {"ref": c["bom-ref"]})
+    graph_state, compositions = graph_completeness(root_ref, refs, dependencies)
 
     metadata: dict[str, Any] = {
         "timestamp": timestamp or utc_now(),
@@ -387,9 +523,11 @@ def assemble_cyclonedx(
         "authors": [{"name": "DevSecShield"}],
         "component": root,
     }
+    props = [{"name": "dss:dependency_graph", "value": graph_state}]
     if tools:
-        metadata["properties"] = [{"name": "dss:inventory_tools", "value": ",".join(tools)}]
-    return {
+        props.insert(0, {"name": "dss:inventory_tools", "value": ",".join(tools)})
+    metadata["properties"] = props
+    out: dict[str, Any] = {
         "$schema": CDX_SCHEMA_16,
         "bomFormat": "CycloneDX",
         "specVersion": "1.6",
@@ -399,3 +537,37 @@ def assemble_cyclonedx(
         "components": cleaned,
         "dependencies": dependencies,
     }
+    if compositions:
+        out["compositions"] = compositions
+    return out
+
+
+def graph_completeness(
+    root_ref: str, refs: list[str], dependencies: list[dict[str, Any]]
+) -> tuple[str, list[dict[str, Any]]]:
+    """``(declared | partial | none, compositions)`` for a graph that holds only declared edges.
+
+    ``declared``: every component is reachable from the subject. Otherwise the subject's dependency list is
+    ``incomplete`` and the components without an entry of their own have ``unknown`` dependencies (CycloneDX 1.6
+    compositions). Edges are never added to make a component reachable.
+    """
+    graph = {str(d.get("ref")): [str(k) for k in d.get("dependsOn") or []] for d in dependencies
+             if isinstance(d, dict) and d.get("ref")}
+    seen: set[str] = set()
+    todo = [root_ref]
+    while todo:
+        for kid in graph.get(todo.pop(), []):
+            if kid not in seen:
+                seen.add(kid)
+                todo.append(kid)
+    reached = sum(1 for r in refs if r in seen)
+    if not refs:
+        return "none", []
+    if reached == len(refs):
+        return "declared", []
+    state = "partial" if reached else "none"
+    compositions: list[dict[str, Any]] = [{"aggregate": "incomplete", "dependencies": [root_ref]}]
+    unknown = [r for r in refs if r not in graph]
+    if unknown:
+        compositions.append({"aggregate": "unknown", "dependencies": unknown})
+    return state, compositions

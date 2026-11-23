@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -80,8 +81,7 @@ def _pinned(constraint: str) -> bool:
     return c.startswith("==") and not any(ch in c[2:] for ch in "*,<>!~")
 
 
-def version_constraints(cdx_path: Path | str | None) -> dict[str, str]:
-    """``purl -> constraint`` for every package whose version Syft guessed from a range (python.guess-unpinned)."""
+def _native_doc(cdx_path: Path | str | None) -> dict[str, Any]:
     if cdx_path is None:
         return {}
     path = native_path(cdx_path)
@@ -91,8 +91,63 @@ def version_constraints(cdx_path: Path | str | None) -> dict[str, str]:
         doc: Any = json.loads(path.read_text(encoding="utf-8", errors="ignore"))
     except Exception:
         return {}
+    return doc if isinstance(doc, dict) else {}
+
+
+_ACTION_REF = re.compile(r"^(?P<path>[^@\s]+)@(?P<sha>[0-9a-f]{40})$", re.I)
+
+
+def action_pins(cdx_path: Path | str | None) -> dict[str, dict[str, str]]:
+    """``tag purl -> {purl, version, tag}`` for every GitHub Action a workflow pins by commit SHA.
+
+    Syft 1.5x names ``uses: actions/checkout@<sha> # v5`` after the comment (``pkg:github/actions/checkout@v5``)
+    while cdxgen uses the SHA, so the same action was listed twice (review 6028132826 M3). The SHA is what runs.
+    """
+    out: dict[str, dict[str, str]] = {}
+    for art in _native_doc(cdx_path).get("artifacts") or []:
+        if not isinstance(art, dict) or not str(art.get("type") or "").startswith("github-action"):
+            continue
+        meta = art.get("metadata") if isinstance(art.get("metadata"), dict) else {}
+        m = _ACTION_REF.match(str(meta.get("value") or "").strip())
+        purl = str(art.get("purl") or "").split("?", 1)[0]
+        if not m or not purl or "@" not in purl:
+            continue
+        sha = m.group("sha").lower()
+        tag = str(art.get("version") or "").strip()
+        if tag.lower() == sha:
+            continue
+        out[purl] = {"purl": f"{purl.rsplit('@', 1)[0]}@{sha}", "version": sha, "tag": tag}
+    return out
+
+
+_GO_MODULE = re.compile(r"^\s*module\s+(\S+)\s*$", re.M)
+
+
+def own_go_modules(directory: Path | str | None) -> set[str]:
+    """``pkg:golang/<module>`` of every ``go.mod`` in the scanned tree: the project itself, not a dependency
+    (Syft 1.57 lists go-test-bench's own module as a component; review 6028132826 n3)."""
+    if not directory:
+        return set()
+    out: set[str] = set()
+    root = Path(directory)
+    for here, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if d not in {".git", "vendor", "node_modules"}]
+        if "go.mod" in files:
+            try:
+                text = (Path(here) / "go.mod").read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            m = _GO_MODULE.search(text)
+            if m:
+                out.add(f"pkg:golang/{m.group(1).strip()}")
+    return out
+
+
+def version_constraints(cdx_path: Path | str | None) -> dict[str, str]:
+    """``purl -> constraint`` for every package whose version Syft guessed from a range (python.guess-unpinned)."""
+    doc = _native_doc(cdx_path)
     out: dict[str, str] = {}
-    for art in (doc.get("artifacts") or []) if isinstance(doc, dict) else []:
+    for art in doc.get("artifacts") or []:
         if not isinstance(art, dict):
             continue
         meta = art.get("metadata") if isinstance(art.get("metadata"), dict) else {}

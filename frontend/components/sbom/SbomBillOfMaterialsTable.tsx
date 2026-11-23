@@ -101,8 +101,8 @@ export default function SbomBillOfMaterialsTable({
             ) : null}
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative max-w-sm flex-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div className="relative w-full min-w-0 sm:max-w-sm sm:flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
             <Input
               type="search"
@@ -113,11 +113,12 @@ export default function SbomBillOfMaterialsTable({
               aria-label="Search software bill of materials"
             />
           </div>
-          <div role="group" aria-label="Components shown" className="inline-flex overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-800">
+          {/* 390 px: the toggle takes the row's full width and its two halves share it (review 6028132826 m2) */}
+          <div role="group" aria-label="Components shown" className="flex w-full min-w-0 overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-800 sm:inline-flex sm:w-auto">
             <Button
               type="button"
               variant={view === "all" ? "default" : "ghost"}
-              className="h-9 cursor-pointer rounded-none"
+              className="h-9 min-w-0 flex-1 cursor-pointer whitespace-normal rounded-none px-2 text-xs leading-tight sm:flex-none sm:px-4 sm:text-sm"
               aria-pressed={view === "all"}
               onClick={() => setView("all")}
               data-testid="sbom-view-all"
@@ -127,7 +128,7 @@ export default function SbomBillOfMaterialsTable({
             <Button
               type="button"
               variant={view === "vulnerable" ? "default" : "ghost"}
-              className="h-9 cursor-pointer rounded-none"
+              className="h-9 min-w-0 flex-1 cursor-pointer whitespace-normal rounded-none px-2 text-xs leading-tight sm:flex-none sm:px-4 sm:text-sm"
               aria-pressed={view === "vulnerable"}
               onClick={() => setView("vulnerable")}
               data-testid="sbom-view-vulnerable"
@@ -153,13 +154,7 @@ export default function SbomBillOfMaterialsTable({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={COLUMNS.length} className="py-8 text-center text-zinc-500">
-                    {emptyBomMessage(view, query, rows.length)}
-                  </TableCell>
-                </TableRow>
-              ) : (
+              {filtered.length === 0 ? null : (
                 filtered.map((row) => (
                   <TableRow
                     key={`${row.name}@${row.version}`}
@@ -187,6 +182,12 @@ export default function SbomBillOfMaterialsTable({
           </Table>
           <ScrollBar orientation="horizontal" />
         </ScrollArea>
+        {filtered.length === 0 ? (
+          // outside the horizontally scrolling table, so it stays in view on a phone (review 6028132826 m2)
+          <p className="py-8 text-center text-sm text-zinc-500" role="status" data-testid="sbom-bom-empty">
+            {emptyBomMessage(view, query, rows.length)}
+          </p>
+        ) : null}
       </CardContent>
     </Card>
   );

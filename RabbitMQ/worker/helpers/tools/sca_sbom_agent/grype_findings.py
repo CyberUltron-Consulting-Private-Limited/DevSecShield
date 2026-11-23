@@ -54,8 +54,10 @@ def impact_from_cvss(score: float | None) -> str | None:
 
 
 def _best_cvss(entries: Iterable[Any]) -> tuple[float | None, str, str]:
-    """(base score, vector, version) of the highest CVSS entry; a primary (NVD) entry wins a tie."""
+    """(base score, vector, version) of the highest CVSS entry; on a tie a ``type: Primary`` entry (NVD's own) wins
+    over a secondary one, else the first listed."""
     best: tuple[float | None, str, str] = (None, "", "")
+    best_primary = False
     for entry in entries:
         entry = _dict(entry)
         metrics = _dict(entry.get("metrics"))
@@ -63,9 +65,26 @@ def _best_cvss(entries: Iterable[Any]) -> tuple[float | None, str, str]:
             score = float(metrics.get("baseScore"))
         except (TypeError, ValueError):
             continue
-        if best[0] is None or score > best[0]:
+        primary = _str(entry.get("type")).lower() == "primary"
+        if best[0] is None or score > best[0] or (score == best[0] and primary and not best_primary):
             best = (score, _str(entry.get("vector")), _str(entry.get("version")))
+            best_primary = primary
     return best
+
+
+def grype_db_info(document: dict[str, Any] | None) -> dict[str, str]:
+    """``{built, schema}`` of the vulnerability database a Grype run used (Grype 0.8x ``descriptor.db.built``,
+    0.9x+ ``descriptor.db.status.built``), so a scan's findings can be reproduced later (review 6028132826 m3)."""
+    db = _dict(_dict(_dict(document).get("descriptor")).get("db"))
+    status = _dict(db.get("status"))
+    built = _str(db.get("built")) or _str(status.get("built"))
+    schema = db.get("schemaVersion") or status.get("schemaVersion")
+    out = {}
+    if built:
+        out["built"] = built
+    if schema not in (None, ""):
+        out["schema"] = str(schema)
+    return out
 
 
 def _cwes(vuln: dict[str, Any]) -> list[str]:
@@ -144,19 +163,21 @@ def finding_rows(
     *,
     licenses: dict[str, tuple[str, str]] | None = None,
     guessed_versions: dict[str, str] | None = None,
-    direct: set[str] | None = None,
+    dependency_types: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Finding rows for every Grype match, sorted by (severity desc, package, advisory id).
 
-    ``licenses`` maps ``purl`` or ``name@version`` to ``(spdx_or_label, license_type)`` from the inventory;
+    ``licenses`` maps ``purl`` or ``name@version`` to ``(spdx_or_label, license_type)`` from the resolved SBOM;
     ``guessed_versions`` maps ``purl`` to the manifest's version constraint where the version was guessed from a
-    range; ``direct`` holds the purls the subject depends on directly (None: not known, rows say "direct").
+    range; ``dependency_types`` maps ``purl`` to direct / transitive from the declared graph (a package with no
+    declared edge is "unknown", never "direct": review 6028132826 M1).
     """
     if not isinstance(document, dict):
         return []
     licenses = licenses or {}
     guessed_versions = guessed_versions or {}
-    seen: set[tuple[str, str, str]] = set()
+    types = dependency_types or {}
+    seen: set[tuple[str, str]] = set()
     rows: list[dict[str, Any]] = []
     for raw in _list(document.get("matches")):
         match = _dict(raw)
@@ -167,11 +188,13 @@ def finding_rows(
         version = _str(artifact.get("version"))
         if not vid or not name:
             continue
-        key = (vid, name.lower(), version)
-        if key in seen:  # grype can report one advisory twice for one package (two matchers)
+        purl = _str(artifact.get("purl")).split("?", 1)[0]
+        # grype can report one advisory twice for one package (two matchers); the purl tells two ecosystems'
+        # packages of the same name and version apart (review 6028132826 m5)
+        key = (vid, purl.lower() or f"{name.lower()}@{version}")
+        if key in seen:
             continue
         seen.add(key)
-        purl = _str(artifact.get("purl")).split("?", 1)[0]
         aliases = _aliases(match, vid)
         cves = [i for i in [vid, *aliases] if _CVE.match(i)]
         # the advisory's own CVSS (it is what grype's severity comes from); a related record's only when it has none
@@ -195,7 +218,7 @@ def finding_rows(
             "dependency": f"{name}=={version}" if version else name,
             "purl": purl or None,
             "reachability": "not_assessed",
-            "dependency_type": "direct" if direct is None or (purl and purl in direct) else "transitive",
+            "dependency_type": types.get(purl, "unknown"),
             "license": lic or "LicenseRef-not-declared",
             "license_type": lic_type or "not_declared",
             "cves": ids_text,
@@ -271,4 +294,4 @@ def merge_llm_enrichment(rows: list[dict[str, Any]], enriched: list[dict[str, An
     return touched
 
 
-__all__ = ["finding_rows", "impact_from_cvss", "merge_llm_enrichment"]
+__all__ = ["finding_rows", "grype_db_info", "impact_from_cvss", "merge_llm_enrichment"]

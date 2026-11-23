@@ -1,5 +1,4 @@
-"""DevSecShield adapter — enrich SBOM/SCA worker output with deterministic compliance.
-"""
+"""DevSecShield adapter — enrich SBOM/SCA worker output with deterministic compliance."""
 
 from __future__ import annotations
 
@@ -27,17 +26,13 @@ def enrich_sbom_scan(
     out: dict[str, Any] = {
         "results": results,
         "duration_of_scan": duration_of_scan,
-        # checks read the CycloneDX document's own fields when there is one (FIX-C1, SOW
-        # D4)
+        # checks read the CycloneDX document's own fields when there is one (FIX-C1, D4)
         "sbom_compliance": run_sbom_compliance(
             results, bom_properties=props, sbom_json=sbom_json
         ),
     }
     if sbom_json is not None:
-        from aibom.sbom.cyclonedx_export import (
-            overlay_sbom_document,
-            stamp_component_compliance,
-        )
+        from aibom.sbom.cyclonedx_export import overlay_sbom_document, stamp_component_compliance
 
         stamped = overlay_sbom_document(sbom_json, out["sbom_compliance"])
         stamped = stamp_component_compliance(stamped, results)

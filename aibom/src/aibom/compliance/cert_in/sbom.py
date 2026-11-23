@@ -74,12 +74,9 @@ def _field_value(r: ScanResult, c: FrameworkComponent, rid: str) -> str | None:
         return prop(c, "sbom:origin")
     if rid == "T5-Component-Dependencies":
         graph = _bom_prop(r, "sbom:dependency_graph")
-        if (
-            graph is not None
-        ):  # the CycloneDX document's `dependencies` reach every component (FIX-C1)
+        if graph is not None:  # the CycloneDX document's `dependencies` (FIX-C1)
             return "yes" if graph == "complete" else None
-        # Older scans with no SBOM document: the projected inventory is the dependency
-        # set.
+        # Inventory of projected deps IS the dependency set of the scanned artifact.
         return "yes" if _sbom_components(r) else None
     if rid == "T5-Vulnerabilities":
         return "yes" if props.get("sbom:vuln_assessed") == "true" else None
@@ -162,6 +159,19 @@ def _make_auto_check(
             val = _field_value(r, comps[0], rid)
             if has_nonempty(val):
                 return PASS(f"{rid} present on SBOM scan metadata", _refs(comps))
+            if (
+                rid == "T5-Component-Dependencies"
+                and _bom_prop(r, "sbom:dependency_graph_source") == "declared"
+            ):
+                # review 6028132826 M1: only declared edges, part of the inventory
+                # reached -> PARTIAL (not BOM-evidenceable, attestable), never a pass
+                reached = _bom_prop(r, "sbom:dependency_graph_reached") or "?"
+                return NOT_EVIDENCEABLE(
+                    f"{rid}: partial — {reached} component(s) reachable through "
+                    "dependency edges the inventory tools declared; the rest are "
+                    "unknown (CycloneDX compositions: incomplete)",
+                    _refs(comps),
+                )
             if missing == "nbe":
                 return NOT_EVIDENCEABLE(
                     f"{rid}: not BOM-evidenceable from SBOM findings "
@@ -192,7 +202,8 @@ def _make_auto_check(
                     _refs(absent),
                 )
             return NOT_EVIDENCEABLE(
-                f"{rid}: not BOM-evidenceable from SBOM findings ({CERTIN_DISCLAIMER})",
+                f"{rid}: not BOM-evidenceable from SBOM findings "
+                f"({CERTIN_DISCLAIMER})",
                 _refs(comps),
             )
 

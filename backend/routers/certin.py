@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import io
 import json
@@ -442,6 +443,16 @@ def _pack_pdf(scan_type: str, data: dict, ctx: ReportContext) -> bytes | None:
             pass
 
 
+def _signature_matches(bom: dict | None, signature: dict) -> bool:
+    """A stored signature ships only when its digest is the SHA-256 of the canonical ``bom.cdx.json`` packed next to
+    it (review 6028132826 M6): a scan signed before its SBOM was re-emitted (CycloneDX 1.7 -> 1.6) would otherwise ship
+    a ``bom_signature.json`` that does not match. Signing itself is PR #484's; this only leaves a stale one out."""
+    if not isinstance(bom, dict) or not isinstance(signature, dict):
+        return False
+    canonical = json.dumps(bom, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return str(signature.get("digest") or "") == hashlib.sha256(canonical).hexdigest()
+
+
 def _build_evidence_pack(engine, team_id: int, scan_type: str, scan_id: int) -> tuple[str, ReportContext]:
     """Write the pack to a temp zip (removed here on any failure; the caller schedules its removal after sending)."""
     scan = _load_success_scan(engine, team_id, scan_type, scan_id)
@@ -485,14 +496,19 @@ def _build_evidence_pack(engine, team_id: int, scan_type: str, scan_id: int) -> 
                         console.print(f"evidence-pack XML skipped: {e.__class__.__name__}", style="yellow")
             if isinstance(data.get("vex_json"), dict):
                 zf.writestr("vex.json", json.dumps(data["vex_json"], indent=2))
-            if isinstance(data.get("bom_signature"), dict):
+            if isinstance(data.get("bom_signature"), dict) and _signature_matches(bom, data["bom_signature"]):
                 zf.writestr("bom_signature.json", json.dumps(data["bom_signature"], indent=2))
             ckey = compliance_key_for(scan_type)
             if isinstance(data.get(ckey), dict):
                 zf.writestr("compliance.json", json.dumps(data[ckey], indent=2))
             if isinstance(data.get("attestations"), dict):
                 zf.writestr("attestations.json", json.dumps(data["attestations"], indent=2))
-            pdf = _pack_pdf(scan_type, data, ctx)
+            pdf_data = data
+            if scan_type == "sbom_sca":  # the pack's report.pdf reads the bom.cdx.json packed here (same subject)
+                from backend.utilities.pdf.sbom_sca_pdf import SUBJECT_NAME_KEY
+
+                pdf_data = {**data, SUBJECT_NAME_KEY: subject_name_for(scan.scan_metadata)}
+            pdf = _pack_pdf(scan_type, pdf_data, ctx)
             if pdf is not None:
                 zf.writestr("report.pdf", pdf)
     except BaseException:

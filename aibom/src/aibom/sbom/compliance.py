@@ -38,9 +38,7 @@ _HIGH_LICENSE = frozenset(
         "Source Available",
     }
 )
-_REACHABLE = frozenset(
-    {"reachable", "Reachable", "potentially_reachable", "Potentially Reachable"}
-)
+_REACHABLE = frozenset({"reachable", "Reachable", "potentially_reachable", "Potentially Reachable"})
 
 
 def _impact(f: dict[str, Any]) -> str:
@@ -154,6 +152,13 @@ def _bom_supplier(comp: dict[str, Any]) -> str:
     return str(comp.get("publisher") or "").strip()
 
 
+def _meta_prop(meta: dict[str, Any], name: str) -> str:
+    for prop in meta.get("properties") or []:
+        if isinstance(prop, dict) and prop.get("name") == name:
+            return str(prop.get("value") or "").strip()
+    return ""
+
+
 def _reachable(edges: dict[str, list[str]], root: str) -> set[str]:
     seen: set[str] = set()
     todo = [root]
@@ -208,6 +213,10 @@ def bom_to_scan_result(
     edges: list[Edge] = []
     for i, comp in enumerate(sbom_json.get("components") or []):
         if not isinstance(comp, dict) or not str(comp.get("name") or "").strip():
+            continue
+        if str(comp.get("type") or "").lower() == "file" and not comp.get("purl"):
+            # a file Syft 1.5x lists (/requirements.txt) is not a component of the
+            # downloaded SBOM, so it is not counted here either (review 6028132826 M3)
             continue
         ref = str(comp.get("bom-ref") or comp.get("purl") or f"component-{i}")
         purl = str(comp.get("purl") or "").split("?", 1)[0]
@@ -294,13 +303,25 @@ def bom_to_scan_result(
         for c in components
         if (c.properties or {}).get("sbom:in_dependency_graph") == "true"
     )
+    graph_state = (
+        "complete"
+        if components and in_graph == len(components)
+        else ("partial" if in_graph else "absent")
+    )
     bom_props: dict[str, str] = {
         "sbom:automation_cyclonedx": "true",
         "sbom:spec_version": str(sbom_json.get("specVersion") or ""),
-        "sbom:dependency_graph": "complete"
-        if components and in_graph == len(components)
-        else ("partial" if in_graph else "absent"),
+        "sbom:dependency_graph": graph_state,
+        "sbom:dependency_graph_reached": f"{in_graph}/{len(components)}",
     }
+    # Review 6028132826 M1: the worker writes only the edges a tool declared and says so
+    # (dss:dependency_graph = declared | partial | none, with CycloneDX compositions).
+    # A graph that does not reach every component is "partial" evidence, not a pass.
+    declared = _meta_prop(meta, "dss:dependency_graph")
+    if declared:
+        bom_props["sbom:dependency_graph_source"] = "declared"
+        if declared != "declared" and graph_state == "complete":
+            bom_props["sbom:dependency_graph"] = "partial"
     if any(authors):
         bom_props["sbom:author"] = ", ".join(a for a in authors if a)
     if meta.get("timestamp"):
@@ -345,11 +366,7 @@ def findings_to_scan_result(
             continue
         name, version = _parse_name_version(dep)
         purl_raw = row.get("purl")
-        purl = (
-            str(purl_raw).strip()
-            if isinstance(purl_raw, str) and purl_raw.strip()
-            else None
-        )
+        purl = str(purl_raw).strip() if isinstance(purl_raw, str) and purl_raw.strip() else None
         bom_ref = _inventory_bom_ref(name, version, purl, i, used_refs)
         # Legacy vuln rows default to assessed; inventory-only rows must opt in.
         vuln_assessed = row.get("vuln_assessed")
@@ -475,10 +492,7 @@ def _supply1(r: ScanResult, req: Requirement) -> CheckResult:
     bad = [c.bom_ref for c in comps if not (c.name and c.version)]
     if bad:
         return FAIL(f"{len(bad)} dependenc(ies) lack name or version", bad)
-    return PASS(
-        f"{len(comps)} dependenc(ies) inventoried with name + version",
-        [c.bom_ref for c in comps],
-    )
+    return PASS(f"{len(comps)} dependenc(ies) inventoried with name + version", [c.bom_ref for c in comps])
 
 
 @register_check(R_S2)
@@ -543,7 +557,9 @@ _CRYPTO_DEP_HINTS = (
 def _supply5(r: ScanResult, req: Requirement) -> CheckResult:
     comps = _sbom_components(r)
     crypto = [
-        c for c in comps if any(h in (c.name or "").lower() for h in _CRYPTO_DEP_HINTS)
+        c
+        for c in comps
+        if any(h in (c.name or "").lower() for h in _CRYPTO_DEP_HINTS)
     ]
     if not crypto:
         return PASS("no crypto-related dependencies in inventory")
@@ -558,10 +574,7 @@ def _supply5(r: ScanResult, req: Requirement) -> CheckResult:
             f"{len(bad)} crypto-related dependenc(ies) with critical/high CVEs",
             bad,
         )
-    return PASS(
-        "crypto-related dependencies have no critical/high CVEs",
-        [c.bom_ref for c in crypto],
-    )
+    return PASS("crypto-related dependencies have no critical/high CVEs", [c.bom_ref for c in crypto])
 
 
 register_manual(
