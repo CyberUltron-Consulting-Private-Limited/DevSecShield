@@ -220,17 +220,6 @@ def _save_scan_data(engine, scan_id: int, team_id: int, scan_type: str, data: di
         session.commit()
 
 
-def _signature_covers(sign_mod, signature: Any, bom: dict) -> bool:
-    """A stored signature is reused only when its digest is the digest of the BOM served now (FIX-C1 re-emits older
-    scans' SBOMs as CycloneDX 1.6, so their stored signatures no longer match). Signing hook for the shared
-    asymmetric signing module (FIX-A1): it replaces ``sign_mod.sign_bom`` and this check, not the callers."""
-    if not isinstance(signature, dict) or not signature.get("digest"):
-        return False
-    import hashlib
-
-    return signature["digest"] == hashlib.sha256(sign_mod.canonical_bom_bytes(bom)).hexdigest()
-
-
 def _hmac_secret() -> bytes:
     raw = os.environ.get("CERTIN_HMAC_SECRET") or ""
     # Fall back to JWT secret for local/dev only when CERTIN_HMAC_SECRET unset —
@@ -468,7 +457,7 @@ def _build_evidence_pack(engine, team_id: int, scan_type: str, scan_id: int) -> 
             findings = data.get("results") if scan_type in ("sbom_sca", "cbom") else None
             data["vex_json"] = _build_vex(engine, scan, scan_type, bom,
                                           findings if isinstance(findings, list) else None, vex_mod)
-        if bom and not _signature_covers(sign_mod, data.get("bom_signature"), bom):
+        if bom and not isinstance(data.get("bom_signature"), dict):
             try:
                 data["bom_signature"] = sign_mod.sign_bom(bom, secret=_hmac_secret())
             except HTTPException:
