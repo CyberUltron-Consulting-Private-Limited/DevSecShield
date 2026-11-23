@@ -30,20 +30,34 @@ and **SARIF 2.1.0** via a reporter registry.
 CycloneDX collapses all edges to `dependsOn`; SPDX maps `trained_on`/`depends_on`
 to native relationshipTypes and `served_by`/`deployed_at` to `other` + a comment.
 
-## Risk-score scale (locked before the Phase-4 heatmap)
-The scorer keeps `risk_total` as the raw flag-weight sum **and** publishes a
-**Trusera-style 0–100 normalized score** plus **low/medium/high bands**, defined
-in `config/risk-weights.yaml` under `scale:`:
+## Risk-score scale
+The scorer keeps `risk_total` as the raw flag-weight sum, maps each component's
+STACKED flag weight to a severity (`severity:` bands in `config/risk-weights.yaml`)
+and, for an AI BOM, publishes the headline **0-100 `risk_normalized`** from
+`posture_score` over every counted component's severity (an unflagged component is
+low; a model only named in a catalog / doc / test, `model:reference_type` catalog or
+test, is in the BOM but not counted). The formula, the cap table and the grade
+words live in ONE stdlib-only module, `score/posture.py`, which the backend PDF
+loads by path (`backend/utilities/pdf/aibom_posture.py`), so the dashboard band and
+the PDF grade say the same word:
 
 ```
-risk_normalized = min(100, round(risk_total / scale.max_raw * 100, 1))
-band:  ≤ scale.bands.low → low;  ≤ scale.bands.medium → medium;  else → high
+risk_normalized = min(100, 4 x (10 critical + 5 high + 2 medium + 1 low)),
+                  capped by the worst severity: no critical <= 69, no critical/high <= 49,
+                  low only <= 29, nothing -> 0
+grade / risk_band: >=70 F critical, >=50 D high, >=30 C elevated, >=15 B moderate, else A low
 ```
 
-`scale.max_raw` is the calibration ceiling = "every defined flag tripped once →
-100" (currently 27 = 8+10+5+4); omit it to auto-compute from the flag weights.
-Defaults: `max_raw=27`, bands `low≤33`, `medium≤66`. Rationale: 0–100 matches the
-dossier's Trusera reference and the dashboard's heatmap, so the scale never needs
-retrofitting; bands give a coarse triage signal. Editing the YAML re-scales with
-no code change. `scores` carries `risk_total`, `risk_normalized`, `risk_band`,
-`by_flag`, `by_component`, `flag_count`.
+`scores` carries `risk_total`, `risk_normalized`, `risk_band`, `risk_grade`,
+`risk_label`, `severity_counts`, `by_flag`, `by_component`, `component_severity`,
+`flag_count`. The CBOM (`cbom/scorer.py`, `score_result(..., posture=False)`) keeps
+its own flag-weight scale: `normalize_score` (raw sum / max_raw) and the YAML
+`scale.bands` (low / medium / high), unchanged by the AI BOM posture score.
+
+## Document identity and disclaimer
+`emit/identity.py`: tool `DevSecShield AI BOM` (CBOM: `DevSecShield CBOM`), version
+from `DSS_BUILD_VERSION` / `DSS_BUILD_SHA` (else the package version), supplier Zero
+Shield, creation time `ScanResult.generated_at` (the adapters stamp the scan time;
+None keeps the goldens on a pinned time). `emit/_disclaimer.py` (`disclaimer_of`):
+CBOM wording for a crypto inventory, the FDA/HIPAA wording only for an AI BOM with
+clinical / regulatory metadata, else the neutral AI BOM wording.

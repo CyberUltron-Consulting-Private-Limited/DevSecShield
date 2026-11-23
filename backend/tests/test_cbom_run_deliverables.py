@@ -287,7 +287,7 @@ def test_evidence_pack_manifest_hashes_equal_the_endpoint_bodies(api, world, mon
     names = [f["name"] for f in manifest["files"]]
     kid = _signing_key.keyring().active.kid
     assert names == ["bom.cdx.json", "bom.cdx.xml", "oscal-assessment-results.json", "vex.json",
-                     "bom_signature.json", "report.pdf", "keys/jwks.json", f"keys/{kid}.pem",
+                     "bom_signature.json", "report.pdf", "drift.json", "keys/jwks.json", f"keys/{kid}.pem",
                      "verify/zs_bom_verify.py", "verify/README.txt", "bom.cdx.json.sig", "bom.cdx.xml.sig",
                      "vex.json.sig"]
     assert sorted(zf.namelist()) == sorted(names + ["manifest.json", "manifest.json.sig", "SHA256SUMS",
@@ -300,6 +300,10 @@ def test_evidence_pack_manifest_hashes_equal_the_endpoint_bodies(api, world, mon
             continue
         served = api("GET", entry["endpoint"])
         assert served.status_code == 200, (entry["endpoint"], served.text[:200])
+        if entry["name"] == "drift.json":  # S4: the summary of the /diff answer (its route lists to 500, events)
+            assert entry["endpoint_same_bytes"] is False
+            assert json.loads(body)["format"] == "zeroshield-cbom-run-drift/1"
+            continue
         if entry["name"] == "oscal-assessment-results.json":  # the route stamps last-modified with the request time
             assert entry["endpoint_same_bytes"] is False
             mine, theirs = json.loads(body), json.loads(served.content)

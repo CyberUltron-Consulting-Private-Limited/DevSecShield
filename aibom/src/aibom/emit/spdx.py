@@ -21,6 +21,7 @@ import uuid
 from typing import Any
 
 from aibom.emit._disclaimer import disclaimer_of
+from aibom.emit.identity import SPDX_NAMESPACE, SUPPLIER, identity_for
 from aibom.emit.registry import BaseReporter, register_reporter
 from aibom.emit.validate import validate_spdx
 from aibom.model.component import (
@@ -38,8 +39,6 @@ from aibom.model.result import (
 
 SPDX_VERSION = "3.0.1"
 SPDX_CONTEXT = "https://spdx.org/rdf/3.0.1/spdx-context.jsonld"
-TOOL_NAME = "clinithread-aibom"
-_CREATED = "2026-06-21T00:00:00Z"  # pinned for deterministic, golden-stable output
 _NS_SEED = uuid.UUID("6f3c8b1e-2a4d-4f6a-9c0b-7e1d2f3a4b5c")
 _CREATION_INFO = "_:creationinfo"
 
@@ -82,7 +81,12 @@ class SpdxValidationError(Exception):
 
 def _base_ns(result: ScanResult) -> str:
     seed = "|".join(result.component_bom_refs())
-    return f"https://devsecshield.example/aibom/{uuid.uuid5(_NS_SEED, seed)}"
+    kind = getattr(result, "document_kind", "aibom")
+    return f"{SPDX_NAMESPACE}/{kind}/{uuid.uuid5(_NS_SEED, seed)}"
+
+
+def _slug(text: str) -> str:
+    return "".join(ch if ch.isalnum() else "-" for ch in text.lower()).strip("-")
 
 
 def _dataset_type_enum(value: str | None) -> str:
@@ -134,7 +138,20 @@ def _new(spdx_type: str, spdx_id: str, **props: Any) -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 
 
-def _ai_package(comp: ModelComponent, sid: str) -> dict[str, Any]:
+# A model the application does not use (a catalog / doc / test mention) is kept
+# with this note rather than dropped (review of #487 M1).
+_MENTION_COMMENT = {
+    "catalog": "Model named in a catalog, document or example file; not used by the "
+    "scanned application.",
+    "test": "Model named only in test code; not used by the scanned application.",
+}
+
+
+def _ai_package(
+    comp: ModelComponent, sid: str, supplier: str | None = None
+) -> dict[str, Any]:
+    """An SPDX 3.0.1 AI profile package: the AI fields the scan established, plus
+    ``software_primaryPurpose`` (model) and ``suppliedBy`` (its publisher)."""
     card = comp.model_card
     type_of_model = []
     if card.architecture_family:
@@ -159,11 +176,15 @@ def _ai_package(comp: ModelComponent, sid: str) -> dict[str, Any]:
     if use_phi not in _PRESENCE:
         use_phi = None
 
+    rtype = (comp.properties or {}).get("model:reference_type")
     return _new(
         "ai_AIPackage",
         sid,
         name=comp.name,
+        comment=_MENTION_COMMENT.get(rtype or ""),
+        suppliedBy=supplier,
         software_packageVersion=comp.version,
+        software_primaryPurpose="model",
         ai_typeOfModel=type_of_model or None,
         ai_limitation=limitations,
         ai_safetyRiskAssessment=_safety_risk(card),
@@ -202,14 +223,32 @@ def _dataset_package(comp: DatasetComponent, sid: str) -> dict[str, Any]:
     )
 
 
-def _software_package(comp: Any, sid: str) -> dict[str, Any]:
+def _software_package(
+    comp: Any, sid: str, supplier: str | None = None
+) -> dict[str, Any]:
     """Emit a framework / service / infra component as a generic SPDX package."""
     return _new(
         "software_Package",
         sid,
         name=comp.name,
+        suppliedBy=supplier,
         software_packageVersion=comp.version,
         software_packageUrl=comp.purl,
+    )
+
+
+def _weight_file_package(comp: Any, sid: str) -> dict[str, Any]:
+    """A model weight file (``model_file``): a package whose primary purpose is a
+    model, as it is a ``machine-learning-model`` in CycloneDX (review of #487
+    m10). It stays a ``software_Package``: an ``ai_AIPackage`` is a model with its
+    one concluded license, and a weight file found on disk declares none."""
+    source = (comp.properties or {}).get("discovery:source")
+    return _new(
+        "software_Package",
+        sid,
+        name=comp.name,
+        comment=f"Model weight file at {source}" if source else "Model weight file",
+        software_primaryPurpose="model",
     )
 
 
@@ -266,17 +305,42 @@ def emit_spdx(result: ScanResult) -> dict[str, Any]:
     def sid(suffix: str) -> str:
         return f"{ns}/{suffix}"
 
-    tool_id = sid("tool/clinithread-aibom")
+    # SPDX 3.0.1 CreationInfo: ``createdBy`` must be Agents (here the supplier
+    # Organization); the software that produced the document is ``createdUsing``
+    # (a Tool). A Tool in createdBy fails the official SHACL model.
+    identity = identity_for(result)
+    org_id = sid(f"agent/{_slug(SUPPLIER)}")
+    tool_id = sid(f"tool/{_slug(identity.tool_name)}")
     graph: list[dict[str, Any]] = [
         {
             "type": "CreationInfo",
             "@id": _CREATION_INFO,
             "specVersion": SPDX_VERSION,
-            "created": _CREATED,
-            "createdBy": [tool_id],
+            "created": identity.timestamp,
+            "createdBy": [org_id],
+            "createdUsing": [tool_id],
         },
-        _new("Tool", tool_id, name=TOOL_NAME),
+        _new("Organization", org_id, name=SUPPLIER),
+        _new(
+            "Tool",
+            tool_id,
+            name=f"{identity.tool_name} {identity.tool_version}",
+        ),
     ]
+
+    # One Organization per publisher the BOM names (not "local"): the
+    # ``suppliedBy`` of its packages.
+    suppliers: dict[str, str] = {}
+
+    def supplier_of(comp: Any) -> str | None:
+        name = (getattr(comp, "publisher", None) or "").strip()
+        if not name or name.lower() == "local":
+            return None
+        if name not in suppliers:
+            supplier_id = sid(f"agent/supplier/{_slug(name)}")
+            suppliers[name] = supplier_id
+            graph.append(_new("Organization", supplier_id, name=name))
+        return suppliers[name]
 
     models = [c for c in result.components if isinstance(c, ModelComponent)]
     datasets = [c for c in result.components if isinstance(c, DatasetComponent)]
@@ -299,7 +363,7 @@ def emit_spdx(result: ScanResult) -> dict[str, Any]:
 
     for model in models:
         mid = sid(f"package/{model.bom_ref}")
-        graph.append(_ai_package(model, mid))
+        graph.append(_ai_package(model, mid, supplier_of(model)))
         root_ids.append(mid)
 
         # Exactly one concluded-license relationship per AIPackage (hard rule).
@@ -328,9 +392,18 @@ def emit_spdx(result: ScanResult) -> dict[str, Any]:
     for ds in datasets:
         graph.append(_dataset_package(ds, sid(f"package/{ds.bom_ref}")))
     for lib in libs:
-        graph.append(_software_package(lib, sid(f"package/{lib.bom_ref}")))
+        graph.append(
+            _software_package(lib, sid(f"package/{lib.bom_ref}"), supplier_of(lib))
+        )
     for other in others:
-        graph.append(_software_package(other, sid(f"package/{other.bom_ref}")))
+        if other.kind == "model_file":
+            graph.append(_weight_file_package(other, sid(f"package/{other.bom_ref}")))
+            continue
+        graph.append(
+            _software_package(
+                other, sid(f"package/{other.bom_ref}"), supplier_of(other)
+            )
+        )
 
     graph.append(
         _new(
@@ -338,6 +411,10 @@ def emit_spdx(result: ScanResult) -> dict[str, Any]:
             sid("document"),
             name=result.subject.name,
             comment=disclaimer_of(result),  # advisory-only hard rule: every report
+            # the SPDX 3.0.1 profiles this document's elements use
+            profileConformance=[
+                "core", "software", "simpleLicensing", "ai", "dataset"
+            ],
             rootElement=root_ids or None,
         )
     )

@@ -26,6 +26,11 @@ def _compliance_blob(payload: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def _out_of_scope(fw: dict[str, Any]) -> bool:
+    applicable = sum(int(fw.get(k) or 0) for k in ("pass", "pass_with_evidence", "fail", "not_bom_evidenceable"))
+    return applicable == 0 and int(fw.get("out_of_scope") or 0) > 0
+
+
 def append_rbi_compliance_pdf_section(
     story: list,
     scan_payload: dict[str, Any],
@@ -61,10 +66,12 @@ def append_rbi_compliance_pdf_section(
         )
     )
 
+    # A framework none of whose requirements applies (every one out of scope: the healthcare FDA / HIPAA / GMLP
+    # checks on a bank's AI BOM) is not listed: a row of 0 / 0 / n/a reads as if it were assessed.
     frameworks = [
         (k, v)
         for k, v in compliance.items()
-        if k != "disclaimer" and isinstance(v, dict)
+        if k != "disclaimer" and isinstance(v, dict) and not _out_of_scope(v)
     ]
     if frameworks:
         rows = [["Framework", "Pass", "Fail", "Coverage"]]

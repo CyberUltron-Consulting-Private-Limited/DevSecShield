@@ -5,9 +5,10 @@
     {
       "tool": {
         "driver": {
-          "name": "clinithread-aibom",
+          "name": "DevSecShield AI BOM",
+          "organization": "Zero Shield",
           "version": "0.1.0",
-          "informationUri": "https://github.com/devsecshield/clinithread-aibom",
+          "informationUri": "https://zeroshield.ai",
           "rules": [
             {
               "id": "DATASET_NO_DEIDENT",
@@ -18,7 +19,7 @@
               "defaultConfiguration": {
                 "level": "error"
               },
-              "helpUri": "https://github.com/devsecshield/clinithread-aibom#dataset_no_deident"
+              "helpUri": "https://zeroshield.ai#dataset_no_deident"
             },
             {
               "id": "MODEL_EU_AI_ACT_HIGH_RISK",
@@ -29,7 +30,7 @@
               "defaultConfiguration": {
                 "level": "warning"
               },
-              "helpUri": "https://github.com/devsecshield/clinithread-aibom#model_eu_ai_act_high_risk"
+              "helpUri": "https://zeroshield.ai#model_eu_ai_act_high_risk"
             },
             {
               "id": "MODEL_NO_LICENSE",
@@ -40,7 +41,7 @@
               "defaultConfiguration": {
                 "level": "error"
               },
-              "helpUri": "https://github.com/devsecshield/clinithread-aibom#model_no_license"
+              "helpUri": "https://zeroshield.ai#model_no_license"
             },
             {
               "id": "MODEL_PHI_AT_INFERENCE",
@@ -51,11 +52,17 @@
               "defaultConfiguration": {
                 "level": "warning"
               },
-              "helpUri": "https://github.com/devsecshield/clinithread-aibom#model_phi_at_inference"
+              "helpUri": "https://zeroshield.ai#model_phi_at_inference"
             }
           ]
         }
       },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "endTimeUtc": "2026-06-21T00:00:00Z"
+        }
+      ],
       "properties": {
         "advisoryDisclaimer": "Regulatory mappings are advisory only; an AI BOM creates visibility, not assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA obligations. A qualified regulatory reviewer must sign off."
       },

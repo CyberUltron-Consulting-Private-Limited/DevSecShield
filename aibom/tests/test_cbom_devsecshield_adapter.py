@@ -189,6 +189,8 @@ def test_adapter_is_deterministic() -> None:
     a, b = _run(), _run()
     for run in (a, b):
         run.pop("duration_of_scan")
+        # the scan time (metadata.timestamp) is the one field that may differ
+        run["cbom_json"]["metadata"].pop("timestamp")
     assert a == b
 
 

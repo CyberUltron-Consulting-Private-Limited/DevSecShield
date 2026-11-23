@@ -48,6 +48,7 @@ from backend.utilities.dashboard.cbom_team_rollup import (  # noqa: E402
 )
 from backend.utilities.pdf import cbom_deliverable_text as authored  # noqa: E402
 from backend.utilities.pdf import cbom_methodology_pdf as methodology  # noqa: E402
+from backend.utilities.pdf import cbom_methodology_text as method_text  # noqa: E402
 from backend.utilities.pdf.cbom_deliverable_common import get_deliverable_styles  # noqa: E402
 from backend.utilities.pdf.cbom_methodology_pdf import build_pdf  # noqa: E402
 
@@ -57,18 +58,24 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 HEADINGS = (
     "1. Purpose and scope",
-    "2. Automated discovery",
-    "3. Manual discovery checklist",
-    "4. Evidence sources and traceability",
-    "5. Validation approach",
-    "6. Coverage methodology",
-    "7. Confidence classification",
-    "8. Ownership and responsibilities (RACI)",
-    "9. Evidence retention and versioning",
-    "10. Limits of the method",
-    "11. Sign-off",
+    "2. Collection methods and sources in scope",
+    "3. Collectors and what they record",
+    "4. Automated code discovery (L1)",
+    "5. Manual discovery checklist",
+    "6. Classification and grading",
+    "7. Evidence model and integrity",
+    "8. Data protection",
+    "9. Scan windows, OT safety and re-scans",
+    "10. Validation approach",
+    "11. Coverage methodology",
+    "12. Confidence classification",
+    "13. Evidence plan per deliverable",
+    "14. Ownership and responsibilities (RACI)",
+    "15. Evidence retention and versioning",
+    "16. Limits of the method",
+    "17. Sign-off",
 )
-APPENDIX = "Appendix A. Scans considered"
+APPENDIX = "Appendix A. Scans and collections considered"
 
 # Plan Appendix B, "Compliance pooled over 6 of 7 current scans (legacy excluded)":
 # pass / fail / not evidenceable / out of scope / coverage.  Order = engine framework order.
@@ -377,9 +384,9 @@ def test_pdf_metadata_and_document_control_name_the_methodology(view, pdf):
     assert title and "Cryptographic Discovery Methodology & Evidence Plan" in title
     assert "E2E Demo Team" in title
     subject = info_field(pdf, "Subject")
-    assert subject and f"CBOM-D03-T1-20261019-{view.fingerprint[:8]}" in subject
+    assert subject and f"CBOM-D2-T1-20261019-{view.fingerprint[:8]}" in subject
     everything = full_text(pdf)
-    assert f"CBOM-D03-T1-20261019-{view.fingerprint[:8]}" in everything
+    assert f"CBOM-D2-T1-20261019-{view.fingerprint[:8]}" in everything
     assert "Cryptographic Discovery Methodology & Evidence Plan" in everything
 
 
@@ -402,7 +409,7 @@ def test_headings_1_to_11_are_present_once_and_in_order(pdf):
     appendix_hits = [i for i, line in enumerate(lines) if line == APPENDIX]
     assert len(appendix_hits) == 1
     assert appendix_hits[0] > positions[-1]
-    assert not [line for line in lines if re.match(r"1[2-9]\. |[2-9][0-9]\. ", line)]
+    assert not [line for line in lines if re.match(r"1[89]\. |[2-9][0-9]\. ", line)]
 
 
 def test_no_heading_is_stranded_at_the_bottom_of_a_page(pdf):
@@ -453,7 +460,7 @@ def test_assets_by_type_table_reconciles_with_appendix_b(text):
 
 # --- 2 Automated discovery (scanner table pinned to the registry) ----------------------------
 def test_scanner_table_equals_the_registry_fixture_names_and_orders(text):
-    two = section(text, 2)
+    two = section(text, 4)
     registry = _registry()["scanners"]
     assert len(registry) == 21  # + crypto_artifacts (WP8, order 18), crypto_lang_misuse (CB-28, order 26)
     crypto = [s["name"] for s in registry if s["name"].startswith("crypto_")]
@@ -464,7 +471,7 @@ def test_scanner_table_equals_the_registry_fixture_names_and_orders(text):
 
 
 def test_scanner_rows_carry_the_authored_description_and_evidence(text):
-    two = section(text, 2)
+    two = section(text, 4)
     assert norm(authored.CBOM_SCANNER_INTRO) in two
     by_name = {spec.name: spec for spec in authored.CBOM_SCANNERS}
     for scanner in _registry()["scanners"]:
@@ -484,7 +491,7 @@ def test_unregistered_scanner_modules_are_never_described(any_pdf):
 
 # --- 3 Manual discovery checklist (blank) ------------------------------------------------------
 def test_manual_checklist_rows_are_listed_and_the_manual_cells_are_blank(text):
-    three = section(text, 3)
+    three = section(text, 5)
     assert norm(methodology.MANUAL_INTRO) in three
     assert (
         "Item Why a static scan cannot see it Status (assessor) Owner (assessor) "
@@ -499,12 +506,12 @@ def test_manual_checklist_rows_are_listed_and_the_manual_cells_are_blank(text):
 
 # --- 4 Evidence sources and traceability (live) -----------------------------------------------
 def test_evidence_section_prints_the_trace_paragraph_and_live_presence_counts(text):
-    four = section(text, 4)
+    four = section(text, 7)
     assert norm(authored.METHOD_EVIDENCE_TRACE) in four
     assert "Evidence is drawn from 7 sources: 6 repositories and 1 zip upload." in four
     assert (
         "Evidence recorded Present for Out of Share "
-        "Repository-relative location of each asset occurrence 69 69 100.0% "
+        "Location of each asset occurrence (file path, host, endpoint or resource) 69 69 100.0% "
         "Certificates identified from parsed X.509 fields 14 14 100.0% "
         "Algorithm occurrences graded for quantum exposure 36 36 100.0% "  # WP2: -1 AES-CBC duplicate
         "Sources whose latest scan carries compliance results 6 7 85.7%" in four
@@ -513,20 +520,20 @@ def test_evidence_section_prints_the_trace_paragraph_and_live_presence_counts(te
 
 # --- 5 Validation approach ---------------------------------------------------------------------
 def test_validation_section_states_deterministic_checks_and_no_ml(text):
-    five = section(text, 5)
+    five = section(text, 10)
     assert five == norm(authored.METHOD_VALIDATION)
     assert "No machine-learning or large-language-model component is used." in five
 
 
 # --- 6 Coverage methodology (tri-state + live pooled table) ------------------------------------
 def test_coverage_section_prints_the_tri_state_methodology(text):
-    six = section(text, 6)
+    six = section(text, 11)
     assert norm(authored.METHOD_COVERAGE) in six
     assert norm(methodology.COVERAGE_FORMULA_NOTE) in six
 
 
 def test_pooled_table_lists_thirteen_frameworks_in_engine_order_with_oracle_numbers(text):
-    six = section(text, 6)
+    six = section(text, 11)
     assert (
         "Framework Pass Pass with evidence Fail Not evidenceable Out of scope Coverage "
         "Sources pooled" in six
@@ -544,7 +551,7 @@ def test_pooled_table_lists_thirteen_frameworks_in_engine_order_with_oracle_numb
 
 
 def test_pooled_table_tri_state_totals_equal_the_sum_of_the_oracle_rows(text):
-    six = section(text, 6)
+    six = section(text, 11)
     passed = sum(row[0] for row in POOLED.values())
     failed = sum(row[1] for row in POOLED.values())
     nbe = sum(row[2] for row in POOLED.values())
@@ -557,7 +564,7 @@ def test_pooled_table_tri_state_totals_equal_the_sum_of_the_oracle_rows(text):
 
 # --- 7 Confidence classification ---------------------------------------------------------------
 def test_confidence_scheme_and_honest_limit(text):
-    seven = section(text, 7)
+    seven = section(text, 12)
     assert len(authored.METHOD_CONFIDENCE_SCHEME) == 3
     for name, meaning in authored.METHOD_CONFIDENCE_SCHEME:
         assert norm(f"{name} {meaning}") in seven, name
@@ -569,7 +576,7 @@ def test_confidence_scheme_and_honest_limit(text):
 
 # --- 8 Ownership / RACI (blank) ----------------------------------------------------------------
 def test_raci_table_is_blank(text):
-    eight = section(text, 8)
+    eight = section(text, 14)
     assert norm(methodology.RACI_INTRO) in eight
     assert (
         "Activity Responsible (assessor) Accountable (assessor) Consulted (assessor) "
@@ -583,9 +590,9 @@ def test_raci_table_is_blank(text):
 
 # --- 9 Evidence retention and versioning --------------------------------------------------------
 def test_retention_paragraph_versioning_and_blank_retention_fields(view, text):
-    nine = section(text, 9)
+    nine = section(text, 15)
     assert norm(authored.METHOD_RETENTION) in nine
-    assert f"Document ID CBOM-D03-T1-20261019-{view.fingerprint[:8]}" in nine
+    assert f"Document ID CBOM-D2-T1-20261019-{view.fingerprint[:8]}" in nine
     assert f"data fingerprint {view.fingerprint}" in nine
     assert "template version 1.0" in nine
     assert "a new successful scan or an attestation upload changes it" in nine
@@ -599,11 +606,14 @@ def test_retention_paragraph_versioning_and_blank_retention_fields(view, text):
 
 
 # --- 10 Limits ---------------------------------------------------------------------------------
-def test_limits_section_lists_every_authored_limit_in_order(text):
-    ten = section(text, 10)
-    assert len(authored.METHOD_LIMITS) == 7
+def test_limits_section_lists_every_limit_of_the_edition_in_order(view, text):
+    """A code-only edition: no collection, no probe, no key service; every limit that holds is printed in order."""
+    ten = section(text, 16)
+    limits = method_text.method_limits(view)
+    assert limits[:3] == (method_text.LIMIT_STATIC_ONLY, method_text.LIMIT_NO_PROBES,
+                          method_text.LIMIT_NO_KEY_SERVICES)
     positions = []
-    for limit in authored.METHOD_LIMITS:
+    for limit in limits:
         assert norm(limit) in ten, limit
         positions.append(ten.index(norm(limit)))
     assert positions == sorted(positions)
@@ -611,7 +621,7 @@ def test_limits_section_lists_every_authored_limit_in_order(text):
 
 # --- 11 Sign-off (blank) -----------------------------------------------------------------------
 def test_signoff_block_has_blank_name_role_date_and_signature(text):
-    eleven = section(text, 11)
+    eleven = section(text, 17)
     assert authored.MANUAL_CELL_NOTE in eleven
     assert eleven.endswith(
         "Sign-off Name Role Date Signature Prepared by Reviewed by (CISO) Approved by"
@@ -650,7 +660,7 @@ def test_scan_appendix_lists_every_team_scan_newest_first_with_its_disposition(t
         row = re.compile(
             rf"#{sid} {re.escape(scan['title'])} (?P<source>.+?) {scan['created_at'][:10]} "
             rf"{re.escape(disposition[sid])} {fidelity.get(sid, 'Full')} {assets}"
-            rf"(?= #\d+ | {re.escape(header)} |$)"
+            rf"(?= #\d+ | {re.escape(header)} | No CBOM Sources collection|$)"
         )
         match = row.search(listing)
         assert match, f"scan #{sid}: no row with the expected cells"
@@ -744,7 +754,7 @@ def test_every_view_builds_a_valid_pdf_with_all_eleven_sections(any_pdf):
 
 
 def test_every_view_pins_the_scanner_table_to_the_registry(any_pdf):
-    two = section(body_text(any_pdf), 2)
+    two = section(body_text(any_pdf), 4)
     scanners = _registry()["scanners"]
     crypto = [s["name"] for s in scanners if s["name"].startswith("crypto_")]
     assert re.findall(r"\bcrypto_[a-z_]+\b", two) == crypto
@@ -753,24 +763,28 @@ def test_every_view_pins_the_scanner_table_to_the_registry(any_pdf):
 
 
 def test_every_view_prints_thirteen_framework_rows(any_pdf):
-    six = section(body_text(any_pdf), 6)
+    six = section(body_text(any_pdf), 11)
     for label in POOLED:
         assert label in six, label
 
 
 def test_every_view_keeps_manual_sections_blank(any_pdf):
     everything = body_text(any_pdf)
-    assert section(everything, 3).endswith(norm(authored.MANUAL_DISCOVERY_ITEMS[-1][1]))
-    assert section(everything, 8).endswith(norm(authored.RACI_ACTIVITIES[-1]))
-    assert section(everything, 9).endswith("Retention period Evidence store location")
-    assert section(everything, 11).endswith("Prepared by Reviewed by (CISO) Approved by")
+    assert section(everything, 5).endswith(norm(authored.MANUAL_DISCOVERY_ITEMS[-1][1]))
+    assert section(everything, 14).endswith(norm(authored.RACI_ACTIVITIES[-1]))
+    assert section(everything, 15).endswith("Retention period Evidence store location")
+    assert section(everything, 17).endswith("Prepared by Reviewed by (CISO) Approved by")
 
 
 def test_no_aibom_fda_hipaa_or_clinithread_text_in_any_view(any_pdf):
     cleaned = full_text(any_pdf).replace(norm(authored.CERTIN_DISCLAIMER), "")
+    # D2's evidence plan names every SOW deliverable, D5 AIBOM included: that one table is the only exception
+    body = body_text(any_pdf)
+    plan = section(body, 13)
+    assert "D5 AIBOM" in plan
     for banned in BANNED:
         assert banned not in cleaned, banned
-    assert "aibom" not in cleaned.lower()
+    assert "aibom" not in body.replace(plan, "").replace(norm(authored.CERTIN_DISCLAIMER), "").lower()
     assert b"clinithread" not in any_pdf.lower()
 
 
@@ -811,9 +825,9 @@ def test_empty_team_states_no_live_figures_and_shows_the_banner():
     assert "This edition reflects" not in one
     assert "Sources 0 assessed in this edition" in one
     assert "Frameworks 13 no results pooled" in one
-    assert "No source has been assessed yet." in section(everything, 4)
+    assert "No source has been assessed yet." in section(everything, 7)
     assert "Low risk" not in everything
-    six = section(everything, 6)
+    six = section(everything, 11)
     assert (
         "No compliance results are pooled: no source has a latest scan that is full-fidelity."
         in six
@@ -824,9 +838,9 @@ def test_empty_team_states_no_live_figures_and_shows_the_banner():
 
 
 def test_empty_team_evidence_table_has_zero_denominators():
-    four = section(body_text(build_pdf(fold([], team_id=3, name="Empty Team"))), 4)
+    four = section(body_text(build_pdf(fold([], team_id=3, name="Empty Team"))), 7)
     assert (
-        "Repository-relative location of each asset occurrence 0 0 n/a "
+        "Location of each asset occurrence (file path, host, endpoint or resource) 0 0 n/a "
         "Certificates identified from parsed X.509 fields 0 0 n/a "
         "Algorithm occurrences graded for quantum exposure 0 0 n/a "
         "Sources whose latest scan carries compliance results 0 0 n/a" in four
@@ -855,14 +869,14 @@ def test_legacy_only_team_says_no_compliance_results_are_pooled():
         "This edition reflects 1 completed scan of 1 source as of 2026-10-19: "
         "0 full-fidelity and 1 legacy-format." in one
     )
-    six = section(everything, 6)
+    six = section(everything, 11)
     assert (
         "No compliance results are pooled: no source has a latest scan that is full-fidelity. "
         "1 legacy-format source carries no compliance results." in six
     )
     assert "NIST SP 1800-38B \u2014 \u2014 \u2014 \u2014 \u2014 \u2014 \u2014" in six
     assert authored.BANNER_REDUCED_TITLE in full_text(raw)
-    assert "Sources whose latest scan carries compliance results 0 1 0.0%" in section(everything, 4)
+    assert "Sources whose latest scan carries compliance results 0 1 0.0%" in section(everything, 7)
 
 
 def test_single_scan_team_uses_singular_wording():
@@ -876,8 +890,8 @@ def test_single_scan_team_uses_singular_wording():
         "Of 1 CBOM scan recorded for this team, 1 completed successfully and 1 is included; "
         "left out: 0 failed, 0 not completed and 0 completed without data." in one
     )
-    assert "Evidence is drawn from 1 source: 1 repository." in section(everything, 4)
-    assert "Pooled over 1 of 1 source whose latest scan is full-fidelity." in section(everything, 6)
+    assert "Evidence is drawn from 1 source: 1 repository." in section(everything, 7)
+    assert "Pooled over 1 of 1 source whose latest scan is full-fidelity." in section(everything, 11)
     assert "Frameworks 13 pooled over 1 source" in one
 
 
@@ -890,7 +904,7 @@ def test_attested_requirements_show_pass_with_evidence_and_coverage_as_given(vie
         pools[1], passed=0, passed_with_evidence=0, failed=0, coverage=None
     )
     edited = dataclasses.replace(view, frameworks=tuple(pools))
-    six = section(body_text(build_pdf(edited)), 6)
+    six = section(body_text(build_pdf(edited)), 11)
     assert "NIST SP 1800-38B 5 2 3 5 4 70.0% 6" in six
     assert "NIST SP 800-57 0 0 0 5 7 n/a 6" in six
 
@@ -899,9 +913,9 @@ def test_not_applicable_requirements_are_disclosed_when_present(view):
     pools = list(view.frameworks)
     pools[2] = dataclasses.replace(pools[2], na=3)
     edited = dataclasses.replace(view, frameworks=tuple(pools))
-    six = section(body_text(build_pdf(edited)), 6)
+    six = section(body_text(build_pdf(edited)), 11)
     assert "3 requirements marked not applicable are excluded from every column." in six
-    assert "not applicable" not in section(body_text(build_pdf(view)), 6)
+    assert "not applicable" not in section(body_text(build_pdf(view)), 11)
 
 
 def test_unknown_framework_keys_are_appended_after_the_registered_thirteen(view):
@@ -910,7 +924,7 @@ def test_unknown_framework_keys_are_appended_after_the_registered_thirteen(view)
     )
     edited = dataclasses.replace(view, frameworks=(*view.frameworks, extra))
     everything = body_text(build_pdf(edited))
-    six = section(everything, 6)
+    six = section(everything, 11)
     assert "zz future fw 1 0 1 0 0 50.0% 6" in six
     assert six.index("SEBI CSCRF (CBOM)") < six.index("zz future fw")
     assert "Frameworks 14 pooled over 6 sources" in section(everything, 1)
@@ -921,7 +935,7 @@ def test_source_kinds_are_counted_in_the_evidence_sentence(view):
         dataclasses.replace(source, kind="file" if index == 0 else source.kind)
         for index, source in enumerate(view.sources)
     )
-    four = section(body_text(build_pdf(dataclasses.replace(view, sources=sources))), 4)
+    four = section(body_text(build_pdf(dataclasses.replace(view, sources=sources))), 7)
     assert (
         "Evidence is drawn from 7 sources: 5 repositories, 1 zip upload and "
         "1 uploaded CBOM file." in four
@@ -1115,9 +1129,10 @@ def test_keep_together_blocks_are_never_nested(name):
 def test_signoff_shares_a_page_with_the_limits_section(pdf):
     """The sign-off block follows section 10 on the same page rather than starting a new one."""
     pages = body_pages(pdf)
-    holder = [i for i, lines in enumerate(pages) if "11. Sign-off" in lines]
+    holder = [i for i, lines in enumerate(pages) if "17. Sign-off" in lines]
     assert len(holder) == 1
-    assert "10. Limits of the method" in pages[holder[0]]
+    page = " ".join(pages[holder[0]])
+    assert "16. Limits of the method" in page or norm(method_text.LIMIT_FONT) in norm(page)
 
 
 def test_build_pdf_is_the_public_entry_point():

@@ -57,10 +57,11 @@ def test_load_certin_module_vex_and_sign() -> None:
     sign = _load_certin_module("sign")
     doc = vex.build_vex(
         bom={"components": [{"name": "AES", "bom-ref": "aes-1"}]},
+        findings=[{"bom_ref": "aes-1", "finding_codes": ["WEAK_CIPHER_MODE"]}],
         scan_type="cbom",
     )
     assert doc["bomFormat"] == "CycloneDX"
-    assert doc["vulnerabilities"]
+    assert doc["vulnerabilities"][0]["affects"] == [{"ref": "aes-1"}]
     sig = sign.sign_bom({"serialNumber": "urn:uuid:test"}, secret=b"unit-test-secret")
     assert sig["alg"] == "HMAC-SHA256"
     assert sign.verify_signature(
