@@ -1,15 +1,20 @@
-"""Scope Baseline & Asset Population Register (deliverable #1): the team-wide PDF renderer.
+"""Scope Baseline and Asset Population Register (SOW D1): the team-wide PDF renderer.
 
 One portrait PDF that records WHAT was assessed for a team: the sources (repositories, archives,
-uploaded CBOM files) behind its completed CBOM scans, the cryptographic asset population found in
-them, how every scan was treated, and the parts of the scope a static scan cannot know, which are
-left as blank forms for the assessor.  Sections, in order:
+uploaded CBOM files, CBOM Sources collections) behind its completed CBOM results, the cryptographic
+asset population found in them, how every scan was treated, and the parts of the scope the method
+did not cover, which are left as blank forms for the assessor.  Sections, in order:
 
     A. Assessment boundary            manual: boundary items, boundary statement and approver
-    B. Sources assessed               live: one row per source, Owner / Business system blank
-    C. Asset population               live: by type x impact, and by source
+    B. Sources assessed               live: one row per source with its SOW layer (L1-L4), and the
+                                      source metadata (owner, application, data classification,
+                                      lifetime, criticality, exposure) from the platform, "to confirm"
+                                      where the platform holds none
+    C. Asset population               live: by SOW layer, by kind x impact, by source, and the
+                                      reconciliation of occurrences, distinct assets and BOM components
     D. Exclusions and data quality    live: every scan accounted for, why some were left out
-    E. Outside static visibility      manual: checklist with blank status / owner / evidence
+    E. Outside static / collected     manual: checklist with blank status / owner / evidence; it never
+       visibility                     lists what a CBOM Sources collection read (probed endpoints ...)
     F. Sign-off                       manual: blank
 
 Contract (plan 5.2 / 5.4): ``build_pdf(view: TeamCbomView) -> bytes`` is a pure function of the
@@ -28,26 +33,22 @@ Rules this module keeps (enforced by the T-1 tests and the T-NOLLM guards):
   escape it.  Scanned repositories are untrusted input.
 * Repository URLs are sanitised once more at render time, so a credential could not reach the
   page even through a hand-built view.
-* Manual cells ("(assessor)") are empty.  Nothing is pre-filled, guessed or marked "N/A".
+* Manual cells ("(assessor)") are empty.  Nothing is pre-filled, guessed or marked "N/A".  The
+  source metadata table is not a manual form: it prints what the platform holds for each source and
+  "to confirm" where it holds nothing (SOW audit A-10).
 """
 
 from __future__ import annotations
 
-from typing import Any
-
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import date, datetime, timezone
+from typing import Any
 
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import CondPageBreak, Flowable, KeepTogether, Paragraph, Spacer
 
 from backend.utilities.dashboard.cbom_team_rollup import (
-    ASSET_ALGORITHM,
-    ASSET_CERTIFICATE,
-    ASSET_MATERIAL,
-    ASSET_OTHER,
-    ASSET_PROTOCOL,
     EXCLUDED_FAILURE,
     EXCLUDED_NO_DATA,
     EXCLUDED_NOT_COMPLETED,
@@ -66,6 +67,7 @@ from backend.utilities.dashboard.cbom_team_rollup import (
     sanitize_repo_url,
 )
 from backend.utilities.pdf import cbom_deliverable_text as authored
+from backend.utilities.pdf import cbom_population as population
 from backend.utilities.pdf.cbom_deliverable_common import (
     Styles,
     build_document,
@@ -80,7 +82,7 @@ from backend.utilities.pdf.cbom_deliverable_common import (
 from backend.utilities.pdf.report_branding import REPORT_META
 
 REPORT_KEY = "cbom_scope_register"
-DELIVERABLE_NUMBER = 1
+DELIVERABLE_NUMBER = 1  # SOW D1 (REPORT_META sow_id; the Document ID reads it)
 TITLE = REPORT_META[REPORT_KEY]["title"]
 
 # Table caps (plan 4.7): an explicit omission notice is printed whenever a cap bites.
@@ -101,8 +103,8 @@ _STATEMENT_HEIGHT = 36
 # Product text: how a source is identified (cbom_team_rollup.source_key_for, plan 4.3).
 _SOURCES_INTRO = (
     "Sources assessed: {sources}. Completed scans included: {included}. A source is one "
-    "repository branch, one uploaded archive or one uploaded CBOM file; its current state is "
-    "its latest successful scan."
+    "repository branch, one uploaded archive, one uploaded CBOM file or one CBOM Sources source; "
+    "its current state is its latest successful scan or collection."
 )
 _SOURCES_NONE = (
     "No sources have been assessed: no completed CBOM scan exists for this team, so there is "
@@ -113,8 +115,15 @@ _SOURCES_LIMITS = (
     "the same title are one source."
 )
 _ASSETS_LEGEND = (
-    "Assets: algorithms / certificates / protocols / key material / libraries, counted in the "
-    "source's current scan."
+    "Layer: the SOW scope layer of the source (L1 code, pipelines and images; L2 servers, Kubernetes "
+    "and databases; L3 cloud keys, HSMs, PKI and identity; L4 network, TLS and appliances). Assets: "
+    "the asset occurrences in the source's current result."
+)
+_METADATA_INTRO = (
+    "Source metadata held by the platform (the owner, application, data classification, data "
+    "lifetime, business criticality and exposure set on each CBOM Sources source). \"to confirm\" "
+    "marks a value the platform does not hold; a code repository carries none, so its owner and "
+    "application are confirmed with the client."
 )
 _LEGACY_LEGEND = (
     "Legacy: the scan predates the current CBOM engine (reduced fidelity). Certificate "
@@ -135,14 +144,20 @@ _ATTEMPT_NO_DATA = (
 
 # Product text: what the counts mean (cbom_team_rollup: assets are never merged across sources).
 _POPULATION_BASIS = (
-    "Counts describe the current state: the latest successful scan of each source. An asset is "
-    "one finding row of a scan. The same algorithm used in two sources is counted twice "
-    "because each source's use is a separate exposure; certificates are also de-duplicated "
-    "across sources in the {cert_register}."
+    "Counts describe the current state: the latest successful result of each source. An asset "
+    "occurrence is one inventory row of a source's result. The same algorithm used in two sources "
+    "is counted twice because each source's use is a separate exposure; certificates are also "
+    "de-duplicated across sources in the {cert_register}."
+)
+_LAYER_INTRO = (
+    "Population by SOW scope layer (SOW section 3.1, Table 4). Each source belongs to one layer; "
+    "its asset occurrences are counted there by kind."
 )
 _LIBRARIES_LINE = (
     "Crypto libraries: {unique} unique across sources ({occurrences} source-level "
-    "occurrences). They are listed in the {assurance_register}."
+    "occurrences) in the code scans' library inventory. They are listed in the {assurance_register}. "
+    "The Libraries kind above counts library assets: libraries loaded by running processes and "
+    "library rows that carry a finding."
 )
 _EXCLUSIONS_INTRO = (
     "Only successful scans that returned data contribute to this register. The table below "
@@ -167,6 +182,10 @@ _VISIBILITY_INTRO = (
     "A static scan of repositories and uploaded artefacts cannot see the items below. For each "
     "one, record how it is assessed, who owns it and where the evidence is kept."
 )
+_COLLECTED_VISIBILITY_INTRO = (
+    "The code scans and the CBOM Sources collections in scope did not cover the items below. For "
+    "each one, record how it is assessed, who owns it and where the evidence is kept."
+)
 _SIGNOFF_ROLES = ("Prepared by", "Reviewed by", "Approved by")
 
 _KIND_LABELS = {
@@ -176,13 +195,6 @@ _KIND_LABELS = {
     SOURCE_SCAN: "Scan",
     "sources": "CBOM Sources collection",  # cbom_team_rollup.SOURCE_SOURCES (merge_collections)
 }
-_TYPE_LABELS = {
-    ASSET_ALGORITHM: "Algorithms",
-    ASSET_CERTIFICATE: "Certificates",
-    ASSET_PROTOCOL: "Protocols",
-    ASSET_MATERIAL: "Key material",
-}
-_MAIN_TYPES = tuple(_TYPE_LABELS)
 _OTHER_IMPACT = "Other"
 
 # Column widths in points for a 540 pt frame; ``_scaled`` stretches them to the real width.
@@ -195,12 +207,13 @@ _SOURCE_HEADERS = (
     "Last scanned (age)",
     "Last attempt",
     "Fidelity",
+    "Layer",
     "Assets",
-    "Owner",
-    "Business system",
 )
-_SOURCE_WIDTHS = (14, 74, 82, 28, 46, 50, 78, 38, 42, 44, 44)
-_SOURCE_MANUAL = (9, 10)
+_SOURCE_WIDTHS = (14, 96, 96, 28, 50, 54, 92, 42, 28, 40)
+_METADATA_HEADERS = ("#", "Source", "Layer", *(label for _key, label in population.METADATA_COLUMNS))
+_METADATA_WIDTHS = (14, 118, 30, 82, 66, 62, 50, 54, 64)
+_LAYER_WIDTHS_BASE = (150, 40, 44)
 _BASIS_WIDTHS = (440, 100)
 _EXCLUDED_HEADERS = ("Scan", "Title", "Source", "Created", "Status", "Reason")
 _EXCLUDED_WIDTHS = (34, 100, 150, 52, 66, 138)
@@ -208,21 +221,6 @@ _QUALITY_WIDTHS = (230, 310)
 _BOUNDARY_WIDTHS = (150, 270, 120)
 _STATEMENT_WIDTHS = (300, 160, 80)
 _CHECKLIST_WIDTHS = (108, 188, 80, 80, 84)
-_BY_SOURCE_FIXED = {  # numeric columns of the population-by-source table
-    "Algorithms": 44,
-    "Certificates": 46,
-    "Protocols": 40,
-    "Key material": 40,
-    "Other types": 40,
-    "Total": 34,
-    "Libraries": 46,
-    "Critical": 36,
-    "High": 30,
-    "Medium": 36,
-    "Low": 30,
-    INFO: 28,  # clean inventory (no finding), shown only when present
-    _OTHER_IMPACT: 30,
-}
 
 
 # ---------------------------------------------------------------------------------------------
@@ -234,13 +232,6 @@ def _num(value: object) -> int:
 
 def _count(counts: Mapping[str, int] | None, key: str) -> int:
     return _num(counts.get(key, 0)) if isinstance(counts, Mapping) else 0
-
-
-def _extra(counts: Mapping[str, int] | None, known: Sequence[str]) -> int:
-    """Sum of the buckets of ``counts`` that are not one of the ``known`` keys."""
-    if not isinstance(counts, Mapping):
-        return 0
-    return sum(_num(value) for key, value in counts.items() if key not in known)
 
 
 def _scaled(base: Sequence[float], width: float) -> list[float]:
@@ -383,16 +374,13 @@ def _attempt_cell(source: SourceAgg, styles: Styles) -> list[Flowable]:
     ]
 
 
-def _compact_assets(source: SourceAgg) -> str:
-    counts = source.asset_counts
-    parts = [_count(counts, kind) for kind in _MAIN_TYPES] + [_num(source.library_count)]
-    text = "/".join(str(part) for part in parts)
-    other = _extra(counts, _MAIN_TYPES)
-    return f"{text}\n+{other} other" if other else text
+def _layer_text(source: SourceAgg, view: TeamCbomView, by_source: Mapping[str, list]) -> str:
+    return population.source_layer(source, view, _assets=by_source) or population.LAYER_UNKNOWN
 
 
 def _source_row(
-    index: int, source: SourceAgg, view: TeamCbomView, styles: Styles
+    index: int, source: SourceAgg, view: TeamCbomView, styles: Styles,
+    by_source: Mapping[str, list] | None = None,
 ) -> list[object]:
     label = source.label or source.key or _DASH
     repo = [sanitize_repo_url(source.repo_url) or _DASH]
@@ -403,6 +391,7 @@ def _source_row(
     if age:
         scanned.append(age)
     full = source.current_fidelity == FIDELITY_FULL
+    by_source = by_source if by_source is not None else population.current_assets_by_source(view)
     return [
         str(index),
         f"{label}\n{_KIND_LABELS.get(source.kind, 'Source')}",
@@ -412,10 +401,14 @@ def _source_row(
         "\n".join(scanned),
         _attempt_cell(source, styles),
         status_chip("FULL" if full else "LEGACY", "low" if full else "medium"),
-        _compact_assets(source),
-        "",  # Owner (assessor)
-        "",  # Business system (assessor)
+        _layer_text(source, view, by_source),
+        str(len(by_source.get(source.key, ()))),
     ]
+
+
+def _metadata_row(index: int, source: SourceAgg, view: TeamCbomView, by_source: Mapping[str, list]) -> list[object]:
+    return [str(index), source.label or source.key, _layer_text(source, view, by_source),
+            *population.source_metadata(source, view)]
 
 
 def _section_sources(view: TeamCbomView, styles: Styles, width: float) -> list[Flowable]:
@@ -426,11 +419,11 @@ def _section_sources(view: TeamCbomView, styles: Styles, width: float) -> list[F
         if sources
         else _SOURCES_NONE
     )
+    by_source = population.current_assets_by_source(view)
     table = dense_table(
         _SOURCE_HEADERS,
-        [_source_row(i, source, view, styles) for i, source in enumerate(shown, start=1)],
+        [_source_row(i, source, view, styles, by_source) for i, source in enumerate(shown, start=1)],
         _scaled(_SOURCE_WIDTHS, width),
-        manual_cols=_SOURCE_MANUAL,
     )
     story: list[Flowable] = [
         *section_heading("B. Sources assessed", styles, min_space=160),
@@ -444,17 +437,21 @@ def _section_sources(view: TeamCbomView, styles: Styles, width: float) -> list[F
     if any(source.current_fidelity != FIDELITY_FULL for source in sources):
         notes.append(_LEGACY_LEGEND)
     story += [_para(note, styles["dense_muted"]) for note in notes]
+    if shown:
+        story += [
+            Spacer(1, 8),
+            *_sub_with_room("Source metadata", styles),
+            _para(_METADATA_INTRO, styles["dense_muted"]),
+            dense_table(_METADATA_HEADERS,
+                        [_metadata_row(i, source, view, by_source) for i, source in enumerate(shown, start=1)],
+                        _scaled(_METADATA_WIDTHS, width)),
+        ]
     return story
 
 
 # ---------------------------------------------------------------------------------------------
 # C. Asset population
 # ---------------------------------------------------------------------------------------------
-def _type_bucket(asset_type: object) -> str:
-    known = isinstance(asset_type, str) and asset_type in _TYPE_LABELS
-    return str(asset_type) if known else ASSET_OTHER
-
-
 def _impact_bucket(impact: object) -> str:
     known = isinstance(impact, str) and impact in (*IMPACT_LEVELS, INFO)
     return str(impact) if known else _OTHER_IMPACT
@@ -467,95 +464,87 @@ def _impact_columns(present: Iterable[str]) -> list[str]:
 
 
 def _population_kpis(view: TeamCbomView) -> list[tuple[str, str, str]]:
-    by_type = view.assets_by_type
+    kinds = population.kind_counts(view)
     return [
-        ("Sources", str(len(view.sources)), "with a completed scan"),
+        ("Sources", str(len(view.sources)), "with a completed result"),
         ("Asset occurrences", str(_num(view.asset_occurrences)), "current state"),
-        ("Algorithms", str(_count(by_type, ASSET_ALGORITHM)), "occurrences"),
-        (
-            "Certificates",
-            str(_count(by_type, ASSET_CERTIFICATE)),
-            f"{_unique_certificates(view)} unique",
-        ),
-        ("Protocols", str(_count(by_type, ASSET_PROTOCOL)), "occurrences"),
-        ("Key material", str(_count(by_type, ASSET_MATERIAL)), "occurrences"),
+        ("Certificates", str(kinds["certificate"]), f"{_unique_certificates(view)} unique"),
+        ("Keys and secrets", str(kinds["key"]), "occurrences"),
+        ("Protocols and endpoints", str(kinds["protocol"]), "occurrences"),
+        ("Algorithms", str(kinds["algorithm"]), "occurrences"),
     ]
+
+
+def _layer_table(view: TeamCbomView, width: float) -> Flowable:
+    """Sources and asset occurrences per SOW layer, by kind, with a total row."""
+    rows_in = population.layer_rows(view)
+    kinds = list(population.KINDS)
+    rows: list[list[object]] = []
+    for row in rows_in:
+        rows.append([population.layer_label(row["layer"]), str(row["sources"]), str(row["assets"]),
+                     *(str(row["kinds"].get(k, 0)) for k in kinds), str(row["findings"])])
+    rows.append(["All layers", str(sum(r["sources"] for r in rows_in)), str(sum(r["assets"] for r in rows_in)),
+                 *(str(sum(r["kinds"].get(k, 0) for r in rows_in)) for k in kinds),
+                 str(sum(r["findings"] for r in rows_in))])
+    headers = ["Layer", "Sources", "Assets", *(population.KIND_LABELS[k] for k in kinds), "Findings"]
+    numeric = (540.0 - 150.0) / (len(headers) - 1)
+    return dense_table(headers, rows, _scaled([150.0, *([numeric] * (len(headers) - 1))], width))
 
 
 def _by_type_table(view: TeamCbomView, width: float) -> Flowable:
-    """Current assets by type (rows) and impact (columns), with a total row."""
+    """Current assets by kind (rows) and impact (columns), with a total row; no "other" kind."""
     cells: Counter[tuple[str, str]] = Counter()
     for asset in view.assets:
         if asset.current:
-            cells[(_type_bucket(asset.asset_type), _impact_bucket(asset.impact))] += 1
-    types = list(_MAIN_TYPES) + ([ASSET_OTHER] if any(t == ASSET_OTHER for t, _ in cells) else [])
+            cells[(population.asset_kind(asset), _impact_bucket(asset.impact))] += 1
+    kinds = list(population.KINDS)
     impacts = _impact_columns(i for _, i in cells)
     rows: list[list[object]] = []
-    for kind in types:
+    for kind in kinds:
         counts = [cells.get((kind, impact), 0) for impact in impacts]
-        label = _TYPE_LABELS.get(kind, "Other types")
-        rows.append([label, *(str(n) for n in counts), str(sum(counts))])
-    totals = [sum(cells.get((kind, impact), 0) for kind in types) for impact in impacts]
-    rows.append(["All asset types", *(str(n) for n in totals), str(sum(totals))])
+        rows.append([population.KIND_LABELS[kind], *(str(n) for n in counts), str(sum(counts))])
+    totals = [sum(cells.get((kind, impact), 0) for kind in kinds) for impact in impacts]
+    rows.append(["All kinds", *(str(n) for n in totals), str(sum(totals))])
     numeric = (540.0 - 150.0) / (len(impacts) + 1)
     base = [150.0, *([numeric] * (len(impacts) + 1))]
-    return dense_table(["Asset type", *impacts, "Total"], rows, _scaled(base, width))
+    return dense_table(["Asset kind", *impacts, "Total"], rows, _scaled(base, width))
+
+
+_KIND_SHORT = {"algorithm": "Algo.", "certificate": "Certs", "key": "Keys", "protocol": "Proto.", "library": "Libs",
+               "setting": "Settings"}
 
 
 def _by_source_table(view: TeamCbomView, shown: Sequence[SourceAgg], width: float) -> Flowable:
-    """Current assets per source; the total row covers EVERY source, shown or not."""
+    """Current assets per source by kind and impact; the total row covers EVERY source, shown or not."""
     sources = list(view.sources)
-    extra_types = any(_extra(s.asset_counts, _MAIN_TYPES) for s in sources)
-    known = (*IMPACT_LEVELS, INFO)
-    has_info = any(_count(s.impact_counts, INFO) for s in sources)
-    extra_impacts = any(_extra(s.impact_counts, known) for s in sources)
+    by_source = population.current_assets_by_source(view)
+    impacts_of = {s.key: Counter(_impact_bucket(a.impact) for a in by_source.get(s.key, ())) for s in sources}
+    has_info = any(c.get(INFO) for c in impacts_of.values())
+    extra_impacts = any(c.get(_OTHER_IMPACT) for c in impacts_of.values())
     levels = [*IMPACT_LEVELS, INFO] if has_info else list(IMPACT_LEVELS)
-
-    headers = ["#", "Source", *_TYPE_LABELS.values()]
-    if extra_types:
-        headers.append("Other types")
-    headers += ["Total", "Libraries", *levels]
     if extra_impacts:
-        headers.append(_OTHER_IMPACT)
+        levels.append(_OTHER_IMPACT)
+    kinds = list(population.KINDS)
+    headers = ["#", "Source", "Layer", *(_KIND_SHORT[k] for k in kinds), "Total", *levels]
 
-    def type_counts(source: SourceAgg) -> list[int]:
-        counts = [_count(source.asset_counts, kind) for kind in _MAIN_TYPES]
-        return [*counts, _extra(source.asset_counts, _MAIN_TYPES)] if extra_types else counts
+    def kind_counts(source: SourceAgg) -> list[int]:
+        found = Counter(population.asset_kind(a) for a in by_source.get(source.key, ()))
+        return [found.get(k, 0) for k in kinds]
 
     def impact_counts(source: SourceAgg) -> list[int]:
-        counts = [_count(source.impact_counts, level) for level in levels]
-        return [*counts, _extra(source.impact_counts, known)] if extra_impacts else counts
+        return [impacts_of[source.key].get(level, 0) for level in levels]
 
-    def line(
-        index: str, label: str, types: list[int], libraries: str, impacts: list[int]
-    ) -> list[object]:
-        # Total = every asset type of the row, so the columns always add up
-        return [
-            index,
-            label,
-            *(str(n) for n in types),
-            str(sum(types)),
-            libraries,
-            *(str(n) for n in impacts),
-        ]
-
-    rows = [
-        line(
-            str(index),
-            source.label or source.key,
-            type_counts(source),
-            str(_num(source.library_count)),
-            impact_counts(source),
-        )
-        for index, source in enumerate(shown, start=1)
-    ]
+    rows: list[list[object]] = []
+    for index, source in enumerate(shown, start=1):
+        counts = kind_counts(source)
+        rows.append([str(index), source.label or source.key, _layer_text(source, view, by_source),
+                     *(str(n) for n in counts), str(sum(counts)), *(str(n) for n in impact_counts(source))])
     if sources:
-        type_totals = [sum(col) for col in zip(*(type_counts(s) for s in sources), strict=True)]
-        impact_totals = [sum(c) for c in zip(*(impact_counts(s) for s in sources), strict=True)]
-        # libraries are de-duplicated across sources, so the cell is the unique count
-        libraries = f"{_unique_libraries(view)} unique"
-        rows.append(line("", "All sources", type_totals, libraries, impact_totals))
-    fixed = [float(_BY_SOURCE_FIXED[name]) for name in headers[2:] if name in _BY_SOURCE_FIXED]
+        kind_totals = [sum(col) for col in zip(*(kind_counts(s) for s in sources), strict=True)]
+        impact_totals = [sum(col) for col in zip(*(impact_counts(s) for s in sources), strict=True)]
+        rows.append(["", "All sources", "", *(str(n) for n in kind_totals), str(sum(kind_totals)),
+                     *(str(n) for n in impact_totals)])
+    fixed = [26.0] + [34.0] * len(kinds) + [32.0] + [32.0] * len(levels)
     widths = [14.0, 540.0 - 14.0 - sum(fixed), *fixed]
     return dense_table(headers, rows, _scaled(widths, width))
 
@@ -573,8 +562,13 @@ def _section_population(view: TeamCbomView, styles: Styles, width: float) -> lis
         *section_heading("C. Asset population", styles, min_space=200),
         _para(basis, styles["muted"]),
         kpi_strip(_population_kpis(view), width),
+        Spacer(1, 6),
+        _para(population.reconciliation_line(view), styles["dense_muted"], limit=1200),
         Spacer(1, 8),
-        KeepTogether([_sub("Assets by type and impact", styles), _by_type_table(view, width)]),
+        KeepTogether([_sub("Asset population by SOW layer", styles), _para(_LAYER_INTRO, styles["dense_muted"]),
+                      _layer_table(view, width)]),
+        Spacer(1, 8),
+        KeepTogether([_sub("Assets by kind and impact", styles), _by_type_table(view, width)]),
         Spacer(1, 8),
         *_sub_with_room("Asset population by source", styles),
         _by_source_table(view, shown, width),
@@ -683,20 +677,21 @@ def _section_exclusions(view: TeamCbomView, styles: Styles, width: float) -> lis
 # ---------------------------------------------------------------------------------------------
 # E. Outside static visibility (manual) and F. Sign-off (manual)
 # ---------------------------------------------------------------------------------------------
-def _section_visibility(styles: Styles, width: float) -> list[Flowable]:
+def _section_visibility(view: TeamCbomView, styles: Styles, width: float) -> list[Flowable]:
     rows = [
         [item, why, _blank(_WRITE_IN_HEIGHT), _blank(_WRITE_IN_HEIGHT), _blank(_WRITE_IN_HEIGHT)]
-        for item, why in authored.MANUAL_DISCOVERY_ITEMS
+        for item, why in authored.manual_discovery_items(view)
     ]
     table = dense_table(
-        authored.MANUAL_DISCOVERY_COLUMNS,
+        authored.discovery_columns(view),
         rows,
         _scaled(_CHECKLIST_WIDTHS, width),
         manual_cols=(2, 3, 4),
     )
+    collected = bool(authored.collections_in_scope(view))
     return [
-        *section_heading("E. Outside static visibility", styles, min_space=160),
-        _para(_VISIBILITY_INTRO, styles["muted"]),
+        *section_heading(f"E. {authored.visibility_heading(view)}", styles, min_space=160),
+        _para(_COLLECTED_VISIBILITY_INTRO if collected else _VISIBILITY_INTRO, styles["muted"]),
         _para(authored.MANUAL_CELL_NOTE, styles["muted"]),
         table,
     ]
@@ -720,7 +715,7 @@ def build_body(view: TeamCbomView, styles: Styles, width: float) -> list[Flowabl
     story += _section_sources(view, styles, width)
     story += _section_population(view, styles, width)
     story += _section_exclusions(view, styles, width)
-    story += _section_visibility(styles, width)
+    story += _section_visibility(view, styles, width)
     story += _section_signoff(styles, width)
     return story
 

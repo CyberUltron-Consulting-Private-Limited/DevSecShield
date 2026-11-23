@@ -98,9 +98,9 @@ TIMELINE_HEADERS = ["When", "Milestone", "Status", "Source", "Source URL"]
 FAMILY_HEADERS = ["Target family", "Primitive", "Occurrences", "Sources"]
 LEVEL_HEADERS = ["NIST quantum security level", "Occurrences", "Of which hybrid"]
 URL_PQC = "https://www.nist.gov/pqcrypto"
-URL_IR8547 = "https://csrc.nist.gov/pubs/ir/8547/ipd"
+URL_IR8547 = "https://csrc.nist.gov/pubs/ir/8547/final"  # FIX-A3: the final IR 8547 (27 Oct 2026), from the KB
 URL_CNSA = "https://media.defense.gov/2025/May/30/2003728741/-1/-1/0/CSA_CNSA_2.0_ALGORITHMS.PDF"
-IR8547 = "NIST IR 8547 (initial public draft)"
+IR8547 = "NIST IR 8547 (final, 2026)"
 TIMELINE_ROWS = [
     (
         "Aug 2024",
@@ -111,26 +111,25 @@ TIMELINE_ROWS = [
         URL_PQC,
     ),
     (
-        "Nov 2024",
-        "NIST IR 8547 initial public draft published: proposed transition timeline for "
-        "quantum-vulnerable public-key algorithms.",
-        "DRAFT",
+        "Oct 2026",
+        "NIST IR 8547 (final, 2026) published: the transition timeline for quantum-vulnerable public-key "
+        "algorithms (RSA, ECDSA, EdDSA, finite-field and elliptic-curve Diffie-Hellman and MQV).",
+        "FINAL",
         IR8547,
         URL_IR8547,
     ),
     (
         "After 2030",
-        "Quantum-vulnerable public-key algorithms with 112 bits of security strength (for "
-        "example RSA-2048) are deprecated (NIST IR 8547 initial public draft).",
-        "DRAFT",
+        "Under NIST IR 8547 (final, 2026), quantum-vulnerable public-key algorithms are deprecated from 112 "
+        "bits of security strength upward (for example RSA-2048, ECDSA P-256 and Ed25519).",
+        "FINAL",
         IR8547,
         URL_IR8547,
     ),
     (
         "After 2035",
-        "All quantum-vulnerable public-key algorithms are disallowed (NIST IR 8547 initial "
-        "public draft).",
-        "DRAFT",
+        "Under NIST IR 8547 (final, 2026), all quantum-vulnerable public-key algorithms are disallowed.",
+        "FINAL",
         IR8547,
         URL_IR8547,
     ),
@@ -144,8 +143,7 @@ TIMELINE_ROWS = [
     ),
 ]
 TIMELINE_FOOTNOTE = (
-    "NIST IR 8547 remains an initial public draft and its dates may change in the final "
-    "publication. FIPS 203, 204 and 205 are final."
+    "NIST IR 8547 (final, 2026) was published in final form on 27 Oct 2026. FIPS 203, 204 and 205 are final."
 )
 # (algorithm, key, strength, source, path, impact, sized): the 5 rows of team 1, in print order
 # (impact rank, key size, name, then source label).
@@ -704,7 +702,7 @@ def test_build_pdf_is_a_landscape_pdf_with_its_own_identity(team_view, team_pdf,
     assert info_field(team_pdf, "Author") == "DevSecShield CBOM engine"
     assert "CBOM PQC Migration Roadmap" in team_text  # its OWN footer label ...
     assert "SAST Report" not in team_text  # ... never the fallback one
-    match = re.search(r"CBOM-D15-T1-20261019-([0-9a-f]{8})", team_text)
+    match = re.search(r"CBOM-D13-T1-20261019-([0-9a-f]{8})", team_text)  # SOW D13
     assert match, "Document ID missing"
     assert match.group(1) == team_view.fingerprint[:8]
 
@@ -1011,13 +1009,14 @@ def test_timeline_covers_every_authored_row(team_body):
     assert len(data_rows(table)) == len(text.PQC_TIMELINE_ROWS) == 5
 
 
-def test_ir_8547_is_always_draft_qualified_and_the_engine_sentence_is_never_printed(team_text):
+def test_ir_8547_is_always_the_final_kb_citation_and_the_engine_sentence_is_never_printed(team_text):
+    # FIX-A3 (SOW audit A-05): NIST IR 8547 is final (27 Oct 2026); every mention is the KB's citation
     flat = norm(team_text)
     mentions = list(re.finditer(r"NIST IR 8547", flat))
-    assert len(mentions) >= 5  # four timeline rows + the footnote
+    assert len(mentions) >= 5  # timeline rows + the footnote
     for mention in mentions:
         window = flat[mention.start() : mention.start() + 60]
-        assert "draft" in window, window
+        assert window.startswith("NIST IR 8547 (final, 2026)") and "draft" not in window, window
     # the engine constant over-simplifies (RSA/ECC/DH after 2030) and rows embed it (D-06)
     assert "RSA/ECC/DH" not in team_text
     assert "SP 1800-38" not in team_text

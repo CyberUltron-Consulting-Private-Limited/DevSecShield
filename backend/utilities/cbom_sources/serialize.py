@@ -345,6 +345,12 @@ def _ct_providers() -> list[str]:
     return provider_names()
 
 
+def _regulated_entity(risk_model: Any) -> str:
+    from backend.utilities.cbom_sources.regulated_entity import of_risk_model
+
+    return of_risk_model(risk_model if isinstance(risk_model, dict) else None)
+
+
 def public_settings(row: CbomCollectionSettings, now: _dt.datetime) -> dict[str, Any]:
     nxt = None
     try:
@@ -374,6 +380,8 @@ def public_settings(row: CbomCollectionSettings, now: _dt.datetime) -> dict[str,
         "stop_all_network": row.stop_all_network,
         "require_signed_nodes": bool(row.require_signed_nodes),
         "risk_model": {k: (row.risk_model or {}).get(k) for k in ("data_shelf_life_years", "migration_years", "threat_years")},
+        # the RBI instrument the regulatory mapping cites (NBFC when not set): regulated_entity.py
+        "regulated_entity": _regulated_entity(row.risk_model),
         "stop_all_changed_by": row.stop_all_changed_by,
         "stop_all_changed_at": iso_z(row.stop_all_changed_at),
         "next_window_start": iso_z(nxt),

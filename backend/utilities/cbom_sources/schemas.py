@@ -230,6 +230,8 @@ class SettingsUpdate(_Body):
     soc_email: str | None = Field(default=None, max_length=254)
     emergency_contact: str | None = Field(default=None, max_length=64)
     risk_model: RiskModel | None = None
+    # which RBI instrument the regulatory mapping cites (regulated_entity.py); stored beside the Mosca inputs
+    regulated_entity: Literal["nbfc", "bank", "other"] | None = None
     require_signed_nodes: bool | None = None
     expected_version: int | None = None
 

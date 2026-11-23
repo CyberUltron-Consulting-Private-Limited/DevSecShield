@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 
-from backend.utilities.cbom_sources import crypto_kb
+from backend.utilities.cbom_sources import crypto_kb, regulated_entity
 from backend.utilities.dashboard.cbom_team_rollup import TeamCbomView
 
 SOURCES_PREFIX = "sources:"  # AssetAgg.source_key of a CBOM Sources collection
@@ -27,9 +27,13 @@ class ClauseRow:
     unrecorded: int = 0  # assets cited for review: the algorithm behind the finding was not recorded (#289)
 
 
-def collected_clauses(view: TeamCbomView) -> list[ClauseRow]:
+def collected_clauses(view: TeamCbomView, entity: str | None = None) -> list[ClauseRow]:
     """Clauses touched by the current collected assets' codes (findings and the informational codes the collector
-    gave, ``AssetAgg.collector_codes``, as the run API counts them): by framework, then most assets first."""
+    gave, ``AssetAgg.collector_codes``, as the run API counts them): by framework, then most assets first.
+
+    Only the clauses that bind the team's regulated-entity type (``view.regulated_entity``, or ``entity``) are cited:
+    an NBFC is mapped to the NBFC Directions 2026, never to the Commercial Banks Directions (SOW audit A-11)."""
+    team_entity = entity or getattr(view, "regulated_entity", None)
     assets: dict[tuple[str, str], set[str]] = defaultdict(set)
     codes: dict[tuple[str, str], set[str]] = defaultdict(set)
     recorded: dict[tuple[str, str], set[str]] = defaultdict(set)  # cited on a recorded algorithm by any of its codes
@@ -41,6 +45,8 @@ def collected_clauses(view: TeamCbomView) -> list[ClauseRow]:
             if code.startswith("COVERAGE_"):  # a check that was not collected is not a finding
                 continue
             for ref in crypto_kb.clauses_for("node", code, evidence.get(code)):  # the clauses it breaks (#269)
+                if not regulated_entity.applies(ref, team_entity):
+                    continue
                 key = (str(ref["framework"]), str(ref["id"]))
                 ident = f"{asset.source_key}|{asset.asset_type}|{asset.ident}"
                 assets[key].add(ident)

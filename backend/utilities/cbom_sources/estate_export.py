@@ -201,8 +201,15 @@ def _document(session: Session, team_id: int, f: Filters, now: _dt.datetime
             "properties": [
                 {"name": "zs:scope", "value": "estate"},
                 {"name": "zs:team_id", "value": str(team_id)},
+                # the three counts the documents reconcile (SOW audit A-09): distinct assets of the estate; asset
+                # components in this file (one per distinct asset, capped); the certificate part components
+                # (zs:part_of = certificate: signature algorithms, public keys) come on top and are not assets
                 {"name": "zs:asset_count", "value": str(total)},
-                {"name": "zs:component_count", "value": str(min(total, cap))},
+                {"name": "zs:asset_components", "value": str(min(total, cap))},
+                {"name": "zs:count_basis", "value": "zs:asset_count = distinct assets of the estate; "
+                                                    "zs:asset_components = asset components in this file; "
+                                                    "components with zs:part_of = certificate are parts of "
+                                                    "certificates, not assets"},
                 {"name": "zs:truncated", "value": str(total > cap).lower()},
                 *[{"name": f"zs:filter:{k}", "value": v} for k, v in f.public().items()],
                 {"name": "zs:kb_version", "value": crypto_kb.version()},

@@ -283,8 +283,16 @@ def fmt_date_utc(dt: datetime | date | None) -> str:
     return _DASH
 
 
+def sow_number(report_key: str) -> int | None:
+    """The SOW Table 7 deliverable ID of a report (``REPORT_META[...]["sow_id"]``: D1 ... D14), None for a report
+    that is not a numbered SOW deliverable. The ONE place a document's number comes from: the registry, the
+    manifest, the menu and the Document ID all read it (SOW audit A-04: the PDFs printed D02 / D15 / D16)."""
+    value = (REPORT_META.get(report_key) or {}).get("sow_id")
+    return int(value) if isinstance(value, int) and not isinstance(value, bool) else None
+
+
 def document_id(view: TeamCbomView, number: int) -> str:
-    """``CBOM-D07-T1-20261019-ab12cd34``: deliverable number, team, as-of day, data fingerprint.
+    """``CBOM-D8-T1-20261019-ab12cd34``: SOW deliverable ID, team, as-of day, data fingerprint.
 
     The fingerprint part is the first 8 hex characters of ``view.fingerprint`` (padded with
     zeros when it is shorter or empty), so the same scan set always yields the same ID.
@@ -292,7 +300,7 @@ def document_id(view: TeamCbomView, number: int) -> str:
     fingerprint = re.sub(r"[^0-9a-f]", "", str(view.fingerprint or "").lower())[:8]
     day = view.as_of
     stamp = f"{day.year:04d}{day.month:02d}{day.day:02d}"
-    return f"CBOM-D{int(number):02d}-T{int(view.team_id)}-{stamp}-{fingerprint.ljust(8, '0')}"
+    return f"CBOM-D{int(number)}-T{int(view.team_id)}-{stamp}-{fingerprint.ljust(8, '0')}"
 
 
 def _pdf_date(dt: datetime) -> str:
@@ -1027,6 +1035,7 @@ def build_document(
     if report_key not in REPORT_META:
         raise ValueError(f"unknown report_key {report_key!r}: add it to REPORT_META")
     meta = REPORT_META[report_key]
+    number = sow_number(report_key) or number  # the SOW ID wins over a renderer's own constant
     styles = get_deliverable_styles()
     doc_id = document_id(view, number)
     team = pdf_plain(view.team_name, limit=80)

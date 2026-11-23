@@ -726,7 +726,12 @@
     "quote": "NIST has a few symmetric cryptography standards at the 112-bit security level, which will be disallowed in 2030.",
     "page": "Sec. 4.1.3, p.18"
    },
-   "ml_kem_default": "NIST recommends using ML-KEM-768 as the default parameter set"
+   "ml_kem_default": "NIST recommends using ML-KEM-768 as the default parameter set",
+   "citation_id": "IR 8547 (final, 2026)",
+   "title": "Transition to Post-Quantum Cryptography Standards",
+   "published": "2026-10-27",
+   "deprecated_after": 2030,
+   "disallowed_after": 2035
   },
   "fips": {
    "fips203_ml_kem": {
@@ -962,7 +967,7 @@
    "source": "https://www.rbi.org.in/Scripts/NotificationUser.aspx?Id=12562",
    "applicability": "SCBs (excl. RRBs), SFBs, Payments Banks, NBFCs (Top/Upper/Middle layer), CICs, AIFIs",
    "para_16_cryptographic_controls": "The key length, algorithms, cipher suites and applicable protocols used in transmission channels, processing of data and authentication purpose shall be strong. REs shall adopt internationally accepted and published standards that are not deprecated/ demonstrated to be insecure/ vulnerable and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions.",
-   "status_note": "Repealed for Commercial Banks by the 2026 Directions below; status for other RE classes not verified."
+   "status_note": "Repealed for Commercial Banks by the Commercial Banks Directions 2026 (para 230) and for NBFCs by the NBFC Directions 2026 (para 155: 'the existing directions, instructions, and guidelines relating to Information Technology Framework and IT Governance as applicable to Non-Banking Financial Companies stand repealed'); status for other RE classes not verified."
   },
   "commercial_banks_directions_2026": {
    "title": "Reserve Bank of India (Commercial Banks – Cybersecurity, Technology: Risk, Resilience and Assurance Framework) Directions, 2026 (Updated as on October 01, 2026)",
@@ -984,6 +989,16 @@
     "note": "Blocked by bot-protection/CAPTCHA; encryption/key-management paragraph numbers in Annex 1 NOT verified."
    },
    "status_note": "Repealed for Commercial Banks per para 230 of the 2026 Directions."
+  },
+  "nbfc_directions_2026": {
+   "title": "Reserve Bank of India (Non-Banking Financial Companies – Cybersecurity, Technology: Risk, Resilience and Assurance Framework) Directions, 2026",
+   "ref": "RBI/DoS/2026-27/461; DoS.CO.CSITEG.55/31.01.015/2026-27; July 31, 2026; in force with immediate effect (para 2)",
+   "applicability": "NBFCs registered with RBI (para 3(1)); Chapter V (Middle Layer and above, excluding CICs) holds the cryptographic controls (C.11, para 118)",
+   "source": "https://www.rbi.org.in/Scripts/BS_ViewMasDirections.aspx?id=13592",
+   "fetched": "2026-11-23",
+   "para_118_cryptographic_controls": "The key length, algorithms, cipher suites, and applicable protocols used in transmission channels, processing of data, and authentication purposes shall be strong. The NBFC shall adopt internationally accepted and published standards that are not deprecated / demonstrated to be insecure / vulnerable, and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions.",
+   "para_155_repeal": "With the issue of these Directions, the existing directions, instructions, and guidelines relating to Information Technology Framework and IT Governance as applicable to Non-Banking Financial Companies stand repealed, as communicated vide circular no.DoS.CO.PPG.66/11.01.005/2026-27 dated July 31, 2026 .",
+   "at_rest_note": "No paragraph on encryption of data at rest (the Commercial Banks Directions' para 106 has no NBFC counterpart; Chapter IV para 33 asks end-to-end encryption for mobile services only)."
   }
  },
  "mosca": {

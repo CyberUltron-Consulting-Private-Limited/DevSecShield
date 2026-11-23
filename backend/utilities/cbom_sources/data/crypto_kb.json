@@ -79,12 +79,18 @@
    "text": "NIST will deprecate quantum-vulnerable public-key cryptography after 2030 and disallow its use under NIST standards and guidelines after 2035."
   },
   "rbi-cb-2026-para-106": {
+   "applies_to": [
+    "bank"
+   ],
    "framework": "RBI",
    "id": "Commercial Banks Cybersecurity Directions 2026, para 106",
    "source": "https://www.rbi.org.in/scripts/NotificationUser.aspx?Id=13643",
    "text": "protecting data / information at rest (e.g., using encryption, if supported by the device) and in-transit (e.g., using technologies such as Virtual Private Network (VPN) or other secure protocols)"
   },
   "rbi-cb-2026-para-140": {
+   "applies_to": [
+    "bank"
+   ],
    "framework": "RBI",
    "id": "Commercial Banks Cybersecurity Directions 2026, para 140",
    "note": "Commercial banks (from 31 July 2026).",
@@ -92,11 +98,24 @@
    "text": "The key length, algorithms, cipher suites and applicable protocols used in transmission channels, processing of data and authentication purpose shall be strong. The bank shall adopt internationally accepted and published standards that are not deprecated / demonstrated to be insecure / vulnerable, and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions."
   },
   "rbi-md-2023-para-16": {
+   "applies_to": [
+    "other"
+   ],
    "framework": "RBI",
    "id": "Master Direction on IT Governance (2023), para 16 Cryptographic controls",
-   "note": "Applies to REs other than commercial banks; repealed for commercial banks by the 2026 Directions.",
+   "note": "Repealed for commercial banks and for NBFCs by their 2026 Directions; kept for other regulated entities.",
    "source": "https://www.rbi.org.in/Scripts/NotificationUser.aspx?Id=12562",
    "text": "The key length, algorithms, cipher suites and applicable protocols used in transmission channels, processing of data and authentication purpose shall be strong. REs shall adopt internationally accepted and published standards that are not deprecated/ demonstrated to be insecure/ vulnerable and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions."
+  },
+  "rbi-nbfc-2026-para-118": {
+   "applies_to": [
+    "nbfc"
+   ],
+   "framework": "RBI",
+   "id": "NBFC Cybersecurity, Technology: Risk, Resilience and Assurance Framework Directions 2026, para 118",
+   "note": "NBFCs, Middle Layer and above (from 31 July 2026); replaces the Master Direction on IT Governance (2023) for NBFCs (para 155).",
+   "source": "https://www.rbi.org.in/Scripts/BS_ViewMasDirections.aspx?id=13592",
+   "text": "The key length, algorithms, cipher suites, and applicable protocols used in transmission channels, processing of data, and authentication purposes shall be strong. The NBFC shall adopt internationally accepted and published standards that are not deprecated / demonstrated to be insecure / vulnerable, and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions."
   },
   "sebi-annexure-h-5": {
    "framework": "SEBI CSCRF",
@@ -155,6 +174,7 @@
    "certin-bom-8.4.2.2",
    "rbi-md-2023-para-16",
    "rbi-cb-2026-para-140",
+   "rbi-nbfc-2026-para-118",
    "sebi-annexure-h-5"
   ],
   "at_rest": [
@@ -165,7 +185,8 @@
   ],
   "auth": [
    "rbi-md-2023-para-16",
-   "rbi-cb-2026-para-140"
+   "rbi-cb-2026-para-140",
+   "rbi-nbfc-2026-para-118"
   ],
   "certificates": [
    "sebi-pr-ds-s4-item-5",
@@ -179,6 +200,7 @@
    "sebi-pr-ds-standard-1",
    "sebi-annexure-i",
    "rbi-cb-2026-para-106",
+   "rbi-nbfc-2026-para-118",
    "certin-gov-6.2.7",
    "certin-gov-4.5.7"
   ],
@@ -188,7 +210,8 @@
   "keysize": [
    "nist-800-131a-below-112-bit",
    "rbi-md-2023-para-16",
-   "rbi-cb-2026-para-140"
+   "rbi-cb-2026-para-140",
+   "rbi-nbfc-2026-para-118"
   ],
   "pqc": [
    "nist-ir-8547",
@@ -202,6 +225,7 @@
    "sebi-annexure-i",
    "rbi-md-2023-para-16",
    "rbi-cb-2026-para-140",
+   "rbi-nbfc-2026-para-118",
    "certin-gov-6.1.7"
   ]
  },
@@ -1225,6 +1249,7 @@
     "clauses": [
      "rbi-md-2023-para-16",
      "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118",
      "sebi-annexure-h-5"
     ],
     "compliance": [
@@ -1905,7 +1930,8 @@
      "certin-bom-8.4.1.6",
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "components",
@@ -2151,6 +2177,7 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
     "compliance": [
@@ -2399,7 +2426,8 @@
     "clause_rules": [],
     "clauses": [
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "algorithms"
@@ -2544,7 +2572,8 @@
     "clause_rules": [],
     "clauses": [
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "algorithms"
@@ -2607,7 +2636,8 @@
     "clause_rules": [],
     "clauses": [
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "key_mgmt"
@@ -2850,6 +2880,7 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
     "compliance": [
@@ -3026,7 +3057,8 @@
     ],
     "clauses": [
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "algorithms"
@@ -3203,7 +3235,8 @@
     "clauses": [
      "nist-800-131a-below-112-bit",
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "keysize",
@@ -3287,6 +3320,7 @@
     "clauses": [
      "rbi-md-2023-para-16",
      "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118",
      "certin-gov-6.1.7"
     ],
     "compliance": [
@@ -3375,7 +3409,8 @@
     "clause_rules": [],
     "clauses": [
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "algorithms"
@@ -3452,7 +3487,8 @@
     "clauses": [
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "algorithms"
@@ -3566,7 +3602,8 @@
     "clause_rules": [],
     "clauses": [
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "key_mgmt"
@@ -3650,7 +3687,8 @@
     ],
     "clauses": [
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "keysize"
@@ -3713,6 +3751,7 @@
     "clauses": [
      "rbi-md-2023-para-16",
      "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118",
      "nist-800-131a-pkcs1-v1_5"
     ],
     "compliance": [
@@ -3785,7 +3824,8 @@
     "clauses": [
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "tls_min"
@@ -3915,7 +3955,8 @@
     "clause_rules": [],
     "clauses": [
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "key_mgmt"
@@ -3978,7 +4019,8 @@
     "clause_rules": [],
     "clauses": [
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "algorithms"
@@ -4150,7 +4192,8 @@
     "clauses": [
      "nist-800-131a-below-112-bit",
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "keysize",
@@ -4379,7 +4422,8 @@
     "clauses": [
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "algorithms",
@@ -4459,7 +4503,8 @@
     "clauses": [
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "algorithms"
@@ -4547,7 +4592,8 @@
     "clauses": [
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "algorithms"
@@ -5627,7 +5673,8 @@
     "clause_rules": [],
     "clauses": [
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "auth"
@@ -5704,6 +5751,7 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
     "compliance": [
@@ -5926,7 +5974,8 @@
     "clause_rules": [],
     "clauses": [
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "auth"
@@ -6068,7 +6117,8 @@
     "clause_rules": [],
     "clauses": [
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "auth"
@@ -6149,7 +6199,8 @@
     "clause_rules": [],
     "clauses": [
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "auth"
@@ -6223,7 +6274,8 @@
     "clause_rules": [],
     "clauses": [
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "auth"
@@ -6432,6 +6484,7 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
     "compliance": [
@@ -6509,7 +6562,8 @@
     "clause_rules": [],
     "clauses": [
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "auth"
@@ -6757,6 +6811,7 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
     "compliance": [
@@ -6847,6 +6902,7 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
     "compliance": [
@@ -7010,7 +7066,8 @@
     "clause_rules": [],
     "clauses": [
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "auth"
@@ -7085,7 +7142,8 @@
     "clauses": [
      "nist-800-131a-below-112-bit",
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "keysize"
@@ -7446,6 +7504,7 @@
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
      "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118",
      "sebi-annexure-i"
     ],
     "compliance": [
@@ -7638,7 +7697,8 @@
     "clause_rules": [],
     "clauses": [
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "algorithms"
@@ -7797,7 +7857,8 @@
     "clauses": [
      "nist-800-131a-below-112-bit",
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "keysize"
@@ -7972,6 +8033,7 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
     "compliance": [
@@ -8155,7 +8217,8 @@
     "clauses": [
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "algorithms"
@@ -8254,7 +8317,8 @@
     "clauses": [
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "auth"
@@ -8447,7 +8511,8 @@
     "clauses": [
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "keysize"
@@ -8566,7 +8631,8 @@
     "clauses": [
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "algorithms"
@@ -8679,7 +8745,8 @@
       "clauses": [
        "certin-bom-8.4.2.2",
        "rbi-md-2023-para-16",
-       "rbi-cb-2026-para-140"
+       "rbi-cb-2026-para-140",
+       "rbi-nbfc-2026-para-118"
       ],
       "match": "md5|des-mac"
      }
@@ -8787,7 +8854,8 @@
       "clauses": [
        "certin-bom-8.4.2.2",
        "rbi-md-2023-para-16",
-       "rbi-cb-2026-para-140"
+       "rbi-cb-2026-para-140",
+       "rbi-nbfc-2026-para-118"
       ],
       "match": "^(DES|DES-IV64|3DES|BLOWFISH|IDEA|CAST|NULL)(-\\d+)?$"
      },
@@ -8795,7 +8863,8 @@
       "clauses": [
        "certin-bom-8.4.2.2",
        "rbi-md-2023-para-16",
-       "rbi-cb-2026-para-140"
+       "rbi-cb-2026-para-140",
+       "rbi-nbfc-2026-para-118"
       ],
       "match": "md5|des-mac"
      },
@@ -8803,7 +8872,8 @@
       "clauses": [
        "certin-bom-8.4.2.2",
        "rbi-md-2023-para-16",
-       "rbi-cb-2026-para-140"
+       "rbi-cb-2026-para-140",
+       "rbi-nbfc-2026-para-118"
       ],
       "match": "^(?:ECP\\-192|MODP\\-1024|MODP\\-1024\\-S160|MODP\\-1536|MODP\\-2048\\-S224|MODP\\-2048\\-S256|MODP\\-768)$"
      },
@@ -9526,6 +9596,7 @@
     "clauses": [
      "rbi-md-2023-para-16",
      "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118",
      "sebi-annexure-h-5"
     ],
     "compliance": [
@@ -10447,6 +10518,7 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
     "compliance": [
@@ -10598,6 +10670,7 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
     "compliance": [
@@ -10680,6 +10753,7 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
     "compliance": [
@@ -10764,6 +10838,7 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
     "compliance": [
@@ -10837,6 +10912,7 @@
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
      "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118",
      "sebi-annexure-i"
     ],
     "compliance": [
@@ -10960,6 +11036,7 @@
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
      "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118",
      "sebi-annexure-i"
     ],
     "compliance": [
@@ -11082,6 +11159,7 @@
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
      "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118",
      "sebi-annexure-i"
     ],
     "compliance": [
@@ -11209,6 +11287,7 @@
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
      "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118",
      "sebi-annexure-i"
     ],
     "compliance": [
@@ -11333,6 +11412,7 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
     "compliance": [
@@ -11601,6 +11681,7 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
     "compliance": [
@@ -11702,6 +11783,7 @@
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
      "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118",
      "sebi-annexure-i"
     ],
     "compliance": [
@@ -11908,6 +11990,7 @@
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
      "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118",
      "nist-800-131a-sha1-signatures"
     ],
     "compliance": [
@@ -11991,6 +12074,7 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
     "compliance": [
@@ -12090,6 +12174,7 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
     "compliance": [
@@ -12182,7 +12267,8 @@
     "clause_rules": [],
     "clauses": [
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "algorithms"
@@ -12258,6 +12344,7 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
     "compliance": [
@@ -12340,6 +12427,7 @@
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
      "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118",
      "nist-800-131a-sha1-signatures"
     ],
     "compliance": [
@@ -12421,6 +12509,7 @@
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
      "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118",
      "sebi-annexure-i"
     ],
     "compliance": [
@@ -12544,6 +12633,7 @@
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
      "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118",
      "sebi-annexure-i"
     ],
     "compliance": [
@@ -12666,6 +12756,7 @@
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
      "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118",
      "sebi-annexure-i"
     ],
     "compliance": [
@@ -12793,6 +12884,7 @@
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
      "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118",
      "sebi-annexure-i"
     ],
     "compliance": [
@@ -13070,6 +13162,7 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7",
      "certin-gov-4.5.7"
     ],
@@ -13157,7 +13250,8 @@
     "clauses": [
      "nist-800-131a-below-112-bit",
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "keysize"
@@ -13241,7 +13335,8 @@
     "clauses": [
      "nist-800-131a-below-112-bit",
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "keysize"
@@ -13658,6 +13753,7 @@
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
      "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118",
      "certin-gov-6.1.7"
     ],
     "compliance": [
@@ -13745,6 +13841,7 @@
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
      "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118",
      "certin-gov-6.1.7",
      "nist-800-131a-sha1-signatures"
     ],
@@ -13840,7 +13937,8 @@
     "clauses": [
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "algorithms"
@@ -13925,6 +14023,7 @@
      "nist-800-131a-below-112-bit",
      "rbi-md-2023-para-16",
      "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118",
      "certin-bom-8.4.2.2",
      "nist-800-131a-sha1-signatures"
     ],
@@ -14010,6 +14109,7 @@
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
      "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118",
      "nist-800-131a-sha1-signatures"
     ],
     "compliance": [
@@ -14087,6 +14187,7 @@
      "nist-800-131a-below-112-bit",
      "rbi-md-2023-para-16",
      "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118",
      "certin-bom-8.4.2.2"
     ],
     "compliance": [
@@ -14319,6 +14420,7 @@
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
      "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118",
      "nist-800-131a-sha1-signatures"
     ],
     "compliance": [
@@ -14471,6 +14573,7 @@
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
      "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118",
      "certin-gov-4.5.7"
     ],
     "compliance": [
@@ -14562,6 +14665,7 @@
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
      "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118",
      "sebi-annexure-h-5"
     ],
     "compliance": [
@@ -14657,7 +14761,8 @@
     "clauses": [
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "algorithms"
@@ -14735,6 +14840,7 @@
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
      "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118",
      "nist-800-131a-pkcs1-v1_5",
      "nist-ir-8547",
      "cnsa-2.0",
@@ -14834,6 +14940,7 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
     "compliance": [
@@ -14973,7 +15080,8 @@
     "clauses": [
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "algorithms"
@@ -15077,6 +15185,7 @@
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
      "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118",
      "sebi-annexure-h-5"
     ],
     "compliance": [
@@ -15185,6 +15294,7 @@
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
      "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118",
      "sebi-annexure-h-5"
     ],
     "compliance": [
@@ -15290,6 +15400,7 @@
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
      "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118",
      "sebi-annexure-i"
     ],
     "compliance": [
@@ -15402,7 +15513,8 @@
     "clauses": [
      "certin-bom-8.4.2.2",
      "rbi-md-2023-para-16",
-     "rbi-cb-2026-para-140"
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
     ],
     "compliance": [
      "algorithms"
@@ -15523,7 +15635,7 @@
    }
   }
  },
- "kb_version": "2026.11.15.6",
+ "kb_version": "2026.11.23.1",
  "legacy_controls": {
   "access": {
    "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control",
@@ -17556,9 +17668,16 @@
    "source": "https://globalriskinstitute.org/mp-files/pdf-quantum-threat-timeline-report-2025.pdf"
   },
   "nist_ir_8547": {
+   "citation": "NIST IR 8547 (final, 2026)",
+   "deprecated_after": 2030,
+   "disallowed_after": 2035,
    "federal": "These systems must adopt post-quantum cryptography for key establishment by December 31, 2030, and for digital signatures by December 31, 2031.",
+   "landing": "https://csrc.nist.gov/pubs/ir/8547/final",
+   "published": "2026-10-27",
    "quote": "NIST will deprecate quantum-vulnerable public-key cryptography after 2030 and disallow its use under NIST standards and guidelines after 2035.",
-   "source": "https://nvlpubs.nist.gov/nistpubs/ir/2026/NIST.IR.8547.pdf"
+   "source": "https://nvlpubs.nist.gov/nistpubs/ir/2026/NIST.IR.8547.pdf",
+   "status": "final",
+   "title": "Transition to Post-Quantum Cryptography Standards"
   },
   "z_default": null,
   "z_note": "There is no authoritative date for a cryptographically relevant quantum computer. Set Z (years until one exists) for your organisation; the expert survey above is one input."

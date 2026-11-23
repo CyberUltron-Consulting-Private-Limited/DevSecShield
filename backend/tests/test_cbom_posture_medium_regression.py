@@ -31,7 +31,7 @@ OLD_SCOPE = (
 )
 NEW_SCOPE = (
     "Method: static analysis of repositories and uploaded artefacts, including declared "
-    "infrastructure and server configuration (documents #5, #6 and #9) and offline import "
+    "infrastructure and server configuration (D6, D7 and D9) and offline import "
     "of TLS result files. It does not include live-network discovery, inspection of HSM "
     "or KMS custody, or inspection of stored data."
 )
@@ -43,13 +43,13 @@ REPLACEMENTS = (
         "No visibility into hardware security modules, key-management services or key custody.",
     ),
     (
-        "Data-at-rest encryption is assessed from declared configuration only (document #9); "
+        "Data-at-rest encryption is assessed from declared configuration only (D9); "
         "the live state of databases, object stores and disks is not inspected.",
         "No assessment of data-at-rest encryption in databases, object stores or disks.",
     ),
     (
         "Whether stored data is actually encrypted. Declared settings are assessed in "
-        "document #9 and are not proof of operation.",
+        "D9 and are not proof of operation.",
         "Database, object-store and disk encryption is runtime configuration.",
     ),
 )

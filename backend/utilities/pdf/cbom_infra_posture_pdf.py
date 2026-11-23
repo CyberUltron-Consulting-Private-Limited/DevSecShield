@@ -24,7 +24,7 @@ from backend.utilities.pdf.cbom_deliverable_common import (
 )
 from backend.utilities.pdf.report_branding import REPORT_META
 
-DOCUMENT_NUMBER = 5
+DOCUMENT_NUMBER = 6  # SOW D6 (REPORT_META sow_id; the Document ID reads it)
 REPORT_KEY = "cbom_infra_posture"
 _SIGNOFF = ("Prepared by", "Reviewed by", "Approved by")
 

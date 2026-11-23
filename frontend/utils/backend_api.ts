@@ -2513,20 +2513,21 @@ const reinitializeCBOMScanWithPayload = async (
 
 /**
  * Team-wide CBOM regulatory deliverables, rendered in-house as PDFs by the backend
- * (GET /{team_id}/cbom/deliverables/{slug}). Order and slugs mirror the backend registry;
- * backend/tests/test_cbom_deliverables_contract.py (T-CON-1) pins the slug list.
+ * (GET /{team_id}/cbom/deliverables/{slug}). Order and slugs mirror the backend registry; `number` is the SOW
+ * Table 7 ID (D1 ... D14) the PDF's Document ID prints; backend/tests/test_cbom_deliverables_contract.py (T-CON-1)
+ * pins slug, number and title.
  */
 export const CBOM_DELIVERABLES = [
-  { slug: "scope-baseline-register", number: 1, title: "Scope Baseline & Asset Population Register" },
-  { slug: "quantum-risk-register", number: 2, title: "Quantum Risk Register" },
-  { slug: "methodology-evidence-plan", number: 3, title: "Cryptographic Discovery Methodology & Evidence Plan" },
-  { slug: "infrastructure-cloud-encryption-posture", number: 5, title: "Infrastructure & Cloud Encryption Posture" },
-  { slug: "network-tls-protocol-assessment", number: 6, title: "Network, TLS & Crypto Protocol Assessment" },
-  { slug: "certificate-estate-register", number: 7, title: "Certificate Estate Register" },
+  { slug: "scope-baseline-register", number: 1, title: "Scope Baseline and Asset Population Register" },
+  { slug: "methodology-evidence-plan", number: 2, title: "Discovery Methodology and Evidence Plan" },
+  { slug: "infrastructure-cloud-encryption-posture", number: 6, title: "Infrastructure and Cloud Encryption Posture" },
+  { slug: "network-tls-protocol-assessment", number: 7, title: "Network, TLS and Crypto Protocol Assessment" },
+  { slug: "certificate-estate-register", number: 8, title: "Certificate Estate Register" },
   { slug: "data-at-rest-encryption-assessment", number: 9, title: "Data-at-Rest Encryption Assessment" },
-  { slug: "third-party-assurance-register", number: 10, title: "Third-Party Cryptographic Assurance & Attestation Register" },
-  { slug: "pqc-migration-roadmap", number: 15, title: "PQC Migration Roadmap" },
-  { slug: "board-executive-report", number: 16, title: "Board / IT Strategy Committee Regulatory & Executive Report" },
+  { slug: "third-party-assurance-register", number: 10, title: "Third-Party Cryptographic Assurance and Attestation Register" },
+  { slug: "quantum-risk-register", number: 12, title: "Quantum Risk Register" },
+  { slug: "pqc-migration-roadmap", number: 13, title: "PQC Migration Roadmap" },
+  { slug: "board-executive-report", number: 14, title: "Board / IT Strategy Committee Report" },
 ] as const;
 
 export type CbomDeliverableSlug = (typeof CBOM_DELIVERABLES)[number]["slug"];
@@ -4400,6 +4401,8 @@ export interface CbomSourcesSettings {
     emergency_contact: string | null
     /** Mosca inputs in years: X = how long data must stay secret, Y = migration time, Z = years until a quantum computer. */
     risk_model: CbomRiskModel
+    /** The RBI instrument the regulatory mapping cites (backend regulated_entity.py); "nbfc" when not set. */
+    regulated_entity?: "nbfc" | "bank" | "other"
     stop_all_network: boolean
     /** Refuse scan nodes that do not sign their requests (legacy nodes must be reset and enrolled again). */
     require_signed_nodes: boolean

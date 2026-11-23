@@ -1,4 +1,4 @@
-"""Board / IT Strategy Committee Regulatory & Executive Report (deliverable #16, portrait) - WP3f.
+"""Board / IT Strategy Committee Report (SOW D14, portrait) - WP3f.
 
 ``build_pdf(view) -> bytes`` renders the team-wide roll-up (``TeamCbomView``) as a short
 executive document: the posture grade and headline numbers, the ten most material risks,
@@ -21,7 +21,14 @@ Design decisions, in one place:
   has no finding to report).  Order: impact rank, then scanner risk score (absent last), then
   name.  Nothing here derives weakness from ``weak`` / ``crypto_strength`` (plan F-04).
 * **Regulatory exposure** prints the pooled counts of the view as they are; "Pass" includes
-  requirements passed on attached evidence (that is what the coverage definition counts).
+  requirements passed on attached evidence (that is what the coverage definition counts). Each row says on how
+  many of the team's sources it is based, and the lead says the percentages are not estate-wide compliance
+  (SOW audit A-11). The collected-infrastructure clauses cite only the RBI instrument of the team's regulated-entity
+  type (NBFC by default).
+* **Readiness** prints the formula with the very numbers of the view (Rule P): safe / (safe + quantum-vulnerable +
+  broken today), the rule of ``cbom_metrics.quantum_readiness_pct`` (SOW audit A-07).
+* **Remediation** rows name each finding by the knowledge base's title and fix (SOW audit A-12); the quantum risk
+  grades of the register (D12) are summarised in section 3.
 * Every data-derived string reaches a ``Paragraph`` through ``pdf_text`` (the one helper
   ``_para``) or through ``dense_table`` / ``kpi_strip`` / ``status_chip``, which sanitise
   themselves; scanned repositories are untrusted input.
@@ -49,7 +56,6 @@ from backend.utilities.dashboard.cbom_team_rollup import (
     ASSET_ALGORITHM,
     ASSET_CERTIFICATE,
     ASSET_MATERIAL,
-    ASSET_OTHER,
     ASSET_PROTOCOL,
     EXPIRED,
     FIDELITY_FULL,
@@ -64,6 +70,9 @@ from backend.utilities.dashboard.cbom_team_rollup import (
     posture_active,
 )
 from backend.utilities.pdf import cbom_deliverable_text as authored
+from backend.utilities.pdf import cbom_kb_text as kb_text
+from backend.utilities.pdf import cbom_population as population
+from backend.utilities.pdf import cbom_risk_register_pdf as register_pdf
 from backend.utilities.pdf.cbom_collected_compliance import collected_clauses
 from backend.utilities.pdf.cbom_deliverable_common import (
     Styles,
@@ -88,7 +97,7 @@ from backend.utilities.pdf.report_branding import (
     compute_risk_score,
 )
 
-DELIVERABLE_NUMBER = 16
+DELIVERABLE_NUMBER = 14  # SOW D14 (REPORT_META sow_id; the Document ID reads it)
 REPORT_KEY = "cbom_board_report"
 TOP_RISKS = 10  # "Material risks (top 10)"
 MAX_SCAN_ROWS = 100  # Appendix B cap; the rest is counted, not listed
@@ -127,12 +136,22 @@ GOVERNANCE_LEAD = (
     "records the owner, due date and decision in the cells marked (assessor)."
 )
 RISKS_ORDER_NOTE = "ordered by impact, then scanner risk score, then name"
-READINESS_NOTE = (
-    "Readiness = quantum-safe algorithm occurrences / (quantum-safe + quantum-vulnerable "
-    "occurrences), counted over the current assets of every source. Quantum-vulnerable "
-    "public-key algorithms (RSA, elliptic-curve, Diffie-Hellman, DSA) are the migration scope; "
-    "section 7 summarises the target standards and the regulatory timeline."
+READINESS_FORMULA = (
+    "Readiness = quantum-safe / (quantum-safe + quantum-vulnerable + broken today) = "
+    "{safe} / ({safe} + {vulnerable} + {broken}) = {pct}"
 )
+READINESS_NOTE = (
+    "Counted over the current assets of every source that carry a quantum verdict; assets without one are left "
+    "out of both sides. Broken today (MD5, DES and the like) is not ready. Quantum-vulnerable public-key "
+    "algorithms (RSA, elliptic-curve, Diffie-Hellman, DSA) are the migration scope; section 7 summarises the "
+    "target standards and the regulatory timeline."
+)
+QGRADE_HEADING = "Quantum risk grades (D12)"
+QGRADE_LEAD = (
+    "Grades from the quantum risk register (D12): {total} distinct assets. Q1 Critical to Q4 Low rank quantum risk "
+    "under the team's Mosca inputs; Q0 Unknown means the platform could not grade the asset, never that it is safe."
+)
+QGRADE_NOT_LOADED = "The quantum risk register (D12) could not be loaded for this report."
 CERT_DATE_NOTE = (
     "Validity is computed as of {as_of} (the report date) from each certificate's notAfter "
     "date, not from the flag raised when the scan ran. Certificates are counted once across "
@@ -143,6 +162,21 @@ EXPOSURE_LEGACY_NOTE = (
     "({legacy} legacy excluded). Re-scan the legacy-format sources to include them."
 )
 EXPOSURE_POOLED = "{pooled} of {sources} sources pooled ({legacy} legacy excluded)."
+EXPOSURE_BASIS = (
+    "Each row is computed only over the sources whose results that framework's checks can read, shown in the last "
+    "column as N of {sources} sources. A percentage is therefore not a measure of estate-wide compliance: a row "
+    "based on one code repository says nothing about the other sources."
+)
+EXPOSURE_ENTITY = (
+    "Regulated entity: {label} (team setting). RBI clauses are cited from {instrument}; RBI directions for other "
+    "entity types are not applied."
+)
+ENTITY_INSTRUMENTS = {
+    "nbfc": "the RBI NBFC Cybersecurity, Technology: Risk, Resilience and Assurance Framework Directions 2026",
+    "bank": "the RBI Commercial Banks Cybersecurity, Technology: Risk, Resilience and Assurance Framework "
+            "Directions 2026",
+    "other": "the RBI Master Direction on IT Governance, Risk, Controls and Assurance Practices (2023)",
+}
 EXPOSURE_COLLECTED_LEAD = (
     "Collected infrastructure (CBOM Sources): the regulatory clauses that the findings of each "
     "source's latest collection touch, with the number of assets concerned (knowledge-base "
@@ -180,8 +214,9 @@ _ASSET_TYPE_LABEL = {
     ASSET_CERTIFICATE: "Certificate",
     ASSET_PROTOCOL: "Protocol",
     ASSET_MATERIAL: "Key or secret material",
-    ASSET_OTHER: "Other",
 }
+_KIND_LABEL = {"algorithm": "Algorithm", "certificate": "Certificate", "key": "Key or secret material",
+               "protocol": "Protocol", "library": "Library", "setting": "Encryption setting"}
 # code scans (aibom) and CBOM Sources collections (cbom_sources.classify) name the same certificate findings differently
 _WEAK_CERT_CODES = frozenset({"WEAK_CERTIFICATE_SIGNATURE", "WEAK_CERTIFICATE_KEY", "SIG_MD5", "SIG_SHA1",
                               "RSA_LT_1024", "RSA_LT_2048", "EC_LT_224"})
@@ -190,7 +225,7 @@ _RANK = {level: index for index, level in enumerate(IMPACT_LEVELS)}
 _UNRANKED = len(IMPACT_LEVELS)
 # "1 sources" -> "1 source": the authored governance templates are written in the plural
 _SINGULAR = re.compile(
-    r"\b1 (unique certificate|requirement|quantum-vulnerable asset occurrence|source)s\b"
+    r"\b1 (unique certificate|requirement|quantum-vulnerable asset occurrence|source|quantum-vulnerable asset)s\b"
 )
 # grade box colours for A and B mirror report_branding.build_kpi_grid
 _GRADE_OK_BG = colors.HexColor("#ECFDF5")
@@ -403,9 +438,18 @@ class GovernanceMetrics:
     attestations_outstanding: int  # requirements some current source cannot evidence from the BOM
     quantum_vulnerable: int
     legacy_scans: int  # current sources whose latest scan is in legacy format
+    mosca_missing: int = 0  # register assets graded Q0 because the Mosca inputs are not set (D12)
+
+
+def _register_summary(view: TeamCbomView) -> dict[str, Any] | None:
+    register = getattr(view, "register", None)
+    summary = register.get("summary") if isinstance(register, dict) else None
+    return summary if isinstance(summary, dict) else None
 
 
 def governance_metrics(view: TeamCbomView) -> GovernanceMetrics:
+    summary = _register_summary(view) or {}
+    reasons = summary.get("q0_reasons") if isinstance(summary.get("q0_reasons"), dict) else {}
     return GovernanceMetrics(
         unique_certs=sum(1 for c in view.certs if c.current),
         attestations_outstanding=sum(
@@ -413,6 +457,7 @@ def governance_metrics(view: TeamCbomView) -> GovernanceMetrics:
         ),
         quantum_vulnerable=int(view.pqc_vulnerable),
         legacy_scans=int(view.compliance_legacy_excluded),
+        mosca_missing=int(reasons.get("mosca_missing", 0) or 0),
     )
 
 
@@ -428,15 +473,21 @@ def governance_rows(view: TeamCbomView) -> list[list[str]]:
         "attestations_outstanding": metrics.attestations_outstanding,
         "quantum_vulnerable": metrics.quantum_vulnerable,
         "legacy_scans": metrics.legacy_scans,
+        "mosca_missing": metrics.mosca_missing,
     }
     live = {
         "owners": _count(metrics.unique_certs, "unique certificate"),
         "attestations": f"{_count(metrics.attestations_outstanding, 'requirement')} outstanding",
         "pqc": _count(metrics.quantum_vulnerable, "quantum-vulnerable occurrence"),
         "legacy": f"{_count(metrics.legacy_scans, 'source')} in legacy format",
+        "mosca": f"{_count(metrics.mosca_missing, 'asset')} Q0 for missing inputs",
     }
+    counts = {"owners": metrics.unique_certs, "attestations": metrics.attestations_outstanding,
+              "legacy": metrics.legacy_scans, "mosca": metrics.mosca_missing}
     rows = []
     for key, template in authored.GOVERNANCE_ACTIONS:
+        if key in authored.GOVERNANCE_HIDE_WHEN_ZERO and counts.get(key, 0) <= 0:
+            continue  # nothing to decide ("Re-scan the 0 sources ..."): the row is left out
         action = _SINGULAR.sub(r"1 \1", template.format(**fields))
         rows.append([action, live.get(key, ""), "", "", ""])
     return rows
@@ -447,7 +498,9 @@ def _percent(ratio: float | None) -> str:
 
 
 def exposure_rows(view: TeamCbomView) -> list[list[str]]:
-    """One row per pooled framework (engine order): label, coverage, pass, fail, NBE, OOS, n."""
+    """One row per pooled framework (engine order): label, coverage, pass, fail, NBE, OOS, and the basis "N of M
+    sources" (M = every source of the report, so a row pooled from one repository says so)."""
+    total = len(view.sources)
     return [
         [
             authored.framework_label(pool.framework),
@@ -456,10 +509,44 @@ def exposure_rows(view: TeamCbomView) -> list[list[str]]:
             str(pool.failed),
             str(pool.not_bom_evidenceable),
             str(pool.out_of_scope),
-            str(pool.sources_pooled),
+            f"{pool.sources_pooled} of {total} source{'' if total == 1 else 's'}",
         ]
         for pool in view.frameworks
     ]
+
+
+def readiness_formula(view: TeamCbomView) -> str | None:
+    """The readiness formula printed with the view's own numbers (Rule P), None when nothing was graded."""
+    if view.readiness_pct is None:
+        return None
+    return READINESS_FORMULA.format(safe=view.pqc_safe, vulnerable=view.pqc_vulnerable,
+                                    broken=view.pqc_broken_today, pct=f"{view.readiness_pct:.1f}%")
+
+
+def qgrade_rows(view: TeamCbomView) -> list[list[str]] | None:
+    """``[grade, assets]`` rows of the quantum risk register (D12), None when it was not loaded."""
+    summary = _register_summary(view)
+    if summary is None:
+        return None
+    grades = summary.get("q_grades") if isinstance(summary.get("q_grades"), dict) else {}
+    rows = [[register_pdf.grade_text(g), str(int(grades.get(g, 0) or 0))] for g in ("Q1", "Q2", "Q3", "Q4", "Q0")]
+    rows.append(["No grade (no public-key cryptography)", str(int(grades.get("none", 0) or 0))])
+    return rows
+
+
+def q0_reason_text(view: TeamCbomView) -> str:
+    """"Q0 by reason: Mosca inputs missing 3, PQC class unknown 1" (the register's reasons, most first)."""
+    summary = _register_summary(view) or {}
+    reasons = summary.get("q0_reasons") if isinstance(summary.get("q0_reasons"), dict) else {}
+    parts = sorted(((str(k), int(v or 0)) for k, v in reasons.items() if int(v or 0) > 0), key=lambda kv: (-kv[1], kv[0]))
+    if not parts:
+        return ""
+    words = register_pdf._REASON_WORDS
+    def word(key: str) -> str:
+        text = words.get(key) or key.replace("_", " ")
+        return text[:1].upper() + text[1:]  # "PQC class unknown" keeps its acronym
+
+    return "Q0 by reason: " + ", ".join(f"{word(k)} {n}" for k, n in parts) + "."
 
 
 def scan_rows(view: TeamCbomView) -> list[list[str]]:
@@ -627,7 +714,8 @@ def _quantum_sentence(view: TeamCbomView) -> str:
     return (
         f"Quantum readiness is {view.readiness_pct:.1f}%: {view.pqc_vulnerable} of {graded} "
         f"gradeable algorithm occurrences {verb} quantum-vulnerable public-key cryptography"
-        + (f" and {view.pqc_broken_today} are broken today (MD5, DES and the like)." if view.pqc_broken_today else ".")
+        + (f" and {view.pqc_broken_today} {'is' if view.pqc_broken_today == 1 else 'are'} broken today (MD5, DES and "
+           "the like)." if view.pqc_broken_today else ".")
     )
 
 
@@ -680,6 +768,7 @@ def _summary_paragraphs(view: TeamCbomView, posture: PostureGrade) -> list[str]:
     line = configuration_posture_line(view)
     if line is not None:
         paragraphs.append(line)
+    paragraphs.append(population.reconciliation_line(view))
     return paragraphs
 
 
@@ -746,7 +835,8 @@ def _risks_section(view: TeamCbomView, styles: Styles):
         return [*story, _para(NO_ISSUES_RISKS, styles, "muted")]
     rows = []
     for rank, asset in enumerate(issues[:TOP_RISKS], start=1):
-        kind = _ASSET_TYPE_LABEL.get(asset.asset_type, _ASSET_TYPE_LABEL[ASSET_OTHER])
+        # what the asset is (a library, an encryption setting ...), never "Other" (SOW audit A-10)
+        kind = _ASSET_TYPE_LABEL.get(asset.asset_type) or _KIND_LABEL[population.asset_kind(asset)]
         where = f"{asset.source_label}\n{asset.location}" if asset.location else asset.source_label
         rows.append(
             [
@@ -789,7 +879,21 @@ def _quantum_section(view: TeamCbomView, styles: Styles, w: float):
         w,
         max_per_row=4,
     )
-    return [*story, strip, _gap(), _para(READINESS_NOTE, styles, "muted")]
+    story += [strip, _gap()]
+    formula = readiness_formula(view)
+    if formula is not None:
+        story += [_para(formula, styles), _gap(2)]
+    story += [_para(READINESS_NOTE, styles, "muted"), _gap(6), _para(QGRADE_HEADING, styles, "box_title")]
+    rows = qgrade_rows(view)
+    if rows is None:
+        return [*story, _para(QGRADE_NOT_LOADED, styles, "muted")]
+    total = int((_register_summary(view) or {}).get("total", 0) or 0)
+    story += [_para(QGRADE_LEAD.format(total=total), styles), _gap(3),
+              dense_table(["Quantum risk grade", "Assets"], rows, [400, 140])]
+    reasons = q0_reason_text(view)
+    if reasons:
+        story += [_gap(3), _para(reasons, styles, "muted")]
+    return story
 
 
 def _certs_section(view: TeamCbomView, styles: Styles):
@@ -839,12 +943,14 @@ def _exposure_section(view: TeamCbomView, styles: Styles):
         "Fail",
         "Not evidenceable",
         "Out of scope",
-        "Sources pooled",
+        "Based on",
     ]
     table = dense_table(headers, exposure_rows(view), [190, 56, 44, 44, 70, 66, 70])
     return [
         *story,
         _para(EXPOSURE_POOLED.format(**basis), styles),
+        _gap(2),
+        _para(EXPOSURE_BASIS.format(sources=len(view.sources)), styles, "muted"),
         _gap(3),
         table,
         _gap(4),
@@ -861,8 +967,12 @@ def _collected_exposure(view: TeamCbomView, styles: Styles) -> list[Flowable]:
         return []
     body = [[f"{r.framework} {r.clause}", str(r.assets), ", ".join(r.codes)
              + (f" (algorithm not recorded for {r.unrecorded}: verify)" if r.unrecorded else "")] for r in rows]
+    entity = getattr(view, "regulated_entity", None) or kb_text.DEFAULT_ENTITY
+    instrument = ENTITY_INSTRUMENTS.get(entity, ENTITY_INSTRUMENTS[kb_text.DEFAULT_ENTITY])
     return [
         _para(EXPOSURE_COLLECTED_LEAD, styles),
+        _gap(2),
+        _para(EXPOSURE_ENTITY.format(label=kb_text.entity_label(entity), instrument=instrument), styles, "muted"),
         _gap(3),
         dense_table(["Framework and clause", "Assets", "Finding codes"], body, [300, 50, 190]),
     ]
@@ -1021,7 +1131,7 @@ def _disclaimers_appendix(styles: Styles, view: TeamCbomView | None = None):
     story.append(_para(authored.PQC_TIMELINE_FOOTNOTE, styles))
     story.append(_gap(6))
     story.append(_para("Limits of the method", styles, "box_title"))
-    for limit in authored.METHOD_LIMITS:
+    for limit in authored.method_limits(view):
         story += [_gap(2), _para(f"\u2022 {limit}", styles)]
     return story
 

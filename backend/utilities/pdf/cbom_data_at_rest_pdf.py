@@ -23,7 +23,7 @@ from backend.utilities.pdf.cbom_deliverable_common import (
 )
 from backend.utilities.pdf.report_branding import REPORT_META
 
-DOCUMENT_NUMBER = 9
+DOCUMENT_NUMBER = 9  # SOW D9 (REPORT_META sow_id; the Document ID reads it)
 REPORT_KEY = "cbom_data_at_rest"
 _SIGNOFF = ("Prepared by", "Reviewed by", "Approved by")
 

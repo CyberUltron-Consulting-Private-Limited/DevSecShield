@@ -154,7 +154,7 @@ def test_the_register_pdf_prints_the_summary_heatmap_top_q1_and_q0_numbers_of_th
     text = " ".join(pdf_pages_text(pdf))
     flat = " ".join(text.split())
     summary = view.register["summary"]
-    assert "Quantum Risk Register" in flat and "CBOM-D02-T1" in flat
+    assert "Quantum Risk Register" in flat and "CBOM-D12-T1" in flat  # SOW D12 (FIX-A3)
     assert f"Assets {summary['total']}" in flat or str(summary["total"]) in flat
     for section in ("A. Summary", "B. Heat-map", "C. Q1 Critical assets", "D. Q0 Unknown gaps", "E. Q0 gaps closed"):
         assert section in flat, section
@@ -185,7 +185,7 @@ def test_a_register_that_failed_to_load_says_so(lab):
 
 def test_registry_entry():
     spec = DELIVERABLES["quantum-risk-register"]
-    assert (spec.number, spec.title, spec.report_key, spec.data_dependent) == (2, "Quantum Risk Register",
+    assert (spec.number, spec.title, spec.report_key, spec.data_dependent) == (12, "Quantum Risk Register",
                                                                               "cbom_risk_register", False)
     assert spec.build is PDF.build_pdf
     with pytest.raises(KeyError):

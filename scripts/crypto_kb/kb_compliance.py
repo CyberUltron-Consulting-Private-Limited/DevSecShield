@@ -26,20 +26,30 @@ def refs(r: dict) -> dict:
     bom = ci["bom_guidelines"]
     gov = ci["govt_entities_guidelines"]
     sc = s["clauses"]
-    md, d26 = rb["md_itgrca_2023"], rb["commercial_banks_directions_2026"]
+    md, d26, nb = rb["md_itgrca_2023"], rb["commercial_banks_directions_2026"], rb["nbfc_directions_2026"]
 
-    def ref(framework, rid, text, source, note=None):
+    def ref(framework, rid, text, source, note=None, applies_to=None):
         out = {"framework": framework, "id": rid, "text": text, "source": source}
         if note:
             out["note"] = note
+        if applies_to:
+            # the regulated-entity types (team setting: bank / nbfc / other) an RBI instrument binds; a clause without
+            # it applies whatever the entity type
+            out["applies_to"] = list(applies_to)
         return out
 
     rbi_md = ref("RBI", "Master Direction on IT Governance (2023), para 16 Cryptographic controls",
                  md["para_16_cryptographic_controls"], md["source"],
-                 "Applies to REs other than commercial banks; repealed for commercial banks by the 2026 Directions.")
+                 "Repealed for commercial banks and for NBFCs by their 2026 Directions; kept for other regulated "
+                 "entities.", applies_to=("other",))
     rbi_26 = ref("RBI", "Commercial Banks Cybersecurity Directions 2026, para 140", d26["para_140_cryptographic_controls"],
-                 d26["source"], "Commercial banks (from 31 July 2026).")
-    rbi_26_106 = ref("RBI", "Commercial Banks Cybersecurity Directions 2026, para 106", d26["para_106"], d26["source"])
+                 d26["source"], "Commercial banks (from 31 July 2026).", applies_to=("bank",))
+    rbi_26_106 = ref("RBI", "Commercial Banks Cybersecurity Directions 2026, para 106", d26["para_106"], d26["source"],
+                     applies_to=("bank",))
+    rbi_nbfc = ref("RBI", "NBFC Cybersecurity, Technology: Risk, Resilience and Assurance Framework Directions 2026, "
+                   "para 118", nb["para_118_cryptographic_controls"], nb["source"],
+                   "NBFCs, Middle Layer and above (from 31 July 2026); replaces the Master Direction on IT Governance "
+                   "(2023) for NBFCs (para 155).", applies_to=("nbfc",))
     certin_tls = ref("CERT-In", "BOM Guidelines v2.0, 8.4.2.2", bom["key_recommendations"]["8.4.2.2"], bom["source"])
     certin_vex = ref("CERT-In", "BOM Guidelines v2.0, 8.4.1.6", bom["key_recommendations"]["8.4.1.6"], bom["source"])
     certin_shor = ref("CERT-In", "BOM Guidelines v2.0, 8.5.1", bom["key_recommendations"]["8.5.1"], bom["source"])
@@ -67,7 +77,7 @@ def refs(r: dict) -> dict:
     nist_pkcs1 = ref("NIST", "SP 800-131A Rev. 2, Sec. 6 Table 5", a131["below_112_bit"]["rsa_key_transport_agreement"]["quote"],
                      a131["below_112_bit"]["source"])
     ir = n["ir8547"]
-    nist_pqc = ref("NIST", "IR 8547 (final, 2026)", ir["quote"], ir["pdf"])
+    nist_pqc = ref("NIST", ir["citation_id"], ir["quote"], ir["pdf"])
     cnsa = ref("NSA CNSA 2.0", "CNSA 2.0 FAQ (April 2024)", c["overall_goal_quote"] + ". Algorithms: AES-256, ML-KEM-1024, "
                "ML-DSA-87, SHA-384/512, LMS/XMSS.", c["source"])
     # the clause catalog (#269): one stable key per clause; each finding code names the keys it breaks in
@@ -78,7 +88,8 @@ def refs(r: dict) -> dict:
         "cnsa-2.0": cnsa, "certin-bom-8.4.2.2": certin_tls, "certin-bom-8.4.1.6": certin_vex,
         "certin-bom-8.5.1": certin_shor, "certin-gov-6.1.7": certin_617, "certin-gov-6.2.7": certin_627,
         "certin-gov-7.1": certin_71, "certin-gov-4.5.7": certin_457, "rbi-md-2023-para-16": rbi_md,
-        "rbi-cb-2026-para-140": rbi_26, "rbi-cb-2026-para-106": rbi_26_106, "sebi-pr-ds-standard-1": sebi_prds,
+        "rbi-cb-2026-para-140": rbi_26, "rbi-cb-2026-para-106": rbi_26_106, "rbi-nbfc-2026-para-118": rbi_nbfc,
+        "sebi-pr-ds-standard-1": sebi_prds,
         "sebi-pr-ds-s1-s3-1a": sebi_prds13, "sebi-pr-ds-s4-item-5": sebi_cert, "sebi-annexure-h-5": sebi_h,
         "sebi-annexure-i": sebi_i, "sebi-box-item-7": sebi_pqc, "sebi-id-ra-standard-2": sebi_ra,
         "sebi-gv-sc-s5": sebi_sbom,
@@ -87,14 +98,14 @@ def refs(r: dict) -> dict:
     # clauses come from its own "clauses" / "clause_rules", never from a whole area. Keys, not copies: each clause's
     # text is stored once (the catalog).
     areas = {
-        "tls_min": [certin_tls, sebi_i, rbi_md, rbi_26, certin_617],
-        "algorithms": [nist_sha1, nist_tdea, nist_pkcs1, certin_tls, rbi_md, rbi_26, sebi_h],
-        "keysize": [nist_112, rbi_md, rbi_26],
+        "tls_min": [certin_tls, sebi_i, rbi_md, rbi_26, rbi_nbfc, certin_617],
+        "algorithms": [nist_sha1, nist_tdea, nist_pkcs1, certin_tls, rbi_md, rbi_26, rbi_nbfc, sebi_h],
+        "keysize": [nist_112, rbi_md, rbi_26, rbi_nbfc],
         "certificates": [sebi_cert, certin_617],
         "key_mgmt": [sebi_h],
         "at_rest": [sebi_prds, sebi_prds13, rbi_26_106, certin_71],
-        "in_transit": [sebi_prds, sebi_i, rbi_26_106, certin_627, certin_457],
-        "auth": [rbi_md, rbi_26],
+        "in_transit": [sebi_prds, sebi_i, rbi_26_106, rbi_nbfc, certin_627, certin_457],
+        "auth": [rbi_md, rbi_26, rbi_nbfc],
         "components": [certin_vex, sebi_sbom],
         "pqc": [nist_pqc, cnsa, sebi_pqc, sebi_ra, certin_shor],
     }
@@ -110,7 +121,11 @@ def pqc_context(r: dict) -> dict:
                   "source": m["inequality"]["source"], "paper": m["original_paper"]["citation"]},
         "expert_survey": {"title": gri["title"], "published": gri["published"], "source": gri["source"],
                           "quotes": gri["quotes"]},
-        "nist_ir_8547": {"quote": ir["quote"], "source": ir["pdf"], "federal": ir["federal_accelerators"]["quote"]},
+        # the ONE citation every document prints for IR 8547 (status, date, dates of the transition): from the research
+        "nist_ir_8547": {"quote": ir["quote"], "source": ir["pdf"], "federal": ir["federal_accelerators"]["quote"],
+                         "citation": f"NIST {ir['citation_id']}", "title": ir["title"], "status": "final",
+                         "published": ir["published"], "landing": ir["source"],
+                         "deprecated_after": ir["deprecated_after"], "disallowed_after": ir["disallowed_after"]},
         "cnsa_2": {"goal": c["overall_goal_quote"], "timeline": c["timeline"], "source": c["source"]},
         "z_default": None,
         "z_note": "There is no authoritative date for a cryptographically relevant quantum computer. Set Z (years until "

@@ -67,6 +67,9 @@ class Collection:
     observed_at: _dt.datetime  # job finished_at (tz-aware UTC)
     asset_count: int = 0  # assets counted (coverage rows excluded), before cross-scope de-duplication
     endpoints_probed: int = 0  # TLS / SSH endpoints the node connected to
+    # the source's metadata (kinds.METADATA_FIELDS: owner, application, data classification, data lifetime,
+    # criticality, exposure, environment): the source's current values, else the run's snapshot of them
+    metadata: dict[str, Any] = field(default_factory=dict, compare=False, repr=False)
 
     @property
     def label(self) -> str:
@@ -249,7 +252,8 @@ def load_sources_result(session: Any, team_id: int, now: _dt.datetime | None = N
             run_id=int(job.run_id), job_id=int(job.id), source_ref=ID.job_source_ref(job, source),
             source_name=ID.job_source_name(job, source), source_kind=(source.kind if source is not None else ""),
             observed_at=_aware(job.finished_at or job.created_at), asset_count=len(assets),
-            endpoints_probed=sum(1 for a in assets if a.asset_type in NETWORK_TYPES))
+            endpoints_probed=sum(1 for a in assets if a.asset_type in NETWORK_TYPES),
+            metadata=_source_metadata(source, job))
         out.collections.append(collection)
         for asset in assets:
             # its identity in its own source; link_certificates gives certificates their cross-source asset key
@@ -274,6 +278,22 @@ def load_sources_result(session: Any, team_id: int, now: _dt.datetime | None = N
         item.row["remediation_status"] = status.get(item.asset_key, "open")
     link_certificates(out.rows)
     out.collections.sort(key=lambda c: (c.source_name.casefold(), c.source_ref))
+    return out
+
+
+def _source_metadata(source: Any, job: Any) -> dict[str, Any]:
+    """The source's metadata fields that hold a value: the source's own config, else the snapshot its run took
+    (``jobs.metadata_snapshot``; a deleted source keeps only that)."""
+    from backend.utilities.cbom_sources.kinds import METADATA_FIELDS
+
+    own = (source.config or {}) if source is not None and isinstance(source.config, dict) else {}
+    snap = (job.params or {}).get("metadata") if isinstance(getattr(job, "params", None), dict) else None
+    snap = snap if isinstance(snap, dict) else {}
+    out: dict[str, Any] = {}
+    for name in METADATA_FIELDS:
+        value = own.get(name) if own.get(name) not in (None, "") else snap.get(name)
+        if value not in (None, ""):
+            out[name] = value
     return out
 
 

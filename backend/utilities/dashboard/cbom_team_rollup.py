@@ -334,6 +334,11 @@ class AssetAgg:
     # the classifier flagged; collections_view.SourcesRow.clause_evidence), so the deliverables cite as the run API
     # does and never on the asset's title or sentence (#289); None or a missing code: not recorded
     clause_evidence: Mapping[str, Any] | None = field(default=None, compare=False, repr=False)
+    # the results[] row's own kind (``algorithm_type``: "library", "configuration", "key", "protocol", a primitive ...)
+    # and, for a CBOM Sources row, the collector's asset type (``tls_endpoint``, ``kms_key`` ...): D1 counts the
+    # population by SOW layer and by what each asset is, so a library or a setting never lands in "Other"
+    row_kind: str | None = field(default=None, compare=False, repr=False)
+    node_type: str | None = field(default=None, compare=False, repr=False)
 
 
 @dataclass
@@ -649,6 +654,9 @@ class CollectionAgg:
     observed_at: datetime  # job finished_at, tz-aware UTC
     asset_count: int = 0  # assets of the collection, before cross-scope de-duplication
     endpoints_probed: int = 0  # TLS / SSH endpoints the scan node connected to
+    # the source's metadata (C5: owner, application, data_classification, data_lifetime_years, business_criticality,
+    # exposure, environment), as the source holds it now; D1 prints it instead of blank owner cells
+    metadata: Mapping[str, Any] = field(default_factory=dict, compare=False, repr=False)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -728,6 +736,9 @@ class TeamCbomView:
     # the team's quantum risk register (``cbom_sources.risk_register.report``: summary, heat-map, top Q1 items, open
     # Q0 gaps) for deliverable #2; None = not loaded. Not part of the fold, like ``remediation``.
     register: dict[str, Any] | None = field(default=None, compare=False, repr=False)
+    # the team's regulated-entity type (CBOM settings: "nbfc" | "bank" | "other"): selects the RBI instrument the
+    # regulatory mapping cites (an NBFC is not bound by the Commercial Banks Directions). Not part of the fold.
+    regulated_entity: str = field(default="nbfc", compare=False)
 
     @property
     def is_empty(self) -> bool:
@@ -1121,6 +1132,7 @@ def _asset_from_row(row: Mapping[str, Any], facts: ScanFacts) -> AssetAgg:
         not_valid_after=_text(row.get("not_valid_after")),
         security_strength_bits=_int(row.get("security_strength_bits")),
         risk_score=_float(row.get("risk_score")),
+        row_kind=_text(row.get("algorithm_type")),
         quantum_vulnerable=quantum_vulnerable,
         broken_today=quantum_vulnerable is False and code_row_broken_today(dict(row)),
         quantum_safe=quantum_safe,
@@ -3110,7 +3122,8 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
         return view
     aggs = {c.key: CollectionAgg(key=c.key, label=c.label, source_name=c.source_name, source_kind=c.source_kind,
                                  run_id=int(c.run_id), job_id=int(c.job_id), observed_at=_utc(c.observed_at) or _EPOCH,
-                                 asset_count=int(c.asset_count), endpoints_probed=int(c.endpoints_probed))
+                                 asset_count=int(c.asset_count), endpoints_probed=int(c.endpoints_probed),
+                                 metadata=dict(getattr(c, "metadata", None) or {}))
             for c in collections}
     # 1. code certificates with a cross-scope identity; latest observation wins
     code_ident: dict[str, str] = {}
@@ -3141,7 +3154,8 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
                           last_updated=agg.observed_at, source_key=agg.key, source_label=agg.label,
                           source_kind=SOURCE_SOURCES, tier=TIER_A, fidelity=FIDELITY_FULL)
         asset = replace(_asset_from_row(item.row, shell), current=True, tier=TIER_A, latest_scan_id=None,
-                        scan_ids=(), clause_evidence=getattr(item, "clause_evidence", None) or None)
+                        scan_ids=(), clause_evidence=getattr(item, "clause_evidence", None) or None,
+                        node_type=getattr(item, "node_type", None) or None)
         assets.append(asset)
         if asset.asset_type == ASSET_CERTIFICATE:
             f = item.facts if isinstance(item.facts, Mapping) else {}
@@ -3220,6 +3234,7 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
         collections=tuple(sorted(aggs.values(), key=lambda a: (a.label.casefold(), a.key))), **_headline(live))
     merged.remediation = view.remediation
     merged.register = view.register
+    merged.regulated_entity = view.regulated_entity
     return merged
 
 
@@ -3282,6 +3297,12 @@ def load_team_cbom_view(engine: Any, team_id: int, *, now: datetime | None = Non
 
         found = load_sources_result(session, team_id, moment)
         view = merge_collections(view, found.rows, found.collections)
+        try:  # the regulated-entity type the regulatory mapping cites (CBOM settings; NBFC when not set)
+            from backend.utilities.cbom_sources.regulated_entity import team_entity
+
+            view.regulated_entity = team_entity(session, team_id)
+        except Exception as exc:  # noqa: BLE001  # pragma: no cover - defensive: the default (NBFC) stays
+            view.warnings = (*view.warnings, f"regulated-entity setting not read: {type(exc).__name__}")
         try:  # remediation waves and scan-node assets for the roadmap; a failure leaves the manual columns blank
             from backend.utilities.cbom_sources.waves import roadmap_extras
 

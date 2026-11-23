@@ -557,13 +557,14 @@ def test_fmt_date_utc():
 
 
 def test_document_id_format():
+    # FIX-A3 (SOW audit A-04): the SOW Table 7 ID exactly as the SOW writes it (D1 ... D14), no zero padding
     view = make_view(fingerprint="ab12cd34ef56")
-    assert document_id(view, 7) == "CBOM-D07-T1-20261019-ab12cd34"
-    assert document_id(view, 16) == "CBOM-D16-T1-20261019-ab12cd34"
-    assert document_id(view, 1) == "CBOM-D01-T1-20261019-ab12cd34"
-    assert document_id(make_view(team_id=42), 3).startswith("CBOM-D03-T42-")
-    pattern = re.compile(r"^CBOM-D\d{2}-T\d+-\d{8}-[0-9a-f]{8}$")
-    for number in (1, 3, 7, 10, 15, 16):
+    assert document_id(view, 8) == "CBOM-D8-T1-20261019-ab12cd34"
+    assert document_id(view, 14) == "CBOM-D14-T1-20261019-ab12cd34"
+    assert document_id(view, 1) == "CBOM-D1-T1-20261019-ab12cd34"
+    assert document_id(make_view(team_id=42), 2).startswith("CBOM-D2-T42-")
+    pattern = re.compile(r"^CBOM-D\d{1,2}-T\d+-\d{8}-[0-9a-f]{8}$")
+    for number in (1, 2, 6, 7, 8, 9, 10, 12, 13, 14):
         assert pattern.match(document_id(view, number))
 
 
@@ -593,8 +594,10 @@ def test_report_meta_new_keys_exist_complete_and_distinct():
     labels = []
     for key in NEW_KEYS:
         meta = REPORT_META[key]
-        assert set(meta) == set(REPORT_META["cbom"])
-        assert all(isinstance(v, str) and v.strip() for v in meta.values())
+        # every team deliverable also carries its SOW Table 7 ID (FIX-A3)
+        assert set(meta) == set(REPORT_META["cbom"]) | {"sow_id"}
+        assert isinstance(meta["sow_id"], int) and 1 <= meta["sow_id"] <= 14
+        assert all(isinstance(v, str) and v.strip() for k, v in meta.items() if k != "sow_id")
         labels.append(meta["footer_label"])
     assert len(set(labels)) == len(labels)
     assert set(labels).isdisjoint(ORIGINAL_FOOTERS.values())
@@ -665,7 +668,7 @@ def test_build_document_front_matter_contents():
         assert label in full, label
     for value in (
         "Certificate Estate Register",
-        document_id(view, 7),
+        document_id(view, 8),  # SOW D8, whatever number the caller passed
         "E2E Demo Team",
         "2026-10-19 12:28 UTC (17:58 IST)",
         "ab12cd34ef56",
@@ -734,7 +737,7 @@ def test_pdf_metadata_present_and_not_library_defaults():
     assert title and "Certificate Estate Register" in title and "E2E Demo Team" in title
     assert info_field(raw, "Author") == "DevSecShield CBOM engine"
     subject = info_field(raw, "Subject")
-    assert subject and document_id(view, 7) in subject
+    assert subject and document_id(view, 8) in subject  # SOW D8
     keywords = info_field(raw, "Keywords")
     assert keywords and "CBOM" in keywords
     creator = info_field(raw, "Creator")
@@ -1171,6 +1174,8 @@ ENGINE_FINDING_CODES = (
 # WP2).  A new URL in cbom_deliverable_text.py must be added here deliberately.
 ALLOWED_SOURCE_URLS = {
     "https://csrc.nist.gov/pubs/ir/8547/ipd",
+    # FIX-A3: the final IR 8547 (27 Oct 2026), the URL the knowledge base records
+    "https://csrc.nist.gov/pubs/ir/8547/final",
     "https://www.nist.gov/pqcrypto",
     "https://csrc.nist.gov/pubs/fips/203/final",
     "https://csrc.nist.gov/pubs/fips/204/final",
@@ -1236,16 +1241,23 @@ def test_tool_identity_is_devsecshield_cbom_engine_and_never_the_internal_packag
     assert not [s for s in _module_strings(text) if "clinithread" in s.lower()]
 
 
-def test_every_printable_mention_of_ir_8547_is_draft_qualified():
-    mentions = [s for s in _module_strings(text) if "8547" in s and not s.startswith("http")]
+def test_every_printable_mention_of_ir_8547_is_the_knowledge_base_citation():
+    """FIX-A3 (SOW audit A-05): IR 8547 is final (27 Oct 2026); every printed mention is the KB's one citation."""
+    from backend.utilities.cbom_sources import crypto_kb
+
+    citation = crypto_kb.load()["pqc_context"]["nist_ir_8547"]["citation"]
+    rows = text.pqc_timeline_rows()
+    mentions = [m for r in rows for m in (r.milestone, r.source) if "8547" in m] + [text.PQC_TIMELINE_FOOTNOTE]
     assert mentions, "the timeline must cite IR 8547"
     for sentence in mentions:
-        assert "draft" in sentence.lower(), sentence
+        assert citation in sentence, sentence
+        assert "draft" not in sentence.lower(), sentence
+    assert not [s for s in _module_strings(text) if "8547" in s and "draft" in s.lower()]
 
 
-def test_pqc_timeline_rows_follow_decision_d06():
+def test_pqc_timeline_rows_follow_the_final_ir_8547():
     rows = text.PQC_TIMELINE_ROWS
-    assert rows
+    assert rows == text.pqc_timeline_rows()
     assert all(r.url.startswith("https://") for r in rows)
     assert {r.url for r in rows} <= ALLOWED_SOURCE_URLS
     after_2030 = [r for r in rows if r.when == "After 2030"]
@@ -1257,8 +1269,10 @@ def test_pqc_timeline_rows_follow_decision_d06():
     assert "deprecated" in after_2030[0].milestone.lower()
     assert "all quantum-vulnerable" in after_2035[0].milestone.lower()
     assert "disallowed" in after_2035[0].milestone.lower()
-    assert after_2030[0].status == after_2035[0].status == "Draft"
-    assert after_2030[0].url == after_2035[0].url == "https://csrc.nist.gov/pubs/ir/8547/ipd"
+    assert after_2030[0].status == after_2035[0].status == "Final"
+    assert after_2030[0].url == after_2035[0].url == "https://csrc.nist.gov/pubs/ir/8547/final"
+    published = [r for r in rows if r.when == "Oct 2026"]
+    assert len(published) == 1 and published[0].status == "Final"
     fips = [r for r in rows if "FIPS 203" in r.milestone]
     assert len(fips) == 1
     assert "FIPS 204" in fips[0].milestone
@@ -1268,9 +1282,8 @@ def test_pqc_timeline_rows_follow_decision_d06():
     cnsa = [r for r in rows if text.CNSA_2_0_SENTENCE in r.milestone]
     assert len(cnsa) == 1
     assert text.CNSA_VERIFY_NOTE in cnsa[0].milestone
-    footnote = text.PQC_TIMELINE_FOOTNOTE.lower()
-    assert "draft" in footnote
-    assert "8547" in footnote
+    footnote = text.PQC_TIMELINE_FOOTNOTE
+    assert "8547" in footnote and "final form on 27 Oct 2026" in footnote
 
 
 def test_timeline_sentences_are_pinned_to_the_engine_text():

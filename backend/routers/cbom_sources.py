@@ -49,6 +49,7 @@ from backend.utilities.rbac.policy import Access
 from backend.utilities.cbom_sources import agents as AG
 from backend.utilities.cbom_sources import limits as LIM
 from backend.utilities.cbom_sources import held as HELD
+from backend.utilities.cbom_sources import regulated_entity as REG_ENTITY
 from backend.utilities.cbom_sources import host_key_resets as HKR  # #150
 from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources import source_cap as SOURCE_CAP
@@ -1263,11 +1264,16 @@ def _update_settings(engine, team_id: int, user_id: int, body: SettingsUpdate) -
                     seen.add(canonical)
                     items.append({"cidr": canonical, "reason": item.reason})
             changes["network_exclusions"] = items
+        entity = changes.pop("regulated_entity", None)  # stored in the risk_model JSON (regulated_entity.py)
         if "risk_model" in changes:
             # merge: a field the request leaves out keeps its value; an explicit null clears it; risk_model: null
-            # clears all three
+            # clears all three (the regulated-entity type stored beside them is not a Mosca input: it stays)
+            kept = {k: v for k, v in (row.risk_model or {}).items() if k == REG_ENTITY.SETTINGS_KEY}
             changes["risk_model"] = ({**(row.risk_model or {}), **body.risk_model.model_dump(exclude_unset=True)}
-                                     if body.risk_model is not None else {})
+                                     if body.risk_model is not None else kept)
+        if entity is not None:
+            changes["risk_model"] = {**(changes.get("risk_model", row.risk_model) or {}),
+                                     REG_ENTITY.SETTINGS_KEY: REG_ENTITY.normalise(entity)}
         if "require_signed_nodes" in changes and changes["require_signed_nodes"] is None:
             changes.pop("require_signed_nodes")  # null means "leave as is" (the column is NOT NULL)
         if "cert_domains" in changes:

@@ -548,9 +548,9 @@ def test_returns_a_valid_portrait_pdf(pdf):
 def test_metadata_and_document_id(pdf):
     title = info_field(pdf, "Title") or ""
     subject = info_field(pdf, "Subject") or ""
-    assert "Board / IT Strategy Committee Regulatory & Executive Report" in title
+    assert "Board / IT Strategy Committee Report" in title  # SOW D14 title (FIX-A3)
     assert "E2E Demo Team" in title
-    assert re.search(r"CBOM-D16-T1-20261019-[0-9a-f]{8}", subject), subject
+    assert re.search(r"CBOM-D14-T1-20261019-[0-9a-f]{8}", subject), subject  # SOW D14
     assert (info_field(pdf, "Author") or "") == authored.TOOL_NAME
 
 
@@ -588,7 +588,7 @@ def test_front_matter_is_the_shared_shell(pdf, lines):
     assert "Scans: 8 included of 9 eligible" in text
     assert "excluded: 1 failed, 2 not completed, 1 without data" in text
     assert "Sources: 7" in text
-    assert re.search(r"CBOM-D16-T1-20261019-[0-9a-f]{8}", text)
+    assert re.search(r"CBOM-D14-T1-20261019-[0-9a-f]{8}", text)
     assert "NO COMPLETED CBOM SCANS" not in text
     assert "REDUCED-FIDELITY DATA" not in text  # 7 of 8 scans are full fidelity
 
@@ -754,7 +754,8 @@ def test_regulatory_exposure_has_all_13_frameworks_with_pooled_numbers(sec):
         assert index > at, f"{label} is out of engine order"
         at = index
         cells = block[index + 1 : index + 7]
-        assert cells == [coverage, str(passed), str(failed), str(nbe), str(oos), "6"], label
+        # the last column names its basis over every source of the report (FIX-A3, SOW audit A-11)
+        assert cells == [coverage, str(passed), str(failed), str(nbe), str(oos), "6 of 7 sources"], label
 
 
 def test_regulatory_exposure_uses_the_labels_the_plan_names(sec):
@@ -786,14 +787,14 @@ def test_pass_column_includes_requirements_passed_on_evidence():
     data = full_blob([_row("AES-256-GCM")], verdicts=verdicts)
     block = split_sections(clean_lines(build_pdf(run_fold([synth(1, data)]))))[H5]
     index = block.index("NIST SP 800-57")
-    assert block[index + 1 : index + 7] == ["66.7%", "2", "1", "0", "1", "1"]
+    assert block[index + 1 : index + 7] == ["66.7%", "2", "1", "0", "1", "1 of 1 source"]
 
 
 def test_coverage_is_na_when_nothing_passed_or_failed():
     data = full_blob([_row("AES-256-GCM")], verdicts={"R1": "not_bom_evidenceable"})
     block = split_sections(clean_lines(build_pdf(run_fold([synth(1, data)]))))[H5]
     index = block.index("NIST SP 800-57")
-    assert block[index + 1 : index + 7] == ["n/a", "0", "0", "1", "0", "1"]
+    assert block[index + 1 : index + 7] == ["n/a", "0", "0", "1", "0", "1 of 1 source"]
 
 
 def test_legacy_only_team_reports_that_no_compliance_could_be_pooled():
@@ -872,11 +873,11 @@ def test_pqc_summary_families_and_timeline(sec):
     # Appendix B: 5 quantum-vulnerable occurrences (payments 2, pqc-pilot 1, legacy 2) in 3 sources
     assert block[index + 1 : index + 3] == ["5", "3"]
     text = joined(block)
-    for when, status in (
+    for when, status in (  # FIX-A3: NIST IR 8547 is final (27 Oct 2026)
         ("Aug 2024", "Final"),
-        ("Nov 2024", "Draft"),
-        ("After 2030", "Draft"),
-        ("After 2035", "Draft"),
+        ("Oct 2026", "Final"),
+        ("After 2030", "Final"),
+        ("After 2035", "Final"),
         ("2025 to 2035", "Advisory"),
     ):
         assert when in block, when
@@ -884,7 +885,7 @@ def test_pqc_summary_families_and_timeline(sec):
     for row in authored.PQC_TIMELINE_ROWS:
         assert norm(row.milestone) in text
     assert norm(authored.PQC_TIMELINE_FOOTNOTE) in text
-    assert "initial public draft" in text
+    assert "initial public draft" not in text and "NIST IR 8547 (final, 2026)" in text
     assert "not a migration sequence" in text.lower() or "PQC Migration Roadmap" in text
 
 

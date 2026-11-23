@@ -86,6 +86,10 @@ def test_component_count_is_the_number_of_distinct_estate_keys(lab):
     m = meta(d)
     assert (m["zs:scope"], m["zs:asset_count"], m["zs:truncated"], m["zs:signature"]) == ("estate", "2", "false",
                                                                                             "unsigned")
+    # FIX-A3 (SOW audit A-09): no "component count" that disagrees with len(components); the parts are named apart
+    assert "zs:component_count" not in m and m["zs:asset_components"] == "2" and "zs:count_basis" in m
+    parts = [c for c in d["components"] if props(c).get("zs:part_of") == ["certificate"]]
+    assert len(d["components"]) == int(m["zs:asset_components"]) + len(parts)
     assert json_errors(d) == []
 
 

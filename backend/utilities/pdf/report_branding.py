@@ -164,7 +164,9 @@ REPORT_META: Dict[str, Dict[str, str]] = {
     # Team-wide CBOM regulatory deliverables (backend/utilities/pdf/cbom_*_pdf.py). Every key
     # needs its own entry: an unknown key silently falls back to the SAST header/footer.
     "cbom_scope_register": {
-        "title": "Scope Baseline & Asset Population Register",
+        # SOW Table 7 ID and title (the Document ID prints D1; the client accepts deliverables by these)
+        "sow_id": 1,
+        "title": "Scope Baseline and Asset Population Register",
         "subtitle": "Cryptographic Bill of Materials · Team-wide scope and asset population",
         "footer_label": "CBOM Scope Baseline Register",
         "kicker": "Regulatory Deliverable",
@@ -178,7 +180,9 @@ REPORT_META: Dict[str, Dict[str, str]] = {
         ),
     },
     "cbom_methodology": {
-        "title": "Cryptographic Discovery Methodology & Evidence Plan",
+        # SOW Table 7 ID and title (the Document ID prints D2; the client accepts deliverables by these)
+        "sow_id": 2,
+        "title": "Discovery Methodology and Evidence Plan",
         "subtitle": "Cryptographic Bill of Materials · Discovery methodology and evidence plan",
         "footer_label": "CBOM Discovery Methodology",
         "kicker": "Regulatory Deliverable",
@@ -192,6 +196,8 @@ REPORT_META: Dict[str, Dict[str, str]] = {
         ),
     },
     "cbom_cert_register": {
+        # SOW Table 7 ID and title (the Document ID prints D8; the client accepts deliverables by these)
+        "sow_id": 8,
         "title": "Certificate Estate Register",
         "subtitle": "Cryptographic Bill of Materials · Team-wide certificate estate",
         "footer_label": "CBOM Certificate Estate Register",
@@ -206,7 +212,9 @@ REPORT_META: Dict[str, Dict[str, str]] = {
         ),
     },
     "cbom_assurance_register": {
-        "title": "Third-Party Cryptographic Assurance & Attestation Register",
+        # SOW Table 7 ID and title (the Document ID prints D10; the client accepts deliverables by these)
+        "sow_id": 10,
+        "title": "Third-Party Cryptographic Assurance and Attestation Register",
         "subtitle": "Cryptographic Bill of Materials · Third-party assurance and attestations",
         "footer_label": "CBOM Third-Party Assurance Register",
         "kicker": "Regulatory Deliverable",
@@ -220,6 +228,8 @@ REPORT_META: Dict[str, Dict[str, str]] = {
         ),
     },
     "cbom_risk_register": {
+        # SOW Table 7 ID and title (the Document ID prints D12; the client accepts deliverables by these)
+        "sow_id": 12,
         "title": "Quantum Risk Register",
         "subtitle": "Cryptographic Bill of Materials · Quantum risk grade per asset (Q1-Q4, Q0 kept visible)",
         "footer_label": "CBOM Quantum Risk Register",
@@ -234,6 +244,8 @@ REPORT_META: Dict[str, Dict[str, str]] = {
         ),
     },
     "cbom_pqc_roadmap": {
+        # SOW Table 7 ID and title (the Document ID prints D13; the client accepts deliverables by these)
+        "sow_id": 13,
         "title": "PQC Migration Roadmap",
         "subtitle": "Cryptographic Bill of Materials · Post-quantum migration planning",
         "footer_label": "CBOM PQC Migration Roadmap",
@@ -248,7 +260,9 @@ REPORT_META: Dict[str, Dict[str, str]] = {
         ),
     },
     "cbom_board_report": {
-        "title": "Board / IT Strategy Committee Regulatory & Executive Report",
+        # SOW Table 7 ID and title (the Document ID prints D14; the client accepts deliverables by these)
+        "sow_id": 14,
+        "title": "Board / IT Strategy Committee Report",
         "subtitle": "Cryptographic Bill of Materials · Board and executive regulatory report",
         "footer_label": "CBOM Board Report",
         "kicker": "Regulatory Deliverable",
@@ -264,7 +278,9 @@ REPORT_META: Dict[str, Dict[str, str]] = {
     # Posture deliverables (#5, #6, #9). Appended after the six regulatory documents so their
     # headers and footers stay on the entries above.
     "cbom_infra_posture": {
-        "title": "Infrastructure & Cloud Encryption Posture",
+        # SOW Table 7 ID and title (the Document ID prints D6; the client accepts deliverables by these)
+        "sow_id": 6,
+        "title": "Infrastructure and Cloud Encryption Posture",
         "subtitle": "Cryptographic Bill of Materials · Declared infrastructure encryption",
         "footer_label": "CBOM Infrastructure Posture",
         "kicker": "Regulatory Deliverable",
@@ -278,7 +294,9 @@ REPORT_META: Dict[str, Dict[str, str]] = {
         ),
     },
     "cbom_network_tls": {
-        "title": "Network, TLS & Crypto Protocol Assessment",
+        # SOW Table 7 ID and title (the Document ID prints D7; the client accepts deliverables by these)
+        "sow_id": 7,
+        "title": "Network, TLS and Crypto Protocol Assessment",
         "subtitle": "Cryptographic Bill of Materials · Declared and imported TLS evidence",
         "footer_label": "CBOM Network TLS Assessment",
         "kicker": "Regulatory Deliverable",
@@ -292,6 +310,8 @@ REPORT_META: Dict[str, Dict[str, str]] = {
         ),
     },
     "cbom_data_at_rest": {
+        # SOW Table 7 ID and title (the Document ID prints D9; the client accepts deliverables by these)
+        "sow_id": 9,
         "title": "Data-at-Rest Encryption Assessment",
         "subtitle": "Cryptographic Bill of Materials · Declared storage encryption",
         "footer_label": "CBOM Data-at-Rest Assessment",

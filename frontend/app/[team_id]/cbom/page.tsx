@@ -822,7 +822,7 @@ export default function CBOMPage() {
                         onSelect={() => downloadDeliverableMutation.mutate(d.slug)}
                       >
                         {pendingSlug === d.slug ? <Loader2 className="animate-spin" /> : <FileText />}
-                        <span>{`#${d.number} · ${d.title}`}</span>
+                        <span>{`D${d.number} · ${d.title}`}</span>
                       </DropdownMenuItem>
                     );
                   })}

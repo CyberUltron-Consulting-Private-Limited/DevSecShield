@@ -77,7 +77,7 @@ from backend.utilities.pdf.cbom_deliverable_common import (
 from backend.utilities.pdf.report_branding import REPORT_META
 
 SLUG = "methodology-evidence-plan"
-NUMBER = 3  # "D03" in the Document ID
+NUMBER = 2  # SOW D2 (REPORT_META sow_id; the Document ID reads it)
 REPORT_KEY = "cbom_methodology"  # REPORT_META key: page header and footer label
 TITLE = REPORT_META[REPORT_KEY]["title"]
 
@@ -388,13 +388,14 @@ def _automated(styles: Styles) -> list[Flowable]:
 # ---------------------------------------------------------------------------------------------
 # 3. Manual discovery checklist (blank)
 # ---------------------------------------------------------------------------------------------
-def _manual(styles: Styles) -> list[Flowable]:
+def _manual(styles: Styles, view: TeamCbomView | None = None) -> list[Flowable]:
+    # the checklist follows what was collected: a probed endpoint is never "outside visibility" (SOW audit A-06)
     rows = [
         [item, reason, _blank(), _blank(), _blank()]
-        for item, reason in authored.MANUAL_DISCOVERY_ITEMS
+        for item, reason in authored.manual_discovery_items(view)
     ]
     table = dense_table(
-        list(authored.MANUAL_DISCOVERY_COLUMNS),
+        list(authored.discovery_columns(view)),
         rows,
         [118, 192, 70, 80, 80],
         manual_cols=(2, 3, 4),
@@ -620,10 +621,10 @@ def _retention(view: TeamCbomView, styles: Styles) -> list[Flowable]:
 # ---------------------------------------------------------------------------------------------
 # 10. Limits of the method
 # ---------------------------------------------------------------------------------------------
-def _limits(styles: Styles, local: dict[str, ParagraphStyle]) -> list[Flowable]:
+def _limits(styles: Styles, local: dict[str, ParagraphStyle], view: TeamCbomView | None = None) -> list[Flowable]:
     content: list[Flowable] = [
         Paragraph(pdf_text(limit, limit=_TEXT_LIMIT), local["bullet"], bulletText=_BULLET)
-        for limit in authored.METHOD_LIMITS
+        for limit in authored.method_limits(view)  # never denies what a CBOM Sources collection did (A-06)
     ]
     return _section(10, styles, content, together=False)
 
@@ -698,14 +699,14 @@ def build_body(view: TeamCbomView, styles: Styles, width: float) -> list[Flowabl
     story: list[Flowable] = []
     story += _purpose(view, styles, width, local)
     story += _automated(styles)
-    story += _manual(styles)
+    story += _manual(styles, view)
     story += _evidence(view, styles)
     story += _validation(styles)
     story += _coverage(view, styles, local)
     story += _confidence(styles)
     story += _raci(styles)
     story += _retention(view, styles)
-    story += _limits(styles, local)
+    story += _limits(styles, local, view)
     story += _signoff(width)
     story += _appendix(view, styles, local)
     return story
