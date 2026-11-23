@@ -41,14 +41,18 @@ const gate = (verdict: string, failing: unknown[]) => ({
     ? "No high crypto finding." : "No CBOM result arrived within the time limit, so the tree was not judged.",
 });
 // Decoys: text inside a JSON string has its quotes escaped, so a snippet cannot fake the top-level verdict.
+// S1: the per-team policy adds the rules each finding broke and a grep-safe summary line (decoy inside a snippet too).
 const FAIL_ANSWER = {
-  results: { results: [row("RSA-1024", ["WEAK_ALGORITHM"], { snippet: 'print(\'"gate_failed":false\')' })] },
+  results: { results: [row("RSA-1024", ["WEAK_ALGORITHM"], { snippet: 'print(\'"gate_failed":false, "gate_summary":"PASS decoy"\')' })] },
   status: "pending", cicd_log_id: "l1", finding_count: 1, gate_failed: true,
-  gate: gate("fail", [{ codes: ["WEAK_ALGORITHM"], title: "RSA-1024", location: "app/keys.py", line: 5, impact: "High" }]),
+  gate: gate("fail", [{ codes: ["WEAK_ALGORITHM"], title: "RSA-1024", location: "app/keys.py", line: 5, impact: "High",
+                        rules: [{ rule: "finding_code", outcome: "fail", detail: "x" }, { rule: "min_key_size", outcome: "fail", detail: "y" }] }]),
+  gate_summary: "FAIL policy=Payments strict failing=1 warnings=0 waived=0 rules_failed=finding_code:1,min_key_size:1",
 };
 const PASS_ANSWER = {
   results: { results: [row("AES-GCM", [], { snippet: 'x = \'"gate_failed":true\'' }), row("RSA-3072", ["QUANTUM_VULNERABLE"])] },
   status: "pending", cicd_log_id: "l2", finding_count: 2, gate_failed: false, gate: gate("pass", []),
+  gate_summary: "PASS policy=Payments strict failing=0 warnings=1 waived=0 rules_failed=none",
 };
 const TIMEOUT_ANSWER = { results: null, status: "pending", cicd_log_id: "l3", finding_count: 0, gate_failed: true, gate: gate("no_result", []) };
 // What a server without the gate answers (dev before CB-30): a CBOM template must not read silence as a pass.
@@ -205,8 +209,12 @@ async function main() {
       if (answer === "noverdict") assert.match(r.out, /no verdict/);
       if (answer === "error") assert.doesNotMatch(r.out, /CBOM policy gate/); // the request step already failed
       if (answer === "fail" && (name === "github" || name === "gitlab")) {
-        assert.match(r.out, /High WEAK_ALGORITHM app\/keys\.py:5 RSA-1024/, `${name}: the failing finding is listed`);
+        assert.match(r.out, /High WEAK_ALGORITHM app\/keys\.py:5 RSA-1024 \[finding_code,min_key_size\]/, `${name}: the failing finding and its rules are listed`);
       }
+      // every runner (jq or not) prints the policy verdict line, never the decoy inside a finding's snippet
+      if (answer === "fail") assert.match(r.out, /^DevSecShield CBOM policy verdict: FAIL policy=Payments strict failing=1 .*rules_failed=finding_code:1,min_key_size:1$/m, `${name}: the verdict line names the policy and rules`);
+      if (answer === "pass") assert.match(r.out, /^DevSecShield CBOM policy verdict: PASS policy=Payments strict/m, `${name}: the verdict line on a pass`);
+      assert.doesNotMatch(r.out, /verdict: PASS decoy/, `${name}: a snippet cannot fake the verdict line`);
       // the verdict line starts a line of its own (Bamboo prints the compact JSON, which has no final newline)
       if (answer !== "error") assert.match(r.out, /^DevSecShield CBOM policy gate: /m, `${name}: the gate message starts its line`);
     }

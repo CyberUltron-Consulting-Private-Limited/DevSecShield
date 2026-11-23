@@ -31,6 +31,8 @@ from backend.utilities.cbom_sources.node_auth import NodeDeploymentHeader
 from backend.utilities.build_info import BuildIdentityMiddleware, UtcIsoFormatter, build_sha, build_version, expose_build
 from backend.routers.cbom_vendor_public import router as cbom_vendor_public_router
 from backend.routers.integrations import router as integrations_router
+from backend.routers.integrations_ticketing import router as integrations_ticketing_router
+from backend.routers.cbom_gate_policy import router as cbom_gate_policy_router
 from backend.routers.guardrails import router as guardrails_router
 from backend.routers.cicd import router as cicd_router
 from backend.routers.dast_profiles import router as dast_profiles_router
@@ -186,7 +188,10 @@ app.include_router(cbom_node_artifacts_router)  # scan node image, Helm chart an
 app.include_router(cbom_vendor_public_router)
 app.include_router(cbom_fleet_router)  # F1 fleet onboarding: inventory, policies, transports, SSH CA (each behind a flag)
 # Integrations: ServiceNow, SIEM (syslog, Splunk HEC), signed webhooks, OSCAL export / push, CMDB import.
+# Jira's own routes and the test tickets first: /{team_id}/integrations/jira must not reach the generic /{kind} routes.
+app.include_router(integrations_ticketing_router)
 app.include_router(integrations_router)
+app.include_router(cbom_gate_policy_router)  # SOW S1: the CBOM CI/CD gate policy of the team and its integrations
 # DEPRECATED: Guardrails routers remain for legacy/API callers; product UI no longer exposes Guardrails.
 app.include_router(guardrails_router)
 app.include_router(guardrails_public_router)

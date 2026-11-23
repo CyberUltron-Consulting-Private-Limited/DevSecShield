@@ -209,6 +209,9 @@ def _policy(path: Path) -> tuple[set[str], tuple[str, ...]]:
     backend += ("backend.utilities.cbom_sources.asset_keys",)
     # CNSA 2.0 / FIPS 140-3 verdicts of a Sources collection (CB-16): pure, the shared standards predicates, no AI
     backend += ("backend.utilities.cbom_sources.frameworks",)
+    # FIX-B2: the one unique-certificate list (D8 PDF / CSV, D7 count) and the network evidence of D7 (SSH, appliance,
+    # IKE, OT, deduplicated TLS endpoints with grades): pure functions over the collection rows, no AI
+    backend += ("backend.utilities.cbom_sources.cert_estate", "backend.utilities.cbom_sources.network_estate")
     if path.parent == _ROUTERS:
         roots |= {"fastapi", "starlette", "sqlmodel", "sqlalchemy", "rich"}
         backend += (

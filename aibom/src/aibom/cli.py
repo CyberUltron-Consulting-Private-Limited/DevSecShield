@@ -168,29 +168,80 @@ def cbom(
     no_fail: bool = typer.Option(
         False,
         "--no-fail",
-        help="Exit 0 even when high findings are present.",
+        help="Exit 0 even when the policy blocks a finding.",
+    ),
+    policy: pathlib.Path = typer.Option(
+        None,
+        "--policy",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        help=(
+            "CBOM gate policy file (JSON; Settings > CBOM policy gate > Download "
+            "policy file). Default: NIST SP 800-131A Rev. 2, quantum-vulnerable "
+            "warns."
+        ),
     ),
 ) -> None:
     """Scan a repository for cryptography and print a CycloneDX 1.6 CBOM.
 
-    Exits 1 when a high finding is present (weak algorithm, ECB, weak key,
-    hard-coded key, static IV, weak RNG, weak padding, disabled certificate
-    verification, or a vulnerable crypto library). Reads only the tree and
-    the shipped advisory file.
+    Exits 1 when the CBOM gate policy blocks a finding: by default a high
+    finding code (weak algorithm, ECB, weak key, hard-coded key, static IV,
+    weak RNG, weak padding, disabled certificate verification, a vulnerable
+    crypto library), a banned algorithm (MD5, DES, 3DES, RC2, RC4) or a key
+    below the SP 800-131A minimum (RSA/DSA/DH 2048, EC 224, symmetric 128;
+    112-bit keys pass with a warning: allowed only through 2030).
+    ``--policy`` reads the same policy file the hosted gate stores per team.
+    Exits 2 when the policy file cannot be used. Reads only the tree, the
+    shipped advisory file and the policy file.
     """
-    from aibom.cbom.gate import failing_flags
+    from aibom.cbom import gate_policy as GP
+    from aibom.cbom.normalize import gate_rows
     from aibom.cbom.pipeline import scan_crypto
     from aibom.emit.cyclonedx import emit_cyclonedx
 
+    active, source = GP.DEFAULT_POLICY, "default"
+    if policy is not None:
+        try:
+            text = policy.read_text(encoding="utf-8")
+            active, source = GP.load_policy_file(text), "file"
+        except (GP.PolicyError, UnicodeDecodeError, OSError) as exc:
+            _eprint(f"# cbom: the policy file cannot be used: {exc}")
+            raise typer.Exit(code=2) from None
     result = scan_crypto(path, level=4)
     _write(json.dumps(emit_cyclonedx(result), indent=2) + "\n", output)
-    failed = failing_flags(result.flags)
-    if not failed:
-        _eprint("# cbom: no high findings")
+    judged = GP.evaluate_rows(gate_rows(result), active)
+    failing, warnings = judged["failing"], judged["warnings"]
+    gate = {
+        "verdict": "fail" if failing else "pass",
+        "policy": active["name"],
+        "failing_count": len(failing),
+        "warning_count": len(warnings),
+        "waived_count": len(judged["waived"]),
+        "rules_failed": judged["rules_failed"],
+    }
+    digest = GP.policy_digest(active)
+    _eprint(f"# cbom: policy {active['name']} ({source}, digest {digest})")
+    for expired in judged["expired_exceptions"]:
+        _eprint(
+            f"# cbom: exception {expired['id']} expired on {expired['expires']} "
+            "and waives nothing"
+        )
+    for entry in (*failing, *warnings, *judged["waived"]):
+        line = f":{entry['line']}" if entry["line"] else ""
+        where = entry["location"] + line
+        for rule in entry["rules"]:
+            outcome = rule["outcome"].upper()
+            _eprint(
+                f"# {outcome} {rule['rule']} {entry['title']} {where}: "
+                f"{rule['detail']}"
+            )
+    _eprint(f"# cbom gate: {GP.summary_line(gate)}")
+    if not failing:
+        _eprint("# cbom: no high findings (nothing the policy blocks)")
         return
-    _eprint(f"# cbom: {len(failed)} high finding(s)")
-    for flag in failed:
-        _eprint(f"# {flag.code} {flag.message}")
+    _eprint(f"# cbom: {len(failing)} finding(s) blocked by the policy")
     if not no_fail:
         raise typer.Exit(code=1)
 
