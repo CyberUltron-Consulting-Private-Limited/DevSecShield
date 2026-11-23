@@ -87,7 +87,7 @@
       "software_packageUrl": "pkg:pypi/torch@2.3.1"
     },
     {
-      "type": "ai_AIPackage",
+      "type": "software_Package",
       "spdxId": "https://zeroshield.ai/spdx/aibom/13999169-4151-588c-ab38-4aff6dc617d0/package/modelfile-model.safetensors",
       "creationInfo": "_:creationinfo",
       "name": "model.safetensors",

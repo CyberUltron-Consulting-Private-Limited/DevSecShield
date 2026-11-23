@@ -238,11 +238,13 @@ def _software_package(
 
 
 def _weight_file_package(comp: Any, sid: str) -> dict[str, Any]:
-    """A model weight file (``model_file``): an AI package in SPDX as it is a
-    ``machine-learning-model`` in CycloneDX (review of #487 m10)."""
+    """A model weight file (``model_file``): a package whose primary purpose is a
+    model, as it is a ``machine-learning-model`` in CycloneDX (review of #487
+    m10). It stays a ``software_Package``: an ``ai_AIPackage`` is a model with its
+    one concluded license, and a weight file found on disk declares none."""
     source = (comp.properties or {}).get("discovery:source")
     return _new(
-        "ai_AIPackage",
+        "software_Package",
         sid,
         name=comp.name,
         comment=f"Model weight file at {source}" if source else "Model weight file",

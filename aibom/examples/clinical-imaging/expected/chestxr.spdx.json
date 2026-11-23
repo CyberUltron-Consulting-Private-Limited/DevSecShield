@@ -137,7 +137,7 @@
       "name": "Acme Imaging AI Cloud"
     },
     {
-      "type": "ai_AIPackage",
+      "type": "software_Package",
       "spdxId": "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/modelfile-model.safetensors",
       "creationInfo": "_:creationinfo",
       "name": "model.safetensors",
