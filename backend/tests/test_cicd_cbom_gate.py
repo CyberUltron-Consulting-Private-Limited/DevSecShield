@@ -79,7 +79,7 @@ def test_a_high_finding_fails_the_gate():
     # sizes; quantum-vulnerable warns). This row carries no key size, so only its finding code fails it.
     assert gate["failing"] == [{"codes": ["WEAK_ALGORITHM"], "title": "RSA-1024", "location": "app/keys.py",
                                 "line": 5, "impact": "High",
-                                "rules": [{"rule": "finding_code", "outcome": "fail",
+                                "rules": [{"rule": "finding_code", "outcome": "fail", "code": "WEAK_ALGORITHM",
                                            "detail": "Finding code WEAK_ALGORITHM is blocked by the policy"},
                                           {"rule": "min_key_size", "outcome": "fail",
                                            "detail": "RSA key size 1024 bits is below the policy minimum of 2048 bits"},

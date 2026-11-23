@@ -20,6 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   KEY_FAMILIES,
   RULE_LABEL,
+  boundedLocation,
   cleanException,
   gatePolicyKey,
   getGatePolicy,
@@ -56,6 +57,7 @@ const MODE_LABEL: Record<GateMode, string> = {
 
 const PRESET_LABEL: Record<string, string> = {
   "sp800-131a": "NIST SP 800-131A Rev. 2 (default)",
+  "sp800-131a-2031": "SP 800-131A from 2031 (128-bit floor)",
   "cnsa-2.0": "CNSA 2.0 (strict)",
 };
 
@@ -217,9 +219,9 @@ function PolicyEditor({ teamId, view, stored, integrationId, onDone }: {
             <Table data-testid={`${prefix}-exceptions`}>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Algorithm <InfoTip id="cbom.gate.exc.algorithm" /></TableHead>
-                  <TableHead>Location <InfoTip id="cbom.gate.exc.location" /></TableHead>
                   <TableHead>Rule <InfoTip id="cbom.gate.exc.rule" /></TableHead>
+                  <TableHead>Finding code or algorithm <InfoTip id="cbom.gate.exc.algorithm" /> <InfoTip id="cbom.gate.exc.code" /></TableHead>
+                  <TableHead>Location <InfoTip id="cbom.gate.exc.location" /></TableHead>
                   <TableHead>Reason <InfoTip id="cbom.gate.exc.reason" /></TableHead>
                   <TableHead>Expires <InfoTip id="cbom.gate.exc.expires" /></TableHead>
                   {isAdmin && <TableHead />}
@@ -228,25 +230,38 @@ function PolicyEditor({ teamId, view, stored, integrationId, onDone }: {
               <TableBody>
                 {draft.exceptions.map((e, i) => (
                   <TableRow key={i}>
-                    <TableCell className="min-w-[130px]">
-                      {/* infotip-shared: the Algorithm column's tip explains this cell */}
-                      <Input aria-label={`Exception ${i + 1} algorithm`} value={e.algorithm ?? ""} placeholder="RSA-1024" disabled={disabled}
-                             onChange={(ev) => updateException(i, { algorithm: ev.target.value })} />
+                    <TableCell className="min-w-[180px]">
+                      {/* infotip-shared: the Rule column's tip explains this cell */}
+                      <Select value={e.rule} onValueChange={(v) => updateException(i, { rule: v as GateRule })} disabled={disabled}>
+                        <SelectTrigger aria-label={`Exception ${i + 1} rule`} className="w-full cursor-pointer"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {view.rules.map((r) => <SelectItem key={r} value={r} className="cursor-pointer">{RULE_LABEL[r]}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell className="min-w-[150px]">
+                      {e.rule === "finding_code" ? (
+                        <>
+                          {/* infotip-shared: the Finding code or algorithm column's tips explain this cell */}
+                          <Input aria-label={`Exception ${i + 1} finding code`} value={e.code ?? ""} placeholder="HARDCODED_KEY" disabled={disabled}
+                                 className="font-mono text-xs" onChange={(ev) => updateException(i, { code: ev.target.value })} />
+                        </>
+                      ) : (
+                        <>
+                          {/* infotip-shared: the Finding code or algorithm column's tips explain this cell */}
+                          <Input aria-label={`Exception ${i + 1} algorithm`} value={e.algorithm ?? ""} placeholder="RSA-1024" disabled={disabled}
+                                 onChange={(ev) => updateException(i, { algorithm: ev.target.value })} />
+                        </>
+                      )}
                     </TableCell>
                     <TableCell className="min-w-[160px]">
                       {/* infotip-shared: the Location column's tip explains this cell */}
                       <Input aria-label={`Exception ${i + 1} location`} value={e.location ?? ""} placeholder="vendor/hsm/*" disabled={disabled}
+                             aria-invalid={Boolean(e.location) && !boundedLocation(e.location ?? "")}
                              onChange={(ev) => updateException(i, { location: ev.target.value })} />
-                    </TableCell>
-                    <TableCell className="min-w-[180px]">
-                      {/* infotip-shared: the Rule column's tip explains this cell */}
-                      <Select value={e.rule ?? "any"} onValueChange={(v) => updateException(i, { rule: v === "any" ? null : (v as GateRule) })} disabled={disabled}>
-                        <SelectTrigger aria-label={`Exception ${i + 1} rule`} className="w-full cursor-pointer"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="any" className="cursor-pointer">Every rule</SelectItem>
-                          {view.rules.map((r) => <SelectItem key={r} value={r} className="cursor-pointer">{RULE_LABEL[r]}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
+                      {e.location && !boundedLocation(e.location) && (
+                        <p className="text-xs text-red-500 mt-1" role="alert">Name a folder or file: a glob that matches everything is refused.</p>
+                      )}
                     </TableCell>
                     <TableCell className="min-w-[200px]">
                       {/* infotip-shared: the Reason column's tip explains this cell */}
@@ -275,7 +290,7 @@ function PolicyEditor({ teamId, view, stored, integrationId, onDone }: {
         )}
         {isAdmin && (
           <Button variant="outline" size="sm" className="cursor-pointer"
-                  onClick={() => set("exceptions", [...draft.exceptions, { rule: null, algorithm: "", location: "", reason: "", expires: inDays(90) }])}>
+                  onClick={() => set("exceptions", [...draft.exceptions, { rule: "min_key_size", code: null, algorithm: "", location: "", reason: "", expires: inDays(90) }])}>
             <Plus className="h-4 w-4 mr-1.5" />Add exception
           </Button>
         )}

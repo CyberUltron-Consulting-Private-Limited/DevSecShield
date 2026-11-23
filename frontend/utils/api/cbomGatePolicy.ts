@@ -8,9 +8,12 @@ export type GateRule = "finding_code" | "banned_algorithm" | "min_key_size" | "d
 export type KeyFamily = "rsa" | "dsa" | "dh" | "ec" | "symmetric"
 export const KEY_FAMILIES: KeyFamily[] = ["rsa", "dsa", "dh", "ec", "symmetric"]
 
+/** One narrow allow-list entry: ONE rule, the finding code (rule finding_code) or the algorithm (other rules) it waives,
+ * and a bounded location (a glob with at least one literal path segment; "*" or "**" are refused by the API). */
 export interface GateException {
   id?: string
-  rule: GateRule | null
+  rule: GateRule
+  code?: string | null
   algorithm: string | null
   location: string | null
   reason: string
@@ -89,9 +92,17 @@ export function splitList(text: string): string[] {
   return out
 }
 
-/** The exception as the API takes it: empty strings become null (an empty rule means "every rule"). */
+/** The exception as the API takes it: empty strings become null; the code goes only with the finding_code rule and the
+ * algorithm only with the other rules. */
 export function cleanException(e: GateException): GateException {
   const blank = (v: string | null | undefined) => (v && v.trim() ? v.trim() : null)
-  return { ...(e.id ? { id: e.id } : {}), rule: e.rule || null, algorithm: blank(e.algorithm), location: blank(e.location),
+  const byCode = e.rule === "finding_code"
+  return { ...(e.id ? { id: e.id } : {}), rule: e.rule, code: byCode ? blank(e.code)?.toUpperCase() ?? null : null,
+           algorithm: byCode ? null : blank(e.algorithm), location: blank(e.location),
            reason: (e.reason ?? "").trim(), expires: (e.expires ?? "").trim() }
+}
+
+/** False for a glob that matches (nearly) everything ("*", "**", "/*", a wildcard in every segment): the API refuses those. */
+export function boundedLocation(glob: string): boolean {
+  return glob.replace(/\\/g, "/").split("/").some((seg) => seg !== "" && seg !== "." && seg !== ".." && !/[*?[\]!]/.test(seg))
 }

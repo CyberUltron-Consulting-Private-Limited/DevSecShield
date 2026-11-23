@@ -799,6 +799,7 @@ export const INFO_TIP_LABELS = {
   "cbom.gate.block_codes": "Blocked finding codes",
   "cbom.gate.exceptions": "Exceptions (allow-list)",
   "cbom.gate.exc.algorithm": "Exception algorithm",
+  "cbom.gate.exc.code": "Exception finding code",
   "cbom.gate.exc.location": "Exception location",
   "cbom.gate.exc.rule": "Exception rule",
   "cbom.gate.exc.reason": "Exception reason",

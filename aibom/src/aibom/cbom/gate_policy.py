@@ -20,15 +20,17 @@ A policy (JSON, ``version`` 1) holds:
 * ``quantum_vulnerable`` and ``deprecated``: ``off``, ``warn`` (reported, the
   build passes) or ``fail``. "Deprecated" is the NIST SP 800-131A Rev. 2 list
   below (SHA-1 outside HMAC, DSA signatures, RSA PKCS #1 v1.5 key transport);
-* ``exceptions``: allow-list entries, each with an algorithm and/or a location
-  (glob), optionally one rule, a reason and an expiry date. An expired exception
+* ``exceptions``: allow-list entries, each naming ONE rule, the finding code (for
+  ``finding_code``) or the algorithm it waives, a bounded location (glob with a
+  literal path segment), a reason and an expiry date. An expired exception
   waives nothing and is listed in the verdict.
 
-The default policy follows SP 800-131A Rev. 2 (RSA / DSA / DH 2048, EC 256,
-symmetric 128; MD5, DES, 3DES, RC2 and RC4 banned) and reports quantum-vulnerable
-and deprecated algorithms as warnings for the CNSA 2.0 transition; the
-``cnsa-2.0`` preset fails on them and raises the minimums to RSA / DH 3072,
-EC 384 and AES-256.
+The default policy follows SP 800-131A Rev. 2 (RSA / DSA / DH 2048, EC 224,
+symmetric 128; MD5, DES, 3DES, RC2 and RC4 banned; 112-bit keys pass with a
+warning that they are allowed only through 2030) and reports quantum-vulnerable
+and deprecated algorithms as warnings for the CNSA 2.0 transition. Presets:
+``sp800-131a-2031`` (the 128-bit floor: RSA / DSA / DH 3072, EC 256) and
+``cnsa-2.0`` (fails on them; RSA / DH 3072, EC 384, AES-256).
 
 Every finding lists each rule it broke with its outcome (``fail``, ``warn`` or
 ``waived``) and a short detail.
@@ -92,14 +94,26 @@ DEFAULT_POLICY: dict[str, Any] = {
     "name": "Default: NIST SP 800-131A Rev. 2 (quantum-vulnerable warns)",
     "block_codes": list(LEGACY_FAIL_CODES),
     "banned_algorithms": ["MD2", "MD4", "MD5", "DES", "3DES", "RC2", "RC4"],
-    "min_key_bits": {"rsa": 2048, "dsa": 2048, "dh": 2048, "ec": 256, "symmetric": 128},
+    # SP 800-131A Rev. 2: 112-bit security (RSA/DSA/DH 2048, ECC len(n) >= 224) is
+    # acceptable through 2030; such keys pass with a warning (FLOOR_AFTER_2030)
+    "min_key_bits": {"rsa": 2048, "dsa": 2048, "dh": 2048, "ec": 224, "symmetric": 128},
     "quantum_vulnerable": "warn",
     "deprecated": "warn",
     "exceptions": [],
 }
 
+# 128-bit security, what SP 800-131A Rev. 2 requires from 2031: a key that meets a
+# lower policy minimum but not this floor passes with a dated warning.
+FLOOR_AFTER_2030 = {"rsa": 3072, "dsa": 3072, "dh": 3072, "ec": 256, "symmetric": 128}
+
 PRESETS: dict[str, dict[str, Any]] = {
     "sp800-131a": DEFAULT_POLICY,
+    "sp800-131a-2031": {
+        **DEFAULT_POLICY,
+        "name": "SP 800-131A from 2031 (128-bit floor: RSA 3072, EC 256)",
+        "min_key_bits": dict(FLOOR_AFTER_2030),
+        "deprecated": "fail",
+    },
     "cnsa-2.0": {
         **DEFAULT_POLICY,
         "name": "CNSA 2.0 (strict: quantum-vulnerable and deprecated fail)",
@@ -361,29 +375,65 @@ def _text(value: Any, field: str, limit: int, *, required: bool) -> str | None:
     return value.strip()
 
 
+_WILDCARDS = set("*?[]!")
+
+
+def bounded_location(glob: str) -> bool:
+    """True when the glob names at least one path segment without wildcards
+    (``vendor/hsm/*``, ``app/keys.py``); ``*``, ``**``, ``/*`` or ``*/*.py``
+    match (nearly) everything and are refused."""
+    for segment in glob.replace("\\", "/").split("/"):
+        if segment not in ("", ".", "..") and not _WILDCARDS & set(segment):
+            return True
+    return False
+
+
 def _exception(
     raw: Any, i: int, today: _dt.date | None, for_save: bool
 ) -> dict[str, Any]:
+    """One allow-list entry. It must be narrow: ONE rule (never "every rule"),
+    the specific thing it waives (the finding ``code`` for the ``finding_code``
+    rule, the ``algorithm`` for the others) and a bounded ``location``, plus a
+    reason and an expiry. So no entry can waive MD5, a hard-coded key and
+    RSA-1024 everywhere at once."""
     field = f"exceptions[{i}]"
     if not isinstance(raw, dict):
         raise PolicyError(
-            field, "an object with algorithm and/or location, reason and expires"
+            field, "an object with rule, code or algorithm, location, reason, expires"
         )
-    unknown = set(raw) - {"id", "rule", "algorithm", "location", "reason", "expires"}
+    known = {"id", "rule", "code", "algorithm", "location", "reason", "expires"}
+    unknown = set(raw) - known
     if unknown:
         raise PolicyError(
             f"{field}.{sorted(unknown)[0]}", "not a field of an exception"
         )
+    rule = raw.get("rule")
+    if rule not in RULES:
+        raise PolicyError(f"{field}.rule", f"one of {', '.join(RULES)}")
     algorithm = _text(raw.get("algorithm"), f"{field}.algorithm", 40, required=False)
     if algorithm is not None and not _ALG_RE.match(algorithm):
         raise PolicyError(f"{field}.algorithm", "an algorithm name such as RSA-1024")
-    location = _text(raw.get("location"), f"{field}.location", 200, required=False)
-    rule = raw.get("rule")
-    if rule in ("", None):
-        rule = None
-    elif rule not in RULES:
+    code = raw.get("code")
+    if code in ("", None):
+        code = None
+    elif not isinstance(code, str) or not _CODE_RE.match(code):
+        raise PolicyError(f"{field}.code", "a finding code such as HARDCODED_KEY")
+    if rule == "finding_code":
+        if code is None:
+            raise PolicyError(f"{field}.code", "name the one finding code to waive")
+        if algorithm is not None:
+            raise PolicyError(f"{field}.algorithm", "not used with finding_code")
+    else:
+        if code is not None:
+            raise PolicyError(f"{field}.code", "used only with finding_code")
+        if algorithm is None:
+            raise PolicyError(f"{field}.algorithm", "name the algorithm to waive")
+    location = _text(raw.get("location"), f"{field}.location", 200, required=True)
+    if location is None or not bounded_location(location):
         raise PolicyError(
-            f"{field}.rule", f"one of {', '.join(RULES)}, or empty for every rule"
+            f"{field}.location",
+            "a bounded path such as vendor/hsm/* (a glob that matches "
+            "everything, such as * or **, is not allowed)",
         )
     reason = _text(raw.get("reason"), f"{field}.reason", 300, required=True)
     expires = _date(raw.get("expires"))
@@ -400,17 +450,10 @@ def _exception(
                 f"{field}.expires",
                 f"at most {MAX_EXCEPTION_DAYS} days ahead; review it again then",
             )
-    if algorithm is None and location is None:
-        raise PolicyError(
-            field,
-            "name an algorithm or a location (glob); a waiver of everything "
-            "is not allowed",
-        )
     ident = raw.get("id")
     if ident in (None, ""):
-        seed = json.dumps(
-            [rule, algorithm, location, reason, expires.isoformat()], sort_keys=True
-        )
+        target = [rule, code, algorithm, location, reason, expires.isoformat()]
+        seed = json.dumps(target, sort_keys=True)
         ident = "exc-" + hashlib.sha256(seed.encode("utf-8")).hexdigest()[:8]
     elif not isinstance(ident, str) or not _ID_RE.match(ident):
         raise PolicyError(
@@ -419,6 +462,7 @@ def _exception(
     return {
         "id": ident,
         "rule": rule,
+        "code": code,
         "algorithm": algorithm,
         "location": location,
         "reason": reason,
@@ -553,18 +597,24 @@ def load_policy_file(text: str) -> dict[str, Any]:
 
 # ----------------------------------------------------------------- evaluation
 def _waiver(
-    row: dict[str, Any], rule: str, active: list[dict[str, Any]]
+    row: dict[str, Any],
+    rule: str,
+    code: str | None,
+    active: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
+    """The active exception for exactly this rule, finding code or algorithm, and
+    location, if any."""
     grams = _ngrams(_tokens(row.get("title") or "")) | {canonical(row.get("title"))}
     location = str(row.get("location") or "")
     for exc in active:
-        if exc["rule"] not in (None, rule):
+        if exc["rule"] != rule:
             continue
-        if exc["algorithm"] is not None and canonical(exc["algorithm"]) not in grams:
+        if rule == "finding_code":
+            if exc.get("code") != code:
+                continue
+        elif exc["algorithm"] is None or canonical(exc["algorithm"]) not in grams:
             continue
-        if exc["location"] is not None and not fnmatch.fnmatchcase(
-            location, exc["location"]
-        ):
+        if not fnmatch.fnmatchcase(location, exc["location"]):
             continue
         return exc
     return None
@@ -576,25 +626,25 @@ def row_rules(
     """Every rule of ``policy`` this finding row breaks, in ``RULES`` order, each
     with its outcome."""
     codes = [c for c in row.get("finding_codes") or [] if isinstance(c, str)]
-    found: list[tuple[str, str, str]] = []  # (rule, mode, detail)
-    blocked = sorted(set(codes) & set(policy["block_codes"]))
-    if blocked:
+    found: list[tuple[str, str, str, str | None]] = []  # (rule, mode, detail, code)
+    for blocked in sorted(set(codes) & set(policy["block_codes"])):
         found.append(
             (
                 "finding_code",
                 "fail",
-                f"Finding code {', '.join(blocked)} is blocked by the policy",
+                f"Finding code {blocked} is blocked by the policy",
+                blocked,
             )
         )
     if row.get("asset_type") in (None, "", "algorithm"):
         banned = banned_match(row, policy["banned_algorithms"])
         if banned is not None:
-            found.append(
-                ("banned_algorithm", "fail", f"{banned} is on the policy's banned list")
-            )
+            detail = f"{banned} is on the policy's banned list"
+            found.append(("banned_algorithm", "fail", detail, None))
         else:  # a banned algorithm is not judged again on its key size or deprecation
             family, bits = classify(row)
             minimum = policy["min_key_bits"].get(family or "")
+            floor = FLOOR_AFTER_2030.get(family or "")
             if family and bits is not None and minimum and bits < minimum:
                 found.append(
                     (
@@ -602,6 +652,19 @@ def row_rules(
                         "fail",
                         f"{FAMILY_LABEL[family]} key size {bits} bits is below the "
                         f"policy minimum of {minimum} bits",
+                        None,
+                    )
+                )
+            elif family and bits is not None and floor and bits < floor:
+                found.append(
+                    (
+                        "min_key_size",
+                        "warn",
+                        f"{FAMILY_LABEL[family]} key size {bits} bits meets the "
+                        "policy minimum but gives 112-bit security, which NIST "
+                        "SP 800-131A Rev. 2 allows only through 2030 (from 2031: "
+                        f"{floor} bits)",
+                        None,
                     )
                 )
             dep = deprecated_match(row) if policy["deprecated"] != "off" else None
@@ -611,28 +674,32 @@ def row_rules(
                         "deprecated_algorithm",
                         policy["deprecated"],
                         f"{dep[0]}: {dep[1]}",
+                        None,
                     )
                 )
     if policy["quantum_vulnerable"] != "off" and (
         row.get("quantum_vulnerable") is True or QV_CODE in codes
     ):
-        found.append(("quantum_vulnerable", policy["quantum_vulnerable"], QV_DETAIL))
+        qv_mode = policy["quantum_vulnerable"]
+        found.append(("quantum_vulnerable", qv_mode, QV_DETAIL, None))
     out: list[dict[str, Any]] = []
-    for rule, mode, detail in found:
-        exc = _waiver(row, rule, active)
+    for rule, mode, detail, code in found:
+        exc = _waiver(row, rule, code, active)
+        keyed = {"code": code} if code is not None else {}
         if exc is not None:
             out.append(
                 {
                     "rule": rule,
                     "outcome": "waived",
                     "detail": detail,
+                    **keyed,
                     "exception_id": exc["id"],
                     "reason": exc["reason"],
                     "expires": exc["expires"],
                 }
             )
         else:
-            out.append({"rule": rule, "outcome": mode, "detail": detail})
+            out.append({"rule": rule, "outcome": mode, "detail": detail, **keyed})
     return out
 
 

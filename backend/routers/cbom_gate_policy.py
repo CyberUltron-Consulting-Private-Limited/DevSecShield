@@ -130,10 +130,10 @@ def _validated(body: PolicyBody) -> dict[str, Any]:
 
 
 def _save(engine, team_id: int, user_id: int, integration_id: int | None, body: PolicyBody) -> dict:
-    policy = _validated(body)
     now = utcnow()
     with Session(engine) as session:
-        require_admin(session, user_id, team_id, "the CBOM gate policy")
+        require_admin(session, user_id, team_id, "the CBOM gate policy")  # before validation: a member learns nothing
+        policy = _validated(body)
         if integration_id is not None:
             _cbom_integration(session, team_id, integration_id)
         scope = STORE.TEAM_SCOPE if integration_id is None else STORE.integration_scope(integration_id)

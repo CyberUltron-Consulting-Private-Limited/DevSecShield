@@ -48,8 +48,9 @@ jobs:
           jq -r '(.results | if type == "object" then (.results // []) elif type == "array" then . else [] end)[] | (.impact // "unknown") + " " + (.title // .name // "")' response.json
 
       # Fails the job when the team's CBOM policy blocks a finding (by default a high crypto finding, a banned
-      # algorithm or a key below the SP 800-131A minimum), and when the answer has no verdict. Each failing finding
-      # names the rule it broke; quantum-vulnerable findings are warnings unless the policy fails them.
+      # algorithm or a key below the SP 800-131A Rev. 2 minimum: RSA/DSA/DH 2048, EC 224), and when the answer has no
+      # verdict. Each failing finding names the rule it broke; 112-bit keys (allowed through 2030) and
+      # quantum-vulnerable findings are warnings unless the policy fails them.
       - name: CBOM policy gate
         run: |
           jq -r '"CBOM policy: " + (.gate.policy // "none") + " (" + (.gate.policy_source // "default") + ")"' response.json

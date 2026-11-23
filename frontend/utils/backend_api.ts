@@ -3895,6 +3895,8 @@ export interface CicdCbomGateRule {
     rule: "finding_code" | "banned_algorithm" | "min_key_size" | "deprecated_algorithm" | "quantum_vulnerable"
     outcome: "fail" | "warn" | "waived"
     detail: string
+    /** the blocked finding code (rule finding_code: one entry per code) */
+    code?: string
     exception_id?: string
     reason?: string
     expires?: string

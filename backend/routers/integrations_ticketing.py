@@ -51,6 +51,7 @@ from backend.utilities.cbom_sources.http import (
 from backend.utilities.cbom_sources.kinds import check_http_url
 from backend.utilities.cbom_sources.settings import get_or_create_settings
 from backend.utilities.db.encryption import decrypt_if_encrypted, prepare_secret_for_storage
+from backend.utilities.integrations import jira as JIRA
 from backend.utilities.integrations import jira_test as JT
 from backend.utilities.integrations import servicenow as SN
 from backend.utilities.integrations.dispatch import context_for
@@ -63,7 +64,11 @@ AuthHeader = Annotated[str | None, Header()]
 READ = [Depends(read_limiter)]
 WRITE = [Depends(write_limiter)]
 BASE = "/{team_id}/integrations"
-IN_FLIGHT_S = 90  # a claimed click older than this is taken as abandoned (a worker restart) and may be retried
+# A claimed click older than this is taken as abandoned (a worker restart) and may be retried. It must outlast the
+# slowest attempt: a retried Jira click makes up to three calls (search/jql, the /search fallback, create), each bounded
+# by jira.REQUEST_TIMEOUT (5 s connect + 30 s read), so 3 x 35 = 105 s; doubled for headroom and Jira's eventually
+# consistent search: 210 s.
+IN_FLIGHT_S = 2 * 3 * sum(JIRA.REQUEST_TIMEOUT)
 _EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,190}\.[^@\s]{1,63}$")
 _CTRL = re.compile(r"[\x00-\x1f\x7f]")
 

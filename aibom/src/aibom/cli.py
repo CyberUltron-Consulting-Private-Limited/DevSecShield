@@ -190,7 +190,8 @@ def cbom(
     finding code (weak algorithm, ECB, weak key, hard-coded key, static IV,
     weak RNG, weak padding, disabled certificate verification, a vulnerable
     crypto library), a banned algorithm (MD5, DES, 3DES, RC2, RC4) or a key
-    below the SP 800-131A minimum (RSA/DSA/DH 2048, EC 256, symmetric 128).
+    below the SP 800-131A minimum (RSA/DSA/DH 2048, EC 224, symmetric 128;
+    112-bit keys pass with a warning: allowed only through 2030).
     ``--policy`` reads the same policy file the hosted gate stores per team.
     Exits 2 when the policy file cannot be used. Reads only the tree, the
     shipped advisory file and the policy file.

@@ -24,8 +24,10 @@ export const CBOM_GATE_NOTE =
   "The job fails when the team's CBOM policy (Settings > CBOM policy gate) blocks a finding: by default a high crypto " +
   "finding (weak algorithm or key, ECB, hard-coded key, static IV, reused nonce, weak RNG, weak padding, disabled " +
   "certificate verification, a vulnerable crypto library), a banned algorithm such as MD5 or 3DES, or a key below the " +
-  "NIST SP 800-131A minimum; and when no result arrives in time. Quantum-vulnerable and deprecated algorithms are " +
-  "reported without failing the job unless the policy says so; the log names the rule each finding broke. The job also fails " +
+  "NIST SP 800-131A Rev. 2 minimum (RSA, DSA and DH 2048 bits, elliptic curves 224 bits, symmetric 128 bits); and when " +
+  "no result arrives in time. 112-bit keys (RSA 2048, P-224), quantum-vulnerable and deprecated algorithms are reported " +
+  "as warnings without failing the job unless the policy says so (SP 800-131A allows 112-bit keys only through 2030); " +
+  "the log names the rule each finding broke. The job also fails " +
   "when DevSecShield cannot be reached, answers with an error or rejects a wrong or revoked API key. To make the " +
   "check advisory, mark the step continue-on-error (GitHub Actions), the job allow_failure (GitLab CI) or wrap the " +
   "stage in catchError (Jenkins).";
@@ -73,8 +75,9 @@ ${indent(scan, 10)}
   return `${workflow}
 
       # Fails the job when the team's CBOM policy blocks a finding (by default a high crypto finding, a banned
-      # algorithm or a key below the SP 800-131A minimum), and when the answer has no verdict. Each failing finding
-      # names the rule it broke; quantum-vulnerable findings are warnings unless the policy fails them.
+      # algorithm or a key below the SP 800-131A Rev. 2 minimum: RSA/DSA/DH 2048, EC 224), and when the answer has no
+      # verdict. Each failing finding names the rule it broke; 112-bit keys (allowed through 2030) and
+      # quantum-vulnerable findings are warnings unless the policy fails them.
       - name: CBOM policy gate
         run: |
 ${indent(cbomGateDetailsJq("response.json"), 10)}

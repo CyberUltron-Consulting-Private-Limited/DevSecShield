@@ -242,3 +242,12 @@ def test_servicenow_refused_credentials_are_reported_without_a_body(api, world, 
 def test_servicenow_test_ticket_needs_a_saved_integration(api, world, lab):
     r = api("POST", "/1/integrations/servicenow/test-ticket", json={"click_id": _click()})
     assert r.status_code == 400 and "ServiceNow" in r.json()["detail"]
+
+
+def test_the_in_flight_window_outlasts_the_slowest_jira_retry():
+    # review of #483: a retried click makes up to 3 Jira calls (search/jql, /search fallback, create), each bounded by
+    # REQUEST_TIMEOUT; a second request of the same click must not run beside it.
+    from backend.routers.integrations_ticketing import IN_FLIGHT_S
+    from backend.utilities.integrations.jira import REQUEST_TIMEOUT
+
+    assert IN_FLIGHT_S >= 180 and IN_FLIGHT_S > 3 * sum(REQUEST_TIMEOUT)

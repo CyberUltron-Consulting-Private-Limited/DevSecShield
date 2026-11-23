@@ -82,8 +82,9 @@ def test_an_exception_in_the_file_waives_its_finding(tmp_path):
         **GP.DEFAULT_POLICY,
         "exceptions": [
             {
+                "rule": "min_key_size",
                 "algorithm": "RSA-1024",
-                "location": "*keys.py",
+                "location": "keys.py",
                 "reason": "HSM vendor fix in Q1",
                 "expires": "2099-12-31",
             }

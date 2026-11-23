@@ -58,7 +58,10 @@ def test_the_default_policy_keeps_every_legacy_fail_code():
 
 def test_default_matches_sp800_131a_and_cnsa_preset_is_stricter():
     d, c = GP.DEFAULT_POLICY, GP.PRESETS["cnsa-2.0"]
-    assert d["min_key_bits"] == {"rsa": 2048, "dsa": 2048, "dh": 2048, "ec": 256, "symmetric": 128}
+    # SP 800-131A Rev. 2 accepts ECC with len(n) >= 224 (112-bit security) through 2030
+    assert d["min_key_bits"] == {"rsa": 2048, "dsa": 2048, "dh": 2048, "ec": 224, "symmetric": 128}
+    assert GP.PRESETS["sp800-131a-2031"]["min_key_bits"] == {"rsa": 3072, "dsa": 3072, "dh": 3072, "ec": 256,
+                                                              "symmetric": 128}
     assert d["quantum_vulnerable"] == "warn" and d["deprecated"] == "warn"
     assert {"MD5", "DES", "3DES", "RC4"} <= set(d["banned_algorithms"])
     assert c["min_key_bits"] == {"rsa": 3072, "dsa": 3072, "dh": 3072, "ec": 384, "symmetric": 256}
@@ -96,7 +99,8 @@ def test_banned_algorithm_rule(row, fails):
     (_row("DH", primitive="key-agree", key_size="1024", qv=True), True),
     (_row("ffdhe2048", primitive="key-agree", qv=True), False),
     (_row("ECDSA", primitive="signature", curve="SECP256R1", qv=True), False),
-    (_row("ECDSA", primitive="signature", curve="secp224r1", qv=True), True),
+    (_row("ECDSA", primitive="signature", curve="secp224r1", qv=True), False),  # SP 800-131A: >= 224 until 2030
+    (_row("ECDSA", primitive="signature", curve="secp192r1", qv=True), True),
     (_row("ECDH", primitive="key-agree", curve="prime192v1", qv=True), True),
     (_row("P-384", primitive="signature", qv=True), False),
     (_row("brainpoolP160r1", primitive="signature", qv=True), True),
@@ -113,6 +117,28 @@ def test_min_key_size_rule(row, fails):
         assert _rules(gate) == [["min_key_size"]]
         detail = gate["failing"][0]["rules"][0]["detail"]
         assert "below the policy minimum" in detail
+
+
+@pytest.mark.parametrize(("row", "floor"), [
+    (_row("ECDSA", primitive="signature", curve="secp224r1", qv=True), 256),
+    (_row("RSA-2048", primitive="pke", key_size="2048", qv=True), 3072),
+    (_row("ffdhe2048", primitive="key-agree", qv=True), 3072),
+])
+def test_112_bit_keys_pass_the_default_with_the_2030_warning(row, floor):
+    gate = cbom_gate.evaluate({"results": [row]}, policy=_policy(quantum_vulnerable="off", deprecated="off"))
+    assert gate["verdict"] == "pass" and gate["warning_count"] == 1
+    (rule,) = gate["warnings"][0]["rules"]
+    assert rule["rule"] == "min_key_size" and rule["outcome"] == "warn"
+    assert "through 2030" in rule["detail"] and f"from 2031: {floor} bits" in rule["detail"]
+    strict = cbom_gate.evaluate({"results": [row]}, policy=GP.validate_policy(GP.PRESETS["sp800-131a-2031"]))
+    assert strict["verdict"] == "fail" and strict["rules_failed"]["min_key_size"] == 1
+
+
+def test_128_bit_keys_get_no_key_size_warning():
+    rows = [_row("ECDSA", primitive="signature", curve="P-256"), _row("RSA-3072", primitive="pke", key_size="3072"),
+            _row("AES-128-GCM", primitive="ae", key_size="128")]
+    gate = cbom_gate.evaluate({"results": rows}, policy=_policy(quantum_vulnerable="off", deprecated="off"))
+    assert gate["verdict"] == "pass" and gate["warning_count"] == 0
 
 
 def test_min_key_size_follows_the_team_numbers():
@@ -184,7 +210,7 @@ def test_a_warn_and_a_fail_on_one_row_keeps_the_row_failing_and_shows_both():
 
 # ------------------------------------------------------------------------------------------------ exceptions
 def _exc(**kw):
-    base = {"id": "legacy-hsm", "rule": None, "algorithm": None, "location": None,
+    base = {"id": "legacy-hsm", "rule": "min_key_size", "algorithm": "RSA-1024", "location": "vendor/hsm/*",
             "reason": "Vendor HSM firmware upgrade booked for Q1", "expires": "2027-01-31"}
     base.update(kw)
     return base
@@ -207,12 +233,12 @@ def test_an_allow_list_exception_waives_until_it_expires():
 
 def test_an_exception_waives_only_its_rule_and_its_location():
     row = _row("RSA-1024", ["WEAK_ALGORITHM"], primitive="pke", key_size="1024", qv=True, location="app/keys.py")
-    only_size = _policy(exceptions=[_exc(algorithm="RSA-1024", rule="min_key_size")])
+    only_size = _policy(exceptions=[_exc(algorithm="RSA-1024", rule="min_key_size", location="app/*")])
     gate = cbom_gate.evaluate({"results": [row]}, policy=only_size, today=TODAY)
     assert gate["verdict"] == "fail"  # finding_code still fails
     outcomes = {r["rule"]: r["outcome"] for r in gate["failing"][0]["rules"]}
     assert outcomes["min_key_size"] == "waived" and outcomes["finding_code"] == "fail"
-    elsewhere = _policy(block_codes=[], exceptions=[_exc(location="vendor/*")])
+    elsewhere = _policy(block_codes=[], exceptions=[_exc(location="vendor/*")])  # a different directory
     assert cbom_gate.evaluate({"results": [row]}, policy=elsewhere, today=TODAY)["verdict"] == "fail"
 
 
@@ -226,7 +252,18 @@ def test_an_exception_waives_only_its_rule_and_its_location():
     ({"block_codes": ["weak algorithm"]}, "block_codes"),
     ({"exceptions": [_exc(reason="")]}, "exceptions[0].reason"),
     ({"exceptions": [_exc(expires="31/01/2027")]}, "exceptions[0].expires"),
-    ({"exceptions": [_exc()]}, "exceptions[0]"),  # neither algorithm nor location: no blanket waiver
+    # review of #483: no wholesale waiver. One rule, the code or algorithm it waives, a bounded location.
+    ({"exceptions": [_exc(location="*")]}, "exceptions[0].location"),
+    ({"exceptions": [_exc(location="**")]}, "exceptions[0].location"),
+    ({"exceptions": [_exc(location="/*")]}, "exceptions[0].location"),
+    ({"exceptions": [_exc(location="*/*.py")]}, "exceptions[0].location"),
+    ({"exceptions": [_exc(location="")]}, "exceptions[0].location"),
+    ({"exceptions": [_exc(location=None)]}, "exceptions[0].location"),
+    ({"exceptions": [_exc(rule=None)]}, "exceptions[0].rule"),
+    ({"exceptions": [_exc(rule="min_key_size", algorithm=None)]}, "exceptions[0].algorithm"),
+    ({"exceptions": [_exc(rule="finding_code", algorithm=None)]}, "exceptions[0].code"),
+    ({"exceptions": [_exc(rule="finding_code", algorithm="MD5", code="HARDCODED_KEY")]}, "exceptions[0].algorithm"),
+    ({"exceptions": [_exc(code="HARDCODED_KEY")]}, "exceptions[0].code"),
     ({"exceptions": [_exc(algorithm="MD5", rule="everything")]}, "exceptions[0].rule"),
     ({"surprise": 1}, "surprise"),
     ({"version": 2}, "version"),
@@ -236,6 +273,36 @@ def test_invalid_policies_are_refused_with_the_field(change, field):
     with pytest.raises(GP.PolicyError) as err:
         GP.validate_policy(raw)
     assert err.value.field == field
+
+
+def test_md5_hardcoded_key_and_rsa1024_cannot_be_waived_wholesale():
+    rows = [_row("MD5", ["WEAK_ALGORITHM"], primitive="hash", location="app/a.py"),
+            _row("secret-key (inline, app/b.py)", ["HARDCODED_KEY"], asset_type="related-crypto-material",
+                 location="app/b.py"),
+            _row("RSA-1024", ["WEAK_ALGORITHM"], primitive="pke", key_size="1024", location="app/c.py")]
+    for glob in ("*", "**", "/*", "*/*", "?*"):
+        for rule in GP.RULES:
+            raw = {**GP.DEFAULT_POLICY, "exceptions": [{"rule": rule, "algorithm": "MD5", "code": None,
+                                                        "location": glob, "reason": "temporary",
+                                                        "expires": "2027-06-30"}]}
+            with pytest.raises(GP.PolicyError):
+                GP.validate_policy(raw)
+    # the narrowest allowed waiver lets exactly one finding code at one path through; the rest still fail
+    narrow = _policy(exceptions=[{"rule": "finding_code", "code": "HARDCODED_KEY", "location": "app/b.py",
+                                  "reason": "rotated in vault, file removed next sprint", "expires": "2027-01-31"}])
+    gate = cbom_gate.evaluate({"results": rows}, policy=narrow, today=TODAY)
+    assert gate["verdict"] == "fail" and gate["failing_count"] == 2 and gate["waived_count"] == 1
+    assert {e["title"] for e in gate["failing"]} == {"MD5", "RSA-1024"}
+
+
+def test_a_finding_code_exception_waives_only_its_code():
+    row = _row("secret-key", ["HARDCODED_KEY", "STATIC_IV"], asset_type="related-crypto-material", location="app/k.py")
+    policy = _policy(exceptions=[{"rule": "finding_code", "code": "HARDCODED_KEY", "location": "app/*",
+                                  "reason": "known", "expires": "2027-01-31"}])
+    gate = cbom_gate.evaluate({"results": [row]}, policy=policy, today=TODAY)
+    assert gate["verdict"] == "fail"
+    outcomes = {(r["rule"], r.get("code")): r["outcome"] for r in gate["failing"][0]["rules"]}
+    assert outcomes == {("finding_code", "HARDCODED_KEY"): "waived", ("finding_code", "STATIC_IV"): "fail"}
 
 
 def test_saving_refuses_an_expired_or_far_exception_but_a_file_may_hold_one():
