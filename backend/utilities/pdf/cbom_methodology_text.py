@@ -268,7 +268,7 @@ ASSET_TYPE_ROWS = (
 )
 # Product text: cbom_sources/posture.py pqc classes; qgrade.py grade scale; SOW 3.2 step 4.
 GRADING_TEXT = (
-    "Each item is classed against NIST FIPS 203 (ML-KEM), FIPS 204 (ML-DSA) and FIPS 205 (SLH-DSA), the NSA CNSA 2.0 "
+    "Each item is classed against the NIST post-quantum standards FIPS 203, FIPS 204 and FIPS 205, the NSA CNSA 2.0 "
     "algorithm suite and dates, and NIST SP 800-131A transitions: quantum-vulnerable (broken by Shor: RSA, "
     "finite-field and elliptic-curve Diffie-Hellman and signatures), Grover-weakened (128-bit symmetric keys), "
     "deprecated or disallowed today (SP 800-131A: MD5, SHA-1 signatures, DES, 3DES, RSA below 2048 bits), hybrid "
