@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
-from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer
+from reportlab.platypus import CondPageBreak, PageBreak, Paragraph, SimpleDocTemplate, Spacer
 
 from backend.utilities.dashboard.aibom_license import (
     is_unlicensed_library_gap,
@@ -171,14 +171,6 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         ("Average risk score (0–10)", f"{avg_risk:.1f}"),
         *_bom_scope_rows(raw if raw else (scan_results if isinstance(scan_results, dict) else {})),
     ]
-    extra_tables.append(
-        (
-            "What this AI BOM counts",
-            ["Measure", "Value"],
-            [[label, value] for label, value in scope_rows],
-            [4.0 * inch, 1.5 * inch],
-        )
-    )
 
     overview = [
         ("Scan type", "AI Bill of Materials (AI BOM)"),
@@ -292,6 +284,12 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
             )
 
     join_parts(story, [summary, catalog_part, details], PageBreak)
+    if ctx.has("summary"):
+        # what the AI BOM counted and left out, and the average on the dashboard's 0-10 scale
+        story.append(Spacer(1, 0.15 * inch))
+        story.append(Paragraph("What this AI BOM counts", styles["heading"]))
+        story.append(styled_data_table(["Measure", "Value"], [[label, value] for label, value in scope_rows],
+                                       styles=styles, col_widths=[4.0 * inch, 1.5 * inch]))
     if ctx.has("compliance"):
         appendix_payload = raw if raw else (scan_results if isinstance(scan_results, dict) else {})
         append_aibom_regulatory_checks(story, appendix_payload, styles)
@@ -365,7 +363,7 @@ def append_aibom_regulatory_checks(story: List[Any], payload: Any, styles: Dict[
             shown.append((key, label))
     if not shown:
         return
-    story.append(PageBreak())
+    story.append(CondPageBreak(3.5 * inch))  # a new page unless most of one is left (never a blank page)
     story.append(Paragraph("AI BOM regulatory checks", styles["title"]))
     story.append(Paragraph(
         "Each requirement is checked against the fields and relationships recorded in this AI BOM. Pass: the BOM "

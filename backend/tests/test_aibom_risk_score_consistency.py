@@ -29,11 +29,17 @@ _AIBOM_SRC = pathlib.Path(__file__).resolve().parents[2] / "aibom" / "src"
 
 @pytest.fixture(scope="module")
 def engine_posture_score():
+    # import the engine from aibom/src without leaking it: another test may have left a namespace ``aibom`` (the
+    # repository folder) in sys.modules, and later tests must see sys.modules as they left it
+    saved = {k: sys.modules.pop(k) for k in list(sys.modules) if k == "aibom" or k.startswith("aibom.")}
     sys.path.insert(0, str(_AIBOM_SRC))
     try:
         from aibom.score.scorer import posture_score
     finally:
         sys.path.remove(str(_AIBOM_SRC))
+        for k in [k for k in sys.modules if k == "aibom" or k.startswith("aibom.")]:
+            del sys.modules[k]
+        sys.modules.update(saved)
     return posture_score
 
 
