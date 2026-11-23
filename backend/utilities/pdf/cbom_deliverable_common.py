@@ -292,7 +292,7 @@ def sow_number(report_key: str) -> int | None:
 
 
 def document_id(view: TeamCbomView, number: int) -> str:
-    """``CBOM-D8-T1-20261019-ab12cd34``: SOW deliverable ID, team, as-of day, data fingerprint.
+    """``CBOM-D08-T1-20261019-ab12cd34``: SOW deliverable ID (two digits, D01 ... D14), team, as-of day, fingerprint.
 
     The fingerprint part is the first 8 hex characters of ``view.fingerprint`` (padded with
     zeros when it is shorter or empty), so the same scan set always yields the same ID.
@@ -300,7 +300,7 @@ def document_id(view: TeamCbomView, number: int) -> str:
     fingerprint = re.sub(r"[^0-9a-f]", "", str(view.fingerprint or "").lower())[:8]
     day = view.as_of
     stamp = f"{day.year:04d}{day.month:02d}{day.day:02d}"
-    return f"CBOM-D{int(number)}-T{int(view.team_id)}-{stamp}-{fingerprint.ljust(8, '0')}"
+    return f"CBOM-D{int(number):02d}-T{int(view.team_id)}-{stamp}-{fingerprint.ljust(8, '0')}"
 
 
 def _pdf_date(dt: datetime) -> str:

@@ -1,8 +1,9 @@
 "use client";
 
-// Settings > Integrations: ServiceNow, syslog (SIEM), Splunk HEC, signed webhook and OSCAL push. One card per
-// integration (form, test button, queue state), the webhook signature check to copy, and the delivery log with the
-// dead-letter list. Secrets are write-only; a blank secret field keeps the stored one. Admins change, members read.
+// Settings > Integrations: Jira and ServiceNow (ticketing, each with "Raise test ticket"), syslog (SIEM), Splunk HEC,
+// signed webhook and OSCAL push. One card per integration (form, test button, queue state), the webhook signature check
+// to copy, and the delivery log with the dead-letter list. Secrets are write-only; a blank secret field keeps the stored
+// one. Admins change, members read.
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, FlaskConical, KeyRound, Loader2, RotateCw, Save, Trash2 } from "lucide-react";
@@ -32,14 +33,19 @@ import {
   integrationKeys,
   listDeliveries,
   listIntegrations,
+  listTestTickets,
   retryDeliveries,
+  ticketingKeys,
   saveIntegration,
   testIntegration,
   type Delivery,
   type Integration,
   type IntegrationEventKind,
   type IntegrationKind,
+  type TestTicket,
 } from "@/utils/api/integrations";
+import JiraCard from "./JiraCard";
+import TestTicketButton, { TestTicketLink } from "./TestTicketButton";
 import { InfoTip } from "@/components/ui/info-tip";
 import type { InfoTipId } from "@/content/infotips";
 
@@ -216,11 +222,13 @@ function ago(iso: string | null | undefined): string {
   return iso ? new Date(iso).toLocaleString() : "—";
 }
 
-function IntegrationCard({ teamId, integration, isAdmin, snippet }: {
+function IntegrationCard({ teamId, integration, isAdmin, snippet, lastTicket }: {
   teamId: number;
   integration: Integration;
   isAdmin: boolean;
   snippet: string;
+  /** ServiceNow: the last test ticket raised (SOW S2 evidence) */
+  lastTicket?: TestTicket | null;
 }) {
   const queryClient = useQueryClient();
   const kind = integration.kind;
@@ -301,6 +309,7 @@ function IntegrationCard({ teamId, integration, isAdmin, snippet }: {
         {lastTest?.message && lastTest.status !== "never" && (
           <p className="text-xs text-zinc-500">Last test {ago(lastTest.at)}: {lastTest.message}</p>
         )}
+        {kind === "servicenow" && <TestTicketLink ticket={lastTicket} />}
         <Checkbox2 infoId="int.enabled" id={`${prefix}-enabled`} checked={enabled} onChange={(v) => isAdmin && setEnabled(v)}>
           Forward events to {integration.label}
         </Checkbox2>
@@ -404,6 +413,10 @@ function IntegrationCard({ teamId, integration, isAdmin, snippet }: {
               {test.isPending ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <FlaskConical className="h-4 w-4 mr-1.5" />}
               Send test
             </Button>
+            {kind === "servicenow" && (
+              <TestTicketButton teamId={teamId} kind="servicenow" disabled={!integration.configured}
+                                title={integration.configured ? "Creates one labelled low-priority record in the table" : "Save the integration first"} />
+            )}
             {integration.configured && (
               <Button variant="outline" className="cursor-pointer text-red-500" disabled={remove.isPending}
                       onClick={() => { if (window.confirm(`Remove ${integration.label} and its delivery log?`)) remove.mutate(); }}>
@@ -524,6 +537,8 @@ export default function IntegrationsPage({ teamId }: { teamId: number }) {
   const team = useQuery({ queryKey: ["team-details", String(teamId)], queryFn: () => getTeam(teamId) });
   const q = useQuery({ queryKey: integrationKeys.list(teamId), queryFn: () => listIntegrations(teamId), refetchInterval: 30000 });
   const labels = useMemo(() => Object.fromEntries((q.data?.integrations ?? []).map((i) => [i.kind, i.label])), [q.data]);
+  const tickets = useQuery({ queryKey: ticketingKeys.testTickets(teamId), queryFn: () => listTestTickets(teamId) });
+  const lastServiceNowTicket = (tickets.data?.test_tickets ?? []).find((t) => t.kind === "servicenow" && t.status === "created") ?? null;
   const isAdmin = Boolean(team.data?.is_team_admin);
   return (
     <div className="flex min-h-screen bg-white dark:bg-zinc-900">
@@ -535,8 +550,8 @@ export default function IntegrationsPage({ teamId }: { teamId: number }) {
             </Link>
             <h1 className="text-3xl font-bold text-zinc-900 dark:text-white mb-2">Integrations</h1>
             <p className="text-zinc-600 dark:text-zinc-400 max-w-3xl">
-              Forward CBOM findings, drift, certificate expiry and finished scans to ServiceNow, your SIEM, a signed webhook or a
-              GRC tool (OSCAL). {isAdmin ? "" : "Only team admins can change integrations."}
+              Ticket findings in Jira or ServiceNow, and forward CBOM findings, drift, certificate expiry and finished scans to
+              your SIEM, a signed webhook or a GRC tool (OSCAL). {isAdmin ? "" : "Only team admins can change integrations."}
             </p>
             {q.data && (
               <p className="text-xs text-zinc-500 mt-2 max-w-3xl">
@@ -548,11 +563,13 @@ export default function IntegrationsPage({ teamId }: { teamId: number }) {
           </div>
           {q.isLoading ? <LoadingBlock /> : q.isError || !q.data ? <ErrorBlock onRetry={() => q.refetch()} /> : (
             <>
+              <JiraCard teamId={teamId} />
               {q.data.integrations.map((integration) => (
                 // keyed by the saved version: a save (here or elsewhere) reloads the form; a background refetch does not
                 <IntegrationCard key={`${integration.kind}-${integration.row_version ?? 0}-${integration.configured}`}
                                  teamId={teamId} integration={integration} isAdmin={isAdmin}
-                                 snippet={q.data.webhook_verify_snippet} />
+                                 snippet={q.data.webhook_verify_snippet}
+                                 lastTicket={integration.kind === "servicenow" ? lastServiceNowTicket : undefined} />
               ))}
               <DeliveryLog teamId={teamId} isAdmin={isAdmin} labels={labels} />
             </>

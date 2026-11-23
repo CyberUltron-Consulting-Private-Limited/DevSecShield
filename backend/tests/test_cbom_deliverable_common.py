@@ -559,11 +559,11 @@ def test_fmt_date_utc():
 def test_document_id_format():
     # FIX-A3 (SOW audit A-04): the SOW Table 7 ID exactly as the SOW writes it (D1 ... D14), no zero padding
     view = make_view(fingerprint="ab12cd34ef56")
-    assert document_id(view, 8) == "CBOM-D8-T1-20261019-ab12cd34"
+    assert document_id(view, 8) == "CBOM-D08-T1-20261019-ab12cd34"
     assert document_id(view, 14) == "CBOM-D14-T1-20261019-ab12cd34"
-    assert document_id(view, 1) == "CBOM-D1-T1-20261019-ab12cd34"
-    assert document_id(make_view(team_id=42), 2).startswith("CBOM-D2-T42-")
-    pattern = re.compile(r"^CBOM-D\d{1,2}-T\d+-\d{8}-[0-9a-f]{8}$")
+    assert document_id(view, 1) == "CBOM-D01-T1-20261019-ab12cd34"
+    assert document_id(make_view(team_id=42), 2).startswith("CBOM-D02-T42-")
+    pattern = re.compile(r"^CBOM-D\d{2}-T\d+-\d{8}-[0-9a-f]{8}$")
     for number in (1, 2, 6, 7, 8, 9, 10, 12, 13, 14):
         assert pattern.match(document_id(view, number))
 

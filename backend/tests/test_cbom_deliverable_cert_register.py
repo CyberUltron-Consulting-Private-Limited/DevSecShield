@@ -729,13 +729,14 @@ def test_owner_and_business_system_are_assessor_columns_and_blank(view):
     computed = register_rows(view)
     table = register.register_table(computed, 720.0, as_of=view.as_of)
     header = [cell.getPlainText() for cell in table._cellvalues[0]]
-    assert len(header) == 14
+    assert len(header) == 15  # FIX-B2: SHA-256 thumbprint and serial added, valid from / to share one column
+    assert header[2:4] == ["SHA-256 thumbprint", "Serial"]
     assert header[-2] == "Owner (assessor)"
     assert header[-1] == "Business system (assessor)"
     body = table._cellvalues[1:]
     assert len(body) == 14
     for cells in body:
-        assert len(cells) == 14
+        assert len(cells) == 15
         assert cells[-2].getPlainText().strip() == ""
         assert cells[-1].getPlainText().strip() == ""
     assert abs(sum(table._colWidths) - 720.0) < 1e-6
@@ -745,7 +746,7 @@ def test_owner_and_business_system_are_assessor_columns_and_blank(view):
         for cmd in table._bkgrndcmds
         if cmd[0] == "BACKGROUND" and cmd[1][0] == cmd[2][0] and cmd[1][1] == 0
     }
-    assert {12, 13} <= tinted
+    assert {13, 14} <= tinted
 
 
 def test_the_register_scales_to_any_frame_width(view):
@@ -1260,7 +1261,9 @@ def test_imports_are_stdlib_reportlab_and_the_pdf_and_rollup_packages_only():
             assert name.split(".")[0] in allowed, name
             if name.startswith("backend"):
                 assert name.startswith(
-                    ("backend.utilities.pdf", "backend.utilities.dashboard.cbom_team_rollup")
+                    ("backend.utilities.pdf", "backend.utilities.dashboard.cbom_team_rollup",
+                     # FIX-B2: the ONE unique-certificate function (pure; Rule P: PDF, CSV and D7 share it)
+                     "backend.utilities.cbom_sources.cert_estate")
                 ), name
 
 

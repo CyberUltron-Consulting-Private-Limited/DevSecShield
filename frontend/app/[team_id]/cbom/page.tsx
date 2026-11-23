@@ -30,13 +30,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
-import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, CheckCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, MinusCircle, Shield, AlertTriangle, Activity, ChevronDown, ArrowUpDown, Check, Filter, DollarSign, TrendingUp, TrendingDown, Lock, ShieldAlert, ShieldCheck, Key, Download, FileText, Network, SlidersHorizontal } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, CheckCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, MinusCircle, Shield, AlertTriangle, Activity, ChevronDown, ArrowUpDown, Check, Filter, DollarSign, TrendingUp, TrendingDown, Lock, ShieldAlert, ShieldCheck, Key, Download, FileText, FileSpreadsheet, Network, SlidersHorizontal } from "lucide-react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { singleFlight } from "@/utils/single_flight";
 import {
   CBOM_DELIVERABLES,
   deleteCBOMScan,
   downloadCbomDeliverable,
+  downloadCbomDeliverableCsv,
   getCbomDeliverables,
   getCBOMScans,
   getCbomRun,
@@ -206,10 +207,10 @@ function OwnerCell({ name, email }: { name: string | null; email: string | null 
   );
 }
 
-/** Mirrors the server's Content-Disposition name: cbom-<slug>-team<id>-<YYYYMMDD>.pdf (UTC date). */
-function deliverableFileName(slug: CbomDeliverableSlug, teamId: number, now: Date): string {
+/** Mirrors the server's Content-Disposition name: cbom-<slug>-team<id>-<YYYYMMDD>.<pdf|csv> (UTC date). */
+function deliverableFileName(slug: CbomDeliverableSlug, teamId: number, now: Date, ext: "pdf" | "csv" = "pdf"): string {
   const yyyymmdd = now.toISOString().slice(0, 10).replace(/-/g, "");
-  return `cbom-${slug}-team${teamId}-${yyyymmdd}.pdf`;
+  return `cbom-${slug}-team${teamId}-${yyyymmdd}.${ext}`;
 }
 
 // ─── Dashboard Tab ──────────────────────────────────────────────────────────────
@@ -710,9 +711,24 @@ export default function CBOMPage() {
     },
     onError: (error) => { showErrorToast(error, "Error downloading deliverable"); },
   });
+  const downloadDeliverableCsvMutation = useMutation({
+    mutationFn: (slug: CbomDeliverableSlug) => {
+      const tid = parseInt(team_id);
+      if (Number.isNaN(tid)) throw new Error("Missing or invalid team id");
+      return downloadCbomDeliverableCsv(tid, slug);
+    },
+    onSuccess: (blob, slug) => {
+      saveBlob(blob, deliverableFileName(slug, parseInt(team_id), new Date(), "csv"));
+      const title = CBOM_DELIVERABLES.find((d) => d.slug === slug)?.title ?? slug;
+      toast.success(`Downloaded ${title} (CSV)`);
+    },
+    onError: (error) => { showErrorToast(error, "Error downloading deliverable"); },
+  });
   const cover = useExportPdf({ teamId: parseInt(team_id) || 0, target: { family: "deliverable" } });
 
-  const pendingSlug = downloadDeliverableMutation.isPending ? (downloadDeliverableMutation.variables ?? null) : null;
+  const pendingSlug = downloadDeliverableMutation.isPending ? (downloadDeliverableMutation.variables ?? null)
+    : downloadDeliverableCsvMutation.isPending ? (downloadDeliverableCsvMutation.variables ?? null) : null;
+  const pendingCsv = downloadDeliverableCsvMutation.isPending;
   const manifestItems = deliverablesQuery.data?.deliverables;
   const deliverableHints = new Map(
     (Array.isArray(manifestItems) ? manifestItems : []).map((d) => [d.slug, d] as const),
@@ -796,7 +812,7 @@ export default function CBOMPage() {
                 </DropdownMenuTrigger>
                 <InfoTip id="cbom.deliverables" />
                 <DropdownMenuContent align="end" className="w-[30rem] max-w-[calc(100vw-2rem)]">
-                  <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Team-wide regulatory deliverables (PDF)</DropdownMenuLabel>
+                  <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Team-wide regulatory deliverables (PDF; D8 also CSV)</DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     data-testid="cbom-deliverables-cover-options"
@@ -812,18 +828,34 @@ export default function CBOMPage() {
                   {CBOM_DELIVERABLES.map((d) => {
                     const hint = deliverableHints.get(d.slug);
                     const unavailable = hint?.available === false;
+                    const itemClass = "cursor-pointer whitespace-normal data-[disabled]:pointer-events-auto data-[disabled]:cursor-not-allowed";
+                    const title = unavailable ? (hint?.reason ?? undefined) : undefined;
                     return (
-                      <DropdownMenuItem
-                        key={d.slug}
-                        data-testid={`cbom-deliverable-${d.slug}`}
-                        className="cursor-pointer whitespace-normal data-[disabled]:pointer-events-auto data-[disabled]:cursor-not-allowed"
-                        disabled={unavailable || pendingSlug !== null}
-                        title={unavailable ? (hint?.reason ?? undefined) : undefined}
-                        onSelect={() => downloadDeliverableMutation.mutate(d.slug)}
-                      >
-                        {pendingSlug === d.slug ? <Loader2 className="animate-spin" /> : <FileText />}
-                        <span>{`D${d.number} · ${d.title}`}</span>
-                      </DropdownMenuItem>
+                      <Fragment key={d.slug}>
+                        <DropdownMenuItem
+                          data-testid={`cbom-deliverable-${d.slug}`}
+                          className={itemClass}
+                          disabled={unavailable || pendingSlug !== null}
+                          title={title}
+                          onSelect={() => downloadDeliverableMutation.mutate(d.slug)}
+                        >
+                          {pendingSlug === d.slug && !pendingCsv ? <Loader2 className="animate-spin" /> : <FileText />}
+                          <span>{`D${d.number} · ${d.title}`}</span>
+                        </DropdownMenuItem>
+                        {/* the backend says which formats exist (a frontend newer than its backend offers no CSV) */}
+                        {hint?.formats?.includes("csv") && (
+                          <DropdownMenuItem
+                            data-testid={`cbom-deliverable-${d.slug}-csv`}
+                            className={itemClass}
+                            disabled={unavailable || pendingSlug !== null}
+                            title={title}
+                            onSelect={() => downloadDeliverableCsvMutation.mutate(d.slug)}
+                          >
+                            {pendingSlug === d.slug && pendingCsv ? <Loader2 className="animate-spin" /> : <FileSpreadsheet />}
+                            <span>{`D${d.number} · ${d.title} (CSV)`}</span>
+                          </DropdownMenuItem>
+                        )}
+                      </Fragment>
                     );
                   })}
                 </DropdownMenuContent>

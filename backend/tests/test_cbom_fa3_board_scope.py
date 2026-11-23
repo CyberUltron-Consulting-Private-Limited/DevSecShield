@@ -314,7 +314,7 @@ def test_every_printed_document_id_carries_the_sow_id(slug):
     spec = DELIVERABLES[slug]
     assert common.sow_number(spec.report_key) == SOW[slug][0]
     view = TeamCbomView(team_id=1, team_name="T", generated_at=NOW, as_of=NOW.date(), fingerprint="0ac3f091e6b8")
-    assert common.document_id(view, common.sow_number(spec.report_key)) == f"CBOM-D{SOW[slug][0]}-T1-20261123-0ac3f091"
+    assert common.document_id(view, common.sow_number(spec.report_key)) == f"CBOM-D{SOW[slug][0]:02d}-T1-20261123-0ac3f091"
     assert REPORT_META[spec.report_key]["title"] == SOW[slug][1]
 
 

@@ -15,6 +15,7 @@ from backend.utilities.team import invitations
 from backend.utilities.team import roles as team_roles
 from backend.new_models import TeamInvitation
 from backend.branding_models import TeamBranding
+from backend.cbom_gate_models import CbomGatePolicy, IntegrationTestTicket
 from sqlalchemy import delete as sa_delete, func, or_
 from backend.utilities.dashboard.team import generate_team_dashboard_data , generate_team_list_dashboard_data
 from backend.utilities.db.encryption import prepare_secret_for_storage, is_secret_placeholder
@@ -479,6 +480,9 @@ async def delete_team(
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
             # the report logo goes with the team in this transaction (the foreign key cascades too, where enforced)
             session.exec(sa_delete(TeamBranding).where(TeamBranding.team_id == team_id))
+            # the CBOM gate policies and test-ticket records (SOW S1 / S2) too (their foreign keys cascade as well)
+            session.exec(sa_delete(CbomGatePolicy).where(CbomGatePolicy.team_id == team_id))
+            session.exec(sa_delete(IntegrationTestTicket).where(IntegrationTestTicket.team_id == team_id))
             audit.record(session, action="team.delete", team_id=team_id, object_type="team", object_id=team_id,
                          ip=meta["ip"], user_agent=meta["user_agent"],
                          details={"name": (team.name or "")[:100], "scans_deleted": len(scan_ids_list)},

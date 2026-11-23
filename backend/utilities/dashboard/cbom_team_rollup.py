@@ -739,6 +739,9 @@ class TeamCbomView:
     # the team's regulated-entity type (CBOM settings: "nbfc" | "bank" | "other"): selects the RBI instrument the
     # regulatory mapping cites (an NBFC is not bound by the Commercial Banks Directions). Not part of the fold.
     regulated_entity: str = field(default="nbfc", compare=False)
+    # the rows of each Sources source's latest completed collection, facts included, and the owner each source names
+    # (``cbom_sources.cert_estate.EstateInputs``) for D7 / D8; None = not loaded. Not part of the fold.
+    estate: Any = field(default=None, compare=False, repr=False)
 
     @property
     def is_empty(self) -> bool:
@@ -3303,6 +3306,13 @@ def load_team_cbom_view(engine: Any, team_id: int, *, now: datetime | None = Non
             view.regulated_entity = team_entity(session, team_id)
         except Exception as exc:  # noqa: BLE001  # pragma: no cover - defensive: the default (NBFC) stays
             view.warnings = (*view.warnings, f"regulated-entity setting not read: {type(exc).__name__}")
+        try:  # every latest-collection row with its facts, for D7 (network) and D8 (certificates)
+            from backend.utilities.cbom_sources.cert_estate import load_inputs as estate_inputs
+
+            view.estate = estate_inputs(session, team_id, found)
+        except Exception as exc:  # pragma: no cover - defensive
+            view.estate = None
+            view.warnings = (*view.warnings, f"estate rows not loaded: {type(exc).__name__}")
         try:  # remediation waves and scan-node assets for the roadmap; a failure leaves the manual columns blank
             from backend.utilities.cbom_sources.waves import roadmap_extras
 

@@ -2343,8 +2343,8 @@ FROZEN_FIELDS = {
         "pqc_hybrid pqc_broken_today pqc_ungraded readiness_pct compliance_sources_pooled "
         # remediation: WP10 (loader only, not compared); collections: M1x (CBOM Sources results, merge_collections);
         # register: CB-23 (the quantum risk register for deliverable #2; loader only, not compared)
-        # regulated_entity: FIX-A3 (the RBI instrument the regulatory mapping cites; loader only, not compared)
-        "compliance_legacy_excluded warnings posture collections remediation register regulated_entity"
+        # regulated_entity: FIX-A3; estate: FIX-B2 (loader only, not compared)
+        "compliance_legacy_excluded warnings posture collections remediation register regulated_entity estate"
     ),
 }
 

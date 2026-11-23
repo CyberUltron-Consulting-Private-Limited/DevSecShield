@@ -377,9 +377,9 @@ def test_pdf_metadata_and_document_control_name_the_methodology(view, pdf):
     assert title and "Discovery Methodology and Evidence Plan" in title
     assert "E2E Demo Team" in title
     subject = info_field(pdf, "Subject")
-    assert subject and f"CBOM-D2-T1-20261019-{view.fingerprint[:8]}" in subject
+    assert subject and f"CBOM-D02-T1-20261019-{view.fingerprint[:8]}" in subject
     everything = full_text(pdf)
-    assert f"CBOM-D2-T1-20261019-{view.fingerprint[:8]}" in everything
+    assert f"CBOM-D02-T1-20261019-{view.fingerprint[:8]}" in everything
     assert "Discovery Methodology and Evidence Plan" in everything
 
 
@@ -585,7 +585,7 @@ def test_raci_table_is_blank(text):
 def test_retention_paragraph_versioning_and_blank_retention_fields(view, text):
     nine = section(text, 9)
     assert norm(authored.METHOD_RETENTION) in nine
-    assert f"Document ID CBOM-D2-T1-20261019-{view.fingerprint[:8]}" in nine
+    assert f"Document ID CBOM-D02-T1-20261019-{view.fingerprint[:8]}" in nine
     assert f"data fingerprint {view.fingerprint}" in nine
     assert "template version 1.0" in nine
     assert "a new successful scan or an attestation upload changes it" in nine

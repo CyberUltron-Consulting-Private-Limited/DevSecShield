@@ -566,7 +566,7 @@ def test_document_identity_title_footer_and_metadata(view, pdf, text):
     assert scope.TITLE == meta["title"] == "Scope Baseline and Asset Population Register"  # SOW D1 title
     assert info_field(pdf, "Title") == f"{scope.TITLE} - E2E Demo Team"
     expected_id = document_id(view, 1)
-    assert expected_id == f"CBOM-D1-T1-20261019-{view.fingerprint[:8]}"  # SOW D1
+    assert expected_id == f"CBOM-D01-T1-20261019-{view.fingerprint[:8]}"  # SOW D1
     assert expected_id in norm(text)
     assert expected_id in (info_field(pdf, "Subject") or "")
     assert authored.TOOL_NAME in norm(text)
@@ -995,7 +995,7 @@ def test_works_with_zero_scans():
     flat = norm(pdf_text(raw))
     assert authored.BANNER_EMPTY_TITLE in flat
     assert "not evidence that no cryptographic assets exist" in flat
-    assert "CBOM-D1-T3-20261019-" in flat
+    assert "CBOM-D01-T3-20261019-" in flat
     for heading in SECTION_HEADINGS:  # the manual parts and every section still print
         assert heading in flat
     story = body_of(empty)
