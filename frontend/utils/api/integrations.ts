@@ -102,6 +102,89 @@ export async function retryDeliveries(teamId: number, body: { ids?: number[]; ki
   return (await api.post(`/${teamId}/integrations/deliveries/retry`, body)).data
 }
 
+// ---------------------------------------------------------------- ticketing (SOW S2): Jira and test tickets
+export type TicketingKind = "jira" | "servicenow"
+
+/** A "Raise test ticket" result: created (with its key and link), failed, or uncertain (the next click looks it up). */
+export interface TestTicket {
+  kind: TicketingKind
+  status: "pending" | "created" | "failed" | "uncertain"
+  ticket_key: string | null
+  ticket_url: string | null
+  message: string | null
+  at: string | null
+  click_id: string
+  ok?: boolean
+  repeated?: boolean
+}
+
+/** The team's Jira as Settings > Integrations shows it; the API token is never returned (api_token_set only). */
+export interface JiraIntegration {
+  kind: "jira"
+  label: string
+  configured: boolean
+  url: string | null
+  email: string | null
+  api_token_set: boolean
+  project_key: string | null
+  issue_type: string
+  issue_type_default: string
+  row_version: number
+  last_test: { status: "ok" | "failed"; at: string | null; message: string | null } | null
+  last_test_ticket: TestTicket | null
+  is_admin: boolean
+}
+
+export interface JiraSave {
+  url: string
+  email: string
+  api_token?: string
+  project_key?: string | null
+  issue_type?: string | null
+  expected_version?: number | null
+}
+
+export const ticketingKeys = {
+  jira: (teamId: number) => ["integrations", teamId, "jira"] as const,
+  testTickets: (teamId: number) => ["integrations", teamId, "test-tickets"] as const,
+}
+
+export async function getJira(teamId: number): Promise<JiraIntegration> {
+  return (await api.get(`/${teamId}/integrations/jira`)).data.jira
+}
+
+export async function saveJira(teamId: number, body: JiraSave): Promise<JiraIntegration> {
+  return (await api.put(`/${teamId}/integrations/jira`, body)).data.jira
+}
+
+export async function deleteJira(teamId: number): Promise<void> {
+  await api.delete(`/${teamId}/integrations/jira`)
+}
+
+export async function testJira(teamId: number): Promise<{ ok: boolean; status: "ok" | "failed"; message: string; at: string }> {
+  return (await api.post(`/${teamId}/integrations/jira/test`)).data
+}
+
+/** One clearly labelled test ticket; the same clickId always answers with the same ticket (idempotent per click). */
+export async function raiseTestTicket(teamId: number, kind: TicketingKind, clickId: string): Promise<TestTicket> {
+  return (await api.post(`/${teamId}/integrations/${kind}/test-ticket`, { click_id: clickId })).data
+}
+
+export async function listTestTickets(teamId: number): Promise<{ test_tickets: TestTicket[] }> {
+  return (await api.get(`/${teamId}/integrations/test-tickets`)).data
+}
+
+/** A fresh id per click (crypto.randomUUID where available). */
+export function newClickId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID()
+  const b = new Uint8Array(16)
+  crypto.getRandomValues(b)
+  b[6] = (b[6] & 0x0f) | 0x40
+  b[8] = (b[8] & 0x3f) | 0x80
+  const h = Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("")
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`
+}
+
 /** OSCAL 1.2.3 assessment results (schema-validated on the server) of a finished run or a CBOM code scan. */
 export async function downloadOscal(teamId: number | string, what: { runId?: number; scanId?: number | string }) {
   const path = what.runId != null

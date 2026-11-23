@@ -15,6 +15,7 @@ import backend.utilities.cbom_sources.fleet.models  # noqa: F401
 import backend.utilities.cbom_sources.billing  # noqa: F401  (cbomcreditentry, CB-14)
 import backend.utilities.cbom_sources.api_keys  # noqa: F401  (cbomapikey, #226)
 import backend.branding_models  # noqa: F401  (teambranding, the team's report logo)
+import backend.cbom_gate_models  # noqa: F401  (cbomgatepolicy, integrationtestticket: SOW S1 / S2)
 from dotenv import load_dotenv
 
 load_dotenv()

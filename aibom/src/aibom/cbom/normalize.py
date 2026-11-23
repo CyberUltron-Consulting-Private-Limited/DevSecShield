@@ -561,6 +561,16 @@ def _annotate_findings(bom: dict[str, Any], result: ScanResult) -> None:
         props.append({"name": "zs:impact", "value": _impact_for(comp, result) or "Info"})
 
 
+def gate_rows(result: ScanResult) -> list[dict[str, Any]]:
+    """The finding rows the policy gate judges: the rows ``normalize_crypto`` puts
+    in ``results`` (crypto assets, flagged facts and flagged libraries), without the
+    graphs and charts. The offline ``aibom cbom`` gate uses them so its verdict
+    matches the hosted gate's for the same tree and policy."""
+    assets = _crypto_assets(result)
+    extra = (*_flagged_facts(result), *_flagged_libraries(result))
+    return [_finding(c, result) for c in (*assets, *extra)]
+
+
 def normalize_crypto(result: ScanResult, *, duration_of_scan: float) -> dict[str, Any]:
     """Normalize a scored CBOM ScanResult into the DevSecShield run-object.
 
@@ -614,4 +624,4 @@ def normalize_crypto(result: ScanResult, *, duration_of_scan: float) -> dict[str
     return payload
 
 
-__all__ = ["normalize_crypto"]
+__all__ = ["gate_rows", "normalize_crypto"]
