@@ -14,7 +14,7 @@ from typing import Any
 
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
-from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate
+from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer
 
 from backend.utilities.pdf.report_branding import (
     append_executive_summary,
@@ -61,9 +61,11 @@ def build_run_pdf(*, run: dict[str, Any], sources: list[dict[str, Any]], posture
                   heatmap: dict[str, Any], head: dict[str, Any], findings: list[dict[str, Any]],
                   vex_states: dict[str, int],
                   provenance: list[dict[str, Any]], at: _dt.datetime, as_of_note: str | None,
-                  findings_cap: int, export_cap: int, cbom_sha256: str, ctx: Any = None) -> bytes:
+                  findings_cap: int, export_cap: int, cbom_sha256: str, ctx: Any = None,
+                  drift: dict[str, Any] | None = None) -> bytes:
     """``ctx`` (``report_context.ReportContext``): export options and the team logo; omitted, the
-    report is today's full report, byte for byte."""
+    report is today's full report, byte for byte. ``drift``: ``drift_report.run_drift`` for the run (S4); the
+    "Changes since the previous comparable run" section is drawn when it is given."""
     from backend.utilities.pdf.report_context import ReportContext, join_parts  # noqa: PLC0415
     from backend.utilities.pdf.report_options import RUN_SECTIONS, severity_bucket  # noqa: PLC0415
     from backend.utilities.pdf.report_branding import append_report_masthead  # noqa: PLC0415
@@ -142,6 +144,8 @@ def build_run_pdf(*, run: dict[str, Any], sources: list[dict[str, Any]], posture
                         f"(the posture numbers above cover every asset).", styles, "body"))
 
     story = posture_part
+    if drift is not None:
+        append_drift_section(story, drift, styles)
     # algorithm family x source
     story.append(Paragraph("Algorithm family by source", styles["heading"]))
     cols = list(heatmap.get("columns") or [])
@@ -264,6 +268,103 @@ def build_run_pdf(*, run: dict[str, Any], sources: list[dict[str, Any]], posture
                        provenance_part if ctx.has("provenance") else []], PageBreak)
     pdf.build(story, onFirstPage=make_cover_callback("cbom", ctx), onLaterPages=make_footer_callback("cbom", ctx))
     return buf.getvalue()
+
+
+DRIFT_ROWS = 12  # items per drift list in the PDF (drift.json in the evidence pack carries drift_report.TOP)
+DRIFT_SOURCES = 15
+
+
+def _delta(value: Any) -> str:
+    if value is None:
+        return "n/a"
+    number = float(value)
+    return f"{number:+.1f} points" if number else "no change"
+
+
+def trigger_text(run: dict[str, Any]) -> str:
+    """"manual", "scheduled: <name>", or "scheduled (schedule #<id>, since deleted)" (audit D-S4-2, review #486 nit)."""
+    if run.get("trigger") != "scheduled":
+        return str(run.get("trigger") or "manual")
+    if run.get("schedule_name"):
+        return f"scheduled: {run['schedule_name']}"
+    return f"scheduled (schedule #{run['schedule_id']}, since deleted)" if run.get("schedule_id") else "scheduled"
+
+
+def append_drift_section(story: list[Any], drift: dict[str, Any], styles: dict) -> None:
+    """S4: what changed since the previous comparable run, from ``drift_report.run_drift`` (the ``/diff`` numbers)."""
+    base = drift.get("baseline")
+    story.append(Paragraph(escape_html("Changes since the previous comparable run" if not base
+                                       else f"Changes since run #{base['id']}"), styles["heading"]))
+    if not base:
+        story.append(_p(drift.get("message") or "Nothing to compare yet.", styles, "muted"))
+        return
+    counts = drift.get("counts") or {}
+    ready = drift.get("readiness") or {}
+    q0 = drift.get("q0") or {}
+    rules = drift.get("rules") or {}
+    run = drift.get("run") or {}
+    story.append(key_value_table([
+        ("Baseline", f"Run #{base['id']} · {base.get('status')} · {trigger_text(base)} · finished "
+                     f"{base.get('finished_at') or '—'}"),
+        ("This run", f"Run #{run.get('id')} · {trigger_text(run)}"),
+        ("Sources compared", f"{counts.get('compared_sources', 0)} compared, {counts.get('not_compared_sources', 0)} "
+                             "not compared (collected completely in only one of the two runs)"),
+        ("Rules", "re-judged with the current rules" if rules.get("reclassified")
+         else ("rules changed between the runs" if rules.get("rules_changed") else "same rules")),
+        *([("Compared", (f"when the run's drift was recorded, {drift['recorded_at']} (the diff endpoint compares "
+                          "with the grade inputs of today)"))] if drift.get("recorded_at") else []),
+    ], styles=styles))
+    story.append(Spacer(1, 6))
+    readiness = (f"{readiness_text(ready.get('before'))} → {readiness_text(ready.get('after'))} "
+                 f"({_delta(ready.get('delta'))}; {ready.get('scope') or 'compared sources only'})")
+    story.append(styled_data_table(
+        ["Change", "Count"],
+        [["Assets added", str(counts.get("added", 0))], ["Assets removed", str(counts.get("removed", 0))],
+         ["Assets changed", str(counts.get("changed", 0))], ["Findings opened (new)", str(counts.get("opened", 0))],
+         ["Findings resolved (closed)", str(counts.get("resolved", 0))],
+         ["Not read this time (kept at last known state)", str(counts.get("not_read", 0))],
+         ["Q0 Unknown closed (graded Q1-Q4 now)", str(q0.get("closed", 0))],
+         ["Q0 Unknown opened", str(q0.get("opened", 0))],
+         ["Risk-register Q0 gaps this run closed", str(q0.get("register_closed_total", 0))],
+         ["PQC readiness", readiness]],
+        styles=styles, col_widths=[3.4 * inch, 3.7 * inch]))
+    story.append(Spacer(1, 4))
+
+    def listing(title: str, key: str, columns: list[str], row) -> None:
+        items = list(drift.get(key) or [])
+        if not items:
+            return
+        total = int(counts.get(key, len(items)) or 0)
+        story.append(Spacer(1, 8))
+        story.append(Paragraph(escape_html(f"{title} ({total})"), styles["table_label"]))
+        story.append(Spacer(1, 3))
+        story.append(styled_data_table(columns, [row(i) for i in items[:DRIFT_ROWS]], styles=styles,
+                                       col_widths=[1.1 * inch, 1.9 * inch, 2.6 * inch, 1.5 * inch]))
+        if total > min(len(items), DRIFT_ROWS):
+            story.append(_p(f"Showing {min(len(items), DRIFT_ROWS)} of {total}; drift.json in the evidence pack "
+                            "and the diff endpoint list more.", styles, "muted"))
+
+    def finding(i: dict[str, Any]) -> list[Any]:
+        return [count_label(i.get("impact") or "low"), _p(i.get("code"), styles, "mono_cell"),
+                _p(short(i.get("label"), FINDING_CHARS), styles), _p(i.get("source_name"), styles)]
+
+    def asset(i: dict[str, Any]) -> list[Any]:
+        return [str(i.get("q_grade") or "—"), _p(i.get("type"), styles),
+                _p(short(i.get("label"), FINDING_CHARS), styles), _p(i.get("source_name"), styles)]
+
+    listing("Findings opened", "opened", ["Severity", "Code", "Asset", "Source"], finding)
+    listing("Findings resolved", "resolved", ["Severity", "Code", "Asset", "Source"], finding)
+    listing("Assets added", "added", ["Q-grade", "Type", "Asset", "Source"], asset)
+    listing("Assets removed", "removed", ["Q-grade", "Type", "Asset", "Source"], asset)
+    skipped = [s for s in drift.get("sources") or [] if s.get("status") != "compared"]
+    if skipped:
+        story.append(_p("Not compared: " + "; ".join(f"{s.get('name')} ({s.get('reason')})"
+                                                      for s in skipped[:DRIFT_SOURCES])
+                        + (f"; and {len(skipped) - DRIFT_SOURCES} more" if len(skipped) > DRIFT_SOURCES else "")
+                        + ".", styles, "muted"))
+    story.append(_p("Same comparison as the run page's Changes and GET .../runs/{id}/diff: only sources collected "
+                    "completely in both runs are compared, and what a run could not read is never counted as removed "
+                    "or resolved.", styles, "muted"))
 
 
 def _duration(run: dict[str, Any]) -> str:

@@ -13,11 +13,13 @@ from aibom.compliance.base import (
     CheckResult,
     Requirement,
     has_license,
+    healthcare_profile,
     models,
     register_check,
     register_manual,
     serving_services,
     trained_datasets,
+    vendor_accountability,
 )
 from aibom.model.result import ScanResult
 
@@ -30,7 +32,13 @@ def _r(rid: str, title: str, func: str) -> Requirement:
 
 # --- GOVERN ---------------------------------------------------------------- #
 R_GV1 = _r("GV-1", "Govern: AI risk-management policies + accountability", "GOVERN")
-R_GV2 = _r("GV-2", "Govern: serving vendor accountability (BAA-bound)", "GOVERN")
+R_GV2 = Requirement(
+    "GV-2",
+    _FW,
+    "Govern: serving vendor accountability (contract / DPA)",
+    "NIST AI RMF 1.0 GOVERN",
+    healthcare_title="Govern: serving vendor accountability (BAA-bound)",
+)
 R_GV3 = _r("GV-3", "Govern: workforce diversity + competency", "GOVERN")
 R_GV4 = _r("GV-4", "Govern: risk-aware organizational culture", "GOVERN")
 # --- MAP ------------------------------------------------------------------- #
@@ -63,6 +71,8 @@ def _gv2(r: ScanResult, req: Requirement) -> CheckResult:
             for s in serving_services(r, m)
         )
     ]
+    if not healthcare_profile(r):
+        return vendor_accountability(r, ms)
     if bad:
         return FAIL(f"{len(bad)} model(s) lack a BAA-bound serving vendor", bad)
     return PASS(

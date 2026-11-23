@@ -13,14 +13,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from aibom.emit._disclaimer import ADVISORY_DISCLAIMER
+from aibom.emit._disclaimer import HEALTHCARE_AIBOM_DISCLAIMER, disclaimer_of
+from aibom.emit.identity import SUPPLIER, SUPPLIER_URL, TOOL_NAMES, identity_for
 from aibom.emit.registry import BaseReporter, register_reporter
 from aibom.emit.validate import validate_sarif
 from aibom.model.result import SEVERITIES, ScanResult
 
-TOOL_NAME = "clinithread-aibom"
-TOOL_VERSION = "0.1.0"
-INFO_URI = "https://github.com/devsecshield/clinithread-aibom"
+TOOL_NAME = TOOL_NAMES["aibom"]
+INFO_URI = SUPPLIER_URL
 SARIF_SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json"
 
 # Static catalog of known flag codes -> SARIF rule metadata (stable ruleIndex).
@@ -54,8 +54,12 @@ _RULE_CATALOG: dict[str, dict[str, str]] = {
 
 
 def _rule_catalog(result: ScanResult) -> list[str]:
-    """All catalog codes plus any novel flag codes, sorted (stable ruleIndex)."""
-    codes = set(_RULE_CATALOG) | {f.code for f in result.flags}
+    """The flag codes raised, sorted (stable ruleIndex). The static catalog's
+    clinical rules (HIPAA / §524B / EU AI Act wording) are listed only for a
+    healthcare-profile scan, so a bank's SARIF never names HIPAA or FDA."""
+    codes = {f.code for f in result.flags}
+    if disclaimer_of(result) == HEALTHCARE_AIBOM_DISCLAIMER:
+        codes |= set(_RULE_CATALOG)
     return sorted(codes)
 
 
@@ -100,6 +104,7 @@ def emit_sarif(result: ScanResult) -> dict[str, Any]:
             ]
         results.append(entry)
 
+    identity = identity_for(result)
     return {
         "version": "2.1.0",
         "$schema": SARIF_SCHEMA,
@@ -107,14 +112,18 @@ def emit_sarif(result: ScanResult) -> dict[str, Any]:
             {
                 "tool": {
                     "driver": {
-                        "name": TOOL_NAME,
-                        "version": TOOL_VERSION,
+                        "name": identity.tool_name,
+                        "organization": SUPPLIER,
+                        "version": identity.tool_version,
                         "informationUri": INFO_URI,
                         "rules": rules,
                     }
                 },
+                "invocations": [
+                    {"executionSuccessful": True, "endTimeUtc": identity.timestamp}
+                ],
                 # advisory-only hard rule: this report carries the disclaimer.
-                "properties": {"advisoryDisclaimer": ADVISORY_DISCLAIMER},
+                "properties": {"advisoryDisclaimer": disclaimer_of(result)},
                 "results": results,
             }
         ],

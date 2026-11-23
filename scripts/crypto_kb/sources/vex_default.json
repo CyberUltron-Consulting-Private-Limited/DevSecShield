@@ -474,6 +474,15 @@
   }
  },
  "node": {
+  "AD_FUNCTIONAL_LEVEL_LEGACY": {
+   "basis": "posture",
+   "reason": "domain posture: missing protections and weaker ticket keys; no attack on the domain as it is without a stolen or cracked key",
+   "sources": [
+    "kb:findings.node.AD_FUNCTIONAL_LEVEL_LEGACY.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
   "CA_ALLOWS_ANY_NAME": {
    "basis": "observed",
    "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
@@ -989,6 +998,43 @@
     "CycloneDX 1.6.2 impactAnalysisState"
    ]
   },
+  "KERBEROS_DES_ENABLED": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.KERBEROS_DES_ENABLED.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "KERBEROS_RC4_ENABLED": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.KERBEROS_RC4_ENABLED.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "KERBEROS_ENCTYPES_DEFAULT": {
+   "basis": "inferred",
+   "reason": "the account's ticket encryption follows a domain controller default that LDAP cannot read: RC4 only if the DCs predate the April 2026 update or DefaultDomainSupportedEncTypes enables it",
+   "sources": [
+    "kb:findings.node.KERBEROS_ENCTYPES_DEFAULT.attack",
+    "Microsoft KB5073381 (CVE-2026-20833)",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "KERBEROS_RC4_ONLY": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.KERBEROS_RC4_ONLY.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
   "KEYSTORE_JKS": {
    "basis": "posture",
    "reason": "format hygiene: brute force needs the keystore file to be stolen first and a weak password",
@@ -1113,6 +1159,15 @@
    "reason": "availability/lifecycle: data loss risk on deletion, no confidentiality or integrity attack",
    "sources": [
     "kb:findings.node.KMS_PENDING_DELETION.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "KRBTGT_KEY_OLD": {
+   "basis": "posture",
+   "reason": "rotation policy: a stolen key stays usable longer; no attack on the domain as it is without that key",
+   "sources": [
+    "kb:findings.node.KRBTGT_KEY_OLD.attack",
     "DEVILS-ADVOCATE.md OA-10c (VEX default)",
     "CycloneDX 1.6.2 impactAnalysisState"
    ]

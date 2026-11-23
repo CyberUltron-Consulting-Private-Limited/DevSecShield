@@ -2349,7 +2349,13 @@ export interface RunListRow {
   linked_scan_id: number | null
   /** the severity counts are those judged when the run collected the assets */
   counts_basis: "as_collected"
+  /** S4: what started the run (absent on an older backend); schedule_name is null once the schedule is deleted */
+  trigger?: CbomRunTrigger
+  schedule_id?: number | null
+  schedule_name?: string | null
 }
+
+export type CbomRunTrigger = "scheduled" | "manual"
 
 export interface CBOMConversationResponse {
   title: string
@@ -2520,7 +2526,7 @@ export const CBOM_DELIVERABLES = [
   { slug: "scope-baseline-register", number: 1, title: "Scope Baseline & Asset Population Register" },
   { slug: "quantum-risk-register", number: 2, title: "Quantum Risk Register" },
   { slug: "methodology-evidence-plan", number: 3, title: "Cryptographic Discovery Methodology & Evidence Plan" },
-  { slug: "infrastructure-cloud-encryption-posture", number: 5, title: "Infrastructure & Cloud Encryption Posture" },
+  { slug: "infrastructure-cloud-encryption-posture", number: 6, title: "Infrastructure & Cloud Encryption Posture" },
   { slug: "network-tls-protocol-assessment", number: 7, title: "Network, TLS & Crypto Protocol Assessment" },
   // SOW D8 is also a CSV: the menu offers it when the manifest lists "csv" in the item's formats
   { slug: "certificate-estate-register", number: 8, title: "Certificate Estate Register" },
@@ -4642,6 +4648,10 @@ export interface CbomRun {
     soc_ack_at: string | null
     cancelled_by: number | null
     cancelled_at: string | null
+    // S4: what started the run (absent on an older backend)
+    trigger?: CbomRunTrigger
+    schedule_id?: number | null
+    schedule_name?: string | null
     finished_at?: string | null
     created_at: string | null
     last_updated: string | null

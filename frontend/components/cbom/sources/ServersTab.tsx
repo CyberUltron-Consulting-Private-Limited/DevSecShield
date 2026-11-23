@@ -115,6 +115,7 @@ type HostKeyPolicy = "tofu" | "pinned" | "host_ca";
 // policies that prove the server before a password goes to it (#59: a host certificate from a listed CA, like a pin)
 const VERIFIED_POLICIES: ReadonlySet<HostKeyPolicy> = new Set(["pinned", "host_ca"]);
 type WindowMode = "network" | "any" | "custom";
+type AdTlsMode = "ldaps" | "starttls";
 
 interface KindInfo {
   value: ServerKind;
@@ -264,6 +265,8 @@ interface FormState {
   knownHosts: string;
   hostCaKeys: string;
   caPem: string;
+  // FIX-B3: Active Directory over LDAPS (636 / 3269) or StartTLS (389 / 3268)
+  tlsMode: AdTlsMode;
   credentialType: CredType;
   vaultProvider: string;
   vaultPath: string;
@@ -298,6 +301,7 @@ function initialForm(source: CbomSource | null, nodes: CbomScanNode[]): FormStat
       knownHosts: "",
       hostCaKeys: "",
       caPem: "",
+      tlsMode: "ldaps",
       credentialType: info.defaultCred,
       vaultProvider: "hashicorp",
       vaultPath: "",
@@ -330,6 +334,7 @@ function initialForm(source: CbomSource | null, nodes: CbomScanNode[]): FormStat
     knownHosts: typeof cfg.known_hosts === "string" ? cfg.known_hosts : "",
     hostCaKeys: Array.isArray(cfg.host_ca_keys) ? (cfg.host_ca_keys as string[]).join("\n") : "",
     caPem: typeof cfg.ca_pem === "string" ? cfg.ca_pem : "",
+    tlsMode: cfg.tls_mode === "starttls" ? "starttls" : "ldaps",
     credentialType: cred,
     vaultProvider: cfg.vault?.provider ?? "hashicorp",
     vaultPath: cfg.vault?.path ?? "",
@@ -363,6 +368,7 @@ function whereChanged(form: FormState, source: CbomSource | null): boolean {
   return (
     splitLines(form.targets).join("\n") !== stored ||
     Number(form.port) !== Number(cfg.port) ||
+    (form.kind === "active_directory" && form.tlsMode !== (cfg.tls_mode === "starttls" ? "starttls" : "ldaps")) ||
     form.loginUser.trim() !== String(cfg.login_user ?? "") ||
     form.nodeId !== source.node_id ||
     policy !== (cfg.host_key_policy ?? "tofu") ||
@@ -875,7 +881,7 @@ function ServerForm({
     }
     if (isLinux && form.credentialType === "password" && !VERIFIED_POLICIES.has(form.hostKeyPolicy))
       e.hostKeyPolicy = "Password logins need pinned host keys or host certificates, so the password only goes to the real servers";
-    const portProblem = isLinux ? null : windowsPortProblem(form.kind, Number(form.port));
+    const portProblem = isLinux ? null : windowsPortProblem(form.kind, Number(form.port), form.tlsMode);
     if (portProblem) e.port = portProblem;
     if (form.credentialType === "vault" && !isAdmin) e.credentialType = "Only a team admin can add or change a vault reference";
     if (form.credentialType === "vault" && !form.vaultPath.trim()) e.vaultPath = "Enter the secret path in your vault";
@@ -935,6 +941,7 @@ function ServerForm({
         known_hosts: isLinux && form.hostKeyPolicy === "pinned" ? form.knownHosts : null,
         ...(isLinux && form.hostKeyPolicy === "host_ca" ? { host_ca_keys: hostCaLines(form.hostCaKeys) } : {}),
         ...(isLinux ? {} : { ca_pem: form.caPem.trim() ? form.caPem : null }),
+        ...(form.kind === "active_directory" ? { tls_mode: form.tlsMode } : {}),
         credential_type: form.credentialType,
         vault: form.credentialType === "vault" ? { provider: form.vaultProvider, path: form.vaultPath.trim() } : null,
         ...(form.credentialType === "ssh_ca"
@@ -1139,7 +1146,30 @@ function ServerForm({
 
           <FormSection title="Connection">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Field infoId="cbsrc.servers.port" label={info.portLabel} htmlFor="servers-port" required error={errors.port}>
+              {form.kind === "active_directory" && (
+                <Field infoId="cbsrc.servers.ad_tls_mode" label="TLS" htmlFor="servers-ad-tls-mode"
+                       hint="LDAPS (636) or StartTLS on plain LDAP (389). Either way the login is sent only after TLS verified the domain controller.">
+                  <Select
+                    value={form.tlsMode}
+                    onValueChange={(v) => {
+                      const mode = v === "starttls" ? "starttls" : "ldaps";
+                      // move the port along with the mode while it is still that mode's default
+                      const port = mode === "starttls" && form.port === "636" ? "389"
+                        : mode === "ldaps" && form.port === "389" ? "636" : form.port;
+                      set({ tlsMode: mode, port });
+                    }}
+                  >
+                    <SelectTrigger id="servers-ad-tls-mode" data-testid="servers-ad-tls-mode" className="cursor-pointer">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ldaps" className="cursor-pointer">LDAPS (TLS from the start)</SelectItem>
+                      <SelectItem value="starttls" className="cursor-pointer">StartTLS (plain LDAP upgraded to TLS)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+              )}
+              <Field infoId="cbsrc.servers.port" label={form.kind === "active_directory" && form.tlsMode === "starttls" ? "LDAP port (StartTLS)" : info.portLabel} htmlFor="servers-port" required error={errors.port}>
                 <Input
                   id="servers-port"
                   data-testid="servers-port"
@@ -1271,7 +1301,7 @@ function ServerForm({
                 htmlFor="servers-ca"
                 error={errors.caPem ?? errors.caFile}
                 hint={form.kind === "active_directory"
-                  ? "LDAPS is checked against the domain controller's certificate before the login is sent. Add the CA that issued it when it is an internal CA."
+                  ? "The domain controller's certificate (LDAPS or StartTLS) is checked before the login is sent. Add the CA that issued it when it is an internal CA."
                   : "WinRM runs over HTTPS and the server's certificate is checked before the login is sent. Add the CA that issued it when it is an internal CA."}
               >
                 <Textarea
