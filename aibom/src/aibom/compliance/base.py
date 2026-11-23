@@ -20,12 +20,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal
 
-from aibom.emit._disclaimer import (
-    ADVISORY_DISCLAIMER,
-    CBOM_DISCLAIMER,
-    HEALTHCARE_AIBOM_DISCLAIMER,
-    disclaimer_of,
-)
+from aibom.emit._disclaimer import ADVISORY_DISCLAIMER, CBOM_DISCLAIMER
 from aibom.model.component import (
     DatasetComponent,
     FrameworkComponent,
@@ -248,6 +243,10 @@ def healthcare_profile(r: object) -> bool:
     """An AI BOM with clinical / regulatory healthcare metadata: the one profile whose
     reports may use healthcare terms (BAA, MDR, PHI, HIPAA, FDA). The same test as
     the disclaimer's (``emit/_disclaimer.disclaimer_of``)."""
+    # imported here: the module import line above is #484's verbatim (one merge, no
+    # conflict)
+    from aibom.emit._disclaimer import HEALTHCARE_AIBOM_DISCLAIMER, disclaimer_of
+
     return disclaimer_of(r) == HEALTHCARE_AIBOM_DISCLAIMER
 
 
