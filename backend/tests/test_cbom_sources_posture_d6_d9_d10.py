@@ -490,6 +490,20 @@ def test_registry_numbers_d6_to_d10_follow_the_sow():
                                  "third-party-assurance-register")] == [6, 7, 8, 9, 10]
 
 
+def test_d2_evidence_plan_names_each_sow_document_by_its_registry_number():
+    """The merge of #486 (D2 methodology) wrote D6 / D7 / D8 as "Team CBOM deliverable #5 / #6 / #7", the numbers
+    before this PR; the registry numbers them #6 / #7 / #8, and #9 / #10 already matched."""
+    from backend.utilities.pdf.cbom_deliverables import DELIVERABLES
+    from backend.utilities.pdf.cbom_methodology_text import EVIDENCE_PLAN
+
+    registry = {spec.number for spec in DELIVERABLES.values()}
+    produced = {sow: produced_from for sow, _title, produced_from, _evidence in EVIDENCE_PLAN}
+    for sow in ("D6", "D7", "D8", "D9", "D10"):
+        number = int(sow[1:])
+        assert number in registry, sow
+        assert produced[sow].startswith(f"Team CBOM deliverable #{number} (PDF)"), (sow, produced[sow])
+
+
 # ------------------------------------------------------------------------------------------------ the DB read
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_cbom_sources_api import api, world  # noqa: E402,F401  (fixtures)

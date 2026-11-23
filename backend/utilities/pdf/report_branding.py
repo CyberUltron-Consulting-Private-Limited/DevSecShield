@@ -17,7 +17,7 @@ import logging
 import os
 import re
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -1503,6 +1503,28 @@ def compute_risk_score(critical: int, high: int, medium: int, low: int) -> Tuple
     return score, "A", "Low risk"
 
 
+def compute_posture_risk_score(critical: int, high: int, medium: int, low: int) -> Tuple[int, str, str]:
+    """The AI BOM grade: ``compute_risk_score`` bounded by the worst severity present (no Critical -> at most D, no
+    Critical/High -> at most C, Low only -> at most B, nothing -> A). Computed by the engine's own function and table
+    (``aibom/src/aibom/score/posture.py``, loaded by ``aibom_posture``), so the PDF and the dashboard band agree."""
+    from backend.utilities.pdf.aibom_posture import posture_risk
+
+    return posture_risk(critical, high, medium, low)
+
+
+def compute_risk_score_band(score: int) -> Tuple[int, str, str]:
+    """The grade and band of a 0-100 score (the bands of ``compute_risk_score``)."""
+    if score >= 70:
+        return score, "F", "Critical risk"
+    if score >= 50:
+        return score, "D", "High risk"
+    if score >= 30:
+        return score, "C", "Elevated risk"
+    if score >= 15:
+        return score, "B", "Moderate risk"
+    return score, "A", "Low risk"
+
+
 def build_severity_bar(
     *,
     critical: int,
@@ -1865,6 +1887,7 @@ def append_executive_summary(
     meta_chips: Optional[Sequence[Tuple[str, str]]] = None,
     scan_time_hint: str = "Completed successfully",
     ctx: Any = None,
+    risk_score_fn: Optional[Callable[[int, int, int, int], Tuple[int, str, str]]] = None,
 ) -> None:
     styles = styles or get_report_styles()
     meta = REPORT_META.get(report_key, REPORT_META["sast"])
@@ -1919,7 +1942,7 @@ def append_executive_summary(
                 time_label = str(value)
                 break
 
-    risk_score, risk_grade, risk_band = compute_risk_score(critical, high, medium, low)
+    risk_score, risk_grade, risk_band = (risk_score_fn or compute_risk_score)(critical, high, medium, low)
 
     story.append(
         build_kpi_grid(

@@ -78,6 +78,7 @@ KNOWN_NEW_FILES = {
     "backend/utilities/pdf/cbom_deliverable_text.py",
     "backend/utilities/pdf/cbom_deliverables.py",
     "backend/utilities/pdf/cbom_methodology_pdf.py",
+    "backend/utilities/pdf/cbom_methodology_text.py",  # D2's authored method text (FIX-D1)
     "backend/utilities/pdf/cbom_pqc_roadmap_pdf.py",
     "backend/utilities/pdf/cbom_scope_register_pdf.py",
 }
@@ -88,6 +89,7 @@ def new_product_files() -> list[Path]:
         *_PDF.glob("cbom_deliverable_*.py"),
         *_PDF.glob("cbom_*_pdf.py"),
         _PDF / "cbom_deliverables.py",
+        _PDF / "cbom_methodology_text.py",
         _DASHBOARD / "cbom_team_rollup.py",
         _ROUTERS / "cbom_deliverables.py",
     }
@@ -206,6 +208,13 @@ def _policy(path: Path) -> tuple[set[str], tuple[str, ...]]:
         # Sources assets as posture facts and components (SOW D6/D9/D10): pure, stdlib only, no AI; and the vendor
         # attestation register read by the loader (the Evidence tab's questionnaires: database rows, no AI)
         backend += ("backend.utilities.cbom_sources.posture_mapper", "backend.utilities.cbom_sources.evidence")
+        # D2's live collection set-up (sources by kind, ports, window, nodes, schedules): database only, no AI
+        backend += ("backend.utilities.cbom_sources.methodology_facts",)
+    if path.name == "cbom_methodology_text.py":
+        # D2's tables generated from the product's constant registries (review #486 minor 10): grade reasons and
+        # labels, fix-class texts, evidence levels, each collector's method. Constant tables, no AI, no network.
+        backend += ("backend.utilities.cbom_sources.qgrade", "backend.utilities.cbom_sources.agility",
+                    "backend.utilities.cbom_sources.evidence", "backend.utilities.cbom_sources.provenance")
     # CBOM Sources collections as CBOM results (M1x): stored assets and the latest-observation rule; database only
     backend += ("backend.utilities.cbom_sources.collections_view",)
     # cross-source asset keys (CB-21): pure, stdlib only, no AI

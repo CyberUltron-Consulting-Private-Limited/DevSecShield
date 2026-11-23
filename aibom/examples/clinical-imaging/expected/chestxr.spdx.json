@@ -7,21 +7,38 @@
       "specVersion": "3.0.1",
       "created": "2026-06-21T00:00:00Z",
       "createdBy": [
-        "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/tool/clinithread-aibom"
+        "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/agent/zero-shield"
+      ],
+      "createdUsing": [
+        "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/tool/devsecshield-ai-bom"
       ]
     },
     {
-      "type": "Tool",
-      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/tool/clinithread-aibom",
+      "type": "Organization",
+      "spdxId": "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/agent/zero-shield",
       "creationInfo": "_:creationinfo",
-      "name": "clinithread-aibom"
+      "name": "Zero Shield"
+    },
+    {
+      "type": "Tool",
+      "spdxId": "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/tool/devsecshield-ai-bom",
+      "creationInfo": "_:creationinfo",
+      "name": "DevSecShield AI BOM 0.1.0"
+    },
+    {
+      "type": "Organization",
+      "spdxId": "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/agent/supplier/acme-medical-ai",
+      "creationInfo": "_:creationinfo",
+      "name": "Acme Medical AI"
     },
     {
       "type": "ai_AIPackage",
-      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/model-chestxr-cnn",
+      "spdxId": "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/model-chestxr-cnn",
       "creationInfo": "_:creationinfo",
       "name": "chestxr-nodule-detector",
+      "suppliedBy": "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/agent/supplier/acme-medical-ai",
       "software_packageVersion": "2.1.0",
+      "software_primaryPurpose": "model",
       "ai_typeOfModel": [
         "convolutional neural network (ResNet-50)"
       ],
@@ -44,13 +61,13 @@
     },
     {
       "type": "simplelicensing_LicenseExpression",
-      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/license/model-chestxr-cnn",
+      "spdxId": "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/license/model-chestxr-cnn",
       "creationInfo": "_:creationinfo",
       "simplelicensing_licenseExpression": "Apache-2.0"
     },
     {
       "type": "dataset_DatasetPackage",
-      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/dataset-chestxr-train",
+      "spdxId": "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/dataset-chestxr-train",
       "creationInfo": "_:creationinfo",
       "name": "chestxr-training-cohort",
       "dataset_datasetType": [
@@ -75,7 +92,7 @@
     },
     {
       "type": "software_Package",
-      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-numpy",
+      "spdxId": "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-numpy",
       "creationInfo": "_:creationinfo",
       "name": "numpy",
       "software_packageVersion": "1.26.4",
@@ -83,7 +100,7 @@
     },
     {
       "type": "software_Package",
-      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-pydicom",
+      "spdxId": "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-pydicom",
       "creationInfo": "_:creationinfo",
       "name": "pydicom",
       "software_packageVersion": "2.4.4",
@@ -91,7 +108,7 @@
     },
     {
       "type": "software_Package",
-      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-safetensors",
+      "spdxId": "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-safetensors",
       "creationInfo": "_:creationinfo",
       "name": "safetensors",
       "software_packageVersion": "0.4.3",
@@ -99,7 +116,7 @@
     },
     {
       "type": "software_Package",
-      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-torch",
+      "spdxId": "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-torch",
       "creationInfo": "_:creationinfo",
       "name": "torch",
       "software_packageVersion": "2.3.1",
@@ -107,7 +124,7 @@
     },
     {
       "type": "software_Package",
-      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-torchvision",
+      "spdxId": "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-torchvision",
       "creationInfo": "_:creationinfo",
       "name": "torchvision",
       "software_packageVersion": "0.18.1",
@@ -115,70 +132,79 @@
     },
     {
       "type": "software_Package",
-      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/service-acme-cloud",
+      "spdxId": "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/service-acme-cloud",
       "creationInfo": "_:creationinfo",
       "name": "Acme Imaging AI Cloud"
     },
     {
       "type": "software_Package",
-      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/modelfile-model.safetensors",
+      "spdxId": "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/modelfile-model.safetensors",
       "creationInfo": "_:creationinfo",
-      "name": "model.safetensors"
+      "name": "model.safetensors",
+      "comment": "Model weight file at model.safetensors",
+      "software_primaryPurpose": "model"
     },
     {
       "type": "SpdxDocument",
-      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/document",
+      "spdxId": "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/document",
       "creationInfo": "_:creationinfo",
       "name": "ChestXR-Triage-SaMD",
       "comment": "Regulatory mappings are advisory only; an AI BOM creates visibility, not assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA obligations. A qualified regulatory reviewer must sign off.",
+      "profileConformance": [
+        "core",
+        "software",
+        "simpleLicensing",
+        "ai",
+        "dataset"
+      ],
       "rootElement": [
-        "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/model-chestxr-cnn"
+        "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/model-chestxr-cnn"
       ]
     },
     {
       "type": "Relationship",
-      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/relationship/1",
+      "spdxId": "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/relationship/1",
       "creationInfo": "_:creationinfo",
-      "from": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/model-chestxr-cnn",
+      "from": "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/model-chestxr-cnn",
       "relationshipType": "hasConcludedLicense",
       "to": [
-        "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/license/model-chestxr-cnn"
+        "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/license/model-chestxr-cnn"
       ]
     },
     {
       "type": "Relationship",
-      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/relationship/2",
+      "spdxId": "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/relationship/2",
       "creationInfo": "_:creationinfo",
-      "from": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/model-chestxr-cnn",
+      "from": "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/model-chestxr-cnn",
       "relationshipType": "trainedOn",
       "to": [
-        "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/dataset-chestxr-train"
+        "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/dataset-chestxr-train"
       ]
     },
     {
       "type": "Relationship",
-      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/relationship/3",
+      "spdxId": "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/relationship/3",
       "creationInfo": "_:creationinfo",
-      "from": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/model-chestxr-cnn",
+      "from": "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/model-chestxr-cnn",
       "relationshipType": "dependsOn",
       "to": [
-        "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-numpy",
-        "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-pydicom",
-        "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-safetensors",
-        "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-torch",
-        "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-torchvision",
-        "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/modelfile-model.safetensors"
+        "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-numpy",
+        "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-pydicom",
+        "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-safetensors",
+        "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-torch",
+        "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-torchvision",
+        "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/modelfile-model.safetensors"
       ]
     },
     {
       "type": "Relationship",
-      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/relationship/4",
+      "spdxId": "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/relationship/4",
       "creationInfo": "_:creationinfo",
       "comment": "served_by",
-      "from": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/model-chestxr-cnn",
+      "from": "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/model-chestxr-cnn",
       "relationshipType": "other",
       "to": [
-        "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/service-acme-cloud"
+        "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/service-acme-cloud"
       ]
     }
   ]

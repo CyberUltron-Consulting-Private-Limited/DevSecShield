@@ -187,7 +187,8 @@ build_component() { # <component>
       [[ -n "${NODE_BASE_IMAGE:-}" ]] && fe_args+=(--build-arg "NODE_BASE_IMAGE=${NODE_BASE_IMAGE}")
       build frontend frontend/Dockerfile frontend "${fe_args[@]}"
       ;;
-    scan-worker) build scan-worker RabbitMQ/worker/Dockerfile . "${base_args[@]}" "${go_args[@]}" ;;
+    scan-worker) build scan-worker RabbitMQ/worker/Dockerfile . "${base_args[@]}" "${go_args[@]}" \
+        --build-arg "DSS_BUILD_SHA=${BUILD_SHA}" --build-arg "DSS_BUILD_VERSION=${BUILD_VERSION}" ;;
     dast-worker) build dast-worker RabbitMQ/dast_worker/Dockerfile RabbitMQ/dast_worker "${base_args[@]}" ;;
   esac
 }

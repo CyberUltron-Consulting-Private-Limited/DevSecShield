@@ -21,7 +21,7 @@ def test_sarif_is_schema_valid() -> None:
     doc = emit_and_validate_sarif(scan_repo(_FIXTURE))  # raises if invalid
     assert validate_sarif(doc) == []
     assert doc["version"] == "2.1.0"
-    assert doc["runs"][0]["tool"]["driver"]["name"] == "clinithread-aibom"
+    assert doc["runs"][0]["tool"]["driver"]["name"] == "DevSecShield AI BOM"
 
 
 def test_sarif_renders_one_result_per_flag() -> None:

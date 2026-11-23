@@ -75,6 +75,7 @@ def queue_run(session: Session, team_id: int, user_id: int, body: RunCreate, set
         breakdown={"groups": plan.groups(), "skipped": [i.public() for i in plan.items if i.status == "skipped"]},
         soc_ack_by=user_id if body.soc_ack else None, soc_ack_at=now if body.soc_ack else None,
         created_at=now, last_updated=now, schedule_id=schedule_id,
+        trigger="scheduled" if schedule_id is not None else "manual",
         # what judges this run's facts (classification happens here, on the API)
         kb_version=(crypto_kb.version() or None), classifier_version=CLASSIFIER_VERSION,
         engine_version=engine_version(),

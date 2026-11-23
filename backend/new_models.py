@@ -531,7 +531,14 @@ class CbomCollectionRun(SQLModel, table=True):
     last_updated: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
     finished_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     schedule_id: int | None = Field(default=None, index=True)  # set when a schedule started the run
+    # what started the run (S4): "scheduled" (a schedule: schedule_id) or "manual" (a member's Start); rsched1trig001
+    trigger: str = Field(default="manual", max_length=16, sa_column_kwargs={"server_default": "manual"})
     drift_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)  # drift events recorded (once)
+    # S4: the run's drift document (drift_report.run_drift: counts, readiness, top items against its baseline), stored
+    # once after its drift is recorded (drift.store_pending_summaries), so report.pdf and drift.json neither recompute
+    # the comparison per download nor change afterwards; keyed by its baseline id (recomputed if the baseline
+    # differs). SQL NULL until stored (none_as_null: "IS NULL" finds it). rsched1trig001
+    drift_summary: dict | None = Field(default=None, sa_column=Column(JSON(none_as_null=True), nullable=True))
 
 
 class CbomCollectionJob(SQLModel, table=True):

@@ -35,6 +35,7 @@ from backend.utilities.cbom_sources.cbom_metrics import average_risk
 from backend.utilities.cbom_sources.collections_view import NETWORK_TYPES, REMEDIATION_BUCKET
 from backend.utilities.build_info import utc_timestamp
 from backend.utilities.cbom_sources.common import console, iso_z
+from backend.utilities.cbom_sources.serialize import run_trigger, schedule_names
 
 LIST_LIMIT = 200
 CACHE_SIZE = 4_096
@@ -228,7 +229,7 @@ def _credits(centi: int | None) -> float:
 
 
 def run_row(run: CbomCollectionRun, counts: dict[str, Any], jobs: dict[str, Any],
-            owner: tuple[str | None, str | None] | None) -> dict[str, Any]:
+            owner: tuple[str | None, str | None] | None, schedule_name: str | None = None) -> dict[str, Any]:
     sources = sorted(jobs["sources"].values(), key=lambda s: (str(s["name"]).casefold(), s["id"] or 0))
     names = ", ".join(str(s["name"]) for s in sources)
     risk = dict(counts["risk_data"])
@@ -258,6 +259,10 @@ def run_row(run: CbomCollectionRun, counts: dict[str, Any], jobs: dict[str, Any]
         "jobs_done": jobs["jobs_done"],
         "linked_scan_id": run.scan_id,
         "counts_basis": COUNTS_BASIS,
+        # S4: "scheduled" (with the schedule's id and, while it exists, its name) or "manual"
+        "trigger": run_trigger(run),
+        "schedule_id": run.schedule_id,
+        "schedule_name": schedule_name,
     }
 
 
@@ -277,7 +282,9 @@ def list_run_rows(session: Session, team_id: int, *, before_id: int | None = Non
     counts = _counts_for(session, team_id, runs)
     jobs = _jobs_by_run(session, team_id, ids)
     owners = _owners(session, (r.owner_user_id for r in runs))
-    rows = [run_row(r, counts[int(r.id)], jobs[int(r.id)], owners.get(r.owner_user_id)) for r in runs]
+    schedules = schedule_names(session, team_id, (r.schedule_id for r in runs))
+    rows = [run_row(r, counts[int(r.id)], jobs[int(r.id)], owners.get(r.owner_user_id),
+                    schedules.get(r.schedule_id or 0)) for r in runs]
     ms = int((time.perf_counter() - started) * 1000)
     _log_line(team_id, len(rows), ms)
     return {"runs_list_data": rows, "runs_total": total}
