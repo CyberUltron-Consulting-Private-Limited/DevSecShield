@@ -56,5 +56,6 @@ max_raw) remains for callers that want the raw-weight scale.
 `emit/identity.py`: tool `DevSecShield AI BOM` (CBOM: `DevSecShield CBOM`), version
 from `DSS_BUILD_VERSION` / `DSS_BUILD_SHA` (else the package version), supplier Zero
 Shield, creation time `ScanResult.generated_at` (the adapters stamp the scan time;
-None keeps the goldens on a pinned time). `emit/_disclaimer.py`: neutral advisory
-text; the FDA/HIPAA text only when the scan has clinical facts (`is_healthcare`).
+None keeps the goldens on a pinned time). `emit/_disclaimer.py` (`disclaimer_of`):
+CBOM wording for a crypto inventory, the FDA/HIPAA wording only for an AI BOM with
+clinical / regulatory metadata, else the neutral AI BOM wording.

@@ -1,72 +1,81 @@
-"""The advisory disclaimer carried by EVERY emitted report.
+"""The advisory disclaimer each emitted BOM carries, by what the BOM is (A-13).
 
 CLAUDE.md hard rule: compliance mapping is advisory only; every report carries a
-disclaimer. All three reporters (CycloneDX / SPDX / SARIF) and the compliance
-reports take it from here, so the caveat can never be present in one format and
-missing in another.
+disclaimer. Every reporter (CycloneDX / SPDX / SARIF) takes it from here, so the
+caveat is never present in one format and missing in another.
 
-The default text is neutral (no sector regulator is named): most scans are of
-banking, fintech or general software, where an FDA / HIPAA caveat is wrong and
-misleading. The healthcare text is used only when the scan itself carries
-clinical facts (:func:`is_healthcare`), i.e. the healthcare profile applies.
+The wording names the regimes the BOM can actually be mapped to: a CBOM (crypto
+inventory) names the cryptography instruments, an AI BOM the AI regimes, and only
+an AI BOM that carries clinical / regulatory healthcare metadata (``clinical:`` or
+``regulatory:`` properties: FDA product code, device class, modality ...) names
+FDA and HIPAA. A bank's CBOM never says FDA or HIPAA.
 """
-
-from __future__ import annotations
 
 from typing import Any
 
-ADVISORY_DISCLAIMER = (
-    "Regulatory and standards mappings are advisory only; a bill of materials "
-    "creates visibility, not assurance, and does not by itself satisfy any "
-    "regulatory obligation. A qualified reviewer must confirm conformance."
-)
-
-HEALTHCARE_DISCLAIMER = (
+HEALTHCARE_AIBOM_DISCLAIMER = (
     "Regulatory mappings are advisory only; an AI BOM creates visibility, not "
     "assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA "
     "obligations. A qualified regulatory reviewer must sign off."
 )
 
-# Model-card fields that only a clinical / medical-device model fills in.
-_CLINICAL_CARD_FIELDS = (
-    "modality",
-    "body_part",
-    "pacs_ae_title",
-    "fda_product_code",
-    "device_class",
+AIBOM_DISCLAIMER = (
+    "Regulatory mappings are advisory only; an AI BOM creates visibility, not "
+    "assurance, and does not by itself satisfy EU AI Act, NIST AI RMF or other "
+    "AI governance obligations. A qualified regulatory reviewer must sign off."
 )
 
+CBOM_DISCLAIMER = (
+    "Regulatory mappings are advisory only; a CBOM creates visibility of "
+    "cryptographic assets, not assurance, and does not by itself satisfy CERT-In, "
+    "RBI, SEBI CSCRF, NIST or CNSA 2.0 obligations. A qualified reviewer must "
+    "sign off."
+)
 
-def is_healthcare(result: Any) -> bool:
-    """Whether the healthcare profile applies: the scan found clinical facts.
+#: The default (an AI BOM without healthcare metadata). Kept under its old name
+#: for the reporters and compliance engines that import it.
+ADVISORY_DISCLAIMER = AIBOM_DISCLAIMER
 
-    True when a component carries a ``clinical:`` property, or a model card names
-    a clinical modality / body part / PACS AE title / FDA product code / device
-    class. Duck-typed on purpose so the emit layer never imports the scanners.
+
+def disclaimer_of(result: Any) -> str:
+    """The disclaimer of one ``ScanResult``, the same in every format.
+
+    A crypto inventory (a CBOM scan result, or any crypto asset / ``crypto:``
+    property) gets the CBOM wording; an AI BOM with clinical / regulatory
+    healthcare metadata the FDA / HIPAA wording; any other AI BOM the neutral one.
     """
-    for comp in getattr(result, "components", None) or []:
-        props = getattr(comp, "properties", None) or {}
-        if any(str(k).startswith("clinical:") for k in props):
-            return True
-        card = getattr(comp, "model_card", None)
-        if card is not None and any(
-            getattr(card, name, None) for name in _CLINICAL_CARD_FIELDS
-        ):
-            return True
-    return any(
-        str(k).startswith("clinical:")
-        for k in (getattr(result, "properties", None) or {})
+    components = list(getattr(result, "components", None) or [])
+    props = getattr(result, "properties", None) or {}
+    crypto = (
+        type(result).__name__ == "CbomScanResult"
+        or any(getattr(c, "kind", None) == "crypto_asset" for c in components)
+        or any(str(k).startswith("crypto:") for k in props)
     )
+    healthcare = any(
+        str(k).startswith(("clinical:", "regulatory:"))
+        for c in components
+        for k in (getattr(c, "properties", None) or {})
+    ) or any(
+        getattr(getattr(c, "model_card", None), f, None)
+        for c in components
+        for f in ("modality", "body_part", "fda_product_code", "device_class")
+    )
+    return disclaimer_for(crypto=crypto, healthcare=healthcare)
 
 
-def disclaimer_for(result: Any) -> str:
-    """The disclaimer for this scan: healthcare text only for a clinical scan."""
-    return HEALTHCARE_DISCLAIMER if is_healthcare(result) else ADVISORY_DISCLAIMER
+def disclaimer_for(*, crypto: bool, healthcare: bool = False) -> str:
+    """The disclaimer of one BOM: CBOM wording for a crypto inventory, healthcare
+    wording for an AI BOM with clinical metadata, else the neutral AI BOM wording."""
+    if crypto:
+        return CBOM_DISCLAIMER
+    return HEALTHCARE_AIBOM_DISCLAIMER if healthcare else AIBOM_DISCLAIMER
 
 
 __all__ = [
     "ADVISORY_DISCLAIMER",
-    "HEALTHCARE_DISCLAIMER",
+    "AIBOM_DISCLAIMER",
+    "CBOM_DISCLAIMER",
+    "HEALTHCARE_AIBOM_DISCLAIMER",
     "disclaimer_for",
-    "is_healthcare",
+    "disclaimer_of",
 ]

@@ -20,7 +20,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from aibom.emit._disclaimer import disclaimer_for
+from aibom.emit._disclaimer import disclaimer_of
 from aibom.emit.identity import SPDX_NAMESPACE, SUPPLIER, identity_for
 from aibom.emit.registry import BaseReporter, register_reporter
 from aibom.emit.validate import validate_spdx
@@ -352,7 +352,7 @@ def emit_spdx(result: ScanResult) -> dict[str, Any]:
             "SpdxDocument",
             sid("document"),
             name=result.subject.name,
-            comment=disclaimer_for(result),  # advisory-only hard rule: every report
+            comment=disclaimer_of(result),  # advisory-only hard rule: every report
             rootElement=root_ids or None,
         )
     )

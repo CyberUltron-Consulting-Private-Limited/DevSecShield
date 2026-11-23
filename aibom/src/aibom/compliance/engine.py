@@ -16,7 +16,7 @@ from aibom.compliance.base import (
     applicability_for,
     checks_for,
 )
-from aibom.emit._disclaimer import disclaimer_for
+from aibom.emit._disclaimer import disclaimer_of
 from aibom.model.result import ScanResult
 
 # Canonical framework keys (must match Requirement.framework) + CLI aliases.
@@ -134,7 +134,7 @@ def run_all(
         fw: run_framework(result, fw, evidence.get(fw)) for fw in FRAMEWORKS
     }
     # healthcare text only for a clinical scan
-    report["disclaimer"] = disclaimer_for(result)
+    report["disclaimer"] = disclaimer_of(result)
     result.compliance = report
     return report
 
