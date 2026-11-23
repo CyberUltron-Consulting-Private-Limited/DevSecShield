@@ -31,7 +31,7 @@ OLD_SCOPE = (
 )
 NEW_SCOPE = (
     "Method: static analysis of repositories and uploaded artefacts, including declared "
-    "infrastructure and server configuration (documents #5, #6 and #9) and offline import "
+    "infrastructure and server configuration (documents #6, #7 and #9) and offline import "
     "of TLS result files. It does not include live-network discovery, inspection of HSM "
     "or KMS custody, or inspection of stored data."
 )
@@ -101,7 +101,13 @@ def test_six_medium_documents_use_the_recorded_posture_sentences() -> None:
         for slug in SIX
     }
     methodology = pages["methodology-evidence-plan"]
-    for new, old in REPLACEMENTS:
+    # D2 (FIX-D1) states its scope and limits from the edition's run coverage (cbom_methodology_text); the old
+    # sentences stay gone
+    from backend.utilities.pdf import cbom_methodology_text as method
+
+    d2 = ((method.method_scope_sentence(view), REPLACEMENTS[0][1]), (method.LIMIT_CUSTODY, REPLACEMENTS[1][1]),
+          (method.LIMIT_STORED_DATA, REPLACEMENTS[2][1]), REPLACEMENTS[3])
+    for new, old in d2:
         assert " ".join(new.split()) in methodology
         assert old not in methodology
     for name in SCANNER_MARKERS:

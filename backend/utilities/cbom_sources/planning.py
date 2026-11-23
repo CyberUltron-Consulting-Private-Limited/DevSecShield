@@ -13,6 +13,7 @@ from typing import Any
 from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectionJob, CbomCollectionSettings, CbomCollectionSource, CbomScanNode
+from backend.utilities.cbom_sources import capabilities as CAPS
 from backend.utilities.cbom_sources import targets as T
 from backend.utilities.cbom_sources.agents import kind_problem
 from backend.utilities.cbom_sources.common import log
@@ -348,6 +349,8 @@ def plan_run(
             item.reason = f"Scan node {node.name} has not registered yet"
         elif needs_node and kind_problem(node, source.kind):
             item.reason = kind_problem(node, source.kind)
+        elif needs_node and not segment and CAPS.upgrade_reason(node, source.kind, source.config):
+            item.reason = CAPS.upgrade_reason(node, source.kind, source.config)  # #488 review m3
         elif source.kind == "aws_account" and source.last_test_status != "passed":
             item.reason = "Validate the AWS role first; only a role that passed validation is scanned"
         elif source.last_test_status == "failed" and (source.last_test_result or {}).get("credential_refused"):

@@ -20,7 +20,7 @@ serializer-agnostic; reporters map it onto exact spec field names.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from typing import Any, ClassVar
 
 from aibom.model.component import AIComponent, MetadataComponent
 
@@ -88,6 +88,12 @@ class ScanResult:
     #: written by :mod:`aibom.owasp` from the components + flags.
     owasp: dict[str, Any] = field(default_factory=dict)
     properties: dict[str, str] = field(default_factory=dict)
+    #: When the scan ran (ISO 8601 UTC). The host stamps it (``scan_to_devsecshield``);
+    #: None keeps the emitters on a pinned time so committed goldens stay stable.
+    generated_at: str | None = None
+
+    #: Which BOM this result renders as (``aibom`` / ``cbom``): picks the tool name.
+    document_kind: ClassVar[str] = "aibom"
 
     # --- graph helpers -------------------------------------------------- #
 

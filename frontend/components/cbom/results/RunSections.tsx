@@ -40,6 +40,7 @@ import {
   type SectionView,
 } from "./model";
 import RunDeliverablesMenu from "./RunDeliverablesMenu";
+import { runTriggerLabel } from "./resultRows";
 import { RunJobsTable, SkippedAtStart } from "./RunJobsTable";
 import { RunSourceCards } from "./RunSourceCards";
 import { toast } from "@/utils/toast";
@@ -89,6 +90,12 @@ export function RunHeaderMeta({ teamId, run, sources }: { teamId: number; run: C
       <span>Started {formatDateTime(run.created_at)}</span>
       {run.finished_at ? <span>Finished {formatDateTime(run.finished_at)}</span> : active ? <span>Running</span> : null}
       <span data-testid="run-results-credits">{credits(run.credits?.charged)} credits charged, {credits(run.credits?.refunded)} refunded</span>
+      {runTriggerLabel(run) && (
+        <span data-testid="run-results-trigger" className="inline-flex items-center gap-1">
+          {run.trigger === "scheduled" ? <Timer className="h-3.5 w-3.5" aria-hidden /> : null}
+          {runTriggerLabel(run)}
+        </span>
+      )}
       {run.scan_id != null && (
         <Link href={`/${teamId}/cbom/${run.scan_id}`} className="text-blue-600 dark:text-blue-400 hover:underline" data-testid="run-results-linked-scan">
           Linked scan #{run.scan_id}

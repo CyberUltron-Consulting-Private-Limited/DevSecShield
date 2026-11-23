@@ -5,12 +5,21 @@
   "version": 1,
   "metadata": {
     "timestamp": "2026-06-21T00:00:00Z",
-    "tools": [
-      {
-        "name": "clinithread-aibom",
-        "version": "0.1.0"
-      }
-    ],
+    "tools": {
+      "components": [
+        {
+          "type": "application",
+          "supplier": {
+            "name": "Zero Shield",
+            "url": [
+              "https://zeroshield.ai"
+            ]
+          },
+          "name": "DevSecShield AI BOM",
+          "version": "0.1.0"
+        }
+      ]
+    },
     "component": {
       "type": "application",
       "name": "ChestXR-Triage-MultiSite",
@@ -188,17 +197,6 @@
       ]
     },
     {
-      "type": "application",
-      "bom-ref": "service-acme-cloud",
-      "name": "Acme Imaging AI Cloud",
-      "properties": [
-        {
-          "name": "service:baa",
-          "value": "true"
-        }
-      ]
-    },
-    {
       "type": "platform",
       "bom-ref": "site-lakeside-regional",
       "name": "Lakeside Regional Medical Center",
@@ -253,6 +251,22 @@
         },
         {
           "name": "model:weight_file",
+          "value": "true"
+        }
+      ]
+    }
+  ],
+  "services": [
+    {
+      "bom-ref": "service-acme-cloud",
+      "name": "Acme Imaging AI Cloud",
+      "properties": [
+        {
+          "name": "aibom:service_kind",
+          "value": "service"
+        },
+        {
+          "name": "service:baa",
           "value": "true"
         }
       ]

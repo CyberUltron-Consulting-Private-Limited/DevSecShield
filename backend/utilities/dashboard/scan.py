@@ -1402,13 +1402,10 @@ def generate_scan_dashboard(
             if total_ai_assets > 0:
                 governance_readiness_score = round((assets_with_license_and_card / total_ai_assets) * 100, 1)
 
-            # Average risk score (normalized 0-10 scale, same as cbom)
-            total_findings = sum(severity_distribution.values())
-            if total_findings > 0:
-                weighted = (severity_distribution["critical"] * 4 + severity_distribution["high"] * 3 + severity_distribution["medium"] * 2 + severity_distribution["low"] * 1) / total_findings
-                average_risk_score = min(10.0, max(0.0, (weighted / 4) * 10))
-            else:
-                average_risk_score = 0.0
+            # Average risk score: the app's one 0-10 scale (risk_scale), the same number the AI BOM PDF prints
+            from backend.utilities.dashboard.risk_scale import average_risk as _average_risk
+
+            average_risk_score = _average_risk(severity_distribution) or 0.0
 
             # Top risks sorted by differentiated risk score
             top_risks_list = sorted(

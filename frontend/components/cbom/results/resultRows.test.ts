@@ -16,6 +16,7 @@ import {
   refundedHint,
   rowsFromListResponse,
   runCountsLine,
+  runTriggerLabel,
   withLiveProgress,
   type LiveRun,
   filterAndSortRows,
@@ -257,4 +258,19 @@ test("footer note only when runs were left out", () => {
   assert.equal(runsLoadedNote(200, 350), "200 newest runs loaded · 350 runs in total");
   assert.equal(runsLoadedNote(5, 5), null);
   assert.equal(runsLoadedNote(5, undefined), null);
+});
+
+test("S4: a run says what started it; an older backend says nothing", () => {
+  assert.equal(runTriggerLabel({ trigger: "manual", schedule_id: null, schedule_name: null }), "Manual");
+  assert.equal(runTriggerLabel({ trigger: "scheduled", schedule_id: 4, schedule_name: "nightly re-scan" }),
+    "Scheduled: nightly re-scan");
+  assert.equal(runTriggerLabel({ trigger: "scheduled", schedule_id: 4, schedule_name: null }),
+    "Scheduled (schedule #4, deleted)");
+  assert.equal(runTriggerLabel({ trigger: "scheduled", schedule_id: 4, schedule_name: "  " }),
+    "Scheduled (schedule #4, deleted)");
+  assert.equal(runTriggerLabel({}), null);
+  assert.equal(runTriggerLabel(null), null);
+  assert.equal(runTriggerLabel({ trigger: "policy" }), null);
+  const row = run(9, { trigger: "scheduled", schedule_id: 1, schedule_name: "weekly" });
+  assert.equal(runTriggerLabel(row), "Scheduled: weekly");
 });

@@ -264,13 +264,17 @@ def test_evidence_pack_manifest_hashes_equal_the_endpoint_bodies(api, world, mon
     manifest = json.loads(zf.read("manifest.json"))
     names = [f["name"] for f in manifest["files"]]
     assert names == ["bom.cdx.json", "bom.cdx.xml", "oscal-assessment-results.json", "vex.json",
-                     "bom_signature.json", "report.pdf"]
+                     "bom_signature.json", "report.pdf", "drift.json"]
     assert sorted(zf.namelist()) == sorted(names + ["manifest.json"]) and manifest["omitted"] == []
     for entry in manifest["files"]:
         body = zf.read(entry["name"])
         assert hashlib.sha256(body).hexdigest() == entry["sha256"] and len(body) == entry["bytes"]
         served = api("GET", entry["endpoint"])
         assert served.status_code == 200, (entry["endpoint"], served.text[:200])
+        if entry["name"] == "drift.json":  # S4: the summary of the /diff answer (its route lists to 500, events)
+            assert entry["endpoint_same_bytes"] is False
+            assert json.loads(body)["format"] == "zeroshield-cbom-run-drift/1"
+            continue
         if entry["name"] == "oscal-assessment-results.json":  # the route stamps last-modified with the request time
             assert entry["endpoint_same_bytes"] is False
             mine, theirs = json.loads(body), json.loads(served.content)

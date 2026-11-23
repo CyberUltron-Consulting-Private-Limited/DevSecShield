@@ -123,6 +123,7 @@ from backend.utilities.cbom_sources.serialize import (
     public_settings,
     public_source,
     public_vendor,
+    schedule_names,
 )
 from backend.utilities.cbom_sources.settings import ensure_evidence_areas, get_or_create_settings
 from backend.utilities.cbom_sources import oci_keys
@@ -1625,8 +1626,9 @@ def _run_detail(session: Session, run: CbomCollectionRun, settings, now) -> dict
                         .order_by(CbomCollectionJob.id)).all()
     nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == run.team_id)).all()}
     sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(CbomCollectionSource.team_id == run.team_id)).all()}
+    names = schedule_names(session, run.team_id, [run.schedule_id])
     return public_run(run, [public_job(j, nodes.get(j.node_id), settings, now, sources.get(j.source_id)) for j in jobs],
-                      settings.risk_model or {})
+                      settings.risk_model or {}, schedule_name=names.get(run.schedule_id or 0))
 
 
 def _create_run(engine, team_id: int, user_id: int, body: RunCreate) -> tuple[dict, int]:
@@ -1650,6 +1652,11 @@ async def create_run(team_id: TeamId, body: RunCreate, Authorization: AuthHeader
     return _ok(payload, code)
 
 
+def _schedule_name(session: Session, run: CbomCollectionRun) -> str | None:
+    """The name of the live schedule that started ``run`` (None: started by hand, or the schedule was deleted)."""
+    return schedule_names(session, run.team_id, [run.schedule_id]).get(run.schedule_id or 0)
+
+
 def _list_runs(engine, team_id: int, scan_id: int | None) -> dict:
     now = utcnow()
     with Session(engine) as session:
@@ -1660,9 +1667,12 @@ def _list_runs(engine, team_id: int, scan_id: int | None) -> dict:
         runs = session.exec(query.order_by(CbomCollectionRun.id.desc()).limit(50)).all()  # type: ignore[union-attr]
         # issue #159 (Rule P): the asset count the Scans table shows too, from the one function, one query for the page
         assets = RUN_LIST.asset_counts(session, team_id, [int(run.id) for run in runs])
-        names = dict(session.exec(select(CbomCollectionSource.id, CbomCollectionSource.name)
-                                  .where(CbomCollectionSource.team_id == team_id)).all())
+        # keyed by SOURCE id; kept apart from the schedule-name map below (both ids start at 1)
+        source_names = dict(session.exec(select(CbomCollectionSource.id, CbomCollectionSource.name)
+                                         .where(CbomCollectionSource.team_id == team_id)).all())
         nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
+        # S4: the schedule's name for every run a live schedule started (one query for the page; null = deleted)
+        names = schedule_names(session, team_id, (run.schedule_id for run in runs))
         out = []
         for run in runs:
             counts: dict[str, int] = {}
@@ -1671,14 +1681,14 @@ def _list_runs(engine, team_id: int, scan_id: int | None) -> dict:
                 counts[job.status] = counts.get(job.status, 0) + 1
                 rows.append({"id": job.id, "status": job.status, "outcome": job.outcome, "error": job.error,
                              "summary": (job.result or {}).get("summary"),
-                             "source_name": names.get(job.source_id) or (job.params or {}).get("source_name"),
+                             "source_name": source_names.get(job.source_id) or (job.params or {}).get("source_name"),
                              "waiting_reason": (J.offline_wait_reason(job, nodes[job.node_id], now)
                                                 if job.status == "pending" and job.node_id in nodes
                                                 and node_status(nodes[job.node_id], now) == "offline" else None)})
             # FIX-B3: the list says why a run is partial or failed, as the run detail does
             reason = RUN_STATUS.status_reason(run.status, rows)
-            out.append({**public_run(run), "job_counts": counts, "asset_count": assets.get(int(run.id), 0),
-                        "status_reason": reason["status_reason"]})
+            out.append({**public_run(run, schedule_name=names.get(run.schedule_id or 0)), "job_counts": counts,
+                        "asset_count": assets.get(int(run.id), 0), "status_reason": reason["status_reason"]})
         return {"runs": out, "server_time": iso_z(now)}
 
 
@@ -1719,7 +1729,7 @@ def _run_assets(engine, team_id: int, run_id: int, params: dict) -> dict:
             raise HTTPException(status_code=409, detail=f"The grade filter is not available for this run ({exc})") \
                 from None
         RUN_TICKETS.add_ticket_fields(session, team_id, run, out["items"])  # CB-38 PR-4: ticket_key, ticket_url
-        out["run"] = public_run(run)
+        out["run"] = public_run(run, schedule_name=_schedule_name(session, run))
         return out
 
 
@@ -1815,7 +1825,7 @@ def _run_posture(engine, team_id: int, run_id: int) -> dict:
     with Session(engine) as session:
         run = _get_owned(session, CbomCollectionRun, run_id, team_id, "Run")
         settings = get_or_create_settings(session, team_id)
-        return {"run": public_run(run, risk_model=settings.risk_model or {}),
+        return {"run": public_run(run, risk_model=settings.risk_model or {}, schedule_name=_schedule_name(session, run)),
                 "posture": POSTURE.run_posture(session, team_id=team_id, run_id=run.id, risk_model=settings.risk_model)}
 
 

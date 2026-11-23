@@ -142,9 +142,13 @@ def _closed_event(row: CbomQ0Gap, now: _dt.datetime, cause: str, grade: str | No
             "asset_key": _fit(row.item_key, EVENT_KEY_MAX),
             "asset_label": str(detail.get("title") or detail.get("location") or row.item_key)[:255],
             "code": row.reason[:48], "severity": "Info",
+            # closed_by_run_id: the run whose write closed the gap (None: a settings save, an evidence answer or a
+            # source removal did); last_seen_run_id: the run that last saw it open. run_id keeps its old meaning
+            # (the causing run, else the last one that saw it) for readers of events stored before (review #486 M1)
             "detail": {"item_kind": row.item_kind, "item_key": row.item_key, "reason": row.reason,
                        "sub_reason": detail.get("sub_reason"), "cause": cause, "new_grade": grade,
-                       "opened_at": opened, "run_id": run_id if run_id is not None else row.run_id},
+                       "opened_at": opened, "closed_by_run_id": run_id, "last_seen_run_id": row.run_id,
+                       "run_id": run_id if run_id is not None else row.run_id},
             "dedupe_key": dedupe("register", row.team_id, row.item_key, opened), "forwarded_at": None}
 
 

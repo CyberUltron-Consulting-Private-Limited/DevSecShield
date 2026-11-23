@@ -87,7 +87,7 @@ SLUGS = [
     "pqc-migration-roadmap",
     "board-executive-report",
 ]
-NUMBERS = dict(zip(SLUGS, [1, 2, 3, 5, 7, 8, 9, 10, 15, 16], strict=True))  # D7 / D8 per SOW (FIX-B2)
+NUMBERS = dict(zip(SLUGS, [1, 2, 3, 6, 7, 8, 9, 10, 15, 16], strict=True))  # 6-10: SOW Table 7 D6-D10
 GENERIC_500 = {"detail": "Error generating deliverable, please try again later"}
 
 # Strings that exist ONLY in scans a team-1 document must never read (plan Appendix B).
@@ -396,7 +396,9 @@ def test_each_slug_returns_its_own_pdf_with_the_contract_headers(api, world, slu
     text = squash(full_text(body))  # cells wrap differently in portrait and landscape
     for needle in (
         # the right document: its own number, the data fingerprint and its own footer label
-        f"CBOM-D{NUMBERS[slug]:02d}-T1-20261019-{fingerprint[:8]}",
+        # (D2 prints its SOW identifier, FIX-D1)
+        f"CBOM-D2-T1-20261019-{fingerprint[:8]}" if slug == "methodology-evidence-plan"
+        else f"CBOM-D{NUMBERS[slug]:02d}-T1-20261019-{fingerprint[:8]}",
         fingerprint,
         REPORT_META[DELIVERABLES[slug].report_key]["footer_label"],
         "2026-10-19 12:28 UTC (17:58 IST)",

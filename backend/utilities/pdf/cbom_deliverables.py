@@ -90,8 +90,8 @@ def _spec(
     )
 
 
-# Menu order: documents #1, #2, #3, #5, #7, #8, #9, #10, #15, #16 (network and certificates carry their SOW Table 7
-# numbers D7 and D8, FIX-B2).
+# Menu order: documents #1, #2, #3, #6, #7, #8, #9, #10, #15, #16.  #6 to #10 are the SOW Table 7 numbers
+# (D6 Infrastructure and Cloud Encryption Posture ... D10 Third-Party Cryptographic Assurance).
 _SPECS = (
     _spec("scope-baseline-register", 1, cbom_scope_register_pdf),
     # the quantum risk register (CB-23): reads the register, not the scans, so it renders for every team
@@ -99,7 +99,7 @@ _SPECS = (
     _spec("methodology-evidence-plan", 3, cbom_methodology_pdf),
     _spec(
         "infrastructure-cloud-encryption-posture",
-        5,
+        6,
         cbom_infra_posture_pdf,
         data_dependent=True,
     ),

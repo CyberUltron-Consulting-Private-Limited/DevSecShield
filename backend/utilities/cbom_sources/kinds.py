@@ -207,6 +207,8 @@ class ServersConfig(_Source):
                 data.pop(name, None)
         if isinstance(data, dict) and self.host_key_policy != "host_ca":
             data.pop("host_ca_keys", None)
+        if isinstance(data, dict) and data.get("tls_mode") == "ldaps":
+            data.pop("tls_mode", None)  # Active Directory's default: the dump of a source saved before it is unchanged
         return data
 
     @model_validator(mode="after")
@@ -279,13 +281,28 @@ class WindowsServersConfig(ServersConfig):
 
 
 class ActiveDirectoryConfig(WindowsServersConfig):
+    """Domain controllers read over LDAPS (636, or 3269 for the global catalog) or StartTLS (389 / 3268) with a
+    read-only account (FIX-B3).  ``login_user`` is the bind name: a UPN (svc-zscbom@corp.example), DOMAIN\\user or a
+    DN.  ``ca_pem`` is the CA that issued the DC certificates when it is not publicly trusted (an enterprise CA)."""
     port: int = Field(default=636, ge=1, le=65535)
+    # "ldaps": TLS from the first byte; "starttls": plain LDAP upgraded with StartTLS before anything is sent.  Omitted
+    # from the dump while "ldaps", so sources saved before it existed keep their connection version.
+    tls_mode: Literal["ldaps", "starttls"] = "ldaps"
+
+    @model_validator(mode="after")
+    def _ad_tls(self) -> "ActiveDirectoryConfig":
+        if self.tls_mode == "starttls" and self.port in AD_LDAPS_PORTS:
+            raise ValueError(f"port: {self.port} is an LDAPS port; StartTLS runs on the plain LDAP port (389, or 3268 "
+                             "for the global catalog)")
+        return self
 
 
 # #156: ports that never carry WinRM over HTTPS (the scan node always speaks HTTPS, so a login sent there would go to a
 # server that is not verified, or nowhere) and ports that are not LDAPS (636, or 3269 for the global catalog)
 WINRM_HTTP_PORTS = frozenset({80, 5985, 8080})
 AD_NOT_LDAPS_PORTS = frozenset({389, 3268, 80, 5985, 5986, 8080})
+AD_LDAPS_PORTS = frozenset({636, 3269})
+AD_STARTTLS_PORTS = frozenset({389, 3268})
 
 
 def check_host_ca_keys(lines: list[str]) -> list[str]:
@@ -400,9 +417,13 @@ def credential_target_problem(kind: str, cfg: Any, secrets: dict[str, str]) -> s
     if kind == "windows_servers" and cfg.port in WINRM_HTTP_PORTS:
         return (f"port: {cfg.port} is a plain-HTTP port; WinRM over HTTP would send the login to a server that is not "
                 "verified; use HTTPS (5986)")
-    if kind == "active_directory" and cfg.port in AD_NOT_LDAPS_PORTS:
+    if kind == "active_directory" and getattr(cfg, "tls_mode", "ldaps") == "starttls" \
+            and cfg.port not in AD_STARTTLS_PORTS:
+        return (f"port: {cfg.port} is not an LDAP port; StartTLS runs on 389 (or 3268 for the global catalog), and "
+                "the login is sent only after TLS verified the domain controller")
+    if kind == "active_directory" and getattr(cfg, "tls_mode", "ldaps") != "starttls" and cfg.port in AD_NOT_LDAPS_PORTS:
         return (f"port: {cfg.port} is not LDAPS; Active Directory is read over LDAPS (636, or 3269 for the global "
-                "catalog) so the login only goes to a verified server")
+                "catalog), or choose StartTLS for 389 / 3268, so the login only goes to a verified server")
     if kind == "linux_servers" and cfg.credential_type == "ssh_cert" and secrets.get("ssh_certificate") \
             and secrets.get("private_key"):
         return ssh_pair_problem(secrets["ssh_certificate"], secrets["private_key"])
@@ -1230,8 +1251,9 @@ KINDS: dict[str, KindSpec] = {
                               frozenset(), _always, _always, _SERVER_WHERE),
     "windows_servers": KindSpec("windows_servers", "servers", "Windows servers", WindowsServersConfig, _server_secrets,
                                 frozenset(), _always, _always, _SERVER_WHERE),
+    # FIX-B3: read-only LDAPS / StartTLS collector on the scan node (collectors/active_directory.py)
     "active_directory": KindSpec("active_directory", "servers", "Active Directory", ActiveDirectoryConfig, _server_secrets,
-                                 frozenset(), _always, _never, _SERVER_WHERE),
+                                 frozenset(), _always, _always, (*_SERVER_WHERE, "tls_mode")),
     "kubernetes": KindSpec("kubernetes", "kubernetes", "Kubernetes cluster", KubernetesConfig,
                            lambda c: {"kubeconfig"} if c.credential_type == "kubeconfig" else set(),
                            frozenset(), _always, _always, ("api_url", "context", "ca_pem", "vault")),

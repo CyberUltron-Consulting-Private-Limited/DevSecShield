@@ -34,11 +34,11 @@ severity:
   medium: 4         # >= 4  -> medium   (unsanctioned=6, unknown-license library=5)
   low: 1            # >= 1  -> low       (model-license-unknown=2; 0 -> low / info)
 
-# Global 0-100 score SCALE (LOCKED formula — see aibom/CLAUDE.md):
-#   risk_normalized = min(100, round(risk_total / max_raw * 100, 1))
-# `max_raw` omitted -> auto-computed as the sum of the flag weights above
-# ("every defined flag tripped once" -> 100). Bands are inclusive upper bounds on
-# the 0-100 normalized score for the OVERALL scan risk_band.
+# Global 0-100 score: aibom.score.scorer.posture_score over every component's
+# severity (see aibom/CLAUDE.md): min(100, 4 x (10C + 5H + 2M + 1L)), capped by
+# the worst severity present (no critical <= 69, no critical/high <= 49, low only
+# <= 29). Bands are inclusive upper bounds on that score for the OVERALL risk_band.
+# (`max_raw` only scales normalize_score, the raw flag-weight helper.)
 scale:
   bands:
     low: 33         # 0-33  -> low
