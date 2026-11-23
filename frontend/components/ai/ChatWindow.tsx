@@ -46,6 +46,7 @@ import { UseQueryResult } from '@tanstack/react-query';
 import { MCPConversationResponse } from '@/utils/backend_api';
 import ReactMarkdown from 'react-markdown';
 import { sanitizeMarkdown } from '@/utils/sanitize';
+import { SCAN_CHAT_HEADER } from "@/components/resultsHeaderLayout";
 
 export type ChatMessage = {
   id: number;
@@ -284,24 +285,26 @@ const ChatWindow = ({
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden  bg-background shadow-sm ">
       {/* Header */}
-      <div className="flex items-center justify-between border-b bg-muted/50 px-4 py-3">
-        <div className="flex items-center gap-3 flex-1 min-w-0">
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="font-medium text-sm cursor-pointer" onClick={() => router.push(`/${team_id}/${type}`)}>{Heading}</span>
-            <ChevronRightIcon className="size-4 text-zinc-500" />
-            <span className="text-neutral-200 font-medium truncate">{query.data?.title}</span>
+      <div className={SCAN_CHAT_HEADER.row} data-testid="scan-chat-header">
+        <div className={SCAN_CHAT_HEADER.lead}>
+          <div className={SCAN_CHAT_HEADER.crumb}>
+            <span className="font-medium text-sm cursor-pointer shrink-0" onClick={() => router.push(`/${team_id}/${type}`)}>{Heading}</span>
+            <ChevronRightIcon className="size-4 shrink-0 text-zinc-500" />
+            <span className={SCAN_CHAT_HEADER.crumbTitle} title={query.data?.title ?? undefined}>{query.data?.title}</span>
           </div>
           {progress != null && (
-            <div className="flex items-center gap-2 min-w-0 flex-1 max-w-xs">
+            <div className="flex items-center gap-2 min-w-24 flex-1 max-w-xs">
               <Progress value={progress.current} className="h-2 flex-1" />
               <span className="text-sm tabular-nums text-zinc-500 shrink-0">{progress.current}%</span>
             </div>
           )}
-          <div className="h-4 w-px bg-border shrink-0" />
-          <ScanStatusIndicator scan_status={query.data?.scan_status || "unknown"} />
+          <div className={SCAN_CHAT_HEADER.status}>
+            <div className="h-4 w-px bg-border shrink-0" />
+            <ScanStatusIndicator scan_status={query.data?.scan_status || "unknown"} />
+          </div>
         </div>
 
-        <div className="flex flex-row justify-end items-center gap-3">
+        <div className={SCAN_CHAT_HEADER.actions}>
             {/* Refresh Button */}
             <Button onClick={refreshQuery} className='bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'>
               <RefreshCcwIcon className="size-4" />

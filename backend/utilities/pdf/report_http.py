@@ -18,11 +18,19 @@ R4 run report, R5 run evidence pack).
   CBOM exports and 2 large scan PDFs at once (4 in all, where one shared pool of 2 allowed 2), each pool's lock files
   in ``ZS_CBOM_EXPORT_LOCK_DIR``; size the memory of a host, or lower ``ZS_CBOM_EXPORT_SLOTS`` /
   ``ZS_PDF_EXPORT_SLOTS``, accordingly.
-* ``report_headers``: ``X-Report-Findings`` (rows shown / rows the scan has), ``X-Report-Logo``
-  (applied | none | skipped) and ``Content-Disposition``; ``main.py`` exposes them through CORS.
+* ``report_headers``: the headers of every report download (R1-R5): ``PRIVATE`` (``Cache-Control: no-store``,
+  ``X-Content-Type-Options: nosniff``: a report names a client and its findings, so no cache keeps it and no browser
+  sniffs it into something else), ``Content-Disposition``, ``X-Report-Logo`` (applied | none | skipped) and, for the
+  reports that count findings (R1, R4), ``X-Report-Findings`` (rows shown / rows the scan has); ``main.py`` exposes
+  them through CORS. Routes add their own (``X-Cbom-*``, ``Content-Length``) beside them, never instead of them.
+* ``busy_refusal``: the 429 of a full export-slot pool: ``PRIVATE``, ``Retry-After`` and ``X-Export-Busy: <pool>``
+  (``export_slots.BUSY_HEADER``), the stable signal a client uses to tell "busy building other exports" (show the
+  server's words) from the rate limiter's 429 (too many requests).
 * ``status_join_error``: the 409 / 503 a status filter answers when the stored statuses cannot be joined.
-* ``log_export``: one line per export with ids, enums, flags and numbers only. The free-text options (prepared for,
-  title) are never logged: they can name a client.
+* ``log_export``: one line per export attempt with ids, enums, flags and numbers only, and its ``outcome``: ``ok``,
+  ``client_gone`` (built, but the client had disconnected by then: ``finished_outcome``), ``busy`` (slot 429),
+  ``refused`` (any other 4xx, ``status=``) or ``error`` (5xx, ``status=``) (``failure_outcome``). The free-text
+  options (prepared for, title) are never logged: they can name a client.
 """
 from __future__ import annotations
 
@@ -35,6 +43,7 @@ from fastapi import HTTPException, Request
 from rich.console import Console
 
 from backend.utilities.build_info import current_request_id
+from backend.utilities.cbom_sources import export_slots as EXPORT_SLOTS
 from backend.utilities.db.finding_rows import StatusesUnavailable, StatusStoreDown
 from backend.utilities.pdf.report_context import ReportContext
 from backend.utilities.pdf.report_options import (
@@ -56,7 +65,10 @@ from backend.utilities.pdf.report_options import (
 console = Console()
 
 # Every header a PDF/report route sets that the browser must be able to read (CORS expose_headers).
-REPORT_EXPOSED_HEADERS = ("Content-Disposition", "X-Report-Findings", "X-Report-Logo")
+REPORT_EXPOSED_HEADERS = ("Content-Disposition", "X-Report-Findings", "X-Report-Logo", EXPORT_SLOTS.BUSY_HEADER)
+# On every report response and slot refusal (module docstring); the same pair as ``cbom_sources.http.PRIVATE``.
+PRIVATE = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
+OUTCOMES = ("ok", "client_gone", "busy", "refused", "error")
 # The CBOM download headers the UI reads (estate SHA-256, deliverable fidelity and logo, ...).
 CBOM_EXPOSED_HEADERS = ("X-Cbom-Assets", "X-Cbom-Fidelity", "X-Cbom-Fingerprint", "X-Cbom-Logo-Sha256",
                         "X-Cbom-Posture", "X-Cbom-Scans-Included", "X-Cbom-Sha256", "X-Cbom-Signature",
@@ -223,21 +235,52 @@ def logo_state(ctx: ReportContext) -> str:
 
 
 def report_headers(ctx: ReportContext, filename: str, *, findings: bool = True) -> dict[str, str]:
-    headers = {"Content-Disposition": f'attachment; filename="{filename}"', "X-Report-Logo": logo_state(ctx)}
+    """Every report download's headers (module docstring); ``findings=False`` for the documents that do not count
+    findings (deliverables, evidence packs)."""
+    headers = {**PRIVATE, "Content-Disposition": f'attachment; filename="{filename}"', "X-Report-Logo": logo_state(ctx)}
     if findings:
         headers["X-Report-Findings"] = f"{ctx.shown}/{ctx.total}"
     return headers
 
 
-def log_export(family: str, *, team: int, id: int, user: int | None, ctx: ReportContext, size: int,
-               started: float, type: str | None = None, slot_wait_ms: int | None = None,
-               outcome: str = "ok") -> None:
-    """One greppable line per export (see module docstring for what may be logged)."""
+def busy_refusal(pool: str) -> HTTPException:
+    """The 429 of a full export-slot pool (``"pdf"``: scan PDFs, ``"cbom"``: CBOM exports), in that pool's words."""
+    detail = EXPORT_SLOTS.PDF_BUSY if pool == "pdf" else EXPORT_SLOTS.CBOM_BUSY
+    return HTTPException(status_code=429, detail=detail, headers={
+        **PRIVATE, "Retry-After": str(EXPORT_SLOTS.RETRY_AFTER_S), EXPORT_SLOTS.BUSY_HEADER: pool})
+
+
+def failure_outcome(exc: BaseException) -> tuple[str, int]:
+    """(outcome, status) of an export that raised ``exc``: ``busy`` for a slot 429 (it carries ``X-Export-Busy``),
+    ``refused`` for any other 4xx, else ``error`` (an exception that is not an HTTPException answers 500)."""
+    status = exc.status_code if isinstance(exc, HTTPException) else 500
+    if status == 429 and EXPORT_SLOTS.BUSY_HEADER in ((exc.headers or {}) if isinstance(exc, HTTPException) else {}):
+        return "busy", status
+    return ("refused" if 400 <= status < 500 else "error"), status
+
+
+async def finished_outcome(request: Request) -> str:
+    """``ok``, or ``client_gone`` when the client disconnected while the report was built (one non-blocking look at the
+    ASGI receive channel: an abandoned download is never counted as delivered)."""
+    try:
+        return "client_gone" if await request.is_disconnected() else "ok"
+    except Exception:  # noqa: BLE001 - the outcome is for the log only; never fail an export over it
+        return "ok"
+
+
+def log_export(family: str, *, team: int, id: int, user: int | None, ctx: ReportContext | None = None,
+               size: int | None = None, started: float, type: str | None = None, slot_wait_ms: int | None = None,
+               outcome: str = "ok", status: int | None = None, options: ReportOptions | None = None) -> None:
+    """One greppable line per export attempt (see module docstring for what may be logged). A refused or failed
+    attempt has no built context: it logs its ``status`` and the ``options`` it was asked for, when they were read."""
     fields: dict[str, Any] = {"family": family, "type": type, "team": team, "id": id, "user": user,
-                              "outcome": outcome}
-    fields.update(ctx.options.log_fields())
-    fields.update({"logo": logo_state(ctx), "shown": ctx.shown, "total": ctx.total, "bytes": size,
-                   "ms": int((time.monotonic() - started) * 1000), "slot_wait_ms": slot_wait_ms})
+                              "outcome": outcome, "status": status}
+    chosen = ctx.options if ctx is not None else options
+    if chosen is not None:
+        fields.update(chosen.log_fields())
+    if ctx is not None:
+        fields.update({"logo": logo_state(ctx), "shown": ctx.shown, "total": ctx.total})
+    fields.update({"bytes": size, "ms": int((time.monotonic() - started) * 1000), "slot_wait_ms": slot_wait_ms})
     parts = [_dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "pdf report export"]
     parts += [f"{key}={value}" for key, value in fields.items() if value is not None]
     request_id = current_request_id()
@@ -249,6 +292,7 @@ def log_export(family: str, *, team: int, id: int, user: int | None, ctx: Report
         pass
 
 
-__all__ = ["BODY_MAX_BYTES", "BODY_MAX_DEPTH", "OPTIONS_BODY_RESPONSES", "CBOM_EXPOSED_HEADERS", "LARGE_PDF_ROWS", "REPORT_EXPOSED_HEADERS", "log_export", "logo_state",
-           "options_body_openapi", "options_from_body", "options_from_request", "report_headers", "request_options",
-           "status_join_error"]
+__all__ = ["BODY_MAX_BYTES", "BODY_MAX_DEPTH", "OPTIONS_BODY_RESPONSES", "CBOM_EXPOSED_HEADERS", "LARGE_PDF_ROWS", "OUTCOMES",
+           "PRIVATE", "REPORT_EXPOSED_HEADERS", "busy_refusal", "failure_outcome", "finished_outcome", "log_export",
+           "logo_state", "options_body_openapi", "options_from_body", "options_from_request", "report_headers",
+           "request_options", "status_join_error"]

@@ -77,6 +77,15 @@ def test_basis_box_scans_line_says_how_many_are_sources_collections():
         "Scans: 3 included of 3 eligible · excluded: 0 failed, 0 not completed, 0 without data")
 
 
+def test_basis_box_scans_line_is_singular_for_one_sources_collection():
+    """Staging QA 23 Nov 2026 (E5 scope baseline register): "of which 1 are CBOM Sources collections"."""
+    one = common.basis_scans_line(_view(code_scans=2, code_sources=2, collections=1))
+    assert one == ("Scans: 3 included of 3 eligible · excluded: 0 failed, 0 not completed, 0 without data"
+                   " · of which 1 is a CBOM Sources collection")
+    assert common.basis_scans_line(_view(code_scans=2, code_sources=2, collections=2)).endswith(
+        " · of which 2 are CBOM Sources collections")
+
+
 def test_board_pdf_with_sources_collections_renders():
     pdf = board.build_pdf(STAGING)
     assert pdf[:5] == b"%PDF-"

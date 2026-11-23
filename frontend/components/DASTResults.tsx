@@ -94,6 +94,7 @@ import { showErrorToast } from "@/utils/error-handler";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
 import Link from "next/link";
+import { RESULTS_HEADER } from "@/components/resultsHeaderLayout";
 
 /** DAST finding as returned by backend (get_findings_for_scan_type dast branch) */
 export interface DASTFinding {
@@ -616,8 +617,8 @@ export default function DASTResults({
     <div className="min-h-screen bg-white dark:bg-zinc-900">
       <div className="container mx-auto p-6 space-y-6">
         {/* Page title – SAST-style layout */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
+        <div className={RESULTS_HEADER.row}>
+          <div className={RESULTS_HEADER.lead}>
             <Button
               variant="outline"
               size="icon"
@@ -627,7 +628,7 @@ export default function DASTResults({
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <div>
+            <div className={RESULTS_HEADER.title}>
               <h1 className="text-3xl font-bold text-zinc-900 dark:text-white">DAST Scan Results</h1>
               <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">
               Findings and security metrics
@@ -635,7 +636,7 @@ export default function DASTResults({
             </div>
           </div>
           {teamId && scanId && (
-            <div className="flex items-center gap-2">
+            <div className={RESULTS_HEADER.actions}>
               {onDownloadReport && (
                 <Button
                   variant="outline"

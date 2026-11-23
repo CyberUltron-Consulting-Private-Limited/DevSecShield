@@ -50,6 +50,7 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, RadialBarChart, RadialBar, PieChart, Pie, Cell, Bar, BarChart, XAxis, YAxis, CartesianGrid } from "recharts";
+import { RESULTS_HEADER } from "@/components/resultsHeaderLayout";
 
 // LLM Benchmark agent output: list of vulnerabilities (FinalLLMBenchmarkingVulnerabilities.vulnerabilities)
 // Schema: title, description, impact, owasp_top_10_llm, compliance_controls, suggested_fix
@@ -446,8 +447,8 @@ export default function LLMResults({ data, dashboard, findings, scanMetadata, co
   if (displayList.length === 0) {
     return (
       <div className="container mx-auto p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
+        <div className={RESULTS_HEADER.row}>
+          <div className={RESULTS_HEADER.lead}>
             {conversationId && (
               <Button
                 variant="outline"
@@ -464,7 +465,7 @@ export default function LLMResults({ data, dashboard, findings, scanMetadata, co
                 <ArrowLeft className="h-4 w-4" />
               </Button>
             )}
-            <h1 className="text-3xl font-bold text-zinc-900 dark:text-white">LLM Benchmark Scan Results</h1>
+            <h1 className="min-w-0 break-words text-3xl font-bold text-zinc-900 dark:text-white">LLM Benchmark Scan Results</h1>
           </div>
           {teamId && conversationId != null && (
             <Button
@@ -488,8 +489,8 @@ export default function LLMResults({ data, dashboard, findings, scanMetadata, co
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <div className={RESULTS_HEADER.row}>
+        <div className={RESULTS_HEADER.lead}>
           {conversationId && (
             <Button
               variant="outline"
@@ -508,7 +509,7 @@ export default function LLMResults({ data, dashboard, findings, scanMetadata, co
           )}
           <div className="space-y-2">
             <div className="flex items-center gap-3">
-              <div>
+              <div className={RESULTS_HEADER.title}>
                 <h1 className="text-3xl font-bold text-zinc-900 dark:text-white">LLM Benchmark Scan Results</h1>
                 
               </div>
@@ -531,7 +532,7 @@ export default function LLMResults({ data, dashboard, findings, scanMetadata, co
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className={RESULTS_HEADER.actions}>
           {onRefresh && (
             <Button variant="outline" size="icon" onClick={onRefresh} className="cursor-pointer" title="Refresh">
               <RefreshCcw className="h-4 w-4" />

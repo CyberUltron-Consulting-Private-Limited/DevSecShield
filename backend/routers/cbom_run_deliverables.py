@@ -46,6 +46,9 @@ from backend.utilities.pdf.cbom_run_pdf import build_run_pdf
 from backend.utilities.pdf.report_context import ReportContext
 from backend.utilities.pdf.report_http import (
     OPTIONS_BODY_RESPONSES,
+    busy_refusal,
+    failure_outcome,
+    finished_outcome,
     log_export,
     options_body_openapi,
     options_from_request,
@@ -108,10 +111,7 @@ def _export_slot(session: Session, run: CbomCollectionRun, what: str) -> Iterato
             yield
     except EXPORT_SLOTS.Busy:
         log("run deliverable busy", team=run.team_id, run=run.id, what=what, rows=rows, slots=EXPORT_SLOTS.SLOTS)
-        raise HTTPException(
-            status_code=429, headers={**PRIVATE, "Retry-After": str(EXPORT_SLOTS.RETRY_AFTER_S)},
-            detail=EXPORT_SLOTS.CBOM_BUSY,
-        ) from None
+        raise busy_refusal("cbom") from None
 
 
 # ----------------------------------------------------------------------------- builders (one session each)
@@ -131,12 +131,19 @@ def _pdf(session: Session, run: CbomCollectionRun, data: RD.Summary, vex: dict[s
     heatmap = HEAT.run_heatmap(session, run.team_id, run.id, by="source")
     run_info = {"id": run.id, "status": run.status, "created_at": iso_z(run.created_at),
                 "finished_at": iso_z(run.finished_at), "last_updated": iso_z(run.last_updated)}
-    return build_run_pdf(run=run_info, sources=RD.run_sources(session, run), posture=posture, heatmap=heatmap,
-                         head=data.head, findings=data.findings, vex_states=RD.vex_states(vex),
-                         provenance=RD.provenance(session, run), at=at, as_of_note=RD.as_of_note(run, at),
-                         findings_cap=RD.PDF_FINDINGS_CAP, export_cap=RD.INV.EXPORT_CAP, cbom_sha256=cbom_sha256,
-                         # default options and no logo: no context at all, so the bytes are today's exactly
-                         ctx=None if ctx is None or (ctx.options.is_default and not ctx.branding.applied) else ctx)
+    # Default options and no logo: build with a fresh default context, exactly what build_run_pdf makes of ctx=None,
+    # so the bytes are today's; its counts are then copied to the caller's context, which fills X-Report-Findings
+    # and the log line (they read 0/0 when this path built with no context at all).
+    fresh = ctx is None or (ctx.options.is_default and not ctx.branding.applied)
+    used = ReportContext() if fresh else ctx
+    pdf = build_run_pdf(run=run_info, sources=RD.run_sources(session, run), posture=posture, heatmap=heatmap,
+                        head=data.head, findings=data.findings, vex_states=RD.vex_states(vex),
+                        provenance=RD.provenance(session, run), at=at, as_of_note=RD.as_of_note(run, at),
+                        findings_cap=RD.PDF_FINDINGS_CAP, export_cap=RD.INV.EXPORT_CAP, cbom_sha256=cbom_sha256,
+                        ctx=used)
+    if ctx is not None and used is not ctx:
+        ctx.shown, ctx.total = used.shown, used.total
+    return pdf
 
 
 def _vex_doc(engine, team_id: int, run_id: int) -> bytes:
@@ -305,23 +312,40 @@ async def run_report_pdf(team_id: TeamId, run_id: ObjectId, request: Request,
     header."""
     started = time.monotonic()
     engine, user = await authorize(team_id, Authorization)
-    options = await request_options(request, "run")
-    body, ctx = await _run("report pdf", team_id, _report, engine, team_id, run_id, options)
+    user_id = getattr(user, "id", None)
+    options = None
+    try:
+        options = await request_options(request, "run")
+        body, ctx = await _run("report pdf", team_id, _report, engine, team_id, run_id, options)
+    except HTTPException as exc:  # _run turns anything else into a 500 HTTPException (server_error)
+        outcome, code = failure_outcome(exc)
+        log_export("run", team=team_id, id=run_id, user=user_id, started=started, outcome=outcome, status=code,
+                   options=options)
+        raise
     filename = f"cbom-sources-run-{run_id}-report.pdf"
-    log_export("run", team=team_id, id=run_id, user=getattr(user, "id", None), ctx=ctx, size=len(body),
-               started=started)
-    return Response(body, media_type="application/pdf", headers={**PRIVATE, **report_headers(ctx, filename)})
+    log_export("run", team=team_id, id=run_id, user=user_id, ctx=ctx, size=len(body), started=started,
+               outcome=await finished_outcome(request))
+    return Response(body, media_type="application/pdf", headers=report_headers(ctx, filename))
 
 
 @router.get(RUN + "/evidence-pack", dependencies=[*WRITE, access.team("cbom.read")],
             summary="Zip of the run's CycloneDX JSON and XML, OSCAL, VEX, signature and PDF with a sha256 manifest")
 async def run_evidence_pack(team_id: TeamId, run_id: ObjectId, request: Request,
                             Authorization: AuthHeader = None) -> Response:
-    engine, _user = await authorize(team_id, Authorization)
-    options_from_request(request.query_params, "pack")  # any report option: 422 (a pack is the full record)
-    out, ctx = await _run("evidence pack", team_id, _evidence_pack, engine, team_id, run_id)
+    started = time.monotonic()
+    engine, user = await authorize(team_id, Authorization)
+    user_id = getattr(user, "id", None)
+    try:
+        options_from_request(request.query_params, "pack")  # any report option: 422 (a pack is the full record)
+        out, ctx = await _run("evidence pack", team_id, _evidence_pack, engine, team_id, run_id)
+    except HTTPException as exc:
+        outcome, code = failure_outcome(exc)
+        log_export("run_pack", team=team_id, id=run_id, user=user_id, started=started, outcome=outcome, status=code)
+        raise
     length = out.seek(0, 2)
     out.seek(0)
+    log_export("run_pack", team=team_id, id=run_id, user=user_id, ctx=ctx, size=length, started=started,
+               outcome=await finished_outcome(request))
     return StreamingResponse(_chunks(out), media_type="application/zip", headers={
-        **PRIVATE, "Content-Length": str(length), "X-Report-Logo": ctx.branding.status,
-        "Content-Disposition": f'attachment; filename="cbom-sources-run-{run_id}-evidence-pack.zip"'})
+        **report_headers(ctx, f"cbom-sources-run-{run_id}-evidence-pack.zip", findings=False),
+        "Content-Length": str(length)})

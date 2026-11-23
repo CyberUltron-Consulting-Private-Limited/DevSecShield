@@ -52,7 +52,15 @@ from backend.utilities.pdf.cbom_deliverables import (
 from backend.utilities.team import check_if_user_is_in_team
 from backend.utilities.pdf.branding_input import ReportBranding
 from backend.utilities.pdf.report_context import ReportContext
-from backend.utilities.pdf.report_http import OPTIONS_BODY_RESPONSES, options_body_openapi, request_options
+from backend.utilities.pdf.report_http import (
+    OPTIONS_BODY_RESPONSES,
+    PRIVATE,
+    failure_outcome,
+    finished_outcome,
+    options_body_openapi,
+    report_headers,
+    request_options,
+)
 from backend.utilities.team.branding import load_report_branding
 
 router = APIRouter(tags=["cbom-deliverables"])
@@ -63,7 +71,6 @@ GENERIC_ERROR_DETAIL = "Error generating deliverable, please try again later"
 UNKNOWN_DELIVERABLE_DETAIL = "Unknown deliverable"
 _MAX_TEAM_ID = 2_147_483_647  # a Postgres integer; larger values can only be malformed input
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
-_PRIVATE = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
 
 
 limiter = RateLimiter("cbom_deliverables", times=30, seconds=60, key_func=user_key)
@@ -138,6 +145,18 @@ def _load_heads(engine: Any, team_id: int) -> list[ScanHead]:
     return heads
 
 
+def _log_outcome(team_id: int, slug: str, outcome: str, status: int, started: float) -> None:
+    """The one line of a refused or failed deliverable request (the success line is in the route); ``slug`` is a
+    known slug or ``unknown``, never the raw path segment."""
+    console.print(
+        f"cbom deliverable team={team_id} slug={slug} outcome={outcome} status={status} "
+        f"ms={int((time.perf_counter() - started) * 1000)}",
+        markup=False,
+        highlight=False,
+        soft_wrap=True,
+    )
+
+
 def _log_failure(what: str, team_id: int, exc: BaseException) -> None:
     """Server-side only: the exception class on one line, then the traceback."""
     console.print(
@@ -194,7 +213,7 @@ async def list_cbom_deliverables(
     except Exception as exc:
         _log_failure("manifest", team_id, exc)
         raise HTTPException(status_code=500, detail=GENERIC_ERROR_DETAIL) from None
-    return JSONResponse(manifest, headers=_PRIVATE)
+    return JSONResponse(manifest, headers=PRIVATE)
 
 
 def _branding(engine: Any, team_id: int) -> ReportBranding:
@@ -254,8 +273,11 @@ async def download_cbom_deliverable(
     Authorization: Annotated[str | None, Header()] = None,
 ) -> Response:
     started = time.perf_counter()
+    authorized = False  # a request that passed the token and membership checks logs one line, whatever its outcome
+    known = slug if slug in DELIVERABLES else "unknown"
     try:
         engine = await _authorize(team_id, Authorization)
+        authorized = True
         spec = DELIVERABLES.get(slug)
         if spec is None:
             raise HTTPException(status_code=404, detail=UNKNOWN_DELIVERABLE_DETAIL)
@@ -268,21 +290,23 @@ async def download_cbom_deliverable(
             pdf = await run_in_threadpool(functools.partial(spec.build, view, ctx=ctx))
         if not isinstance(pdf, bytes) or not pdf.startswith(b"%PDF-"):
             raise ValueError("the renderer did not return a PDF")
-    except HTTPException:
+    except HTTPException as exc:
+        if authorized:
+            _log_outcome(team_id, known, *failure_outcome(exc), started)
         raise
     except Exception as exc:
         _log_failure("pdf", team_id, exc)
+        if authorized:
+            _log_outcome(team_id, known, "error", 500, started)
         raise HTTPException(status_code=500, detail=GENERIC_ERROR_DETAIL) from None
     filename = deliverable_filename(spec, team_id, view.as_of)
     headers = {
-        **_PRIVATE,
-        "Content-Disposition": f'attachment; filename="{filename}"',
+        **report_headers(ctx, filename, findings=False),
         "X-Cbom-Scans-Included": str(view.included),
         "X-Cbom-Sources": str(len(view.sources)),
         "X-Cbom-Fidelity": view.fidelity_summary,
         "X-Cbom-Fingerprint": view.fingerprint,
         "X-Cbom-Posture": _posture_header(view),
-        "X-Report-Logo": ctx.branding.status,
     }
     if ctx.branding.applied:
         headers["X-Cbom-Logo-Sha256"] = ctx.branding.sha256
@@ -290,7 +314,8 @@ async def download_cbom_deliverable(
     console.print(
         f"cbom deliverable team={team_id} slug={spec.slug} scans={view.included} "
         f"sources={len(view.sources)} bytes={len(pdf)} ms={elapsed_ms} logo={ctx.branding.status} "
-        f"label={options.label} prepared_for_set={int(options.prepared_for is not None)}",
+        f"label={options.label} prepared_for_set={int(options.prepared_for is not None)} "
+        f"outcome={await finished_outcome(request)}",
         markup=False,
         highlight=False,
         soft_wrap=True,  # one log line per request, never wrapped, so it stays greppable

@@ -103,6 +103,7 @@ BASIS_SCANS = (
 )
 # a CBOM Sources collection counts as an included scan and a source (cbom_team_rollup.merge_collections)
 BASIS_SCANS_COLLECTIONS = " \u00b7 of which {collections} are CBOM Sources collections"
+BASIS_SCANS_COLLECTION_ONE = " \u00b7 of which 1 is a CBOM Sources collection"  # the singular (QA: "1 are")
 BASIS_SOURCES = "Sources: {sources}"
 BASIS_FIDELITY = "Fidelity: {full} full / {reduced} legacy-format"
 BASIS_HISTORY = "History: {folded} scans folded"
@@ -1005,6 +1006,7 @@ __all__ = [
     "BASIS_RULE",
     "BASIS_SCANS",
     "BASIS_SCANS_COLLECTIONS",
+    "BASIS_SCANS_COLLECTION_ONE",
     "BASIS_SOURCES",
     "CBOM_SCANNERS",
     "CBOM_SCANNER_INTRO",

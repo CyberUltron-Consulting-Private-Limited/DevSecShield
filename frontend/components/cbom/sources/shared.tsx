@@ -576,11 +576,11 @@ export function ChoiceCards<T extends string | number>({
   );
 }
 
-export function Checkbox2({ id, checked, onChange, children, infoId }: { id: string; checked: boolean; onChange: (v: boolean) => void; children: ReactNode; infoId?: InfoTipId }) {
+export function Checkbox2({ id, checked, onChange, children, infoId, disabled = false }: { id: string; checked: boolean; onChange: (v: boolean) => void; children: ReactNode; infoId?: InfoTipId; disabled?: boolean }) {
   const box = (
-    <label htmlFor={id} className="flex items-start gap-2 text-sm text-zinc-700 dark:text-zinc-300 cursor-pointer">
+    <label htmlFor={id} className={`flex items-start gap-2 text-sm text-zinc-700 dark:text-zinc-300 ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}>
       {/* infotip-shared: Checkbox2 is a control in the coverage test; its caller gives it a tip */}
-      <input id={id} type="checkbox" className="mt-0.5 h-4 w-4 accent-blue-600 shrink-0" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <input id={id} type="checkbox" className="mt-0.5 h-4 w-4 accent-blue-600 shrink-0" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
       <span>{children}</span>
     </label>
   );

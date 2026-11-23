@@ -16,6 +16,7 @@ from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer
 
 from backend.utilities.pdf.report_context import ReportContext, details_note, join_parts
 from backend.utilities.pdf.report_branding import (
+    report_generated,
     append_report_masthead,
     append_executive_summary,
     append_findings_catalog,
@@ -90,7 +91,7 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None, *, ctx: O
     overview = [
         ("Scan type", "Large Language Model Security Benchmark"),
         ("Total issues found", str(total)),
-        ("Report generated", datetime.now().strftime("%B %d, %Y at %I:%M %p")),
+        ("Report generated", report_generated(long=True)),
     ]
     summary: List[Any] = []
     if not ctx.has("summary"):
@@ -107,7 +108,7 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None, *, ctx: O
         meta_chips=[
             ("Scan type", "LLM"),
             ("Total issues", str(total)),
-            ("Report generated", datetime.now().strftime("%b %d, %Y · %I:%M %p")),
+            ("Report generated", report_generated()),
             ("Platform", "zeroshield.ai"),
         ],
         ctx=ctx,
