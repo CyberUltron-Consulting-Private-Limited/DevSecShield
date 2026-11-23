@@ -46,8 +46,11 @@ from typing import Any
 from aibom.cbom import crypto_kb
 from aibom.cbom.normalize import normalize_crypto
 from aibom.cbom.pipeline import analyze_cbom_document, scan_crypto
-from aibom.cbom.posture.safeio import SKIP_DIRS  # the directories the engine never reads (for size estimates)
+from aibom.cbom.posture.safeio import (
+    SKIP_DIRS,  # the directories the engine never reads (for size estimates)
+)
 from aibom.cbom.redact import attach_snippets
+from aibom.emit.identity import utc_now
 
 log = logging.getLogger("aibom.cbom")
 
@@ -322,6 +325,7 @@ def scan_crypto_to_devsecshield(
     result = scan_crypto(target, level=level, include_vendored=include_vendored, scan_history=scan_history,
                          scan_binaries=scan_binaries)
     _report(progress, 80, "normalizing crypto findings")
+    result.generated_at = utc_now()  # the real scan time in the CBOM metadata
     out = normalize_to_devsecshield(result, duration_of_scan=time.monotonic() - start)
     # Code windows (redacted) are read here, while the checkout still exists, and only for this code-scan path:
     # uploaded CBOMs (analyze_cbom_file_to_devsecshield) carry attacker-chosen paths and never read files.
@@ -365,6 +369,7 @@ def analyze_cbom_file_to_devsecshield(
     start = time.monotonic()
     _report(progress, 30, "analysing cryptographic assets")
     result, stats = analyze_cbom_document(doc, level=4)
+    result.generated_at = utc_now()
     _report(progress, 80, "normalizing crypto findings")
     out = normalize_to_devsecshield(result, duration_of_scan=time.monotonic() - start)
     # No code windows here: an uploaded file's paths are attacker-chosen, so nothing is ever read from disk.

@@ -16,6 +16,7 @@ from aibom.compliance.base import (
     Requirement,
     deployed_sites,
     has_license,
+    healthcare_profile,
     is_deidentified,
     models,
     register_applicability,
@@ -23,6 +24,7 @@ from aibom.compliance.base import (
     register_manual,
     serving_services,
     trained_datasets,
+    vendor_accountability,
 )
 from aibom.model.result import ScanResult
 
@@ -246,6 +248,8 @@ def _vendor(r: ScanResult, req: Requirement) -> CheckResult:
     ms = models(r)
     if not ms:
         return NA("no model component")
+    if not healthcare_profile(r):
+        return vendor_accountability(r, ms)
     served = [m for m in ms if serving_services(r, m)]
     if not served:
         return NA("no externally-served models to assess vendor accountability")

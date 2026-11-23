@@ -50,7 +50,9 @@ def score_crypto(result: ScanResult) -> ScanResult:
     ``risk_normalized`` / ``risk_band`` / ``by_flag`` / ``by_component`` /
     ``component_severity`` / ``flag_count``.
     """
-    return score_result(result, str(_CBOM_WEIGHTS_PATH))
+    # the CBOM keeps its own flag-weight scale: the AI BOM posture score (#487) does
+    # not change CBOM scores
+    return score_result(result, str(_CBOM_WEIGHTS_PATH), posture=False)
 
 
 __all__ = ["score_crypto", "_CBOM_WEIGHTS_PATH"]

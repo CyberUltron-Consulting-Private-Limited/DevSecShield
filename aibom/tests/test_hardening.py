@@ -12,7 +12,8 @@ from aibom.emit.spdx import emit_and_validate_spdx, emit_spdx
 from aibom.emit.validate import validate_cyclonedx, validate_spdx
 from aibom.model.result import REL_DEPLOYED_AT, REL_SERVED_BY
 from aibom.scan.pipeline import scan_repo
-from aibom.score.scorer import normalize_score, risk_band
+from aibom.score.posture import posture_grade
+from aibom.score.scorer import normalize_score, posture_score, risk_band
 
 _EX = pathlib.Path(__file__).resolve().parent.parent / "examples"
 _CLINICAL = _EX / "clinical-imaging"
@@ -149,18 +150,29 @@ def test_scores_carry_normalized_and_band() -> None:
     # normalized score is 14/71*100 = 19.7 (low band). NB: the GLOBAL risk_band is
     # an internal aggregate; the dashboard rates each FINDING by its stacked
     # per-component severity (here the clinical model is component-severity critical).
-    scores = scan_repo(_CLINICAL).scores
+    # The headline score is posture_score over every component's stacked severity
+    # (unflagged = low), the same rows and formula the dashboard and PDF use; the
+    # critical model makes it uncapped.
+    result = scan_repo(_CLINICAL)
+    scores = result.scores
     assert scores["risk_total"] == 14.0  # 8 + 6 (raw internal sum)
-    assert scores["risk_normalized"] == 19.7  # 14 / 71 * 100
-    assert scores["risk_band"] == "low"
     assert scores["component_severity"]["model-chestxr-cnn"] == "critical"
+    counts = scores["severity_counts"]
+    assert counts["critical"] == 1 and sum(counts.values()) == len(result.components)
+    assert scores["risk_normalized"] == posture_score(**counts)
+    # the band is the PDF grade's word, from the one table in score/posture.py
+    grade, band = posture_grade(scores["risk_normalized"])
+    assert (scores["risk_grade"], scores["risk_band"]) == (grade, band)
 
 
 def test_no_phi_scores_low_band() -> None:
     scores = scan_repo(_NO_PHI).scores
     assert scores["risk_total"] == 0.0
-    assert scores["risk_normalized"] == 0.0
-    assert scores["risk_band"] == "low"
+    # nothing flagged: low inventory only, so the score is capped in the low band
+    assert {k for k, n in scores["severity_counts"].items() if n} == {"low"}
+    assert scores["risk_normalized"] <= 29.0
+    assert scores["risk_band"] in ("low", "moderate")  # grade A or B, never worse
+    assert scores["risk_grade"] in ("A", "B")
 
 
 def test_normalize_score_caps_at_100() -> None:

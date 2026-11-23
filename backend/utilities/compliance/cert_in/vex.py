@@ -1,19 +1,79 @@
-"""CERT-In VEX emit — CycloneDX 1.6-compatible vulnerabilities (F5).
+"""CERT-In VEX emit: a CycloneDX 1.6 VEX of the scan's real vulnerabilities (F5).
 
-Default analysis state is ``not_affected`` unless proven otherwise.
-Proven affected: SBOM finding rows with non-empty CVE ids.
-CBOM code scans: a weakness seen in the code (finding code) or a CVE matched from that evidence is ``in_triage``
-(the use is real, whether it protects anything exploitable needs a person); only assets with no finding are
-``not_affected``. A CBOM asset that names a CVE is never reported as not affected.
+A VEX statement is about a vulnerability: it names one (a CVE / GHSA / OSV id), the
+components it affects and an
+analysis state. Rules (CycloneDX VEX, CISA "Minimum Requirements for VEX"):
+
+* Only real vulnerability ids are emitted. A component with no known vulnerability gets
+NO statement: the earlier
+  ``not-affected:<component>`` stubs asserted "not affected" with a made-up id
+  and no justification for every
+  component of every SBOM / AI BOM, which is false assurance.
+* A matched vulnerability is ``in_triage`` (the match is real; whether it is exploitable
+here needs a person), unless
+  the scan row carries an analysis of its own.
+* ``not_affected`` is emitted only with a CycloneDX ``justification`` (e.g.
+``code_not_reachable``); a row claiming
+  not affected without one stays ``in_triage``.
+* CBOM code scans: a weakness seen in the code (finding code) or a CVE matched from that
+evidence is ``in_triage``
+  (the backend builds CBOM code-scan VEX with ``cbom_sources/vex_semantics``; this
+  branch is the fallback).
+* AI BOM: the vulnerabilities the AI BOM itself records (``bom.vulnerabilities``) and
+any finding row with a CVE.
+
+stdlib only (the backend loads this file without the aibom package).
 """
 
 from __future__ import annotations
 
+import datetime as _dt
+import hashlib
+import json
+import uuid
 from typing import Any
 
-__all__ = ["build_vex"]
+__all__ = ["build_vex", "VEX_RULES", "is_current"]
 
-_HIGH_IMPACT = frozenset({"Critical", "critical", "High", "high"})
+# : Version of these rules, stamped as ``zs:vex_rules``. A stored VEX written by older
+# rules is rebuilt.
+VEX_RULES = "certin-3"
+# the CBOM fallback branch keeps its rule id (cbom_sources.vex_semantics owns CBOM VEX)
+CBOM_VEX_RULES = "2"
+
+_STATES = frozenset(
+    {
+        "resolved",
+        "resolved_with_pedigree",
+        "exploitable",
+        "in_triage",
+        "false_positive",
+        "not_affected",
+    }
+)
+_JUSTIFICATIONS = frozenset(
+    {
+        "code_not_present",
+        "code_not_reachable",
+        "requires_configuration",
+        "requires_dependency",
+        "requires_environment",
+        "protected_by_compiler",
+        "protected_at_runtime",
+        "protected_at_perimeter",
+        "protected_by_mitigating_control",
+    }
+)
+_SEVERITY = {
+    "critical": "critical",
+    "high": "high",
+    "medium": "medium",
+    "low": "low",
+    "info": "info",
+    "informational": "info",
+    "none": "none",
+}
+_VEX_NS = uuid.UUID("0f4d6c52-7a3e-4b8f-9d21-5c6e7f8a9b0c")
 
 
 def _cve_ids_from_finding(row: dict[str, Any]) -> list[str]:
@@ -32,73 +92,225 @@ def _cve_ids_from_finding(row: dict[str, Any]) -> list[str]:
                 cid = item.get("id") or item.get("cve")
                 if cid and str(cid).strip():
                     out.append(str(cid).strip())
+    for key in ("cve", "cve_id", "vulnerability_id"):
+        value = row.get(key)
+        if isinstance(value, str) and value.strip() and value.strip() not in out:
+            out.append(value.strip())
     return out
 
 
-def _dep_ref(row: dict[str, Any], index: int) -> str:
-    dep = str(row.get("dependency") or row.get("package_name") or "").strip()
-    if dep:
-        return dep.split("@")[0].split("==")[0].strip() or f"component-{index}"
-    return f"component-{index}"
+def _source(vuln_id: str) -> dict[str, str]:
+    up = vuln_id.upper()
+    if up.startswith("CVE-"):
+        return {"name": "NVD", "url": f"https://nvd.nist.gov/vuln/detail/{vuln_id}"}
+    if up.startswith("GHSA-"):
+        return {"name": "GitHub", "url": f"https://github.com/advisories/{vuln_id}"}
+    return {"name": "OSV", "url": f"https://osv.dev/vulnerability/{vuln_id}"}
 
 
-def _vuln_entry(
-    *,
-    vuln_id: str,
-    state: str,
-    affects_ref: str | None,
-    detail: str,
+def _component_refs(bom: dict[str, Any] | None) -> dict[str, str]:
+    """name / name@version / purl (lower-case) -> bom-ref, so a statement points
+    at the BOM's own component."""
+    out: dict[str, str] = {}
+    for comp in (bom or {}).get("components") or []:
+        if not isinstance(comp, dict) or not comp.get("bom-ref"):
+            continue
+        ref = str(comp["bom-ref"])
+        name = str(comp.get("name") or "").strip().lower()
+        if comp.get("purl"):
+            out.setdefault(str(comp["purl"]).lower(), ref)
+        if name:
+            if comp.get("version"):
+                out.setdefault(f"{name}@{str(comp['version']).lower()}", ref)
+            out.setdefault(name, ref)
+    return out
+
+
+def _affects_ref(row: dict[str, Any], index: int, refs: dict[str, str]) -> str:
+    for key in ("bom_ref", "bom-ref"):
+        if row.get(key):
+            return str(row[key])
+    if row.get("purl") and str(row["purl"]).lower() in refs:
+        return refs[str(row["purl"]).lower()]
+    dep = str(
+        row.get("dependency")
+        or row.get("package_name")
+        or row.get("component_name")
+        or ""
+    ).strip()
+    name = dep.split("@")[0].split("==")[0].strip()
+    version = (
+        str(row.get("version") or row.get("installed_version") or "").strip().lower()
+    )
+    for key in (f"{name.lower()}@{version}", name.lower()):
+        if key in refs:
+            return refs[key]
+    return name or row.get("purl") or f"component-{index}"
+
+
+def _analysis(row: dict[str, Any], detail: str) -> dict[str, Any]:
+    """The row's own analysis when it states a valid one; else in_triage.
+    not_affected needs a justification."""
+    state = str(row.get("vex_state") or row.get("analysis_state") or "").strip().lower()
+    justification = (
+        str(row.get("vex_justification") or row.get("justification") or "")
+        .strip()
+        .lower()
+    )
+    if state == "not_affected" and justification not in _JUSTIFICATIONS:
+        state = ""
+    if state not in _STATES:
+        return {"state": "in_triage", "detail": detail}
+    out: dict[str, Any] = {
+        "state": state,
+        "detail": str(row.get("vex_detail") or detail),
+    }
+    if state == "not_affected":
+        out["justification"] = justification
+    return out
+
+
+def _entry(
+    vuln_id: str, analysis: dict[str, Any], refs: list[str], impact: str | None
 ) -> dict[str, Any]:
     entry: dict[str, Any] = {
         "id": vuln_id,
-        "source": {"name": "DevSecShield CERT-In VEX", "url": ""},
-        "analysis": {
-            "state": state,
-            "detail": detail,
-        },
+        "source": _source(vuln_id),
+        "analysis": analysis,
+        "affects": [{"ref": r} for r in dict.fromkeys(refs)],
     }
-    if affects_ref:
-        entry["affects"] = [{"ref": affects_ref}]
+    severity = _SEVERITY.get(str(impact or "").strip().lower())
+    if severity:
+        entry["ratings"] = [
+            {
+                "source": {"name": "DevSecShield"},
+                "severity": severity,
+                "method": "other",
+            }
+        ]
     return entry
 
 
-CBOM_VEX_RULES = "2"
+def _finding_vulnerabilities(
+    findings: list[dict[str, Any]], bom: dict[str, Any] | None
+) -> list[dict[str, Any]]:
+    refs = _component_refs(bom)
+    by_id: dict[str, dict[str, Any]] = {}
+    for i, row in enumerate(findings):
+        if not isinstance(row, dict):
+            continue
+        ids = _cve_ids_from_finding(row)
+        if not ids:
+            continue
+        ref = _affects_ref(row, i, refs)
+        detail = (
+            "Matched to this component's name and version from the bill of "
+            "materials; confirm whether the "
+            "vulnerable code is used before closing it."
+        )
+        for vid in ids:
+            if vid in by_id:
+                by_id[vid]["affects"].append({"ref": ref})
+                continue
+            by_id[vid] = _entry(vid, _analysis(row, detail), [ref], row.get("impact"))
+    for entry in by_id.values():
+        entry["affects"] = [
+            dict(t) for t in dict.fromkeys(tuple(a.items()) for a in entry["affects"])
+        ]
+    return [by_id[k] for k in sorted(by_id)]
+
+
+def _bom_vulnerabilities(bom: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Vulnerabilities the BOM itself records (an AI BOM / SBOM with matched
+    advisories), restated as VEX."""
+    out: list[dict[str, Any]] = []
+    for v in (bom or {}).get("vulnerabilities") or []:
+        if not isinstance(v, dict) or not str(v.get("id") or "").strip():
+            continue
+        refs = [
+            str(a.get("ref"))
+            for a in v.get("affects") or []
+            if isinstance(a, dict) and a.get("ref")
+        ]
+        if not refs:
+            continue
+        analysis = v.get("analysis") if isinstance(v.get("analysis"), dict) else {}
+        row = {
+            "vex_state": analysis.get("state"),
+            "vex_justification": analysis.get("justification"),
+            "vex_detail": analysis.get("detail"),
+        }
+        entry = _entry(
+            str(v["id"]).strip(),
+            _analysis(
+                row,
+                "Recorded in the bill of materials; confirm whether "
+                "it is exploitable here.",
+            ),
+            refs,
+            None,
+        )
+        if v.get("ratings"):
+            entry["ratings"] = v["ratings"]
+        out.append(entry)
+    return out
 
 
 def _cbom_vulnerabilities(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """One entry per finding code and per CVE across the scan, listing the assets (bom-refs) they affect."""
+    """One entry per finding code and per CVE across the scan, listing the
+    assets (bom-refs) they affect."""
     by_code: dict[str, list[str]] = {}
     by_cve: dict[str, list[str]] = {}
-    clean: list[str] = []
     for i, row in enumerate(findings):
         if not isinstance(row, dict):
             continue
         ref = str(row.get("bom_ref") or row.get("bom-ref") or f"component-{i}")
-        codes = [c for c in row.get("finding_codes") or [] if isinstance(c, str)]
-        for code in codes:
+        for code in [c for c in row.get("finding_codes") or [] if isinstance(c, str)]:
             by_code.setdefault(code, []).append(ref)
         for cid in _cve_ids_from_finding(row):
             by_cve.setdefault(cid, []).append(ref)
-        if not codes and not _cve_ids_from_finding(row):
-            clean.append(ref)
     out: list[dict[str, Any]] = []
     for code, refs in sorted(by_code.items()):
-        entry = _vuln_entry(vuln_id=f"ZS-CBOM-{code}", state="in_triage", affects_ref=None,
-                            detail="Seen in the source code or configuration; confirm whether it protects data that "
-                                   "matters, then fix or record the exception.")
-        entry["affects"] = [{"ref": r} for r in dict.fromkeys(refs)]
+        entry = _entry(
+            f"ZS-CBOM-{code}",
+            {
+                "state": "in_triage",
+                "detail": (
+                    "Seen in the source code or configuration; confirm whether it "
+                    "protects data that matters, then fix or "
+                    "record the exception."
+                ),
+            },
+            refs,
+            None,
+        )
+        entry["source"] = {"name": "DevSecShield CBOM rules"}
         out.append(entry)
     for cid, refs in sorted(by_cve.items()):
-        entry = _vuln_entry(vuln_id=cid, state="in_triage", affects_ref=None,
-                            detail="Matched from the algorithm or protocol the code uses; a match is not proof of "
-                                   "exposure.")
-        entry["source"] = {"name": "NVD", "url": f"https://nvd.nist.gov/vuln/detail/{cid}"}
-        entry["affects"] = [{"ref": r} for r in dict.fromkeys(refs)]
-        out.append(entry)
-    for ref in dict.fromkeys(clean):
-        out.append(_vuln_entry(vuln_id=f"not-affected:{ref}", state="not_affected", affects_ref=ref,
-                               detail="No weakness or CVE found for this asset (CERT-In F5)"))
+        out.append(
+            _entry(
+                cid,
+                {
+                    "state": "in_triage",
+                    "detail": (
+                        "Matched from the algorithm or protocol the code uses; a "
+                        "match is not proof of exposure."
+                    ),
+                },
+                refs,
+                None,
+            )
+        )
     return out
+
+
+def _iso_now() -> str:
+    return (
+        _dt.datetime.now(_dt.UTC)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
 
 
 def build_vex(
@@ -106,100 +318,92 @@ def build_vex(
     bom: dict[str, Any] | None = None,
     findings: list[dict[str, Any]] | None = None,
     scan_type: str = "sbom_sca",
+    now: str | None = None,
 ) -> dict[str, Any]:
-    """Build a CycloneDX-shaped VEX document (vulnerabilities list + metadata).
+    """Build a CycloneDX 1.6 VEX document of the scan's real vulnerabilities (see
+    the module docstring).
 
-    - SBOM with CVE-bearing findings → those CVEs are ``affected`` (or
-      ``exploitable`` when impact is Critical/High).
-    - Components / findings without CVEs → ``not_affected`` stubs when we have
-      an inventory; empty inventory → empty vulnerabilities (honest).
-    - CBOM/AIBOM (no CVE inventory) → ``not_affected`` per component bom-ref
-      when ``bom.components`` present; never invent CVEs from crypto flags.
+    No vulnerability -> an empty ``vulnerabilities`` list (honest: nothing to state),
+    never per-component stubs.
     """
-    vulnerabilities: list[dict[str, Any]] = []
-    seen_cves: set[str] = set()
-
-    if scan_type == "cbom" and findings:
-        vulnerabilities = _cbom_vulnerabilities(findings)
-    elif findings:
-        for i, row in enumerate(findings):
-            if not isinstance(row, dict):
-                continue
-            cves = _cve_ids_from_finding(row)
-            ref = _dep_ref(row, i)
-            impact = str(row.get("impact") or "")
-            if cves:
-                state = "exploitable" if impact in _HIGH_IMPACT else "affected"
-                for cid in cves:
-                    if cid in seen_cves:
-                        continue
-                    seen_cves.add(cid)
-                    vulnerabilities.append(
-                        _vuln_entry(
-                            vuln_id=cid,
-                            state=state,
-                            affects_ref=ref,
-                            detail=(
-                                "Proven by SBOM/SCA CVE linkage "
-                                f"(impact={impact or 'unknown'})"
-                            ),
-                        )
-                    )
+    if scan_type == "cbom":
+        vulnerabilities = _cbom_vulnerabilities(findings or [])
+        rules = CBOM_VEX_RULES
+    else:
+        merged: dict[str, dict[str, Any]] = {}
+        for entry in _bom_vulnerabilities(bom) + _finding_vulnerabilities(
+            findings or [], bom
+        ):
+            if entry["id"] in merged:
+                merged[entry["id"]]["affects"] += [
+                    a
+                    for a in entry["affects"]
+                    if a not in merged[entry["id"]]["affects"]
+                ]
             else:
-                # No CVE → default not_affected for this inventoried dependency.
-                vulnerabilities.append(
-                    _vuln_entry(
-                        vuln_id=f"not-affected:{ref}",
-                        state="not_affected",
-                        affects_ref=ref,
-                        detail="No CVE linkage; default not_affected (CERT-In F5)",
-                    )
-                )
-
-    elif isinstance(bom, dict):
-        comps = bom.get("components")
-        if isinstance(comps, list):
-            for i, comp in enumerate(comps):
-                if not isinstance(comp, dict):
-                    continue
-                ref = str(comp.get("bom-ref") or comp.get("name") or f"component-{i}")
-                vulnerabilities.append(
-                    _vuln_entry(
-                        vuln_id=f"not-affected:{ref}",
-                        state="not_affected",
-                        affects_ref=ref,
-                        detail=(
-                            f"No CVE inventory for {scan_type}; "
-                            "default not_affected (CERT-In F5)"
-                        ),
-                    )
-                )
-
-    return {
+                merged[entry["id"]] = entry
+        vulnerabilities = [merged[k] for k in sorted(merged)]
+        rules = VEX_RULES
+    digest = hashlib.sha256(
+        json.dumps(vulnerabilities, sort_keys=True).encode()
+    ).hexdigest()
+    subject = (bom or {}).get("serialNumber") or ""
+    states: dict[str, int] = {}
+    for v in vulnerabilities:
+        states[v["analysis"]["state"]] = states.get(v["analysis"]["state"], 0) + 1
+    seed = f"{scan_type}:{subject}:{rules}:{digest}"
+    doc: dict[str, Any] = {
         "bomFormat": "CycloneDX",
         "specVersion": "1.6",
+        "serialNumber": f"urn:uuid:{uuid.uuid5(_VEX_NS, seed)}",
         "version": 1,
         "metadata": {
+            "timestamp": now or _iso_now(),
             "tools": {
                 "components": [
                     {
                         "type": "application",
                         "name": "DevSecShield CERT-In VEX",
-                        "version": "1.0",
+                        "version": rules,
                     }
                 ]
             },
             "properties": [
-                {"name": "zs:vex_rules", "value": CBOM_VEX_RULES},
+                {"name": "zs:vex_rules", "value": rules},
+                *[
+                    {"name": f"zs:entries_{state}", "value": str(n)}
+                    for state, n in sorted(states.items())
+                ],
                 {
                     "name": "certin:disclaimer",
                     "value": (
-                        "Advisory VEX alignment to CERT-In TG v2.0; "
-                        "default not_affected unless proven. "
-                        "Does not constitute CERT-In certification."
+                        "Advisory VEX alignment to CERT-In TG v2.0. Lists only real "
+                        "vulnerability identifiers matched for this scan; matched "
+                        "vulnerabilities are in triage until analysed, and "
+                        "not_affected is stated only with a justification. "
+                        "Components without a known vulnerability carry no "
+                        "statement. Does not constitute CERT-In certification."
                     ),
-                }
+                },
             ],
         },
         "vulnerabilities": vulnerabilities,
     }
+    return doc
+
+
+def is_current(scan_type: str, vex: Any) -> bool:
+    """A stored SBOM / AI BOM VEX written by older rules (per-component
+    not_affected stubs) is rebuilt."""
+    props = (
+        ((vex.get("metadata") or {}).get("properties") or [])
+        if isinstance(vex, dict)
+        else []
+    )
+    want = CBOM_VEX_RULES if scan_type == "cbom" else VEX_RULES
+    return any(
+        isinstance(p, dict)
+        and p.get("name") == "zs:vex_rules"
+        and p.get("value") == want
+        for p in props
+    )
