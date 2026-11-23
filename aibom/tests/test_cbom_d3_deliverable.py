@@ -133,13 +133,22 @@ def test_kdf_parameters_are_captured(run, name, source, expected) -> None:
 def test_hard_coded_salt_and_iv_are_findings_with_the_literal_masked(run: dict) -> None:
     results = run["results"]
     codes = {r.get("title"): tuple(r.get("finding_codes") or []) for r in results}
-    assert codes["salt (app/encryption.py)"] == ("STATIC_SALT",)  # SmarterRouter's case
-    assert codes["salt (app/kdf.py)"] == ("STATIC_SALT",)
-    assert codes["initialization-vector (app/kdf.py)"] == ("STATIC_IV",)
-    salt = _props(_comp(run["cbom_json"], "salt (app/kdf.py)", "app/kdf.py"))
-    # pbkdf2_hmac's inline salt and scrypt's named one; HKDF's fixed salt is allowed
+    assert codes["salt (app/encryption.py:12)"] == ("STATIC_SALT",)  # SmarterRouter's
+    # one row per literal, at its line (review of #491 m6): pbkdf2_hmac's inline salt,
+    # scrypt's named one (the misuse lane's row, merged); HKDF's fixed salt is allowed
     # (RFC 5869) and feeds no finding
-    assert salt["crypto:usedBy"].split(",") == ["PBKDF2", "scrypt"]
+    assert codes["salt (app/kdf.py:13)"] == ("STATIC_SALT",)
+    assert codes["salt (SCRYPT_SALT, kdf.py)"] == ("STATIC_SALT",)
+    assert codes["salt (app/kdf.py:21)"] == ()
+    assert codes["initialization-vector (app/kdf.py:28)"] == ("STATIC_IV",)
+    used = {
+        name: _props(_comp(run["cbom_json"], name, "app/kdf.py")).get("crypto:usedBy")
+        for name in ("salt (app/kdf.py:13)", "salt (SCRYPT_SALT, kdf.py)")
+    }
+    assert used == {
+        "salt (app/kdf.py:13)": "PBKDF2",
+        "salt (SCRYPT_SALT, kdf.py)": "scrypt",
+    }
     # nowhere: not in the BOM, not in any row's code window (the KDF row's window
     # shows the same line as the salt)
     text = json.dumps(run["cbom_json"]) + json.dumps(
@@ -158,7 +167,7 @@ def test_dependencies_graph_uses_and_provides(run: dict) -> None:
     assert deps[pbkdf2]["dependsOn"] == sorted(
         [
             _comp(bom, "SHA-256", "app/encryption.py")["bom-ref"],
-            _comp(bom, "salt (app/encryption.py)", "app/encryption.py")["bom-ref"],
+            _comp(bom, "salt (app/encryption.py:12)", "app/encryption.py")["bom-ref"],
         ]
     )
     pyca = next(c for c in bom["components"] if c["name"] == "pyca/cryptography")

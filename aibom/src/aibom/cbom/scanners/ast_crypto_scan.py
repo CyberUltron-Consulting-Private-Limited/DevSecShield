@@ -291,16 +291,32 @@ def _literal_value(node: ast.expr | None, consts: dict[str, object]) -> object |
         return consts.get(node.id)
     if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):  # ``consts.ALG`` (another module)
         return consts.get(f"{node.value.id}.{node.attr}")
-    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Mult, ast.Add)):
+    if isinstance(node, ast.BinOp) and isinstance(
+        node.op, (ast.Mult, ast.Add, ast.Pow, ast.LShift)
+    ):
         left: Any = _literal_value(node.left, consts)
         right: Any = _literal_value(node.right, consts)
         if left is None or right is None:
             return None
+        if isinstance(node.op, (ast.Pow, ast.LShift)):
+            # ``n=2**14`` / ``1 << 14`` (the cryptography docs' scrypt cost), bounded so
+            # a hostile file cannot make the scanner build a huge number
+            if not (_small_int(left) and _small_int(right) and 0 <= right <= 64):
+                return None
+            return left**right if isinstance(node.op, ast.Pow) else left << right
         try:
             return left * right if isinstance(node.op, ast.Mult) else left + right
         except (TypeError, ValueError):
             return None
     return None
+
+
+def _small_int(value: object) -> bool:
+    return (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and abs(value) <= 1 << 16
+    )
 
 
 def _kwarg(call: ast.Call, name: str) -> ast.expr | None:
@@ -329,8 +345,11 @@ def _has_crypto_import(tree: ast.AST) -> bool:
     return False
 
 
-def _collect_consts(tree: ast.AST) -> dict[str, object]:
-    """Module + function-level ``name = <literal>`` bindings, flattened."""
+def _collect_consts(
+    tree: ast.AST, lines: dict[str, int] | None = None
+) -> dict[str, object]:
+    """Module + function-level ``name = <literal>`` bindings, flattened; ``lines``
+    (when given) receives the line each name was bound on."""
     consts: dict[str, object] = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign) and len(node.targets) == 1:
@@ -339,6 +358,8 @@ def _collect_consts(tree: ast.AST) -> dict[str, object]:
                 value = _literal_value(node.value, consts)
                 if value is not None:
                     consts[target.id] = value
+                    if lines is not None:
+                        lines[target.id] = node.lineno
     return consts
 
 
@@ -361,7 +382,7 @@ def _collect_calls(node: ast.AST, scope: tuple[str, ...], out: list) -> None:
 class _Asset:
     __slots__ = ("key", "name", "key_size", "mode", "curve", "primitive",
                  "context", "padding", "iterations", "scope", "location", "params",
-                 "symbol")
+                 "symbol", "calls")
 
     def __init__(self, key, name, key_size, mode, curve, primitive, context,
                  scope, location):
@@ -376,16 +397,19 @@ class _Asset:
         self.iterations: int | None = None
         self.params: dict[str, str] = {}  # KDF parameters as crypto:* properties
         self.symbol: str | None = None  # the callee that fixed it: its library
+        # KDF call sites: (line, that call's crypto:* parameters), one per call
+        self.calls: list[tuple[int, dict[str, str]]] = []
         self.scope = scope
         self.location = location
 
 
 class _Material:
-    __slots__ = ("kind", "location", "props")
+    __slots__ = ("kind", "location", "props", "line")
 
-    def __init__(self, kind, location):
+    def __init__(self, kind, location, line=None):
         self.kind = kind
         self.location = location
+        self.line: int | None = line  # a literal salt: the line that wrote it
         # a static literal: crypto:staticSalt / staticIv, its length, usedBy
         self.props: dict[str, str] = {}
 
@@ -433,7 +457,8 @@ def _scan_file(
 
     # constants imported from other project modules (``from .consts import ALG``), then this file's own
     consts = {name: d.value for name, d in (external or {}).items()}
-    consts.update(_collect_consts(tree))
+    const_lines: dict[str, int] = {}
+    consts.update(_collect_consts(tree, const_lines))
     calls: list[tuple[ast.Call, tuple[str, ...]]] = []
     _collect_calls(tree, (), calls)
 
@@ -457,10 +482,14 @@ def _scan_file(
             pad_by_scope[scope].append(pad)
 
     assets: dict[tuple[str, str], _Asset] = {}
-    materials: dict[tuple[str, str], _Material] = {}
+    materials: dict[tuple[str, str, int], _Material] = {}
 
-    def _emit_material(kind: str) -> _Material:
-        return materials.setdefault((kind, rel), _Material(kind, rel))
+    def _emit_material(kind: str, line: int = 0) -> _Material:
+        """One material row per (kind, file); a literal salt gets a row per line it
+        was written on, so two salts in one file are two rows, each with its line."""
+        return materials.setdefault(
+            (kind, rel, line), _Material(kind, rel, line or None)
+        )
 
     def _add_asset(asset: _Asset | None) -> _Asset | None:
         if asset is None:
@@ -493,8 +522,11 @@ def _scan_file(
                 iv_node = _arg(mode_node, 0)
                 iv = _literal_value(iv_node, consts)
                 if isinstance(iv, (bytes, str)):
+                    static = isinstance(iv_node, ast.Constant)
                     material = _emit_material(
-                        "nonce" if mode in _NONCE_MODES else "initialization-vector")
+                        "nonce" if mode in _NONCE_MODES else "initialization-vector",
+                        iv_node.lineno if static and iv_node is not None else 0,
+                    )
                     # an IV written into the call is static (a named constant is
                     # the misuse lane's: no double finding); its value is never
                     # recorded, only its length
@@ -546,7 +578,10 @@ def _scan_file(
                 _make_asset(base_key, None, None, None, context, scope, rel))
             if asset is not None:
                 asset.symbol = asset.symbol or (_symbols(func) or (None,))[0]
-                _kdf_parameters(call, func, base_key, asset, consts, _emit_material)
+                params = _kdf_parameters(
+                    call, func, base_key, asset, consts, const_lines, _emit_material
+                )
+                asset.calls.append((call.lineno, params))
             continue
 
         mac = _rule(func, _MAC)
@@ -562,9 +597,16 @@ def _scan_file(
             ):
                 asset.padding = pad_name
 
+    # Pass 5: a KDF asset (one per algorithm and file) reports its weakest call's
+    # parameter set, never a mix and never just the last call: legacy and modern
+    # KDF code in one module is the migration case a CBOM must show.
+    for asset in assets.values():
+        if asset.calls:
+            _settle_kdf(asset)
+
     return (
         sorted(assets.values(), key=lambda a: (a.name, a.location)),
-        sorted(materials.values(), key=lambda m: (m.kind, m.location)),
+        sorted(materials.values(), key=lambda m: (m.kind, m.location, m.line or 0)),
     )
 
 
@@ -594,10 +636,14 @@ def _add_to_list(props: dict[str, str], key: str, value: str) -> None:
     props[key] = ",".join(items)
 
 
-def _kdf_parameters(call, func, base_key, asset, consts, emit_material) -> None:
-    """KDF parameters (iterations, output length, salt length, scrypt n/r/p, Argon2
-    costs, the PRF) onto the KDF asset; a literal salt of a password-based KDF becomes
-    a static-salt material (its length, never its value)."""
+def _kdf_parameters(
+    call, func, base_key, asset, consts, const_lines, emit_material
+) -> dict[str, str]:
+    """One KDF call's parameters (iterations, output length, salt length, scrypt
+    n/r/p, Argon2 costs and variant, the PRF) as ``crypto:*`` properties. A literal
+    salt of a password-based KDF becomes a static-salt material (its length and the
+    line that wrote it, never its value)."""
+    params: dict[str, str] = {}
     tails = [sym.split(".")[-1] for sym in _symbols(func)]
     spec = next((_KDF_PARAMS[t] for t in tails if t in _KDF_PARAMS), {})
     prf = _prf_name(_kwarg(call, "algorithm"), consts) if "prf" not in spec else None
@@ -611,26 +657,72 @@ def _kdf_parameters(call, func, base_key, asset, consts, emit_material) -> None:
         value = _literal_value(node, consts)
         if name == "salt":
             if isinstance(value, (bytes, str)):
-                asset.params["crypto:saltLength"] = str(len(value))
-                material = emit_material("salt")
-                if base_key in _PASSWORD_KDFS:  # one salt row per file: every KDF
+                params["crypto:saltLength"] = str(len(value))
+                # the line the literal is written on: the constant's binding, else
+                # the argument itself
+                line = (
+                    const_lines.get(node.id, node.lineno)
+                    if isinstance(node, ast.Name)
+                    else node.lineno
+                )
+                material = emit_material("salt", line)
+                if base_key in _PASSWORD_KDFS:
                     material.props["crypto:staticSalt"] = "true"
                     _add_to_list(material.props, "crypto:usedBy", asset.name)
-                    _add_to_list(
-                        material.props, "crypto:literalLength", str(len(value))
-                    )
+                    material.props["crypto:literalLength"] = str(len(value))
             continue
         if name == "variant" and isinstance(node, ast.Attribute):
-            asset.params[_PROP_OF[name]] = f"Argon2{node.attr.lower()}"
+            params[_PROP_OF[name]] = f"Argon2{node.attr.lower()}"
             continue
         if isinstance(value, int) and not isinstance(value, bool):
-            asset.params[_PROP_OF[name]] = str(value)
-            if name == "iterations":
-                asset.iterations = value
+            params[_PROP_OF[name]] = str(value)
     if prf:
-        asset.params["crypto:kdfPrf"] = prf
-    if base_key == "argon2" and "crypto:argon2Variant" not in asset.params:
-        asset.params["crypto:argon2Variant"] = "Argon2id (library default)"
+        params["crypto:kdfPrf"] = prf
+    if base_key == "argon2" and "crypto:argon2Variant" not in params:
+        params["crypto:argon2Variant"] = "Argon2id (library default)"
+    return params
+
+
+def _kdf_cost(key: str, params: dict[str, str]) -> float:
+    """How expensive one call makes a guess (lower = weaker); a call whose cost the
+    scan cannot read (library defaults, a value from configuration) ranks last."""
+
+    def num(prop: str) -> float | None:
+        raw = params.get(prop, "")
+        return float(raw) if raw.isdigit() else None
+
+    if key == "pbkdf2":
+        cost = num("crypto:iterations")
+    elif key == "scrypt":
+        cost = num("crypto:scryptN")
+    elif key == "argon2":
+        memory, time = num("crypto:argon2MemoryCost"), num("crypto:argon2TimeCost")
+        cost = memory * time if memory is not None and time is not None else memory
+    else:
+        cost = None
+    return float("inf") if cost is None else cost
+
+
+def _settle_kdf(asset: _Asset) -> None:
+    """The asset's parameters are its weakest call's (ties: the first call); with
+    several calls every call's parameters are listed by line
+    (``crypto:kdfCalls``)."""
+    line, weakest = min(asset.calls, key=lambda c: (_kdf_cost(asset.key, c[1]), c[0]))
+    asset.params = dict(weakest)
+    raw = weakest.get("crypto:iterations", "")
+    asset.iterations = int(raw) if raw.isdigit() else None
+    if len(asset.calls) > 1:
+        asset.params["crypto:kdfWeakestLine"] = str(line)
+        asset.params["crypto:kdfCalls"] = " | ".join(
+            f"L{n} "
+            + (
+                " ".join(
+                    f"{k.split(':', 1)[1]}={v}" for k, v in sorted(params.items())
+                )
+                or "library defaults"
+            )
+            for n, params in sorted(asset.calls, key=lambda c: c[0])
+        )
 
 
 def _iter_py_files(walk: FileWalk) -> list[Path]:
@@ -641,6 +733,8 @@ def _iter_py_files(walk: FileWalk) -> list[Path]:
 def _library_for(
     context: str, key: str | None = None, symbol: str | None = None
 ) -> str:
+    if symbol and symbol.split(".")[0] == "hashes":  # pyca ``hashes.SHA256()``
+        return _LIBRARY
     if context == "digest":
         return _HASHLIB
     if context == "mac":
@@ -701,6 +795,15 @@ class AstCryptoScanner(Scanner):
                 if asset.iterations:
                     props["crypto:iterations"] = str(asset.iterations)
                 props.update(asset.params)
+                if asset.calls:
+                    # located at its calls (the occurrence pass would take the first
+                    # line naming it, e.g. an ``except ImportError: PBKDF2HMAC = None``)
+                    lines = sorted({n for n, _ in asset.calls})
+                    # several calls: the row points at the weakest one (its parameters)
+                    props["crypto:line"] = asset.params.get(
+                        "crypto:kdfWeakestLine", str(lines[0])
+                    )
+                    props["crypto:occurrences"] = ",".join(str(n) for n in lines)
                 ctx.add_component(
                     CryptoAssetComponent(
                         bom_ref=f"crypto-algo-{_slug(asset.name)}-{_slug(asset.location)}",
@@ -710,20 +813,32 @@ class AstCryptoScanner(Scanner):
                 )
 
             for material in materials:
+                mprops = {
+                    "crypto:assetType": "related-crypto-material",
+                    "crypto:materialKind": material.kind,
+                    "crypto:detectionMethod": "ast",
+                    "discovery:source": material.location,
+                    **material.props,
+                }
+                suffix = ""
+                if material.line:  # a literal salt: its own row, at its own line
+                    suffix = f"-l{material.line}"
+                    mprops["crypto:line"] = str(material.line)
+                    mprops["crypto:occurrences"] = str(material.line)
                 ctx.add_component(
                     CryptoAssetComponent(
                         bom_ref=(
                             f"crypto-material-{_slug(material.kind)}-"
-                            f"{_slug(material.location)}"
+                            f"{_slug(material.location)}{suffix}"
                         ),
-                        name=f"{material.kind} ({material.location})",
-                        properties={
-                            "crypto:assetType": "related-crypto-material",
-                            "crypto:materialKind": material.kind,
-                            "crypto:detectionMethod": "ast",
-                            "discovery:source": material.location,
-                            **material.props,
-                        },
+                        # a literal's row names its line: two salts in one file are
+                        # two rows a reader can tell apart
+                        name=(
+                            f"{material.kind} ({material.location}:{material.line})"
+                            if material.line
+                            else f"{material.kind} ({material.location})"
+                        ),
+                        properties=mprops,
                     )
                 )
 

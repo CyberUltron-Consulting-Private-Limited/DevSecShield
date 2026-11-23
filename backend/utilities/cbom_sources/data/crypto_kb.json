@@ -3577,7 +3577,7 @@
      "CWE-916"
     ],
     "default_impact": "Medium",
-    "description": "A constant iteration count below the minimum for the API reaches a password-based key derivation: below 1,000 for Java's PBEKeySpec / PBEParameterSpec (NIST SP 800-132), below 100,000 for .NET's Rfc2898DeriveBytes, whose constructors without a count use 1,000 (Microsoft rule CA5387).",
+    "description": "A constant iteration count below the minimum for the API reaches a password-based key derivation: below 1,000 for Java's PBEKeySpec / PBEParameterSpec (NIST SP 800-132), below 100,000 for .NET's Rfc2898DeriveBytes, whose constructors without a count use 1,000 (Microsoft rule CA5387). For a Python KDF call the captured cost is graded against NIST SP 800-132 (below 1,000 PBKDF2 iterations: Medium) and the OWASP Password Storage minimums (PBKDF2-HMAC-SHA256 600,000, -SHA512 210,000, -SHA1 1,300,000; scrypt N 2^17; Argon2id 19 MiB with 2 passes or an equivalent pair: Low).",
     "fix_class": {
      "basis": "the salt or iteration count is fixed in the team's own source code: the code changes, then a rebuild and release",
      "capability": false,
@@ -3615,6 +3615,10 @@
       {
        "how": "Rfc2898DeriveBytes.Pbkdf2(password, salt, 600000, HashAlgorithmName.SHA256, 32)",
        "platform": ".NET"
+      },
+      {
+       "how": "PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=os.urandom(16), iterations=600000) or hashlib.pbkdf2_hmac(\"sha256\", password, salt, 600_000)",
+       "platform": "Python"
       }
      ],
      "summary": "Use PBKDF2 with at least 600,000 iterations for HMAC-SHA256 (OWASP), or a memory-hard KDF such as Argon2id or scrypt, and keep the count in configuration so it can rise."
@@ -3624,7 +3628,28 @@
      "Microsoft code analysis rule CA5387 (Rfc2898DeriveBytes: at least 100,000 iterations)",
      "OWASP Password Storage Cheat Sheet (PBKDF2-HMAC-SHA256: 600,000 iterations)"
     ],
-    "summary_rules": [],
+    "summary_rules": [
+     {
+      "match": "^scrypt",
+      "steps": [
+       {
+        "how": "hashlib.scrypt(password, salt=os.urandom(16), n=2**17, r=8, p=1, dklen=32)",
+        "platform": "Python"
+       }
+      ],
+      "summary": "Raise the scrypt cost to at least N = 2^17 with r = 8 and p = 1 (OWASP), or use Argon2id, and keep the cost in configuration so it can rise."
+     },
+     {
+      "match": "^argon2",
+      "steps": [
+       {
+        "how": "argon2.PasswordHasher(time_cost=2, memory_cost=19456, parallelism=1) (argon2-cffi's defaults are stronger: PasswordHasher())",
+        "platform": "Python"
+       }
+      ],
+      "summary": "Use Argon2id with at least 19 MiB of memory and 2 passes (OWASP: m=19456, t=2, p=1, or an equivalent pair such as m=47104, t=1), and keep the cost in configuration."
+     }
+    ],
     "title": "Too few iterations for password-based key derivation",
     "verify": [
      {

@@ -53,6 +53,15 @@ CONFIG_WEAKNESS_CODES = frozenset({
 _WEAKNESS_CODES = WEAK_CRYPTO_CODES | {EXPIRED_CERTIFICATE, "CUSTOM_CRYPTO"} | CONFIG_WEAKNESS_CODES
 
 _SEVERITY_IMPACT = {"error": "High", "warning": "Medium", "note": "Low", "none": "Low"}
+
+
+def _weakens(flag: Any) -> bool:
+    """A finding that makes the asset weak (classically broken). A KDF cost above
+    the NIST floor but below the OWASP minimum (WEAK_KDF_ITERATIONS at note, Low)
+    asks for a higher cost; it does not make PBKDF2 / scrypt / Argon2 broken today."""
+    if flag.code == "WEAK_KDF_ITERATIONS" and flag.severity == "note":
+        return False
+    return flag.code in _WEAKNESS_CODES
 _IMPACT_RANK = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
 
 
@@ -148,7 +157,7 @@ def _finding(comp: AIComponent, result: ScanResult) -> dict[str, Any]:
         "pqc_migration_roadmap": props.get("crypto:pqcMigrationRoadmap"),
         "parameter_set": props.get("crypto:parameterSet"),
         "hybrid": props.get("crypto:hybrid") == "true",
-        "weak": any(c in _WEAKNESS_CODES for c in codes),
+        "weak": any(_weakens(f) for f in result.flags_for(comp.bom_ref)),
         "finding_codes": codes,
         "description": _finding_description(comp, result),
         "location": props.get("crypto:source") or props.get("discovery:source") or "",
@@ -488,9 +497,7 @@ def _crypto_graph(
             "impact": _impact_for(c, result),
             "quantum_vulnerable": (c.properties or {}).get("crypto:quantumVulnerable")
             == "true",
-            "weak": any(
-                f.code in _WEAKNESS_CODES for f in result.flags_for(c.bom_ref)
-            ),
+            "weak": any(_weakens(f) for f in result.flags_for(c.bom_ref)),
             "location": (c.properties or {}).get("discovery:source")
             or (c.properties or {}).get("crypto:source"),
         }

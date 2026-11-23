@@ -59,7 +59,12 @@ def _image_references(ctx: ScanContext, walk) -> None:
             props["discovery:line"] = str(ref.line)
         if ref.digest:
             props["image:digest"] = ref.digest
-        if not ref.tag and not ref.digest:
+        if ref.unresolved:
+            # a variable with no value in the repository: kept, never dropped
+            props["image:unresolved"] = ",".join(ref.unresolved)
+            if ref.repository != ref.reference:
+                props["image:tag"] = f"unresolved ({', '.join(ref.unresolved)})"
+        elif not ref.tag and not ref.digest:
             props["image:tag"] = "latest (implicit)"
         ctx.add_component(
             ContainerComponent(

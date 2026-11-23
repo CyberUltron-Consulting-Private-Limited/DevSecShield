@@ -352,6 +352,84 @@ def weak_padding_finding(component: AIComponent) -> tuple[str, str, str] | None:
     )
 
 
+# KDF cost minimums (review of #491 m7). NIST SP 800-132 section 5.2: at least 1,000
+# PBKDF2 iterations (the KB's WEAK_KDF_ITERATIONS floor, Medium). OWASP Password
+# Storage Cheat Sheet (2023): PBKDF2-HMAC-SHA1 1,300,000, -SHA256 600,000, -SHA512
+# 210,000 iterations; scrypt N = 2^17 (r 8, p 1); Argon2id one of the (memory KiB,
+# time) pairs below (p 1). Below OWASP but above the NIST floor: Low.
+_NIST_PBKDF2_MIN = 1_000
+_OWASP_PBKDF2_MIN = {
+    "HMAC-SHA1": 1_300_000,
+    "HMAC-SHA256": 600_000,
+    "HMAC-SHA512": 210_000,
+}
+_OWASP_SCRYPT_N_MIN = 2**17
+_OWASP_ARGON2 = ((47104, 1), (19456, 2), (12288, 3), (9216, 4), (7168, 5))
+
+
+def _int_prop(props: dict[str, str], key: str) -> int | None:
+    raw = str(props.get(key) or "")
+    return int(raw) if raw.isdigit() else None
+
+
+def kdf_parameter_findings(component: AIComponent) -> list[tuple[str, str, str]]:
+    """Grade a KDF algorithm asset's captured cost (its weakest call's, see
+    ``ast_crypto_scan._settle_kdf``) against NIST SP 800-132 and the OWASP minimums.
+
+    PBKDF2 below 1,000 iterations is Medium (the KB floor); below the OWASP minimum
+    for its PRF, scrypt N below 2^17 and Argon2 below every OWASP (memory, time)
+    pair are Low. A cost the scan could not read (library defaults, a value from
+    configuration) is not graded."""
+    if component.kind != "crypto_asset":
+        return []
+    props = component.properties or {}
+    if props.get("crypto:assetType") != "algorithm":
+        return []
+    name = component.name.upper()
+    where = props.get("crypto:kdfWeakestLine") or props.get("crypto:line")
+    at = f" (line {where})" if where else ""
+    if name.startswith("PBKDF2"):
+        iterations = _int_prop(props, "crypto:iterations")
+        if iterations is None:
+            return []
+        prf = props.get("crypto:kdfPrf") or "HMAC-SHA256"
+        floor = _OWASP_PBKDF2_MIN.get(prf.upper().replace("SHA-", "SHA"), 600_000)
+        if iterations < _NIST_PBKDF2_MIN:
+            return [(WEAK_KDF_ITERATIONS, _SEV_MED,
+                     f"Weak KDF iteration count {component.name}{at}: {iterations} "
+                     f"iterations (CWE-916), below the 1,000 minimum of NIST SP "
+                     f"800-132 "
+                     f"and the OWASP minimum of {floor:,} for PBKDF2-{prf}.")]
+        if iterations < floor:
+            return [(WEAK_KDF_ITERATIONS, _SEV_LOW,
+                     f"KDF iteration count {component.name}{at}: {iterations:,} "
+                     f"iterations, below the OWASP Password Storage minimum of "
+                     f"{floor:,} for PBKDF2-{prf} (CWE-916). Raise it, or move to "
+                     f"Argon2id.")]
+        return []
+    if name.startswith("SCRYPT"):
+        cost = _int_prop(props, "crypto:scryptN")
+        if cost is not None and cost < _OWASP_SCRYPT_N_MIN:
+            return [(WEAK_KDF_ITERATIONS, _SEV_LOW,
+                     f"scrypt cost {component.name}{at}: N = {cost:,}, below the OWASP "
+                     f"Password Storage minimum N = 2^17 (131,072) with r = 8, p = 1 "
+                     f"(CWE-916).")]
+        return []
+    if name.startswith("ARGON2"):
+        memory = _int_prop(props, "crypto:argon2MemoryCost")
+        time = _int_prop(props, "crypto:argon2TimeCost")
+        if memory is None or time is None:
+            return []
+        if any(memory >= m and time >= t for m, t in _OWASP_ARGON2):
+            return []
+        return [(WEAK_KDF_ITERATIONS, _SEV_LOW,
+                 f"Argon2 cost {component.name}{at}: memory {memory:,} KiB, "
+                 f"time {time}, "
+                 f"below the OWASP Password Storage minimum (Argon2id 19 MiB with 2 "
+                 f"passes, or an equivalent pair) (CWE-916).")]
+    return []
+
+
 def material_misuse_findings(component: AIComponent) -> list[tuple[str, str, str]]:
     """Return every crypto-material misuse flag on a related-crypto-material asset (C6).
 
@@ -935,5 +1013,6 @@ __all__ = [
     "cert_expiry_finding",
     "certificate_findings",
     "material_misuse_findings",
+    "kdf_parameter_findings",
     "cipher_suite_findings",
 ]

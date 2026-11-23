@@ -731,6 +731,34 @@ def append_bom_compliance_sections(
         logger.warning("BOM compliance appendix failed; continuing PDF export", exc_info=True)
 
 
+def wrap_at_separators(text: str, style: ParagraphStyle, width: float, separators: str = "-/:_.") -> str:
+    """Escaped Paragraph markup of ``text`` broken into lines of at most ``width`` points, only after one of
+    ``separators`` (a path at "/" and ":", an id or a primitive at "-"), so a narrow table column never breaks a
+    word in the middle ("block-ciph er"). A single part wider than the column is left to the paragraph."""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+
+    parts: List[str] = []
+    current = ""
+    for ch in text:
+        current += ch
+        if ch in separators:
+            parts.append(current)
+            current = ""
+    if current:
+        parts.append(current)
+    lines: List[str] = []
+    line = ""
+    for part in parts:
+        if line and stringWidth(line + part, style.fontName, style.fontSize) > width:
+            lines.append(line)
+            line = part
+        else:
+            line += part
+    if line:
+        lines.append(line)
+    return "<br/>".join(escape_html(x) for x in lines)
+
+
 def escape_html(text: Any) -> str:
     if text is None:
         return ""
@@ -2203,7 +2231,9 @@ def build_finding_section(
             code_text = code_text[:700] + "..."
         code_text = "\n".join(code_text.split("\n")[:14])
         code_box = Table(
-            [[Preformatted(escape_html(code_text), styles["code"], maxLineLength=90)]],
+            # Preformatted draws its text verbatim (no markup is parsed), so the evidence goes in as written: escaping
+            # it printed "&lt;redacted:21&gt;" (review of #491 m1), and unescaped text cannot inject markup here
+            [[Preformatted(code_text, styles["code"], maxLineLength=90)]],
             colWidths=[CONTENT_WIDTH - 3.0 - 28],
         )
         code_box.setStyle(

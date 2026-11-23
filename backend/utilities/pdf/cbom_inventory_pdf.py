@@ -14,7 +14,9 @@ from typing import Any, Dict, List
 from reportlab.lib.units import inch
 from reportlab.platypus import CondPageBreak, Paragraph, Spacer
 
-from backend.utilities.pdf.report_branding import escape_html, styled_data_table
+from backend.utilities.pdf.report_branding import escape_html, styled_data_table, wrap_at_separators
+
+_CELL_PAD = 16  # styled_data_table's left + right cell padding, in points
 
 # KDF / construction parameters printed under "Parameters", in order: property -> label.
 _PARAMS = (
@@ -72,11 +74,13 @@ def _algorithm_rows(components: List[Dict[str, Any]], libs: Dict[str, str]) -> L
         library = libs.get((props.get("crypto:detectedBy") or "").lower()) or ", ".join(
             libs.get(x.strip().lower(), x.strip()) for x in (props.get("crypto:libraries") or "").split(",") if x
         )
+        # no leading "—;" when the size is unknown: only the parts the scan knows
+        detail = ([f"{size} bits" if size.isdigit() else size] if size else []) + params
         rows.append([
             str(comp.get("name") or ""),
             str(ap.get("primitive") or props.get("crypto:primitive") or "—"),
             str(ap.get("mode") or props.get("crypto:mode") or "—").upper(),
-            (f"{size} bits" if size.isdigit() else size or "—") + (f"; {'; '.join(params)}" if params else ""),
+            "; ".join(detail) or "—",
             "—" if level is None else str(level),
             library or "—",
             _location(props),
@@ -118,21 +122,34 @@ def _material_rows(components: List[Dict[str, Any]]) -> List[List[str]]:
 
 
 def _library_rows(components: List[Dict[str, Any]]) -> List[List[str]]:
+    """One row per library. A vulnerable pin the advisory lane lists as its own component (``cryptography@>=42``)
+    and links to the code lane's row for the same package (``crypto:libraryRef`` -> pyca/cryptography) is printed
+    on that row, not as a second library (review of #491 m6)."""
+    libraries = [c for c in components if c.get("type") == "library" and _props(c).get("crypto:role") == "library"]
+    refs = {str(c.get("bom-ref") or "") for c in libraries}
+    pins: Dict[str, List[Dict[str, str]]] = {}
+    for comp in libraries:
+        target = _props(comp).get("crypto:libraryRef")
+        if target and target in refs and target != comp.get("bom-ref"):
+            pins.setdefault(target, []).append(_props(comp))
     rows: List[List[str]] = []
-    for comp in components:
+    for comp in libraries:
         props = _props(comp)
-        if comp.get("type") != "library" or props.get("crypto:role") != "library":
-            continue
+        if props.get("crypto:libraryRef") in pins:
+            continue  # printed on the library row it is linked to
+        advisories = [p for p in [props] + pins.get(str(comp.get("bom-ref") or ""), []) if p.get("crypto:advisory")]
         version = str(comp.get("version") or "")
         if version:
             basis = f"from {props.get('crypto:versionSource') or 'the manifest'}"
             if props.get("crypto:versionConstraint"):
                 basis += f" (declared {props['crypto:versionConstraint']})"
         else:
-            declared = props.get("crypto:versionConstraint") or props.get("crypto:version")
+            declared = props.get("crypto:versionConstraint") or props.get("crypto:version") or next(
+                (p.get("crypto:version") for p in advisories if p.get("crypto:version")), None)
             basis = props.get("crypto:versionUnknownReason") or (f"declared {declared}" if declared else "—")
-            if props.get("crypto:advisory"):
-                basis += f"; matches {props.get('crypto:advisoryCount') or 'known'} advisories"
+        for pin in advisories:
+            basis += f"; {pin.get('crypto:version') or 'the declared version'} matches " \
+                     f"{pin.get('crypto:advisoryCount') or 'known'} advisories"
         rows.append([str(comp.get("name") or ""), version or "not known", basis, _location(props)])
     return sorted(rows, key=lambda r: r[0].lower())
 
@@ -149,14 +166,21 @@ def _image_rows(components: List[Dict[str, Any]]) -> List[List[str]]:
 
 
 def _table(story: List[Any], title: str, note: str, headers: List[str], rows: List[List[str]],
-           widths: List[float], styles: Dict[str, Any]) -> None:
+           widths: List[float], styles: Dict[str, Any], wrap: Dict[int, str] | None = None) -> None:
+    """One inventory table. ``wrap`` maps a column to the separators its cells may break after (paths at "/" and
+    ":", primitives at "-"), so narrow columns never split a word."""
     if not rows:
         return
     story.append(Spacer(1, 0.12 * inch))
+    story.append(CondPageBreak(1.4 * inch))  # the title never sits alone at the foot of a page
     story.append(Paragraph(escape_html(f"{title} ({len(rows)})"), styles["heading"]))
     if note:
         story.append(Paragraph(escape_html(note), styles["muted"]))
     shown = rows[:_MAX_ROWS]
+    if wrap:
+        cell = styles["table_cell"]
+        shown = [[Paragraph(wrap_at_separators(str(v), cell, widths[i] - _CELL_PAD, wrap[i]), cell) if i in wrap
+                  else v for i, v in enumerate(row)] for row in shown]
     story.append(styled_data_table(headers, shown, styles=styles, col_widths=widths))
     if len(rows) > len(shown):
         story.append(Paragraph(escape_html(f"{len(rows) - len(shown)} more in the CycloneDX download."),
@@ -176,19 +200,23 @@ def append_cbom_inventory(story: List[Any], payload: Any, styles: Dict[str, Any]
         "Every cryptographic asset the scan found, with or without a finding: the same assets as the CycloneDX "
         "download. NIST level is the post-quantum security category (0 = broken by a quantum computer).",
         styles["muted"]))
-    _table(story, "Algorithms", "", ["Algorithm", "Primitive", "Mode", "Key size and parameters", "NIST level",
-                                     "Library", "Location"], _algorithm_rows(components, libs),
-           [1.05 * inch, 0.75 * inch, 0.45 * inch, 1.7 * inch, 0.45 * inch, 0.95 * inch, 1.15 * inch], styles)
+    path = "/:"
+    _table(story, "Algorithms", "NIST: the post-quantum security category.", ["Algorithm", "Primitive", "Mode",
+                                                                             "Key size and parameters", "NIST",
+                                                                             "Library", "Location"],
+           _algorithm_rows(components, libs),
+           [1.0 * inch, 0.85 * inch, 0.55 * inch, 1.85 * inch, 0.5 * inch, 1.0 * inch, 1.35 * inch], styles,
+           wrap={0: "-", 1: "-", 5: "/ @-", 6: path})
     _table(story, "Keys, certificates, protocols and crypto material",
            "Salt, IV, nonce and key literals are listed with their length and use; their values are not printed.",
            ["Asset", "Type", "Detail", "Location"], _material_rows(components),
-           [1.7 * inch, 1.0 * inch, 2.7 * inch, 1.1 * inch], styles)
+           [1.9 * inch, 1.15 * inch, 2.6 * inch, 1.45 * inch], styles, wrap={0: " /-", 1: "-", 3: path})
     _table(story, "Crypto libraries", "Version from the tree's lockfiles and manifests, or why it is not known.",
            ["Library", "Version", "Basis", "Declared or imported in"], _library_rows(components),
-           [1.5 * inch, 0.8 * inch, 2.8 * inch, 1.4 * inch], styles)
+           [1.5 * inch, 0.9 * inch, 3.15 * inch, 1.55 * inch], styles, wrap={0: "/ @-", 3: path})
     _table(story, "Container images", "Images named by Dockerfile FROM lines and Compose files (not pulled).",
            ["Image", "Tag or digest", "Named by", "Location"], _image_rows(components),
-           [2.2 * inch, 1.5 * inch, 1.2 * inch, 1.6 * inch], styles)
+           [2.4 * inch, 1.6 * inch, 1.3 * inch, 1.8 * inch], styles, wrap={0: "/:.-", 1: ".-:", 3: path})
     return True
 
 

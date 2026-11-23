@@ -46,6 +46,9 @@ ADDED_AFTER_BASE = {
     "WEAK_KDF_ITERATIONS": 4,
     # CB-28: RSA public exponent 3, High
     "WEAK_RSA_EXPONENT": 8,
+    # review of #491 m7: a Python KDF cost above the NIST floor but below the OWASP
+    # minimum, Low
+    "WEAK_KDF_ITERATIONS@note": 1,
 }
 
 
