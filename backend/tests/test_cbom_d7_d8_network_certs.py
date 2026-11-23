@@ -373,7 +373,10 @@ def test_d7_has_collapsible_bookmarks_for_the_suite_lists(view):
     titles = [item.title for item in outline if not isinstance(item, list)]
     assert "Accepted cipher suites by endpoint" in titles
     children = next(item for item in outline if isinstance(item, list))
-    assert [c.title for c in children][:2] == ["10.0.0.10:443 (B*)", "10.0.0.11:443 (A)"]
+    # lowest grade first: the endpoints that need work open first
+    assert [c.title for c in children] == ["10.0.0.12:25 (C)", "10.0.0.10:443 (B*)", "10.0.0.11:443 (A)"]
+    for section in ("SSH endpoints", "IKE / IPsec proposals", "OPC UA endpoint security", "TLS grade rubric"):
+        assert section in titles, section
 
 
 def test_d7_source_table_lists_every_current_network_source_and_no_deleted_one(view):
@@ -495,3 +498,106 @@ def test_shared_certificate_predicates():
     assert thumbprint({"fingerprint_sha256": ("AB:" * 32)[:-1]}) == "ab" * 32
     assert thumbprint({"fingerprint_sha256": "SHA256:lzKIsD0zuPFhjJOQAe9Qh+Pq1HO1vbFQ+ZQLvVPR7Ik"}) == ""
     assert thumbprint({"certificate_sha256": "cd" * 32}) == "cd" * 32
+
+
+# ----------------------------------------------------------------------------- review of #481
+def test_weak_suite_count_agrees_with_the_grade(view):
+    """RC4 caps 10.0.0.12:25 at C, so the register's weak-suite list names it too (one rule for both)."""
+    scoped, model = D7._scoped(view)
+    smtp = next(e for e in model.tls if e.key == "10.0.0.12:25")
+    assert "RC4 accepted" in smtp.grade.caps
+    net = next(f.fact["net"] for f in scoped.posture.facts if f.fact.get("address") == "10.0.0.12:25")
+    assert [(w["suite"], w["reasons"]) for w in net["weak_suites"]] == [("TLS_RSA_WITH_RC4_128_SHA", ["RC4"])]
+
+
+@pytest.mark.parametrize("temp,group,bits", [
+    ("DH, 2560 bits", "", 2560),            # a finite-field group: not "256" (P-256)
+    ("DH, 1024 bits", "", 1024),
+    ("DH, 384 bits", "", 384),
+    ("ECDH, P-384, 384 bits", "", 7680),
+    ("ECDH, prime256v1, 256 bits", "", 3072),
+    ("X25519, 253 bits", "", 3072),
+    ("", "ffdhe2048", 2048),
+    ("", "secp521r1", 15360),
+    ("", "X25519MLKEM768", 15360),
+    ("", "", None),
+])
+def test_key_exchange_strength_is_read_from_exact_tokens(temp, group, bits):
+    from backend.utilities.cbom_sources import network_estate as NE
+
+    assert NE._kx_bits({"server_temp_key": temp, "negotiated_group": group}, False, None) == bits
+
+
+def test_key_exchange_tiers_and_an_unrecorded_key_exchange_is_capped_and_said():
+    from backend.utilities.cbom_sources import network_estate as NE
+
+    assert [NE.kx_score(b) for b in (384, 512, 1024, 2048, 4096, None)] == [20, 40, 80, 90, 100, 80]
+    grade = NE.grade_tls(_tls(["TLSv1.3"], {"TLSv1.3": ["TLS_AES_256_GCM_SHA384"]}, group=""), NOW.date())
+    assert grade.letter == "B" and "key exchange not recorded (scored as < 2048 bits)" in grade.caps
+    weak_dh = _tls(["TLSv1.2"], {"TLSv1.2": ["TLS_DHE_RSA_WITH_AES_256_GCM_SHA384"]}, group="")
+    weak_dh["server_temp_key"] = "DH, 768 bits"
+    assert NE.grade_tls(weak_dh, NOW.date()).letter == "F"
+    assert any("< 512 = 20" in rule and "not recorded" in rule for _part, rule in NE.RUBRIC)
+
+
+def test_d8_sections_are_pdf_bookmarks(d8_pdf):
+    titles = [item.title for item in PdfReader(io.BytesIO(d8_pdf)).outline if not isinstance(item, list)]
+    assert titles[:3] == ["1. Summary", "2. Validity bands as of 2026-11-23", "3. Certificate register"]
+    assert "4. Discovery limits and manual-field guidance" in titles
+
+
+def _synthetic_view(endpoints: int, certs: int):
+    """A view whose Sources rows are ``endpoints`` TLS endpoints and ``certs`` chain certificates (two per endpoint)."""
+    import types
+
+    from backend.utilities.cbom_sources.cert_estate import EstateInputs
+    from backend.utilities.dashboard.cbom_team_rollup import TeamCbomView
+
+    coll = types.SimpleNamespace(key="sources:big", label="Sources run #9 · Big range", source_kind="network",
+                                 source_ref="big", run_id=9, job_id=90, observed_at=NOW)
+    rows = []
+    for i in range(endpoints):
+        where = f"10.{i // 65536}.{(i // 256) % 256}.{i % 256}:443"
+        facts = _tls(["TLSv1.2", "TLSv1.3"], {"TLSv1.3": ["TLS_AES_256_GCM_SHA384"],
+                                             "TLSv1.2": ["TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"]})
+        rows.append(types.SimpleNamespace(node_type="tls_endpoint", facts=facts, collection=coll, target=where,
+                                          identity=f"node|big|{where}", row={"location": where, "title": where}))
+    for j in range(certs):
+        where = f"10.{(j // 2) // 65536}.{((j // 2) // 256) % 256}.{(j // 2) % 256}:443#chain[{j % 2}]"
+        facts = {"subject": f"CN=h{j}", "issuer": "CN=CA", "fingerprint_sha256": f"{j:064x}", "key_alg": "RSA",
+                 "key_size": 2048, "not_after": "2027-01-01T00:00:00Z"}
+        rows.append(types.SimpleNamespace(node_type="certificate", facts=facts, collection=coll,
+                                          target=where.split(":")[0], identity=f"cert:{j}",
+                                          row={"location": where, "title": f"CN=h{j}"}))
+    view = TeamCbomView(team_id=1, team_name="Big", generated_at=NOW, as_of=NOW.date())
+    view.estate = EstateInputs(rows=tuple(rows))
+    return view
+
+
+def test_tls_endpoints_scale_linearly_5k_endpoints_10k_certificates():
+    """Review of #481 (major): the chain lookup was O(endpoints x certificates), 9.3 s at 5k / 10k. Now one index."""
+    import time
+
+    from backend.utilities.cbom_sources import network_estate as NE
+
+    view = _synthetic_view(5_000, 10_000)
+    started = time.perf_counter()
+    endpoints, _deleted = NE.tls_endpoints(view)
+    elapsed = time.perf_counter() - started
+    assert len(endpoints) == 5_000 and all(len(e.chain) == 2 for e in endpoints)
+    assert elapsed < 4.0, f"tls_endpoints took {elapsed:.2f} s for 5,000 endpoints / 10,000 certificates"
+
+
+def test_very_large_d7_tables_are_capped_and_say_where_the_full_list_is():
+    view = _synthetic_view(D7.D7_ROW_CAP + 5, 0)
+    _scoped, model = D7._scoped(view)
+    styles_width = 720.0
+    from backend.utilities.pdf.cbom_deliverable_common import _shared_styles
+
+    flow = D7._grades(model, _shared_styles(), styles_width)
+    notes = [f.getPlainText() for f in flow if hasattr(f, "getPlainText") and "Showing" in f.getPlainText()]
+    assert notes == [f"Showing {D7.D7_ROW_CAP} of {D7.D7_ROW_CAP + 5} graded endpoints; the full list is in each "
+                     "Sources run's asset list and CycloneDX export (protocolProperties.cipherSuites)."]
+    suites = D7._suites(model, _shared_styles(), styles_width)
+    marks = [f for f in suites if isinstance(f, D7.Bookmark) and f.level == 1]
+    assert len(marks) == D7.SUITE_ENDPOINT_CAP

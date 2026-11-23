@@ -842,7 +842,8 @@ export default function CBOMPage() {
                           {pendingSlug === d.slug && !pendingCsv ? <Loader2 className="animate-spin" /> : <FileText />}
                           <span>{`#${d.number} · ${d.title}`}</span>
                         </DropdownMenuItem>
-                        {"csv" in d && d.csv && (
+                        {/* the backend says which formats exist (a frontend newer than its backend offers no CSV) */}
+                        {hint?.formats?.includes("csv") && (
                           <DropdownMenuItem
                             data-testid={`cbom-deliverable-${d.slug}-csv`}
                             className={itemClass}

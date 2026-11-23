@@ -54,9 +54,12 @@ GRADE_BANDS = ((80, "A"), (65, "B"), (50, "C"), (35, "D"), (20, "E"), (0, "F"))
 RUBRIC = (
     ("Protocol (30 %)", "Average of the best and the worst version offered: TLS 1.3 / 1.2 = 100, TLS 1.1 = 95, "
                         "TLS 1.0 = 90, SSL 3 = 80, SSL 2 = 0."),
-    ("Key exchange (30 %)", "Strength of the negotiated key exchange in RSA-equivalent bits: < 1024 = 40, < 2048 = 80, "
-                            "< 4096 = 90, >= 4096 = 100 (X25519 / P-256 count as 3072, P-384 / X448 as 7680, a "
-                            "post-quantum hybrid group as 100). Static RSA key exchange counts the certificate key."),
+    ("Key exchange (30 %)", "Strength of the negotiated key exchange in RSA-equivalent bits: < 512 = 20, < 1024 = 40, "
+                            "< 2048 = 80, < 4096 = 90, >= 4096 = 100 (X25519 / P-256 count as 3072, P-384 / P-521 / "
+                            "X448 as 7680, a finite-field DH group as its modulus size, a post-quantum hybrid group as "
+                            "100). Static RSA key exchange counts the certificate key. When the probe recorded no key "
+                            "exchange it scores 80 (the < 2048 tier), the grade is capped at B and the endpoint says "
+                            "'key exchange not recorded'."),
     ("Cipher strength (40 %)", "Average of the strongest and the weakest accepted suite: 0 bits (NULL) = 0, < 128 = 20, "
                                "< 256 = 80, >= 256 = 100 (3DES counts 112 bits, RC4 128)."),
     ("Letter", "A >= 80, B >= 65, C >= 50, D >= 35, E >= 20, else F; then the caps below (the lowest cap wins)."),
@@ -120,22 +123,76 @@ def _worse(a: str, b: str) -> str:
     return a if _ORDER.index(a) >= _ORDER.index(b) else b
 
 
+# RSA-equivalent strength of a named elliptic-curve / Edwards group (NIST SP 800-57 Part 1 Table 2)
+_CURVE_RSA_BITS = {"x25519": 3072, "secp256r1": 3072, "p-256": 3072, "prime256v1": 3072, "brainpoolp256r1": 3072,
+                   "brainpoolp256r1tls13": 3072, "secp224r1": 2048, "p-224": 2048, "x448": 7680, "secp384r1": 7680,
+                   "p-384": 7680, "brainpoolp384r1": 7680, "brainpoolp384r1tls13": 7680, "secp521r1": 15360,
+                   "p-521": 15360, "brainpoolp512r1": 15360, "brainpoolp512r1tls13": 15360}
+_FFDHE = re.compile(r"^ffdhe(\d{4})$")
+_BITS = re.compile(r"(\d{2,5})\s*bits?\b")
+
+
+def _ec_rsa_bits(bits: int) -> int:
+    return 15360 if bits >= 512 else 7680 if bits >= 384 else 3072 if bits >= 250 else 2048 if bits >= 224 else 1024
+
+
 def _kx_bits(facts: Mapping[str, Any], static_rsa: bool, leaf_bits: int | None) -> int | None:
+    """RSA-equivalent bits of the key exchange, or None when the probe recorded none. Exact tokens, never
+    substrings: "DH, 2560 bits" is a 2560-bit finite-field group, not P-256 (OpenSSL ``Server Temp Key`` forms:
+    "X25519, 253 bits", "ECDH, P-256, 256 bits", "ECDH, prime256v1, 256 bits", "DH, 2048 bits")."""
     if static_rsa and leaf_bits:
         return leaf_bits
     group = norm_group(facts.get("negotiated_group") or "")
     temp = str(facts.get("server_temp_key") or "")
-    if _post_quantum(group) or _post_quantum(temp.split(",", 1)[0]):
+    parts = [p.strip() for p in temp.split(",") if p.strip()]
+    if _post_quantum(group) or any(_post_quantum(p) for p in parts[:2]):
         return 15360
-    text = (group + " " + temp).casefold()
-    if "x448" in text or "384" in text or "521" in text:
-        return 7680
-    if "x25519" in text or "256" in text:
-        return 3072
-    match = re.search(r"(?:dh|ffdhe)[^0-9]*(\d{3,5})", text)
+    fold = group.casefold()
+    if fold in _CURVE_RSA_BITS:
+        return _CURVE_RSA_BITS[fold]
+    match = _FFDHE.match(fold)
     if match:
         return int(match.group(1))
+    if parts:
+        kind = parts[0].casefold()
+        named = next((p.casefold() for p in parts[1:] if p.casefold() in _CURVE_RSA_BITS), "")
+        size = next((int(m.group(1)) for p in parts if (m := _BITS.search(p.casefold()))), None)
+        if kind in _CURVE_RSA_BITS:
+            return _CURVE_RSA_BITS[kind]
+        if kind in ("dh", "dhe", "ffdh"):
+            return size
+        if kind in ("ecdh", "ecdhe"):
+            return _CURVE_RSA_BITS[named] if named else (_ec_rsa_bits(size) if size else None)
     return None
+
+
+def kx_score(bits: int | None) -> int:
+    """The key-exchange part of the score; an unrecorded key exchange scores the < 2048 tier (80)."""
+    if bits is None:
+        return 80
+    return 20 if bits < 512 else 40 if bits < 1024 else 80 if bits < 2048 else 90 if bits < 4096 else 100
+
+
+_WEAK_RULES = (  # (reason, test on the upper-case IANA / OpenSSL suite name); the grade caps read the same list
+    ("NULL cipher", lambda n: _suite_bits(n) == 0),
+    ("EXPORT", lambda n: "EXPORT" in n or "EXP-" in n),
+    ("anonymous key exchange", lambda n: "_ANON_" in n or n.startswith(("ADH", "AECDH"))),
+    ("RC4", lambda n: "RC4" in n),
+    ("64-bit block (DES / 3DES)", lambda n: _suite_bits(n) in (56, 112)),
+)
+
+
+def weak_by_name(names: Iterable[str]) -> dict[str, list[str]]:
+    """Weak suites by reason, from the suite names alone (``_WEAK_RULES``)."""
+    out: dict[str, list[str]] = {}
+    for name in names:
+        upper = str(name).upper()
+        for reason, test in _WEAK_RULES:
+            if test(upper):
+                out.setdefault(reason, [])
+                if name not in out[reason]:
+                    out[reason].append(str(name))
+    return out
 
 
 def grade_tls(facts: Mapping[str, Any], as_of: Any = None) -> Grade:
@@ -159,11 +216,10 @@ def grade_tls(facts: Mapping[str, Any], as_of: Any = None) -> Grade:
     weak = facts.get("weak_ciphers_accepted") if isinstance(facts.get("weak_ciphers_accepted"), Mapping) else {}
     static_rsa = bool(weak.get("static_rsa")) or any(re.match(r"TLS_RSA_WITH", n) for n in names)
     kx = _kx_bits(facts, static_rsa and not any("ECDHE" in n or "DHE" in n for n in names), leaf_bits)
-    kx_score = 90 if kx is None else (40 if kx < 1024 else 80 if kx < 2048 else 90 if kx < 4096 else 100)
     bits = [_suite_bits(n) for n in names]
     strong, weakest = max(bits), min(bits)
     cipher = sum((0 if b == 0 else 20 if b < 128 else 80 if b < 256 else 100) for b in (strong, weakest)) / 2
-    score = round(0.3 * protocol + 0.3 * kx_score + 0.4 * cipher)
+    score = round(0.3 * protocol + 0.3 * kx_score(kx) + 0.4 * cipher)
     letter, caps = _band(score), []
 
     def cap(to: str, why: str) -> None:
@@ -173,18 +229,23 @@ def grade_tls(facts: Mapping[str, Any], as_of: Any = None) -> Grade:
         caps.append(why)
 
     upper = [n.upper() for n in names]
+    by_reason = weak_by_name(names)
     if "SSLv2" in offered:
         cap("F", "SSL 2 offered")
-    if any(b == 0 for b in bits) or any("EXPORT" in n or "_ANON_" in n or "ADH" in n for n in upper):
+    if any(r in by_reason for r in ("NULL cipher", "EXPORT", "anonymous key exchange")):
         cap("F", "NULL, EXPORT or anonymous suite accepted")
     if leaf_bits and str(leaf.get("key_alg") or "").upper().startswith("RSA") and leaf_bits < 1024:
         cap("F", f"certificate RSA key {leaf_bits} bits")
     if "SSLv3" in offered:
         cap("C", "SSL 3 offered")
-    if any("RC4" in n for n in upper):
+    if "RC4" in by_reason:
         cap("C", "RC4 accepted")
-    if any(b in (56, 112) for b in bits):
+    if "64-bit block (DES / 3DES)" in by_reason:
         cap("C", "DES / 3DES (64-bit block) accepted")
+    if kx is None:
+        cap("B", "key exchange not recorded (scored as < 2048 bits)")
+    elif kx < 1024:
+        cap("F", f"key exchange {kx} bits")
     if "TLSv1.0" in offered or "TLSv1.1" in offered:
         cap("B", "TLS 1.0 / 1.1 offered")
     has_fs = any("ECDHE" in n or "DHE" in n or n.startswith(("TLS_AES_", "TLS_CHACHA20_")) for n in upper)
@@ -360,29 +421,33 @@ class TlsEndpoint:
         return self.observed.key
 
 
-def _chain_of(endpoint: str, certs: Sequence[Any]) -> tuple[ChainCert, ...]:
-    out: dict[int, ChainCert] = {}
+def chain_index(certs: Sequence[Any]) -> dict[str, tuple[ChainCert, ...]]:
+    """``host:port`` -> the certificates its handshake presented, by chain position (``#chain[i]`` locations). Built
+    once per document in one pass over the certificate rows, so the lookup per endpoint is a dict read (a
+    5,000-endpoint, 10,000-certificate estate is linear, not quadratic)."""
+    found: dict[str, dict[int, ChainCert]] = {}
     for item in certs:
         location = str(item.row.get("location") or "")
-        if location.split("#", 1)[0] != endpoint.split("/", 1)[0]:
-            continue
         match = _CHAIN.search(location)
         if not match:
             continue
+        slots = found.setdefault(location.split("#", 1)[0], {})
         index = int(match.group(1))
+        if index in slots:
+            continue  # the first row read for this position wins (rows come newest collection first per source)
         facts = item.facts if isinstance(item.facts, Mapping) else {}
         key = f"{facts.get('key_alg') or ''} {facts.get('key_size') or facts.get('curve') or ''}".strip()
-        held = out.get(index)
-        if held is None:
-            out[index] = ChainCert(index, str(facts.get("subject") or ""), str(facts.get("issuer") or ""),
-                                   str(facts.get("not_after") or ""), thumbprint(facts), key)
-    return tuple(out[i] for i in sorted(out))
+        slots[index] = ChainCert(index, str(facts.get("subject") or ""), str(facts.get("issuer") or ""),
+                                 str(facts.get("not_after") or ""), thumbprint(facts), key)
+    return {endpoint: tuple(slots[i] for i in sorted(slots)) for endpoint, slots in found.items()}
 
 
 def tls_endpoints(view: Any) -> tuple[list[TlsEndpoint], int]:
     """(unique TLS endpoints, rows left out because their source was deleted)."""
     rows, deleted = _rows(view, ("tls_endpoint",))
     certs, _d = _rows(view, ("certificate",))
+    certs.sort(key=lambda i: (i.collection.observed_at, i.collection.job_id), reverse=True)  # newest read wins
+    chains = chain_index(certs)
     out = []
     for observed in dedupe(rows):
         facts = observed.facts
@@ -397,7 +462,7 @@ def tls_endpoints(view: Any) -> tuple[list[TlsEndpoint], int]:
             observed=observed, service=service, starttls=service.startswith(STARTTLS_PREFIX),
             grade=grade_tls(facts, getattr(view, "as_of", None)), suites=accepted_suites(facts),
             suites_complete={str(k): bool(v) for k, v in complete.items()}, groups=tuple(dict.fromkeys(groups)),
-            chain=_chain_of(observed.key, certs),
+            chain=chains.get(observed.key.split("/", 1)[0], ()),
             not_read=tuple(str(x) for x in (enumeration.get("not_complete") or [])[:12])))
     return out, deleted
 
@@ -415,8 +480,16 @@ def tls_net(endpoint: TlsEndpoint, evidence: str) -> dict[str, Any]:
         return name.replace("TLSv", "TLS ") if name.startswith("TLSv") else name
 
     weak_map = facts.get("weak_ciphers_accepted") if isinstance(facts.get("weak_ciphers_accepted"), Mapping) else {}
-    weak = [{"suite": str(s), "reasons": [str(reason).replace("_", " ")]}
-            for reason, suites in sorted(weak_map.items()) if isinstance(suites, (list, tuple)) for s in suites]
+    # the probe's weak classes and the name rules the grade caps on (RC4, 3DES, NULL, EXPORT, anon), one row per suite
+    reasons: dict[str, list[str]] = {}
+    for reason, suites in sorted(weak_map.items()):
+        for suite in suites if isinstance(suites, (list, tuple)) else ():
+            reasons.setdefault(str(suite), []).append(str(reason).replace("_", " "))
+    for reason, suites in weak_by_name([n for items in endpoint.suites.values() for n in items]).items():
+        for suite in suites:
+            if reason not in reasons.setdefault(suite, []):
+                reasons[suite].append(reason)
+    weak = [{"suite": suite, "reasons": why} for suite, why in reasons.items()]
     leaf = facts.get("leaf") if isinstance(facts.get("leaf"), Mapping) else {}
     scsv = facts.get("fallback_scsv")
     downgrade = "" if scsv is None else ("TLS_FALLBACK_SCSV supported" if scsv else "TLS_FALLBACK_SCSV not supported")
@@ -601,7 +674,7 @@ def opcua_summary(observed: Observed) -> dict[str, str]:
     }
 
 
-__all__ = ["APPLIANCE_KINDS", "GRADE_BANDS", "PROTOCOL_SCORE", "RUBRIC", "ChainCert", "Grade", "Observed",
+__all__ = ["chain_index", "kx_score", "weak_by_name", "APPLIANCE_KINDS", "GRADE_BANDS", "PROTOCOL_SCORE", "RUBRIC", "ChainCert", "Grade", "Observed",
            "TlsEndpoint", "accepted_suites", "appliance_configs", "appliance_settings", "dedupe", "endpoint_key",
            "grade_tls", "ike_endpoints", "ike_summary", "norm_group", "opcua_summary", "ot_endpoints",
            "ssh_algorithms", "ssh_endpoints", "ssh_host_keys", "ssh_pq_kex", "tls_endpoints", "tls_net"]

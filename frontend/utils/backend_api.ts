@@ -2522,8 +2522,8 @@ export const CBOM_DELIVERABLES = [
   { slug: "methodology-evidence-plan", number: 3, title: "Cryptographic Discovery Methodology & Evidence Plan" },
   { slug: "infrastructure-cloud-encryption-posture", number: 5, title: "Infrastructure & Cloud Encryption Posture" },
   { slug: "network-tls-protocol-assessment", number: 7, title: "Network, TLS & Crypto Protocol Assessment" },
-  // SOW D8 is delivered as PDF and CSV (GET /{team_id}/cbom/deliverables/certificate-estate-register.csv)
-  { slug: "certificate-estate-register", number: 8, title: "Certificate Estate Register", csv: true },
+  // SOW D8 is also a CSV: the menu offers it when the manifest lists "csv" in the item's formats
+  { slug: "certificate-estate-register", number: 8, title: "Certificate Estate Register" },
   { slug: "data-at-rest-encryption-assessment", number: 9, title: "Data-at-Rest Encryption Assessment" },
   { slug: "third-party-assurance-register", number: 10, title: "Third-Party Cryptographic Assurance & Attestation Register" },
   { slug: "pqc-migration-roadmap", number: 15, title: "PQC Migration Roadmap" },

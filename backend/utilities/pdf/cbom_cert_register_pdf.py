@@ -87,6 +87,7 @@ from backend.utilities.pdf.cbom_deliverable_common import (
     status_chip,
     tone_for_impact,
 )
+from backend.utilities.pdf.cbom_pdf_outline import Bookmark
 from backend.utilities.pdf.report_branding import COLOR_BODY, COLOR_SLATE, REPORT_META
 
 REPORT_KEY = "cbom_cert_register"
@@ -811,7 +812,10 @@ def _bullets(items: Sequence[str], styles: Styles) -> list[Flowable]:
 def _scope_note(estate: EstateResult) -> str:
     """What the unique set leaves out, and where the full detail is (the CSV has every column untruncated)."""
     parts = ["The CSV export of this register has one row per certificate in the same order with the full "
-             "thumbprint, serial, subject alternative names and every location."]
+             "thumbprint, serial, subject alternative names and every location.",
+             "The certificate hygiene list (orphaned / unmanaged) counts the Sources estate store, which also keeps "
+             "certificates not seen in a source's latest collection and leaves out code-scan certificates, so its "
+             "count can differ from this one; both use the same thumbprint identity."]
     if estate.deleted_only:
         parts.append(f"{count_phrase(estate.deleted_only)} seen only by deleted sources "
                      f"{'is' if estate.deleted_only == 1 else 'are'} not listed.")
@@ -842,17 +846,19 @@ def _body(view: TeamCbomView, max_rows: int) -> Callable[[Styles, float], list[F
             """The next numbered section heading (numbers stay consecutive when 4 is absent)."""
             nonlocal section
             section += 1
-            return section_heading(f"{section}. {title}", styles, min_space=min_space)
+            flow = section_heading(f"{section}. {title}", styles, min_space=min_space)
+            # a level-0 bookmark per section (the PDF outline panel): first the page break, then the mark
+            return [flow[0], Bookmark(f"{section}. {title}", f"d8-section-{section}", 0), *flow[1:]]
 
         story.extend(heading("Summary"))
         story.append(kpi_strip(_kpi_cards(rows), width, max_per_row=7))
         story.append(Spacer(1, 6))
 
         # the band table is five rows: keep it, its lead and its heading on one page
-        bands_heading = heading(f"Validity bands as of {as_of_text}")[-1]
+        *bands_mark, bands_heading = heading(f"Validity bands as of {as_of_text}")
         bands_lead = Paragraph(pdf_text(f"{unique}, validity as of {as_of_text}."), styles["muted"])
         story.append(
-            KeepTogether([bands_heading, bands_lead, _bands_table(rows, view.as_of, width)])
+            KeepTogether([*bands_mark[1:], bands_heading, bands_lead, _bands_table(rows, view.as_of, width)])
         )
         story.append(Spacer(1, 6))
 

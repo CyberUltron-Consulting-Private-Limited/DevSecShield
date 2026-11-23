@@ -12,6 +12,7 @@ probed one.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -27,10 +28,10 @@ from backend.utilities.pdf.cbom_deliverable_common import (
     build_document,
     kpi_strip,
     manual_form,
-    pdf_plain,
-    section_heading,
     signoff_block,
 )
+from backend.utilities.pdf.cbom_deliverable_common import section_heading as _section_heading
+from backend.utilities.pdf.cbom_pdf_outline import Bookmark
 from backend.utilities.pdf.report_branding import REPORT_META
 
 DOCUMENT_NUMBER = 7  # SOW Table 7: D7 Network, TLS and Crypto Protocol Assessment
@@ -85,6 +86,35 @@ class _Model:
     deleted_sources: tuple[str, ...] = ()
     certificates: int = 0
     certificates_served: int = 0
+
+
+# Very large estates: a D7 table of probed evidence stops at D7_ROW_CAP rows and the per-endpoint suite appendix at
+# SUITE_ENDPOINT_CAP endpoints (lowest grade first); the document says how many were left out and where the full
+# lists are (each Sources run's CycloneDX export carries every endpoint's cipherSuites).
+D7_ROW_CAP = 1000
+SUITE_ENDPOINT_CAP = 300
+_FULL_LIST = "the full list is in each Sources run's asset list and CycloneDX export (protocolProperties.cipherSuites)"
+_GRADE_ORDER = {letter: rank for rank, letter in enumerate("FTEDCBA-")}
+
+
+def section_heading(text: str, styles: Styles, *, min_space: float = 90) -> list[Flowable]:
+    """The shared heading plus a level-0 bookmark, so every section is one click away in the PDF outline."""
+    flow = _section_heading(text, styles, min_space=min_space)
+    slug = re.sub(r"[^a-z0-9]+", "-", text.casefold()).strip("-")[:60]
+    return [flow[0], Bookmark(text, f"d7-{slug}", 0, closed=True), *flow[1:]]
+
+
+def _capped(rows: list[list[Any]], noun: str, styles: Styles,
+            cap: int = D7_ROW_CAP) -> tuple[list[list[Any]], list[Flowable]]:
+    if len(rows) <= cap:
+        return rows, []
+    return rows[:cap], [common.note(f"Showing {cap} of {len(rows)} {noun}; {_FULL_LIST}.", styles)]
+
+
+def _table(headers: tuple[str, ...], rows: list[list[Any]], weights: tuple[float, ...], width: float, styles: Styles,
+           noun: str) -> list[Flowable]:
+    shown, notes = _capped(rows, noun, styles)
+    return [*notes, *common.register(headers, shown, weights, width, styles, noun=noun)]
 
 
 _SOURCES_RENDERED = frozenset({"tls_endpoint", "ssh_service"})  # kinds this document reads from the rows themselves
@@ -234,7 +264,7 @@ def _endpoint_register(view: object, styles: Styles, width: float) -> list[Flowa
                 "Location",
             ),
             rows,
-            (130, 56, 46, 34, 36, 30, 60, 34, 46, 50, 74, 52, 60),
+            (130, 60, 46, 34, 36, 30, 60, 56, 46, 52, 56, 64, 42),
             width,
             styles,
             view=view,
@@ -462,23 +492,6 @@ def _imports(view: object, styles: Styles, width: float) -> list[Flowable]:
     ]
 
 
-# ----------------------------------------------------------------------------- Sources evidence sections (FIX-B2)
-class _Bookmark(Flowable):
-    """A PDF outline entry at this point of the story: the viewer's bookmark panel shows it collapsed under its
-    parent, so a long per-endpoint list folds away (``closed``)."""
-
-    def __init__(self, title: str, key: str, level: int, closed: bool = True) -> None:
-        super().__init__()
-        self.title, self.key, self.level, self.closed = title, key, level, closed
-
-    def wrap(self, availWidth: float, availHeight: float) -> tuple[float, float]:
-        return 0, 0
-
-    def draw(self) -> None:
-        self.canv.bookmarkPage(self.key)
-        self.canv.addOutlineEntry(pdf_plain(self.title, limit=120), self.key, level=self.level, closed=self.closed)
-
-
 def _codes(codes: Any) -> str:
     return " ".join(str(c) for c in codes or ())
 
@@ -512,23 +525,25 @@ def _grades(model: _Model, styles: Styles, width: float) -> list[Flowable]:
         ])
     return [
         *section_heading("TLS endpoint grades", styles),
-        *common.register(("Endpoint", "Service", "Grade", "Score", "Caps and trust", "Negotiated", "Cipher",
+        *_table(("Endpoint", "Service", "Grade", "Score", "Caps and trust", "Negotiated", "Cipher",
                           "Groups", "Suite enumeration", "Source"), rows,
-                         (90, 50, 50, 30, 130, 45, 100, 60, 90, 75), width, styles, noun="graded endpoints"),
+                         (90, 50, 50, 30, 130, 45, 100, 60, 90, 75), width, styles, "graded endpoints"),
     ]
 
 
 def _suites(model: _Model, styles: Styles, width: float) -> list[Flowable]:
     flow: list[Flowable] = [*section_heading("Accepted cipher suites by endpoint", styles),
-                            _Bookmark("Accepted cipher suites by endpoint", "d7-suites", 0, closed=True),
                             common.note("Every suite the probe saw accepted, per protocol version. Each endpoint is a "
                                         "collapsed entry under 'Accepted cipher suites by endpoint' in the PDF "
                                         "bookmarks panel. 'Incomplete' means the probe's handshake budget ran out "
                                         "before every suite was tried.", styles)]
     rows_all = 0
-    for index, e in enumerate(model.tls):
-        if not e.suites:
-            continue
+    listed = sorted((e for e in model.tls if e.suites), key=lambda e: _GRADE_ORDER.get(e.grade.letter, 9))
+    if len(listed) > SUITE_ENDPOINT_CAP:
+        flow.append(common.note(f"Showing the {SUITE_ENDPOINT_CAP} lowest-graded of {len(listed)} endpoints; "
+                                f"{_FULL_LIST}.", styles))
+        listed = listed[:SUITE_ENDPOINT_CAP]
+    for index, e in enumerate(listed):
         rows = []
         for version, names in e.suites.items():
             done = e.suites_complete.get(version)
@@ -536,7 +551,7 @@ def _suites(model: _Model, styles: Styles, width: float) -> list[Flowable]:
             for position, name in enumerate(names):  # one suite per row: a long list is never cut
                 rows.append([version if position == 0 else "", position + 1, name, state if position == 0 else ""])
                 rows_all += 1
-        flow.append(_Bookmark(f"{e.key} ({e.grade.text})", f"d7-suites-{index}", 1, closed=True))
+        flow.append(Bookmark(f"{e.key} ({e.grade.text})", f"d7-suites-{index}", 1, closed=True))
         flow.extend(common.register((f"{e.key} · version", "#", "Accepted suite (IANA name)", "Enumeration"),
                                     rows, (110, 30, 480, 100), width, styles, noun="suite rows"))
     if rows_all == 0:
@@ -552,8 +567,8 @@ def _chains(model: _Model, styles: Styles, width: float) -> list[Flowable]:
                          (cert.thumbprint[:16] + "\u2026") if cert.thumbprint else ""])
     return [
         *section_heading("Certificate chains presented", styles),
-        *common.register(("Endpoint", "#", "Subject", "Issuer", "Valid to", "Key", "SHA-256"), rows,
-                         (100, 20, 170, 170, 60, 70, 90), width, styles, noun="chain certificates"),
+        *_table(("Endpoint", "#", "Subject", "Issuer", "Valid to", "Key", "SHA-256"), rows,
+                         (100, 20, 170, 170, 60, 70, 90), width, styles, "chain certificates"),
     ]
 
 
@@ -566,9 +581,9 @@ def _ssh(model: _Model, styles: Styles, width: float) -> list[Flowable]:
                      _codes(o.codes), _seen(o)])
     return [
         *section_heading("SSH endpoints", styles),
-        *common.register(("Endpoint", "Banner", "Host keys", "Key exchange", "Ciphers", "MACs", "PQ kex",
+        *_table(("Endpoint", "Banner", "Host keys", "Key exchange", "Ciphers", "MACs", "PQ kex",
                           "Finding codes", "Source"), rows, (70, 70, 120, 110, 90, 70, 30, 90, 70), width, styles,
-                         noun="SSH endpoints"),
+                         "SSH endpoints"),
     ]
 
 
@@ -581,8 +596,8 @@ def _appliances(model: _Model, styles: Styles, width: float) -> list[Flowable]:
                      f.get("section") or "", NE.appliance_settings(o), _codes(o.codes), _seen(o)])
     return [
         *section_heading("Network appliance configuration (TLS, SSH, IKE, IPsec)", styles),
-        *common.register(("Appliance", "Vendor", "Setting", "Section", "Configured values", "Finding codes",
-                          "Source"), rows, (70, 60, 60, 120, 220, 110, 80), width, styles, noun="appliance settings"),
+        *_table(("Appliance", "Vendor", "Setting", "Section", "Configured values", "Finding codes",
+                          "Source"), rows, (70, 60, 60, 120, 220, 110, 80), width, styles, "appliance settings"),
     ]
 
 
@@ -599,11 +614,11 @@ def _ike(model: _Model, styles: Styles, width: float) -> list[Flowable]:
         *section_heading("IKE / IPsec proposals", styles),
         common.note("Probed: what an IKE gateway accepted when the scan node offered proposals (UDP 500 / 4500). "
                     "Configured: the proposals and transform sets in the appliance configuration.", styles),
-        *common.register(("Gateway", "Versions", "Chosen proposal", "Weak transforms accepted", "Aggressive mode",
+        *_table(("Gateway", "Versions", "Chosen proposal", "Weak transforms accepted", "Aggressive mode",
                           "PQ (RFC 9370)", "Finding codes", "Source"), probed,
-                         (80, 55, 140, 150, 50, 60, 100, 85), width, styles, noun="IKE gateways"),
-        *common.register(("Appliance", "Vendor", "Proposal / transform set", "Configured values", "Finding codes"),
-                         configured, (80, 70, 170, 260, 140), width, styles, noun="configured proposals"),
+                         (80, 55, 140, 150, 50, 60, 100, 85), width, styles, "IKE gateways"),
+        *_table(("Appliance", "Vendor", "Proposal / transform set", "Configured values", "Finding codes"),
+                         configured, (80, 70, 170, 260, 140), width, styles, "configured proposals"),
     ]
 
 
@@ -617,8 +632,8 @@ def _starttls(model: _Model, styles: Styles, width: float) -> list[Flowable]:
                      net.get("max") or "", e.grade.text, _codes(e.observed.codes), _seen(e.observed)])
     return [
         *section_heading("STARTTLS services", styles),
-        *common.register(("Endpoint", "Service", "Lowest TLS", "Highest TLS", "Grade", "Finding codes", "Source"),
-                         rows, (110, 110, 60, 60, 60, 160, 160), width, styles, noun="STARTTLS services"),
+        *_table(("Endpoint", "Service", "Lowest TLS", "Highest TLS", "Grade", "Finding codes", "Source"),
+                         rows, (110, 110, 60, 60, 60, 160, 160), width, styles, "STARTTLS services"),
     ]
 
 
@@ -632,14 +647,14 @@ def _ot(model: _Model, styles: Styles, width: float) -> list[Flowable]:
                _codes(o.codes), _seen(o)] for o in model.modbus]
     return [
         *section_heading("OPC UA endpoint security", styles),
-        *common.register(("Endpoint", "Application", "Endpoints", "Security modes", "Security policies",
+        *_table(("Endpoint", "Application", "Endpoints", "Security modes", "Security policies",
                           "User tokens", "Finding codes", "Source"), opc,
-                         (90, 100, 45, 90, 130, 90, 90, 85), width, styles, noun="OPC UA endpoints"),
+                         (90, 100, 45, 90, 130, 90, 90, 85), width, styles, "OPC UA endpoints"),
         *section_heading("Modbus/TCP (port open only)", styles),
         common.note("SOW 7.2: Modbus devices are recorded from a TCP connect to the port only. No Modbus request (not "
                     "even a read) is sent, so nothing about the device is asserted beyond the open port.", styles),
-        *common.register(("Endpoint", "Evidence", "Transport security", "Finding codes", "Source"), modbus,
-                         (120, 140, 220, 110, 130), width, styles, noun="Modbus endpoints"),
+        *_table(("Endpoint", "Evidence", "Transport security", "Finding codes", "Source"), modbus,
+                         (120, 140, 220, 110, 130), width, styles, "Modbus endpoints"),
     ]
 
 

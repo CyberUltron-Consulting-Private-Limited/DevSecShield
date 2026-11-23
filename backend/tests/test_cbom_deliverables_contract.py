@@ -252,14 +252,16 @@ def test_frontend_download_name_matches_the_server_file_name():
 
 
 def test_frontend_offers_a_csv_item_exactly_for_the_deliverables_that_have_one():
-    """SOW Table 7: D8 Certificate Estate Register is "PDF, CSV" (FIX-B2); the others are PDF only."""
+    """SOW Table 7: D8 Certificate Estate Register is "PDF, CSV" (FIX-B2); the others are PDF only. The menu reads the
+    manifest's ``formats`` (review of #481: a frontend deployed before its backend must not offer a CSV that 404s)."""
+    assert {s.slug for s in DELIVERABLES.values() if "csv" in s.formats} == {"certificate-estate-register"}
     ts = _read(_FE_API, needs_frontend=True)
-    found = re.search(r"export const CBOM_DELIVERABLES = \[(.*?)\] as const;", ts, re.S)
-    with_csv = set(re.findall(r'slug:\s*"([^"]+)"[^}]*csv:\s*true', found.group(1)))
-    assert with_csv == {s.slug for s in DELIVERABLES.values() if "csv" in s.formats} == {"certificate-estate-register"}
     page = _read(_FE_PAGE, needs_frontend=True)
+    assert 'hint?.formats?.includes("csv")' in page
     assert "cbom-deliverable-${d.slug}-csv" in page and "downloadCbomDeliverableCsv" in page
     assert "/cbom/deliverables/${slug}.csv" in ts
+    found = re.search(r"export const CBOM_DELIVERABLES = \[(.*?)\] as const;", ts, re.S)
+    assert "csv" not in re.sub(r"//[^\n]*", "", found.group(1))  # never hard-coded
 
 
 def _strip_ts_comments(text: str) -> str:
