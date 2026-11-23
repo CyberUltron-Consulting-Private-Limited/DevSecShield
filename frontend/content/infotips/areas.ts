@@ -21,6 +21,7 @@ export const AREA_PREFIXES = {
   "cbom-results": ["cbom.res", "cbom.chart", "cbom.cal", "cbom.reg", "cbom.q0", "cbom.ai"],
   "cbom-grade": ["cbom.agility", "cbom.qgrade", "cbom.source"],
   "cbom-run": ["cbom.run"],
+  "cbom-gate": ["cbom.gate"],
   "cbsrc-common": ["cbsrc.col", "cbsrc.common", "cbsrc.sources", "cbsrc.sidebar", "cbsrc.meta", "cbsrc.compare", "cbsrc.waves"],
   "cbsrc-nodes": ["cbsrc.nodes", "cbsrc.pool", "cbsrc.sched"],
   "cbsrc-servers": ["cbsrc.servers", "cbsrc.test", "cbsrc.app"],

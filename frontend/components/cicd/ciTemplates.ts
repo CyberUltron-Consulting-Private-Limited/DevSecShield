@@ -21,9 +21,11 @@ export const isCbom = (kind: string) => (kind || "").toLowerCase() === "cbom";
 
 // Shown under every guide for a CBOM integration: what makes the generated job fail.
 export const CBOM_GATE_NOTE =
-  "The job fails when DevSecShield reports a high crypto finding (weak algorithm or key, ECB, hard-coded key, static " +
-  "IV, reused nonce, weak RNG, weak padding, disabled certificate verification, a vulnerable crypto library) and when " +
-  "no result arrives in time. Quantum-vulnerable findings are reported without failing the job. The job also fails " +
+  "The job fails when the team's CBOM policy (Settings > CBOM policy gate) blocks a finding: by default a high crypto " +
+  "finding (weak algorithm or key, ECB, hard-coded key, static IV, reused nonce, weak RNG, weak padding, disabled " +
+  "certificate verification, a vulnerable crypto library), a banned algorithm such as MD5 or 3DES, or a key below the " +
+  "NIST SP 800-131A minimum; and when no result arrives in time. Quantum-vulnerable and deprecated algorithms are " +
+  "reported without failing the job unless the policy says so; the log names the rule each finding broke. The job also fails " +
   "when DevSecShield cannot be reached, answers with an error or rejects a wrong or revoked API key. To make the " +
   "check advisory, mark the step continue-on-error (GitHub Actions), the job allow_failure (GitLab CI) or wrap the " +
   "stage in catchError (Jenkins).";
@@ -70,9 +72,9 @@ ${indent(scan, 10)}
   if (!isCbom(kind)) return workflow;
   return `${workflow}
 
-      # Fails the job on a high crypto finding (weak algorithm or key, ECB, hard-coded key, static IV, reused nonce,
-      # weak RNG, weak padding, disabled certificate verification, vulnerable crypto library), and when the answer
-      # has no verdict. Quantum-vulnerable findings are reported, not blocked.
+      # Fails the job when the team's CBOM policy blocks a finding (by default a high crypto finding, a banned
+      # algorithm or a key below the SP 800-131A minimum), and when the answer has no verdict. Each failing finding
+      # names the rule it broke; quantum-vulnerable findings are warnings unless the policy fails them.
       - name: CBOM policy gate
         run: |
 ${indent(cbomGateDetailsJq("response.json"), 10)}
@@ -96,15 +98,16 @@ export function jenkinsfile({ kind: rawKind, endpoint }: TemplateOptions): strin
   const gateStage = isCbom(kind)
     ? `
 
-        // Fails the build on a high crypto finding, and when the answer has no verdict (fail closed).
+        // Fails the build when the team's CBOM policy blocks a finding, and when the answer has no verdict (fail closed).
         stage('CBOM Policy Gate') {
             steps {
                 script {
                     def jsonResponse = readJSON(file: 'devsecshield-response.json')
                     def gate = jsonResponse.containsKey('gate') ? jsonResponse.gate : null
                     if (gate instanceof Map) {
+                        echo "CBOM policy: ${D}{gate.policy} (${D}{gate.policy_source ?: 'default'})"
                         echo "${D}{gate.reason}"
-                        (gate.failing ?: []).each { echo "${D}{it.impact} ${D}{it.codes} ${D}{it.location} ${D}{it.title}" }
+                        (gate.failing ?: []).each { echo "${D}{it.impact} ${D}{it.codes} ${D}{it.location} ${D}{it.title} ${D}{(it.rules ?: []).collect { r -> r.rule + ':' + r.outcome }}" }
                     }
                 }
                 sh '''#!/bin/sh
@@ -214,7 +217,7 @@ export function gitlabCi({ kind: rawKind, endpoint, branch }: TemplateOptions & 
     ...(isCbom(kind) ? [cbomGateDetailsJq("devsecshield-response.json"), cbomGateScript("devsecshield-response.json")] : []),
   ].join("\n");
   return `# DevSecShield ${label} scan for GitLab CI: add this job to .gitlab-ci.yml and the CI/CD variable CICD_API_KEY
-# (Settings > CI/CD > Variables, masked).${isCbom(kind) ? " The job fails on a high crypto finding (CBOM policy gate)." : ""}
+# (Settings > CI/CD > Variables, masked).${isCbom(kind) ? " The job fails when the team's CBOM policy blocks a finding (CBOM policy gate)." : ""}
 ${kind}-check:
   image: alpine:3.22
   rules:

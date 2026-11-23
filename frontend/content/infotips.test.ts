@@ -78,6 +78,11 @@ export const COVERED: string[] = [
   // Settings > Integrations: ServiceNow, syslog, Splunk HEC, webhook, OSCAL and the delivery log (issue #43)
   "app/[team_id]/settings/integrations/page.tsx",
   "components/integrations/IntegrationsPage.tsx",
+  "components/integrations/JiraCard.tsx", // Settings > Integrations > Jira and "Raise test ticket" (SOW S2)
+  "components/integrations/TestTicketButton.tsx",
+  // Settings > CBOM policy gate (SOW S1): the team policy and per-integration overrides
+  "app/[team_id]/settings/cbom-gate/page.tsx",
+  "components/cicd/CbomGatePolicyPage.tsx",
   // CBOM code-scan results: KPIs, charts, remediation, findings filters and table, top risks
   "components/CbomResults.tsx",
   "components/cbom/CbomCryptoCharts.tsx",
