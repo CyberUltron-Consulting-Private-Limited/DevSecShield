@@ -3312,7 +3312,7 @@ def load_team_cbom_view(engine: Any, team_id: int, *, now: datetime | None = Non
         try:  # D2's live collection set-up; a failure prints "Not loaded" in its tables
             from backend.utilities.cbom_sources.methodology_facts import load as methodology_facts
 
-            view.methodology = methodology_facts(session, team_id)
+            view.methodology = methodology_facts(session, team_id, view)
         except Exception as exc:  # pragma: no cover - defensive
             view.methodology = None
             view.warnings = (*view.warnings, f"methodology facts not loaded: {type(exc).__name__}")

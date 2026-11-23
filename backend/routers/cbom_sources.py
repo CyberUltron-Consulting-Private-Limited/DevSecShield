@@ -1651,6 +1651,11 @@ async def create_run(team_id: TeamId, body: RunCreate, Authorization: AuthHeader
     return _ok(payload, code)
 
 
+def _schedule_name(session: Session, run: CbomCollectionRun) -> str | None:
+    """The name of the live schedule that started ``run`` (None: started by hand, or the schedule was deleted)."""
+    return schedule_names(session, run.team_id, [run.schedule_id]).get(run.schedule_id or 0)
+
+
 def _list_runs(engine, team_id: int, scan_id: int | None) -> dict:
     now = utcnow()
     with Session(engine) as session:
@@ -1661,12 +1666,15 @@ def _list_runs(engine, team_id: int, scan_id: int | None) -> dict:
         runs = session.exec(query.order_by(CbomCollectionRun.id.desc()).limit(50)).all()  # type: ignore[union-attr]
         # issue #159 (Rule P): the asset count the Scans table shows too, from the one function, one query for the page
         assets = RUN_LIST.asset_counts(session, team_id, [int(run.id) for run in runs])
+        # S4: the schedule's name for every run a live schedule started (one query for the page; null = deleted)
+        names = schedule_names(session, team_id, (run.schedule_id for run in runs))
         out = []
         for run in runs:
             counts: dict[str, int] = {}
             for job in session.exec(select(CbomCollectionJob).where(CbomCollectionJob.run_id == run.id)).all():
                 counts[job.status] = counts.get(job.status, 0) + 1
-            out.append({**public_run(run), "job_counts": counts, "asset_count": assets.get(int(run.id), 0)})
+            out.append({**public_run(run, schedule_name=names.get(run.schedule_id or 0)), "job_counts": counts,
+                        "asset_count": assets.get(int(run.id), 0)})
         return {"runs": out, "server_time": iso_z(now)}
 
 
@@ -1707,7 +1715,7 @@ def _run_assets(engine, team_id: int, run_id: int, params: dict) -> dict:
             raise HTTPException(status_code=409, detail=f"The grade filter is not available for this run ({exc})") \
                 from None
         RUN_TICKETS.add_ticket_fields(session, team_id, run, out["items"])  # CB-38 PR-4: ticket_key, ticket_url
-        out["run"] = public_run(run)
+        out["run"] = public_run(run, schedule_name=_schedule_name(session, run))
         return out
 
 
@@ -1803,7 +1811,7 @@ def _run_posture(engine, team_id: int, run_id: int) -> dict:
     with Session(engine) as session:
         run = _get_owned(session, CbomCollectionRun, run_id, team_id, "Run")
         settings = get_or_create_settings(session, team_id)
-        return {"run": public_run(run, risk_model=settings.risk_model or {}),
+        return {"run": public_run(run, risk_model=settings.risk_model or {}, schedule_name=_schedule_name(session, run)),
                 "posture": POSTURE.run_posture(session, team_id=team_id, run_id=run.id, risk_model=settings.risk_model)}
 
 

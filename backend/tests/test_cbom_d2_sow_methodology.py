@@ -109,9 +109,9 @@ def test_document_id_is_the_sow_identifier_d2(sview, spdf):
 
 
 # ----------------------------------------------------------------------------- section 2: methods and Table 4
-def test_three_collection_methods_are_described(stext):
+def test_three_collection_methods_are_described(sview, stext):
     two = H.section(stext, 2)
-    for name, how, _sources, safeguards in M.METHOD_ROWS:
+    for name, how, _sources, safeguards in M.method_rows(sview):
         assert _norm(f"{name} {how}") in two, name
         assert _norm(safeguards) in two
     assert "outbound HTTPS" in two and "Ed25519" in two and "list" in two
@@ -167,15 +167,33 @@ def test_every_collector_kind_is_described_and_out_of_sow_kinds_are_marked(stext
 
 
 def test_collectors_are_pinned_to_the_kinds_registry_and_its_provenance_methods():
+    """Review #486 minor 10: every column the product words is pinned (kind, label, layer, method, transport, SOW 7.2
+    flag); the method is generated from provenance."""
     from backend.utilities.cbom_sources.kinds import KINDS
     from backend.utilities.cbom_sources.provenance import kind_provenance
 
     assert {spec.kind for spec in M.COLLECTORS} == set(KINDS)  # a new collector cannot ship without its D2 row
     method = {"agentless": M.AGENTLESS, "agent": M.AGENT, "api": M.API}
+
+    def stem(label: str) -> str:
+        return label.split()[0].casefold().rstrip("s")
+
+    layer_of = {}
+    for row in M.SOW_SOURCE_TYPES:  # SOW Table 4 places each kind in a layer
+        for kind in (*row.kinds, *(v.split(":")[0] for v in row.variants)):
+            layer_of.setdefault(kind, set()).add(row.layer)
     for spec in M.COLLECTORS:
         assert spec.method == method[kind_provenance(spec.kind).method], spec.kind
-    for kind in ("ct_logs", "awx_hosts", "salt_hosts", "ssm_hosts"):  # SOW 7.2 exclusions
-        assert M.COLLECTOR_BY_KIND[kind].in_sow is False
+        assert stem(spec.label) == stem(KINDS[spec.kind].label), (spec.label, KINDS[spec.kind].label)
+        if spec.kind in layer_of:
+            assert layer_of[spec.kind] == {spec.layer}, spec.kind
+        transport = kind_provenance(spec.kind).transport
+        if transport == "local":
+            assert "agent mode" in spec.transport, spec.kind
+        elif transport != "direct":  # zs-collect through the customer's AWX / Salt / AWS Systems Manager
+            word = {"awx": "AWX", "salt": "Salt", "ssm": "Systems Manager"}[transport]
+            assert word in spec.transport, spec.kind
+        assert spec.in_sow is (spec.kind not in ("ct_logs", "awx_hosts", "salt_hosts", "ssm_hosts")), spec.kind
 
 
 def test_active_directory_row_matches_whether_the_product_collects_it():
@@ -228,11 +246,34 @@ def test_q0_reasons_fix_classes_and_evidence_levels_are_pinned_to_the_product():
     assert [code for code, _t in M.Q0_REASONS] == [c for c, r in qgrade.REASONS.items() if r["grade"] == "Q0"]
     for code, text in M.Q0_REASONS:
         assert text.rstrip(".") == qgrade.REASONS[code]["text"], code
-    assert [c for c, _s, _t in M.FIX_CLASSES] == list(agility.CLASSES)
-    assert sorted(level for level, _t in M.EVIDENCE_LEVELS) == sorted(evidence.CONFIDENCE)
-    assert evidence.EVIDENCE_MAX_AGE_DAYS == 365 and "365 days" in dict(M.EVIDENCE_LEVELS)["E0"]
+    # every column of the fix-class table: the class, the SOW term and the product's own sentence
+    assert [(c, t) for c, _s, t in M.FIX_CLASSES] == [(c, agility.CLASS_TEXT[c]["what"]) for c in agility.CLASSES]
+    assert {c: s for c, s, _t in M.FIX_CLASSES} == M.SOW_FIX_TERMS
+    # every column of the evidence-level table: level, the product's name for it, the expiry
+    assert [level for level, _t in M.EVIDENCE_LEVELS] == list(reversed(evidence.CONFIDENCE))
+    for level, text in M.EVIDENCE_LEVELS:
+        assert text.startswith(f"{evidence.CONFIDENCE_LABEL[level]}: "), level
+    assert f"{evidence.EVIDENCE_MAX_AGE_DAYS} days" in dict(M.EVIDENCE_LEVELS)["E0"]
     assert [g.split()[0] for g, _t in M.Q_GRADE_ROWS] == ["Q1", "Q2", "Q3", "Q4", "Q0"]
     assert set(qgrade.GRADES) == {g.split()[0] for g, _t in M.Q_GRADE_ROWS}
+
+
+def test_the_grade_table_is_every_rule_of_the_product_classical_fallback_included():
+    """Review #486 minor 4: the Q1-Q4 rows are qgrade.REASONS (a post-quantum endpoint that still accepts a
+    classical fallback is Q1-Q3, not Q4)."""
+    from backend.utilities.cbom_sources import qgrade
+
+    rows = dict(M.Q_GRADE_ROWS)
+    for code, reason in qgrade.REASONS.items():
+        if reason["grade"] in ("Q1", "Q2", "Q3", "Q4"):
+            assert reason["text"] in rows[f"{reason['grade']} {qgrade.LABELS[reason['grade']]}"], code
+    fallback = "Post-quantum endpoint that still accepts a classical fallback"
+    assert all(fallback in rows[g] for g in ("Q1 Critical", "Q2 High", "Q3 Medium")) and fallback not in rows["Q4 Low"]
+
+
+def test_the_grade_table_in_the_pdf_has_the_fallback_rule(stext):
+    six = H.section(stext, 6)
+    assert "Post-quantum endpoint that still accepts a classical fallback, X + Y <= Z" in six
 
 
 def test_without_the_register_open_counts_are_not_invented(sview):
@@ -245,6 +286,7 @@ def test_without_the_register_open_counts_are_not_invented(sview):
 
 # ----------------------------------------------------------------------------- sections 7-9
 def test_evidence_model_signing_fingerprints_and_signed_deliverables(stext):
+    # every collector and node method row stays true for a team with legacy nodes (see the test below)
     seven = H.section(stext, 7)
     for step, text in M.EVIDENCE_CHAIN:
         assert _norm(f"{step} {text}") in seven, step
@@ -253,9 +295,9 @@ def test_evidence_model_signing_fingerprints_and_signed_deliverables(stext):
     assert "evidence pack" in seven and "drift file" in seven and "verify" in seven
 
 
-def test_data_protection_states_metadata_only_tls_least_privilege_rbac_and_audit(stext):
+def test_data_protection_states_metadata_only_tls_least_privilege_rbac_and_audit(sview, stext):
     eight = H.section(stext, 8)
-    for line in M.DATA_PROTECTION:
+    for line in M.data_protection(sview):
         assert _norm(line) in eight
     for token in ("Metadata only", "never read or exported", "TLS", "Least privilege", "RBAC", "audit log"):
         assert token in eight, token
@@ -282,6 +324,112 @@ def test_evidence_plan_covers_d1_to_d14_in_order(stext):
 
 
 # ----------------------------------------------------------------------------- the contradiction (audit-D)
+def _signing_view(signing: int, legacy: int, required):
+    view = sources_view()
+    view.methodology = {**view.methodology, "nodes": {**view.methodology["nodes"], "signing": signing,
+                                                      "legacy": legacy},
+                        "settings": {**view.methodology["settings"], "require_signed_nodes": required}}
+    return view
+
+
+def test_every_request_is_signed_only_when_no_node_is_legacy_and_unsigned_nodes_are_refused(sview, stext):
+    """Review #486 minor 3: sections 2 and 8 said "every node request is signed" while section 7 said a legacy
+    node is unsigned and not refused."""
+    assert "Every node request is signed (Ed25519); unsigned nodes are refused" in H.section(stext, 2)
+    legacy = _signing_view(2, 1, False)
+    text = H.body_text(build_pdf(legacy))
+    everything = H.norm(text).casefold()
+    assert "every node request is signed" not in everything and "every request signed" not in everything
+    clause = "Nodes enrolled with a request-signing key sign every request (Ed25519; 2 of 3 nodes); 1 legacy node " \
+             "is unsigned; unsigned nodes are not refused"
+    assert clause in H.section(text, 2)
+    assert H.norm("nodes enrolled with a request-signing key sign every request (Ed25519; 2 of 3 nodes); 1 legacy "
+                  "node is unsigned; unsigned nodes are not refused") in H.section(text, 8)
+    assert "1 without (legacy); unsigned nodes are not refused" in H.section(text, 7)
+    # no legacy node, but unsigned nodes would not be refused: still no "every node request is signed"
+    off = M.signing_clause(_signing_view(3, 0, False))
+    assert off == "Nodes enrolled with a request-signing key sign every request (Ed25519; 3 of 3 nodes); unsigned " \
+                  "nodes are not refused"
+    view = sources_view()
+    view.methodology = None
+    assert M.signing_clause(view) == "Nodes enrolled with a request-signing key sign every request (Ed25519)"
+
+
+def _linux_only_view(*, code: bool):
+    """The reviewer's seeded edition: Linux SSH sources and a database (its own TLS port stored as a tls_endpoint),
+    no network range; with or without code scans."""
+    base = H.fold()
+    cols = tuple(c for c in _collections() if c.source_kind in ("linux_servers", "database"))
+    cols = tuple(dataclasses.replace(c, endpoints_probed=1) if c.source_kind == "database" else c for c in cols)
+    view = dataclasses.replace(base, collections=cols, sources=base.sources if code else ())
+    view.methodology = _facts(cols)
+    return view
+
+
+def test_a_database_tls_port_is_no_live_network_discovery():
+    """Review #486 minor 6: only network-range and appliance probes drop "No live-network discovery" and the
+    manual "Live TLS endpoints" item."""
+    view = _linux_only_view(code=True)
+    assert M.coverage(view)["endpoints_probed"] == 6 and M.network_probed(view) == 0
+    limits = M.method_limits(view)
+    assert M.LIMIT_NO_NETWORK_PROBES in limits and M.LIMIT_NO_PROBES not in limits  # 6 service ports were probed
+    text = H.body_text(build_pdf(view))
+    assert "Live TLS endpoints" in H.section(text, 5) and "are not a manual item" not in H.section(text, 5)
+    assert H.norm(M.LIMIT_NO_NETWORK_PROBES) in H.section(text, 16)
+
+
+def test_the_disclaimer_names_only_the_methods_and_code_scanning_the_edition_has():
+    """Review #486 minor 2: a Linux-SSH-only team with no code scan was told "code scanning plus ... (agentless,
+    agent and read-only API ...)"."""
+    sentence = M.method_scope_sentence(_linux_only_view(code=False))
+    assert sentence.startswith("Method: 14 CBOM Sources collections (agentless; 6 endpoints probed).")
+    assert "code scanning" not in sentence and "agent," not in sentence and "read-only API" not in sentence
+    with_code = M.method_scope_sentence(_linux_only_view(code=True))
+    assert with_code.startswith("Method: code scanning plus 14 CBOM Sources collections (agentless; ")
+    full = M.method_scope_sentence(sources_view())
+    assert "(agentless, agent and read-only API; 212 endpoints probed)" in full
+    assert f"section {M.LIMITS_SECTION} the limits" in full
+
+
+def test_limits_section_number_in_the_disclaimer_is_the_limits_section():
+    from backend.utilities.pdf.cbom_methodology_pdf import SEC
+
+    assert SEC["Limits of the method"] == M.LIMITS_SECTION
+
+
+def test_binaries_are_configured_only_when_a_code_scan_ran_with_the_option(sview):
+    """Review #486 minor 5: crypto_artifacts reads binaries only with "scan binaries"."""
+    label = "Compiled binaries and firmware"
+    two = H.section(H.body_text(build_pdf(sview)), 2)  # facts loaded without code facts (older loader): not claimed
+    assert f"L1 {label} Agentless Available with the 'scan binaries' option — 0" in two
+    off = sources_view()
+    off.methodology = {**off.methodology, "code": {"sources": 7, "scan_binaries": 0}}
+    assert f"L1 {label} Agentless Available with the 'scan binaries' option 0 0" in H.section(
+        H.body_text(build_pdf(off)), 2)
+    on = sources_view()
+    on.methodology = {**on.methodology, "code": {"sources": 7, "scan_binaries": 2}}
+    assert f"L1 {label} Agentless Configured 2 2" in H.section(H.body_text(build_pdf(on)), 2)
+    none = dataclasses.replace(sources_view(), sources=())
+    none.methodology = sources_view().methodology
+    assert f"L1 {label} Agentless Not configured 0 0" in H.section(H.body_text(build_pdf(none)), 2)
+
+
+def test_sources_rows_are_counted_under_their_cyclonedx_type(sview):
+    """Review #486 minor 9: Sources rows the rollup types "other" print under the type the run CBOM export writes
+    (algorithm, or a library component); the total is unchanged."""
+    from backend.utilities.pdf.cbom_methodology_pdf import _asset_type_counts
+
+    view = sources_view()
+    view.assets_by_type = {"algorithm": 10, "certificate": 4, "protocol": 3, "related-crypto-material": 2, "other": 9}
+    view.methodology = {**view.methodology, "sources_other_types": {"algorithm": 5, "library": 3}}
+    counts = _asset_type_counts(view)
+    assert counts == {"algorithm": 15, "certificate": 4, "protocol": 3, "related-crypto-material": 2, "other": 1,
+                      "library": 3}
+    assert sum(counts.values()) == sum(view.assets_by_type.values())
+    one = H.section(H.body_text(build_pdf(view)), 1)
+    assert "Algorithm 15" in one and "Crypto library (CycloneDX library component) 3" in one and "Other 1" in one
+
+
 def test_no_sentence_denies_what_the_runs_did(sview, spdf, stext):
     everything = H.full_text(spdf)
     for denial in ("No live-network discovery", "not probed", "Static analysis only", "running systems are not",
@@ -291,7 +439,7 @@ def test_no_sentence_denies_what_the_runs_did(sview, spdf, stext):
     assert _norm(M.LIMIT_CUSTODY) in sixteen and _norm(M.LIMIT_MODBUS) in sixteen
     five = H.section(stext, 5)  # the manual checklist drops what the collections read
     assert "Live TLS endpoints Negotiated" not in five
-    assert "212 endpoints were probed by CBOM Sources collections" in five
+    assert "208 endpoints were probed by CBOM Sources network-range and appliance collections" in five
     assert _norm(M.MANUAL_KEY_CUSTODY_COLLECTED) in five
 
 
@@ -309,6 +457,8 @@ def test_disclaimer_is_whole_and_true_for_the_edition(spdf):
     sentence = M.method_scope_sentence(sources_view())
     assert len(sentence) < 600 and _norm(sentence) in everything
     assert "56 CBOM Sources collections" in sentence and "212 endpoints probed" in sentence
+    assert sentence.startswith("Method: code scanning plus 56 CBOM Sources collections (agentless, agent and "
+                               "read-only API; 212 endpoints probed).")
     assert "liv…" not in everything
 
 
@@ -360,7 +510,8 @@ def test_methodology_facts_load_counts_one_team_and_never_reads_secrets(tmp_path
         s.add(CbomScanNode(team_id=1, owner_user_id=1, name="n2", mode="agent", enrolled_at=now))
         s.add(CbomScanNode(team_id=1, owner_user_id=1, name="n3", mode="agentless"))  # never enrolled
         s.add(CbomCollectionSchedule(team_id=1, owner_user_id=1, name="nightly", enabled=False))
-        for i, (trigger, sid) in enumerate((("manual", None), ("scheduled", 1), ("manual", None))):
+        # the third run: an old pod inserted it during a deploy with the column default (review #486 nit 2)
+        for i, (trigger, sid) in enumerate((("manual", None), ("scheduled", 1), ("manual", None), ("manual", 1))):
             s.add(CbomCollectionRun(team_id=1, owner_user_id=1, client_request_id=f"r{i}", trigger=trigger,
                                     schedule_id=sid))
         s.add(CbomCollectionRun(team_id=2, owner_user_id=1, client_request_id="other", trigger="scheduled"))
@@ -376,7 +527,7 @@ def test_methodology_facts_load_counts_one_team_and_never_reads_secrets(tmp_path
     assert st["never_scan_entries"] == 1 and st["settings_default"] is False
     assert facts["nodes"] == {"agentless": 1, "agent": 1, "signing": 1, "legacy": 1}
     assert facts["schedules"] == {"total": 1, "enabled": 0}
-    assert facts["runs"] == {"total": 3, "scheduled": 1, "manual": 2}
+    assert facts["runs"] == {"total": 4, "scheduled": 2, "manual": 2}  # the same rule as serialize.run_trigger
     assert "SECRET-CANARY" not in repr(facts)
     with Session(engine) as s:  # a team that never opened CBOM Sources: product defaults, no row created
         empty = F.load(s, 2)

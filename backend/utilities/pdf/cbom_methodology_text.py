@@ -4,11 +4,14 @@ The document says how assets are discovered, classified and evidenced, so its wo
 answer: Section 2 (three collection methods, data protection), Table 4 (sources per layer L1 to L4), 3.2 (ingest,
 normalise, grade, score, Q0 Unknown), C6 (scan windows, OT-safe windows), 7.2 (exclusions) and Table 7 (D1 to D14).
 
-Every row describes the product's own behaviour and names the code it describes ("Product text:" comments); the
-contract tests in ``test_cbom_deliverable_methodology.py`` pin ``COLLECTORS`` to ``cbom_sources.kinds.KINDS``,
-``Q0_REASONS`` to ``cbom_sources.qgrade.REASONS``, ``FIX_CLASSES`` to ``cbom_sources.agility.CLASSES`` and
-``EVIDENCE_LEVELS`` to ``cbom_sources.evidence``, so a new collector, grade reason or fix class cannot ship without
-its D2 row.  This module imports nothing from the product: the renderer stays a pure function of the view.
+Every row describes the product's own behaviour and names the code it describes ("Product text:" comments). The
+tables a product registry already words are GENERATED from it at import (review #486 minor 10): the Q1-Q4 grade rows
+and the Q0 reasons from ``cbom_sources.qgrade.REASONS`` / ``LABELS`` (so the classical-fallback rule is in the grade
+table), the fix classes from ``cbom_sources.agility.CLASSES`` / ``CLASS_TEXT``, the evidence levels' names and expiry
+from ``cbom_sources.evidence`` and each collector's method from ``cbom_sources.provenance``. What no registry words
+(a collector's connection, what it records and never reads) is authored, and ``test_cbom_d2_sow_methodology.py`` pins
+every column it can to the product (kind, label, layer, method, transport, SOW 7.2 flag). Only constant registries
+are imported: the renderer stays a pure function of the view (no database read).
 
 ``method_limits(view)`` replaces the constant ``cbom_deliverable_text.METHOD_LIMITS`` for D2: a limit is printed only
 when the edition's own run coverage leaves it true (no "not probed" sentence when endpoints were probed).
@@ -18,6 +21,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+
+import backend.utilities.cbom_sources.agility as _AGILITY
+import backend.utilities.cbom_sources.evidence as _EVIDENCE
+import backend.utilities.cbom_sources.qgrade as _QGRADE
+from backend.utilities.cbom_sources.provenance import kind_provenance as _kind_provenance
 
 SOW_ID = "D2"  # the SOW Table 7 identifier printed in the Document ID
 
@@ -31,7 +39,8 @@ METHODS = (AGENTLESS, AGENT, API)
 
 # Product text: scan_node/README.md ("What it runs", "Kubernetes (Helm) and agent mode"), cbom_sources/kinds.py
 # (node_less kinds run in the cloud worker), routers/cbom_node.py + cbom_sources/node_auth.py (signed requests).
-METHOD_ROWS = (
+# "{signing}" is ``signing_clause(view)``: whether every node request is signed depends on the team's nodes.
+_METHOD_ROWS = (
     (
         AGENTLESS,
         "A ZeroShield scan node runs inside the customer network (container, VM image or Helm chart; uid 10001, "
@@ -41,7 +50,7 @@ METHOD_ROWS = (
         "Servers over SSH and WinRM-HTTPS, Kubernetes API, databases, network ranges, appliances, container "
         "registries; code repositories and archives.",
         "The node only opens connections: to targets inside the customer's scan window and never-scan list, and "
-        "outbound HTTPS to ZeroShield. Every node request is signed (Ed25519).",
+        "outbound HTTPS to ZeroShield. {signing}.",
     ),
     (
         AGENT,
@@ -50,8 +59,8 @@ METHOD_ROWS = (
         "no port.",
         "Host agent: OS release, crypto packages, crypto policy and FIPS flag, sshd_config, SSH host keys, key and "
         "certificate files, crypto libraries mapped by running processes.",
-        "Outbound HTTPS to ZeroShield only, every request signed (Ed25519). Host files are read through a "
-        "descriptor-checked walk; /proc, /sys and /dev of the host are not walked.",
+        "Outbound HTTPS to ZeroShield only. {signing}. Host files are read through a descriptor-checked walk; "
+        "/proc, /sys and /dev of the host are not walked.",
     ),
     (
         API,
@@ -68,9 +77,47 @@ METHOD_ROWS = (
 METHOD_COLUMNS = ("Method", "How it works", "Sources", "Connections and safeguards")
 
 
+def _signing_state(view: Any) -> tuple[int, int, bool | None] | None:
+    facts = getattr(view, "methodology", None)
+    if not isinstance(facts, dict):
+        return None
+    nodes, settings = facts.get("nodes") or {}, facts.get("settings") or {}
+    return (int(nodes.get("signing", 0) or 0), int(nodes.get("legacy", 0) or 0),
+            settings.get("require_signed_nodes"))
+
+
+def signing_clause(view: Any) -> str:
+    """How node requests are signed, true for the team (review #486 minor 3): "every node request is signed" only
+    when no enrolled node is legacy (no signing key) and 'require signed nodes' refuses unsigned ones; otherwise the
+    share of nodes that sign and what happens to the others. No trailing full stop."""
+    state = _signing_state(view)
+    if state is None:
+        return "Nodes enrolled with a request-signing key sign every request (Ed25519)"
+    signing, legacy, required = state
+    if legacy == 0 and required:
+        return "Every node request is signed (Ed25519); unsigned nodes are refused"
+    total = signing + legacy
+    parts = [f"Nodes enrolled with a request-signing key sign every request (Ed25519; {signing} of {total} "
+             f"node{'' if total == 1 else 's'})" if total else
+             "Nodes enrolled with a request-signing key sign every request (Ed25519)"]
+    if legacy:
+        parts.append(f"{legacy} legacy node{' is' if legacy == 1 else 's are'} unsigned")
+    if not required:
+        parts.append("unsigned nodes are not refused")
+    return "; ".join(parts)
+
+
+def method_rows(view: Any) -> tuple[tuple[str, str, str, str], ...]:
+    """The three method rows with the team's signing clause."""
+    clause = signing_clause(view)
+    return tuple((name, how, sources, safeguards.format(signing=clause))
+                 for name, how, sources, safeguards in _METHOD_ROWS)
+
+
 @dataclass(frozen=True)
 class CollectorSpec:
-    """One CBOM Sources collector (``cbom_sources.kinds.KINDS`` key), as D2 describes it."""
+    """One CBOM Sources collector (``cbom_sources.kinds.KINDS`` key), as D2 describes it; ``method`` is the product's
+    (``cbom_sources.provenance.kind_provenance``), the rest is authored and pinned by the contract tests."""
 
     kind: str
     label: str
@@ -82,76 +129,85 @@ class CollectorSpec:
     in_sow: bool = True  # False: SOW 7.2 excludes it (described, but outside this engagement)
 
 
+_METHOD_OF = {"agentless": AGENTLESS, "agent": AGENT, "api": API}  # cbom_sources.provenance method -> D2 method
+
+
+def _collector(kind: str, label: str, layer: str, transport: str, reads: str, never: str,
+               in_sow: bool = True) -> CollectorSpec:
+    return CollectorSpec(kind, label, layer, _METHOD_OF[_kind_provenance(kind).method], transport, reads, never,
+                         in_sow)
+
+
 # Product text: scan_node/README.md per collector; kinds.py groups and node_less flags; SOW 7.2 for in_sow.
 COLLECTORS = (
-    CollectorSpec("container_images", "Container images", "L1", AGENTLESS, "Registry API (OCI / Distribution v2), HTTPS",
+    _collector("container_images", "Container images", "L1", "Registry API (OCI / Distribution v2), HTTPS",
                   "Image manifests and layers streamed once and checked against their digests; crypto packages "
                   "with versions (up to 50 images per source).",
                   "Nothing is written to disk; credentials go only to the registry's own origin."),
-    CollectorSpec("linux_servers", "Linux servers", "L2", AGENTLESS, "SSH, fixed read-only command list",
+    _collector("linux_servers", "Linux servers", "L2", "SSH, fixed read-only command list",
                   "Keystores (JKS, PKCS#12, PEM) as public material, SSH host keys, OpenSSL and Java security "
                   "settings, crypto packages, crypto libraries loaded by processes (Tier 2).",
                   "Private keys: only public parts are printed (openssl pkey -pubout, ssh-keygen -l)."),
-    CollectorSpec("windows_servers", "Windows servers", "L2", AGENTLESS, "WinRM over HTTPS (5986), read-only PowerShell",
+    _collector("windows_servers", "Windows servers", "L2", "WinRM over HTTPS (5986), read-only PowerShell",
                   "Certificate stores, SCHANNEL protocol keys, TLS cipher-suite order, BitLocker, RDP security "
                   "layer, key provider class (software, TPM, smart card, HSM).",
                   "No key is opened or exported."),
-    CollectorSpec("active_directory", "Active Directory", "L2", AGENTLESS, "LDAPS (636 or 3269)",
+    _collector("active_directory", "Active Directory", "L2", "LDAPS (636 or 3269)",
                   "Recorded in scope; the current scan node has no directory collector, so domain controllers are "
                   "assessed through the TLS probe of their LDAPS ports (network ranges) and AD CS through the CA "
                   "connector.", "No directory object, password hash or secret attribute is read."),
-    CollectorSpec("host_agent", "Host agent", "L2", AGENT, "Outbound HTTPS only (agent mode)",
+    _collector("host_agent", "Host agent", "L2", "Outbound HTTPS only (agent mode)",
                   "The agent's own host: OS release, crypto packages, crypto policy, FIPS flag, sshd_config, SSH "
                   "host keys, key and certificate files.", "Never given a credential; reads world-readable files "
                   "unless the customer grants more."),
-    CollectorSpec("kubernetes", "Kubernetes clusters", "L2", AGENTLESS, "Kubernetes API (HTTPS), token or client "
+    _collector("kubernetes", "Kubernetes clusters", "L2", "Kubernetes API (HTTPS), token or client "
                   "certificate", "Ingress TLS, cert-manager certificates, Istio and Linkerd mTLS policy, CA "
                   "bundles; TLS secrets' certificates (Tier 2).", "tls.key is dropped; keys pasted into ConfigMaps "
                   "are recorded by type and size only."),
-    CollectorSpec("database", "Databases", "L2", AGENTLESS, "Database protocol over TLS (TLS checked before the "
+    _collector("database", "Databases", "L2", "Database protocol over TLS (TLS checked before the "
                   "password is sent)", "TLS versions and certificates, TDE and encrypted tablespaces, key and "
                   "certificate metadata, password hash types.", "Fixed queries only; no table data, no password "
                   "hash."),
-    CollectorSpec("key_manager", "HSMs and key managers", "L3", API, "PKCS#11 read-only session; KMIP 1.0-2.0 "
+    _collector("key_manager", "HSMs and key managers", "L3", "PKCS#11 read-only session; KMIP 1.0-2.0 "
                   "over TLS with a client certificate", "Token information; per object class, key type, size or "
                   "curve, label, usage flags and dates.", "A key's value attribute is never requested; KMIP Get "
                   "and Export are never sent."),
-    CollectorSpec("ca_connector", "Certificate authorities", "L3", API, "CA REST APIs (HashiCorp Vault, EJBCA, "
+    _collector("ca_connector", "Certificate authorities", "L3", "CA REST APIs (HashiCorp Vault, EJBCA, "
                   "Venafi, Keyfactor, DigiCert, Sectigo, AWS Private CA) or WinRM-HTTPS (AD CS)",
                   "CA hierarchy and certificates, signing profiles and templates, issued certificates, CRL and URL "
                   "configuration, Vault transit key settings.", "Never Vault export or backup; no CA private key."),
-    CollectorSpec("aws_account", "AWS accounts", "L3", API, "AWS APIs through an assumed read-only role (external ID)",
+    _collector("aws_account", "AWS accounts", "L3", "AWS APIs through an assumed read-only role (external ID)",
                   "KMS keys, ACM and AWS Private CA certificates, Secrets Manager metadata, TLS and encryption "
                   "settings of load balancers, CloudFront, API Gateway, RDS and S3.",
                   "No decrypt, sign or GetSecretValue call."),
-    CollectorSpec("azure_subscription", "Azure subscriptions", "L3", API, "Azure Resource Manager and Key Vault APIs, "
+    _collector("azure_subscription", "Azure subscriptions", "L3", "Azure Resource Manager and Key Vault APIs, "
                   "reader roles", "Key Vault keys and certificates, secret metadata, TLS and encryption settings.",
                   "Secret values are never read."),
-    CollectorSpec("gcp_project", "Google Cloud projects", "L3", API, "Google Cloud APIs, viewer roles",
+    _collector("gcp_project", "Google Cloud projects", "L3", "Google Cloud APIs, viewer roles",
                   "Cloud KMS keys, CA Service, Certificate Manager, Secret Manager metadata.",
                   "secretmanager.versions.access is not granted."),
-    CollectorSpec("oci_tenancy", "Oracle Cloud tenancies", "L3", API, "OCI APIs with signed requests",
+    _collector("oci_tenancy", "Oracle Cloud tenancies", "L3", "OCI APIs with signed requests",
                   "Vault keys, certificates, secret metadata, load balancer TLS, Object Storage encryption.",
                   "Secret contents are never read."),
-    CollectorSpec("idp", "Identity providers", "L3", API, "Public sign-in metadata (OIDC discovery, SAML metadata) "
+    _collector("idp", "Identity providers", "L3", "Public sign-in metadata (OIDC discovery, SAML metadata) "
                   "over HTTPS", "Token-signing keys and certificates of Entra ID, Okta, Keycloak and AD FS.",
                   "No user or sign-in data."),
-    CollectorSpec("network_range", "Network ranges and endpoints", "L4", AGENTLESS, "TLS, STARTTLS, SSH, IKE and OPC "
+    _collector("network_range", "Network ranges and endpoints", "L4", "TLS, STARTTLS, SSH, IKE and OPC "
                   "UA handshakes from the scan node", "Protocol versions, cipher suites, key exchange, certificate "
                   "chains and key sizes, SSH host keys and algorithms, IKE proposals, OPC UA endpoint security; "
                   "Modbus: whether the port accepts connections.", "No login, no application data; no Modbus request "
                   "is sent."),
-    CollectorSpec("appliance", "Network appliances", "L4", AGENTLESS, "SSH show commands (Cisco IOS, Cisco ASA, "
+    _collector("appliance", "Network appliances", "L4", "SSH show commands (Cisco IOS, Cisco ASA, "
                   "FortiOS); read-only API GETs (PAN-OS, F5 BIG-IP)", "SSH, management TLS, IKE and IPsec "
                   "settings and key sizes from the running configuration.", "Pre-shared keys and passwords never "
                   "leave the node."),
-    CollectorSpec("ct_logs", "Certificate Transparency", "L3", API, "Public CT search providers", "Certificates "
+    _collector("ct_logs", "Certificate Transparency", "L3", "Public CT search providers", "Certificates "
                   "logged for the team's domains.", "Public data only.", in_sow=False),
-    CollectorSpec("awx_hosts", "Hosts through AWX/AAP", "L2", AGENTLESS, "AWX inventory", "Host list for server "
+    _collector("awx_hosts", "Hosts through AWX/AAP", "L2", "AWX inventory", "Host list for server "
                   "collection.", "Read-only inventory.", in_sow=False),
-    CollectorSpec("salt_hosts", "Hosts through Salt", "L2", AGENTLESS, "Salt API", "Host list for server collection.",
+    _collector("salt_hosts", "Hosts through Salt", "L2", "Salt API", "Host list for server collection.",
                   "Read-only.", in_sow=False),
-    CollectorSpec("ssm_hosts", "Hosts through AWS SSM", "L2", AGENTLESS, "AWS Systems Manager", "Host list for server "
+    _collector("ssm_hosts", "Hosts through AWS SSM", "L2", "AWS Systems Manager", "Host list for server "
                   "collection.", "Read-only.", in_sow=False),
 )
 COLLECTOR_BY_KIND = {spec.kind: spec for spec in COLLECTORS}
@@ -177,7 +233,8 @@ class SowSourceType:
 
     ``code``: matched by the team's code scans (``view.sources``) of these kinds; ``kinds``: CBOM Sources kinds; each
     ``variants`` entry is ``kind:value`` against the source's provider / engine / vendor; ``ports``: the team's probe
-    port protocols (prefix match) that must be present as well, for network-range types."""
+    port protocols (prefix match) that must be present as well, for network-range types; ``option``: a code-scan
+    option (``Scan.scan_metadata`` key) without which code scans do not read this type."""
 
     layer: str
     label: str
@@ -186,6 +243,7 @@ class SowSourceType:
     kinds: tuple[str, ...] = ()
     variants: tuple[str, ...] = ()
     ports: tuple[str, ...] = ()
+    option: str = ""
 
 
 _CODE = ("repo", "zip", "file", "scan")  # cbom_team_rollup SOURCE_* (and a legacy scan source)
@@ -196,7 +254,8 @@ SOW_SOURCE_TYPES = (
                   code=_CODE),
     SowSourceType("L1", "Server and database configuration files", AGENTLESS, code=_CODE),
     SowSourceType("L1", "Container images (up to 50 per source)", AGENTLESS, kinds=("container_images",)),
-    SowSourceType("L1", "Compiled binaries and firmware", AGENTLESS, code=_CODE),
+    # Product text: cbom_deliverable_text.py crypto_artifacts: read only with the scan option "scan binaries"
+    SowSourceType("L1", "Compiled binaries and firmware", AGENTLESS, code=_CODE, option="scan_binaries"),
     SowSourceType("L2", "Linux servers (SSH)", AGENTLESS, kinds=("linux_servers",)),
     SowSourceType("L2", "Windows servers (WinRM over HTTPS)", AGENTLESS, kinds=("windows_servers",)),
     SowSourceType("L2", "Host agent", AGENT, kinds=("host_agent",)),
@@ -246,6 +305,8 @@ SOW_SOURCE_TYPES = (
 CONFIGURED = "Configured"
 NOT_CONFIGURED = "Not configured"
 NOT_LOADED = "Not loaded"
+OPTION_LABELS = {"scan_binaries": "scan binaries"}
+AVAILABLE_WITH_OPTION = "Available with the '{option}' option"  # code sources exist, none scanned with the option
 SOW_TABLE_COLUMNS = ("Layer", "SOW Table 4 source type", "Method", "Status", "Sources", "Collected")
 SOW_TABLE_NOTE = (
     "Status is read from the team's configured CBOM Sources and code scans when this edition was generated. "
@@ -275,31 +336,30 @@ GRADING_TEXT = (
     "(classical plus a FIPS 203 key exchange) or quantum-safe. Certificates are also flagged by expiry. The rules "
     "are deterministic and versioned (knowledge-base and classifier versions are recorded on every run)."
 )
-Q_GRADE_ROWS = (
-    ("Q1 Critical", "Quantum-vulnerable and X + Y > Z (Mosca), reachable from the internet or a trust anchor."),
-    ("Q2 High", "Quantum-vulnerable and X + Y > Z, internal or exposure unknown."),
-    ("Q3 Medium", "Quantum-vulnerable within Z, Grover-weakened, or post-quantum on E1 evidence only."),
-    ("Q4 Low", "Hybrid or quantum-safe, observed by a collector, found in code or attested at E2/E3."),
-    ("Q0 Unknown", "Cannot be graded; always carries one of the reasons below and is never counted as safe."),
-)
+Q0_ROW_TEXT = "Cannot be graded; always carries one of the reasons below and is never counted as safe."
+
+
+def _grade_rows() -> tuple[tuple[str, str], ...]:
+    """Q1..Q4 rows from ``qgrade.REASONS``: every rule that gives the grade, in the product's words (a post-quantum
+    endpoint that still accepts a classical fallback is graded like a quantum-vulnerable one); then Q0."""
+    rows = []
+    for grade in ("Q1", "Q2", "Q3", "Q4"):
+        texts = [reason["text"] for reason in _QGRADE.REASONS.values() if reason["grade"] == grade]
+        rows.append((f"{grade} {_QGRADE.LABELS[grade]}", "; ".join(texts) + "."))
+    rows.append((f"Q0 {_QGRADE.LABELS['Q0']}", Q0_ROW_TEXT))
+    return tuple(rows)
+
+
+# Product text: cbom_sources/qgrade.py REASONS and LABELS (generated).
+Q_GRADE_ROWS = _grade_rows()
 Q0_POLICY = (
     "Q0 Unknown policy: an item that cannot be assessed is graded Q0 with a reason, never left out and never "
     "counted as safe. Q0 items are listed in the Quantum Risk Register (D12) with their reason and are closed only "
     "by new evidence, a complete re-collection, the inputs being set, or the source being removed; each closure is "
     "recorded with its cause and the grade it closed to (D12 'gaps closed by week')."
 )
-# Product text: cbom_sources/qgrade.py REASONS (grade Q0 only), pinned by a contract test.
-Q0_REASONS = (
-    ("coverage_gap", "A check, target or address range was not read."),
-    ("source_not_read", "The run did not read the source (skipped by the planner, or its collect job did not "
-                        "succeed or has not finished)."),
-    ("source_truncated", "The collect job was cut at the asset limit, or stored fewer assets than it read."),
-    ("excluded_by_choice", "Left out by the team's choice (never-scan list, a disabled source, an option off)."),
-    ("evidence_e0", "Evidence at E0 (no answer, rated unknown, expired, vendor no response)."),
-    ("unknown_verdict", "The product could not tell the asset's PQC class."),
-    ("not_correlated", "Correlation required and absent (reserved)."),
-    ("mosca_missing", "Quantum-vulnerable, and the team's Mosca X, Y or Z is not set."),
-)
+# Product text: cbom_sources/qgrade.py REASONS (grade Q0 only, generated).
+Q0_REASONS = tuple((code, reason["text"] + ".") for code, reason in _QGRADE.REASONS.items() if reason["grade"] == "Q0")
 # Product text: cbom_sources/posture.py (risk score) and the Mosca inputs of the team settings (risk_model).
 RISK_SCORING_TEXT = (
     "Risk score: impact weight x business criticality x internet exposure, per asset (posture). Data lifetime "
@@ -308,22 +368,20 @@ RISK_SCORING_TEXT = (
     "raises the grade. Criticality, exposure, owner, data classification and data lifetime come from the source "
     "metadata the customer supplies (C5); where it is missing the item says so instead of assuming."
 )
-# Product text: cbom_sources/agility.py CLASSES (fx-1), pinned by a contract test; SOW 3.2 step 5.
-FIX_CLASSES = (
-    ("configurable", "Configuration", "Fixed by a setting (protocol floor, cipher order, key policy)."),
-    ("code-fixed", "Code", "Fixed by a code or dependency change in the customer's software."),
-    ("vendor-fixed", "Vendor", "Needs a vendor release (appliance, SaaS, packaged product)."),
-    ("hardware-fixed", "Hardware", "Needs new hardware (HSM, smart card, TPM, OT device)."),
-)
+# SOW 3.2 step 5 names the fix classes config / code / vendor / hardware.
+SOW_FIX_TERMS = {"configurable": "Configuration", "code-fixed": "Code", "vendor-fixed": "Vendor",
+                 "hardware-fixed": "Hardware"}
+# Product text: cbom_sources/agility.py CLASSES and CLASS_TEXT (fx-1, generated); SOW 3.2 step 5.
+FIX_CLASSES = tuple((cls, SOW_FIX_TERMS[cls], _AGILITY.CLASS_TEXT[cls]["what"]) for cls in _AGILITY.CLASSES)
 
 # ---------------------------------------------------------------------------------------------
 # Evidence model (SOW 3.2 step 1, Section 2)
 # ---------------------------------------------------------------------------------------------
 EVIDENCE_CHAIN = (
-    ("1. Signed collection", "Every scan-node request carries an Ed25519 signature over method, path, timestamp, "
-     "nonce and the body's SHA-256, made with a key generated at enrolment; the server checks it on the raw bytes "
-     "before parsing, refuses clock skew and replays (per-node sequence window) and, with 'require signed nodes', "
-     "refuses unsigned nodes."),
+    ("1. Signed collection", "A scan node enrolled with a request-signing key signs every request with Ed25519 "
+     "over method, path, timestamp, nonce and the body's SHA-256 (the key is generated at enrolment); the server "
+     "checks it on the raw bytes before parsing, refuses clock skew and replays (per-node sequence window) and, with "
+     "'require signed nodes', refuses unsigned nodes. The team's nodes and policy follow below."),
     ("2. Job provenance", "Each collection is a job of a run: source, scan node, attempts, outcome, duration, "
      "asset count and coverage rows (what was and was not read, with the reason)."),
     ("3. Fingerprint and de-duplication", "Each asset gets a stable key (identity of the thing itself, e.g. a "
@@ -345,25 +403,31 @@ EVIDENCE_BY_METHOD = (
     (API, "Cloud account / tenant and region, resource ARN or id, the describe call's metadata fields, key and "
           "certificate identifiers, coverage rows for denied or throttled calls."),
 )
-# Product text: cbom_sources/evidence.py levels E0..E3 and the 365-day expiry.
-EVIDENCE_LEVELS = (
-    ("E3", "Observed by a collector or proven by a document the assessor verified."),
-    ("E2", "Attested with a dated document (policy, vendor letter, configuration export)."),
-    ("E1", "Attested by a named person without a document."),
-    ("E0", "No answer, rated unknown, expired (older than 365 days) or vendor no response: the item stays Q0."),
-)
+# Product text: cbom_sources/evidence.py CONFIDENCE, CONFIDENCE_LABEL and EVIDENCE_MAX_AGE_DAYS (generated); the
+# meaning of each level is authored (the registry has no sentence for it).
+_EVIDENCE_MEANING = {
+    "E3": "Observed by a collector or proven by a document the assessor verified.",
+    "E2": "Attested with a dated document (policy, vendor letter, configuration export).",
+    "E1": "Attested by a named person without a document.",
+    "E0": "No answer, rated unknown, expired (older than {days} days) or vendor no response: the item stays Q0.",
+}
+EVIDENCE_LEVELS = tuple(
+    (level, f"{_EVIDENCE.CONFIDENCE_LABEL[level]}: "
+            + _EVIDENCE_MEANING[level].format(days=_EVIDENCE.EVIDENCE_MAX_AGE_DAYS))
+    for level in reversed(_EVIDENCE.CONFIDENCE))
 
 # ---------------------------------------------------------------------------------------------
 # Data protection (SOW Section 2, 7.1, 7.2)
 # ---------------------------------------------------------------------------------------------
-DATA_PROTECTION = (
+# "{signing}" is ``signing_clause(view)`` in lower case (review #486 minor 3).
+_DATA_PROTECTION = (
     "Metadata only: private keys, key material and secret values are never read or exported. Collectors print "
     "public parts only (certificates, public keys, fingerprints); PKCS#11 value attributes, KMIP Get/Export, Vault "
     "export, cloud decrypt and secret-value reads are never requested.",
     "Read-only: every collector account is read-only (sudoers lines, PowerShell, database grants and cloud roles "
     "are generated as read-only templates); ZeroShield needs no administrative or write access.",
-    "Encrypted in transit: scan nodes reach ZeroShield over HTTPS (TLS), every node request is signed (Ed25519) "
-    "and replay-protected; database passwords are sent only after TLS is verified.",
+    "Encrypted in transit: scan nodes reach ZeroShield over HTTPS (TLS) and signed requests are replay-protected; "
+    "{signing}; database passwords are sent only after TLS is verified.",
     "Least privilege: each source uses its own service account with only the read permissions its collector "
     "needs; agent-mode nodes never receive credentials.",
     "Credentials at rest: source secrets are write-only in the UI and API and stored encrypted; a vault reference "
@@ -372,6 +436,11 @@ DATA_PROTECTION = (
     "source, a schedule or an export is written to the audit log with the user and the time.",
     "No stored data is read (SOW 7.2): data-at-rest findings come from declared encryption settings only.",
 )
+
+
+def data_protection(view: Any) -> tuple[str, ...]:
+    clause = signing_clause(view)
+    return tuple(line.format(signing=clause[:1].lower() + clause[1:]) for line in _DATA_PROTECTION)
 
 # ---------------------------------------------------------------------------------------------
 # Scan windows and OT safety (SOW C6, 7.1, 7.2)
@@ -446,6 +515,10 @@ LIMIT_STATIC_ONLY = (
     "certificate or key files are inspected and running systems are not."
 )
 LIMIT_NO_PROBES = "No live-network discovery in this edition: no TLS, SSH or IKE endpoint was probed."
+LIMIT_NO_NETWORK_PROBES = (
+    "No live-network discovery in this edition: no network range or appliance was probed; the endpoints probed are "
+    "the service ports of the systems collected (databases, clusters, key managers)."
+)
 LIMIT_NO_KEY_SERVICES = (
     "No key service was collected in this edition: cloud KMS, HSM and CA settings are known only from declared "
     "configuration."
@@ -477,12 +550,26 @@ def _attr(item: Any, name: str, default: Any = None) -> Any:
     return item.get(name, default) if isinstance(item, dict) else getattr(item, name, default)
 
 
+# Collections that discover the network (live TLS / SSH / IKE probing of ranges and appliances). The database, SQL
+# Server, Kubernetes and KMIP collectors also store a tls_endpoint for their own service port: those are counted as
+# probed endpoints, but they are no live-network discovery (review #486 minor 6).
+NETWORK_KINDS = frozenset({"network_range", "appliance"})
+
+
 def coverage(view: Any) -> dict[str, Any]:
-    """What this edition's collections actually did: kinds collected, endpoints probed, collections in scope."""
+    """What this edition's collections actually did: kinds collected, endpoints probed (by any collector, and by the
+    network collections alone), collections in scope."""
     found = tuple(getattr(view, "collections", ()) or ())
     kinds = {str(_attr(c, "source_kind", "") or "") for c in found}
     probed = sum(int(_attr(c, "endpoints_probed", 0) or 0) for c in found)
-    return {"collections": len(found), "kinds": kinds - {""}, "endpoints_probed": probed}
+    network = sum(int(_attr(c, "endpoints_probed", 0) or 0) for c in found
+                  if _attr(c, "source_kind", "") in NETWORK_KINDS)
+    return {"collections": len(found), "kinds": kinds - {""}, "endpoints_probed": probed, "network_probed": network}
+
+
+def network_probed(view: Any) -> int:
+    """Endpoints a network-range or appliance collection of this edition probed (the live-network discovery)."""
+    return int(coverage(view)["network_probed"])
 
 
 def method_limits(view: Any) -> tuple[str, ...]:
@@ -493,8 +580,8 @@ def method_limits(view: Any) -> tuple[str, ...]:
     out: list[str] = []
     if not cov["collections"]:
         out.append(LIMIT_STATIC_ONLY)
-    if not cov["endpoints_probed"]:
-        out.append(LIMIT_NO_PROBES)
+    if not cov["network_probed"]:
+        out.append(LIMIT_NO_NETWORK_PROBES if cov["endpoints_probed"] else LIMIT_NO_PROBES)
     if cov["collections"] and not cov["kinds"] & _HOST_KINDS:
         out.append(LIMIT_NO_HOSTS)
     if not cov["kinds"] & _KEY_KINDS:
@@ -503,27 +590,39 @@ def method_limits(view: Any) -> tuple[str, ...]:
     return tuple(out)
 
 
+_CODE_SOURCE_KINDS = frozenset(_CODE)
+_METHOD_WORD = {AGENTLESS: "agentless", AGENT: "agent", API: "read-only API"}  # in a sentence
+LIMITS_SECTION = 16  # "Limits of the method" in cbom_methodology_pdf.SECTION_TITLES (pinned by a test)
+
+
 def method_scope_sentence(view: Any) -> str:
     """The disclaimer box's method sentence for D2: short (the box clamps at 600 characters), and true for the run
-    coverage of this edition; the full coverage is in the body."""
+    coverage of this edition (review #486 minor 2): it names code scanning only when the edition has a code source
+    and only the collection methods of the kinds it collected; the full coverage is in the body."""
     cov = coverage(view)
+    code = any(str(_attr(s, "kind", "") or "") in _CODE_SOURCE_KINDS for s in getattr(view, "sources", ()) or ())
     if not cov["collections"]:
         return ("Method: static analysis of repositories and uploaded artefacts in this edition; the collection methods "
                 "of SOW Section 2 are described in section 2 and apply once sources are collected.")
     probed = cov["endpoints_probed"]
     noun = "collection" if cov["collections"] == 1 else "collections"
     probes = (f"{probed} endpoint{'' if probed == 1 else 's'} probed" if probed else "no endpoint probed")
-    return (f"Method: code scanning plus {cov['collections']} CBOM Sources {noun} (agentless, agent and read-only "
-            f"API; {probes}). Section 2 lists every source type and section 12 the limits of this edition.")
+    used = [m for m in METHODS if any(COLLECTOR_BY_KIND[k].method == m for k in cov["kinds"] if k in COLLECTOR_BY_KIND)]
+    words = [_METHOD_WORD[m] for m in used] or ["collector"]
+    methods = ", ".join(words[:-1]) + (" and " if len(words) > 1 else "") + words[-1]
+    lead = "code scanning plus " if code else ""
+    return (f"Method: {lead}{cov['collections']} CBOM Sources {noun} ({methods}; {probes}). Section 2 lists every "
+            f"source type and section {LIMITS_SECTION} the limits of this edition.")
 
 
 __all__ = [
-    "AGENT", "AGENTLESS", "API", "ASSET_TYPE_ROWS", "COLLECTORS", "COLLECTOR_BY_KIND", "CONFIGURED",
-    "DATA_PROTECTION", "EVIDENCE_BY_METHOD", "EVIDENCE_CHAIN", "EVIDENCE_LEVELS", "EVIDENCE_PLAN",
-    "EVIDENCE_PLAN_COLUMNS", "FIX_CLASSES", "GRADING_TEXT", "LAYERS", "METHODS", "METHOD_COLUMNS", "METHOD_ROWS",
-    "NOT_CONFIGURED", "NOT_LOADED", "OT_SAFETY_TEXT", "OUT_OF_SOW_NOTE", "Q0_POLICY", "Q0_REASONS", "Q_GRADE_ROWS",
-    "RISK_SCORING_TEXT", "SCAN_WINDOW_TEXT", "SCHEDULE_TEXT", "SOW_ID", "SOW_SOURCE_TYPES", "SOW_TABLE_COLUMNS",
-    "SOW_TABLE_NOTE", "CollectorSpec", "SowSourceType", "coverage", "method_limits", "method_scope_sentence",
+    "AGENT", "AGENTLESS", "API", "ASSET_TYPE_ROWS", "AVAILABLE_WITH_OPTION", "COLLECTORS", "COLLECTOR_BY_KIND",
+    "CONFIGURED", "EVIDENCE_BY_METHOD", "EVIDENCE_CHAIN", "EVIDENCE_LEVELS", "EVIDENCE_PLAN", "EVIDENCE_PLAN_COLUMNS",
+    "FIX_CLASSES", "GRADING_TEXT", "LAYERS", "LIMITS_SECTION", "LIMIT_NO_NETWORK_PROBES", "LIMIT_NO_PROBES", "METHODS", "METHOD_COLUMNS", "NETWORK_KINDS",
+    "NOT_CONFIGURED", "NOT_LOADED", "OPTION_LABELS", "OT_SAFETY_TEXT", "OUT_OF_SOW_NOTE", "Q0_POLICY", "Q0_REASONS",
+    "Q0_ROW_TEXT", "Q_GRADE_ROWS", "RISK_SCORING_TEXT", "SCAN_WINDOW_TEXT", "SCHEDULE_TEXT", "SOW_FIX_TERMS", "SOW_ID",
+    "SOW_SOURCE_TYPES", "SOW_TABLE_COLUMNS", "SOW_TABLE_NOTE", "CollectorSpec", "SowSourceType", "coverage",
+    "data_protection", "method_limits", "method_rows", "method_scope_sentence", "network_probed", "signing_clause",
 ]
 
 # ---------------------------------------------------------------------------------------------
@@ -541,7 +640,7 @@ MANUAL_KEY_CUSTODY_COLLECTED = (
 def probed_note(probed: int) -> str:
     noun = "endpoint was" if probed == 1 else "endpoints were"
     return (f"Live TLS endpoints are not a manual item in this edition: {probed} {noun} probed by CBOM Sources "
-            "collections (Appendix A).")
+            "network-range and appliance collections (Appendix A).")
 
 
 def key_kinds_collected(view: Any) -> bool:

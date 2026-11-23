@@ -59,6 +59,12 @@ def tick(engine, now=None) -> dict[str, Any]:
         out["sshca_retention"] = purge_due(engine, now)
     except Exception as exc:
         log("ssh ca audit retention FAILED", ref=new_ref(), error=type(exc).__name__)
+    try:  # S4 (review #486 minor 8): the drift document of recently recorded runs, stored once for report and pack
+        from backend.utilities.cbom_sources.drift import store_pending_summaries
+
+        out["drift_summaries"] = store_pending_summaries(engine, now)
+    except Exception as exc:  # noqa: BLE001 - a download computes the document instead
+        log("drift summaries FAILED", ref=new_ref(), error=type(exc).__name__)
     return out
 
 

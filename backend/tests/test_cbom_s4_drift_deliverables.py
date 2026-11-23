@@ -123,25 +123,168 @@ def test_q0_transitions_read_the_diff_lists():
     assert q0_transitions({}) == {"closed": 0, "opened": 0, "removed": 0}
 
 
-def test_register_closures_count_only_this_runs_q0_closed_events(world):
+def test_q0_transitions_use_the_uncapped_counts_of_the_diff():
+    """Review #486 minor 1: run_diff caps its lists at LIST_CAP; the Q0 counts come from its counts, taken before."""
+    from backend.utilities.cbom_sources.drift_report import q0_transitions
+
+    capped = {"counts": {"q0_closed": 700, "q0_opened": 3, "q0_removed": 0},
+              "changed": [{"changes": {"q_grade": ["Q0", "Q2"]}}], "added": [], "removed": []}
+    assert q0_transitions(capped) == {"closed": 700, "opened": 3, "removed": 0}
+
+
+def test_run_diff_counts_q0_transitions_before_the_list_cap(api, finished_two_runs, monkeypatch):
+    from backend.utilities.cbom_sources import drift as DRIFT
+
+    r2 = finished_two_runs["run2"]["id"]
+    full = api("GET", f"/1/cbom/sources/runs/{r2}/diff").json()
+    expected = DRIFT.q0_counts(full["changed"], full["added"], full["removed"])
+    assert {k: full["counts"][f"q0_{k}"] for k in expected} == expected
+    monkeypatch.setattr(DRIFT, "LIST_CAP", 0)  # every list cut: the counts must not move
+    cut = api("GET", f"/1/cbom/sources/runs/{r2}/diff").json()
+    assert full["counts"]["added"] >= 1 and cut["added"] == [] and cut["truncated"] is True
+    assert {k: cut["counts"][f"q0_{k}"] for k in expected} == expected
+
+
+def test_recorded_drift_is_stored_once_and_served_without_recomputing(api, finished_two_runs, monkeypatch, tmp_path):
+    """Review #486 minor 8: the drift recording stores the run's drift document (keyed by its baseline); report.pdf
+    and drift.json serve it, so a download runs no comparison and a finished run's report keeps its bytes."""
+    from backend.utilities.cbom_sources import drift as DRIFT
+    from backend.utilities.cbom_sources import drift_report
+
+    engine, r1, r2 = finished_two_runs["engine"], finished_two_runs["run1"]["id"], finished_two_runs["run2"]["id"]
+    diff = api("GET", f"/1/cbom/sources/runs/{r2}/diff").json()
+    now = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
+    assert DRIFT.record_pending_drift(engine, now) == 2
+    with Session(engine) as s:
+        assert s.get(CbomCollectionRun, r2).drift_summary is None  # the recording itself stores no document
+    from backend.workers.cbom_scheduler import tick
+
+    assert tick(engine, now)["drift_summaries"] == 2  # the scheduler's last step: both runs' documents, once
+    assert tick(engine, now)["drift_summaries"] == 0
+    with Session(engine) as s:
+        run = s.get(CbomCollectionRun, r2)
+        held = run.drift_summary
+        assert held["v"] == drift_report.STORED_VERSION and held["baseline_id"] == r1
+        assert held["doc"]["recorded_at"] is not None and held["doc"]["baseline"]["id"] == r1
+        assert s.get(CbomCollectionRun, r1).drift_summary["baseline_id"] is None  # first run: stored "nothing yet"
+    for key in ("added", "removed", "changed", "opened", "resolved", "compared_sources"):
+        assert held["doc"]["counts"][key] == diff["counts"][key], key
+    calls = []
+    real = DRIFT.run_diff
+    monkeypatch.setattr(DRIFT, "run_diff", lambda *a, **k: calls.append(1) or real(*a, **k))
+    pdf = api("GET", f"/1/cbom/sources/runs/{r2}/report.pdf").content
+    pack = api("GET", f"/1/cbom/sources/runs/{r2}/evidence-pack").content
+    assert calls == []  # served from the run, not recomputed
+    doc = json.loads(zipfile.ZipFile(io.BytesIO(pack)).read("drift.json"))
+    assert doc == held["doc"]
+    text = _flat(_pdf_text(pdf, tmp_path))
+    assert f"Changes since run #{r1}" in text and "when the run's drift was recorded" in text
+    assert api("GET", f"/1/cbom/sources/runs/{r2}/report.pdf").content == pdf
+
+
+def test_a_document_that_cannot_be_computed_is_marked_and_the_report_still_builds(api, finished_two_runs,
+                                                                                    monkeypatch, tmp_path):
+    from backend.utilities.cbom_sources import drift as DRIFT
+
+    engine, r2 = finished_two_runs["engine"], finished_two_runs["run2"]["id"]
+    now = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
+    with Session(engine) as s:  # recorded the way the cbom_ops route does it, without the scheduler's pass
+        for rid in (finished_two_runs["run1"]["id"], r2):
+            assert DRIFT.record_run_drift(s, s.get(CbomCollectionRun, rid), now) is not None
+        s.commit()
+        assert s.get(CbomCollectionRun, r2).drift_summary is None  # the recording itself stores no document
+
+    def boom(*_a, **_k):
+        raise RuntimeError("diff exploded")
+
+    monkeypatch.setattr(DRIFT, "run_diff", boom)
+    assert DRIFT.store_pending_summaries(engine, now) == 1  # run 1 (nothing to compare) is stored; run 2 failed
+    with Session(engine) as s:
+        assert s.get(CbomCollectionRun, r2).drift_summary == {"v": 1, "failed": True}
+    assert DRIFT.store_pending_summaries(engine, now) == 0  # the marker keeps it out of the next ticks
+    r = api("GET", f"/1/cbom/sources/runs/{r2}/report.pdf")
+    assert r.status_code == 200 and "Drift could not be computed" in _flat(_pdf_text(r.content, tmp_path))
+
+
+def test_a_stored_drift_document_of_another_baseline_is_recomputed(world):
+    from backend.utilities.cbom_sources import drift_report
+
+    run = CbomCollectionRun(team_id=1, owner_user_id=1, client_request_id="held", status="done",
+                            drift_summary={"v": drift_report.STORED_VERSION, "baseline_id": 4,
+                                           "doc": {"format": drift_report.FORMAT, "x": 1}})
+    assert drift_report._stored(run, 4) == {"format": drift_report.FORMAT, "x": 1}
+    assert drift_report._stored(run, 5) is None and drift_report._stored(run, None) is None
+    run.drift_summary = {**run.drift_summary, "v": drift_report.STORED_VERSION + 1}
+    assert drift_report._stored(run, 4) is None
+
+
+def test_register_closures_count_only_the_closures_this_run_caused(world):
+    """Review #486 M1: a closure counts for the run that CAUSED it (``closed_by_run_id``), recorded by the time its
+    drift was (``drift_at``). ``detail.run_id`` alone is the run that last saw the gap: a settings save, an evidence
+    answer or a source removal that closes the gap later names that run too."""
     from backend.utilities.cbom_sources.drift_report import register_closures
 
     engine, _ = world
-    now = dt.datetime.utcnow()
+    now = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None, microsecond=0)
     with Session(engine) as s:
         run = CbomCollectionRun(team_id=1, owner_user_id=1, client_request_id="drift-q0", status="done",
-                                created_at=now - dt.timedelta(minutes=5), last_updated=now)
+                                created_at=now - dt.timedelta(minutes=5), last_updated=now,
+                                finished_at=now - dt.timedelta(minutes=1), drift_at=now)
         s.add(run)
         s.commit()
         s.refresh(run)
-        for i, (rid, cause) in enumerate(((run.id, "observation"), (run.id, "observation"), (run.id, "removed"),
-                                          (run.id + 999, "observation"))):
-            s.add(CbomDriftEvent(team_id=1, at=now, scope="register", kind="q0_closed", dedupe_key=f"q0-{i}",
-                                 detail={"run_id": rid, "cause": cause}))
+        events = (
+            (now, {"closed_by_run_id": run.id, "last_seen_run_id": run.id, "run_id": run.id, "cause": "observation"}),
+            (now, {"closed_by_run_id": run.id, "last_seen_run_id": run.id, "run_id": run.id, "cause": "observation"}),
+            (now, {"closed_by_run_id": run.id, "last_seen_run_id": 3, "run_id": run.id, "cause": "removed"}),
+            # no run caused these: a settings save and an evidence answer after the run
+            (now + dt.timedelta(days=3), {"closed_by_run_id": None, "last_seen_run_id": run.id, "run_id": run.id,
+                                          "cause": "inputs"}),
+            (now, {"closed_by_run_id": None, "last_seen_run_id": run.id, "run_id": run.id, "cause": "evidence"}),
+            # another run's closure
+            (now, {"closed_by_run_id": run.id + 999, "run_id": run.id + 999, "cause": "observation"}),
+            # caused by this run but recorded after its drift (an estate backfill replay): not in its report
+            (now + dt.timedelta(hours=1), {"closed_by_run_id": run.id, "run_id": run.id, "cause": "observation"}),
+            # written before closed_by_run_id existed: the run's own estate write is stamped with its drift_at
+            (now, {"run_id": run.id, "cause": "inputs"}),
+            (now + dt.timedelta(days=1), {"run_id": run.id, "cause": "inputs"}),
+        )
+        for i, (at, detail) in enumerate(events):
+            s.add(CbomDriftEvent(team_id=1, at=at, scope="register", kind="q0_closed", dedupe_key=f"q0-{i}",
+                                 detail=detail))
         s.add(CbomDriftEvent(team_id=2, at=now, scope="register", kind="q0_closed", dedupe_key="other-team",
-                             detail={"run_id": run.id, "cause": "observation"}))
+                             detail={"closed_by_run_id": run.id, "cause": "observation"}))
         s.commit()
-        assert register_closures(s, run) == {"observation": 2, "removed": 1}
+        assert register_closures(s, run) == {"inputs": 1, "observation": 2, "removed": 1}
+
+
+def test_a_settings_save_after_the_run_never_changes_its_register_closures_or_report(api, finished_two_runs, tmp_path):
+    """Review #486 M1 repro (qa/486/harness/rev486_register_closures.py, through the product functions): an
+    ``inputs:mosca`` gap last seen by the run is closed 3 days later by a Settings save. The run did not close it: its
+    count stays {} and its report.pdf (REPRODUCIBLE) keeps the same bytes."""
+    from backend.new_models import CbomQ0Gap
+    from backend.utilities.cbom_sources import q0register
+    from backend.utilities.cbom_sources.drift_report import register_closures
+
+    engine, r2 = finished_two_runs["engine"], finished_two_runs["run2"]["id"]
+    with Session(engine) as s:
+        run = s.get(CbomCollectionRun, r2)
+        s.add(CbomQ0Gap(team_id=1, item_kind="inputs", item_key="inputs:mosca", reason="mosca_missing", detail={},
+                        opened_at=run.created_at, run_id=r2))
+        s.commit()
+        before = register_closures(s, run)
+    pdf_before = api("GET", f"/1/cbom/sources/runs/{r2}/report.pdf").content
+    with Session(engine) as s:
+        q0register.close_mosca(s, 1, {"data_shelf_life_years": 10, "migration_years": 5, "threat_years": 12},
+                               dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) + dt.timedelta(days=3))
+        s.commit()
+        event = s.exec(sa.select(CbomDriftEvent.detail).where(CbomDriftEvent.kind == "q0_closed")).scalars().one()
+        assert event["closed_by_run_id"] is None and event["last_seen_run_id"] == r2 and event["cause"] == "inputs"
+        after = register_closures(s, s.get(CbomCollectionRun, r2))
+    assert before == {} and after == {}
+    pdf_after = api("GET", f"/1/cbom/sources/runs/{r2}/report.pdf").content
+    assert pdf_after == pdf_before
+    assert "Risk-register Q0 gaps this run closed 0" in _flat(_pdf_text(pdf_after, tmp_path))
 
 
 def test_weekly_drift_buckets_recorded_events_by_iso_week(world):
@@ -206,10 +349,28 @@ def test_a_scheduled_run_records_its_schedule_and_shows_its_name(api, world):
     with Session(engine) as s:
         row = next(r for r in list_run_rows(s, 1)["runs_list_data"] if r["id"] == rid)
     assert (row["trigger"], row["schedule_id"], row["schedule_name"]) == ("scheduled", sched["id"], "nightly re-scan")
+    # review #486 minor 7: every endpoint that serialises the run names the live schedule (null only once deleted)
+    listed = next(r for r in api("GET", "/1/cbom/sources/runs").json()["runs"] if r["id"] == rid)
+    posture = api("GET", f"/1/cbom/sources/runs/{rid}/posture").json()["run"]
+    assets = api("GET", f"/1/cbom/sources/runs/{rid}/assets").json()["run"]
+    assert listed["schedule_name"] == posture["schedule_name"] == assets["schedule_name"] == "nightly re-scan"
     # the schedule is deleted: the run keeps saying scheduled, with the id and no name
     assert api("DELETE", f"/1/cbom/sources/schedules/{sched['id']}").status_code == 200
     run = api("GET", f"/1/cbom/sources/runs/{rid}").json()["run"]
     assert (run["trigger"], run["schedule_id"], run["schedule_name"]) == ("scheduled", sched["id"], None)
+    listed = next(r for r in api("GET", "/1/cbom/sources/runs").json()["runs"] if r["id"] == rid)
+    assert listed["schedule_name"] is None
+
+
+def test_the_run_report_names_the_schedule_that_started_the_run():
+    """Audit D-S4-2 / review #486 nit 1: "Scheduled: <name>", or the id once the schedule is deleted."""
+    from backend.utilities.pdf.cbom_run_pdf import trigger_text
+
+    assert trigger_text({"trigger": "scheduled", "schedule_id": 4, "schedule_name": "nightly re-scan"}) \
+        == "scheduled: nightly re-scan"
+    assert trigger_text({"trigger": "scheduled", "schedule_id": 4, "schedule_name": None}) \
+        == "scheduled (schedule #4, since deleted)"
+    assert trigger_text({"trigger": "manual", "schedule_id": None}) == "manual"
 
 
 def test_run_trigger_falls_back_to_schedule_id_for_unbackfilled_rows():
@@ -231,9 +392,9 @@ def _migration():
     return module
 
 
-def test_migration_is_the_one_head_after_rpdf1brand001():
+def test_migration_is_the_one_head_after_fd2gate001():
     mod = _migration()
-    assert (mod.revision, mod.down_revision) == ("rsched1trig001", "rpdf1brand001")
+    assert (mod.revision, mod.down_revision) == ("rsched1trig001", "fd2gate001")
     revisions, parents = set(), set()
     for path in VERSIONS.glob("*.py"):
         text = path.read_text()
@@ -273,6 +434,7 @@ def test_migration_up_down_up_backfills_from_schedule_id(tmp_path):
     step("upgrade")
     cols, got = rows()
     assert "trigger" in cols and got == [(1, None, "manual"), (2, 4, "scheduled"), (3, None, "manual")]
+    assert "drift_summary" in cols  # S4 review #486 minor 8: the stored drift document (NULL until written)
     with engine.begin() as conn:  # the default applies to rows written without it; the check refuses others
         conn.execute(sa.text("INSERT INTO cbomcollectionrun (id, status) VALUES (4, 'queued')"))
         with pytest.raises(sa.exc.IntegrityError):
@@ -280,7 +442,7 @@ def test_migration_up_down_up_backfills_from_schedule_id(tmp_path):
                 conn.execute(sa.text("UPDATE cbomcollectionrun SET trigger = 'cron' WHERE id = 4"))
     assert rows()[1][-1] == (4, None, "manual")
     step("downgrade")
-    assert "trigger" not in rows()[0]
+    assert "trigger" not in rows()[0] and "drift_summary" not in rows()[0]
     step("upgrade")
     assert rows()[1] == [(1, None, "manual"), (2, 4, "scheduled"), (3, None, "manual"), (4, None, "manual")]
     engine.dispose()

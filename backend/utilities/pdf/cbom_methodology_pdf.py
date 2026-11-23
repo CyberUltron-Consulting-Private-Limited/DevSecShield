@@ -164,8 +164,8 @@ COLLECTORS_INTRO = (
 )
 # Product text: section 6 tables (cbom_methodology_text, pinned to qgrade / agility).
 CLASSIFICATION_INTRO = (
-    "Every collected or scanned item is normalised into a CycloneDX 1.6 cryptographic asset of one of four types, "
-    "then graded and scored as follows."
+    "Every collected or scanned cryptographic item is normalised into a CycloneDX 1.6 cryptographic asset of one of "
+    "four types (crypto libraries are CycloneDX library components), then graded and scored as follows."
 )
 # Product text: section 7 tables.
 EVIDENCE_INTRO = (
@@ -202,11 +202,13 @@ _TEXT_LIMIT = 2000  # authored paragraphs are long; pdf_text's default (300) wou
 _CELL_LIMIT = 700  # scanner descriptions run to ~290 characters; leave generous headroom
 _BLANK_HEIGHT = 18  # write-in cells are at least this tall (points)
 
+ASSET_LIBRARY = "library"  # a CBOM Sources crypto library: a CycloneDX library component in the run CBOM
 _ASSET_TYPE_LABELS = {
     "algorithm": "Algorithm",
     "certificate": "Certificate",
     "protocol": "Protocol",
     "related-crypto-material": "Related crypto material",
+    ASSET_LIBRARY: "Crypto library (CycloneDX library component)",
     ASSET_OTHER: "Other",
 }
 _SOURCE_KIND_NOUNS = (
@@ -372,10 +374,28 @@ def _scope_text(view: TeamCbomView) -> str:
     return " ".join(parts)
 
 
+def _asset_type_counts(view: TeamCbomView) -> dict[str, int]:
+    """``view.assets_by_type`` with the CBOM Sources rows the rollup types "other" counted under the type the run
+    CBOM export writes them as (``methodology.sources_other_types``: algorithm, or a library component); review #486
+    minor 9. The total is unchanged."""
+    counts = {k: int(v) for k, v in (view.assets_by_type or {}).items()}
+    mapped = (_facts(view) or {}).get("sources_other_types")
+    if isinstance(mapped, dict):
+        algorithm, library = int(mapped.get("algorithm", 0) or 0), int(mapped.get("library", 0) or 0)
+        moved = min(algorithm + library, counts.get(ASSET_OTHER, 0))
+        if moved == algorithm + library:
+            counts[ASSET_OTHER] = counts.get(ASSET_OTHER, 0) - moved
+            counts[ASSET_ALGORITHM] = counts.get(ASSET_ALGORITHM, 0) + algorithm
+            if library:
+                counts[ASSET_LIBRARY] = library
+    return counts
+
+
 def _asset_type_table(view: TeamCbomView, local: dict[str, ParagraphStyle]) -> Flowable:
-    counts = view.assets_by_type or {}
-    keys = [k for k in ASSET_TYPES if k != ASSET_OTHER or counts.get(k, 0)]
-    keys += sorted(k for k in counts if k not in ASSET_TYPES)
+    counts = _asset_type_counts(view)
+    keys = [k for k in ASSET_TYPES if k != ASSET_OTHER]
+    keys += [k for k in (ASSET_LIBRARY, ASSET_OTHER) if counts.get(k, 0)]
+    keys += sorted(k for k in counts if k not in ASSET_TYPES and k != ASSET_LIBRARY)
     rows: list[list[object]] = [
         [_ASSET_TYPE_LABELS.get(key, key), str(int(counts.get(key, 0)))] for key in keys
     ]
@@ -455,10 +475,17 @@ def _collection_variant(view: TeamCbomView, collection: Any) -> str:
 
 def _sow_row_status(view: TeamCbomView, spec: method.SowSourceType) -> tuple[str, int | None, int]:
     """(status, sources of the type, of them collected in this edition) for one SOW Table 4 row."""
+    facts = _facts(view)
     if spec.code:
         found = sum(1 for source in view.sources if source.kind in spec.code)
+        if spec.option and found:  # read only by scans run with the option (review #486 minor 5)
+            available = method.AVAILABLE_WITH_OPTION.format(option=method.OPTION_LABELS.get(spec.option, spec.option))
+            code = (facts or {}).get("code")
+            if not isinstance(code, dict):
+                return available, None, 0
+            with_option = int(code.get(spec.option, 0) or 0)
+            return (method.CONFIGURED, with_option, with_option) if with_option else (available, 0, 0)
         return (method.CONFIGURED if found else method.NOT_CONFIGURED), found, found
-    facts = _facts(view)
     collections = [c for c in view.collections if c.source_kind in spec.kinds] if spec.kinds else [
         c for c in view.collections if _collection_variant(view, c) in spec.variants]
     if facts is None:
@@ -498,7 +525,7 @@ def _setup_sentence(view: TeamCbomView) -> str:
 
 
 def _methods(view: TeamCbomView, styles: Styles, local: dict[str, ParagraphStyle]) -> list[Flowable]:
-    table = dense_table(list(method.METHOD_COLUMNS), [list(row) for row in method.METHOD_ROWS],
+    table = dense_table(list(method.METHOD_COLUMNS), [list(row) for row in method.method_rows(view)],
                         [60, 190, 150, 140], cell_limit=_CELL_LIMIT)
     content: list[Flowable] = [
         _para(METHODS_INTRO, styles["body"]),
@@ -545,7 +572,7 @@ def _collectors(view: TeamCbomView, styles: Styles, local: dict[str, ParagraphSt
 # 5. Manual discovery checklist (blank; only what no collector in this edition read)
 # ---------------------------------------------------------------------------------------------
 def _manual_items(view: TeamCbomView) -> list[tuple[str, str]]:
-    probed = authored.endpoints_probed(view)
+    probed = method.network_probed(view)  # a database's or cluster's own TLS port is no live-network discovery
     keys = method.key_kinds_collected(view)
     out: list[tuple[str, str]] = []
     for item, reason in authored.MANUAL_DISCOVERY_ITEMS:
@@ -566,7 +593,7 @@ def _manual(view: TeamCbomView, styles: Styles, local: dict[str, ParagraphStyle]
         manual_cols=(2, 3, 4),
     )
     content: list[Flowable] = [_para(MANUAL_INTRO, styles["body"]), table, Spacer(1, 4)]
-    probed = authored.endpoints_probed(view)
+    probed = method.network_probed(view)
     if probed:
         content.append(_para(method.probed_note(probed), local["caption"]))
     return _section(SEC["Manual discovery checklist"], styles, content, together=True)
@@ -700,10 +727,10 @@ def _evidence(view: TeamCbomView, styles: Styles) -> list[Flowable]:
 # ---------------------------------------------------------------------------------------------
 # 8. Data protection (SOW Section 2)
 # ---------------------------------------------------------------------------------------------
-def _protection(styles: Styles, local: dict[str, ParagraphStyle]) -> list[Flowable]:
+def _protection(view: TeamCbomView, styles: Styles, local: dict[str, ParagraphStyle]) -> list[Flowable]:
     content: list[Flowable] = [
         Paragraph(pdf_text(line, limit=_TEXT_LIMIT), local["bullet"], bulletText=_BULLET)
-        for line in method.DATA_PROTECTION
+        for line in method.data_protection(view)
     ]
     return _section(SEC["Data protection"], styles, content, together=True)
 
@@ -1028,7 +1055,7 @@ def build_body(view: TeamCbomView, styles: Styles, width: float) -> list[Flowabl
     story += _manual(view, styles, local)
     story += _classification(view, styles, local)
     story += _evidence(view, styles)
-    story += _protection(styles, local)
+    story += _protection(view, styles, local)
     story += _windows(view, styles)
     story += _validation(styles)
     story += _coverage(view, styles, local)

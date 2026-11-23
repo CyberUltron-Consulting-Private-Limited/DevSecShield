@@ -281,6 +281,15 @@ def _delta(value: Any) -> str:
     return f"{number:+.1f} points" if number else "no change"
 
 
+def trigger_text(run: dict[str, Any]) -> str:
+    """"manual", "scheduled: <name>", or "scheduled (schedule #<id>, since deleted)" (audit D-S4-2, review #486 nit)."""
+    if run.get("trigger") != "scheduled":
+        return str(run.get("trigger") or "manual")
+    if run.get("schedule_name"):
+        return f"scheduled: {run['schedule_name']}"
+    return f"scheduled (schedule #{run['schedule_id']}, since deleted)" if run.get("schedule_id") else "scheduled"
+
+
 def append_drift_section(story: list[Any], drift: dict[str, Any], styles: dict) -> None:
     """S4: what changed since the previous comparable run, from ``drift_report.run_drift`` (the ``/diff`` numbers)."""
     base = drift.get("baseline")
@@ -295,13 +304,15 @@ def append_drift_section(story: list[Any], drift: dict[str, Any], styles: dict) 
     rules = drift.get("rules") or {}
     run = drift.get("run") or {}
     story.append(key_value_table([
-        ("Baseline", f"Run #{base['id']} · {base.get('status')} · {base.get('trigger')} · finished "
+        ("Baseline", f"Run #{base['id']} · {base.get('status')} · {trigger_text(base)} · finished "
                      f"{base.get('finished_at') or '—'}"),
-        ("This run", f"Run #{run.get('id')} · {run.get('trigger')}"),
+        ("This run", f"Run #{run.get('id')} · {trigger_text(run)}"),
         ("Sources compared", f"{counts.get('compared_sources', 0)} compared, {counts.get('not_compared_sources', 0)} "
                              "not compared (collected completely in only one of the two runs)"),
         ("Rules", "re-judged with the current rules" if rules.get("reclassified")
          else ("rules changed between the runs" if rules.get("rules_changed") else "same rules")),
+        *([("Compared", (f"when the run's drift was recorded, {drift['recorded_at']} (the diff endpoint compares "
+                          "with the grade inputs of today)"))] if drift.get("recorded_at") else []),
     ], styles=styles))
     story.append(Spacer(1, 6))
     readiness = (f"{readiness_text(ready.get('before'))} → {readiness_text(ready.get('after'))} "
