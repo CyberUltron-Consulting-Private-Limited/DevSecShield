@@ -167,12 +167,12 @@ def _rotation(facts: Mapping[str, Any]) -> tuple[str, str]:
     return "unknown", status
 
 
-_KEY_SPEC = re.compile(r"^(RSA|HMAC)_(\d+)$|^ECC_(NIST|SECG)_P(\d+)K?\d*$|^ML_DSA_(\d+)$", re.IGNORECASE)
+_KEY_SPEC = re.compile(r"^(RSA|HMAC)_(\d+)$|^ECC_(NIST|SECG)_P(\d+)K?\d*$", re.IGNORECASE)
 
 
 def _algorithm_size(algorithm: Any, key_size: Any) -> str:
     """``AES-256`` / ``RSA-2048`` / ``ECDSA P-256``: a provider key spec (``SYMMETRIC_DEFAULT``, ``RSA_2048``,
-    ``ECC_NIST_P256``) is printed as the algorithm it names."""
+    ``ECC_NIST_P256``) is printed as the algorithm it names; any other spec is printed as stored."""
     name = _text(algorithm, 60)
     size = _text(key_size, 10)
     if name.upper() == "SYMMETRIC_DEFAULT":  # AWS / GCP / OCI symmetric keys are AES-256 (GCM)
@@ -181,9 +181,7 @@ def _algorithm_size(algorithm: Any, key_size: Any) -> str:
     if spec:
         if spec.group(1):
             return f"{spec.group(1).upper()}-{spec.group(2)}"
-        if spec.group(4):
-            return f"ECDSA P-{spec.group(4)}"
-        return f"ML-DSA-{spec.group(5)}"
+        return f"ECDSA P-{spec.group(4)}"
     if name and size and size not in name:
         return f"{name}-{size}"
     return name or (f"{size}-bit" if size else "")
