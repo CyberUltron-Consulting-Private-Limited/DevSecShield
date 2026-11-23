@@ -29,6 +29,7 @@ const LOADERS: Record<TipArea, Loader> = {
   "cbom-results": () => import("./text/cbom-results"),
   "cbom-grade": () => import("./text/cbom-grade"),
   "cbom-run": () => import("./text/cbom-run"),
+  "cbom-gate": () => import("./text/cbom-gate"),
   "cbsrc-common": () => import("./text/cbsrc-common"),
   "cbsrc-nodes": () => import("./text/cbsrc-nodes"),
   "cbsrc-servers": () => import("./text/cbsrc-servers"),

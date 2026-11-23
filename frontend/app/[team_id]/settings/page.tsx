@@ -14,7 +14,6 @@ import {
   revokeTeamInvitation,
   type TeamInvitationItem,
   type UpdateTeamData,
-  type TicketingIntegrationSettingsData,
 } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
 import { Button } from "@/components/ui/button";
@@ -41,7 +40,6 @@ import { Loader2, Trash2, UserPlus, UserMinus, Pencil, PenLine, Coins, Users, In
 import { Skeleton } from "@/components/ui/skeleton";
 import { JiraIcon } from "@/components/icons/arcticons-jira";
 import { toast } from "sonner";
-import { JIRA_ADMIN_ONLY, JIRA_TOKEN_KEPT_HINT, jiraFormFrom, jiraToSave } from "@/utils/jiraSettings";
 import { formatDateIst } from "@/utils/datetime";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ROLE_HELP, ROLE_LABELS, accessFrom, can, canManageMember, lastOwnerProblem, roleChoices, roleLabel, type TeamRole } from "@/utils/rbac";
@@ -63,11 +61,6 @@ export default function TeamSettingsPage() {
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [jiraEmail, setJiraEmail] = useState("");
-  const [jiraUrl, setJiraUrl] = useState("");
-  const [jiraApiToken, setJiraApiToken] = useState("");
-  // the API says only whether a token is stored; the field starts empty and an empty field keeps it
-  const [jiraTokenSet, setJiraTokenSet] = useState(false);
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
   const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set());
   const [addMemberEmail, setAddMemberEmail] = useState("");
@@ -82,11 +75,6 @@ export default function TeamSettingsPage() {
     if (team) {
       setName(team.team_name ?? "");
       setDescription(team.team_description ?? "");
-      const jira = jiraFormFrom(team.team_integration_settings);
-      setJiraEmail(jira.email);
-      setJiraUrl(jira.url);
-      setJiraApiToken(jira.apiToken);
-      setJiraTokenSet(jira.tokenSet);
     }
   }, [team]);
 
@@ -178,26 +166,6 @@ export default function TeamSettingsPage() {
     updateTeamMutation.mutate({
       name: name.trim() || undefined,
       description: description.trim() || undefined,
-    });
-  };
-
-  const handleSaveJira = () => {
-    // a partly filled form used to save jira: null and still say "Team updated successfully"
-    const decision = jiraToSave(jiraEmail, jiraUrl, jiraApiToken, jiraTokenSet);
-    if (!decision.ok) {
-      toast.error(decision.message);
-      return;
-    }
-    const integration_settings: TicketingIntegrationSettingsData = {
-      ...(team?.team_integration_settings && typeof team.team_integration_settings === "object" && !Array.isArray(team.team_integration_settings)
-        ? (team.team_integration_settings as TicketingIntegrationSettingsData)
-        : {}),
-      jira: decision.jira,
-    };
-    updateTeamMutation.mutate({
-      name: team?.team_name ?? undefined,
-      description: team?.team_description ?? undefined,
-      integration_settings,
     });
   };
 
@@ -482,8 +450,8 @@ export default function TeamSettingsPage() {
           </div>
         </section>
 
-        {/* 3. Integration settings (Jira) */}
-        <section className="pb-6 mb-6 border-b border-border">
+        {/* 3. Jira: configured with the other ticketing integrations in Settings > Integrations (SOW S2) */}
+        <section className="pb-6 mb-6 border-b border-border" data-testid="settings-jira-moved">
           <h2 className="text-lg font-medium flex items-center gap-2">
             <span className="inline-flex items-center justify-center rounded-md bg-blue-600 p-1.5">
               <JiraIcon size={20} className="text-white" />
@@ -491,62 +459,25 @@ export default function TeamSettingsPage() {
             Jira integration
             <InfoTip id="settings.jira" />
           </h2>
-          <p className="text-sm text-muted-foreground mb-4 mt-1">Configure Jira (and other integrations later) for this team. Use an email that has access to the Jira project.</p>
-          {!is_team_admin && (
-            <p className="text-sm text-muted-foreground mb-4" data-testid="jira-admin-only">{JIRA_ADMIN_ONLY}</p>
-          )}
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <FieldLabel htmlFor="jira-email" infoId="settings.jira.email">Email (Jira account with project access)</FieldLabel>
-              <Input
-                id="jira-email"
-                type="email"
-                value={jiraEmail}
-                readOnly={!is_team_admin}
-                onChange={(e) => setJiraEmail(e.target.value)}
-                placeholder="you@example.com"
-              />
-            </div>
-            <div className="space-y-2">
-              <FieldLabel htmlFor="jira-url" infoId="settings.jira.url">Jira URL</FieldLabel>
-              <Input
-                id="jira-url"
-                type="url"
-                value={jiraUrl}
-                readOnly={!is_team_admin}
-                onChange={(e) => setJiraUrl(e.target.value)}
-                placeholder="https://your-domain.atlassian.net"
-              />
-            </div>
-            <div className="space-y-2">
-              <FieldLabel htmlFor="jira-token" infoId="settings.jira.token">Jira API token</FieldLabel>
-              <Input
-                id="jira-token"
-                type="password"
-                autoComplete="off"
-                value={jiraApiToken}
-                readOnly={!is_team_admin}
-                onChange={(e) => setJiraApiToken(e.target.value)}
-                placeholder={jiraTokenSet ? "Saved (hidden)" : "Jira API token"}
-                aria-describedby="jira-token-state"
-              />
-              <p id="jira-token-state" className="text-xs text-muted-foreground" data-testid="jira-token-state">
-                {jiraTokenSet
-                  ? (is_team_admin ? JIRA_TOKEN_KEPT_HINT : "A token is saved.")
-                  : "No token is saved."}
-              </p>
-            </div>
-            {is_team_admin && (
-              <Button
-                onClick={handleSaveJira}
-                disabled={updateTeamMutation.isPending}
-                className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
-              >
-                {updateTeamMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                Save integration settings
-              </Button>
-            )}
-          </div>
+          <p className="text-sm text-muted-foreground mb-4 mt-1">
+            Jira is set up next to ServiceNow in Integrations: the Jira site, account and API token, the project for CBOM
+            tickets, a connection test and a test ticket. Code-scan, CI/CD and CBOM tickets all use that connection.
+          </p>
+          <Link href={`/${team_id}/settings/integrations#int-jira`} className="inline-flex items-center rounded-md bg-blue-600 hover:bg-blue-700 px-4 py-2 text-sm text-white" data-testid="settings-jira-link">
+            Open Jira in Integrations
+          </Link>
+        </section>
+
+        {/* CBOM CI/CD policy gate (SOW S1): its own page */}
+        <section className="pb-6 mb-6 border-b border-border">
+          <h2 className="text-lg font-medium">CBOM policy gate</h2>
+          <p className="text-sm text-muted-foreground mb-4 mt-1">
+            What fails a CI/CD pipeline that runs the CBOM scan: banned algorithms, minimum key sizes, quantum-vulnerable and
+            deprecated algorithms, with time-limited exceptions; per team or per CI/CD integration.
+          </p>
+          <Link href={`/${team_id}/settings/cbom-gate`} className="inline-flex items-center rounded-md bg-blue-600 hover:bg-blue-700 px-4 py-2 text-sm text-white" data-testid="settings-cbom-gate-link">
+            Open CBOM policy gate
+          </Link>
         </section>
 
         {/* Report branding: the team's client logo on its PDF reports (its own queries; never ["team-details"]) */}
