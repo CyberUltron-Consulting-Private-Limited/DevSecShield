@@ -731,6 +731,9 @@ class TeamCbomView:
     # D2's live collection set-up (``cbom_sources.methodology_facts.load``: sources by kind and provider, ports, scan
     # window, nodes, schedules, runs by trigger); None = not loaded. Not part of the fold, like ``register``.
     methodology: dict[str, Any] | None = field(default=None, compare=False, repr=False)
+    # the rows of each Sources source's latest completed collection, facts included, and the owner each source names
+    # (``cbom_sources.cert_estate.EstateInputs``) for D7 / D8; None = not loaded. Not part of the fold.
+    estate: Any = field(default=None, compare=False, repr=False)
 
     @property
     def is_empty(self) -> bool:
@@ -3285,6 +3288,13 @@ def load_team_cbom_view(engine: Any, team_id: int, *, now: datetime | None = Non
 
         found = load_sources_result(session, team_id, moment)
         view = merge_collections(view, found.rows, found.collections)
+        try:  # every latest-collection row with its facts, for D7 (network) and D8 (certificates)
+            from backend.utilities.cbom_sources.cert_estate import load_inputs as estate_inputs
+
+            view.estate = estate_inputs(session, team_id, found)
+        except Exception as exc:  # pragma: no cover - defensive
+            view.estate = None
+            view.warnings = (*view.warnings, f"estate rows not loaded: {type(exc).__name__}")
         try:  # remediation waves and scan-node assets for the roadmap; a failure leaves the manual columns blank
             from backend.utilities.cbom_sources.waves import roadmap_extras
 
