@@ -12,6 +12,7 @@ from aibom.emit.spdx import emit_and_validate_spdx, emit_spdx
 from aibom.emit.validate import validate_cyclonedx, validate_spdx
 from aibom.model.result import REL_DEPLOYED_AT, REL_SERVED_BY
 from aibom.scan.pipeline import scan_repo
+from aibom.score.posture import posture_grade
 from aibom.score.scorer import normalize_score, posture_score, risk_band
 
 _EX = pathlib.Path(__file__).resolve().parent.parent / "examples"
@@ -159,7 +160,9 @@ def test_scores_carry_normalized_and_band() -> None:
     counts = scores["severity_counts"]
     assert counts["critical"] == 1 and sum(counts.values()) == len(result.components)
     assert scores["risk_normalized"] == posture_score(**counts)
-    assert scores["risk_band"] == risk_band(scores["risk_normalized"])
+    # the band is the PDF grade's word, from the one table in score/posture.py
+    grade, band = posture_grade(scores["risk_normalized"])
+    assert (scores["risk_grade"], scores["risk_band"]) == (grade, band)
 
 
 def test_no_phi_scores_low_band() -> None:
@@ -168,7 +171,8 @@ def test_no_phi_scores_low_band() -> None:
     # nothing flagged: low inventory only, so the score is capped in the low band
     assert {k for k, n in scores["severity_counts"].items() if n} == {"low"}
     assert scores["risk_normalized"] <= 29.0
-    assert scores["risk_band"] == "low"
+    assert scores["risk_band"] in ("low", "moderate")  # grade A or B, never worse
+    assert scores["risk_grade"] in ("A", "B")
 
 
 def test_normalize_score_caps_at_100() -> None:

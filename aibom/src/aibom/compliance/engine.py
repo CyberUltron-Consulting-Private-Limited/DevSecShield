@@ -95,8 +95,8 @@ def run_framework(
         requirements.append(
             {
                 "id": requirement.id,
-                "title": requirement.title,
-                "source": requirement.source,
+                "title": requirement.title_for(result),
+                "source": requirement.source_for(result),
                 "verdict": cr.verdict,
                 "evidence": cr.evidence,
                 "refs": list(cr.refs),

@@ -1503,19 +1503,13 @@ def compute_risk_score(critical: int, high: int, medium: int, low: int) -> Tuple
     return score, "A", "Low risk"
 
 
-# The worst severity present bounds the grade: without it 32 Low and 10 Medium inventory rows scored 100 / F
-# "Critical risk" with zero Critical or High findings (AI BOM audit G-D5-4). Same formula as the AI BOM engine's
-# ``aibom.score.scorer.posture_score`` (pinned by backend/tests/test_aibom_risk_score_consistency.py).
-POSTURE_SCORE_CAPS = (("critical", 100), ("high", 69), ("medium", 49), ("low", 29))
-
-
 def compute_posture_risk_score(critical: int, high: int, medium: int, low: int) -> Tuple[int, str, str]:
-    """``compute_risk_score`` bounded by the worst severity present: no Critical -> at most D, no Critical/High ->
-    at most C, Low only -> at most B, nothing -> A (0)."""
-    score, _grade, _band = compute_risk_score(critical, high, medium, low)
-    counts = {"critical": critical, "high": high, "medium": medium, "low": low}
-    cap = next((c for sev, c in POSTURE_SCORE_CAPS if int(counts[sev] or 0) > 0), 0)
-    return compute_risk_score_band(min(score, cap))
+    """The AI BOM grade: ``compute_risk_score`` bounded by the worst severity present (no Critical -> at most D, no
+    Critical/High -> at most C, Low only -> at most B, nothing -> A). Computed by the engine's own function and table
+    (``aibom/src/aibom/score/posture.py``, loaded by ``aibom_posture``), so the PDF and the dashboard band agree."""
+    from backend.utilities.pdf.aibom_posture import posture_risk
+
+    return posture_risk(critical, high, medium, low)
 
 
 def compute_risk_score_band(score: int) -> Tuple[int, str, str]:

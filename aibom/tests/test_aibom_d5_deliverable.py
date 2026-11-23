@@ -133,21 +133,29 @@ def test_model_names_are_not_truncated() -> None:
 
 def test_only_models_the_application_uses_are_inventoried(run: dict) -> None:
     bom = run["ai_bom_json"]
-    models = sorted(
-        c["name"] for c in bom["components"] if c["type"] == "machine-learning-model"
-    )
+    models = {
+        c["name"]: {p["name"]: p["value"] for p in c.get("properties", [])}
+        for c in bom["components"]
+        if c["type"] == "machine-learning-model"
+    }
     # gpt-4o: the judge model's default; Qwen2.5-1.5B-Instruct: loaded with
-    # from_pretrained.
-    # Not: the supported-models table (Qwen2-0.5B …), the pricing doc (gpt-4-turbo), the
-    # test (claude-3-opus).
-    assert models == ["Qwen2.5-1.5B-Instruct", "gpt-4o"]
+    # from_pretrained. The supported-models table (Qwen2-0.5B …), the pricing doc
+    # (gpt-4-turbo) and the test (claude-3-opus) stay in the BOM as tagged
+    # references (review of #487 M1), never as models in use.
+    in_use = sorted(
+        n for n, p in models.items() if p["model:reference_type"] == "usage"
+    )
+    assert in_use == ["Qwen2.5-1.5B-Instruct", "gpt-4o"]
+    assert models["claude-3-opus"]["model:reference_type"] == "test"
+    assert models["gpt-4-turbo"]["model:reference_type"] == "catalog"
     props = {p["name"]: p["value"] for p in bom["metadata"]["properties"]}
     assert int(props["aibom:model_mentions_catalog"]) >= 6
     assert props["aibom:model_mentions_test"] == "1"
-    model = next(c for c in bom["components"] if c["name"] == "gpt-4o")
-    assert {"name": "discovery:source", "value": "router/config.py"} in model[
-        "properties"
-    ]
+    assert models["gpt-4o"]["discovery:source"] == "router/config.py"
+    # only models in use are findings
+    rows = {r["component_name"] for r in run["results"]}
+    assert {"gpt-4o", "Qwen2.5-1.5B-Instruct"} <= rows
+    assert not {"Qwen2-0.5B", "gpt-4-turbo", "claude-3-opus"} & rows
 
 
 # --------------------------------------------------------------------------- AI
@@ -215,7 +223,8 @@ def test_risk_score_is_bounded_by_the_findings(run: dict) -> None:
     )  # the engine counts the rows the dashboard and PDF count
     assert scores["risk_normalized"] == posture_score(**sev)
     if not sev["critical"] and not sev["high"]:
-        assert scores["risk_normalized"] <= 49 and scores["risk_band"] != "high"
+        assert scores["risk_normalized"] <= 49
+        assert scores["risk_band"] not in ("critical", "high")
 
 
 @pytest.mark.parametrize(

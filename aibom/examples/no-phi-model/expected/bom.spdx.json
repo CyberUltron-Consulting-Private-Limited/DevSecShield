@@ -26,11 +26,19 @@
       "name": "DevSecShield AI BOM 0.1.0"
     },
     {
+      "type": "Organization",
+      "spdxId": "https://zeroshield.ai/spdx/aibom/13999169-4151-588c-ab38-4aff6dc617d0/agent/supplier/openrad-research",
+      "creationInfo": "_:creationinfo",
+      "name": "OpenRad Research"
+    },
+    {
       "type": "ai_AIPackage",
       "spdxId": "https://zeroshield.ai/spdx/aibom/13999169-4151-588c-ab38-4aff6dc617d0/package/model-bone-age",
       "creationInfo": "_:creationinfo",
       "name": "bone-age-estimator",
+      "suppliedBy": "https://zeroshield.ai/spdx/aibom/13999169-4151-588c-ab38-4aff6dc617d0/agent/supplier/openrad-research",
       "software_packageVersion": "1.0.0",
+      "software_primaryPurpose": "model",
       "ai_typeOfModel": [
         "convolutional neural network (ResNet-18)"
       ],
@@ -79,10 +87,12 @@
       "software_packageUrl": "pkg:pypi/torch@2.3.1"
     },
     {
-      "type": "software_Package",
+      "type": "ai_AIPackage",
       "spdxId": "https://zeroshield.ai/spdx/aibom/13999169-4151-588c-ab38-4aff6dc617d0/package/modelfile-model.safetensors",
       "creationInfo": "_:creationinfo",
-      "name": "model.safetensors"
+      "name": "model.safetensors",
+      "comment": "Model weight file at model.safetensors",
+      "software_primaryPurpose": "model"
     },
     {
       "type": "SpdxDocument",
@@ -90,6 +100,13 @@
       "creationInfo": "_:creationinfo",
       "name": "BoneAge-Research-Tool",
       "comment": "Regulatory mappings are advisory only; an AI BOM creates visibility, not assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA obligations. A qualified regulatory reviewer must sign off.",
+      "profileConformance": [
+        "core",
+        "software",
+        "simpleLicensing",
+        "ai",
+        "dataset"
+      ],
       "rootElement": [
         "https://zeroshield.ai/spdx/aibom/13999169-4151-588c-ab38-4aff6dc617d0/package/model-bone-age"
       ]

@@ -26,11 +26,19 @@
       "name": "DevSecShield AI BOM 0.1.0"
     },
     {
+      "type": "Organization",
+      "spdxId": "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/agent/supplier/acme-medical-ai",
+      "creationInfo": "_:creationinfo",
+      "name": "Acme Medical AI"
+    },
+    {
       "type": "ai_AIPackage",
       "spdxId": "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/model-chestxr-cnn",
       "creationInfo": "_:creationinfo",
       "name": "chestxr-nodule-detector",
+      "suppliedBy": "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/agent/supplier/acme-medical-ai",
       "software_packageVersion": "2.1.0",
+      "software_primaryPurpose": "model",
       "ai_typeOfModel": [
         "convolutional neural network (ResNet-50)"
       ],
@@ -129,10 +137,12 @@
       "name": "Acme Imaging AI Cloud"
     },
     {
-      "type": "software_Package",
+      "type": "ai_AIPackage",
       "spdxId": "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/modelfile-model.safetensors",
       "creationInfo": "_:creationinfo",
-      "name": "model.safetensors"
+      "name": "model.safetensors",
+      "comment": "Model weight file at model.safetensors",
+      "software_primaryPurpose": "model"
     },
     {
       "type": "SpdxDocument",
@@ -140,6 +150,13 @@
       "creationInfo": "_:creationinfo",
       "name": "ChestXR-Triage-SaMD",
       "comment": "Regulatory mappings are advisory only; an AI BOM creates visibility, not assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA obligations. A qualified regulatory reviewer must sign off.",
+      "profileConformance": [
+        "core",
+        "software",
+        "simpleLicensing",
+        "ai",
+        "dataset"
+      ],
       "rootElement": [
         "https://zeroshield.ai/spdx/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/model-chestxr-cnn"
       ]

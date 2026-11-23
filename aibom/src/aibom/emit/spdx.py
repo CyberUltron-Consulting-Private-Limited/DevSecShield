@@ -138,7 +138,20 @@ def _new(spdx_type: str, spdx_id: str, **props: Any) -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 
 
-def _ai_package(comp: ModelComponent, sid: str) -> dict[str, Any]:
+# A model the application does not use (a catalog / doc / test mention) is kept
+# with this note rather than dropped (review of #487 M1).
+_MENTION_COMMENT = {
+    "catalog": "Model named in a catalog, document or example file; not used by the "
+    "scanned application.",
+    "test": "Model named only in test code; not used by the scanned application.",
+}
+
+
+def _ai_package(
+    comp: ModelComponent, sid: str, supplier: str | None = None
+) -> dict[str, Any]:
+    """An SPDX 3.0.1 AI profile package: the AI fields the scan established, plus
+    ``software_primaryPurpose`` (model) and ``suppliedBy`` (its publisher)."""
     card = comp.model_card
     type_of_model = []
     if card.architecture_family:
@@ -163,11 +176,15 @@ def _ai_package(comp: ModelComponent, sid: str) -> dict[str, Any]:
     if use_phi not in _PRESENCE:
         use_phi = None
 
+    rtype = (comp.properties or {}).get("model:reference_type")
     return _new(
         "ai_AIPackage",
         sid,
         name=comp.name,
+        comment=_MENTION_COMMENT.get(rtype or ""),
+        suppliedBy=supplier,
         software_packageVersion=comp.version,
+        software_primaryPurpose="model",
         ai_typeOfModel=type_of_model or None,
         ai_limitation=limitations,
         ai_safetyRiskAssessment=_safety_risk(card),
@@ -206,14 +223,30 @@ def _dataset_package(comp: DatasetComponent, sid: str) -> dict[str, Any]:
     )
 
 
-def _software_package(comp: Any, sid: str) -> dict[str, Any]:
+def _software_package(
+    comp: Any, sid: str, supplier: str | None = None
+) -> dict[str, Any]:
     """Emit a framework / service / infra component as a generic SPDX package."""
     return _new(
         "software_Package",
         sid,
         name=comp.name,
+        suppliedBy=supplier,
         software_packageVersion=comp.version,
         software_packageUrl=comp.purl,
+    )
+
+
+def _weight_file_package(comp: Any, sid: str) -> dict[str, Any]:
+    """A model weight file (``model_file``): an AI package in SPDX as it is a
+    ``machine-learning-model`` in CycloneDX (review of #487 m10)."""
+    source = (comp.properties or {}).get("discovery:source")
+    return _new(
+        "ai_AIPackage",
+        sid,
+        name=comp.name,
+        comment=f"Model weight file at {source}" if source else "Model weight file",
+        software_primaryPurpose="model",
     )
 
 
@@ -293,6 +326,20 @@ def emit_spdx(result: ScanResult) -> dict[str, Any]:
         ),
     ]
 
+    # One Organization per publisher the BOM names (not "local"): the
+    # ``suppliedBy`` of its packages.
+    suppliers: dict[str, str] = {}
+
+    def supplier_of(comp: Any) -> str | None:
+        name = (getattr(comp, "publisher", None) or "").strip()
+        if not name or name.lower() == "local":
+            return None
+        if name not in suppliers:
+            supplier_id = sid(f"agent/supplier/{_slug(name)}")
+            suppliers[name] = supplier_id
+            graph.append(_new("Organization", supplier_id, name=name))
+        return suppliers[name]
+
     models = [c for c in result.components if isinstance(c, ModelComponent)]
     datasets = [c for c in result.components if isinstance(c, DatasetComponent)]
     libs = [c for c in result.components if isinstance(c, FrameworkComponent)]
@@ -314,7 +361,7 @@ def emit_spdx(result: ScanResult) -> dict[str, Any]:
 
     for model in models:
         mid = sid(f"package/{model.bom_ref}")
-        graph.append(_ai_package(model, mid))
+        graph.append(_ai_package(model, mid, supplier_of(model)))
         root_ids.append(mid)
 
         # Exactly one concluded-license relationship per AIPackage (hard rule).
@@ -343,9 +390,18 @@ def emit_spdx(result: ScanResult) -> dict[str, Any]:
     for ds in datasets:
         graph.append(_dataset_package(ds, sid(f"package/{ds.bom_ref}")))
     for lib in libs:
-        graph.append(_software_package(lib, sid(f"package/{lib.bom_ref}")))
+        graph.append(
+            _software_package(lib, sid(f"package/{lib.bom_ref}"), supplier_of(lib))
+        )
     for other in others:
-        graph.append(_software_package(other, sid(f"package/{other.bom_ref}")))
+        if other.kind == "model_file":
+            graph.append(_weight_file_package(other, sid(f"package/{other.bom_ref}")))
+            continue
+        graph.append(
+            _software_package(
+                other, sid(f"package/{other.bom_ref}"), supplier_of(other)
+            )
+        )
 
     graph.append(
         _new(
@@ -353,6 +409,10 @@ def emit_spdx(result: ScanResult) -> dict[str, Any]:
             sid("document"),
             name=result.subject.name,
             comment=disclaimer_of(result),  # advisory-only hard rule: every report
+            # the SPDX 3.0.1 profiles this document's elements use
+            profileConformance=[
+                "core", "software", "simpleLicensing", "ai", "dataset"
+            ],
             rootElement=root_ids or None,
         )
     )

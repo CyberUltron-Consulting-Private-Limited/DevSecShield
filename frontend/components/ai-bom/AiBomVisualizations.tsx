@@ -90,8 +90,15 @@ const C = {
   critical: "#dc2626", // red-600
 };
 // 0-100 normalized -> band (the LOCKED scale: low<=33, medium<=66, else high)
+// The engine's band words (aibom/src/aibom/score/posture.py): critical / high /
+// elevated / moderate / low, the same words as the PDF grade. "medium" is the
+// CBOM / older scans' middle band.
 const bandColor = (band?: string) =>
-  band === "high" ? C.high : band === "medium" ? C.medium : C.low;
+  band === "critical" || band === "high"
+    ? C.high
+    : band === "elevated" || band === "moderate" || band === "medium"
+      ? C.medium
+      : C.low;
 
 // ── types (the FE-exposed run-object shapes) ────────────────────────────────
 interface GNode {

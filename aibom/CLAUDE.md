@@ -33,24 +33,26 @@ to native relationshipTypes and `served_by`/`deployed_at` to `other` + a comment
 ## Risk-score scale
 The scorer keeps `risk_total` as the raw flag-weight sum, maps each component's
 STACKED flag weight to a severity (`severity:` bands in `config/risk-weights.yaml`)
-and publishes the headline **0-100 `risk_normalized`** from `posture_score` over
-every component's severity (an unflagged component is low) — the same rows the
-dashboard and the PDF count, and the same formula as the PDF grade
-(`backend/utilities/pdf/report_branding.compute_posture_risk_score`, pinned by
-`backend/tests/test_aibom_risk_score_consistency.py`):
+and, for an AI BOM, publishes the headline **0-100 `risk_normalized`** from
+`posture_score` over every counted component's severity (an unflagged component is
+low; a model only named in a catalog / doc / test, `model:reference_type` catalog or
+test, is in the BOM but not counted). The formula, the cap table and the grade
+words live in ONE stdlib-only module, `score/posture.py`, which the backend PDF
+loads by path (`backend/utilities/pdf/aibom_posture.py`), so the dashboard band and
+the PDF grade say the same word:
 
 ```
 risk_normalized = min(100, 4 x (10 critical + 5 high + 2 medium + 1 low)),
                   capped by the worst severity: no critical <= 69, no critical/high <= 49,
                   low only <= 29, nothing -> 0
-band:  <= scale.bands.low (33) -> low;  <= scale.bands.medium (66) -> medium;  else -> high
+grade / risk_band: >=70 F critical, >=50 D high, >=30 C elevated, >=15 B moderate, else A low
 ```
 
-The cap is the point: the old flag-sum normalisation saturated at 100 ("Critical
-risk") on a bank repo with zero critical or high findings. `scores` carries
-`risk_total`, `risk_normalized`, `risk_band`, `severity_counts`, `by_flag`,
-`by_component`, `component_severity`, `flag_count`. `normalize_score` (raw sum /
-max_raw) remains for callers that want the raw-weight scale.
+`scores` carries `risk_total`, `risk_normalized`, `risk_band`, `risk_grade`,
+`risk_label`, `severity_counts`, `by_flag`, `by_component`, `component_severity`,
+`flag_count`. The CBOM (`cbom/scorer.py`, `score_result(..., posture=False)`) keeps
+its own flag-weight scale: `normalize_score` (raw sum / max_raw) and the YAML
+`scale.bands` (low / medium / high), unchanged by the AI BOM posture score.
 
 ## Document identity and disclaimer
 `emit/identity.py`: tool `DevSecShield AI BOM` (CBOM: `DevSecShield CBOM`), version

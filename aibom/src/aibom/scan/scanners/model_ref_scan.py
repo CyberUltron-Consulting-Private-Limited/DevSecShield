@@ -17,11 +17,19 @@ from __future__ import annotations
 import re
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 from aibom.model.component import ModelCard, ModelComponent, PedigreeAncestor
 from aibom.scan.parsers import model_kb
 from aibom.scan.parsers.licenses import license_choice
 from aibom.scan.parsers.model_refs import find_model_refs_ctx
+from aibom.scan.path_roles import (
+    evidence_rank,
+    is_doc_path,
+    is_env_file,
+    is_example_path,
+    is_test_path,
+)
 from aibom.scan.registry import ScanContext, Scanner, register
 from aibom.scan.safe_files import read_text, walk_files
 
@@ -114,29 +122,16 @@ def _slug(name: str) -> str:
     return _SLUG.sub("-", name.lower()).strip("-")
 
 
-_TEST_DIRS = frozenset(
-    {"test", "tests", "__tests__", "testing", "spec", "specs", "testdata", "fixtures",
-     "e2e"}
-)
-_TEST_FILE = re.compile(
-    r"^(?:test_.+\.py|.+_test\.(?:py|go)|conftest\.py|.+\.(?:test|spec)\.[cm]?[jt]sx?)$",
-    re.IGNORECASE,
-)
-
-
-def _is_test_path(path: Path, root: Path) -> bool:
-    """A test file or a file under a test directory (relative to the scan root)."""
-    try:
-        parts = path.relative_to(root).parts
-    except ValueError:
-        parts = path.parts
-    return bool(_TEST_FILE.match(path.name)) or any(
-        p.lower() in _TEST_DIRS for p in parts[:-1]
-    )
+# A reference's type, strongest first: the code uses it, a catalog / doc / example
+# lists it, only test code names it.
+_TYPE_RANK = {"usage": 0, "catalog": 1, "test": 2}
 
 
 def _walk(root: Path) -> Iterator[Path]:
-    yield from walk_files(root, _SKIP_DIRS, lambda p: p.suffix.lower() in _EXTS)
+    # ``.env`` / ``.env.example`` have no usable suffix: matched by name
+    yield from walk_files(
+        root, _SKIP_DIRS, lambda p: p.suffix.lower() in _EXTS or is_env_file(p)
+    )
 
 
 @register
@@ -146,43 +141,53 @@ class ModelRefScanner(Scanner):
     level = 1
 
     def scan(self, ctx: ScanContext) -> None:
-        # normalized name -> [display name, vendor, reference_type]. usage wins.
-        # Only a reference the application itself USES is a model of this system:
-        # a name in a supported-model table / pricing catalog / docs ("catalog")
-        # or only in test code ("test": mocks and fixtures) is not inventory, and
-        # emitting it inflated SmarterRouter's AI BOM to 71 "models" (6 real).
-        # Their counts stay visible as BOM properties (aibom:model_mentions_*).
-        seen: dict[str, list[str]] = {}
-        mentions: dict[str, str] = {}  # normalized name -> best non-usage type
+        # normalized name -> {name, vendor, type, source, rank}; the strongest type
+        # wins. A reference the application USES is a model of this system. A name
+        # only in a supported-model table / pricing catalog / docs / example file
+        # ("catalog") or only in test code ("test") stays in the BOM, tagged with
+        # its ``model:reference_type``, but is not counted: the findings, the score,
+        # the compliance checks and the PDF count only models in use (SmarterRouter
+        # listed 71 "models", 6 real). Dropping them instead turned every gap in the
+        # usage patterns into data loss (review of #487 M1).
+        seen: dict[str, dict[str, Any]] = {}
         for path in _walk(ctx.root):
             # None: a link, not a regular file, or over the limit
             text = read_text(path, _MAX_BYTES)
             if text is None:
                 continue
-            in_tests = _is_test_path(path, ctx.root)
+            if is_test_path(path, ctx.root):
+                role = "test"
+            elif is_doc_path(path) or is_example_path(path, ctx.root):
+                role = "catalog"  # prose and sample data mention, never use
+            else:
+                role = None
+            try:
+                source = path.relative_to(ctx.root).as_posix()
+            except ValueError:
+                source = path.name
+            rank = evidence_rank(path)
             refs = dict(find_model_refs_ctx(text))  # name -> (vendor, reference_type)
             for name, (vendor, rtype) in refs.items():
+                kind = role or rtype
                 low = name.lower()
-                if rtype == "usage" and not in_tests:
-                    if low not in seen:
-                        try:
-                            source = path.relative_to(ctx.root).as_posix()
-                        except ValueError:
-                            source = path.name
-                        seen[low] = [name, vendor, "usage", source]
-                    continue
-                kind = "test" if in_tests else rtype
-                if mentions.get(low) != "catalog":  # catalog outranks test
-                    mentions[low] = kind
-        for low in seen:
-            mentions.pop(low, None)
+                entry = seen.get(low)
+                if entry is None or _TYPE_RANK[kind] < _TYPE_RANK[entry["type"]] or (
+                    kind == entry["type"] == "usage" and rank < entry["rank"]
+                ):
+                    # usage evidenced by application code outranks configuration
+                    # (m11): discovery:source names the strongest evidence
+                    seen[low] = {"name": name, "vendor": vendor, "type": kind,
+                                 "source": source, "rank": rank}
         for kind in ("catalog", "test"):
-            n = sum(1 for v in mentions.values() if v == kind)
+            n = sum(1 for v in seen.values() if v["type"] == kind)
             if n:
                 ctx.properties[f"aibom:model_mentions_{kind}"] = str(n)
 
         for key in sorted(seen):
-            name, vendor, rtype, source = seen[key]
+            entry = seen[key]
+            name, vendor, rtype, source = (
+                entry["name"], entry["vendor"], entry["type"], entry["source"]
+            )
             bom_ref = f"modelref-{_slug(name)}"
             if ctx.has_ref(bom_ref):
                 continue  # a carded model already owns this ref — don't double-add
@@ -199,12 +204,13 @@ class ModelRefScanner(Scanner):
                 publisher=vendor,
                 licenses=[license_choice(spdx)] if spdx else None,
                 # usage = the code loads/calls it; catalog = listed in a
-                # supported-model registry (catalog is NOT real inventory).
+                # supported-model registry / doc / example; test = test code only
+                # (catalog and test are NOT models in use).
                 properties={"model:reference_type": rtype, "discovery:source": source},
             )
             _apply_card(comp.model_card, card_fields)
             ctx.add_component(comp)
-            if spdx is None:
+            if spdx is None and rtype == "usage":
                 # SOFT finding — a model with no known license is NOT a library
                 # "unlicensed"; it needs manual model-licensing classification.
                 ctx.add_flag(

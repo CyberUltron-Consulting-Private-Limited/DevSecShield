@@ -10,13 +10,14 @@ from typing import Any, Dict, List, Optional, Union
 
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
-from reportlab.platypus import CondPageBreak, PageBreak, Paragraph, SimpleDocTemplate, Spacer
+from reportlab.platypus import CondPageBreak, KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer
 
 from backend.utilities.dashboard.aibom_license import (
     is_unlicensed_library_gap,
     resolve_aibom_license,
 )
 from backend.utilities.dashboard.aibom_provider import resolve_aibom_provider
+from backend.utilities.dashboard.rbi_posture import build_rbi_csf_rollup
 from backend.utilities.dashboard.risk_scale import average_risk_of
 from backend.utilities.pdf.report_context import ReportContext, details_note, join_parts
 from backend.utilities.pdf.report_branding import (
@@ -285,15 +286,21 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
 
     join_parts(story, [summary, catalog_part, details], PageBreak)
     if ctx.has("summary"):
-        # what the AI BOM counted and left out, and the average on the dashboard's 0-10 scale
+        # what the AI BOM counted and left out, and the average on the dashboard's 0-10 scale; the heading never
+        # sits alone at the foot of a page
         story.append(Spacer(1, 0.15 * inch))
-        story.append(Paragraph("What this AI BOM counts", styles["heading"]))
-        story.append(styled_data_table(["Measure", "Value"], [[label, value] for label, value in scope_rows],
-                                       styles=styles, col_widths=[4.0 * inch, 1.5 * inch]))
+        story.append(KeepTogether([
+            Paragraph("What this AI BOM counts", styles["heading"]),
+            styled_data_table(["Measure", "Value"], [[label, value] for label, value in scope_rows],
+                              styles=styles, col_widths=[4.0 * inch, 1.5 * inch]),
+        ]))
     if ctx.has("compliance"):
         appendix_payload = raw if raw else (scan_results if isinstance(scan_results, dict) else {})
-        append_aibom_regulatory_checks(story, appendix_payload, styles)
-        append_bom_compliance_sections(story, appendix_payload, styles)
+        if append_aibom_regulatory_checks(story, appendix_payload, styles):
+            # every framework and requirement is listed above: only the RBI pillar rollup is new
+            append_rbi_pillar_rollup(story, appendix_payload, styles)
+        else:  # a stored scan without the engine's compliance report: the older appendix
+            append_bom_compliance_sections(story, appendix_payload, styles)
 
     doc.build(
         story,
@@ -316,8 +323,11 @@ def _bom_scope_rows(payload: Any) -> List[tuple]:
     rows: List[tuple] = []
     if isinstance(bom, dict):
         comps = [c for c in bom.get("components") or [] if isinstance(c, dict)]
-        models = sum(1 for c in comps if c.get("type") == "machine-learning-model")
-        rows.append(("Models in use", str(models)))
+        kinds = [_model_kind(c) for c in comps if c.get("type") == "machine-learning-model"]
+        # the models the compliance checks assess ("all N model(s)"): weight files and catalog / test mentions apart
+        rows.append(("Models in use", str(kinds.count("model"))))
+        if kinds.count("weights"):
+            rows.append(("Model weight files", str(kinds.count("weights"))))
         rows.append(("AI services and endpoints", str(len(bom.get("services") or []))))
     props = _bom_props(payload)
     for key, label in (
@@ -331,7 +341,40 @@ def _bom_scope_rows(payload: Any) -> List[tuple]:
     return rows
 
 
-def _framework_rows(fw: dict) -> List[List[str]]:
+def _model_kind(comp: dict) -> str:
+    """``model`` (a model the application uses), ``weights`` (a weight file) or ``mention`` (a model only named in a
+    catalog, a document or a test: kept in the BOM, not counted)."""
+    props = {str(p.get("name")): str(p.get("value")) for p in comp.get("properties") or [] if isinstance(p, dict)}
+    if props.get("model:weight_file") == "true":
+        return "weights"
+    if props.get("model:reference_type") in ("catalog", "test"):
+        return "mention"
+    return "model"
+
+
+_ID_COL = 1.45 * inch
+
+
+def _breakable(text: str, style: Any, width: float = _ID_COL - 18) -> str:
+    """Escaped text wrapped at its hyphens to fit ``width`` (requirement ids such as T10-ML-Models-and-Algorithms),
+    so a line never breaks in the middle of a word. A single part wider than the column is left to the paragraph."""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+
+    parts = [p + "-" for p in text.split("-")]
+    parts[-1] = parts[-1][:-1]
+    lines: List[str] = []
+    line = ""
+    for part in parts:
+        if line and stringWidth(line + part, style.fontName, style.fontSize) > width:
+            lines.append(line)
+            line = part
+        else:
+            line += part
+    lines.append(line)
+    return "<br/>".join(escape_html(x) for x in lines if x)
+
+
+def _framework_rows(fw: dict, styles: Dict[str, Any]) -> List[List[Any]]:
     rows: List[List[str]] = []
     for req in fw.get("requirements") or []:
         if not isinstance(req, dict):
@@ -341,7 +384,7 @@ def _framework_rows(fw: dict) -> List[List[str]]:
         if len(evidence) > 220:
             evidence = evidence[:217] + "..."
         rows.append([
-            str(req.get("id") or ""),
+            Paragraph(_breakable(str(req.get("id") or ""), styles["table_cell"]), styles["table_cell"]),
             str(req.get("title") or ""),
             VERDICT_LABEL.get(verdict, verdict or "—"),
             evidence or "—",
@@ -349,12 +392,13 @@ def _framework_rows(fw: dict) -> List[List[str]]:
     return rows
 
 
-def append_aibom_regulatory_checks(story: List[Any], payload: Any, styles: Dict[str, Any]) -> None:
+def append_aibom_regulatory_checks(story: List[Any], payload: Any, styles: Dict[str, Any]) -> bool:
     """The SOW AI BOM regulatory checks, computed by the engine from the BOM's fields and graph: a summary per
-    framework and every requirement with its verdict and evidence. Healthcare frameworks only when in scope."""
+    framework and every requirement with its verdict and evidence. Healthcare frameworks only when in scope.
+    True when the section was written."""
     compliance = payload.get("ai_bom_compliance") if isinstance(payload, dict) else None
     if not isinstance(compliance, dict):
-        return
+        return False
     shown = [(k, label) for k, label in SOW_FRAMEWORKS if isinstance(compliance.get(k), dict)]
     for key, label in HEALTHCARE_FRAMEWORKS:
         fw = compliance.get(key)
@@ -362,7 +406,7 @@ def append_aibom_regulatory_checks(story: List[Any], payload: Any, styles: Dict[
                                                                          "not_bom_evidenceable")):
             shown.append((key, label))
     if not shown:
-        return
+        return False
     story.append(CondPageBreak(3.5 * inch))  # a new page unless most of one is left (never a blank page)
     story.append(Paragraph("AI BOM regulatory checks", styles["title"]))
     story.append(Paragraph(
@@ -384,17 +428,45 @@ def append_aibom_regulatory_checks(story: List[Any], payload: Any, styles: Dict[
                                    styles=styles, col_widths=[3.2 * inch, 0.8 * inch, 0.8 * inch, 1.1 * inch,
                                                               0.9 * inch]))
     for key, label in shown:
-        rows = _framework_rows(compliance[key])
+        rows = _framework_rows(compliance[key], styles)
         if not rows:
             continue
         story.append(Spacer(1, 0.12 * inch))
+        story.append(CondPageBreak(1.3 * inch))  # a framework heading never sits alone at the foot of a page
         story.append(Paragraph(escape_html(label), styles["heading"]))
         story.append(styled_data_table(["Requirement", "Title", "Result", "Evidence"], rows, styles=styles,
-                                       col_widths=[1.2 * inch, 1.9 * inch, 0.95 * inch, 2.75 * inch]))
+                                       col_widths=[_ID_COL, 1.75 * inch, 0.9 * inch, 2.7 * inch]))
     disclaimer = compliance.get("disclaimer")
     if disclaimer:
         story.append(Spacer(1, 0.08 * inch))
         story.append(Paragraph(escape_html(disclaimer), styles["muted"]))
+    return True
+
+
+def append_rbi_pillar_rollup(story: List[Any], payload: Any, styles: Dict[str, Any]) -> None:
+    """The RBI cyber-security framework pillars over the AI BOM's checks (the RBI appendix's one table the
+    regulatory checks above do not already show)."""
+    ai = payload.get("ai_bom_compliance") if isinstance(payload, dict) else None
+    rollup = (payload.get("rbi_csf_rollup") if isinstance(payload, dict) else None) or build_rbi_csf_rollup(
+        ai_bom_compliance=ai if isinstance(ai, dict) else None, cbom_compliance=None, sbom_compliance=None)
+    pillars = rollup.get("rbi_csf_rollup") if isinstance(rollup, dict) else None
+    if not isinstance(pillars, dict) or not pillars:
+        return
+    rows = []
+    for name, data in pillars.items():
+        if not isinstance(data, dict):
+            continue
+        cov = data.get("coverage")
+        rows.append([str(name).replace("_", " ").capitalize(), str(data.get("pass", 0)), str(data.get("fail", 0)),
+                     "n/a" if cov is None else f"{round(float(cov) * 100)}%"])
+    if not rows:
+        return
+    story.append(Spacer(1, 0.15 * inch))
+    story.append(KeepTogether([
+        Paragraph("RBI cyber-security framework pillars", styles["heading"]),
+        styled_data_table(["Pillar", "Pass", "Fail", "Coverage"], rows, styles=styles,
+                          col_widths=[3.2 * inch, 0.8 * inch, 0.8 * inch, 0.9 * inch]),
+    ]))
 
 
 def create_title_page(canvas_obj, doc):
