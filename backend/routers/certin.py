@@ -45,7 +45,14 @@ from backend.utilities.compliance.certin_attest import (
 )
 from backend.utilities.pdf import generate_pdf_for_type
 from backend.utilities.pdf.report_context import ReportContext
-from backend.utilities.pdf.report_http import log_export, options_from_request
+from backend.utilities.pdf.report_http import (
+    PRIVATE,
+    failure_outcome,
+    finished_outcome,
+    log_export,
+    options_from_request,
+    report_headers,
+)
 from backend.utilities.team.branding import load_report_branding
 from backend.utilities.team import check_if_user_is_in_team
 from rich.console import Console
@@ -400,14 +407,14 @@ async def download_scan_bom(
         raise HTTPException(status_code=409, detail="No CycloneDX document is stored for this scan")
     if format == "json":
         return JSONResponse(bom, headers={
-            "Content-Disposition": f'attachment; filename="{type}-cyclonedx-{scan_id}.cdx.json"'})
+            **PRIVATE, "Content-Disposition": f'attachment; filename="{type}-cyclonedx-{scan_id}.cdx.json"'})
     if type != "cbom":
         raise HTTPException(status_code=400, detail="format=xml: XML export is available for CBOM scans")
     from backend.utilities.cbom_sources import cdx_xml
 
     body = await run_in_threadpool(cdx_xml.to_xml, bom)
     return Response(body, media_type=cdx_xml.XML_MEDIA_TYPE, headers={
-        "Content-Disposition": f'attachment; filename="cbom-cyclonedx-{scan_id}.cdx.xml"',
+        **PRIVATE, "Content-Disposition": f'attachment; filename="cbom-cyclonedx-{scan_id}.cdx.xml"',
         "X-ZS-Signature-Scope": cdx_xml.SIGNATURE_SCOPE})
 
 
@@ -508,22 +515,23 @@ async def download_evidence_pack(
     engine = get_db()
     user = await get_user_from_header_or_raise_exception(engine, Authorization)
     check_if_user_is_in_team(user.id, team_id, engine)
-    options_from_request(request.query_params, "pack")  # any report option: 422 (a pack is the full record)
     try:
+        options_from_request(request.query_params, "pack")  # any report option: 422 (a pack is the full record)
         tmp_path, ctx = await run_in_threadpool(_build_evidence_pack, engine, team_id, type, scan_id)
-    except HTTPException:
+    except HTTPException as e:
+        outcome, code = failure_outcome(e)
+        log_export("pack", type=type, team=team_id, id=scan_id, user=user.id, started=started, outcome=outcome,
+                   status=code)
         raise
     except Exception as e:
         console.print(f"evidence-pack failed for scan {scan_id} team {team_id}: {e.__class__.__name__}",
                       style="bold red", markup=False)
+        log_export("pack", type=type, team=team_id, id=scan_id, user=user.id, started=started, outcome="error",
+                   status=500)
         raise HTTPException(status_code=500, detail="Error building the evidence pack, please try again later") from None
     background_tasks.add_task(os.unlink, tmp_path)
     filename = f"certin-evidence-pack-{type}-{scan_id}.zip"
     log_export("pack", type=type, team=team_id, id=scan_id, user=user.id, ctx=ctx,
-               size=os.path.getsize(tmp_path), started=started)
-    return FileResponse(
-        tmp_path,
-        media_type="application/zip",
-        filename=filename,
-        headers={"X-Report-Logo": ctx.branding.status},
-    )
+               size=os.path.getsize(tmp_path), started=started, outcome=await finished_outcome(request))
+    # the file name travels in report_headers' Content-Disposition (FileResponse adds its own only for filename=)
+    return FileResponse(tmp_path, media_type="application/zip", headers=report_headers(ctx, filename, findings=False))

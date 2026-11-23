@@ -21,6 +21,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { useRouter, useSearchParams } from "next/navigation";
+import { RESULTS_HEADER } from "@/components/resultsHeaderLayout";
 
 interface LeakageResult {
   RuleID: string;
@@ -157,8 +158,8 @@ export default function DataLeakageResults({ data, conversationId }: DataLeakage
   return (
     <div className="container mx-auto p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <div className={RESULTS_HEADER.row}>
+        <div className={RESULTS_HEADER.lead}>
           {conversationId && (
             <Button
               variant="outline"
@@ -175,7 +176,7 @@ export default function DataLeakageResults({ data, conversationId }: DataLeakage
               <ArrowLeft className="h-4 w-4" />
             </Button>
           )}
-          <div>
+          <div className={RESULTS_HEADER.title}>
             <h1 className="text-3xl font-bold text-zinc-900 dark:text-white">Data Leakage Scan Results</h1>
             <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">
               Secret detection and credential exposure analysis

@@ -42,9 +42,15 @@ PDF_SLOTS = _int_env("ZS_PDF_EXPORT_SLOTS", 2, 1)
 LARGE_ASSETS = _int_env("ZS_CBOM_EXPORT_LARGE_ASSETS", 10_000, 1)
 LOCK_DIR = os.environ.get("ZS_CBOM_EXPORT_LOCK_DIR") or tempfile.gettempdir()
 RETRY_AFTER_S = 30
-# The 429 detail of each pool: it names the exports that hold that pool's slots, and only those.
-CBOM_BUSY = f"The server is busy building other large CBOM exports; retry in {RETRY_AFTER_S} s."
-PDF_BUSY = f"The server is busy building other large scan PDF reports; retry in {RETRY_AFTER_S} s."
+# The 429 detail of each pool: it names the exports that hold that pool's slots, and only those. It states no wait:
+# Retry-After carries it, and a client counts it down (a fixed "retry in 30 s" contradicted the export dialog's live
+# countdown, PR #478 review); the generic error handler adds "Please try again in N seconds" from the header.
+CBOM_BUSY = "The server is busy building other large CBOM exports."
+PDF_BUSY = "The server is busy building other large scan PDF reports."
+# On every slot-busy 429, naming the full pool ("cbom" or "pdf"): the stable signal that tells a client "the host is
+# busy building other exports" apart from the per-route rate limiter's 429 ("Too Many Requests", which never has it).
+# ``report_http.busy_refusal`` builds the whole answer; ``main.py`` exposes the header through CORS.
+BUSY_HEADER = "X-Export-Busy"
 
 
 class Busy(Exception):
@@ -85,5 +91,5 @@ def pdf_slot() -> contextlib.AbstractContextManager[int]:
     return _take("zs-pdf-export-slot", PDF_SLOTS)
 
 
-__all__ = ["Busy", "CBOM_BUSY", "LARGE_ASSETS", "LOCK_DIR", "PDF_BUSY", "PDF_SLOTS", "RETRY_AFTER_S", "SLOTS",
+__all__ = ["BUSY_HEADER", "Busy", "CBOM_BUSY", "LARGE_ASSETS", "LOCK_DIR", "PDF_BUSY", "PDF_SLOTS", "RETRY_AFTER_S", "SLOTS",
            "is_large", "pdf_slot", "slot"]

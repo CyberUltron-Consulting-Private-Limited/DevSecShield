@@ -16,8 +16,9 @@ export function saveBlob(blob: Blob, filename: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-/** A blob request's error body arrives as a Blob, so the server's ``detail`` ("retry in 30 s") would be lost: read it
- * back into ``error.response.data`` before the error is shown. Returns that data (undefined when there is none). */
+/** A blob request's error body arrives as a Blob, so the server's ``detail`` ("The server is busy building …")
+ * would be lost: read it back into ``error.response.data`` before the error is shown.
+ * Returns that data (undefined when there is none). */
 export async function readBlobErrorDetail(error: unknown): Promise<unknown> {
   const response = (error as { response?: { data?: unknown } } | null)?.response;
   const data = response?.data;

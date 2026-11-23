@@ -85,6 +85,7 @@ import FindingSelectionMenu from "@/components/finding-selection-menu";
 import { Progress } from "@/components/ui/progress";
 import { InfoTip } from "@/components/ui/info-tip";
 import { criticalFixedPct } from "@/components/cbom/remediationKpis";
+import { RESULTS_HEADER } from "@/components/resultsHeaderLayout";
 
 // Agent output format (from worker_sast_agent_results_testing.json)
 type OwaspOrComplianceItem = Record<string, string>;
@@ -868,8 +869,8 @@ function SASTResultsAgentView({
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <div className={RESULTS_HEADER.row}>
+        <div className={RESULTS_HEADER.lead}>
           {(conversationId || isCicdContext) && (
             <Button
               variant="outline"
@@ -888,7 +889,7 @@ function SASTResultsAgentView({
               <ArrowLeft className="h-4 w-4" />
             </Button>
           )}
-          <div>
+          <div className={RESULTS_HEADER.title}>
             <h1 className="text-3xl font-bold text-zinc-900 dark:text-white">SAST Scan Results</h1>
             <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">
               Agent analysis by logical component
@@ -896,7 +897,7 @@ function SASTResultsAgentView({
           </div>
         </div>
         {!isCicdContext && teamId && conversationId != null && (
-          <div className="flex items-center gap-2">
+          <div className={RESULTS_HEADER.actions}>
             {onDownloadReport && (
               <Button
                 variant="outline"
@@ -1487,8 +1488,8 @@ export default function SASTResults({ conversationId, dashboard, findings, teamI
   if (!hasFindings && !hasDashboard) {
     return (
       <div className="container mx-auto p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
+        <div className={RESULTS_HEADER.row}>
+          <div className={RESULTS_HEADER.lead}>
             {(conversationId || isCicdContext) && (
               <Button
                 variant="outline"
@@ -1507,7 +1508,7 @@ export default function SASTResults({ conversationId, dashboard, findings, teamI
               <ArrowLeft className="h-4 w-4" />
             </Button>
             )}
-            <h1 className="text-3xl font-bold text-zinc-900 dark:text-white">SAST Scan Results</h1>
+            <h1 className="min-w-0 break-words text-3xl font-bold text-zinc-900 dark:text-white">SAST Scan Results</h1>
           </div>
           {!isCicdContext && teamId && conversationId != null && (
             <Button

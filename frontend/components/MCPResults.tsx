@@ -75,6 +75,7 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, XAxis, YAxis } from "recharts";
+import { RESULTS_HEADER } from "@/components/resultsHeaderLayout";
 
 // ----- Agent format -----
 export interface MCPVulnerabilityAgent {
@@ -996,8 +997,8 @@ function AgentResultsView({
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <div className={RESULTS_HEADER.row}>
+        <div className={RESULTS_HEADER.lead}>
           {conversationId && (
             <Button
               variant="outline"
@@ -1009,14 +1010,14 @@ function AgentResultsView({
               <ArrowLeft className="h-4 w-4" />
             </Button>
           )}
-          <div className="flex flex-col">
+          <div className={`${RESULTS_HEADER.title} flex flex-col`}>
             <h1 className="text-3xl font-bold text-zinc-900 dark:text-white">MCP Scan Results</h1>
             <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">
               Model Context Protocol — tools, prompts, and resources in one view
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className={RESULTS_HEADER.actions}>
           {onRefresh && (
             <Button variant="outline" size="icon" onClick={onRefresh} className="cursor-pointer" title="Refresh">
               <RefreshCcw className="h-4 w-4" />
@@ -1594,14 +1595,14 @@ function LegacyResultsView({ data, conversationId, teamId }: { data: MCPResultsD
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <div className={RESULTS_HEADER.row}>
+        <div className={RESULTS_HEADER.lead}>
           {conversationId && (
             <Button variant="outline" size="icon" aria-label="Back" onClick={() => router.push(origin === "list" ? (teamId ? `/${teamId}/mcp` : "/home/mcp") : (teamId ? `/${teamId}/mcp/${conversationId}` : `/home/mcp/${conversationId}`))} className="cursor-pointer">
               <ArrowLeft className="h-4 w-4" />
             </Button>
           )}
-          <div>
+          <div className={RESULTS_HEADER.title}>
             <h1 className="text-3xl font-bold text-zinc-900 dark:text-white">MCP Scan Results</h1>
             <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">Legacy format: security issues</p>
           </div>

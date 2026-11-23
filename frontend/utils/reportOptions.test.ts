@@ -130,6 +130,10 @@ assert.deepEqual(RO.optionProblems(opts({ severities: [] }), "scan", "sast"), { 
 assert.deepEqual(RO.optionProblems(opts({ statuses: [] }), "scan", "sast"), { statuses: "Choose at least one status" });
 assert.deepEqual(RO.optionProblems(opts({ statuses: [] }), "run"), {}, "a run takes no status filter");
 assert.deepEqual(RO.optionProblems(opts({ sections: ["inventory"] }), "scan", "sast"), { sections: "Choose at least one section" }, "SAST has no inventory");
+// review 6015786659: validation judges the same set the request is built from (remediation/mappings need details)
+assert.deepEqual(RO.optionProblems(opts({ sections: ["remediation"] }), "scan", "sast"), { sections: "Choose at least one section" });
+assert.deepEqual(RO.optionProblems(opts({ sections: ["remediation", "mappings"] }), "scan", "sast"), { sections: "Choose at least one section" });
+assert.deepEqual(RO.optionProblems(opts({ sections: ["details", "remediation"] }), "scan", "sast"), {});
 assert.deepEqual(RO.optionProblems(opts({ title: "東" }), "deliverable"), {}, "a deliverable takes no title");
 assert.deepEqual(RO.optionProblems(opts({ prepared_for: "東" }), "deliverable"), { prepared_for: SCRIPTS });
 assert.deepEqual(RO.optionProblems(opts({ prepared_for: "भारतीय स्टेट बैंक" }), "deliverable"), {});
@@ -185,5 +189,18 @@ for (const o of [opts(), everything, opts({ severities: ["critical"], statuses: 
   }
 }
 assert.equal(RO.summaryText(opts(), "scan", "sast"), "The full report, every severity.");
+
+// Remediation and Standards mappings are drawn inside Finding details (QA 23 Nov): never sent without it
+assert.deepEqual(RO.SECTION_NEEDS, { remediation: "details", mappings: "details" });
+assert.deepEqual(RO.consistentSections(["summary", "catalog", "remediation", "mappings", "notes"]), ["summary", "catalog", "notes"]);
+assert.deepEqual(RO.consistentSections(["details", "remediation"]), ["details", "remediation"]);
+assert.deepEqual(RO.toQuery(opts({ preset: null, sections: ["summary", "catalog", "remediation", "mappings"] }), "scan", "sast"),
+  { sections: "summary,catalog" }, "an inconsistent set is never sent");
+assert.deepEqual(RO.toQuery(opts({ preset: null, sections: ["summary", "details", "mappings"] }), "scan", "sast"),
+  { sections: "summary,details,mappings" });
+const kept = new Map<string, string>();
+Object.defineProperty(g, "localStorage", { configurable: true, value: { getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, val: string) => void kept.set(k, val), removeItem: (k: string) => void kept.delete(k) } });
+kept.set(RO.rememberedKey(9, "scan"), JSON.stringify({ preset: null, sections: ["summary", "remediation", "mappings"] }));
+assert.deepEqual(RO.initialOptions(9, "scan", "sast").sections, ["summary"], "a remembered inconsistent set is fitted");
 
 console.log("reportOptions.test.ts: ok");

@@ -19,6 +19,7 @@ from backend.utilities.dashboard.aibom_license import (
 from backend.utilities.dashboard.aibom_provider import resolve_aibom_provider
 from backend.utilities.pdf.report_context import ReportContext, details_note, join_parts
 from backend.utilities.pdf.report_branding import (
+    report_generated,
     append_report_masthead,
     append_bom_compliance_sections,
     append_executive_summary,
@@ -153,7 +154,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         ("Unlicensed assets", str(unlicensed)),
         ("External providers", str(len(by_provider))),
         ("Average risk score (0–10)", f"{avg_risk:.1f}"),
-        ("Report generated", datetime.now().strftime("%B %d, %Y at %I:%M %p")),
+        ("Report generated", report_generated(long=True)),
     ]
     ctx = ctx or ReportContext()
     impact_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
@@ -185,7 +186,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         meta_chips=[
             ("Scan type", "AI BOM"),
             ("Total assets", str(total)),
-            ("Report generated", datetime.now().strftime("%b %d, %Y · %I:%M %p")),
+            ("Report generated", report_generated()),
             ("Unlicensed", str(unlicensed)),
         ],
         ctx=ctx,

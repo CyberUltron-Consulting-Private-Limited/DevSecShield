@@ -896,7 +896,9 @@ def basis_scans_line(view: TeamCbomView) -> str:
         no_data=count(EXCLUDED_NO_DATA),
     )
     collections = len(view.collections or ())
-    if collections:
+    if collections == 1:
+        line += authored.BASIS_SCANS_COLLECTION_ONE
+    elif collections:
         line += authored.BASIS_SCANS_COLLECTIONS.format(collections=collections)
     return line
 

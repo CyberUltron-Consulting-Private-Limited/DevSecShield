@@ -92,6 +92,7 @@ import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRoll
 import { CertInLanePosture } from "@/components/certin/CertInLanePosture";
 import { InfoTip } from "@/components/ui/info-tip";
 import { type CertInRollupData } from "@/components/certin/certinShared";
+import { RESULTS_HEADER } from "@/components/resultsHeaderLayout";
 
 // SBOM agent output format (from worker_sbom_agent_results_testing.json): array of flat vulnerability objects
 type OwaspOrCompliance = Record<string, string> | null | undefined;
@@ -930,8 +931,8 @@ function SbomResultsView({
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <div className={RESULTS_HEADER.row}>
+        <div className={RESULTS_HEADER.lead}>
           {(conversationId != null || teamId) && (
             <Button
               variant="outline"
@@ -951,7 +952,7 @@ function SbomResultsView({
               <ArrowLeft className="h-4 w-4" />
             </Button>
           )}
-          <div>
+          <div className={RESULTS_HEADER.title}>
             <h1 className="text-3xl font-bold text-zinc-900 dark:text-white">SCA + SBOM Scan Results</h1>
             <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">
               Agent analysis of dependency vulnerabilities
@@ -959,7 +960,7 @@ function SbomResultsView({
           </div>
         </div>
         {teamId && conversationId != null && (
-          <div className="flex items-center gap-2 flex-wrap justify-end">
+          <div className={RESULTS_HEADER.actions}>
             <Button
               variant="outline"
               className="cursor-pointer"
@@ -1699,8 +1700,8 @@ export default function SbomResults({ data, conversationId, teamId, dashboard, f
   if (isEmpty) {
     return (
       <div className="container mx-auto p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
+        <div className={RESULTS_HEADER.row}>
+          <div className={RESULTS_HEADER.lead}>
             {(conversationId != null || teamId) && (
               <Button
                 variant="outline"
@@ -1720,7 +1721,7 @@ export default function SbomResults({ data, conversationId, teamId, dashboard, f
                 <ArrowLeft className="h-4 w-4" />
               </Button>
             )}
-            <h1 className="text-3xl font-bold text-zinc-900 dark:text-white">SCA + SBOM Scan Results</h1>
+            <h1 className="min-w-0 break-words text-3xl font-bold text-zinc-900 dark:text-white">SCA + SBOM Scan Results</h1>
           </div>
           {teamId && conversationId != null && (
             <Button

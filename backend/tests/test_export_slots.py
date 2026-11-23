@@ -82,6 +82,9 @@ def test_the_pools_are_host_wide_across_processes(slots):
 
 
 def test_each_pool_says_whose_exports_are_busy():
-    assert ES.CBOM_BUSY == f"The server is busy building other large CBOM exports; retry in {ES.RETRY_AFTER_S} s."
-    assert ES.PDF_BUSY == f"The server is busy building other large scan PDF reports; retry in {ES.RETRY_AFTER_S} s."
+    assert ES.CBOM_BUSY == "The server is busy building other large CBOM exports."
+    assert ES.PDF_BUSY == "The server is busy building other large scan PDF reports."
+    # no wait in the words: Retry-After carries it, so a client's countdown never disagrees with the text
+    for detail in (ES.CBOM_BUSY, ES.PDF_BUSY):
+        assert not any(ch.isdigit() for ch in detail) and "retry" not in detail.lower()
     assert ES.PDF_SLOTS >= 1 and ES.SLOTS >= 1

@@ -38,7 +38,9 @@ import {
   STATUSES,
   STATUS_TEXT,
   TEXT_MAX,
+  SECTION_NEEDS,
   availableSections,
+  consistentSections,
   getSessionPreparedFor,
   initialOptions,
   optionProblems,
@@ -310,9 +312,25 @@ export function ExportPdfForm({ teamId, target, pending, error, onDownload, onCl
   const blocked = Object.keys(problems).length > 0;
   const statusFiltered = family === "scan" && options.statuses != null;
 
+  // what was ticked inside a section when it was unticked, so ticking it again brings those back (null: never unticked
+  // in this dialog; ticking it then ticks every section drawn inside it, as the full report has them)
+  const insideWhenUnticked = useRef<Partial<Record<ReportSection, ReportSection[]>>>({});
   const toggleSection = (s: ReportSection, on: boolean) => {
-    const next = available.filter((a) => (a === s ? on : chosen.includes(a)));
+    const inside = available.filter((a) => SECTION_NEEDS[a] === s);
+    let base = available.filter((a) => (a === s ? on : chosen.includes(a)));
+    if (!on && inside.length) insideWhenUnticked.current[s] = inside.filter((a) => chosen.includes(a));
+    if (on && inside.length) {
+      const back = insideWhenUnticked.current[s] ?? inside;
+      base = available.filter((a) => base.includes(a) || back.includes(a));
+    }
+    // unticking Finding details unticks what is drawn inside it (Remediation, Standards mappings): a consistent set
+    const next = consistentSections(base);
     set({ sections: next, preset: presetFor(family, next, scanType) });
+  };
+  /** The section `s` is drawn inside, when that one is not ticked (`s` is then disabled). */
+  const missingParent = (s: ReportSection): ReportSection | null => {
+    const parent = SECTION_NEEDS[s];
+    return parent && available.includes(parent) && !chosen.includes(parent) ? parent : null;
   };
   const toggleIn = <T extends string>(all: readonly T[], current: T[] | null, v: T): T[] => {
     const base = current ?? [...all];
@@ -346,13 +364,18 @@ export function ExportPdfForm({ teamId, target, pending, error, onDownload, onCl
             <section className="space-y-2" data-testid="export-sections">
               <h3 className="text-sm font-medium">Sections</h3>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {available.map((s) => (
-                  <Checkbox2 key={s} id={`${ids.section}-${s}`} checked={chosen.includes(s)} onChange={(on) => toggleSection(s, on)}
-                             infoId={SECTION_TIP[`${family}.${s}`]}>
-                    <span className="block">{SECTION_TEXT[s].title}</span>
-                    <span className="block text-xs text-zinc-500">{SECTION_TEXT[s].hint}</span>
-                  </Checkbox2>
-                ))}
+                {available.map((s) => {
+                  const parent = missingParent(s);
+                  return (
+                    <Checkbox2 key={s} id={`${ids.section}-${s}`} checked={chosen.includes(s) && !parent} disabled={!!parent}
+                               onChange={(on) => toggleSection(s, on)} infoId={SECTION_TIP[`${family}.${s}`]}>
+                      <span className="block">{SECTION_TEXT[s].title}</span>
+                      <span className="block text-xs text-zinc-500" data-testid={parent ? `export-section-needs-${s}` : undefined}>
+                        {parent ? `Needs ${SECTION_TEXT[parent].title}: drawn inside each finding's details` : SECTION_TEXT[s].hint}
+                      </span>
+                    </Checkbox2>
+                  );
+                })}
               </div>
               {problems.sections && <p className="text-xs text-red-500" role="alert">{problems.sections}</p>}
             </section>
@@ -535,14 +558,19 @@ function ErrorPanel({ error, waitS, statusFiltered, onRemoveStatusFilter }: {
   let body = error.message;
   if (error.status === 409) title = "Finding statuses aren't available for this scan yet";
   else if (error.status === 503) title = "Finding statuses are unavailable right now";
-  else if (error.status === 429) {
-    title = "The server is busy building other reports";
+  else if (error.status === 429 && error.busy) {
+    // every export slot of the host is taken: the server says which work holds them
+    title = error.detail ?? "The server is busy building other reports";
     body = waitS > 0 ? `Try again in ${waitS} s.` : "You can try again now.";
+  } else if (error.status === 429) {
+    // the per-route rate limit (no X-Export-Busy): this user asked too often, the host is not busy
+    title = "Too many requests";
+    body = waitS > 0 ? `Too many export requests; try again in ${waitS} s.` : "You can try again now.";
   } else if (error.status === 400) title = "This report is not available yet";
   else if (error.status === 422) title = "The server refused an option";
   const offerRemove = (error.status === 409 || error.status === 503) && statusFiltered;
   return (
-    <div ref={panel} tabIndex={-1} role="alert" data-testid="export-error" data-status={error.status ?? "network"}
+    <div ref={panel} tabIndex={-1} role="alert" data-testid="export-error" data-status={error.status ?? "network"} data-busy={error.busy ?? undefined}
          className="flex scroll-mb-28 items-start outline-none focus-visible:ring-2 focus-visible:ring-red-500/50 gap-2 rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm">
       <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" aria-hidden />
       <div className={cn("space-y-1", EXPORT_DIALOG_LAYOUT.text)}>

@@ -15,6 +15,7 @@ from reportlab.lib.units import inch
 from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer
 
 from backend.utilities.pdf.report_branding import (
+    report_generated,
     append_executive_summary,
     append_findings_catalog,
     build_finding_section,
@@ -85,7 +86,7 @@ def _build_agent_pdf_story(
         ("Scan type", "Static Application Security Testing (SAST)"),
         ("Total issues found", str(total)),
         ("Application areas reviewed", str(len(components))),
-        ("Report generated", datetime.now().strftime("%B %d, %Y at %I:%M %p")),
+        ("Report generated", report_generated(long=True)),
     ]
     for imp in ["Critical", "High", "Medium", "Low"]:
         if by_impact.get(imp):
@@ -116,7 +117,7 @@ def _build_agent_pdf_story(
             meta_chips=[
                 ("Project", str(components[0].get("logical_component_title") or "Application") if components else "Application"),
                 ("Scan type", "SAST"),
-                ("Report generated", datetime.now().strftime("%b %d, %Y · %I:%M %p")),
+                ("Report generated", report_generated()),
                 ("Platform", "zeroshield.ai"),
             ],
             ctx=ctx,
@@ -224,7 +225,7 @@ def _build_semgrep_pdf_story(
         ("Files skipped", str(len(skipped_paths))),
         ("Scan engine", str(engine_requested)),
         ("Engine version", str(version)),
-        ("Report generated", datetime.now().strftime("%B %d, %Y at %I:%M %p")),
+        ("Report generated", report_generated(long=True)),
     ]
     summary: List[Any] = []
     if ctx.has("summary"):

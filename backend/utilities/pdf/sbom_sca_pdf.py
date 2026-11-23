@@ -18,6 +18,7 @@ from backend.utilities.dashboard.risk_scale import average_risk_of
 from backend.utilities.dashboard.sbom_rows import is_inventory_row
 from backend.utilities.pdf.report_context import ReportContext, details_note, join_parts
 from backend.utilities.pdf.report_branding import (
+    report_generated,
     append_report_masthead,
     COLOR_WHITE,
     append_bom_compliance_sections,
@@ -342,7 +343,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         ("Packages affected", str(len(unique_packages))),
         ("Likely fixable via upgrade/update", str(fixable_count)),
         ("Average risk score (0–10)", f"{avg_risk:.1f}" if avg_risk is not None else "N/A"),
-        ("Report generated", datetime.now().strftime("%B %d, %Y at %I:%M %p")),
+        ("Report generated", report_generated(long=True)),
     ]
     summary: List[Any] = []
     if not ctx.has("summary"):
@@ -359,7 +360,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         meta_chips=[
             ("Scan type", "SBOM / SCA"),
             ("Packages affected", str(len(unique_packages))),
-            ("Report generated", datetime.now().strftime("%b %d, %Y · %I:%M %p")),
+            ("Report generated", report_generated()),
             ("Fixable", str(fixable_count)),
         ],
         ctx=ctx,

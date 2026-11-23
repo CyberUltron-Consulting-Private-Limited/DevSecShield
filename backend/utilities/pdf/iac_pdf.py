@@ -16,6 +16,7 @@ from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer
 
 from backend.utilities.pdf.report_context import ReportContext, details_note, join_parts
 from backend.utilities.pdf.report_branding import (
+    report_generated,
     append_report_masthead,
     append_executive_summary,
     append_findings_catalog,
@@ -134,7 +135,7 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None, *, ctx: O
         ("Scan type", "Infrastructure as Code (IAC)"),
         ("Total findings", str(total_findings)),
         ("Unique locations", str(len(unique_locations))),
-        ("Report generated", datetime.now().strftime("%B %d, %Y at %I:%M %p")),
+        ("Report generated", report_generated(long=True)),
     ]
     extra_tables = []
     if not use_agent_format and by_provider:
@@ -173,7 +174,7 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None, *, ctx: O
             ("Scan type", "IAC"),
             ("Total findings", str(total_findings)),
             ("Locations", str(len(unique_locations))),
-            ("Report generated", datetime.now().strftime("%b %d, %Y · %I:%M %p")),
+            ("Report generated", report_generated()),
         ],
         ctx=ctx,
       )
