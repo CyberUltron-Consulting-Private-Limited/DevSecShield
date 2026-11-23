@@ -1234,6 +1234,43 @@
      "basis": "the evidence names Triple DES (TDEA): SP 800-131A Table 1 disallows three-key TDEA for encryption after 2023, and SEBI asks for strong encryption algorithms"
     }
    ]
+  },
+  "KERBEROS_DES_ENABLED": {
+   "clauses": [
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "sebi-annexure-h-5"
+   ],
+   "basis": "Kerberos tickets encrypted with single DES, a broken cipher, for authentication (RBI; SEBI strong encryption algorithms)",
+   "rules": []
+  },
+  "KERBEROS_RC4_ONLY": {
+   "clauses": [
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "sebi-annexure-h-5"
+   ],
+   "basis": "Kerberos tickets encrypted with RC4-HMAC, a deprecated cipher, for authentication (RBI; SEBI strong encryption algorithms)",
+   "rules": []
+  },
+  "KERBEROS_RC4_ENABLED": {
+   "clauses": [
+    "rbi-md-2023-para-16",
+    "rbi-cb-2026-para-140",
+    "sebi-annexure-h-5"
+   ],
+   "basis": "RC4-HMAC, a deprecated cipher, is still accepted for Kerberos authentication (RBI; SEBI strong encryption algorithms)",
+   "rules": []
+  },
+  "AD_FUNCTIONAL_LEVEL_LEGACY": {
+   "clauses": [],
+   "basis": "a directory feature level: no clause in the knowledge base names it, so it is not cited under a framework",
+   "rules": []
+  },
+  "KRBTGT_KEY_OLD": {
+   "clauses": [],
+   "basis": "key or certificate lifecycle hygiene (rotation, deletion protection, inventory): no clause in the knowledge base requires it, so it is not cited under a framework",
+   "rules": []
   }
  },
  "code": {

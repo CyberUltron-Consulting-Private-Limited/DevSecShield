@@ -60,6 +60,8 @@ export const ASSET_TYPE_LABEL: Record<string, string> = {
   ca_authority: "CA",
   ca_template: "CA template",
   ike_endpoint: "IKE/IPsec endpoint",
+  ad_domain: "Active Directory domain",
+  kerberos_account: "Kerberos account",
   ot_endpoint: "OT endpoint",
   appliance_config: "Network appliance config",
   k8s_mesh_destination: "Mesh destination rule",
