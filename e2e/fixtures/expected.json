@@ -169,7 +169,7 @@
     "disclaimers": [
       "Advisory mapping to CERT-In Technical Guidelines on SBOM, QBOM & CBOM, AIBOM and HBOM v2.0 (09.07.2025). Does not constitute CERT-In certification or regulatory approval.",
       "Advisory mapping only. BOM evidence supports but does not satisfy regulatory obligations. Organizational/process controls require attestation.",
-      "Method: static analysis of repositories and uploaded artefacts, including declared infrastructure and server configuration (documents #5, #6 and #9) and offline import of TLS result files. It does not include live-network discovery, inspection of HSM or KMS custody, or inspection of stored data."
+      "Method: static analysis of repositories and uploaded artefacts, including declared infrastructure and server configuration (documents #6, #7 and #9) and offline import of TLS result files. It does not include live-network discovery, inspection of HSM or KMS custody, or inspection of stored data."
     ],
     "manual_legend": "Cells marked (assessor) are MANUAL: they are intentionally left blank for the assessor to complete and are never pre-filled by the platform.",
     "fonts_allowed": ["Helvetica", "Helvetica-Bold", "Courier"],
@@ -198,8 +198,8 @@
       "header_label": "CBOM Third-Party Assurance Register", "orientation": "landscape", "min_pages": 5, "max_pages": 10
     },
     "infrastructure-cloud-encryption-posture": {
-      "number": 5, "title": "Infrastructure & Cloud Encryption Posture",
-      "menu_label": "#5 · Infrastructure & Cloud Encryption Posture",
+      "number": 6, "title": "Infrastructure & Cloud Encryption Posture",
+      "menu_label": "#6 · Infrastructure & Cloud Encryption Posture",
       "header_label": "CBOM Infrastructure Posture", "orientation": "landscape", "min_pages": 1, "max_pages": 20
     },
     "network-tls-protocol-assessment": {
