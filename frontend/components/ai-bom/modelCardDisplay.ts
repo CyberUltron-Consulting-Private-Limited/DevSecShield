@@ -93,7 +93,9 @@ export function inventoryModelNames(findings?: Json[] | null): Set<string> {
   const out = new Set<string>();
   for (const f of findings ?? []) {
     const t = String(f.asset_type ?? f.component_type ?? "").toLowerCase();
-    if (!INVENTORY_TYPES.has(t)) continue;
+    // a provider-served model is typed external_provider but is still a model (engine kind, QA round 2 Q2-06)
+    const kind = String(f.asset_kind ?? f.component_kind ?? "").toLowerCase();
+    if (!INVENTORY_TYPES.has(t) && kind !== "model") continue;
     const name = nonEmptyStr(f.asset_name) || nonEmptyStr(f.component_name) || nonEmptyStr(f.title);
     if (name) out.add(name);
   }

@@ -73,6 +73,7 @@ import {
 import { BomGraphCard } from "@/components/bom/BomGraphCard";
 import { pickBomGraph } from "@/components/bom/layout";
 import type { BomGraph } from "@/components/bom/types";
+import { governanceSubtitle } from "@/components/ai-bom/aibomDisplay";
 
 export type { AttestHandler, Compliance } from "@/components/compliance/ComplianceMatrix";
 
@@ -658,6 +659,7 @@ export function AiBomVisualizations({
   findings,
   onAttest,
   onOpenFinding,
+  regulatedEntity,
 }: {
   compliance?: Compliance;
   graph?: Graph | BomGraph | null;
@@ -668,6 +670,8 @@ export function AiBomVisualizations({
   findings?: Json[];
   onAttest?: AttestHandler;
   onOpenFinding?: (finding: Json) => void;
+  /** The team's regulated-entity type (CBOM settings); words the subtitle. */
+  regulatedEntity?: string | null;
 }) {
   const has =
     compliance ||
@@ -683,9 +687,8 @@ export function AiBomVisualizations({
         <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
           AI Governance &amp; Lineage
         </h2>
-        <p className="text-sm text-zinc-500">
-          Healthcare AI-BOM insights — compliance readiness, supply-chain
-          lineage, deployment drift, and model provenance.
+        <p className="text-sm text-zinc-500" data-testid="aibom-governance-subtitle">
+          {governanceSubtitle(regulatedEntity, aiBomJson)}
         </p>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

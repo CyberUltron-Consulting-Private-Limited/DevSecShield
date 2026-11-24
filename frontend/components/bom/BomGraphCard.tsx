@@ -12,10 +12,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { BomGraphCanvas } from "./BomGraphCanvas";
 import { BomGraphFullscreen } from "./BomGraphFullscreen";
 import type { BomGraph, BomLane } from "./types";
 import { AIBOM_KIND_COLOR, CBOM_ASSET_COLOR } from "./layout";
+
+/** The compact canvas's zoom floor: readable labels on a wide card, the whole graph on a phone. */
+export function compactMinZoom(lane: BomLane, narrow: boolean): number {
+  return lane === "cbom" || narrow ? 0.3 : 0.55;
+}
 
 export function BomGraphCard({
   graph,
@@ -36,6 +42,7 @@ export function BomGraphCard({
   heightClass?: string;
 }) {
   const overlay = expandedGraph ?? graph;
+  const narrow = useIsMobile();
   const n = graph.nodes?.length ?? 0;
   const raw = graph.meta?.raw_node_count;
   const simplified = raw != null && raw > n;
@@ -75,8 +82,11 @@ export function BomGraphCard({
             <div
               className={`${heightClass} w-full rounded-lg border border-zinc-200 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-900/40`}
             >
-              {/* CBOM family boards are wide: let the card zoom out far enough to show the whole board */}
-              <BomGraphCanvas graph={graph} lane={lane} minZoom={lane === "cbom" ? 0.3 : 0.55} fitOnMount />
+              {/* CBOM family boards are wide: let the card zoom out far enough to show the whole board. On a phone
+                  the AI BOM floor (0.55) kept fitView from fitting a 340 px-wide canvas and the graph was clipped on
+                  the left (staging QA round 2, N6): narrow screens get the CBOM floor; keyed so the fit re-runs. */}
+              <BomGraphCanvas key={narrow ? "narrow" : "wide"} graph={graph} lane={lane}
+                minZoom={compactMinZoom(lane, narrow)} fitOnMount />
             </div>
             <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-zinc-600 dark:text-zinc-400">
               {lane === "aibom"

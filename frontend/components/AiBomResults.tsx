@@ -57,8 +57,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useRouter, useSearchParams, useParams } from "next/navigation";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { updateScan, toggleFindingState, createTicket, postCertInAttestation, postCertInSign, getCertInVex, getCertInEvidencePack, type AiBomScanDashboardData, type AiBomFinding, type AiBomScanMetadata, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { getCbomSourcesSettings, updateScan, toggleFindingState, createTicket, postCertInAttestation, postCertInSign, getCertInVex, getCertInEvidencePack, type AiBomScanDashboardData, type AiBomFinding, type AiBomScanMetadata, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
 import { overlayBomCompliance } from "@/utils/overlayBomCompliance";
 import {
@@ -102,6 +102,8 @@ import {
   type Graph as AiBomGraph,
   type Scores as AiBomScores,
 } from "@/components/ai-bom/AiBomVisualizations";
+import { licenceLabel } from "@/components/ai-bom/aibomDisplay";
+import { cbomSourcesKeys } from "@/components/cbom/sources/keys";
 import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRollup";
 import { CertInLanePosture } from "@/components/certin/CertInLanePosture";
 import { type CertInRollupData } from "@/components/certin/certinShared";
@@ -311,6 +313,15 @@ export default function AiBomResults({
   }, [findingsList]);
 
   const tid = parseInt(String(team_id ?? "0"), 10);
+  // The team's regulatory profile (the PDF and the evidence pack use the same one): it words the AI Governance
+  // subtitle, so a bank or an NBFC never reads "Healthcare" (staging QA round 2, Q2-08). Not readable: neutral words.
+  const teamSettings = useQuery({
+    queryKey: cbomSourcesKeys.settings(tid),
+    queryFn: () => getCbomSourcesSettings(tid),
+    enabled: tid > 0,
+    retry: false,
+    staleTime: 60_000,
+  });
   const sid = typeof scan_id === "number" ? scan_id : parseInt(String(scan_id), 10);
 
   const updateIntegrationMutation = useMutation({
@@ -857,7 +868,9 @@ export default function AiBomResults({
           {dashboard && cardData && (
             <div className="space-y-6">
               {/* Summary Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4">
+              {/* eight per row only from 2xl (1536 px): at 1366 the sidebar leaves ~120 px a tile and labels were cut
+                  ("Unlicense…", "Governanc…"; staging QA round 2, N3) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8 gap-4" data-testid="aibom-summary-tiles">
                 {[
                   { label: "AI Assets", value: cardData.total_ai_assets, icon: Bot, color: "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400" },
                   { label: "Models", value: cardData.total_models, icon: Bot, color: "bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400" },
@@ -874,7 +887,7 @@ export default function AiBomResults({
                         <c.icon className="h-5 w-5" />
                       </div>
                       <div className="min-w-0">
-                        <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{c.label}</p>
+                        <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 break-words">{c.label}</p>
                         <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums">{c.value}</p>
                       </div>
                     </CardContent>
@@ -1100,13 +1113,16 @@ export default function AiBomResults({
                     {licenseData.length === 0 ? (
                       <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No license data available</div>
                     ) : (
-                      <ChartContainer config={barConfig} className="mx-auto aspect-auto h-[280px] w-full max-h-[280px]">
-                        <BarChart data={licenseData} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
-                          <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
-                          <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} className="text-xs" />
-                          <YAxis tickLine={false} axisLine={false} className="text-xs" />
-                          <ChartTooltip content={<ChartTooltipContent />} />
-                          <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                      // horizontal bars with every licence named (at 1366 the vertical chart labelled 2 of 4 bars; staging QA
+                      // round 2, N5); long LicenseRef ids are shortened on the axis, the tooltip keeps the full id
+                      <ChartContainer config={barConfig} className="mx-auto aspect-auto h-[280px] w-full max-h-[280px]" data-testid="aibom-licence-chart">
+                        <BarChart data={licenseData} layout="vertical" margin={{ top: 0, right: 8, bottom: 0, left: 0 }}>
+                          <CartesianGrid horizontal={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+                          <XAxis type="number" tickLine={false} axisLine={false} allowDecimals={false} className="text-xs" />
+                          <YAxis dataKey="name" type="category" width={150} interval={0} tickLine={false} axisLine={false}
+                            tickFormatter={(v: string) => licenceLabel(String(v))} className="text-xs" />
+                          <ChartTooltip content={<ChartTooltipContent labelFormatter={(v) => String(v)} />} />
+                          <Bar dataKey="count" radius={[0, 4, 4, 0]}>
                             {licenseData.map((entry, index) => (
                               <Cell key={`cell-${index}`} fill={entry.fill} />
                             ))}
@@ -1303,6 +1319,7 @@ export default function AiBomResults({
             aiBomJson={meta?.ai_bom_json as Record<string, unknown> | undefined}
             findings={(findingsList ?? []) as unknown as Record<string, unknown>[]}
             onAttest={handleCertInAttest}
+            regulatedEntity={teamSettings.data?.regulated_entity ?? null}
             onOpenFinding={(f) =>
               setSelectedFinding(f as unknown as AiBomFinding)
             }
@@ -1473,7 +1490,7 @@ export default function AiBomResults({
                 onBulkStatusChange={(status) => bulkStatusMutation.mutate(status)}
                 isBulkStatusChanging={bulkStatusMutation.isPending}
               />
-              <ScrollArea className="h-[500px] w-full rounded-md border border-zinc-200 dark:border-zinc-800">
+              <ScrollArea className="h-[500px] w-full rounded-md border border-zinc-200 dark:border-zinc-800" data-testid="aibom-findings-table">
                 <div className="min-w-max">
                   <Table>
                     <TableHeader>
@@ -1492,16 +1509,18 @@ export default function AiBomResults({
                             className="cursor-pointer"
                           />
                         </TableHead>
-                        <TableHead className="min-w-[180px]">Asset</TableHead>
-                        <TableHead className="min-w-[120px]">Type</TableHead>
-                        <TableHead className="min-w-[120px]">Provider</TableHead>
-                        <TableHead className="min-w-[110px]">License</TableHead>
-                        <TableHead className="min-w-[130px]">Risk</TableHead>
-                        <TableHead className="min-w-[90px]">Impact</TableHead>
-                        <TableHead className="min-w-[90px] text-center">Risk score</TableHead>
-                        <TableHead className="min-w-[140px]">Location</TableHead>
-                        <TableHead className="min-w-[100px]">Status</TableHead>
-                        <TableHead className="min-w-[100px] text-right">Actions</TableHead>
+                        {/* the risk columns come first and text cells wrap, so the table fits a 1366 px page; Location
+                            (also in the finding's detail panel) from 2xl (staging QA round 2, N6) */}
+                        <TableHead className="min-w-[84px] sm:min-w-[180px]">Asset</TableHead>
+                        <TableHead className="min-w-[72px]">Impact</TableHead>
+                        <TableHead className="min-w-[72px] text-center">Risk score</TableHead>
+                        <TableHead className="min-w-[90px]">Type</TableHead>
+                        <TableHead className="min-w-[80px]">Provider</TableHead>
+                        <TableHead className="min-w-[100px]">License</TableHead>
+                        <TableHead className="min-w-[110px]">Risk</TableHead>
+                        <TableHead className="hidden 2xl:table-cell min-w-[140px]">Location</TableHead>
+                        <TableHead className="min-w-[84px]">Status</TableHead>
+                        <TableHead className="min-w-[56px] 2xl:min-w-[100px] text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1535,26 +1554,8 @@ export default function AiBomResults({
                                   className="cursor-pointer"
                                 />
                               </TableCell>
-                              <TableCell className="font-medium max-w-[180px] truncate text-zinc-900 dark:text-zinc-100" title={finding.asset_name || finding.title || undefined}>
+                              <TableCell className="font-medium max-w-[84px] sm:max-w-[180px] truncate text-zinc-900 dark:text-zinc-100" title={finding.asset_name || finding.title || undefined}>
                                 {finding.asset_name || finding.title}
-                              </TableCell>
-                              <TableCell className="text-sm text-zinc-600 dark:text-zinc-400">
-                                {finding.asset_type?.replace(/_/g, " ") ?? "—"}
-                              </TableCell>
-                              <TableCell className="text-sm text-zinc-600 dark:text-zinc-400">
-                                {finding.provider ?? "—"}
-                              </TableCell>
-                              <TableCell>
-                                {finding.license_type ? (
-                                  <Badge variant="outline" className="border-zinc-300 text-zinc-600 dark:border-zinc-500/50 dark:text-zinc-400">
-                                    {finding.license_type}
-                                  </Badge>
-                                ) : (
-                                  <span className="text-zinc-500 dark:text-zinc-400 text-xs">—</span>
-                                )}
-                              </TableCell>
-                              <TableCell className="text-sm text-zinc-600 dark:text-zinc-400">
-                                {finding.risk_category?.replace(/_/g, " ") ?? "—"}
                               </TableCell>
                               <TableCell>
                                 <Badge variant="outline" className={getImpactBadgeClass(finding.impact)}>{finding.impact}</Badge>
@@ -1564,7 +1565,26 @@ export default function AiBomResults({
                                   {finding.risk_score?.toFixed(1) ?? "—"}
                                 </Badge>
                               </TableCell>
-                              <TableCell className="text-sm text-zinc-600 dark:text-zinc-400 max-w-[140px] truncate" title={finding.location ?? ""}>
+                              <TableCell className="text-sm text-zinc-600 dark:text-zinc-400 whitespace-normal max-w-[110px]">
+                                {finding.asset_type?.replace(/_/g, " ") ?? "—"}
+                              </TableCell>
+                              <TableCell className="text-sm text-zinc-600 dark:text-zinc-400">
+                                {finding.provider ?? "—"}
+                              </TableCell>
+                              <TableCell>
+                                {finding.license_type ? (
+                                  <Badge variant="outline" title={finding.license_type}
+                                    className="border-zinc-300 text-zinc-600 dark:border-zinc-500/50 dark:text-zinc-400">
+                                    {licenceLabel(finding.license_type, 16)}
+                                  </Badge>
+                                ) : (
+                                  <span className="text-zinc-500 dark:text-zinc-400 text-xs">—</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-sm text-zinc-600 dark:text-zinc-400 whitespace-normal max-w-[120px]">
+                                {finding.risk_category?.replace(/_/g, " ") ?? "—"}
+                              </TableCell>
+                              <TableCell className="hidden 2xl:table-cell text-sm text-zinc-600 dark:text-zinc-400 max-w-[140px] truncate" title={finding.location ?? ""}>
                                 {finding.location ?? "—"}
                               </TableCell>
                               <TableCell>
@@ -1577,7 +1597,7 @@ export default function AiBomResults({
                                   <DropdownMenuTrigger asChild>
                                     <Button variant="outline" size="sm" className="cursor-pointer gap-1.5 h-8 shrink-0" aria-label="Finding actions">
                                       <Pencil className="h-3.5 w-3.5 opacity-70" />
-                                      Action
+                                      <span className="hidden 2xl:inline">Action</span>
                                     </Button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
@@ -1633,8 +1653,9 @@ export default function AiBomResults({
                         <TableCell className="text-sm text-zinc-600 dark:text-zinc-400">{risk.asset_type?.replace(/_/g, " ")}</TableCell>
                         <TableCell className="text-sm text-zinc-600 dark:text-zinc-400">{risk.provider}</TableCell>
                         <TableCell>
-                          <Badge variant="outline" className="border-zinc-300 text-zinc-600 dark:border-zinc-500/50 dark:text-zinc-400">
-                            {risk.license_type}
+                          <Badge variant="outline" title={risk.license_type}
+                            className="border-zinc-300 text-zinc-600 dark:border-zinc-500/50 dark:text-zinc-400">
+                            {licenceLabel(risk.license_type)}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-sm text-zinc-600 dark:text-zinc-400 max-w-[200px] truncate">{risk.impact}</TableCell>
