@@ -386,40 +386,35 @@ def test_acm_certificates_get_their_sha256_from_get_certificate():
     """14 of team 1's D8 rows had no SHA-256: the collector never asked ACM for the (public) certificate body.  Asked
     after every DescribeCertificate, only for an issued certificate; a denial keeps the row and records a gap."""
     import hashlib
+    import ssl
 
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from test_cbom_aws_collect_wp4 import ACCOUNT, REGION, _run  # noqa: E402
-    from test_cbom_d7_d8_network_certs import _pem  # noqa: E402
+    from test_cbom_aws_cb33 import ACM_PREFIX, Plan, _cert_detail, _cert_summary, _body_pem, run  # noqa: E402
 
-    pem, fp, _serial = _pem()
-    arn = f"arn:aws:acm:{REGION}:{ACCOUNT}:certificate/"
-    summaries = [{"CertificateArn": arn + n, "DomainName": f"{n}.bank.example"} for n in ("ok", "denied", "pending")]
-    calls = [("list_certificates", {"CertificateSummaryList": summaries}, None)]
-    for name, status in (("ok", "ISSUED"), ("denied", "ISSUED"), ("pending", "PENDING_VALIDATION")):
-        calls.append(("describe_certificate", {"Certificate": {
-            "CertificateArn": arn + name, "DomainName": f"{name}.bank.example", "KeyAlgorithm": "EC-prime256v1",
-            "SignatureAlgorithm": "SHA256WITHECDSA", "Status": status, "Type": "AMAZON_ISSUED"}},
-            {"CertificateArn": arn + name}))
-    calls += [("get_certificate", {"Certificate": pem}, {"CertificateArn": arn + "ok"}),
-              ("get_certificate", "AccessDeniedException", {"CertificateArn": arn + "denied"})]
-    stubs, found = _run({"acm": calls})
-    for stub in stubs:
-        stub.assert_no_pending_responses()  # PENDING_VALIDATION: never asked (it has no body)
+    pem = _body_pem()
+    plan = Plan()
+    plan.acm = [("list_certificates", {"CertificateSummaryList": [_cert_summary(n) for n in (1, 2, 3)]}, None),
+                ("describe_certificate", _cert_detail(1), {"CertificateArn": f"{ACM_PREFIX}c1"}),
+                ("describe_certificate", _cert_detail(2), {"CertificateArn": f"{ACM_PREFIX}c2"}),
+                ("describe_certificate", _cert_detail(3, Status="PENDING_VALIDATION"),
+                 {"CertificateArn": f"{ACM_PREFIX}c3"}),
+                ("get_certificate", {"Certificate": pem}, {"CertificateArn": f"{ACM_PREFIX}c1"}),
+                ("get_certificate", "AccessDeniedException", {"CertificateArn": f"{ACM_PREFIX}c2"})]
+    _services, found, _rows = run(plan)  # every recorded call made, in order; c3 (no body) never asked
     certs = {a["location"].rsplit("/", 1)[-1]: a for a in found if a["type"] == "certificate"}
-    assert certs["ok"]["facts"]["fingerprint_sha256"] == fp == hashlib.sha256(
-        __import__("ssl").PEM_cert_to_DER_cert(pem)).hexdigest()
-    assert certs["ok"]["facts"]["certificate_read"] == "ok"
-    assert "fingerprint_sha256" not in certs["denied"]["facts"]
-    assert certs["denied"]["facts"]["certificate_read"] == "AccessDeniedException"
-    assert "certificate_read" not in certs["pending"]["facts"]
+    assert certs["c1"]["facts"]["fingerprint_sha256"] == hashlib.sha256(ssl.PEM_cert_to_DER_cert(pem)).hexdigest()
+    assert certs["c1"]["facts"]["certificate_read"] == "ok"
+    assert "fingerprint_sha256" not in certs["c2"]["facts"]
+    assert certs["c2"]["facts"]["certificate_read"] == "AccessDeniedException"
+    assert "certificate_read" not in certs["c3"]["facts"]
     gaps = [a for a in found if a["type"] == "coverage" and "#body" in a["location"]]
-    assert gaps and gaps[0]["facts"].get("incomplete") is True  # the certificate is listed, its thumbprint missing
+    assert len(gaps) == 1 and gaps[0]["facts"].get("incomplete") is True  # listed; its thumbprint missing
 
 
 def test_the_reader_role_may_read_public_certificate_bodies_only():
     from backend.utilities.cbom_sources import templates as T
 
-    text = T.cloudformation_template("ZS-EXT-1", "account")
+    text = T.cloudformation_template("zs-ext-AAAA-BBBB-CCCC-DDDD", "account")
     assert "acm:ExportCertificate" in T.DENY_ACTIONS  # the private key stays out of reach
     assert "- acm:GetCertificate" in text and "AllowPublicCertificateBodies" in text
 

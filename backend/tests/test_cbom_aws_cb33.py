@@ -133,6 +133,42 @@ class Plan:
         return self
 
 
+def acm_bodies(calls: list[tuple[str, Any, dict | None]]) -> list[tuple[str, Any, dict | None]]:
+    """The GetCertificate calls ``acm()`` makes after every DescribeCertificate (QA Q3-08: the public certificate
+    body gives the SHA-256 thumbprint), one per described certificate whose status has a body, in the same order, unless
+    the plan records them itself.  Each answers with one throwaway self-signed certificate."""
+    from backend.utilities.cbom_sources.aws_collect import ACM_WITH_BODY
+
+    if any(method == "get_certificate" for method, _a, _p in calls):
+        return []
+    out = []
+    for method, answer, params in calls:
+        if method == "describe_certificate" and isinstance(answer, dict) \
+                and answer.get("Certificate", {}).get("Status") in ACM_WITH_BODY:
+            out.append(("get_certificate", {"Certificate": _body_pem()}, params))
+    return out
+
+
+def _body_pem() -> str:
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+
+    global _PEM
+    if _PEM is None:
+        key = ec.generate_private_key(ec.SECP256R1())
+        name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "acm-body.example.com")])
+        cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key())
+                .serial_number(7).not_valid_before(dt.datetime(2026, 1, 1)).not_valid_after(dt.datetime(2027, 6, 1))
+                .sign(key, hashes.SHA256()))
+        _PEM = cert.public_bytes(serialization.Encoding.PEM).decode()
+    return _PEM
+
+
+_PEM: str | None = None
+
+
 class _Denied:
     """Every service a test does not record answers AccessDenied (those service rows are dropped by ``run``)."""
 
@@ -154,7 +190,7 @@ class _Acct:
                 continue
             client = _BS.create_client(service, region_name=REGION, aws_access_key_id="x", aws_secret_access_key="y")
             stub = Stubber(client)
-            for method, answer, params in calls:
+            for method, answer, params in (calls + acm_bodies(calls) if service == "acm" else calls):
                 if isinstance(answer, str):
                     stub.add_client_error(method, service_error_code=answer, http_status_code=400,
                                           expected_params=params)
