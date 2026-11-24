@@ -4,7 +4,7 @@
  * Run: npx --yes tsx components/ai-bom/aibomDisplay.test.ts
  */
 import assert from "node:assert/strict";
-import { governanceSubtitle, isHealthcareBom, licenceLabel } from "./aibomDisplay";
+import { applicabilityNote, bindingCompliance, governanceSubtitle, isHealthcareBom, licenceLabel } from "./aibomDisplay";
 import { inventoryModelNames } from "./modelCardDisplay";
 
 const HEALTH_BOM = {
@@ -33,8 +33,9 @@ assert.match(governanceSubtitle("nbfc", PLAIN_BOM), /^NBFC AI BOM: /);
 // an "other" entity with a clinical BOM keeps the healthcare wording; without one it is neutral
 assert.match(governanceSubtitle("other", HEALTH_BOM), /^Healthcare AI BOM: /);
 assert.match(governanceSubtitle("other", PLAIN_BOM), /^AI BOM: /);
-// the profile not loaded (or not readable by this user): neutral, never healthcare
-assert.match(governanceSubtitle(undefined, HEALTH_BOM), /^AI BOM: /);
+// no declared profile (review 6037909737 M4): nothing filtered, a clinical BOM keeps the healthcare wording
+assert.match(governanceSubtitle(undefined, HEALTH_BOM), /^Healthcare AI BOM: /);
+assert.match(governanceSubtitle(null, PLAIN_BOM), /^AI BOM: /);
 assert.equal(isHealthcareBom(HEALTH_BOM), true);
 assert.equal(isHealthcareBom(PLAIN_BOM), false);
 assert.equal(isHealthcareBom(undefined), false);
@@ -59,5 +60,19 @@ const names = inventoryModelNames([
 ]);
 assert.ok(names.has("anthropic.claude-3-5-sonnet-20240620-v1:0"));
 assert.ok(!names.has("Amazon Bedrock Runtime"));
+
+// M3: the page keeps only the frameworks that bind the team, like the PDF and the pack
+const compliance = { cert_in_aibom: {}, rbi_free_ai: {}, nist_rmf: {}, eu_ai_act_annexIV: {}, sebi_cscrf_aibom: {},
+  fda_524b: {}, hipaa: {}, gmlp: {}, disclaimer: "advisory" };
+const bank = { regulatory_profile: { entity: "bank", flags: [] }, basis: "Commercial bank in India, not SEBI-regulated",
+  binding: ["cert_in_aibom", "rbi_free_ai", "nist_rmf", "eu_ai_act_annexIV"],
+  not_applicable: [{ framework: "fda_524b", label: "FDA Section 524B" }, { framework: "hipaa", label: "HIPAA" },
+    { framework: "gmlp", label: "FDA GMLP" }, { framework: "sebi_cscrf_aibom", label: "SEBI CSCRF" }] };
+assert.deepEqual(Object.keys(bindingCompliance(compliance, bank) ?? {}).sort(),
+  ["cert_in_aibom", "disclaimer", "eu_ai_act_annexIV", "nist_rmf", "rbi_free_ai"]);
+assert.equal(bindingCompliance(compliance, null), compliance); // an older backend: unchanged
+assert.match(applicabilityNote(bank) ?? "", /Not applicable to it: FDA Section 524B, HIPAA, FDA GMLP, SEBI CSCRF\./);
+assert.match(applicabilityNote({ regulatory_profile: null, binding: Object.keys(compliance) }) ?? "",
+  /regulated entity not set/);
 
 console.log("aibomDisplay tests passed");

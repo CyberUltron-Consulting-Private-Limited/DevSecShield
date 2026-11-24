@@ -73,7 +73,12 @@ import {
 import { BomGraphCard } from "@/components/bom/BomGraphCard";
 import { pickBomGraph } from "@/components/bom/layout";
 import type { BomGraph } from "@/components/bom/types";
-import { governanceSubtitle } from "@/components/ai-bom/aibomDisplay";
+import {
+  applicabilityNote,
+  bindingCompliance,
+  governanceSubtitle,
+  type AiBomApplicability,
+} from "@/components/ai-bom/aibomDisplay";
 
 export type { AttestHandler, Compliance } from "@/components/compliance/ComplianceMatrix";
 
@@ -659,7 +664,7 @@ export function AiBomVisualizations({
   findings,
   onAttest,
   onOpenFinding,
-  regulatedEntity,
+  applicability,
 }: {
   compliance?: Compliance;
   graph?: Graph | BomGraph | null;
@@ -670,8 +675,8 @@ export function AiBomVisualizations({
   findings?: Json[];
   onAttest?: AttestHandler;
   onOpenFinding?: (finding: Json) => void;
-  /** The team's regulated-entity type (CBOM settings); words the subtitle. */
-  regulatedEntity?: string | null;
+  /** The frameworks that bind the team (server ``ai_bom_applicability``): words the subtitle, filters the charts. */
+  applicability?: AiBomApplicability | null;
 }) {
   const has =
     compliance ||
@@ -688,11 +693,17 @@ export function AiBomVisualizations({
           AI Governance &amp; Lineage
         </h2>
         <p className="text-sm text-zinc-500" data-testid="aibom-governance-subtitle">
-          {governanceSubtitle(regulatedEntity, aiBomJson)}
+          {governanceSubtitle(applicability?.regulatory_profile?.entity, aiBomJson)}
         </p>
+        {applicabilityNote(applicability) && (
+          <p className="mt-1 text-xs text-zinc-500" data-testid="aibom-applicability-note">
+            {applicabilityNote(applicability)}
+          </p>
+        )}
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <ComplianceCoverage compliance={compliance} onAttest={onAttest} hideOutOfScope />
+        <ComplianceCoverage compliance={bindingCompliance(compliance, applicability) ?? undefined}
+          onAttest={onAttest} hideOutOfScope />
         <DependencyGraph
           graph={graph}
           graphCompact={graphCompact}

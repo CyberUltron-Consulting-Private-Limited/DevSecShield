@@ -2649,6 +2649,13 @@ export interface AiBomScanMetadata {
   ai_bom_graph_compact?: { nodes?: unknown[]; edges?: unknown[]; meta?: Record<string, unknown> }
   ai_bom_graph_expanded?: { nodes?: unknown[]; edges?: unknown[]; meta?: Record<string, unknown> }
   ai_bom_scores?: Record<string, unknown>
+  /** The frameworks that bind the team's regulatory profile (backend aibom_applicability.page_view) */
+  ai_bom_applicability?: {
+    regulatory_profile?: { entity?: string; flags?: string[] } | null
+    basis?: string
+    binding?: string[]
+    not_applicable?: { framework: string; label: string }[]
+  } | null
   ai_bom_spdx?: Record<string, unknown>
   ai_bom_sarif?: Record<string, unknown>
   rbi_csf_rollup?: Record<string, unknown> | null
@@ -2669,6 +2676,8 @@ export interface AiBomScanDashboardData {
     total_external_providers: number
     total_high_risk_assets: number
     total_unlicensed_assets: number
+    /** Library licences the offline manifest did not resolve (unknown / partial, not unlicensed); absent: older backend */
+    total_licence_unknown_assets?: number
     governance_readiness_score: number
     average_risk_score: number
   }

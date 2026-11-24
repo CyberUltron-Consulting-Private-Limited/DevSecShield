@@ -22,12 +22,44 @@ export function isHealthcareBom(aiBomJson: Json | null | undefined): boolean {
   return typeof disclaimer === "string" && /\b(?:HIPAA|FDA)\b/.test(disclaimer);
 }
 
-/** The AI Governance section subtitle for a team's regulated-entity type (undefined: not loaded / not readable). */
+/** The AI Governance section subtitle for a team's regulated-entity type. ``null`` / undefined: the team declared no
+ * regulated entity, so nothing is filtered and a clinical BOM keeps the healthcare wording (review 6037909737 M4). */
 export function governanceSubtitle(entity: string | null | undefined, aiBomJson: Json | null | undefined): string {
   const choice = REGULATED_ENTITY_CHOICES.find((c) => c.value === entity);
   if (choice && choice.value !== "other") return `${choice.label} AI BOM: ${SUBTITLE_TAIL}`;
-  if (choice?.value === "other" && isHealthcareBom(aiBomJson)) return `Healthcare AI BOM: ${SUBTITLE_TAIL}`;
+  if (isHealthcareBom(aiBomJson)) return `Healthcare AI BOM: ${SUBTITLE_TAIL}`;
   return `AI BOM: ${SUBTITLE_TAIL}`;
+}
+
+/** The server's ``ai_bom_applicability`` (backend aibom_applicability.page_view): the frameworks that bind the team. */
+export type AiBomApplicability = {
+  regulatory_profile?: { entity?: string; flags?: string[] } | null;
+  basis?: string;
+  binding?: string[];
+  not_applicable?: { framework: string; label: string }[];
+};
+
+/** The engine's compliance report keeping only the frameworks that bind the team (and its disclaimer), so the
+ * results page shows what the PDF and the evidence pack show (review 6037909737 of #498, M3). No applicability (an
+ * older backend): unchanged. */
+export function bindingCompliance<T extends Record<string, unknown>>(
+  compliance: T | null | undefined,
+  applicability: AiBomApplicability | null | undefined,
+): T | null | undefined {
+  if (!compliance || !applicability || !Array.isArray(applicability.binding)) return compliance;
+  const keep = new Set([...applicability.binding, "disclaimer"]);
+  return Object.fromEntries(Object.entries(compliance).filter(([k]) => keep.has(k))) as T;
+}
+
+/** The sentence under the framework charts: which profile chose them, and which frameworks it leaves out. */
+export function applicabilityNote(applicability: AiBomApplicability | null | undefined): string | null {
+  if (!applicability) return null;
+  if (!applicability.regulatory_profile) {
+    return "Team regulatory profile: regulated entity not set. Every framework this AI BOM is in the scope of is shown.";
+  }
+  const names = (applicability.not_applicable ?? []).map((n) => n.label);
+  if (names.length === 0) return null;
+  return `Frameworks shown for this team's regulatory profile (${applicability.basis}). Not applicable to it: ${names.join(", ")}.`;
 }
 
 const MAX_LABEL = 24;

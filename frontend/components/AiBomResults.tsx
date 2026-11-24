@@ -57,8 +57,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useRouter, useSearchParams, useParams } from "next/navigation";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getCbomSourcesSettings, updateScan, toggleFindingState, createTicket, postCertInAttestation, postCertInSign, getCertInVex, getCertInEvidencePack, type AiBomScanDashboardData, type AiBomFinding, type AiBomScanMetadata, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { updateScan, toggleFindingState, createTicket, postCertInAttestation, postCertInSign, getCertInVex, getCertInEvidencePack, type AiBomScanDashboardData, type AiBomFinding, type AiBomScanMetadata, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
 import { overlayBomCompliance } from "@/utils/overlayBomCompliance";
 import {
@@ -102,8 +102,7 @@ import {
   type Graph as AiBomGraph,
   type Scores as AiBomScores,
 } from "@/components/ai-bom/AiBomVisualizations";
-import { licenceLabel } from "@/components/ai-bom/aibomDisplay";
-import { cbomSourcesKeys } from "@/components/cbom/sources/keys";
+import { licenceLabel, type AiBomApplicability } from "@/components/ai-bom/aibomDisplay";
 import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRollup";
 import { CertInLanePosture } from "@/components/certin/CertInLanePosture";
 import { type CertInRollupData } from "@/components/certin/certinShared";
@@ -313,15 +312,6 @@ export default function AiBomResults({
   }, [findingsList]);
 
   const tid = parseInt(String(team_id ?? "0"), 10);
-  // The team's regulatory profile (the PDF and the evidence pack use the same one): it words the AI Governance
-  // subtitle, so a bank or an NBFC never reads "Healthcare" (staging QA round 2, Q2-08). Not readable: neutral words.
-  const teamSettings = useQuery({
-    queryKey: cbomSourcesKeys.settings(tid),
-    queryFn: () => getCbomSourcesSettings(tid),
-    enabled: tid > 0,
-    retry: false,
-    staleTime: 60_000,
-  });
   const sid = typeof scan_id === "number" ? scan_id : parseInt(String(scan_id), 10);
 
   const updateIntegrationMutation = useMutation({
@@ -660,6 +650,9 @@ export default function AiBomResults({
   const hasRiskData = severityRadarData.some((d) => d.count > 0);
   const criticalCount = dashboard?.severity_distribution?.critical ?? 0;
   const meta = scanMetadata as AiBomScanMetadata | null;
+  const aiBomApplicability = (meta?.ai_bom_applicability ?? null) as AiBomApplicability | null;
+  // RBI's pillar rollup only when RBI binds the team (review 6037909737 of #498, M3)
+  const rbiBinds = !aiBomApplicability?.binding || aiBomApplicability.binding.includes("rbi_free_ai");
 
   const showTabs = team_id && scan_id != null;
   const hasTicketingTab = showTabs && onIntegrationSettingsUpdated != null;
@@ -877,7 +870,9 @@ export default function AiBomResults({
                   { label: "Datasets", value: cardData.total_datasets, icon: Database, color: "bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400" },
                   { label: "External Providers", value: cardData.total_external_providers, icon: Cloud, color: "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400" },
                   { label: "High Risk", value: cardData.total_high_risk_assets, icon: ShieldAlert, color: "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400" },
-                  { label: "Unlicensed", value: cardData.total_unlicensed_assets, icon: Scale, color: "bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400" },
+                  { label: "Unlicensed", value: cardData.total_unlicensed_assets, icon: Scale, color: "bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400",
+                    // a licence the offline manifest did not resolve is unknown, not unlicensed: say how many (M7)
+                    hint: cardData.total_licence_unknown_assets ? `Licence unknown: ${cardData.total_licence_unknown_assets}` : undefined },
                   { label: "Governance Ready", value: `${cardData.governance_readiness_score}%`, icon: Shield, color: "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400" },
                   { label: "Avg Risk", value: cardData.average_risk_score?.toFixed(1) ?? "N/A", icon: Activity, color: "bg-pink-100 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400" },
                 ].map((c) => (
@@ -889,6 +884,9 @@ export default function AiBomResults({
                       <div className="min-w-0">
                         <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 break-words">{c.label}</p>
                         <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums">{c.value}</p>
+                        {"hint" in c && c.hint && (
+                          <p className="text-[11px] text-zinc-500 dark:text-zinc-400" data-testid="aibom-licence-unknown-hint">{c.hint}</p>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -1319,13 +1317,13 @@ export default function AiBomResults({
             aiBomJson={meta?.ai_bom_json as Record<string, unknown> | undefined}
             findings={(findingsList ?? []) as unknown as Record<string, unknown>[]}
             onAttest={handleCertInAttest}
-            regulatedEntity={teamSettings.data?.regulated_entity ?? null}
+            applicability={aiBomApplicability}
             onOpenFinding={(f) =>
               setSelectedFinding(f as unknown as AiBomFinding)
             }
           />
           <RbiCsfRollup
-            rollup={meta?.rbi_csf_rollup as RbiCsfRollupData | undefined}
+            rollup={rbiBinds ? (meta?.rbi_csf_rollup as RbiCsfRollupData | undefined) : undefined}
             onAttest={handleCertInAttest}
             onViewFindings={handleViewRelatedFindings}
             findings={findingsList ?? []}
