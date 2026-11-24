@@ -37,10 +37,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import test_cbom_sources_api as SOURCES_API
 import test_cbom_wp9_outputs as WP9
 from backend.new_models import Scan, Team
+from backend.tests.support.cyclonedx_schema import json_errors, xml_errors
 from backend.utilities.cbom_sources import bom_signing as SIGN
 from backend.utilities.cbom_sources import bom_verify as V
 from test_cbom_d11_signed_outputs import _add_scans
 from test_cbom_posture import ASSETS, _store
+from test_cbom_sources_api import _collect_job
 
 globals().update(api=SOURCES_API.api, world=SOURCES_API.world, http=WP9.http)
 REPO = Path(__file__).resolve().parents[2]
@@ -215,6 +217,63 @@ def test_n1_every_own_file_still_verifies(http):
             x = client.get(f"/1/{kind}/scan/{sid}/bom?format=xml", headers=HDR)
             outs["xml"] = _check(client, verify, x.content, x.headers["x-zs-signature"])
         assert all(o["valid"] for o in outs.values()), (kind, sid, {k: o.get("reason") for k, o in outs.items()})
+
+
+_AD_ASSETS = [
+    {"type": "kerberos_account", "target": "dc1.corp.example", "location": "ad:corp.example/domain_controller/DC1$",
+     "name": "DC1$", "algorithm": "AES256-CTS-HMAC-SHA1-96", "protocol": "kerberos",
+     "facts": {"account": "DC1$", "account_type": "domain_controller", "enc_types_value": 28,
+               "enc_types_source": "attribute", "rc4_enabled": True, "aes_enabled": True,
+               "enc_types": ["RC4-HMAC", "AES128-CTS-HMAC-SHA1-96", "AES256-CTS-HMAC-SHA1-96"]}},
+    {"type": "kerberos_account", "target": "dc1.corp.example", "location": "ad:corp.example/service_account/svc-rc4",
+     "name": "svc-rc4", "algorithm": "RC4-HMAC", "protocol": "kerberos",
+     "facts": {"account": "svc-rc4", "account_type": "service_account", "rc4_only": True, "rc4_enabled": True,
+               "aes_enabled": False, "enc_types": ["RC4-HMAC"], "enc_types_value": 4, "enc_types_source": "attribute"}},
+    {"type": "ad_domain", "target": "dc1.corp.example", "location": "ad:corp.example", "name": "corp.example",
+     "protocol": "kerberos", "facts": {"domain": "corp.example", "domain_functional_level": 7,
+                                       "krbtgt_password_last_set": "2020-01-01T00:00:00Z"}},
+]
+
+
+def test_n1_ad_collector_run_content_is_stamped_and_signed(api, world, tmp_path):
+    """#488's Active Directory assets (kerberos_account: related-crypto-material secret-key with its key-type parts)
+    reach the run CBOM like every other run asset: the JSON carries zs:run_id + zs:team_id and a valid JSF signature
+    (and X-ZS-Signature), the XML its detached signature, the VEX the same stamp, and the evidence pack verifies
+    offline; each file is bound to this run of this team (another team's or run's: test_n1_run_file_of_another_team_does_not_bind)."""
+    engine, _ = world
+    _src, run, claim, hdr = _collect_job(api, engine)
+    job = claim["job"]
+    r = api("POST", f"/cbom/node/jobs/{job['id']}/assets", None, headers=hdr,
+            json={"lease_id": job["lease_id"], "batch_id": "ad-d11", "assets": _AD_ASSETS})
+    assert r.status_code == 200 and r.json()["accepted"] == 3, r.text
+    rid = run["id"]
+    j = api("GET", f"/1/cbom/sources/runs/{rid}/cbom")
+    doc = json.loads(j.content)
+    assert _props(doc)["zs:run_id"] == [str(rid)] and _props(doc)["zs:team_id"] == ["1"]
+    kerberos = [c for c in doc["components"] if any(p["name"] == "zs:kerberos_enc_types" for p in c.get("properties") or [])]
+    assert {c["name"] for c in kerberos} == {"DC1$", "svc-rc4"}
+    for comp in kerberos:
+        material = comp["cryptoProperties"]["relatedCryptoMaterialProperties"]
+        assert comp["cryptoProperties"]["assetType"] == "related-crypto-material" and material["type"] == "secret-key"
+        assert material["algorithmRef"] in {c["bom-ref"] for c in doc["components"]}  # the key-type part is in the BOM
+    assert json_errors({k: v for k, v in doc.items() if k != "signature"}) == []
+    assert SIGN.verify_bom(j.content)["valid"] is True
+    assert SIGN.verify_detached(j.content, base64.b64decode(j.headers["x-zs-signature"]))["valid"] is True
+    x = api("GET", f"/1/cbom/sources/runs/{rid}/cbom?format=xml")
+    assert b"secret-key" in x.content and xml_errors(x.content) == []
+    assert SIGN.verify_detached(x.content, base64.b64decode(x.headers["x-zs-signature"]))["valid"] is True
+    vex = api("GET", f"/1/cbom/sources/runs/{rid}/vex")
+    assert _props(json.loads(vex.content))["zs:team_id"] == ["1"] and SIGN.verify_bom(vex.content)["valid"] is True
+    verify = f"/1/cbom/sources/runs/{rid}/signature/verify"
+    for body, sent in ((j.content, None), (x.content, x.headers["x-zs-signature"]),
+                       (vex.content, None)):
+        out = api("POST", verify, content=body, headers={"X-ZS-Signature-B64": sent} if sent else {}).json()
+        assert out["valid"] is True and out["bound"] is True, out
+    pack = tmp_path / "pack.zip"
+    pack.write_bytes(api("GET", f"/1/cbom/sources/runs/{rid}/evidence-pack").content)
+    res = V.verify_pack(str(pack), SIGN.keyring().verifier_keys())
+    assert res["valid"] is True, [c for c in res["checks"] if not c.get("valid")]
+    assert b"DC1$" in zipfile.ZipFile(pack).read("bom.cdx.json")
 
 
 # ----------------------------------------------------------------------------------------------- N2

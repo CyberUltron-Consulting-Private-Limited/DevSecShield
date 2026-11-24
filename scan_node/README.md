@@ -198,6 +198,23 @@ shell-quoted, and are read with commands that print **public** material only (`o
 `openssl pkey -pubout`, `ssh-keygen -l`, `keytool -list`). Host keys: pinned `known_hosts`, or trust on first
 use per (address, port, key type); a changed key stops the target before any credential is sent.
 
+**Active Directory (LDAPS 636 / 3269, or StartTLS on 389 / 3268).** `collectors/active_directory.py` with the
+read-only LDAP client `ldapmini.py` (bind, search, StartTLS and unbind only: there is no write operation). Without
+credentials: the DC's TLS posture on the LDAP port, read by the network prober (`NetworkScan.scan_endpoint`, protocol
+`tls` or `starttls-ldap`): versions, every cipher suite per version, groups, PQ key exchange and the certificate chain,
+the same facts as every D7 endpoint, all within the source's `timeout_s`. Then a TLS session that verifies the DC's certificate (`ca_pem`, else the system store) and name;
+only then is the read-only account's password sent (simple bind), so an unverified certificate ends the target with
+`identity_unverified` and the password is not sent. Read once per domain: RootDSE (functional levels),
+`msDS-SupportedEncryptionTypes` of the DCs, krbtgt, service accounts (users with an SPN, krbtgt excluded) and gMSAs
+(RC4 / DES / AES, `ad_domain` and `kerberos_account` assets, each account once by DN), a count over computer accounts, the krbtgt key age (`pwdLastSet`) and the
+AD CS enrollment services with their CA certificates. Secret-bearing attributes (`unicodePwd`, `msDS-ManagedPassword`,
+LAPS, BitLocker recovery, `userPKCS12`, ...; also with `;options` or as a numeric OID) and `*` are refused before a
+request is sent and dropped if a server returns them. An account without `msDS-SupportedEncryptionTypes` gets the DC's
+default, which LDAP cannot read (AES only on a DC with the April 2026 update, KB5073381 / CVE-2026-20833, unless
+`DefaultDomainSupportedEncTypes` enables RC4): it is recorded as "DC default" (RC4 unknown), never as RC4. krbtgt is
+judged by the domain functional level and its key age. LDAP signing and channel binding live in each DC's registry and
+are not readable over LDAP (a coverage row says so).
+
 **Windows (WinRM HTTPS 5986).** Read-only PowerShell: certificate stores, SCHANNEL protocol keys, TLS cipher
 suite order, BitLocker, RDP security layer. For a certificate with a private key, the key's provider comes from the
 certificate's KEY_PROV_INFO property in the store's registry value (`HKLM\SOFTWARE\Microsoft\SystemCertificates\
