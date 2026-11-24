@@ -2038,13 +2038,14 @@ def _cancel_run(engine, team_id: int, user_id: int, run_id: int) -> dict:
         run = _get_owned(session, CbomCollectionRun, run_id, team_id, "Run")
         require_owner_or_admin(session, user_id, team_id, run.owner_user_id, "run")
         refunded = J.cancel_run(session, run, user_id, now)
-        # a cancelled run may no longer be the baseline of a later run's stored drift document: clear those it was
-        # (review 6030475121 nit 3); the scheduler's summary pass stores them again against the new baseline
-        DRIFT.refresh_later_baselines(session, run, now)
         if refunded or run.cancelled_at == now:
             audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="run.cancel",
                   object_type="run", object_id=run.id)
         session.commit()
+        # a cancelled run may no longer be the baseline of a later run's stored drift document: clear those it was
+        # (review 6030475121 nit 3; the summary pass stores them again). After the cancel commits, in its own short
+        # transaction, before this session reads again: never part of the cancel, and never holding its lock
+        DRIFT.refresh_later_baselines_after(engine, team_id, run_id, now)
         session.refresh(run)
         if refunded:
             log("run cancelled", team=team_id, run=run.id, refunded=credits(refunded), by=user_id)

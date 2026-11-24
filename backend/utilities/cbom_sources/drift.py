@@ -1151,6 +1151,21 @@ def record_run_drift(session: Session, run: CbomCollectionRun, now: _dt.datetime
     return stored
 
 
+def refresh_later_baselines_after(engine, team_id: int, run_id: int, now: _dt.datetime) -> int:
+    """``refresh_later_baselines`` in a transaction of its own, after the caller's has committed (the cancel route).
+    Best effort: a failure is logged and leaves the documents as they are (a download serves the right baseline)."""
+    from backend.utilities.cbom_sources import drift_report
+
+    try:
+        with Session(engine) as session:
+            cleared = drift_report.refresh_baselines(session, team_id, run_id, now)
+            session.commit()
+            return cleared
+    except Exception as exc:  # noqa: BLE001
+        log("drift baseline refresh FAILED", team=team_id, run=run_id, error=type(exc).__name__)
+        return 0
+
+
 def refresh_later_baselines(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> None:
     """``run`` finished, was cancelled or otherwise changed what it can be a baseline for: clear the stored drift
     documents of later runs that now pick another baseline (``drift_report.refresh_baselines``), so the summary pass
