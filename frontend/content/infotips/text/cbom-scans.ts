@@ -138,11 +138,11 @@ const TEXT = {
     example: "12.4 (1 refunded).",
   },
   // src: backend/utilities/cbom_sources/estate_export.py:1-30, backend/routers/cbom_estate_export.py:1-9 — one
-  // component per estate key; unsigned with X-Cbom-Sha256; filters application / source / type
+  // component per estate key; signed (JSF in the JSON, detached X-ZS-Signature) with X-Cbom-Sha256; filters application / source / type
   "cbom.estate.export": {
     what: "Your whole estate as one CycloneDX 1.6 file (JSON or XML): every asset once, however many sources see it, with its current quantum risk grade and VEX. It covers what the latest collections read, plus assets they could not read again (marked not read); removed assets are left out. The download API also filters by application, source or asset type.",
-    why: "One file to hand to an auditor or import into another tool. It is unsigned: the response carries the file's SHA-256 (X-Cbom-Sha256, shown after the download) so anyone can check it outside ZeroShield.",
-    example: "cbom-estate-team3-2026-11-15.cdx.json · 2,140 assets · unsigned · SHA-256 4f1c….",
+    why: "One file to hand to an auditor or import into another tool. It is signed with your deployment's published key (ES256, inside the JSON and in the X-ZS-Signature header), and its SHA-256 is shown after the download, so anyone can check it outside ZeroShield.",
+    example: "cbom-estate-team3-2026-11-15.cdx.json · 2,140 assets · SHA-256 4f1c….",
   },
 } as const satisfies TipAreaText;
 

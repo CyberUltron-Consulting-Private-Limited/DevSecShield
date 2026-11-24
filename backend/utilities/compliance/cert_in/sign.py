@@ -1,5 +1,9 @@
 """CERT-In BOM signing — HMAC-SHA256 over canonical JSON (stdlib only).
 
+Kept for the ``bom_signature`` objects already issued (verified server-side).
+Customer-verifiable signatures are ES256 with a published key:
+``backend/utilities/cbom_sources/bom_signing.py`` (D11).
+
 F4: signing lives inside the ``aibom`` package. Do **not** add ``cryptography``;
 secret bytes are supplied by the caller (backend ``CERTIN_HMAC_SECRET``).
 """
@@ -23,9 +27,15 @@ _ALG = "HMAC-SHA256"
 
 
 def canonical_bom_bytes(bom: dict[str, Any]) -> bytes:
-    """Deterministic UTF-8 JSON bytes (sorted keys, compact separators)."""
+    """Deterministic UTF-8 JSON bytes (sorted keys, compact separators).
+
+    A top-level JSF ``signature`` (the ES256 signature the BOM downloads now
+    carry, ``backend/utilities/cbom_sources/bom_signing.py``) is not part of the
+    signed content: it was added after this HMAC was made, so an HMAC issued for
+    the stored BOM still verifies the signed download.
+    """
     return json.dumps(
-        bom,
+        {k: v for k, v in bom.items() if k != "signature"},
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,

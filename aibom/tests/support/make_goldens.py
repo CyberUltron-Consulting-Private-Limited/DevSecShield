@@ -61,7 +61,7 @@ def capture() -> dict:
     from aibom.cbom.pipeline import scan_crypto
     from aibom.emit.cyclonedx import emit_cyclonedx
     from aibom.integrations.cbom_devsecshield import scan_crypto_to_devsecshield
-    from support.base_commit import BASE_COMMIT
+    from support.base_commit import BASE_COMMIT, DIGESTS_FROM
 
     trees: dict[str, dict[str, str]] = {}
     for name in TREES:
@@ -79,7 +79,7 @@ def capture() -> dict:
     signature = str(inspect.signature(scan_crypto_to_devsecshield))
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "adapter_signature.txt").write_text(signature + "\n", encoding="ascii")
-    payload = {"base_commit": BASE_COMMIT, "trees": trees}
+    payload = {"base_commit": BASE_COMMIT, "digests_from": DIGESTS_FROM, "trees": trees}
     (OUT / "base_commit_digests.json").write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="ascii",

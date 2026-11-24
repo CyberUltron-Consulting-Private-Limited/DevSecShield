@@ -345,6 +345,11 @@ def public_run(run: CbomCollectionRun, jobs: list[dict[str, Any]] | None = None,
         for job in jobs:
             counts[job["status"]] = counts.get(job["status"], 0) + 1
         out["job_counts"] = counts
+        # FIX-B3: why the run is partial / failed / cancelled, or what an open run waits for (offline scan nodes)
+        from backend.utilities.cbom_sources.run_status import status_reason
+
+        out.update(status_reason(run.status, [{**job, "summary": (job.get("result") or {}).get("summary")}
+                                              for job in jobs]))
     return out
 
 
