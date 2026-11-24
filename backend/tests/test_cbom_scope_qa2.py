@@ -24,11 +24,11 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from backend.tests.support import sources_every_type as FX
-from backend.tests.support.pdf_text import pdf_text
-from backend.utilities.cbom_sources import collections_view as CV
-from backend.utilities.dashboard import cbom_team_rollup as R
-from backend.utilities.pdf import cbom_scope_register_pdf as d1
+from backend.tests.support import sources_every_type as FX  # noqa: E402
+from backend.tests.support.pdf_text import pdf_text  # noqa: E402
+from backend.utilities.cbom_sources import collections_view as CV  # noqa: E402
+from backend.utilities.dashboard import cbom_team_rollup as R  # noqa: E402
+from backend.utilities.pdf import cbom_scope_register_pdf as d1  # noqa: E402
 
 NOW = dt.datetime(2026, 11, 24, 6, 0, tzinfo=dt.timezone.utc)
 GONE = "Lab network"  # the fixture's network source, deleted in these tests
@@ -180,7 +180,7 @@ def test_collection_history_reads_every_collect_job_of_the_source():
     engine = create_engine("sqlite://")
     for table in (CbomCollectionSource.__table__, CbomCollectionJob.__table__):
         table.create(engine)
-    t = lambda day: dt.datetime(2026, 11, day, 9, 0, tzinfo=dt.timezone.utc).replace(tzinfo=None)
+    t = lambda day: dt.datetime(2026, 11, day, 9, 0, tzinfo=dt.timezone.utc).replace(tzinfo=None)  # noqa: E731
     with Session(engine) as s:
         src = CbomCollectionSource(team_id=1, owner_user_id=1, kind="kubernetes", name="Kubernetes lab Tier 1",
                                    name_lower="kubernetes lab tier 1", source_uid="k8s1")

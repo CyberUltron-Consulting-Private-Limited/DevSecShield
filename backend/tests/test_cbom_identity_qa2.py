@@ -23,16 +23,16 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from backend.new_models import (
+from backend.new_models import (  # noqa: E402
     CbomCollectionJob,
     CbomQ0Gap,
     CbomRemediationAssignment,
 )
-from backend.utilities.cbom_sources import drift as D
-from backend.utilities.cbom_sources import estate as E
-from backend.utilities.cbom_sources import identity as ID
-from backend.utilities.cbom_sources import identity_migration as M
-from sqlmodel import Session, select
+from backend.utilities.cbom_sources import drift as D  # noqa: E402
+from backend.utilities.cbom_sources import estate as E  # noqa: E402
+from backend.utilities.cbom_sources import identity as ID  # noqa: E402
+from backend.utilities.cbom_sources import identity_migration as M  # noqa: E402
+from sqlmodel import Session, select  # noqa: E402
 
 FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "qa2_run54_vs_run52_pca.json").read_text())
 CREATED = dt.datetime(2026, 11, 20, 9, 0, tzinfo=dt.timezone.utc).replace(tzinfo=None)  # stored naive UTC
@@ -110,7 +110,7 @@ def test_a_cloud_certificate_is_its_resource_id_and_a_renewal_stays_renewed():
 
 
 # ----------------------------------------------------------------------------- the stored keys move (estate write)
-from test_cbom_cb20_estate import World, _sqlite, cert
+from test_cbom_cb20_estate import World, _sqlite, cert  # noqa: E402
 
 
 @pytest.fixture

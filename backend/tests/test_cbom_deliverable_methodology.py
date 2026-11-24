@@ -47,7 +47,7 @@ from backend.utilities.dashboard.cbom_team_rollup import (  # noqa: E402
     fold_scans,
 )
 from backend.utilities.pdf import cbom_deliverable_text as authored  # noqa: E402
-from backend.utilities.pdf import cbom_kb_text as kb_text
+from backend.utilities.pdf import cbom_kb_text as kb_text  # noqa: E402
 from backend.utilities.pdf import cbom_methodology_pdf as methodology  # noqa: E402
 from backend.utilities.pdf import cbom_methodology_text as method_text  # noqa: E402
 from backend.utilities.pdf.cbom_deliverable_common import get_deliverable_styles  # noqa: E402

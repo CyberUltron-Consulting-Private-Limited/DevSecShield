@@ -21,13 +21,13 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from backend.new_models import CbomCollectionAuditEvent, CbomCollectionRun
-from backend.utilities.cbom_sources import drift as D
-from backend.utilities.cbom_sources import schedules as SCHED
-from backend.utilities.cbom_sources.run_status import WINDOW_WAIT, status_reason
-from backend.utilities.dashboard import cbom_board_issues as ISSUES
-from backend.utilities.pdf.cbom_run_pdf import not_compared_text
-from sqlmodel import Session, select
+from backend.new_models import CbomCollectionAuditEvent, CbomCollectionRun  # noqa: E402
+from backend.utilities.cbom_sources import drift as D  # noqa: E402
+from backend.utilities.cbom_sources import schedules as SCHED  # noqa: E402
+from backend.utilities.cbom_sources.run_status import WINDOW_WAIT, status_reason  # noqa: E402
+from backend.utilities.dashboard import cbom_board_issues as ISSUES  # noqa: E402
+from backend.utilities.pdf.cbom_run_pdf import not_compared_text  # noqa: E402
+from sqlmodel import Session, select  # noqa: E402
 
 
 # ----------------------------------------------------------------------------- Q1-10
@@ -77,7 +77,7 @@ def test_the_pdf_line_separates_the_reasons():
     assert not_compared_text({"not_compared_sources": 1}) == " (collected completely in only one of the two runs)"
 
 
-from test_cbom_cb20_estate import World, _sqlite, endpoint
+from test_cbom_cb20_estate import World, _sqlite, endpoint  # noqa: E402
 
 
 @pytest.fixture
@@ -118,8 +118,8 @@ def test_a_formal_issue_is_explicit_or_the_first_stable_download(explicit, previ
     assert ISSUES.formal_issue(explicit=explicit, preview=preview, active_runs=active) == expected
 
 
-import test_cbom_pr485_review as R485
-from test_cbom_pr485_review import api, seeded, world  # noqa: F401  (fixtures)
+import test_cbom_pr485_review as R485  # noqa: E402
+from test_cbom_pr485_review import api, seeded, world  # noqa: E402, F401
 
 
 def _issues(engine) -> int:
