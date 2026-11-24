@@ -52,6 +52,7 @@ from backend.utilities.cbom_sources import pqc_targets as PQT
 from backend.utilities.cbom_sources import held as HELD
 from backend.utilities.cbom_sources import host_key_resets as HKR  # #150
 from backend.utilities.cbom_sources import jobs as J
+from backend.utilities.cbom_sources import run_status as RUN_STATUS
 from backend.utilities.cbom_sources import source_cap as SOURCE_CAP
 from backend.utilities.cbom_sources import targets as T
 from backend.utilities.cbom_sources import vault_support as VAULT_SUPPORT  # #364
@@ -1671,15 +1672,28 @@ def _list_runs(engine, team_id: int, scan_id: int | None) -> dict:
         runs = session.exec(query.order_by(CbomCollectionRun.id.desc()).limit(50)).all()  # type: ignore[union-attr]
         # issue #159 (Rule P): the asset count the Scans table shows too, from the one function, one query for the page
         assets = RUN_LIST.asset_counts(session, team_id, [int(run.id) for run in runs])
+        # keyed by SOURCE id; kept apart from the schedule-name map below (both ids start at 1)
+        source_names = dict(session.exec(select(CbomCollectionSource.id, CbomCollectionSource.name)
+                                         .where(CbomCollectionSource.team_id == team_id)).all())
+        nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
         # S4: the schedule's name for every run a live schedule started (one query for the page; null = deleted)
         names = schedule_names(session, team_id, (run.schedule_id for run in runs))
         out = []
         for run in runs:
             counts: dict[str, int] = {}
+            rows = []
             for job in session.exec(select(CbomCollectionJob).where(CbomCollectionJob.run_id == run.id)).all():
                 counts[job.status] = counts.get(job.status, 0) + 1
+                rows.append({"id": job.id, "status": job.status, "outcome": job.outcome, "error": job.error,
+                             "summary": (job.result or {}).get("summary"),
+                             "source_name": source_names.get(job.source_id) or (job.params or {}).get("source_name"),
+                             "waiting_reason": (J.offline_wait_reason(job, nodes[job.node_id], now)
+                                                if job.status == "pending" and job.node_id in nodes
+                                                and node_status(nodes[job.node_id], now) == "offline" else None)})
+            # FIX-B3: the list says why a run is partial or failed, as the run detail does
+            reason = RUN_STATUS.status_reason(run.status, rows)
             out.append({**public_run(run, schedule_name=names.get(run.schedule_id or 0)), "job_counts": counts,
-                        "asset_count": assets.get(int(run.id), 0)})
+                        "asset_count": assets.get(int(run.id), 0), "status_reason": reason["status_reason"]})
         return {"runs": out, "server_time": iso_z(now)}
 
 

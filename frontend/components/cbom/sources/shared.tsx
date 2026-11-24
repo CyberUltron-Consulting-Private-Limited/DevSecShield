@@ -123,9 +123,21 @@ const RUN_STATUS: Record<CbomRunStatus, [Tone, string]> = {
   failed: ["red", "Failed"],
   cancelled: ["zinc", "Cancelled"],
 };
-export function RunStatusBadge({ status }: { status: CbomRunStatus }) {
+export function RunStatusBadge({ status, reason }: { status: CbomRunStatus; reason?: string | null }) {
   const [tone, label] = RUN_STATUS[status] ?? RUN_STATUS.queued;
-  return <StatusBadge tone={tone}>{label}</StatusBadge>;
+  return <StatusBadge tone={tone} title={reason ?? undefined}>{label}</StatusBadge>;
+}
+
+/** FIX-B3: the run's status_reason under its badge ("18 of 19 jobs read everything; 1 collected only part of its
+ * targets. …"), so a Partial run whose jobs all say success is never a mystery. */
+export function RunStatusReason({ reason, testId, clamp = false }: { reason?: string | null; testId?: string; clamp?: boolean }) {
+  if (!reason) return null;
+  return (
+    <span className={`block text-xs text-zinc-600 dark:text-zinc-400 ${clamp ? "max-w-[360px] line-clamp-2" : ""}`}
+          title={clamp ? reason : undefined} data-testid={testId}>
+      {reason}
+    </span>
+  );
 }
 
 /** Evidence confidence (CB-18, DA §2.3): E0..E3. Its own indigo palette with rising emphasis (E0 dashed outline, E1

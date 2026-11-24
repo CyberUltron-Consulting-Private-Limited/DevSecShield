@@ -24,7 +24,7 @@ import { TERMINAL_RUN } from "@/components/cbom/sources/keys";
 import { credits, formatDateTime, formatDay, pluralize } from "@/components/cbom/sources/logic";
 import { LabModeBanner } from "@/components/cbom/sources/LabModeBanner";
 import { TargetsBlock } from "@/components/cbom/sources/RunResults";
-import { EmptyState, RunStatusBadge, StatusBadge, Truncate, type Tone } from "@/components/cbom/sources/shared";
+import { EmptyState, RunStatusBadge, RunStatusReason, StatusBadge, Truncate, type Tone } from "@/components/cbom/sources/shared";
 
 import { CbomDashboardCharts, type DashboardChartPart } from "./CbomDashboardCharts";
 import { WaveLegend } from "./WaveLegend";
@@ -86,7 +86,7 @@ export function RunHeaderMeta({ teamId, run, sources }: { teamId: number; run: C
   const active = isActiveRunStatus(run.status);
   return (
     <>
-      <span data-testid="run-results-status"><RunStatusBadge status={run.status} /></span>
+      <span data-testid="run-results-status"><RunStatusBadge status={run.status} reason={run.status_reason} /></span>
       <span>Started {formatDateTime(run.created_at)}</span>
       {run.finished_at ? <span>Finished {formatDateTime(run.finished_at)}</span> : active ? <span>Running</span> : null}
       <span data-testid="run-results-credits">{credits(run.credits?.charged)} credits charged, {credits(run.credits?.refunded)} refunded</span>
@@ -108,6 +108,11 @@ export function RunHeaderMeta({ teamId, run, sources }: { teamId: number; run: C
               <Network className="h-3 w-3 mr-1" /> {s.name}
             </Badge>
           ))}
+        </span>
+      )}
+      {run.status_reason && (
+        <span className="basis-full" data-testid="run-results-status-reason-line">
+          <RunStatusReason reason={run.status_reason} testId="run-results-status-reason" />
         </span>
       )}
       {active && (
