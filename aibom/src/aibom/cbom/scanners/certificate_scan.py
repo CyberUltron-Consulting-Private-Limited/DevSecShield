@@ -398,6 +398,13 @@ class CertificateMaterialScanner(Scanner):
         if ref in seen:
             return
         seen.add(ref)
+        if material_kind in ("salt", "initialization-vector") and any(
+            c.bom_ref == ref or c.bom_ref.startswith(ref + "-l") for c in ctx.components
+        ):
+            # the AST scanner already inventoried this file's literal salt / IV, one row
+            # per line with its length and finding: a second, file-level row would
+            # list the same literal twice (review of #491 m6)
+            return
         props: dict[str, str] = {
             "crypto:assetType": "related-crypto-material",
             "crypto:materialKind": material_kind,

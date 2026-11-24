@@ -100,3 +100,17 @@ def test_never_returns_unknown() -> None:
         got = resolve_aibom_provider(asset)
         assert got != "unknown"
         assert got in KNOWN_PROVIDERS
+
+
+def test_alibaba_provider_row_is_not_local() -> None:
+    """Second review of #487 (n-a): Qwen's publisher node, stored ``local`` by scans
+    made before the adapter knew it, reads as ``alibaba``; a local weight file stays
+    local."""
+    assert infer_aibom_provider(name="Alibaba", kind_or_type="external_provider") == "alibaba"
+    assert resolve_aibom_provider(
+        {"source": "local", "component_name": "Alibaba", "component_type": "external_provider"}
+    ) == "alibaba"
+    assert resolve_aibom_provider(
+        {"source": "local", "component_name": "qwen2-0.5b.gguf", "component_type": "local_model_file"}
+    ) == "local"
+    assert "alibaba" in KNOWN_PROVIDERS

@@ -41,7 +41,13 @@ _SECRETY = re.compile(
     r"bearer|cipher|aes\.new|des\.new|createcipher|secretkeyspec|ivparameterspec|gcmparameterspec|\.init\(|"
     r"newcipher|getinstance)", re.I)
 # a backslash is only ever an escape pair here, so a run of backslashes has one parse (no exponential backtracking)
-_LITERAL = re.compile(r"""(?P<prefix>\b[bBrRuUfF]{0,2})(?P<q>["'`])(?P<body>(?:\\.|(?!(?P=q))[^\\]){1,4096}?)(?P=q)""")
+# The string prefix (b"", rb"", f"") needs a word boundary; an unprefixed literal
+# does not (``f("sha512", b"…")``: a required boundary made the match start at the
+# closing quote of "sha512" and leave b"…" unmasked).
+_LITERAL = re.compile(
+    r"""(?P<prefix>(?:\b[bBrRuUfF]{1,2})?)(?P<q>["'`])"""
+    r"""(?P<body>(?:\\.|(?!(?P=q))[^\\]){1,4096}?)(?P=q)"""
+)
 _TOKENS = [
     re.compile(r"\b(AKIA|ASIA|AGPA|AIDA|AROA)[0-9A-Z]{16}\b"),
     re.compile(r"\bgh[pousr]_[A-Za-z0-9]{30,}\b"),
@@ -98,7 +104,8 @@ def redact_line(line: str, strict: bool = False) -> tuple[str, int]:
         nonlocal hits
         body = m.group("body")
         limit = 4 if strict else 6
-        if len(body) < limit or (not strict and _is_algorithm_literal(body)):
+        # an algorithm name ("sha512") is never a secret
+        if len(body) < limit or _is_algorithm_literal(body):
             return m.group(0)
         hits += 1
         return f"{m.group('prefix')}{m.group('q')}{_mask(len(body))}{m.group('q')}"
@@ -207,6 +214,12 @@ def is_generated(rel: str, text: str) -> bool:
     return longest > 2000 or (len(text) > 50_000 and len(lines) < 20)
 
 
+_STRICT_CODES = frozenset({"HARDCODED_KEY", "STATIC_IV", "REUSED_NONCE", "STATIC_SALT"})
+_STRICT_KINDS = frozenset(
+    {"key", "secret-key", "iv", "initialization-vector", "nonce", "salt", "seed"}
+)
+
+
 def attach_snippets(rows: list[dict], root: Path) -> dict[str, int]:
     """Fill ``snippet`` / ``snippet_start`` on code-scan rows that know their file and line. Reads only files that
     resolve inside ``root``; never copies private-key material; stops at the per-scan budget."""
@@ -215,6 +228,15 @@ def attach_snippets(rows: list[dict], root: Path) -> dict[str, int]:
     stats = {"snippets": 0, "skipped_generated": 0, "skipped_material": 0, "skipped_budget": 0, "redactions": 0}
     cache: dict[str, str | None] = {}
     used = 0
+    # A file holding a hard-coded salt / IV / nonce / key: every code window of that
+    # file is strictly redacted, so the literal does not reappear in the window of
+    # the KDF or cipher row it feeds.
+    strict_files = {
+        re.sub(r":\d+$", "", str(row.get("location") or ""))
+        for row in rows
+        if set(row.get("finding_codes") or []) & _STRICT_CODES
+        or str(row.get("material_kind") or "").lower() in _STRICT_KINDS
+    }
     for row in rows:
         line = row.get("line")
         rel = str(row.get("location") or "")
@@ -241,8 +263,9 @@ def attach_snippets(rows: list[dict], root: Path) -> dict[str, int]:
             row["snippet_note"] = "Generated or minified file: no code window."
             stats["skipped_generated"] += 1
             continue
-        strict = bool(codes & {"HARDCODED_KEY", "STATIC_IV", "REUSED_NONCE"}) or kind in ("key", "secret-key", "iv", "nonce",
-                                                                                              "salt", "seed")
+        strict = (
+            bool(codes & _STRICT_CODES) or kind in _STRICT_KINDS or rel in strict_files
+        )
         needle = re.split(r"[\s(@-]", str(row.get("title") or ""), maxsplit=1)[0] or None
         win = code_window(text, int(line), strict=strict, needle=needle)
         if not win:
