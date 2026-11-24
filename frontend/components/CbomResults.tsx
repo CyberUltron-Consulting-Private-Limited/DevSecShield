@@ -48,7 +48,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { updateScan, toggleFindingState, createTicket, postCertInAttestation, postCertInSign, getCertInVex, getCertInEvidencePack, type CbomScanDashboardData, type CbomFinding, type CbomScanMetadata, type CbomGraph, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
+import { updateScan, toggleFindingState, createTicket, postCertInAttestation, postCertInSign, getCertInEvidencePack, type CbomScanDashboardData, type CbomFinding, type CbomScanMetadata, type CbomGraph, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
+import { downloadOutcome, downloadServedVex, type SignedDownload } from "@/utils/api/bomDownload";
 import { showErrorToast } from "@/utils/error-handler";
 import { downloadCbomScanBom, INFORMATIONAL_LABEL, type CbomCoverageReport, type CbomImportReport } from "@/utils/api/cbom_outputs";
 import { downloadOscal } from "@/utils/api/integrations";
@@ -443,9 +444,14 @@ export default function CbomResults({
 
   // The server's CycloneDX document as stored: the file bom_signature signs and the XML is written from. A copy
   // rebuilt in the browser merged crypto assets and dropped library purls, so it never verified against the signature.
+  // one message per saved file: signed, unsigned or not stated (review 6036875286 m2)
+  const sayDownloaded = (label: string, saved: SignedDownload) => {
+    const said = downloadOutcome(label, saved);
+    toast[said.level](said.text);
+  };
   const handleDownloadCBOMJson = () => {
     void downloadCbomScanBom(team_id as string, scan_id as string, "json")
-      .then(() => toast.success("CycloneDX CBOM JSON downloaded"))
+      .then((saved) => sayDownloaded("CycloneDX CBOM JSON", saved))
       .catch(() => undefined);
   };
 
@@ -463,13 +469,10 @@ export default function CbomResults({
 
   const handleDownloadVex = async () => {
     try {
-      const cached = (scanMetadata as CbomScanMetadata | null)?.vex_json;
-      const vex = cached ?? (await getCertInVex(tid, "cbom", sid));
-      saveBlob(
-        new Blob([JSON.stringify(vex, null, 2)], { type: "application/json" }),
-        `cbom-vex-${scan_id}.json`,
-      );
-      toast.success("VEX downloaded");
+      // the API's signed VEX, saved as served (the page's cached copy is the same document without its signature)
+      const saved = await downloadServedVex(tid, "cbom", sid);
+      const said = downloadOutcome("VEX", saved);
+      toast[said.level](said.text);
       queryClient.invalidateQueries({ queryKey: ["cbom-conversation-data"] });
     } catch (err) {
       showErrorToast(err, "Failed to download VEX");
@@ -768,7 +771,7 @@ export default function CbomResults({
               variant="outline"
               className="cursor-pointer"
               title="The same CycloneDX 1.6 document as XML (valid against the official schema). The BOM signature covers the JSON form."
-              onClick={() => void downloadCbomScanBom(team_id as string, scan_id as string, "xml").then(() => toast.success("CycloneDX XML downloaded")).catch(() => undefined)}
+              onClick={() => void downloadCbomScanBom(team_id as string, scan_id as string, "xml").then((saved) => sayDownloaded("CycloneDX XML", saved)).catch(() => undefined)}
               data-testid="cbom-download-xml"
             >
               <Download className="h-4 w-4 mr-2" />

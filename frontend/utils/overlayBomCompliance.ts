@@ -45,7 +45,8 @@ function asProps(raw: unknown): Prop[] {
 /**
  * dss: properties the SBOM keeps, the same list as aibom/sbom/cyclonedx_export.KEEP_DSS_PROPS and the API's
  * sbom_cyclonedx._KEEP_PROPS / _KEEP_META_PROPS (review 6028132826 B2: a version guessed from a range must say so in
- * every copy of the SBOM, this page's table and its "Download CycloneDX" file included).
+ * every copy of the SBOM, this page's table included). Downloads never use this overlay: "Download CycloneDX" saves the
+ * server's signed /bom (utils/api/bomDownload.ts).
  */
 const KEEP_DSS_PROPS = new Set([
   "dss:compliance",
