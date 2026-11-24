@@ -28,6 +28,10 @@
     },
     "properties": [
       {
+        "name": "aibom:licence_coverage",
+        "value": "5/5"
+      },
+      {
         "name": "clinical:modality",
         "value": "DX (chest radiograph)"
       },

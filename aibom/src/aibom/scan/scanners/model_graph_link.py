@@ -45,7 +45,8 @@ _VENDOR_SDK: dict[str, tuple[str, ...]] = {
     "Anthropic": ("anthropic",),
     "Google": ("google-generativeai", "google-genai", "vertexai"),
     "Cohere": ("cohere",),
-    "Mistral": ("mistralai",),
+    # open weights loaded locally (transformers / llama.cpp) are not API-served
+    "Mistral": ("mistralai", "transformers", "llama-cpp-python"),
     "Meta": ("transformers", "llama-cpp-python"),
     "sentence-transformers": ("sentence-transformers", "chromadb", "transformers"),
     "HuggingFace": ("transformers", "sentence-transformers", "huggingface-hub"),
@@ -60,6 +61,20 @@ _VENDOR_API: dict[str, str] = {
     "Cohere": "cohere",
     "Mistral": "mistral",
     "Amazon": "bedrock",  # Titan / Nova run on Amazon Bedrock only
+    "DeepSeek": "deepseek",
+}
+# Vendor -> other platforms that serve its models (beyond its own API).
+_SERVES: dict[str, tuple[str, ...]] = {
+    "OpenAI": ("azure",),
+    "Anthropic": ("bedrock", "vertex"),
+    "Google": ("vertex",),
+    "Mistral": ("bedrock", "azure", "vertex"),
+    "Meta": ("bedrock", "groq", "together", "azure", "vertex"),
+    "Cohere": ("bedrock", "azure"),
+    "AI21 Labs": ("bedrock",),
+    "DeepSeek": ("deepseek", "bedrock", "azure"),
+    "Writer": ("bedrock",),
+    "Alibaba": ("bedrock",),
 }
 _BEDROCK_REF = "cloud_service-bedrock-runtime"
 _SLUG = re.compile(r"[^a-z0-9]+")
@@ -99,12 +114,24 @@ class ModelGraphLinker(Scanner):
         }
         # provider key -> the scan's service for it (net-env: a URL the code names or
         # an SDK client it constructs). First seen wins (component order is stable).
+        # A gateway (a literal base URL on an unknown host) has the key "gateway".
         services: dict[str, str] = {}
+        # application file -> [(provider key, service ref)] of the services it calls
+        by_file: dict[str, list[tuple[str, str]]] = {}
         for comp in ctx.components:
-            if comp.kind in ("cloud_service", "endpoint"):
-                key = PROVIDER_KEY.get(comp.name)
-                if key:
-                    services.setdefault(key, comp.bom_ref)
+            if comp.kind not in ("cloud_service", "endpoint"):
+                continue
+            props = comp.properties or {}
+            key = "gateway" if props.get("service:kind") == "gateway" else (
+                PROVIDER_KEY.get(comp.name, ""))
+            if not key:
+                continue
+            services.setdefault(key, comp.bom_ref)
+            files = ctx.service_files.get(comp.bom_ref) or {
+                props.get("discovery:source", "")
+            }
+            for f in files:
+                by_file.setdefault(f, []).append((key, comp.bom_ref))
         vendor_nodes: dict[str, str] = {}  # vendor -> provider node (created on demand)
 
         for model in models:
@@ -123,10 +150,13 @@ class ModelGraphLinker(Scanner):
                 # where the data goes): record both.
                 ctx.add_edge(model.bom_ref, REL_DEPENDS_ON, sdk_ref)
 
-            key, ref = self._gateway(ctx, model, hint, vendor, services)
+            key, ref = self._gateway(ctx, model, hint, vendor, services, by_file)
             if ref is not None:
                 ctx.add_edge(model.bom_ref, REL_SERVED_BY, ref)
-                model.properties = {**props, "model:provider": key}
+                # a gateway is no ModelProvider value: the vendor's own stays
+                model.properties = (
+                    {**props, "model:provider": key} if key != "gateway" else props
+                )
                 continue
             model.properties = props
             if sdk_ref is not None:
@@ -153,8 +183,15 @@ class ModelGraphLinker(Scanner):
         hint: str | None,
         vendor: str,
         services: dict[str, str],
+        by_file: dict[str, list[tuple[str, str]]],
     ) -> tuple[str, str | None]:
-        """``(provider key, service ref)`` that serves the model, or ``("", None)``."""
+        """``(provider key, service ref)`` that serves the model, or ``("", None)``.
+
+        Strongest first: a Bedrock id; a gateway named in the reference's code block;
+        a service the model's OWN file calls that can serve the vendor's models (its
+        own API first, then e.g. Azure OpenAI for a GPT model, or a gateway); the
+        vendor's own API anywhere in the repository; else the one service in the
+        repository that can serve the vendor (review 6037909737 of #498, M2)."""
         props = model.properties or {}
         if props.get("model:provider") == "bedrock":
             if "bedrock" not in services:
@@ -176,8 +213,19 @@ class ModelGraphLinker(Scanner):
         if hint and hint in services:
             return hint, services[hint]
         own = _VENDOR_API.get(vendor)
+        able = _SERVES.get(vendor, ())
+        local = [
+            (k, r)
+            for k, r in by_file.get(props.get("discovery:source", ""), [])
+            if k == own or k in able or k == "gateway"
+        ]
+        if local:
+            return next(((k, r) for k, r in local if k == own), local[0])
         if own and own in services:
             return own, services[own]
+        others = [k for k in able if k in services]
+        if len(others) == 1:
+            return others[0], services[others[0]]
         return "", None
 
 

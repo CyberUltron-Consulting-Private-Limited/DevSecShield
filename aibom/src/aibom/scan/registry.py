@@ -30,6 +30,9 @@ class ScanContext:
         self.flags: list[Flag] = []
         self.subject: MetadataComponent | None = None
         self.properties: dict[str, str] = {}
+        # service bom_ref -> every application file that calls it (net-env). Scan
+        # bookkeeping for the model-graph linker; never emitted.
+        self.service_files: dict[str, set[str]] = {}
 
     # --- mutation helpers (the scanner-facing API) ---------------------- #
 

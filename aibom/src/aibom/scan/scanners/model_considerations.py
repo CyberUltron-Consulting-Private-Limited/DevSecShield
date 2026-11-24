@@ -13,7 +13,10 @@ what is KNOWN, never invented, and marks the block ``derived``:
   another AWS Region of that geography (AWS Bedrock user guide, "Geographic
   cross-Region inference");
 * ``out_of_scope``: uses the model's licence excludes, from the licence's published
-  terms, as the model KB records them (Codestral: Mistral AI Non-Production License).
+  terms, as the model KB records them (Codestral 22B open weights: Mistral AI
+  Non-Production License). A Mistral model served by an API is used under the
+  provider's commercial terms: its licence is ``LicenseRef-proprietary`` and no
+  open-weights exclusion applies.
 
 Ethical, fairness and environmental considerations are never derived: nothing in a
 code reference states them, so they are omitted. Only models referenced in code
@@ -31,12 +34,26 @@ from pathlib import Path
 from aibom.model.component import Considerations, ModelComponent, is_model_mention
 from aibom.model.result import REL_SERVED_BY
 from aibom.scan.parsers import model_kb
+from aibom.scan.parsers.licenses import license_choice
 from aibom.scan.registry import ScanContext, Scanner, register
 
+_PROVIDER_TERMS = "LicenseRef-proprietary"
 _HOSTED = (
     "provider-hosted: the weights, training data and evaluation results are not in "
     "this repository; the provider's model documentation states its limitations"
 )
+
+
+def _external(services: list) -> list:
+    """The serving services outside the trust boundary: not a loopback endpoint, and
+    not the linker's endpoint-less vendor node (who makes the model is no proof that
+    an API serves it)."""
+    return [
+        s
+        for s in services
+        if (s.properties or {}).get("service:trust_zone") != "local"
+        and (s.properties or {}).get("provider:kind") != "model_provider"
+    ]
 
 
 def _alias(name: str) -> str | None:
@@ -78,9 +95,22 @@ class ModelConsiderations(Scanner):
                 continue
             if not comp.bom_ref.startswith("modelref-"):
                 continue  # a carded model: its author's card says what is known
+            services = [by_ref[r] for r in served.get(comp.bom_ref, [])]
+            if comp.publisher == "Mistral" and _external(services):
+                # served by an API (Mistral, Bedrock, Azure …): used under the
+                # provider's commercial terms, not an open-weights licence (review
+                # 6037909737 of #498, M6)
+                comp.licenses = [license_choice(_PROVIDER_TERMS)]
+                ctx.flags[:] = [
+                    f
+                    for f in ctx.flags
+                    if not (
+                        f.code == "MODEL_LICENSE_UNKNOWN" and f.target == comp.bom_ref
+                    )
+                ]
             if comp.model_card.considerations is not None:
                 continue
-            cons = self._derive(comp, [by_ref[r] for r in served.get(comp.bom_ref, [])])
+            cons = self._derive(comp, services)
             if cons is not None:
                 comp.model_card.considerations = cons
 
@@ -98,10 +128,7 @@ class ModelConsiderations(Scanner):
                 if via
                 else f"{task}, called from {source}"
             )
-        external = [
-            s for s in services
-            if (s.properties or {}).get("service:trust_zone") != "local"
-        ]
+        external = _external(services)
         limitations = [
             text
             for text in (
@@ -111,7 +138,9 @@ class ModelConsiderations(Scanner):
             )
             if text
         ]
-        out_of_scope = list(kb.get("out_of_scope") or [])
+        # an open-weights licence's excluded uses do not apply to an API-served model
+        api_served = comp.publisher == "Mistral" and bool(external)
+        out_of_scope = [] if api_served else list(kb.get("out_of_scope") or [])
         if not (use_cases or limitations or out_of_scope):
             return None
         return Considerations(

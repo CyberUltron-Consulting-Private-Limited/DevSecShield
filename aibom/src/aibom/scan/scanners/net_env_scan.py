@@ -36,6 +36,7 @@ import re
 from pathlib import Path
 
 from aibom.model.component import CloudServiceComponent, EndpointComponent
+from aibom.scan.parsers.code_text import call_arguments, language_of, mask
 from aibom.scan.path_roles import is_env_file, is_example_path, is_test_path
 from aibom.scan.registry import ScanContext, Scanner, register
 from aibom.scan.safe_files import read_text, walk_files
@@ -182,12 +183,34 @@ _SDK_CLIENTS: tuple[tuple[str, str, str, str, str], ...] = (
         "Cohere API", "Cohere", "https://api.cohere.com",
     ),
 )
+# Azure OpenAI: always Azure (never the OpenAI API); the endpoint is the literal
+# ``azure_endpoint`` when there is one, else unknown, with the environment variable
+# that holds it recorded (review 6037909737 of #498, M2)
+_AZURE_IMPORT = re.compile(
+    r"""(?:^|\n)\s*(?:from\s+openai\b|import\s+openai\b)|from\s+['"]openai['"]|"""
+    r"""from\s+['"]@azure/openai['"]""",
+    re.IGNORECASE,
+)
+_AZURE_CALL = re.compile(r"(?<!\w)(?:new\s+)?(?:Async)?AzureOpenAI\s*\(")
+_AZURE_ENDPOINT = re.compile(
+    r"""\b(?:azure_endpoint|endpoint|baseURL)\s*[=:]\s*(?:['"](?P<url>https?://[^'"]+)['"]|"""
+    r"""(?:os\.environ(?:\.get)?\s*[\[(]|os\.getenv\s*\(|process\.env\.)\s*['"]?"""
+    r"""(?P<env>[A-Z][A-Z0-9_]*))"""
+)
+# An OpenAI-compatible gateway the code points a client at by a literal base URL
+# (a LiteLLM / vLLM / internal proxy): a service of its own, so the models behind it
+# read as served by that gateway, not as local (review 6037909737 of #498, m4). A
+# known vendor host is left to the host patterns above.
+_LITERAL_BASE = re.compile(
+    r"""\b(?:base_url|api_base|baseURL|openai_api_base)['"]?\s*[=:]\s*['"]"""
+    r"""(?P<url>https?://[^'"\s]+)['"]"""
+)
 _SDK_RES = [
     (re.compile(imp, re.IGNORECASE), re.compile(call), label, vendor, endpoint)
     for imp, call, label, vendor, endpoint in _SDK_CLIENTS
 ]
-# The arguments of one call, with one level of nested parentheses (os.getenv(...)).
-_CALL_ARGS = re.compile(r"\((?P<args>[^()]*(?:\([^()]*\)[^()]*)*)\)")
+# A ``**kwargs`` / ``...spread`` argument: the base URL may be in it, so it is unknown
+_SPREAD = re.compile(r"(?<![\w*])\*\*\s*\w|\.\.\.\s*\w")
 _OTHER_BASE = re.compile(
     r"\b(?:base_url|baseURL|api_base|vertexai)\s*[=:]", re.IGNORECASE
 )
@@ -201,6 +224,8 @@ _ANTHROPIC_VERTEX = re.compile(r"(?<!\w)(?:new\s+)?(?:Async)?AnthropicVertex\s*\
 # inference endpoint: recorded, at low confidence.
 _LOW_CONFIDENCE_HOSTS = frozenset({"localhost:8000"})
 
+# the vendor host patterns alone, for telling a gateway host from a vendor host
+_HOST_RES_BARE = [(re.compile(pat, re.IGNORECASE), kind) for pat, kind, *_r in _HOSTS]
 _HOST_RES = [
     (
         re.compile(rf"(?<![\w.-])(?:(?P<scheme>https?)://(?:[^\s/?#@'\"`<>]*@)?)?"
@@ -214,7 +239,11 @@ _HOST_RES = [
     for pat, kind, label, vendor, auth in _HOSTS
 ]
 
-_SUFFIXES = {".env", ".py", ".ts", ".js", ".yaml", ".yml", ".toml", ".sh", ".cfg"}
+# JS / TS route and module files too: a Next.js route calling an SDK is a .tsx / .mjs
+# file (review 6037909737 of #498, m5)
+_SUFFIXES = {".env", ".py", ".ts", ".js", ".tsx", ".jsx", ".mjs", ".cjs", ".mts",
+             ".cts",
+             ".yaml", ".yml", ".toml", ".sh", ".cfg"}
 _LOOPBACK = ("localhost", "127.0.0.1")
 # An API version path segment: v1, v2, v1beta, v1alpha2, v2preview, 2023-05-15. Only
 # the real version words may follow the number, so a key-shaped segment such as
@@ -319,6 +348,8 @@ class NetEnvScanner(Scanner):
                 source = path.name
             not_app = is_test_path(path, ctx.root) or is_example_path(path, ctx.root)
             for comp in _services_in(text, source):
+                if not not_app:
+                    ctx.service_files.setdefault(comp.bom_ref, set()).add(source)
                 if comp.bom_ref in seen or ctx.has_ref(comp.bom_ref):
                     continue
                 if not_app:
@@ -331,18 +362,85 @@ class NetEnvScanner(Scanner):
             ctx.properties["aibom:services_excluded_test_example"] = str(len(excluded))
 
 
-def _default_client_called(text: str, call: re.Pattern[str], label: str) -> bool:
-    """Whether ``text`` constructs / calls the SDK client at its default base URL."""
-    if label == "OpenAI API" and _MODULE_BASE.search(text):
+def _default_client_called(
+    code: str, bare: str, call: re.Pattern[str], label: str
+) -> bool:
+    """Whether the file constructs / calls the SDK client at its default base URL.
+
+    ``code`` / ``bare`` are the file with comments (and, in ``bare``, string
+    contents) masked (:func:`aibom.scan.parsers.code_text.mask`): a commented-out
+    ``# client = OpenAI()`` is not a call. The arguments are read to the balanced
+    closing parenthesis; arguments that cannot be read, or a ``**kwargs`` /
+    ``...spread`` argument, may carry another base URL, so they never claim the
+    vendor's default endpoint (review 6037909737 of #498, M1)."""
+    if label == "OpenAI API" and _MODULE_BASE.search(code):
         return False
-    for m in call.finditer(text):
-        head = text[text.rfind("\n", 0, m.start()) + 1 : m.start()]
+    for m in call.finditer(bare):
+        head = bare[bare.rfind("\n", 0, m.start()) + 1 : m.start()]
         if _DEFINITION.search(head):
             continue  # ``class MistralClient(BaseClient):`` defines, never calls
-        args = _CALL_ARGS.match(text, m.end() - 1)
-        if args is None or not _OTHER_BASE.search(args.group("args")):
-            return True
+        args = call_arguments(bare, m.end() - 1)
+        if args is None or _SPREAD.search(args) or _OTHER_BASE.search(args):
+            continue
+        return True
     return False
+
+
+def _azure_services(
+    code: str, bare: str, source: str
+) -> list[CloudServiceComponent | EndpointComponent]:
+    out: list[CloudServiceComponent | EndpointComponent] = []
+    if not (_AZURE_IMPORT.search(code) and _AZURE_CALL.search(bare)):
+        return out
+    for m in _AZURE_CALL.finditer(bare):
+        args_bare = call_arguments(bare, m.end() - 1)
+        if args_bare is None:
+            continue
+        args = code[m.end() : m.end() + len(args_bare)]
+        found = _AZURE_ENDPOINT.search(args)
+        if found and found.group("url"):
+            endpoint = base_url(None, *_split_url(found.group("url")))
+            comp = _component("cloud_service", "Azure OpenAI", "Microsoft", True,
+                              endpoint, source)
+        else:
+            comp = _component("cloud_service", "Azure OpenAI", "Microsoft", True, None,
+                              source, host="azure-openai")
+            if found and found.group("env"):
+                comp.properties["service:endpoint_env"] = found.group("env")
+        comp.properties["discovery:method"] = "sdk-client"
+        out.append(comp)
+    return out
+
+
+def _split_url(url: str) -> tuple[str, str | None]:
+    """``(host[:port], path)`` of an http(s) URL with user information dropped."""
+    rest = url.split("://", 1)[-1]
+    hostpart, _, path = rest.partition("/")
+    return hostpart.rsplit("@", 1)[-1], ("/" + path) if path else None
+
+
+def _gateway_services(
+    code: str, source: str, claimed_hosts: set[str]
+) -> list[CloudServiceComponent | EndpointComponent]:
+    """A literal base URL on a host no vendor pattern knows: an OpenAI-compatible
+    gateway service (endpoint = scheme, host and version segments only)."""
+    out: list[CloudServiceComponent | EndpointComponent] = []
+    for m in _LITERAL_BASE.finditer(code):
+        url = m.group("url")
+        scheme = url.split("://", 1)[0].lower()
+        host, path = _split_url(url)
+        if not host or host.lower() in claimed_hosts:
+            continue
+        if any(pat.fullmatch(host) for pat, *_r in _HOST_RES_BARE):
+            continue  # a vendor host: the host patterns name that service
+        endpoint = base_url(scheme, host, path)
+        comp = _component("cloud_service", f"AI gateway ({host.lower()})",
+                          "OpenAI-compatible gateway", None, endpoint, source)
+        comp.properties["discovery:method"] = "literal-base-url"
+        comp.properties["service:kind"] = "gateway"
+        out.append(comp)
+        claimed_hosts.add(host.lower())
+    return out
 
 
 def _services_in(
@@ -359,19 +457,25 @@ def _services_in(
                 continue
             claimed.append(span)
             out.append(_component(kind, label, vendor, auth, _endpoint(match), source))
+    code, bare = mask(text, language_of(source))
     for imp, call, label, vendor, endpoint in _SDK_RES:
-        if imp.search(text) and _default_client_called(text, call, label):
+        if imp.search(code) and _default_client_called(code, bare, call, label):
             comp = _component("cloud_service", label, vendor, True, endpoint, source)
             comp.properties["discovery:method"] = "sdk-client"
             comp.properties["service:endpoint_basis"] = "sdk-default"
             out.append(comp)
-    if _ANTHROPIC_VERTEX.search(text):
+    out.extend(_azure_services(code, bare, source))
+    claimed_hosts = {
+        (c.properties or {}).get("discovery:host", "").lower() for c in out
+    } - {""}
+    out.extend(_gateway_services(code, source, claimed_hosts))
+    if _ANTHROPIC_VERTEX.search(bare):
         comp = _component("cloud_service", "Google Vertex AI", "Google", True, None,
                           source, host="aiplatform")
         comp.properties["discovery:method"] = "sdk-client"
         out.append(comp)
-    if _BEDROCK_SDK.search(text) or _ANTHROPIC_BEDROCK.search(text):
-        region = _BEDROCK_REGION.search(text)
+    if _BEDROCK_SDK.search(code) or _ANTHROPIC_BEDROCK.search(bare):
+        region = _BEDROCK_REGION.search(code)
         if region:
             host = f"bedrock-runtime.{region.group('region').lower()}.amazonaws.com"
             out.append(_component("cloud_service", "Amazon Bedrock Runtime", "Amazon",

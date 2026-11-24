@@ -168,11 +168,10 @@ def test_scores_carry_normalized_and_band() -> None:
 def test_no_phi_scores_low_band() -> None:
     scores = scan_repo(_NO_PHI).scores
     assert scores["risk_total"] == 0.0
-    # nothing flagged: low inventory only, so the score is capped in the low band
+    # nothing flagged: low inventory only, so the score is in the low band (grade A)
     assert {k for k, n in scores["severity_counts"].items() if n} == {"low"}
-    assert scores["risk_normalized"] <= 29.0
-    assert scores["risk_band"] in ("low", "moderate")  # grade A or B, never worse
-    assert scores["risk_grade"] in ("A", "B")
+    assert scores["risk_normalized"] <= 14.0
+    assert (scores["risk_band"], scores["risk_grade"]) == ("low", "A")
 
 
 def test_normalize_score_caps_at_100() -> None:

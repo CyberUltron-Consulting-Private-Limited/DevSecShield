@@ -420,27 +420,28 @@ def test_q2_07_sdk_licences_are_apache(pkg: str) -> None:
 
 
 def test_q2_07_codestral_is_mnpl_not_apache() -> None:
-    assert lookup("codestral-latest")["license"] == (
-        "LicenseRef-Mistral-AI-Non-Production-License"
-    )
+    # Q2-07, refined by review 6037909737 of #498 (M6): MNPL / MRL are the licences
+    # of the OPEN WEIGHTS; an API name carries no weights licence (the API is used
+    # under the provider's terms, see test_q2_07_zsh_codex_codestral_licence)
     assert lookup("Codestral-22B-v0.1")["license"] == (
         "LicenseRef-Mistral-AI-Non-Production-License"
     )
-    # the other Mistral families keep their published licences
-    assert (
-        lookup("mistral-large-2407")["license"] == "LicenseRef-Mistral-Research-License"
+    assert lookup("Mistral-Large-Instruct-2407")["license"] == (
+        "LicenseRef-Mistral-Research-License"
     )
-    assert lookup("mistral-small-latest")["license"] == "Apache-2.0"
+    for api_name in ("codestral-latest", "mistral-large-2407", "mistral-small-latest"):
+        assert "license" not in lookup(api_name), api_name
     assert lookup("Mixtral-8x7B-v0.1")["license"] == "Apache-2.0"
     assert lookup("codestral-mamba-latest")["license"] == "Apache-2.0"
 
 
 def test_q2_07_zsh_codex_codestral_licence(zsh) -> None:
+    # codestral-latest through the Mistral API: provider terms, never Apache-2.0
+    # and never the open-weights Non-Production licence
     lic = _model(zsh, "codestral-latest").licenses
-    assert lic == [
-        {"license": {"name": "LicenseRef-Mistral-AI-Non-Production-License"}}
-    ] or (
-        lic == [{"license": {"id": "LicenseRef-Mistral-AI-Non-Production-License"}}]
+    assert lic in (
+        [{"license": {"name": "LicenseRef-proprietary"}}],
+        [{"license": {"id": "LicenseRef-proprietary"}}],
     ), lic
 
 
@@ -485,7 +486,7 @@ def test_g_d5_5_considerations_state_known_facts(zsh, audit) -> None:
         "codestral-latest" in t and "alias" in t
         for t in codestral.technical_limitations
     )
-    assert any("Non-Production" in t for t in codestral.out_of_scope)
+    assert not codestral.out_of_scope  # API-served: no open-weights exclusion
     prof = _model(audit, "us.anthropic.claude-3-7-sonnet-20250219-v1:0").model_card
     assert any(
         "cross-Region inference profile" in t
@@ -503,7 +504,7 @@ def test_g_d5_5_cyclonedx_carries_the_considerations(tmp_path: pathlib.Path) -> 
         "code completion and generation (fill-in-the-middle) through Mistral API, "
         "called from services/services.py"
     ]
-    assert any(t.startswith("Out of scope:") for t in cons["technicalLimitations"])
+    assert not any(t.startswith("Out of scope:") for t in cons["technicalLimitations"])
     assert "environmentalConsiderations" not in cons  # not known: omitted
 
 

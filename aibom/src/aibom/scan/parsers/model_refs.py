@@ -55,8 +55,16 @@ _BEDROCK_PROVIDERS: dict[str, tuple[str, str]] = {
     "meta": ("llama", "Meta"),
     "amazon": ("titan|nova", "Amazon"),
     "mistral": ("mistral|mixtral|pixtral|ministral|codestral", "Mistral"),
-    "cohere": ("command|embed|rerank", "Cohere"),
+    # the family word is followed by its series ("command-r", "embed-english"), so
+    # prose such as "cohere.command docs" is no model id (review 6037909737 f6)
+    "cohere": ("command-|embed-|rerank-", "Cohere"),
     "ai21": ("jamba|j2", "AI21 Labs"),
+    # newer Bedrock providers (review 6037909737 of #498, m3): deepseek.r1-v1:0,
+    # openai.gpt-oss-120b-1:0, writer.palmyra-x5-v1:0, qwen.qwen3-32b-v1:0
+    "deepseek": ("r1|v3", "DeepSeek"),
+    "openai": ("gpt-oss", "OpenAI"),
+    "writer": ("palmyra", "Writer"),
+    "qwen": ("qwen", "Alibaba"),
 }
 # Cross-Region inference profile geographies (the id's first label).
 _BEDROCK_GEOS = ("us-gov", "us", "eu", "apac", "global")
@@ -202,6 +210,12 @@ _USAGE_CONTEXT = re.compile(
     r"\bpipeline\s*\(|"  # transformers pipeline(...)
     r"EmbeddingFunction\s*\(|OllamaEmbeddingFunction\s*\(|"
     r"\.(?:chat|completions|complete|embed|generate|invoke|converse)\s*\(|"
+    # Bedrock: modelId= / ModelId: / model_arn=, invoke_model(…), the JS commands
+    # (review 6037909737 of #498, M2: modelId="eu.anthropic…" read as a catalog)
+    r"\b(?:modelId|ModelId|modelArn|model_arn)\s*[=:]\s*['\"]|"
+    r"\b(?:invoke_model|invoke_model_with_response_stream|converse_stream)\s*\(|"
+    r"\b(?:InvokeModelCommand|InvokeModelWithResponseStreamCommand|ConverseCommand|"
+    r"ConverseStreamCommand)\s*\(|"
     r"\b(?:MODEL|LLM|EMBED(?:DING)?_MODEL|GEN_MODEL|CLAUDE_MODEL)\b\s*[:=]\s*['\"]|"
     # a *_model setting / field with the model as its value or default:
     #   judge_model: str = Field(default="gpt-4o")   embedding_model = "bge-m3"

@@ -6,14 +6,22 @@ instead of keeping a copy of the table: the engine's ``risk_band`` (shown by the
 dashboard) and the PDF's grade say the same word for the same score (review of
 #487 m2).
 
-score = min(100, 4 x (10 critical + 5 high + 2 medium + 1 low)), capped by the
-worst severity present: no critical -> at most 69 (D), no critical or high -> at
-most 49 (C), low only -> at most 14 (A), nothing -> 0 (A). Without the cap 32 low
-and 10 medium inventory rows scored 100 / F "Critical risk" with zero critical or
-high findings (audit-C G-D5-4). Low only was capped at 29 (B, "Moderate risk")
-until staging QA round 2: every unflagged inventory item counts as Low, so a
-repository with no finding at all read "29 / B Moderate risk" (SmarterRouter). A
-posture whose worst severity is Low is graded Low risk (A).
+score = min(100, 4 x (10 critical + 5 high + 2 medium + 1 low)), kept inside the
+band of the worst severity present:
+
+    worst severity   score range   grades
+    critical         50 - 100      D, F
+    high             30 - 69       C, D
+    medium           15 - 49       B, C
+    low               0 - 14       A
+    nothing           0            A
+
+so grade A means exactly "the worst finding is Low" (review 6037909737 of #498, m2:
+one medium scored 8, an A). Without the caps 32 low and 10 medium inventory rows
+scored 100 / F "Critical risk" with zero critical or high findings (audit-C G-D5-4).
+Low only was capped at 29 (B, "Moderate risk") until staging QA round 2: every
+unflagged inventory item counts as Low, so a repository with no finding read
+"29 / B Moderate risk" (SmarterRouter).
 """
 
 from __future__ import annotations
@@ -21,6 +29,8 @@ from __future__ import annotations
 POSTURE_WEIGHTS = {"critical": 10, "high": 5, "medium": 2, "low": 1}
 POSTURE_MULTIPLIER = 4
 POSTURE_CAPS = (("critical", 100), ("high", 69), ("medium", 49), ("low", 14))
+# the lowest score of the worst severity present (its grade's lower bound)
+POSTURE_FLOORS = (("critical", 50), ("high", 30), ("medium", 15), ("low", 0))
 # (lowest score of the grade, grade, band word). The PDF prints "<Band> risk".
 POSTURE_GRADES = (
     (70, "F", "critical"),
@@ -32,16 +42,17 @@ POSTURE_GRADES = (
 
 
 def posture_score(critical: int, high: int, medium: int, low: int) -> int:
-    """0-100 risk score from severity counts, bounded by the worst severity."""
+    """0-100 risk score from severity counts, inside the worst severity's band."""
     counts = {"critical": critical, "high": high, "medium": medium, "low": low}
     weighted = sum(POSTURE_WEIGHTS[k] * max(0, int(n or 0)) for k, n in counts.items())
     score = min(100, weighted * POSTURE_MULTIPLIER)
     cap = next((c for sev, c in POSTURE_CAPS if int(counts[sev] or 0) > 0), 0)
-    return min(score, cap)
+    floor = next((f for sev, f in POSTURE_FLOORS if int(counts[sev] or 0) > 0), 0)
+    return max(floor, min(score, cap))
 
 
 def posture_grade(score: float) -> tuple[str, str]:
-    """``(grade, band)`` of a 0-100 score: ``("B", "moderate")`` for 29."""
+    """``(grade, band)`` of a 0-100 score: ``("B", "moderate")`` for 15 to 29."""
     return next(
         (g, band) for floor, g, band in POSTURE_GRADES if score >= floor or floor == 0
     )
@@ -55,8 +66,8 @@ def posture_label(band: str) -> str:
 def posture_risk(
     critical: int, high: int, medium: int, low: int
 ) -> tuple[int, str, str]:
-    """``(score, grade, label)`` from severity counts: ``(29, "B", "Moderate risk")``
-    for seven lows."""
+    """``(score, grade, label)`` from severity counts: ``(14, "A", "Low risk")`` for
+    seven lows, ``(15, "B", "Moderate risk")`` for one medium."""
     score = posture_score(critical, high, medium, low)
     grade, band = posture_grade(score)
     return score, grade, posture_label(band)
@@ -64,6 +75,7 @@ def posture_risk(
 
 __all__ = [
     "POSTURE_CAPS",
+    "POSTURE_FLOORS",
     "POSTURE_GRADES",
     "POSTURE_MULTIPLIER",
     "POSTURE_WEIGHTS",

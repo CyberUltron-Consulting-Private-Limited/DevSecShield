@@ -38,8 +38,8 @@ severity:
 
 # Global 0-100 score: aibom.score.scorer.posture_score over every component's
 # severity (see aibom/CLAUDE.md): min(100, 4 x (10C + 5H + 2M + 1L)), capped by
-# the worst severity present (no critical <= 69, no critical/high <= 49, low only
-# <= 14, grade A). Bands are inclusive upper bounds on that score for the OVERALL risk_band.
+# kept in the worst severity's band (critical 50-100, high 30-69, medium 15-49, low
+# 0-14: grade A = worst finding Low). Bands are inclusive upper bounds on that score.
 # (`max_raw` only scales normalize_score, the raw flag-weight helper.)
 scale:
   bands:

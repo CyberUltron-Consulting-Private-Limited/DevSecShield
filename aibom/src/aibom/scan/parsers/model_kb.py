@@ -156,34 +156,29 @@ _KB: tuple[tuple[str, dict], ...] = (
             "lineage": [],
         },
     ),
-    # ── Mistral families whose licence is not Apache-2.0 (QA round 2, Q2-07) ──
-    # Sources: Mistral's model weights page (docs.mistral.ai/getting-started/models/
-    # weights): Codestral-22B-v0.1 MNPL, Mistral-Large-Instruct-2407 / -2411 Mistral
-    # Research License, Codestral-Mamba-7B Apache 2.0; mistral.ai/news/codestral:
-    # "Codestral is a 22B open-weight model licensed under the new Mistral AI
-    # Non-Production License" (research and testing; commercial licence on request).
-    # docs.mistral.ai lists codestral-latest as the alias of codestral-2508 (code
-    # completion, fill-in-the-middle).
+    # ── Mistral (QA round 2 Q2-07; review 6037909737 of #498, M6) ──
+    # A licence is the licence of the OPEN WEIGHTS, so it is stated only for an
+    # open-weight id (a Hugging Face style id with its size / instruct tag). Sources:
+    # docs.mistral.ai/getting-started/models/weights (Codestral-22B MNPL; Mistral
+    # Large Instruct 2407 / 2411, Ministral 8B, Pixtral Large: Mistral Research
+    # License; Mistral 7B, Mixtral, Nemo, Small, Codestral Mamba, Mathstral, Pixtral
+    # 12B: Apache 2.0) and mistral.ai/news/codestral. API names (codestral-latest /
+    # -2508, mistral-large-latest, mistral-saba-latest …) are used under Mistral's
+    # commercial terms (legal.mistral.ai): they carry no weights licence here, and the
+    # model-considerations scanner records an API-served Mistral model as provider
+    # terms (LicenseRef-proprietary), with no out-of-scope use.
     (
-        "codestral-mamba",
-        {
-            "task": "code generation",
-            "model_architecture": "Codestral Mamba",
-            "license": "Apache-2.0",
-            "lineage": [],
-        },
-    ),
-    (
-        "codestral",
+        "codestral-22b",
         {
             "task": "code completion and generation (fill-in-the-middle)",
+            "architecture_family": "transformer",
             "model_architecture": "Codestral",
             "license": "LicenseRef-Mistral-AI-Non-Production-License",
             "lineage": [],
             "out_of_scope": [
-                "production / commercial use: the Mistral AI Non-Production License "
-                "permits research and testing only; production use needs a commercial "
-                "licence from Mistral AI"
+                "production / commercial use of the open weights: the Mistral AI "
+                "Non-Production License permits research and testing only; production "
+                "use needs a commercial licence from Mistral AI"
             ],
         },
     ),
@@ -191,55 +186,56 @@ _KB: tuple[tuple[str, dict], ...] = (
         (
             token,
             {
-                "task": "chat/completion",
-                "architecture_family": "transformer",
-                "model_architecture": "Mistral Large",
+                "task": task,
+                "model_architecture": arch,
                 "license": "LicenseRef-Mistral-Research-License",
                 "lineage": [],
             },
         )
-        for token in (
-            "mistral-large-2407",
-            "mistral-large-instruct-2407",
-            "mistral-large-2411",
-            "mistral-large-instruct-2411",
+        for token, task, arch in (
+            ("mistral-large-instruct-2407", "chat/completion", "Mistral Large"),
+            ("mistral-large-instruct-2411", "chat/completion", "Mistral Large"),
+            ("ministral-8b", "chat/completion", "Ministral"),
+            ("pixtral-large", "image-text-to-text", "Pixtral"),
         )
     ),
-    # other Mistral Large / Medium versions: the licence depends on the version (a
-    # hosted premier model, or an open-weight release under its own licence), so it
-    # is not stated (the scanner raises the soft MODEL_LICENSE_UNKNOWN for usage)
-    (
-        "mistral-large",
-        {"task": "chat/completion", "model_architecture": "Mistral Large",
-         "lineage": []},
+    *(
+        (
+            token,
+            {
+                "approach_type": "self-supervised",
+                "task": task,
+                "architecture_family": family,
+                "model_architecture": arch,
+                "license": "Apache-2.0",
+                "lineage": [],
+            },
+        )
+        for token, task, family, arch in (
+            ("codestral-mamba", "code generation", "state space model",
+             "Codestral Mamba"),
+            ("mathstral", "chat/completion", "transformer", "Mathstral"),
+            ("pixtral-12b", "image-text-to-text", "transformer", "Pixtral"),
+            ("mixtral-8x", "chat/completion", "transformer (sparse MoE)", "Mixtral"),
+            ("mistral-7b", "chat/completion", "transformer", "Mistral"),
+            ("mistral-nemo", "chat/completion", "transformer", "Mistral NeMo"),
+            ("mistral-small-24b", "chat/completion", "transformer", "Mistral Small"),
+            ("mistral-small-3", "chat/completion", "transformer", "Mistral Small"),
+        )
     ),
-    (
-        "mistral-medium",
-        {"task": "chat/completion", "model_architecture": "Mistral Medium",
-         "lineage": []},
-    ),
-    # ── open generative ──
-    (
-        "mixtral",
-        {
-            "approach_type": "self-supervised",
-            "task": "chat/completion",
-            "architecture_family": "transformer (sparse MoE)",
-            "model_architecture": "Mixtral",
-            "license": "Apache-2.0",
-            "lineage": ["Mistral"],
-        },
-    ),
-    (
-        "mistral",
-        {
-            "approach_type": "self-supervised",
-            "task": "chat/completion",
-            "architecture_family": "transformer",
-            "model_architecture": "Mistral",
-            "license": "Apache-2.0",
-            "lineage": [],
-        },
+    # any other Mistral id (codestral-latest, mistral-large-latest, mistral-saba …):
+    # model card fields only, no licence (API terms, or a version-dependent licence)
+    *(
+        (token, {"task": task, "model_architecture": arch, "lineage": []})
+        for token, task, arch in (
+            ("codestral", "code completion and generation (fill-in-the-middle)",
+             "Codestral"),
+            ("mixtral", "chat/completion", "Mixtral"),
+            ("mistral-large", "chat/completion", "Mistral Large"),
+            ("mistral-medium", "chat/completion", "Mistral Medium"),
+            ("mistral-small", "chat/completion", "Mistral Small"),
+            ("mistral", "chat/completion", "Mistral"),
+        )
     ),
     (
         "llama",
