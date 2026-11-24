@@ -22,7 +22,11 @@ import pytest
 
 from backend.utilities.dashboard.risk_scale import average_risk_of
 from backend.utilities.pdf.ai_bom_pdf import generate_pdf
-from backend.utilities.pdf.report_branding import compute_posture_risk_score, compute_risk_score
+from backend.utilities.pdf.report_branding import (
+    compute_posture_risk_score,
+    compute_risk_score,
+    compute_risk_score_band,
+)
 
 _AIBOM_SRC = pathlib.Path(__file__).resolve().parents[2] / "aibom" / "src"
 
@@ -54,9 +58,13 @@ def test_pdf_grade_and_engine_score_are_one_function(engine_posture_score):
         if not critical and not high:
             assert grade not in ("F", "D"), counts
         if not critical and not high and not medium:
-            assert grade in ("A", "B"), counts
+            assert grade == "A", counts  # grade A = the worst finding is Low
+        if medium and not critical and not high:
+            assert grade in ("B", "C"), counts
         if critical:  # with a critical finding nothing is capped: the shared grade stands
-            assert (score, grade, band) == compute_risk_score(*counts)
+            # inside the critical band (50-100): the shared score, lifted to 50 at least
+            raw = compute_risk_score(*counts)[0]
+            assert (score, grade, band) == compute_risk_score_band(max(50, raw))
 
 
 def _rows(medium: int, low: int) -> list[dict]:

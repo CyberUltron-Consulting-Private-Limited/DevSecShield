@@ -332,6 +332,11 @@ def _bom_scope_rows(payload: Any) -> List[tuple]:
             rows.append(("Model weight files", str(kinds.count("weights"))))
         rows.append(("AI services and endpoints", str(len(bom.get("services") or []))))
     props = _bom_props(payload)
+    coverage = props.get("aibom:licence_coverage", "")
+    if "/" in coverage:  # unknown licences stated in aggregate (review 6037909737 of #498, M7)
+        resolved, _, total = coverage.partition("/")
+        unknown = props.get("aibom:licence_unknown")
+        rows.append(("Library licences resolved", f"{resolved} of {total}" + (f", {unknown} unknown" if unknown else "")))
     for key, label in (
         ("aibom:model_mentions_catalog", "Model names only listed in catalogs (not counted)"),
         ("aibom:model_mentions_test", "Model names only in test code (not counted)"),
@@ -395,6 +400,7 @@ def append_aibom_regulatory_checks(story: List[Any], payload: Any, styles: Dict[
     if not shown:
         return False
     story.append(CondPageBreak(3.5 * inch))  # a new page unless most of one is left (never a blank page)
+    story.append(Spacer(1, 0.25 * inch))  # never flush under the counts table above (review 6037909737 nit)
     story.append(Paragraph("AI BOM regulatory checks", styles["title"]))
     story.append(Paragraph(
         "Each requirement is checked against the fields and relationships recorded in this AI BOM. Pass: the BOM "
@@ -405,6 +411,12 @@ def append_aibom_regulatory_checks(story: List[Any], payload: Any, styles: Dict[
         story.append(Paragraph(escape_html(
             f"Frameworks shown for this team's regulatory profile ({APPLICABILITY.profile_sentence(team)}). "
             f"Not applicable to it: {names}."), styles["muted"]))
+    elif team is None and isinstance(payload, dict) and APPLICABILITY.PROFILE_KEY in payload:
+        # the team declared no regulated entity: no filter, and the report says so (review 6037909737 of #498, M4)
+        story.append(Paragraph(escape_html(
+            f"Team regulatory profile: {APPLICABILITY.UNDECLARED}. Every framework this AI BOM is in the scope of is "
+            "shown; set the regulated entity in the CBOM settings to see only the frameworks that bind the team."),
+            styles["muted"]))
     summary = []
     for key, label in shown:
         fw = compliance[key]

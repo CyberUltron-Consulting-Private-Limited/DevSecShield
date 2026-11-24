@@ -11,6 +11,7 @@ from backend.utilities.dashboard.finding_metrics import get_average_resolution_t
 from backend.utilities.dashboard.garak_probes import GARAK_PROBES_DESCRIPTION
 from backend.utilities.dashboard.aibom_license import (
     is_governance_license,
+    is_unknown_license,
     is_unlicensed_library_gap,
     resolve_aibom_license,
 )
@@ -1287,6 +1288,8 @@ def generate_scan_dashboard(
             distinct_datasets: set = set()
             total_high_risk_assets = 0
             total_unlicensed_assets = 0
+            # library licences the offline manifest did not resolve: unknown / partial, not unlicensed (M7)
+            total_licence_unknown_assets = 0
             assets_with_license_and_card = 0
 
             for asset in results:
@@ -1344,6 +1347,8 @@ def generate_scan_dashboard(
                     and is_unlicensed_library_gap(license_type)
                 ):
                     total_unlicensed_assets += 1
+                if is_unknown_license(license_type):
+                    total_licence_unknown_assets += 1
 
                 # governance readiness: assets with both declared license and model card
                 has_license = is_governance_license(license_type)
@@ -1439,6 +1444,7 @@ def generate_scan_dashboard(
                     "total_external_providers": total_external_providers,
                     "total_high_risk_assets": total_high_risk_assets,
                     "total_unlicensed_assets": total_unlicensed_assets,
+                    "total_licence_unknown_assets": total_licence_unknown_assets,
                     "governance_readiness_score": governance_readiness_score,
                     "average_risk_score": round(average_risk_score * 10) / 10,
                 },

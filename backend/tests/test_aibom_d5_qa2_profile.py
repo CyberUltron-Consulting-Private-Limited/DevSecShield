@@ -181,7 +181,10 @@ def test_other_entity_keeps_in_scope_healthcare_and_drops_rbi(aibom_api, clinica
 
 
 def test_nbfc_default_profile_for_the_bank_router(aibom_api, bank_payload):
-    http, _engine, _team_id, store = aibom_api  # no settings row: the default NBFC profile
+    # a team that DECLARED NBFC (review 6037909737 of #498, M4: a team with no settings row is not filtered, see
+    # test_aibom_d5_review_6037909737.test_an_undeclared_profile_is_no_filter)
+    http, engine, team_id, store = aibom_api
+    _team(engine, team_id, "nbfc")
     doc = json.loads(_pack(http, store(bank_payload))["compliance.json"])
     assert doc["applicability"]["regulatory_profile"]["entity"] == "nbfc"
     assert "rbi_free_ai" in doc and "hipaa" not in doc

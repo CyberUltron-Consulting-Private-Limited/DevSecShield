@@ -658,7 +658,7 @@ def _build_evidence_pack(engine, team_id: int, scan_type: str, scan_id: int) -> 
 
     with Session(engine) as session:
         ctx = ReportContext(branding=load_report_branding(session, team_id))
-        team = REG_ENTITY.team_profile(session, team_id)
+        team = REG_ENTITY.declared_team_profile(session, team_id)  # None: not declared, no filter (M4)
 
     tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
     tmp_path = tmp.name

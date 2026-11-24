@@ -86,7 +86,7 @@ def _cbom_input(raw) -> dict | None:
     out["notes"] = [str(n)[:300] for n in (raw.get("notes") or []) if isinstance(n, str) and n.strip()][:20]
     return out
 
-def get_scan_metadata(scan_type: scan_types, scan: Scan):
+def get_scan_metadata(scan_type: scan_types, scan: Scan, regulatory_profile: dict | None = None):
     """
     for SAST scans : 
     - repo_url
@@ -423,8 +423,17 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
                 except Exception:
                     pass
             if "ai_bom_scores" in scan.scan_data:
-                ai_bom_scores = scan.scan_data["ai_bom_scores"]
+                # the headline from the stored severity counts through the engine's posture function, so a scan stored
+                # before a posture change reads on the page as in the PDF and the API (Rule P; review 6037909737 of
+                # #498, M5)
+                from backend.utilities.pdf.aibom_posture import current_scores
 
+                ai_bom_scores = current_scores(scan.scan_data["ai_bom_scores"])
+
+        # the frameworks that bind the team (the PDF and the evidence pack show the same; review 6037909737 of #498, M3)
+        from backend.utilities.compliance.aibom_applicability import page_view
+
+        ai_bom_applicability = page_view(ai_bom_compliance, regulatory_profile)
         rbi_csf_rollup = None
         certin_posture = None
         if ai_bom_compliance:
@@ -455,6 +464,7 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             "ai_bom_graph_compact": ai_bom_graph_compact,
             "ai_bom_graph_expanded": ai_bom_graph_expanded,
             "ai_bom_scores": ai_bom_scores,
+            "ai_bom_applicability": ai_bom_applicability,
             "ai_bom_spdx": ai_bom_spdx,
             "ai_bom_sarif": ai_bom_sarif,
             "rbi_csf_rollup": rbi_csf_rollup,

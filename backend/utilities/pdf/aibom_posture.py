@@ -13,7 +13,7 @@ import os
 import threading
 from pathlib import Path
 from types import ModuleType
-from typing import Tuple
+from typing import Any, Tuple
 
 _LOCK = threading.Lock()
 _MODULE: list[ModuleType] = []
@@ -46,9 +46,26 @@ def engine_posture() -> ModuleType:
 
 
 def posture_risk(critical: int, high: int, medium: int, low: int) -> Tuple[int, str, str]:
-    """``(score, grade, label)``, e.g. ``(29, "B", "Moderate risk")``: the engine's function."""
+    """``(score, grade, label)``, e.g. ``(14, "A", "Low risk")`` for seven lows: the engine's function."""
     score, grade, label = engine_posture().posture_risk(critical, high, medium, low)
     return int(score), str(grade), str(label)
 
 
-__all__ = ["engine_posture", "posture_risk"]
+def current_scores(scores: Any) -> Any:
+    """A stored AI BOM ``ai_bom_scores`` with its headline recomputed from its own ``severity_counts`` by the engine's
+    posture function: a scan stored before a posture change shows on the page what the PDF and the API compute now
+    (Rule P; review 6037909737 of #498, M5). Anything without four severity counts is returned unchanged."""
+    if not isinstance(scores, dict):
+        return scores
+    counts = scores.get("severity_counts")
+    keys = ("critical", "high", "medium", "low")
+    if not isinstance(counts, dict) or not all(isinstance(counts.get(k), (int, float)) for k in keys):
+        return scores
+    module = engine_posture()
+    score = module.posture_score(*(int(counts[k]) for k in keys))
+    grade, band = module.posture_grade(score)
+    return {**scores, "risk_normalized": float(score), "risk_grade": grade, "risk_band": band,
+            "risk_label": module.posture_label(band)}
+
+
+__all__ = ["current_scores", "engine_posture", "posture_risk"]
