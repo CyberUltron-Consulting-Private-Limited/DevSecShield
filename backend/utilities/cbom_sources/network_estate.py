@@ -117,8 +117,8 @@ class Grade:
 
     @property
     def text(self) -> str:
-        if self.letter == "-":
-            return "no TLS"
+        if self.letter == "-":  # no TLS at all, or too little handshake data to grade (its reason is the cap)
+            return "not graded" if self.caps else "no TLS"
         base = self.letter + ("*" if self.provisional else "")
         if self.letter == "T":
             return f"{base} (if trusted: {self.untrusted_letter})"

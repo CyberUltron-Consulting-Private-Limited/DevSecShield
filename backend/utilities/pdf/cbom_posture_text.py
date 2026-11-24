@@ -390,7 +390,7 @@ def unknown_check(reason: object) -> str:
 # kty): the API spelling stays in the Location / evidence, the register reads as words.
 PROVIDER_LABELS = {"aws": "AWS", "gcp": "Google Cloud", "azure": "Azure", "oci": "OCI", "self_hosted": "self-hosted"}
 _ENUM_WORDS = {
-    "SYMMETRIC_DEFAULT": "Symmetric (AES-256-GCM)", "ENCRYPT_DECRYPT": "encrypt / decrypt",
+    "SYMMETRIC_DEFAULT": "symmetric default", "ENCRYPT_DECRYPT": "encrypt / decrypt",
     "SIGN_VERIFY": "sign / verify", "GENERATE_VERIFY_MAC": "MAC generate / verify", "KEY_AGREEMENT": "key agreement",
     "ASYMMETRIC_SIGN": "sign (asymmetric)", "ASYMMETRIC_DECRYPT": "decrypt (asymmetric)", "MAC": "MAC",
     "RAW_ENCRYPT_DECRYPT": "raw encrypt / decrypt", "PendingImport": "pending import (no key material)",
