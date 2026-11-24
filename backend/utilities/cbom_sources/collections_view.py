@@ -112,6 +112,13 @@ class SourcesRow:
     also_seen_keys: tuple[str, ...] = field(default=(), compare=False, repr=False)  # their collection keys
 
 
+def is_deleted_source(collection: Any) -> bool:
+    """THE rule for a collection whose source was deleted (``Collection.source_kind`` is "" then): its last collection
+    is history, never current population or posture evidence. The team roll-up (D1, D12, D14, posture), the dashboard
+    and the certificate / network estates all ask this one function (staging QA2 Q1-01)."""
+    return not str(getattr(collection, "source_kind", "") or "")
+
+
 # remediation status of a Sources finding (waves) -> the dashboard's finding status buckets
 REMEDIATION_BUCKET = {"open": "not_started", "in_progress": "in_progress", "done": "fixed", "accepted_risk": "ignored"}
 
@@ -454,8 +461,8 @@ def link_resources(rows: list[SourcesRow]) -> int:
 def _rank(item: SourcesRow) -> tuple:
     """The observation kept for an identity (``resource_identity.rank``): a source that still exists before a deleted
     one, then an observation with a quantum verdict, then the newer collection, then the higher job id."""
-    return (bool(item.collection.source_kind), item.row.get("quantum_safe") is not None, item.collection.observed_at,
-            item.collection.job_id)
+    return (not is_deleted_source(item.collection), item.row.get("quantum_safe") is not None,
+            item.collection.observed_at, item.collection.job_id)
 
 
 # ----------------------------------------------------------------------------- latest observation wins
@@ -566,7 +573,8 @@ def resolve(code_observations: Iterable[tuple[int, _dt.datetime, str]], rows: It
         item = best[ident]
         if len(group) > 1:
             others = [m for m in sorted(group, key=_rank, reverse=True)
-                      if m is not item and m.collection.source_kind and m.collection.key != item.collection.key]
+                      if m is not item and not is_deleted_source(m.collection)
+                      and m.collection.key != item.collection.key]
             item.also_seen = tuple(dict.fromkeys(m.collection.label for m in others
                                                  if m.collection.label != item.collection.label))
             item.also_seen_keys = tuple(dict.fromkeys(m.collection.key for m in others))

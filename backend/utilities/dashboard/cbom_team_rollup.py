@@ -3189,7 +3189,9 @@ def _pool_sources_compliance(code_frameworks: Sequence[FrameworkPool], code_requ
     requirements and the number of collections pooled (D10's "Pooled over N sources" counts them)."""
     from backend.utilities.cbom_sources.frameworks import collection_compliance
 
-    parts: dict[str, list[Any]] = {key: [] for key, agg in aggs.items() if getattr(agg, "source_kind", "")}
+    from backend.utilities.cbom_sources.collections_view import is_deleted_source
+
+    parts: dict[str, list[Any]] = {key: [] for key, agg in aggs.items() if not is_deleted_source(agg)}
     pooled_keys: set[str] = set()
     for item in rows:
         key = item.collection.key
@@ -3339,7 +3341,7 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
     become posture facts with evidence ``probed:CBOM Sources`` (the Network TLS document lists them)."""
     import backend.utilities.cbom_sources.posture_mapper as mapper
     from backend.utilities.cbom_sources.asset_keys import code_certificate_key
-    from backend.utilities.cbom_sources.collections_view import resolve
+    from backend.utilities.cbom_sources.collections_view import is_deleted_source, resolve
 
     if not collections:
         return view
@@ -3411,7 +3413,7 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
                 scan_count=1 + sum(c.scan_count for c in earlier), scan_ids=(), latest_scan_id=None))
         # a deleted source's last collection (source_kind "") is never current posture evidence: no posture fact and
         # so no posture source row (D6 / D7 / D9 print "Left out" from ``collections`` instead)
-        posture_evidence = bool(agg.source_kind)
+        posture_evidence = not is_deleted_source(agg)
         if item.node_type == "tls_endpoint":
             if posture_evidence:
                 facts_of.setdefault(agg.key, []).append(_probed_tls_fact(item, agg, asset))
@@ -3483,7 +3485,7 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
         for items in facts_of.values():
             for fact in items:
                 for other in fact.get("also_seen_keys") or ():
-                    if other in aggs and aggs[other].source_kind:
+                    if other in aggs and not is_deleted_source(aggs[other]):
                         lanes_of.setdefault(other, set()).add(str(fact.get("lane") or "sources_network"))
         new_rows = [PostureSourceAgg(key=key, label=aggs[key].label, state="assessed", reason=None,
                                      current_scan_id=aggs[key].run_id, last_scanned=aggs[key].observed_at,
