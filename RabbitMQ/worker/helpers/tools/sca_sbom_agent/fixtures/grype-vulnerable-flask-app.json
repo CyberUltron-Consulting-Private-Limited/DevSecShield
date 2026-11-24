@@ -1,0 +1,908 @@
+{
+ "matches": [
+  {
+   "vulnerability": {
+    "id": "GHSA-xqr8-7jwr-rhp7",
+    "dataSource": "https://github.com/advisories/GHSA-xqr8-7jwr-rhp7",
+    "namespace": "github:language:python",
+    "severity": "High",
+    "urls": [
+     "https://github.com/advisories/GHSA-xqr8-7jwr-rhp7"
+    ],
+    "description": "Removal of e-Tugra root certificate",
+    "cvss": [
+     {
+      "version": "3.1",
+      "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N",
+      "metrics": {
+       "baseScore": 7.5,
+       "exploitabilityScore": 3.9,
+       "impactScore": 3.6
+      },
+      "vendorMetadata": {
+       "base_severity": "High",
+       "status": "N/A"
+      }
+     }
+    ],
+    "fix": {
+     "versions": [
+      "2023.7.22"
+     ],
+     "state": "fixed"
+    },
+    "advisories": []
+   },
+   "relatedVulnerabilities": [
+    {
+     "id": "CVE-2023-37920",
+     "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2023-37920",
+     "namespace": "nvd:cpe",
+     "severity": "Critical",
+     "urls": [
+      "https://github.com/certifi/python-certifi/commit/8fb96ed81f71e7097ed11bc4d9b19afd7ea5c909"
+     ],
+     "description": "Certifi is a curated collection of Root Certificates for validating the trustworthiness of SSL certificates while verifying the identity of TLS hosts. Certifi p",
+     "cvss": [
+      {
+       "source": "security-advisories@github.com",
+       "type": "Secondary",
+       "version": "3.1",
+       "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N",
+       "metrics": {
+        "baseScore": 7.5,
+        "exploitabilityScore": 3.9,
+        "impactScore": 3.6
+       },
+       "vendorMetadata": {}
+      },
+      {
+       "source": "nvd@nist.gov",
+       "type": "Primary",
+       "version": "3.1",
+       "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+       "metrics": {
+        "baseScore": 9.8,
+        "exploitabilityScore": 3.9,
+        "impactScore": 5.9
+       },
+       "vendorMetadata": {}
+      }
+     ]
+    }
+   ],
+   "matchDetails": [
+    {
+     "type": "exact-direct-match",
+     "matcher": "python-matcher",
+     "searchedBy": {
+      "language": "python",
+      "namespace": "github:language:python",
+      "package": {
+       "name": "certifi",
+       "version": "2017.4.17"
+      }
+     },
+     "found": {
+      "versionConstraint": ">=2015.4.28,<2023.7.22 (python)",
+      "vulnerabilityID": "GHSA-xqr8-7jwr-rhp7"
+     }
+    }
+   ],
+   "artifact": {
+    "id": "35aa67747222abde",
+    "name": "certifi",
+    "version": "2017.4.17",
+    "type": "python",
+    "locations": [
+     {
+      "path": "/app/requirements.txt"
+     }
+    ],
+    "language": "python",
+    "licenses": [],
+    "cpes": [
+     "cpe:2.3:a:kennethreitz:certifi:2017.4.17:*:*:*:*:python:*:*"
+    ],
+    "purl": "pkg:pypi/certifi@2017.4.17",
+    "upstreams": []
+   }
+  },
+  {
+   "vulnerability": {
+    "id": "GHSA-m2qf-hxjv-5gpq",
+    "dataSource": "https://github.com/advisories/GHSA-m2qf-hxjv-5gpq",
+    "namespace": "github:language:python",
+    "severity": "High",
+    "urls": [
+     "https://github.com/advisories/GHSA-m2qf-hxjv-5gpq"
+    ],
+    "description": "Flask vulnerable to possible disclosure of permanent session cookie due to missing Vary: Cookie header",
+    "cvss": [
+     {
+      "version": "3.1",
+      "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+      "metrics": {
+       "baseScore": 7.5,
+       "exploitabilityScore": 3.9,
+       "impactScore": 3.6
+      },
+      "vendorMetadata": {
+       "base_severity": "High",
+       "status": "N/A"
+      }
+     }
+    ],
+    "fix": {
+     "versions": [
+      "2.2.5"
+     ],
+     "state": "fixed"
+    },
+    "advisories": []
+   },
+   "relatedVulnerabilities": [
+    {
+     "id": "CVE-2023-30861",
+     "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2023-30861",
+     "namespace": "nvd:cpe",
+     "severity": "High",
+     "urls": [
+      "https://github.com/pallets/flask/commit/70f906c51ce49c485f1d355703e9cc3386b1cc2b"
+     ],
+     "description": "Flask is a lightweight WSGI web application framework. When all of the following conditions are met, a response containing data intended for one client may be c",
+     "cvss": [
+      {
+       "source": "security-advisories@github.com",
+       "type": "Secondary",
+       "version": "3.1",
+       "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+       "metrics": {
+        "baseScore": 7.5,
+        "exploitabilityScore": 3.9,
+        "impactScore": 3.6
+       },
+       "vendorMetadata": {}
+      },
+      {
+       "source": "nvd@nist.gov",
+       "type": "Primary",
+       "version": "3.1",
+       "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+       "metrics": {
+        "baseScore": 7.5,
+        "exploitabilityScore": 3.9,
+        "impactScore": 3.6
+       },
+       "vendorMetadata": {}
+      }
+     ]
+    }
+   ],
+   "matchDetails": [
+    {
+     "type": "exact-direct-match",
+     "matcher": "python-matcher",
+     "searchedBy": {
+      "language": "python",
+      "namespace": "github:language:python",
+      "package": {
+       "name": "flask",
+       "version": "0.12.2"
+      }
+     },
+     "found": {
+      "versionConstraint": "<2.2.5 (python)",
+      "vulnerabilityID": "GHSA-m2qf-hxjv-5gpq"
+     }
+    }
+   ],
+   "artifact": {
+    "id": "d442f8480bbc96fb",
+    "name": "flask",
+    "version": "0.12.2",
+    "type": "python",
+    "locations": [
+     {
+      "path": "/app/requirements.txt"
+     }
+    ],
+    "language": "python",
+    "licenses": [],
+    "cpes": [
+     "cpe:2.3:a:python-flask:python-flask:0.12.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python-flask:python_flask:0.12.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python_flask:python-flask:0.12.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python_flask:python_flask:0.12.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python:python-flask:0.12.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python:python_flask:0.12.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:flask:python-flask:0.12.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:flask:python_flask:0.12.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python-flask:flask:0.12.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python_flask:flask:0.12.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python:flask:0.12.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:flask:flask:0.12.2:*:*:*:*:*:*:*"
+    ],
+    "purl": "pkg:pypi/flask@0.12.2",
+    "upstreams": []
+   }
+  },
+  {
+   "vulnerability": {
+    "id": "GHSA-68rp-wp8r-4726",
+    "dataSource": "https://github.com/advisories/GHSA-68rp-wp8r-4726",
+    "namespace": "github:language:python",
+    "severity": "Low",
+    "urls": [
+     "https://github.com/advisories/GHSA-68rp-wp8r-4726"
+    ],
+    "description": "Flask session does not add `Vary: Cookie` header when accessed in some ways",
+    "cvss": [],
+    "fix": {
+     "versions": [
+      "3.1.3"
+     ],
+     "state": "fixed"
+    },
+    "advisories": []
+   },
+   "relatedVulnerabilities": [
+    {
+     "id": "CVE-2026-27205",
+     "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2026-27205",
+     "namespace": "nvd:cpe",
+     "severity": "Medium",
+     "urls": [
+      "https://github.com/pallets/flask/commit/089cb86dd22bff589a4eafb7ab8e42dc357623b4"
+     ],
+     "description": "Flask is a web server gateway interface (WSGI) web application framework. In versions 3.1.2 and below, when the session object is accessed, Flask should set the",
+     "cvss": [
+      {
+       "source": "nvd@nist.gov",
+       "type": "Primary",
+       "version": "3.1",
+       "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:N/A:N",
+       "metrics": {
+        "baseScore": 4.3,
+        "exploitabilityScore": 2.8,
+        "impactScore": 1.4
+       },
+       "vendorMetadata": {}
+      },
+      {
+       "source": "security-advisories@github.com",
+       "type": "Secondary",
+       "version": "4.0",
+       "vector": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:L/VI:N/VA:N/SC:N/SI:N/SA:N/E:X/CR:X/IR:X/AR:X/MAV:X/MAC:X/MAT:X/MPR:X/MUI:X/MVC:X/MVI:X/MVA:X/MSC:X/MSI:X/MSA:X/S:X/AU:X/R:X/V:X/RE:X/U:X",
+       "metrics": {
+        "baseScore": 2.3
+       },
+       "vendorMetadata": {}
+      }
+     ]
+    }
+   ],
+   "matchDetails": [
+    {
+     "type": "exact-direct-match",
+     "matcher": "python-matcher",
+     "searchedBy": {
+      "language": "python",
+      "namespace": "github:language:python",
+      "package": {
+       "name": "flask",
+       "version": "0.12.2"
+      }
+     },
+     "found": {
+      "versionConstraint": "<3.1.3 (python)",
+      "vulnerabilityID": "GHSA-68rp-wp8r-4726"
+     }
+    }
+   ],
+   "artifact": {
+    "id": "d442f8480bbc96fb",
+    "name": "flask",
+    "version": "0.12.2",
+    "type": "python",
+    "locations": [
+     {
+      "path": "/app/requirements.txt"
+     }
+    ],
+    "language": "python",
+    "licenses": [],
+    "cpes": [
+     "cpe:2.3:a:python-flask:python-flask:0.12.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python-flask:python_flask:0.12.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python_flask:python-flask:0.12.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python_flask:python_flask:0.12.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python:python-flask:0.12.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python:python_flask:0.12.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:flask:python-flask:0.12.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:flask:python_flask:0.12.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python-flask:flask:0.12.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python_flask:flask:0.12.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python:flask:0.12.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:flask:flask:0.12.2:*:*:*:*:*:*:*"
+    ],
+    "purl": "pkg:pypi/flask@0.12.2",
+    "upstreams": []
+   }
+  },
+  {
+   "vulnerability": {
+    "id": "GHSA-x7m3-jprg-wc5g",
+    "dataSource": "https://github.com/advisories/GHSA-x7m3-jprg-wc5g",
+    "namespace": "github:language:python",
+    "severity": "Critical",
+    "urls": [
+     "https://github.com/advisories/GHSA-x7m3-jprg-wc5g"
+    ],
+    "description": "Gevent allows remote attacker to escalate privileges",
+    "cvss": [
+     {
+      "version": "3.1",
+      "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+      "metrics": {
+       "baseScore": 9.8,
+       "exploitabilityScore": 3.9,
+       "impactScore": 5.9
+      },
+      "vendorMetadata": {
+       "base_severity": "Critical",
+       "status": "N/A"
+      }
+     }
+    ],
+    "fix": {
+     "versions": [
+      "23.9.0"
+     ],
+     "state": "fixed"
+    },
+    "advisories": []
+   },
+   "relatedVulnerabilities": [
+    {
+     "id": "CVE-2023-41419",
+     "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2023-41419",
+     "namespace": "nvd:cpe",
+     "severity": "Critical",
+     "urls": [
+      "https://github.com/gevent/gevent/commit/2f53c851eaf926767fbac62385615efd4886221c"
+     ],
+     "description": "An issue in Gevent before version 23.9.0 allows a remote attacker to escalate privileges via a crafted script to the WSGIServer component.",
+     "cvss": [
+      {
+       "source": "nvd@nist.gov",
+       "type": "Primary",
+       "version": "3.1",
+       "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+       "metrics": {
+        "baseScore": 9.8,
+        "exploitabilityScore": 3.9,
+        "impactScore": 5.9
+       },
+       "vendorMetadata": {}
+      }
+     ]
+    }
+   ],
+   "matchDetails": [
+    {
+     "type": "exact-direct-match",
+     "matcher": "python-matcher",
+     "searchedBy": {
+      "language": "python",
+      "namespace": "github:language:python",
+      "package": {
+       "name": "gevent",
+       "version": "1.2.2"
+      }
+     },
+     "found": {
+      "versionConstraint": "<23.9.0 (python)",
+      "vulnerabilityID": "GHSA-x7m3-jprg-wc5g"
+     }
+    }
+   ],
+   "artifact": {
+    "id": "71f52dae0998d86f",
+    "name": "gevent",
+    "version": "1.2.2",
+    "type": "python",
+    "locations": [
+     {
+      "path": "/app/requirements.txt"
+     }
+    ],
+    "language": "python",
+    "licenses": [],
+    "cpes": [
+     "cpe:2.3:a:python-gevent:python-gevent:1.2.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python-gevent:python_gevent:1.2.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python_gevent:python-gevent:1.2.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python_gevent:python_gevent:1.2.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:gevent:python-gevent:1.2.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:gevent:python_gevent:1.2.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python-gevent:gevent:1.2.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python:python-gevent:1.2.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python:python_gevent:1.2.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python_gevent:gevent:1.2.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:gevent:gevent:1.2.2:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python:gevent:1.2.2:*:*:*:*:*:*:*"
+    ],
+    "purl": "pkg:pypi/gevent@1.2.2",
+    "upstreams": []
+   }
+  },
+  {
+   "vulnerability": {
+    "id": "GHSA-jjg7-2v4v-x38h",
+    "dataSource": "https://github.com/advisories/GHSA-jjg7-2v4v-x38h",
+    "namespace": "github:language:python",
+    "severity": "Medium",
+    "urls": [
+     "https://github.com/advisories/GHSA-jjg7-2v4v-x38h"
+    ],
+    "description": "Internationalized Domain Names in Applications (IDNA) vulnerable to denial of service from specially crafted inputs to idna.encode",
+    "cvss": [
+     {
+      "version": "3.1",
+      "vector": "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+      "metrics": {
+       "baseScore": 6.2,
+       "exploitabilityScore": 2.5,
+       "impactScore": 3.6
+      },
+      "vendorMetadata": {
+       "base_severity": "Medium",
+       "status": "N/A"
+      }
+     }
+    ],
+    "fix": {
+     "versions": [
+      "3.7"
+     ],
+     "state": "fixed"
+    },
+    "advisories": []
+   },
+   "relatedVulnerabilities": [
+    {
+     "id": "CVE-2024-3651",
+     "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2024-3651",
+     "namespace": "nvd:cpe",
+     "severity": "High",
+     "urls": [
+      "https://github.com/kjd/idna/commit/1d365e17e10d72d0b7876316fc7b9ca0eebdd38d"
+     ],
+     "description": "A vulnerability was identified in the kjd/idna library, specifically within the `idna.encode()` function, affecting version 3.6. The issue arises from the funct",
+     "cvss": [
+      {
+       "source": "security@huntr.dev",
+       "type": "Secondary",
+       "version": "3.0",
+       "vector": "CVSS:3.0/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+       "metrics": {
+        "baseScore": 6.2,
+        "exploitabilityScore": 2.5,
+        "impactScore": 3.6
+       },
+       "vendorMetadata": {}
+      },
+      {
+       "source": "nvd@nist.gov",
+       "type": "Primary",
+       "version": "3.1",
+       "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+       "metrics": {
+        "baseScore": 7.5,
+        "exploitabilityScore": 3.9,
+        "impactScore": 3.6
+       },
+       "vendorMetadata": {}
+      }
+     ]
+    }
+   ],
+   "matchDetails": [
+    {
+     "type": "exact-direct-match",
+     "matcher": "python-matcher",
+     "searchedBy": {
+      "language": "python",
+      "namespace": "github:language:python",
+      "package": {
+       "name": "idna",
+       "version": "2.5"
+      }
+     },
+     "found": {
+      "versionConstraint": "<3.7 (python)",
+      "vulnerabilityID": "GHSA-jjg7-2v4v-x38h"
+     }
+    }
+   ],
+   "artifact": {
+    "id": "0f14173065f03c29",
+    "name": "idna",
+    "version": "2.5",
+    "type": "python",
+    "locations": [
+     {
+      "path": "/app/requirements.txt"
+     }
+    ],
+    "language": "python",
+    "licenses": [],
+    "cpes": [
+     "cpe:2.3:a:python-idna:python-idna:2.5:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python-idna:python_idna:2.5:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python_idna:python-idna:2.5:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python_idna:python_idna:2.5:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python:python-idna:2.5:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python:python_idna:2.5:*:*:*:*:*:*:*",
+     "cpe:2.3:a:idna:python-idna:2.5:*:*:*:*:*:*:*",
+     "cpe:2.3:a:idna:python_idna:2.5:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python-idna:idna:2.5:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python_idna:idna:2.5:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python:idna:2.5:*:*:*:*:*:*:*",
+     "cpe:2.3:a:idna:idna:2.5:*:*:*:*:*:*:*"
+    ],
+    "purl": "pkg:pypi/idna@2.5",
+    "upstreams": []
+   }
+  },
+  {
+   "vulnerability": {
+    "id": "GHSA-462w-v97r-4m45",
+    "dataSource": "https://github.com/advisories/GHSA-462w-v97r-4m45",
+    "namespace": "github:language:python",
+    "severity": "High",
+    "urls": [
+     "https://github.com/advisories/GHSA-462w-v97r-4m45"
+    ],
+    "description": "Jinja2 sandbox escape via string formatting",
+    "cvss": [
+     {
+      "version": "3.0",
+      "vector": "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:N/A:N",
+      "metrics": {
+       "baseScore": 8.6,
+       "exploitabilityScore": 3.9,
+       "impactScore": 4
+      },
+      "vendorMetadata": {
+       "base_severity": "High",
+       "status": "N/A"
+      }
+     }
+    ],
+    "fix": {
+     "versions": [
+      "2.10.1"
+     ],
+     "state": "fixed"
+    },
+    "advisories": []
+   },
+   "relatedVulnerabilities": [
+    {
+     "id": "CVE-2019-10906",
+     "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2019-10906",
+     "namespace": "nvd:cpe",
+     "severity": "High",
+     "urls": [
+      "http://lists.opensuse.org/opensuse-security-announce/2019-05/msg00030.html"
+     ],
+     "description": "In Pallets Jinja before 2.10.1, str.format_map allows a sandbox escape.",
+     "cvss": [
+      {
+       "source": "nvd@nist.gov",
+       "type": "Primary",
+       "version": "2.0",
+       "vector": "AV:N/AC:L/Au:N/C:P/I:N/A:N",
+       "metrics": {
+        "baseScore": 5,
+        "exploitabilityScore": 10,
+        "impactScore": 2.9
+       },
+       "vendorMetadata": {}
+      },
+      {
+       "source": "nvd@nist.gov",
+       "type": "Primary",
+       "version": "3.1",
+       "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:N/A:N",
+       "metrics": {
+        "baseScore": 8.6,
+        "exploitabilityScore": 3.9,
+        "impactScore": 4
+       },
+       "vendorMetadata": {}
+      }
+     ]
+    }
+   ],
+   "matchDetails": [
+    {
+     "type": "exact-direct-match",
+     "matcher": "python-matcher",
+     "searchedBy": {
+      "language": "python",
+      "namespace": "github:language:python",
+      "package": {
+       "name": "jinja2",
+       "version": "2.9.6"
+      }
+     },
+     "found": {
+      "versionConstraint": "<2.10.1 (python)",
+      "vulnerabilityID": "GHSA-462w-v97r-4m45"
+     }
+    }
+   ],
+   "artifact": {
+    "id": "502b7610ba943e46",
+    "name": "jinja2",
+    "version": "2.9.6",
+    "type": "python",
+    "locations": [
+     {
+      "path": "/app/requirements.txt"
+     }
+    ],
+    "language": "python",
+    "licenses": [],
+    "cpes": [
+     "cpe:2.3:a:python-jinja2:python-jinja2:2.9.6:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python-jinja2:python_jinja2:2.9.6:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python_jinja2:python-jinja2:2.9.6:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python_jinja2:python_jinja2:2.9.6:*:*:*:*:*:*:*",
+     "cpe:2.3:a:jinja2:python-jinja2:2.9.6:*:*:*:*:*:*:*",
+     "cpe:2.3:a:jinja2:python_jinja2:2.9.6:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python-jinja2:jinja2:2.9.6:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python:python-jinja2:2.9.6:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python:python_jinja2:2.9.6:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python_jinja2:jinja2:2.9.6:*:*:*:*:*:*:*",
+     "cpe:2.3:a:jinja2:jinja2:2.9.6:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python:jinja2:2.9.6:*:*:*:*:*:*:*"
+    ],
+    "purl": "pkg:pypi/jinja2@2.9.6",
+    "upstreams": []
+   }
+  },
+  {
+   "vulnerability": {
+    "id": "GHSA-q2x7-8rv6-6q7h",
+    "dataSource": "https://github.com/advisories/GHSA-q2x7-8rv6-6q7h",
+    "namespace": "github:language:python",
+    "severity": "Medium",
+    "urls": [
+     "https://github.com/advisories/GHSA-q2x7-8rv6-6q7h"
+    ],
+    "description": "Jinja has a sandbox breakout through indirect reference to format method",
+    "cvss": [
+     {
+      "version": "3.1",
+      "vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H",
+      "metrics": {
+       "baseScore": 7.8,
+       "exploitabilityScore": 1.8,
+       "impactScore": 5.9
+      },
+      "vendorMetadata": {
+       "base_severity": "High",
+       "status": "N/A"
+      }
+     }
+    ],
+    "fix": {
+     "versions": [
+      "3.1.5"
+     ],
+     "state": "fixed"
+    },
+    "advisories": []
+   },
+   "relatedVulnerabilities": [
+    {
+     "id": "CVE-2024-56326",
+     "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2024-56326",
+     "namespace": "nvd:cpe",
+     "severity": "High",
+     "urls": [
+      "https://github.com/pallets/jinja/commit/48b0687e05a5466a91cd5812d604fa37ad0943b4"
+     ],
+     "description": "Jinja is an extensible templating engine. Prior to 3.1.5, An oversight in how the Jinja sandboxed environment detects calls to str.format allows an attacker tha",
+     "cvss": [
+      {
+       "source": "134c704f-9b21-4f2e-91b3-4a467353bcc0",
+       "type": "Secondary",
+       "version": "3.1",
+       "vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H",
+       "metrics": {
+        "baseScore": 7.8,
+        "exploitabilityScore": 1.8,
+        "impactScore": 5.9
+       },
+       "vendorMetadata": {}
+      },
+      {
+       "source": "security-advisories@github.com",
+       "type": "Secondary",
+       "version": "4.0",
+       "vector": "CVSS:4.0/AV:L/AC:L/AT:P/PR:L/UI:P/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N/E:X/CR:X/IR:X/AR:X/MAV:X/MAC:X/MAT:X/MPR:X/MUI:X/MVC:X/MVI:X/MVA:X/MSC:X/MSI:X/MSA:X/S:X/AU:X/R:X/V:X/RE:X/U:X",
+       "metrics": {
+        "baseScore": 5.4
+       },
+       "vendorMetadata": {}
+      }
+     ]
+    }
+   ],
+   "matchDetails": [
+    {
+     "type": "exact-direct-match",
+     "matcher": "python-matcher",
+     "searchedBy": {
+      "language": "python",
+      "namespace": "github:language:python",
+      "package": {
+       "name": "jinja2",
+       "version": "2.9.6"
+      }
+     },
+     "found": {
+      "versionConstraint": "<=3.1.4 (python)",
+      "vulnerabilityID": "GHSA-q2x7-8rv6-6q7h"
+     }
+    }
+   ],
+   "artifact": {
+    "id": "502b7610ba943e46",
+    "name": "jinja2",
+    "version": "2.9.6",
+    "type": "python",
+    "locations": [
+     {
+      "path": "/app/requirements.txt"
+     }
+    ],
+    "language": "python",
+    "licenses": [],
+    "cpes": [
+     "cpe:2.3:a:python-jinja2:python-jinja2:2.9.6:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python-jinja2:python_jinja2:2.9.6:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python_jinja2:python-jinja2:2.9.6:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python_jinja2:python_jinja2:2.9.6:*:*:*:*:*:*:*",
+     "cpe:2.3:a:jinja2:python-jinja2:2.9.6:*:*:*:*:*:*:*",
+     "cpe:2.3:a:jinja2:python_jinja2:2.9.6:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python-jinja2:jinja2:2.9.6:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python:python-jinja2:2.9.6:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python:python_jinja2:2.9.6:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python_jinja2:jinja2:2.9.6:*:*:*:*:*:*:*",
+     "cpe:2.3:a:jinja2:jinja2:2.9.6:*:*:*:*:*:*:*",
+     "cpe:2.3:a:python:jinja2:2.9.6:*:*:*:*:*:*:*"
+    ],
+    "purl": "pkg:pypi/jinja2@2.9.6",
+    "upstreams": []
+   }
+  },
+  {
+   "vulnerability": {
+    "id": "GHSA-xqr8-7jwr-rhp7",
+    "dataSource": "https://github.com/advisories/GHSA-xqr8-7jwr-rhp7",
+    "namespace": "github:language:python",
+    "severity": "High",
+    "urls": [
+     "https://github.com/advisories/GHSA-xqr8-7jwr-rhp7"
+    ],
+    "description": "Removal of e-Tugra root certificate",
+    "cvss": [
+     {
+      "version": "3.1",
+      "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N",
+      "metrics": {
+       "baseScore": 7.5,
+       "exploitabilityScore": 3.9,
+       "impactScore": 3.6
+      },
+      "vendorMetadata": {
+       "base_severity": "High",
+       "status": "N/A"
+      }
+     }
+    ],
+    "fix": {
+     "versions": [
+      "2023.7.22"
+     ],
+     "state": "fixed"
+    },
+    "advisories": []
+   },
+   "relatedVulnerabilities": [
+    {
+     "id": "CVE-2023-37920",
+     "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2023-37920",
+     "namespace": "nvd:cpe",
+     "severity": "Critical",
+     "urls": [
+      "https://github.com/certifi/python-certifi/commit/8fb96ed81f71e7097ed11bc4d9b19afd7ea5c909"
+     ],
+     "description": "Certifi is a curated collection of Root Certificates for validating the trustworthiness of SSL certificates while verifying the identity of TLS hosts. Certifi p",
+     "cvss": [
+      {
+       "source": "security-advisories@github.com",
+       "type": "Secondary",
+       "version": "3.1",
+       "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N",
+       "metrics": {
+        "baseScore": 7.5,
+        "exploitabilityScore": 3.9,
+        "impactScore": 3.6
+       },
+       "vendorMetadata": {}
+      },
+      {
+       "source": "nvd@nist.gov",
+       "type": "Primary",
+       "version": "3.1",
+       "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+       "metrics": {
+        "baseScore": 9.8,
+        "exploitabilityScore": 3.9,
+        "impactScore": 5.9
+       },
+       "vendorMetadata": {}
+      }
+     ]
+    }
+   ],
+   "matchDetails": [
+    {
+     "type": "exact-direct-match",
+     "matcher": "python-matcher",
+     "searchedBy": {
+      "language": "python",
+      "namespace": "github:language:python",
+      "package": {
+       "name": "certifi",
+       "version": "2017.4.17"
+      }
+     },
+     "found": {
+      "versionConstraint": ">=2015.4.28,<2023.7.22 (python)",
+      "vulnerabilityID": "GHSA-xqr8-7jwr-rhp7"
+     }
+    }
+   ],
+   "artifact": {
+    "id": "35aa67747222abde",
+    "name": "certifi",
+    "version": "2017.4.17",
+    "type": "python",
+    "locations": [
+     {
+      "path": "/app/requirements.txt"
+     }
+    ],
+    "language": "python",
+    "licenses": [],
+    "cpes": [
+     "cpe:2.3:a:kennethreitz:certifi:2017.4.17:*:*:*:*:python:*:*"
+    ],
+    "purl": "pkg:pypi/certifi@2017.4.17",
+    "upstreams": []
+   }
+  }
+ ],
+ "descriptor": {
+  "name": "grype",
+  "version": "0.87.0"
+ }
+}

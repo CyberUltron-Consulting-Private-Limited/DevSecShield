@@ -3,13 +3,18 @@
 # BuildKit reads "<Dockerfile>.dockerignore" next to the Dockerfile in preference to a .dockerignore at the context
 # root, so these patterns are relative to the repository root (RabbitMQ/worker/.dockerignore does not apply here).
 #
-# Allowlist: the image needs the engine (aibom/), the worker (RabbitMQ/worker/) and one backend file, the CBOM SSRF
-# guard's address rule (standard library only, #53). Everything else in the repository (the root SSH key, other
-# services' .env files, the rest of backend/, frontend/, e2e/ ...) stays out of the build context.
+# Allowlist: the image needs the engine (aibom/), the worker (RabbitMQ/worker/) and four backend files, all standard
+# library only: the CBOM SSRF guard's address rule (#53), and the SBOM scan's package-registry lookup, SPDX licence-id
+# rules and licence risk categories (sca_sbom_agent/registry_enrich.py loads them by path). Everything else in the
+# repository (the root SSH key, other services' .env files, the rest of backend/, frontend/, e2e/ ...) stays out of
+# the build context.
 *
 !aibom
 !RabbitMQ/worker
 !backend/utilities/cbom_sources/address_rule.py
+!backend/utilities/compliance/sbom_registry.py
+!backend/utilities/compliance/spdx_license.py
+!backend/utilities/dashboard/sbom_license.py
 
 # Secrets never enter the image (they are passed at run time).
 **/.env

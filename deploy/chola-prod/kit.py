@@ -364,7 +364,10 @@ def render_env(app, app_user, collector, cfg, tag, principal=None):
                         + (", ".join(sorted(collector)) or "none") + "): CBOM AWS sources are unavailable")
     # Scan / CI-CD workers: queue, results store, S3 download + Bedrock, the vector store, the model.
     scan = docker + rabbit + mongo + aws + [("QDRANT_HOST", "qdrant"), ("QDRANT_PORT", "6333"),
-                                           ("QDRANT_API_KEY", app["QDRANT_API_KEY"]), ("LLM_MODEL", cfg["llm_model"])]
+                                           ("QDRANT_API_KEY", app["QDRANT_API_KEY"]), ("LLM_MODEL", cfg["llm_model"]),
+                                           # SBOM scans resolve licences in the worker (registry_enrich.py): no
+                                           # public-registry lookups here either (opt-in only, never set to 1)
+                                           ("DSS_SBOM_REGISTRY", "0")]
     # DAST worker: queue, results store, Bedrock (its agent's model id is fixed in the code).
     dast = docker + rabbit + mongo + aws
 

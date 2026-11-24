@@ -230,25 +230,13 @@ try:
             # STEP [ 3 ] : =========== Initialize the agent , and run the agent ======================
             def _finalize_sbom(agent: SCASBOMAgent, result):
                 from aibom.integrations.sbom_devsecshield import enrich_sbom_scan
+                from helpers.tools.sca_sbom_agent.main import combine_rows
 
-                vuln_rows = agent.to_dict_list(result) if result else []
-                inventory = list(getattr(agent, "inventory_rows", None) or [])
-                # Vuln-shaped rows win on dependency key; inventory fills gaps.
-                by_dep: dict = {}
-                for row in inventory:
-                    dep = str((row or {}).get("dependency") or "").strip()
-                    if dep:
-                        by_dep[dep] = row
-                for row in vuln_rows:
-                    dep = str((row or {}).get("dependency") or "").strip()
-                    if dep:
-                        by_dep[dep] = row
-                    else:
-                        by_dep[f"__vuln_{len(by_dep)}"] = row
-                parsed_output = list(by_dep.values())
-                from helpers.tools.sca_sbom_agent.parser import apply_grype_cves
-
-                apply_grype_cves(parsed_output, getattr(agent, "grype_document", None))
+                # one row per Grype advisory (deterministic), then the packages with no known vulnerability
+                parsed_output = combine_rows(
+                    list(getattr(agent, "inventory_rows", None) or []),
+                    list(result or []),
+                )
                 end_time = time.time()
                 duration_of_scan = end_time - start_time
                 return enrich_sbom_scan(

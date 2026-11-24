@@ -1,7 +1,7 @@
 """SBOM / AI BOM VEX lists real vulnerability statements only, and a stored VEX written by the old rules is rebuilt.
 
 Staging (audit-C G-D4-3): AI BOM #9's VEX had 103 entries ``not-affected:<component>`` (state not_affected, no
-vulnerability id, no justification), SBOM #8's 7. The rules are now ``certin-3`` (utilities/compliance/cert_in/vex.py);
+vulnerability id, no justification), SBOM #8's 7. The rules are now ``certin-4`` (certin-3 plus the SBOM BOM-Links of #489) (utilities/compliance/cert_in/vex.py);
 the scan page and the evidence pack serve a stored VEX only when it was written by them, so old scans get the honest
 document on their next download.
 

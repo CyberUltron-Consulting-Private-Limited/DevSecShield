@@ -207,7 +207,8 @@ def test_industry_sbom_strips_syft_and_per_framework_noise() -> None:
     assert comp_props == {"dss:compliance"}
     assert not any(n.startswith("syft:") for n in comp_props)
     meta_names = _prop_names(bom)
-    assert meta_names == {"dss:compliance"}
+    # one verdict, no per-framework dumps; dss:dependency_graph says whether the graph is complete (review M1)
+    assert meta_names == {"dss:compliance", "dss:dependency_graph"}
     meta_comp = (bom.get("metadata") or {}).get("component") or {}
     assert "/tmp/" not in str(meta_comp.get("name") or "")
     assert meta_comp.get("name") == "juice-shop"

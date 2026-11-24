@@ -1937,7 +1937,10 @@ def append_executive_summary(
     scan_time_hint: str = "Completed successfully",
     ctx: Any = None,
     risk_score_fn: Optional[Callable[[int, int, int, int], Tuple[int, str, str]]] = None,
+    unverified: int = 0,
 ) -> None:
+    """``unverified``: findings listed in the catalogue but left out of the counts and the grade (an SBOM match on
+    a version read from a manifest range); the headline says how many, so it agrees with the catalogue."""
     styles = styles or get_report_styles()
     meta = REPORT_META.get(report_key, REPORT_META["sast"])
     shaped = ctx is not None and ctx.options.shapes_content
@@ -2004,7 +2007,7 @@ def append_executive_summary(
                 f"{critical} C · {high} H · {medium} M · {low} L · {unknown} U"
                 if unknown
                 else f"{critical} C · {high} H · {medium} M · {low} L"
-            ),
+            ) + (f" · {unverified} unverified (not counted)" if unverified else ""),
             risk_score=risk_score,
             risk_grade=risk_grade,
             risk_band=risk_band,
@@ -2111,7 +2114,9 @@ def append_findings_catalog(
     chunk_size: int = 18,
     ctx: Any = None,
     empty_text: str = "No security findings were identified in this scan.",
+    unverified: int = 0,
 ) -> None:
+    """``unverified``: how many of ``catalog_rows`` are listed but not counted (see append_executive_summary)."""
     styles = styles or get_report_styles()
     filtered = ctx is not None and ctx.filtered and ctx.total
     if not catalog_rows:
@@ -2144,6 +2149,8 @@ def append_findings_catalog(
         if offset == 0:
             title = panel_title
             meta = f"{len(normalized)} of {ctx.total} issues (filtered)" if filtered else f"{len(normalized)} issues"
+            if unverified:
+                meta += f" · {unverified} unverified version, not counted"
         else:
             title = f"{panel_title} (cont.)"
             meta = f"{offset + 1}–{end} of {len(normalized)}"

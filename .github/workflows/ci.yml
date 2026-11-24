@@ -146,6 +146,11 @@ jobs:
               - 'RabbitMQ/worker/**'
               - 'aibom/src/**'         # the sca_sbom_agent tests import aibom from source
               - 'backend/utilities/cbom_sources/address_rule.py'  # MCP/LLM egress runs this file (helpers/net/guard.py)
+              - '.github/ci/install-sbom-tools.sh'
+              # the SBOM scan loads these API files by path (sca_sbom_agent/registry_enrich.py)
+              - 'backend/utilities/compliance/sbom_registry.py'
+              - 'backend/utilities/compliance/spdx_license.py'
+              - 'backend/utilities/dashboard/sbom_license.py'
             dast-worker:
               - *pipeline
               - '.github/ci/pytest-deselect-dast-worker.txt'
@@ -327,10 +332,13 @@ jobs:
       # until #392 untracked it, which turned test_cbom_api_keys and test_cbom_fleet_scaffold red.
       # pypdf and pypdfium2 (PDFium, Chrome's PDF engine; wheels for amd64 and arm64) are test-only: test_report_fonts
       # checks that non-Latin report text copies exactly in them, besides pdftotext (poppler-utils, installed above).
+      # cyclonedx-python-lib is test-only too: test_sbom_d4_review_fixes validates /bom as strict CycloneDX 1.6 JSON and
+      # XSD (review 6028132826 B1).
       test-command: >-
         CANCEL_RACE_PG_URL="$PG_URL_C1" AUTH_TEST_PG_URL="$PG_URL_AUTH" CBOM_TEST_PG_URL="$PG_URL_CBOM"
         P1_PG_URL="$PG_URL_P1"
         uv run --frozen --with pytest==9.2.0 --with moto==5.2.5 --with pypdf==7.1.1 --with pypdfium2==5.15.2
+        --with "cyclonedx-python-lib[json-validation,xml-validation]==11.12.0"
         python -m pytest tests -q -p no:cacheprovider
         -o addopts="" --durations=15 --junitxml="$GITHUB_WORKSPACE/test-reports/backend-junit.xml"
       artifact-paths: test-reports/
@@ -455,6 +463,9 @@ jobs:
       # garak pulls torch with the CUDA wheels (several GB): make room, and do not push them into the 10 GB Actions cache.
       free-disk-space: true
       uv-cache: false
+      # the image's Syft and Grype (versions and SHA-256 read from RabbitMQ/worker/Dockerfile), so the real-Syft SBOM
+      # tests run here with the tools the image ships (review 6028132826 M3)
+      setup-command: bash "$GITHUB_WORKSPACE/.github/ci/install-sbom-tools.sh"
       install-command: uv sync --frozen
       # Every pytest-style test file: tests/, helpers/tests/test_*.py, helpers/tools/sca_sbom_agent/test_*.py. The
       # older helpers/tests/*_test.py scripts call live LLMs and services and are not part of the suite. pytest is

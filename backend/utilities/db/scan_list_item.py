@@ -156,7 +156,8 @@ def return_sbom_sca_list_item(scan : Scan) -> dict:
     total_critical , total_high , total_medium , total_low  = 0,0,0,0
     if scan.scan_data and scan.scan_data != {} and "results" in scan.scan_data and scan.scan_status == "success":
         # the known vulnerabilities only: the inventoried packages are the SBOM, not Low vulnerabilities (#46)
-        for vulnerability in sbom_rows.vulnerability_rows(scan.scan_data["results"]):
+        # a match on a version guessed from a range is not counted (review 6028132826 M2)
+        for vulnerability in sbom_rows.severity_rows(scan.scan_data["results"]):
             if vulnerability["impact"].lower() == "critical":
                 total_critical += 1
             elif vulnerability["impact"].lower() == "high":

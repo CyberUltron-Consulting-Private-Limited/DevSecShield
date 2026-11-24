@@ -937,6 +937,16 @@ def _build_scan_report(engine, team_id: int, type: str, scan_id: int, options) -
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan data not found for specified team and scan id")
         raw = scan.scan_data
         scan_data = prepare_pdf_export_payload(type, raw)
+        if type == "sbom_sca" and isinstance(scan_data, dict):
+            # the PDF's SBOM pages read the document /bom serves: same builder, same subject (review 6028132826 m1)
+            # and the routes' own builder (served_bom, review 6032108510 M-3): the SHA-256 printed is /bom's
+            from backend.utilities.compliance import served_bom
+            from backend.utilities.compliance.certin_attest import subject_name_for
+            from backend.utilities.pdf.sbom_sca_pdf import SUBJECT_NAME_KEY
+
+            subject = subject_name_for(scan.scan_metadata)
+            scan_data = {**scan_data, SUBJECT_NAME_KEY: subject,
+                         served_bom.SCAN_IDENTITY_KEY: served_bom.pdf_identity(type, scan_id, team_id, subject)}
         started_at, completed_at = scan.created_at, scan.last_updated
 
     if type not in TYPE_SECTIONS:  # leakage, agent discovery...: "not supported" (400) before any status read

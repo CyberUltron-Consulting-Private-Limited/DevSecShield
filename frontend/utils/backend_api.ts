@@ -323,6 +323,8 @@ export interface SbomFinding {
   reachability?: string | null
   dependency_type?: string | null
   license_type?: string | null
+  /** the manifest range a guessed version came from: the match is unverified and not counted (review 6032108510 m2) */
+  version_guessed_from?: string | null
   remediation?: RemediationData | null
 }
 
@@ -352,6 +354,8 @@ export interface SbomScanDashboardData {
     total_high_risk_licenses: number
     average_risk_score: number | null
     total_reachable_issues: number
+    /** matches on a version guessed from a manifest range: listed, not counted (review 6028132826 M2) */
+    total_unverified_version_findings?: number
   }
   remediation_actions_required: {
     total_findings: number
@@ -1785,6 +1789,7 @@ export interface SBOMSCADashboardData {
         total_high_risk_licenses: number
         average_risk_score: number | null
         total_reachable_issues: number
+        total_unverified_version_findings?: number
     }
     average_risk_score_per_reachability_level: Record<string, number>
     policy_compliance_data: Record<string, number>

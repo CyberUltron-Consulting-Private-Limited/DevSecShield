@@ -10,7 +10,6 @@ import os
 import sys
 import tempfile
 import time
-import uuid
 import zipfile
 from pathlib import Path
 from typing import Annotated, Any
@@ -38,14 +37,13 @@ from backend.get_db import get_db
 from backend.new_models import Scan, scan_types
 from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
 from backend.utilities.cbom_sources import bom_signing as SIGN
+from backend.utilities.compliance import served_bom as SERVED
 from backend.utilities.compliance.certin_attest import (
-    _BOM_JSON_KEY,
-    _stub_sbom_from_findings,
-    bom_dict_from_scan_data,
     compliance_key_for,
     delete_attestation,
     recompute_compliance_for_scan,
     requirement_ids_in_compliance,
+    subject_name_for,
     upsert_attestation,
 )
 from backend.utilities.pdf import generate_pdf_for_type
@@ -102,7 +100,10 @@ def _certin_module_candidates(name: str) -> list[Path]:
 
 
 def _vex_is_current(scan_type: str, vex: dict) -> bool:
-    """A CBOM VEX stored by older rules (rules 2: everything in triage; before: everything not affected) is rebuilt."""
+    """A VEX stored by older rules is rebuilt: CBOM (rules 2: everything in triage; before: everything not
+    affected), SBOM and AI BOM (before FIX-C1: a blanket not_affected per component, cert_in/vex.py)."""
+    if scan_type != "cbom":
+        return bool(_load_certin_module("vex").is_current(vex))
     from backend.utilities.cbom_sources.vex_semantics import is_current
 
     return is_current(scan_type, vex)
@@ -346,7 +347,8 @@ async def sign_scan_bom(
     check_if_user_is_in_team(user.id, team_id, engine)
     scan = _load_success_scan(engine, team_id, type, scan_id)
     data = scan.scan_data if isinstance(scan.scan_data, dict) else {}
-    bom = _scan_bom(type, scan_id, data, team_id)  # the document the downloads serve, so the HMAC covers it
+    # the document the downloads serve, so the HMAC covers it
+    bom = _scan_bom(type, scan_id, data, team_id, subject_name=subject_name_for(scan.scan_metadata))
     if not bom:
         raise HTTPException(status_code=409, detail="No BOM JSON available to sign")
     secret = _hmac_secret()
@@ -361,44 +363,10 @@ async def sign_scan_bom(
     return {"bom_signature": signature}
 
 
-_SCAN_SERIAL_NS = uuid.uuid5(uuid.NAMESPACE_URL, "https://zeroshield.ai/code-scan/bom")
-
-
-def _scan_serial(scan_type: str, scan_id: int) -> str:
-    """The scan's stable serial when its stored BOM has none: uuid5 of the scan type and id, the same on every
-    request (review 6029745818 N2)."""
-    return f"urn:uuid:{uuid.uuid5(_SCAN_SERIAL_NS, f'{scan_type}:{scan_id}')}"
-
-
-def _scan_bom(scan_type: str, scan_id: int, data: dict, team_id: int, *,
-              subject_name: str | None = None) -> dict | None:
-    """The scan's CycloneDX document exactly as every route serves, packs, signs and verifies it.
-
-    * Serial (N2): a stored BOM without a ``serialNumber``, and the stub an SBOM scan without a stored BOM gets from its
-      findings, are given the scan's stable serial (``_scan_serial``) in a copy of ``data`` BEFORE
-      ``bom_dict_from_scan_data`` runs, so the SBOM path (``sanitize_industry_sbom``, which writes a fresh uuid4 when
-      there is none) keeps it: every download, pack, VEX and verify of the scan computes the same serial. A stored
-      serial is kept as it is (drift and VEX BOM-Links name it). ``data`` is never changed.
-    * Binding (N1): every ``zs:`` metadata property of the stored document is dropped (an SBOM or CBOM scan can store a
-      user's uploaded file as it was uploaded) and the server stamps ``zs:scan_id``, ``zs:scan_type`` and
-      ``zs:team_id`` (``bom_signing.stamp_subject``); ``/signature/verify`` binds a signed file to a scan by those
-      three, never by its serial.
-    * ``subject_name`` is passed to ``bom_dict_from_scan_data`` as given (PR #489 names the SBOM subject there)."""
-    key = _BOM_JSON_KEY.get(scan_type)
-    stored = data.get(key) if key else None
-    src = data
-    if isinstance(stored, dict):
-        if not (isinstance(stored.get("serialNumber"), str) and stored["serialNumber"]):
-            src = {**data, key: {**stored, "serialNumber": _scan_serial(scan_type, scan_id)}}
-    elif scan_type == "sbom_sca" and key:
-        findings = data.get("results") if isinstance(data.get("results"), list) else None
-        src = {**data, key: {**_stub_sbom_from_findings(findings), "serialNumber": _scan_serial(scan_type, scan_id)}}
-    bom = bom_dict_from_scan_data(scan_type, src, subject_name=subject_name)
-    if not isinstance(bom, dict):
-        return None
-    if not (isinstance(bom.get("serialNumber"), str) and bom["serialNumber"]):
-        bom = {**bom, "serialNumber": _scan_serial(scan_type, scan_id)}
-    return SIGN.stamp_subject(bom, SIGN.scan_facts(scan_type, scan_id, team_id), drop_all_zs=True)
+# the one builder of the served document (review 6032108510 M-3): /bom, /vex, /sign, the pack, and the SBOM PDF's
+# minimum-elements page (pdf/sbom_sca_pdf.py, from /export and the pack) all call it
+_scan_serial = SERVED.scan_serial
+_scan_bom = SERVED.served_bom
 
 
 def _served_vex(scan_type: str, scan_id: int, team_id: int, vex: dict, bom: dict | None) -> dict:
@@ -434,7 +402,7 @@ async def get_scan_vex(
     check_if_user_is_in_team(user.id, team_id, engine)
     scan = _load_success_scan(engine, team_id, type, scan_id)
     data = scan.scan_data if isinstance(scan.scan_data, dict) else {}
-    bom = _scan_bom(type, scan_id, data, team_id)
+    bom = _scan_bom(type, scan_id, data, team_id, subject_name=subject_name_for(scan.scan_metadata))
     if not refresh and isinstance(data.get("vex_json"), dict) and _vex_is_current(type, data["vex_json"]):
         return await run_in_threadpool(_signed_vex_response, type, scan_id, team_id, data["vex_json"], bom)
     findings = data.get("results") if type in ("sbom_sca", "cbom") else None
@@ -467,7 +435,8 @@ async def download_scan_bom(
     user = await get_user_from_header_or_raise_exception(engine, Authorization)
     check_if_user_is_in_team(user.id, team_id, engine)
     scan = _load_success_scan(engine, team_id, type, scan_id)
-    bom = _scan_bom(type, scan_id, scan.scan_data if isinstance(scan.scan_data, dict) else {}, team_id)
+    bom = _scan_bom(type, scan_id, scan.scan_data if isinstance(scan.scan_data, dict) else {}, team_id,
+                    subject_name=subject_name_for(scan.scan_metadata))
     if not bom:
         raise HTTPException(status_code=409, detail="No CycloneDX document is stored for this scan")
     if format == "json":
@@ -650,13 +619,23 @@ def _pack_pdf(scan_type: str, data: dict, ctx: ReportContext) -> bytes | None:
             pass
 
 
+def _signature_matches(bom: dict | None, signature: dict) -> bool:
+    """A stored signature ships only when its digest is the SHA-256 of the canonical ``bom.cdx.json`` packed next to
+    it (review 6028132826 M6): a scan signed before its SBOM was re-emitted (CycloneDX 1.7 -> 1.6) would otherwise ship
+    a ``bom_signature.json`` that does not match. Signing itself is PR #484's; this only leaves a stale one out."""
+    if not isinstance(bom, dict) or not isinstance(signature, dict):
+        return False
+    return str(signature.get("digest") or "") == SERVED.bom_sha256(bom)
+
+
 def _build_evidence_pack(engine, team_id: int, scan_type: str, scan_id: int) -> tuple[str, ReportContext]:
     """Write the pack to a temp zip (removed here on any failure; the caller schedules its removal after sending)."""
     scan = _load_success_scan(engine, team_id, scan_type, scan_id)
     data = scan.scan_data if isinstance(scan.scan_data, dict) else {}
 
     # Ensure vex + signature exist when possible
-    bom = _scan_bom(scan_type, scan_id, data, team_id)
+    subject = subject_name_for(scan.scan_metadata)
+    bom = _scan_bom(scan_type, scan_id, data, team_id, subject_name=subject)
     try:
         vex_mod = _load_certin_module("vex")
         sign_mod = _load_certin_module("sign")
@@ -682,7 +661,7 @@ def _build_evidence_pack(engine, team_id: int, scan_type: str, scan_id: int) -> 
     tmp_path = tmp.name
     tmp.close()
     try:
-        files = _pack_members(scan_type, scan_id, team_id, data, bom, ctx)
+        files = _pack_members(scan_type, scan_id, team_id, data, bom, ctx, subject_name=subject)
         with zipfile.ZipFile(tmp_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             for name, body in files:
                 zf.writestr(name, body)
@@ -696,7 +675,7 @@ def _build_evidence_pack(engine, team_id: int, scan_type: str, scan_id: int) -> 
 
 
 def _pack_members(scan_type: str, scan_id: int, team_id: int, data: dict, bom: dict | None,
-                  ctx: ReportContext) -> list[tuple[str, bytes]]:
+                  ctx: ReportContext, *, subject_name: str | None = None) -> list[tuple[str, bytes]]:
     """The pack's files in zip order. D11 / C G-X-3: the JSON BOM carries its embedded JSF signature; with a signing
     key the pack also holds the public key, the offline verifier, the detached signature of each BOM file and a
     signed ``manifest.json`` (SHA-256 and size of every file) and ``SHA256SUMS`` (``bom_signing.pack_files``)."""
@@ -713,14 +692,21 @@ def _pack_members(scan_type: str, scan_id: int, team_id: int, data: dict, bom: d
     if isinstance(data.get("vex_json"), dict):  # D7: signed inside (JSF) and detached, like the BOM
         files.append(("vex.json", _signed_bom_bytes(_served_vex(scan_type, scan_id, team_id, data["vex_json"], bom),
                                                      indent=2)))
-    if isinstance(data.get("bom_signature"), dict):
+    # a stored HMAC ships only when it signs the bom.cdx.json packed next to it (review 6028132826 M6)
+    if isinstance(data.get("bom_signature"), dict) and _signature_matches(bom, data["bom_signature"]):
         files.append(("bom_signature.json", json.dumps(data["bom_signature"], indent=2).encode("utf-8")))
     ckey = compliance_key_for(scan_type)
     if isinstance(data.get(ckey), dict):
         files.append(("compliance.json", json.dumps(data[ckey], indent=2).encode("utf-8")))
     if isinstance(data.get("attestations"), dict):
         files.append(("attestations.json", json.dumps(data["attestations"], indent=2).encode("utf-8")))
-    pdf = _pack_pdf(scan_type, data, ctx)
+    pdf_data = data
+    if scan_type == "sbom_sca":  # the report's SBOM pages read this pack's bom.cdx.json: the same builder and subject
+        from backend.utilities.pdf.sbom_sca_pdf import SUBJECT_NAME_KEY
+
+        pdf_data = {**data, SUBJECT_NAME_KEY: subject_name,
+                    SERVED.SCAN_IDENTITY_KEY: SERVED.pdf_identity(scan_type, scan_id, team_id, subject_name)}
+    pdf = _pack_pdf(scan_type, pdf_data, ctx)
     if pdf is not None:
         files.append(("report.pdf", pdf))
     try:

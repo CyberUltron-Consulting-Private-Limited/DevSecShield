@@ -122,16 +122,18 @@ def test_list_dashboard_counts_vulnerabilities_not_inventory(stored):
     assert card["total_critical_vulnerabilities"] == 0
     assert card["total_reachable_issues"] == 1
     assert card["total_policy_violations"] == 1
-    # license risks only from the vulnerable package (LGPL-like weak copyleft), not the clean GPL / AGPL packages
-    assert card["total_license_risks"] == 1
-    assert card["total_high_risk_licenses"] == 0
+    # review 6028132826 M4: license risk is counted over the SBOM's packages (the weak-copyleft vulnerable one and
+    # the clean GPL / AGPL ones), not over the vulnerability rows
+    assert card["total_license_risks"] == 3
+    assert card["total_high_risk_licenses"] == 2
     assert card["average_risk_score"] == 7.5
     assert dash["severity_distribution"] == {"critical": 0, "high": 1, "medium": 0, "low": 0}
     assert dash["reachability_distribution"] == {"not_reachable": 0, "potentially_reachable": 0, "reachable": 1,
                                                  "not_assessed": 0}
     assert dash["vulnerability_trends_over_time"] == {"2026-11-16": {"critical": 0, "high": 1, "medium": 0, "low": 0}}
-    assert sum(dash["licenses_distribution"].values()) == 1
+    assert sum(dash["licenses_distribution"].values()) == 4  # one per package (M4)
     assert dash["licenses_distribution"]["weak_copyleft"] == 1
+    assert dash["licenses_distribution"]["strong_copyleft"] == 1
     assert [t["dependency"] for t in dash["top_vulnerabilities_by_risk_score"]] == ["acme-parser@2.1.0"]
     assert dash["average_risk_score_per_reachability_level"] == {"reachable": 7.5, "potentially_reachable": 0.0,
                                                                  "not_reachable": 0.0, "not_assessed": 0.0}
@@ -145,7 +147,7 @@ def test_list_dashboard_with_inventory_only_scan_is_empty(monkeypatch: pytest.Mo
     monkeypatch.setattr(scan_list_mod, "get_findings_for_scan_id", lambda *a, **k: list(docs))
     dash = generate_sbom_sca_dashboard_data([_scan(list(CLEAN))])
     assert dash["card_data"]["total_vulnerabilities"] == 0
-    assert dash["card_data"]["total_license_risks"] == 0
+    assert dash["card_data"]["total_license_risks"] == 2  # the GPL and AGPL packages (M4: over the packages)
     assert dash["card_data"]["average_risk_score"] is None  # the average of no vulnerability: the card shows "—"
     assert dash["severity_distribution"] == {"critical": 0, "high": 0, "medium": 0, "low": 0}
     assert sum(dash["reachability_distribution"].values()) == 0
@@ -160,14 +162,14 @@ def test_results_dashboard_counts_vulnerabilities_not_inventory(stored):
     card = dash["card_data"]
     assert card["total_vulnerabilities"] == 1
     assert card["total_reachable_issues"] == 1
-    assert card["total_license_risks"] == 1
-    assert card["total_high_risk_licenses"] == 0
+    assert card["total_license_risks"] == 3  # over the SBOM's packages (review 6028132826 M4)
+    assert card["total_high_risk_licenses"] == 2
     assert card["average_risk_score"] == 7.5
     assert dash["severity_distribution"] == {"critical": 0, "high": 1, "medium": 0, "low": 0}
     assert dash["reachability_distribution"] == {"not_reachable": 0, "potentially_reachable": 0, "reachable": 1,
                                                  "not_assessed": 0}
     assert dash["vulnerability_trends_over_time"] == {"2026-11-16": {"critical": 0, "high": 1, "medium": 0, "low": 0}}
-    assert sum(dash["licenses_distribution"].values()) == 1
+    assert sum(dash["licenses_distribution"].values()) == 4
     assert [t["dependency"] for t in dash["top_vulnerabilities_by_risk_score"]] == ["acme-parser@2.1.0"]
     assert dash["remediation_actions_required"]["total_findings"] == 1
 

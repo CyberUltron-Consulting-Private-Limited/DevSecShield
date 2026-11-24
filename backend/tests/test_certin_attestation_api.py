@@ -143,8 +143,10 @@ def test_scan_metadata_surfaces_phase4_keys_cbom() -> None:
     assert get_scan_metadata("cbom", scan)["vex_json"] is None
 
 
-# a VEX written by the current cert_in/vex.py rules (certin-3)
-_CURRENT_VEX_RULES = {"metadata": {"properties": [{"name": "zs:vex_rules", "value": "certin-3"}]}}
+# a VEX written by the current cert_in/vex.py rules (the one value vex_semantics pins)
+from backend.utilities.cbom_sources.vex_semantics import CERTIN_VEX_RULES as _CERTIN_VEX_RULES  # noqa: E402
+
+_CURRENT_VEX_RULES = {"metadata": {"properties": [{"name": "zs:vex_rules", "value": _CERTIN_VEX_RULES}]}}
 
 
 def test_scan_metadata_surfaces_phase4_keys_ai_bom_and_sbom() -> None:

@@ -538,9 +538,9 @@ def code_scan_vex(findings: list[Any], *, scan_id: int | None = None, now: _dt.d
     }
 
 
-# The rules of utilities/compliance/cert_in/vex.py (SBOM / AI BOM VEX): "certin-3" lists real vulnerability ids only
+# The rules of utilities/compliance/cert_in/vex.py (SBOM / AI BOM VEX): "certin-4" lists real vulnerability ids only
 # (no per-component not_affected stubs). Pinned to that module by backend/tests/test_vex_real_statements.py.
-CERTIN_VEX_RULES = "certin-3"
+CERTIN_VEX_RULES = "certin-4"
 
 
 def is_current(scan_type: str, vex: Any) -> bool:

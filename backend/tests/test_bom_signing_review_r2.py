@@ -317,15 +317,16 @@ def test_n2_scan_bom_passes_subject_name_through(monkeypatch):
     """#489 adds ``subject_name`` to ``bom_dict_from_scan_data``: ``_scan_bom`` passes it as given, so the merge is
     mechanical and the download and verify paths compute the same document."""
     from backend.routers import certin
+    from backend.utilities.compliance import served_bom  # the shared builder (#489 review 6032108510 M-3)
 
     seen = []
-    real = certin.bom_dict_from_scan_data
+    real = served_bom.bom_dict_from_scan_data
 
     def spy(scan_type, data, **kwargs):
         seen.append(kwargs)
         return real(scan_type, data, **kwargs)
 
-    monkeypatch.setattr(certin, "bom_dict_from_scan_data", spy)
+    monkeypatch.setattr(served_bom, "bom_dict_from_scan_data", spy)
     data = {"results": [], "sbom_json": {"bomFormat": "CycloneDX", "specVersion": "1.6"}}
     bom = certin._scan_bom("sbom_sca", 3, data, 1, subject_name="acme/app")
     assert seen[-1].get("subject_name") == "acme/app" and bom["serialNumber"].startswith("urn:uuid:")

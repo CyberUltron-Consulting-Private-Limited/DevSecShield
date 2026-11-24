@@ -1,0 +1,4532 @@
+{
+"results": [
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2023-50447"
+],
+"cves": {
+"CVE-2023-50447": "Arbitrary Code Execution in Pillow",
+"GHSA-3f63-hfp8-52jq": "Arbitrary Code Execution in Pillow"
+},
+"cvss_score": 8.1,
+"cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H",
+"cvss_version": "3.1",
+"dependency": "pillow==10.0",
+"dependency_type": "direct",
+"description": "Arbitrary Code Execution in Pillow",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"10.2.0"
+],
+"grype_severity": "Critical",
+"impact": "Critical",
+"inventory_only": false,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"location": "/requirements-docs.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/pillow@10.0",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade pillow from 10.0 to 10.2.0 or later. The version was read from a version range in the manifest (its lower bound); confirm the version you install, pin it, and rescan.",
+"title": "GHSA-3f63-hfp8-52jq in pillow 10.0",
+"version_guessed_from": ">=10.0,<13.0",
+"vuln_aliases": [
+"CVE-2023-50447"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-3f63-hfp8-52jq",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-3f63-hfp8-52jq"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2024-28219"
+],
+"cves": {
+"CVE-2024-28219": "Pillow buffer overflow vulnerability",
+"GHSA-44wm-f244-xhp3": "Pillow buffer overflow vulnerability"
+},
+"cvss_score": 6.7,
+"cvss_vector": "CVSS:3.1/AV:L/AC:H/PR:L/UI:R/S:U/C:H/I:H/A:H",
+"cvss_version": "3.1",
+"dependency": "pillow==10.0",
+"dependency_type": "direct",
+"description": "Pillow buffer overflow vulnerability",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"10.3.0"
+],
+"grype_severity": "High",
+"impact": "High",
+"inventory_only": false,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"location": "/requirements-docs.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/pillow@10.0",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade pillow from 10.0 to 10.3.0 or later. The version was read from a version range in the manifest (its lower bound); confirm the version you install, pin it, and rescan.",
+"title": "GHSA-44wm-f244-xhp3 in pillow 10.0",
+"version_guessed_from": ">=10.0,<13.0",
+"vuln_aliases": [
+"CVE-2024-28219"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-44wm-f244-xhp3",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-44wm-f244-xhp3"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2023-4863"
+],
+"cves": {
+"CVE-2023-4863": "libwebp: OOB write in BuildHuffmanTable",
+"GHSA-j7hp-h8jx-5ppr": "libwebp: OOB write in BuildHuffmanTable"
+},
+"cvss_score": 8.8,
+"cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:H",
+"cvss_version": "3.1",
+"dependency": "pillow==10.0",
+"dependency_type": "direct",
+"description": "libwebp: OOB write in BuildHuffmanTable",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"10.0.1"
+],
+"grype_severity": "High",
+"impact": "High",
+"inventory_only": false,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"location": "/requirements-docs.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/pillow@10.0",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade pillow from 10.0 to 10.0.1 or later. The version was read from a version range in the manifest (its lower bound); confirm the version you install, pin it, and rescan.",
+"title": "GHSA-j7hp-h8jx-5ppr in pillow 10.0",
+"version_guessed_from": ">=10.0,<13.0",
+"vuln_aliases": [
+"CVE-2023-4863"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-j7hp-h8jx-5ppr",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-j7hp-h8jx-5ppr"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2026-24049"
+],
+"cves": {
+"CVE-2026-24049": "Wheel Affected by Arbitrary File Permission Modification via Path Traversal in wheel unpack",
+"GHSA-8rrh-rw8j-w5fx": "Wheel Affected by Arbitrary File Permission Modification via Path Traversal in wheel unpack"
+},
+"cvss_score": 7.1,
+"cvss_vector": "CVSS:3.1/AV:L/AC:L/PR:N/UI:R/S:U/C:N/I:H/A:H",
+"cvss_version": "3.1",
+"dependency": "wheel==0.45",
+"dependency_type": "direct",
+"description": "Wheel Affected by Arbitrary File Permission Modification via Path Traversal in wheel unpack",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"0.46.2"
+],
+"grype_severity": "High",
+"impact": "High",
+"inventory_only": false,
+"license": "MIT",
+"license_type": "permissive",
+"location": "/requirements-build.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/wheel@0.45",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade wheel from 0.45 to 0.46.2 or later. The version was read from a version range in the manifest (its lower bound); confirm the version you install, pin it, and rescan.",
+"title": "GHSA-8rrh-rw8j-w5fx in wheel 0.45",
+"version_guessed_from": ">=0.45,<1",
+"vuln_aliases": [
+"CVE-2026-24049"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-8rrh-rw8j-w5fx",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-8rrh-rw8j-w5fx"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2025-69534"
+],
+"cves": {
+"CVE-2025-69534": "Python-Markdown has an Uncaught Exception",
+"GHSA-5wmx-573v-2qwq": "Python-Markdown has an Uncaught Exception"
+},
+"dependency": "markdown==3.5",
+"dependency_type": "direct",
+"description": "Python-Markdown has an Uncaught Exception",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"3.8.1"
+],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"location": "/requirements-runtime.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/markdown@3.5",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade markdown from 3.5 to 3.8.1 or later. The version was read from a version range in the manifest (its lower bound); confirm the version you install, pin it, and rescan.",
+"title": "GHSA-5wmx-573v-2qwq in markdown 3.5",
+"version_guessed_from": ">=3.5,<4",
+"vuln_aliases": [
+"CVE-2025-69534"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-5wmx-573v-2qwq",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-5wmx-573v-2qwq"
+},
+{
+"compliance_controls": {},
+"cve_ids": [],
+"cves": {
+"GHSA-cq46-m9x9-j8w2": "Scapy Session Loading Vulnerable to Arbitrary Code Execution via Untrusted Pickle Deserialization"
+},
+"dependency": "scapy==2.6",
+"dependency_type": "direct",
+"description": "Scapy Session Loading Vulnerable to Arbitrary Code Execution via Untrusted Pickle Deserialization",
+"detected_by": "grype",
+"fix_state": "not-fixed",
+"fix_versions": [],
+"grype_severity": "Medium",
+"impact": "Medium",
+"inventory_only": false,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"location": "/requirements-runtime.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/scapy@2.6",
+"reachability": "not_assessed",
+"suggested_fix": "No fixed release of scapy is published yet; track the advisory, apply the vendor workaround if any, or record the exception. The version was read from a version range in the manifest (its lower bound); confirm the version you install, pin it, and rescan.",
+"title": "GHSA-cq46-m9x9-j8w2 in scapy 2.6",
+"version_guessed_from": ">=2.6,<3",
+"vuln_aliases": [],
+"vuln_assessed": true,
+"vuln_id": "GHSA-cq46-m9x9-j8w2",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-cq46-m9x9-j8w2"
+},
+{
+"compliance_controls": {},
+"cve_ids": [
+"CVE-2024-34062"
+],
+"cves": {
+"CVE-2024-34062": "tqdm CLI arguments injection attack",
+"GHSA-g7vv-2v7x-gj9p": "tqdm CLI arguments injection attack"
+},
+"cvss_score": 3.9,
+"cvss_vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:R/S:U/C:L/I:L/A:N",
+"cvss_version": "3.1",
+"dependency": "tqdm==4.66",
+"dependency_type": "direct",
+"description": "tqdm CLI arguments injection attack",
+"detected_by": "grype",
+"fix_state": "fixed",
+"fix_versions": [
+"4.66.3"
+],
+"grype_severity": "Low",
+"impact": "Low",
+"inventory_only": false,
+"license": "MPL-2.0",
+"license_type": "weak_copyleft",
+"location": "/requirements-runtime.txt",
+"owasp_top_10": {
+"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+},
+"purl": "pkg:pypi/tqdm@4.66",
+"reachability": "not_assessed",
+"suggested_fix": "Upgrade tqdm from 4.66 to 4.66.3 or later. The version was read from a version range in the manifest (its lower bound); confirm the version you install, pin it, and rescan.",
+"title": "GHSA-g7vv-2v7x-gj9p in tqdm 4.66",
+"version_guessed_from": ">=4.66,<5",
+"vuln_aliases": [
+"CVE-2024-34062"
+],
+"vuln_assessed": true,
+"vuln_id": "GHSA-g7vv-2v7x-gj9p",
+"vuln_source": "github:language:python",
+"vuln_url": "https://github.com/advisories/GHSA-g7vv-2v7x-gj9p"
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "actions/checkout==fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+"dependency_type": "direct",
+"description": "Inventoried component actions/checkout==fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:github/actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: actions/checkout",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "actions/upload-artifact==ea165f8d65b6e75b540449e92b4886f43607fa02",
+"dependency_type": "direct",
+"description": "Inventoried component actions/upload-artifact==ea165f8d65b6e75b540449e92b4886f43607fa02",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:github/actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: actions/upload-artifact",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "anthropic==0.49",
+"dependency_type": "direct",
+"description": "Inventoried component anthropic==0.49",
+"impact": "Low",
+"inventory_only": true,
+"license": "MIT",
+"license_type": "permissive",
+"owasp_top_10": {},
+"purl": "pkg:pypi/anthropic@0.49",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: anthropic",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "brotli==1.2.1",
+"dependency_type": "direct",
+"description": "Inventoried component brotli==1.2.1",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/brotli@1.2.1",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: brotli",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "certifi==2026.10.23",
+"dependency_type": "direct",
+"description": "Inventoried component certifi==2026.10.23",
+"impact": "Low",
+"inventory_only": true,
+"license": "MPL-2.0",
+"license_type": "weak_copyleft",
+"owasp_top_10": {},
+"purl": "pkg:pypi/certifi@2026.10.23",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: certifi",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "cryptography==50.0.2",
+"dependency_type": "direct",
+"description": "Inventoried component cryptography==50.0.2",
+"impact": "Low",
+"inventory_only": true,
+"license": "Apache-2.0",
+"license_type": "permissive",
+"owasp_top_10": {},
+"purl": "pkg:pypi/cryptography@50.0.2",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: cryptography",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "docker/build-push-action==c3c9e263c25d99ce0380d002d59b67737d91b0dc",
+"dependency_type": "direct",
+"description": "Inventoried component docker/build-push-action==c3c9e263c25d99ce0380d002d59b67737d91b0dc",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:github/docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: docker/build-push-action",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "docker/setup-buildx-action==f87e5991a6d7451dcb8d9637bfbc97413f497069",
+"dependency_type": "direct",
+"description": "Inventoried component docker/setup-buildx-action==f87e5991a6d7451dcb8d9637bfbc97413f497069",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:github/docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: docker/setup-buildx-action",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "fastapi==0.135",
+"dependency_type": "direct",
+"description": "Inventoried component fastapi==0.135",
+"impact": "Low",
+"inventory_only": true,
+"license": "MIT",
+"license_type": "permissive",
+"owasp_top_10": {},
+"purl": "pkg:pypi/fastapi@0.135",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: fastapi",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "filelock==4.2.1",
+"dependency_type": "direct",
+"description": "Inventoried component filelock==4.2.1",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/filelock@4.2.1",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: filelock",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "httpx==0.28",
+"dependency_type": "direct",
+"description": "Inventoried component httpx==0.28",
+"impact": "Low",
+"inventory_only": true,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"owasp_top_10": {},
+"purl": "pkg:pypi/httpx@0.28",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: httpx",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "jinja2==3.1.6",
+"dependency_type": "direct",
+"description": "Inventoried component jinja2==3.1.6",
+"impact": "Low",
+"inventory_only": true,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"owasp_top_10": {},
+"purl": "pkg:pypi/jinja2@3.1.6",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: jinja2",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "kaleido==1.5",
+"dependency_type": "direct",
+"description": "Inventoried component kaleido==1.5",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/kaleido@1.5",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: kaleido",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "matplotlib==3.10",
+"dependency_type": "direct",
+"description": "Inventoried component matplotlib==3.10",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/matplotlib@3.10",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: matplotlib",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "maxminddb-geolite2==2018.703",
+"dependency_type": "direct",
+"description": "Inventoried component maxminddb-geolite2==2018.703",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/maxminddb-geolite2@2018.703",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: maxminddb-geolite2",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "mcp==2.3.0",
+"dependency_type": "direct",
+"description": "Inventoried component mcp==2.3.0",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/mcp@2.3.0",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: mcp",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "numpy==1.26",
+"dependency_type": "direct",
+"description": "Inventoried component numpy==1.26",
+"impact": "Low",
+"inventory_only": true,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"owasp_top_10": {},
+"purl": "pkg:pypi/numpy@1.26",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: numpy",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "openai==2.0",
+"dependency_type": "direct",
+"description": "Inventoried component openai==2.0",
+"impact": "Low",
+"inventory_only": true,
+"license": "Apache-2.0",
+"license_type": "permissive",
+"owasp_top_10": {},
+"purl": "pkg:pypi/openai@2.0",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: openai",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "pandas==2.3",
+"dependency_type": "direct",
+"description": "Inventoried component pandas==2.3",
+"impact": "Low",
+"inventory_only": true,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"owasp_top_10": {},
+"purl": "pkg:pypi/pandas@2.3",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: pandas",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "pillow==13",
+"dependency_type": "direct",
+"description": "Inventoried component pillow==13",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/pillow@13",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: pillow",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "playwright==1.50",
+"dependency_type": "direct",
+"description": "Inventoried component playwright==1.50",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/playwright@1.50",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: playwright",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "plotly==6.8",
+"dependency_type": "direct",
+"description": "Inventoried component plotly==6.8",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/plotly@6.8",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: plotly",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "pydyf==0.12",
+"dependency_type": "direct",
+"description": "Inventoried component pydyf==0.12",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/pydyf@0.12",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: pydyf",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "pyshark==0.6",
+"dependency_type": "direct",
+"description": "Inventoried component pyshark==0.6",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/pyshark@0.6",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: pyshark",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "pytesseract==0.3.13",
+"dependency_type": "direct",
+"description": "Inventoried component pytesseract==0.3.13",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/pytesseract@0.3.13",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: pytesseract",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "pytest==9.0.3",
+"dependency_type": "direct",
+"description": "Inventoried component pytest==9.0.3",
+"impact": "Low",
+"inventory_only": true,
+"license": "MIT",
+"license_type": "permissive",
+"owasp_top_10": {},
+"purl": "pkg:pypi/pytest@9.0.3",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: pytest",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "pytest-cov==7",
+"dependency_type": "direct",
+"description": "Inventoried component pytest-cov==7",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/pytest-cov@7",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: pytest-cov",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "python-dateutil==2.9",
+"dependency_type": "direct",
+"description": "Inventoried component python-dateutil==2.9",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/python-dateutil@2.9",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: python-dateutil",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "python-multipart==0.0.22",
+"dependency_type": "direct",
+"description": "Inventoried component python-multipart==0.0.22",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/python-multipart@0.0.22",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: python-multipart",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "python-whois==0.9",
+"dependency_type": "direct",
+"description": "Inventoried component python-whois==0.9",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/python-whois@0.9",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: python-whois",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "pyyaml==6",
+"dependency_type": "direct",
+"description": "Inventoried component pyyaml==6",
+"impact": "Low",
+"inventory_only": true,
+"license": "MIT",
+"license_type": "permissive",
+"owasp_top_10": {},
+"purl": "pkg:pypi/pyyaml@6",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: pyyaml",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "requests==2.32.5",
+"dependency_type": "direct",
+"description": "Inventoried component requests==2.32.5",
+"impact": "Low",
+"inventory_only": true,
+"license": "Apache-2.0",
+"license_type": "permissive",
+"owasp_top_10": {},
+"purl": "pkg:pypi/requests@2.32.5",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: requests",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "ruff==0.15",
+"dependency_type": "direct",
+"description": "Inventoried component ruff==0.15",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/ruff@0.15",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: ruff",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "setuptools==80.9",
+"dependency_type": "direct",
+"description": "Inventoried component setuptools==80.9",
+"impact": "Low",
+"inventory_only": true,
+"license": "MIT",
+"license_type": "permissive",
+"owasp_top_10": {},
+"purl": "pkg:pypi/setuptools@80.9",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: setuptools",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "streamlit==1.66.1",
+"dependency_type": "direct",
+"description": "Inventoried component streamlit==1.66.1",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/streamlit@1.66.1",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: streamlit",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "ujson==5.9",
+"dependency_type": "direct",
+"description": "Inventoried component ujson==5.9",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/ujson@5.9",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: ujson",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "urllib3==2.8",
+"dependency_type": "direct",
+"description": "Inventoried component urllib3==2.8",
+"impact": "Low",
+"inventory_only": true,
+"license": "MIT",
+"license_type": "permissive",
+"owasp_top_10": {},
+"purl": "pkg:pypi/urllib3@2.8",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: urllib3",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "uvicorn==0.30",
+"dependency_type": "direct",
+"description": "Inventoried component uvicorn==0.30",
+"impact": "Low",
+"inventory_only": true,
+"license": "BSD-3-Clause",
+"license_type": "permissive",
+"owasp_top_10": {},
+"purl": "pkg:pypi/uvicorn@0.30",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: uvicorn",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "weasyprint==70",
+"dependency_type": "direct",
+"description": "Inventoried component weasyprint==70",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/weasyprint@70",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: weasyprint",
+"vuln_assessed": true
+},
+{
+"compliance_controls": {},
+"cves": {},
+"dependency": "yara-python==4.3",
+"dependency_type": "direct",
+"description": "Inventoried component yara-python==4.3",
+"impact": "Low",
+"inventory_only": true,
+"license": "LicenseRef-not-declared",
+"license_type": "not_declared",
+"owasp_top_10": {},
+"purl": "pkg:pypi/yara-python@4.3",
+"reachability": "not_reachable",
+"suggested_fix": "n/a \u2014 inventory row",
+"title": "Inventory: yara-python",
+"vuln_assessed": true
+}
+],
+"source": "review 6028132826 run A: ninedter/pcap-hunter@cf839a4, the worker's SBOM at PR #489 head 9d3696d3c (PyPI and GitHub components) and its result rows",
+"worker_sbom": {
+"$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
+"bomFormat": "CycloneDX",
+"components": [
+{
+"bom-ref": "pkg:github/actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+"cpe": "cpe:2.3:a:actions\\/checkout:actions\\/checkout:fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09:*:*:*:*:*:*:*",
+"name": "actions/checkout",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "github-actions-usage-cataloger"
+},
+{
+"name": "syft:package:type",
+"value": "github-action"
+},
+{
+"name": "syft:location:0:path",
+"value": "/.github/workflows/ci.yml"
+}
+],
+"purl": "pkg:github/actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+"type": "library",
+"version": "fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09"
+},
+{
+"bom-ref": "pkg:github/actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+"cpe": "cpe:2.3:a:actions\\/upload-artifact:actions\\/upload-artifact:ea165f8d65b6e75b540449e92b4886f43607fa02:*:*:*:*:*:*:*",
+"name": "actions/upload-artifact",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "github-actions-usage-cataloger"
+},
+{
+"name": "syft:package:type",
+"value": "github-action"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:actions\\/upload-artifact:actions\\/upload_artifact:ea165f8d65b6e75b540449e92b4886f43607fa02:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:actions\\/upload_artifact:actions\\/upload-artifact:ea165f8d65b6e75b540449e92b4886f43607fa02:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:actions\\/upload_artifact:actions\\/upload_artifact:ea165f8d65b6e75b540449e92b4886f43607fa02:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:actions\\/upload:actions\\/upload-artifact:ea165f8d65b6e75b540449e92b4886f43607fa02:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:actions\\/upload:actions\\/upload_artifact:ea165f8d65b6e75b540449e92b4886f43607fa02:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/.github/workflows/ci.yml"
+}
+],
+"purl": "pkg:github/actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+"type": "library",
+"version": "ea165f8d65b6e75b540449e92b4886f43607fa02"
+},
+{
+"bom-ref": "pkg:pypi/anthropic@0.49",
+"cpe": "cpe:2.3:a:python-anthropic:python-anthropic:0.49:*:*:*:*:*:*:*",
+"name": "anthropic",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-anthropic:python_anthropic:0.49:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_anthropic:python-anthropic:0.49:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_anthropic:python_anthropic:0.49:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:anthropic:python-anthropic:0.49:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:anthropic:python_anthropic:0.49:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-anthropic:anthropic:0.49:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_anthropic:anthropic:0.49:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-anthropic:0.49:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_anthropic:0.49:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:anthropic:anthropic:0.49:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:anthropic:0.49:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=0.49,<1"
+}
+],
+"purl": "pkg:pypi/anthropic@0.49",
+"type": "library",
+"version": "0.49"
+},
+{
+"bom-ref": "pkg:pypi/brotli@1.2.1",
+"cpe": "cpe:2.3:a:python-brotli:python-brotli:1.2.1:*:*:*:*:*:*:*",
+"name": "brotli",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-brotli:python_brotli:1.2.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_brotli:python-brotli:1.2.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_brotli:python_brotli:1.2.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:brotli:python-brotli:1.2.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:brotli:python_brotli:1.2.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-brotli:brotli:1.2.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-brotli:1.2.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_brotli:1.2.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_brotli:brotli:1.2.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:brotli:brotli:1.2.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:brotli:1.2.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=1.2.1,<2"
+}
+],
+"purl": "pkg:pypi/brotli@1.2.1",
+"type": "library",
+"version": "1.2.1"
+},
+{
+"bom-ref": "pkg:pypi/certifi@2026.10.23",
+"cpe": "cpe:2.3:a:kennethreitz:certifi:2026.10.23:*:*:*:*:python:*:*",
+"name": "certifi",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=2026.10.23"
+}
+],
+"purl": "pkg:pypi/certifi@2026.10.23",
+"type": "library",
+"version": "2026.10.23"
+},
+{
+"bom-ref": "pkg:pypi/cryptography@50.0.2",
+"cpe": "cpe:2.3:a:cryptography.io:cryptography:50.0.2:*:*:*:*:python:*:*",
+"name": "cryptography",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:cryptography.io:cryptography:50.0.2:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=50.0.2,<51"
+}
+],
+"purl": "pkg:pypi/cryptography@50.0.2",
+"type": "library",
+"version": "50.0.2"
+},
+{
+"bom-ref": "pkg:github/docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc",
+"cpe": "cpe:2.3:a:docker\\/build-push-action:docker\\/build-push-action:c3c9e263c25d99ce0380d002d59b67737d91b0dc:*:*:*:*:*:*:*",
+"name": "docker/build-push-action",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "github-actions-usage-cataloger"
+},
+{
+"name": "syft:package:type",
+"value": "github-action"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:docker\\/build-push-action:docker\\/build_push_action:c3c9e263c25d99ce0380d002d59b67737d91b0dc:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:docker\\/build_push_action:docker\\/build-push-action:c3c9e263c25d99ce0380d002d59b67737d91b0dc:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:docker\\/build_push_action:docker\\/build_push_action:c3c9e263c25d99ce0380d002d59b67737d91b0dc:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:docker\\/build-push:docker\\/build-push-action:c3c9e263c25d99ce0380d002d59b67737d91b0dc:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:docker\\/build-push:docker\\/build_push_action:c3c9e263c25d99ce0380d002d59b67737d91b0dc:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:docker\\/build_push:docker\\/build-push-action:c3c9e263c25d99ce0380d002d59b67737d91b0dc:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:docker\\/build_push:docker\\/build_push_action:c3c9e263c25d99ce0380d002d59b67737d91b0dc:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:docker\\/build:docker\\/build-push-action:c3c9e263c25d99ce0380d002d59b67737d91b0dc:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:docker\\/build:docker\\/build_push_action:c3c9e263c25d99ce0380d002d59b67737d91b0dc:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/.github/workflows/ci.yml"
+}
+],
+"purl": "pkg:github/docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc",
+"type": "library",
+"version": "c3c9e263c25d99ce0380d002d59b67737d91b0dc"
+},
+{
+"bom-ref": "pkg:github/docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069",
+"cpe": "cpe:2.3:a:docker\\/setup-buildx-action:docker\\/setup-buildx-action:f87e5991a6d7451dcb8d9637bfbc97413f497069:*:*:*:*:*:*:*",
+"name": "docker/setup-buildx-action",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "github-actions-usage-cataloger"
+},
+{
+"name": "syft:package:type",
+"value": "github-action"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:docker\\/setup-buildx-action:docker\\/setup_buildx_action:f87e5991a6d7451dcb8d9637bfbc97413f497069:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:docker\\/setup_buildx_action:docker\\/setup-buildx-action:f87e5991a6d7451dcb8d9637bfbc97413f497069:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:docker\\/setup_buildx_action:docker\\/setup_buildx_action:f87e5991a6d7451dcb8d9637bfbc97413f497069:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:docker\\/setup-buildx:docker\\/setup-buildx-action:f87e5991a6d7451dcb8d9637bfbc97413f497069:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:docker\\/setup-buildx:docker\\/setup_buildx_action:f87e5991a6d7451dcb8d9637bfbc97413f497069:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:docker\\/setup_buildx:docker\\/setup-buildx-action:f87e5991a6d7451dcb8d9637bfbc97413f497069:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:docker\\/setup_buildx:docker\\/setup_buildx_action:f87e5991a6d7451dcb8d9637bfbc97413f497069:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:docker\\/setup:docker\\/setup-buildx-action:f87e5991a6d7451dcb8d9637bfbc97413f497069:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:docker\\/setup:docker\\/setup_buildx_action:f87e5991a6d7451dcb8d9637bfbc97413f497069:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/.github/workflows/ci.yml"
+}
+],
+"purl": "pkg:github/docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069",
+"type": "library",
+"version": "f87e5991a6d7451dcb8d9637bfbc97413f497069"
+},
+{
+"bom-ref": "pkg:pypi/fastapi@0.135",
+"cpe": "cpe:2.3:a:python-fastapi:python-fastapi:0.135:*:*:*:*:*:*:*",
+"name": "fastapi",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-fastapi:python_fastapi:0.135:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_fastapi:python-fastapi:0.135:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_fastapi:python_fastapi:0.135:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:fastapi:python-fastapi:0.135:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:fastapi:python_fastapi:0.135:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-fastapi:fastapi:0.135:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_fastapi:fastapi:0.135:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-fastapi:0.135:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_fastapi:0.135:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:fastapi:fastapi:0.135:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:fastapi:0.135:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=0.135,<1"
+}
+],
+"purl": "pkg:pypi/fastapi@0.135",
+"type": "library",
+"version": "0.135"
+},
+{
+"bom-ref": "pkg:pypi/filelock@4.2.1",
+"cpe": "cpe:2.3:a:python-filelock:python-filelock:4.2.1:*:*:*:*:*:*:*",
+"name": "filelock",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-filelock:python_filelock:4.2.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_filelock:python-filelock:4.2.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_filelock:python_filelock:4.2.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:filelock:python-filelock:4.2.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:filelock:python_filelock:4.2.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-filelock:filelock:4.2.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_filelock:filelock:4.2.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-filelock:4.2.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_filelock:4.2.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:filelock:filelock:4.2.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:filelock:4.2.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=4.2.1,<5"
+}
+],
+"purl": "pkg:pypi/filelock@4.2.1",
+"type": "library",
+"version": "4.2.1"
+},
+{
+"bom-ref": "pkg:pypi/httpx@0.28",
+"cpe": "cpe:2.3:a:encode:httpx:0.28:*:*:*:*:python:*:*",
+"name": "httpx",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=0.28,<1"
+}
+],
+"purl": "pkg:pypi/httpx@0.28",
+"type": "library",
+"version": "0.28"
+},
+{
+"bom-ref": "pkg:pypi/jinja2@3.1.6",
+"cpe": "cpe:2.3:a:python-jinja2:python-jinja2:3.1.6:*:*:*:*:*:*:*",
+"name": "jinja2",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-jinja2:python_jinja2:3.1.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_jinja2:python-jinja2:3.1.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_jinja2:python_jinja2:3.1.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:jinja2:python-jinja2:3.1.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:jinja2:python_jinja2:3.1.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-jinja2:jinja2:3.1.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-jinja2:3.1.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_jinja2:3.1.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_jinja2:jinja2:3.1.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:jinja2:jinja2:3.1.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:jinja2:3.1.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=3.1.6,<4"
+}
+],
+"purl": "pkg:pypi/jinja2@3.1.6",
+"type": "library",
+"version": "3.1.6"
+},
+{
+"bom-ref": "pkg:pypi/kaleido@1.5",
+"cpe": "cpe:2.3:a:python-kaleido:python-kaleido:1.5:*:*:*:*:*:*:*",
+"name": "kaleido",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-kaleido:python_kaleido:1.5:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_kaleido:python-kaleido:1.5:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_kaleido:python_kaleido:1.5:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:kaleido:python-kaleido:1.5:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:kaleido:python_kaleido:1.5:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-kaleido:kaleido:1.5:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_kaleido:kaleido:1.5:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-kaleido:1.5:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_kaleido:1.5:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:kaleido:kaleido:1.5:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:kaleido:1.5:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=1.5,<2"
+}
+],
+"purl": "pkg:pypi/kaleido@1.5",
+"type": "library",
+"version": "1.5"
+},
+{
+"bom-ref": "pkg:pypi/markdown@3.5",
+"cpe": "cpe:2.3:a:python-markdown:python-markdown:3.5:*:*:*:*:*:*:*",
+"name": "markdown",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-markdown:python_markdown:3.5:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_markdown:python-markdown:3.5:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_markdown:python_markdown:3.5:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:markdown:python-markdown:3.5:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:markdown:python_markdown:3.5:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-markdown:markdown:3.5:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_markdown:markdown:3.5:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-markdown:3.5:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_markdown:3.5:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:markdown:markdown:3.5:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:markdown:3.5:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=3.5,<4"
+}
+],
+"purl": "pkg:pypi/markdown@3.5",
+"type": "library",
+"version": "3.5"
+},
+{
+"bom-ref": "pkg:pypi/matplotlib@3.10",
+"cpe": "cpe:2.3:a:python-matplotlib:python-matplotlib:3.10:*:*:*:*:*:*:*",
+"name": "matplotlib",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-matplotlib:python_matplotlib:3.10:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_matplotlib:python-matplotlib:3.10:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_matplotlib:python_matplotlib:3.10:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:matplotlib:python-matplotlib:3.10:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:matplotlib:python_matplotlib:3.10:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-matplotlib:matplotlib:3.10:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_matplotlib:matplotlib:3.10:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-matplotlib:3.10:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_matplotlib:3.10:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:matplotlib:matplotlib:3.10:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:matplotlib:3.10:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=3.10,<4"
+}
+],
+"purl": "pkg:pypi/matplotlib@3.10",
+"type": "library",
+"version": "3.10"
+},
+{
+"bom-ref": "pkg:pypi/maxminddb-geolite2@2018.703",
+"cpe": "cpe:2.3:a:python-maxminddb-geolite2:python-maxminddb-geolite2:2018.703:*:*:*:*:*:*:*",
+"name": "maxminddb-geolite2",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-maxminddb-geolite2:python_maxminddb_geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_maxminddb_geolite2:python-maxminddb-geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_maxminddb_geolite2:python_maxminddb_geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:maxminddb-geolite2:python-maxminddb-geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:maxminddb-geolite2:python_maxminddb_geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:maxminddb_geolite2:python-maxminddb-geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:maxminddb_geolite2:python_maxminddb_geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-maxminddb-geolite2:maxminddb-geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-maxminddb-geolite2:maxminddb_geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_maxminddb_geolite2:maxminddb-geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_maxminddb_geolite2:maxminddb_geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-maxminddb:python-maxminddb-geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-maxminddb:python_maxminddb_geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_maxminddb:python-maxminddb-geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_maxminddb:python_maxminddb_geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:maxminddb-geolite2:maxminddb-geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:maxminddb-geolite2:maxminddb_geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:maxminddb_geolite2:maxminddb-geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:maxminddb_geolite2:maxminddb_geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:maxminddb:python-maxminddb-geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:maxminddb:python_maxminddb_geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-maxminddb:maxminddb-geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-maxminddb:maxminddb_geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_maxminddb:maxminddb-geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_maxminddb:maxminddb_geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-maxminddb-geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_maxminddb_geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:maxminddb:maxminddb-geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:maxminddb:maxminddb_geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:maxminddb-geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:maxminddb_geolite2:2018.703:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+}
+],
+"purl": "pkg:pypi/maxminddb-geolite2@2018.703",
+"type": "library",
+"version": "2018.703"
+},
+{
+"bom-ref": "pkg:pypi/mcp@2.3.0",
+"cpe": "cpe:2.3:a:python-mcp:python-mcp:2.3.0:*:*:*:*:*:*:*",
+"name": "mcp",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-mcp:python_mcp:2.3.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_mcp:python-mcp:2.3.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_mcp:python_mcp:2.3.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-mcp:2.3.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_mcp:2.3.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:mcp:python-mcp:2.3.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:mcp:python_mcp:2.3.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-mcp:mcp:2.3.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_mcp:mcp:2.3.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:mcp:2.3.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:mcp:mcp:2.3.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+}
+],
+"purl": "pkg:pypi/mcp@2.3.0",
+"type": "library",
+"version": "2.3.0"
+},
+{
+"bom-ref": "pkg:pypi/numpy@1.26",
+"cpe": "cpe:2.3:a:python-numpy:python-numpy:1.26:*:*:*:*:*:*:*",
+"name": "numpy",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-numpy:python_numpy:1.26:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_numpy:python-numpy:1.26:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_numpy:python_numpy:1.26:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-numpy:1.26:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_numpy:1.26:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:numpy:python-numpy:1.26:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:numpy:python_numpy:1.26:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-numpy:numpy:1.26:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_numpy:numpy:1.26:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:numpy:1.26:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:numpy:numpy:1.26:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-docs.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=1.26,<3"
+}
+],
+"purl": "pkg:pypi/numpy@1.26",
+"type": "library",
+"version": "1.26"
+},
+{
+"bom-ref": "pkg:pypi/openai@2.0",
+"cpe": "cpe:2.3:a:python-openai:python-openai:2.0:*:*:*:*:*:*:*",
+"name": "openai",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-openai:python_openai:2.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_openai:python-openai:2.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_openai:python_openai:2.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:openai:python-openai:2.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:openai:python_openai:2.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-openai:openai:2.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-openai:2.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_openai:2.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_openai:openai:2.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:openai:openai:2.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:openai:2.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=2.0,<3"
+}
+],
+"purl": "pkg:pypi/openai@2.0",
+"type": "library",
+"version": "2.0"
+},
+{
+"bom-ref": "pkg:pypi/pandas@2.3",
+"cpe": "cpe:2.3:a:python-pandas:python-pandas:2.3:*:*:*:*:*:*:*",
+"name": "pandas",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-pandas:python_pandas:2.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pandas:python-pandas:2.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pandas:python_pandas:2.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pandas:python-pandas:2.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pandas:python_pandas:2.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-pandas:pandas:2.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-pandas:2.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_pandas:2.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pandas:pandas:2.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pandas:pandas:2.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:pandas:2.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=2.3,<3"
+}
+],
+"purl": "pkg:pypi/pandas@2.3",
+"type": "library",
+"version": "2.3"
+},
+{
+"bom-ref": "pkg:pypi/pillow@10.0",
+"cpe": "cpe:2.3:a:python-pillow:python-pillow:10.0:*:*:*:*:*:*:*",
+"name": "pillow",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-pillow:python_pillow:10.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pillow:python-pillow:10.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pillow:python_pillow:10.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pillow:python-pillow:10.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pillow:python_pillow:10.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-pillow:pillow:10.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-pillow:10.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_pillow:10.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pillow:pillow:10.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pillow:pillow:10.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:pillow:10.0:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-docs.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=10.0,<13.0"
+}
+],
+"purl": "pkg:pypi/pillow@10.0",
+"type": "library",
+"version": "10.0"
+},
+{
+"bom-ref": "pkg:pypi/pillow@13",
+"cpe": "cpe:2.3:a:python-pillow:python-pillow:13:*:*:*:*:*:*:*",
+"name": "pillow",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-pillow:python_pillow:13:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pillow:python-pillow:13:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pillow:python_pillow:13:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pillow:python-pillow:13:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pillow:python_pillow:13:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-pillow:pillow:13:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-pillow:13:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_pillow:13:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pillow:pillow:13:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pillow:pillow:13:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:pillow:13:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=13,<14"
+}
+],
+"purl": "pkg:pypi/pillow@13",
+"type": "library",
+"version": "13"
+},
+{
+"bom-ref": "pkg:pypi/playwright@1.50",
+"cpe": "cpe:2.3:a:python-playwright:python-playwright:1.50:*:*:*:*:*:*:*",
+"name": "playwright",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-playwright:python_playwright:1.50:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_playwright:python-playwright:1.50:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_playwright:python_playwright:1.50:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:playwright:python-playwright:1.50:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:playwright:python_playwright:1.50:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-playwright:playwright:1.50:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_playwright:playwright:1.50:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-playwright:1.50:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_playwright:1.50:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:playwright:playwright:1.50:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:playwright:1.50:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-docs.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=1.50,<2.0"
+}
+],
+"purl": "pkg:pypi/playwright@1.50",
+"type": "library",
+"version": "1.50"
+},
+{
+"bom-ref": "pkg:pypi/plotly@6.8",
+"cpe": "cpe:2.3:a:python-plotly:python-plotly:6.8:*:*:*:*:*:*:*",
+"name": "plotly",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-plotly:python_plotly:6.8:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_plotly:python-plotly:6.8:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_plotly:python_plotly:6.8:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:plotly:python-plotly:6.8:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:plotly:python_plotly:6.8:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-plotly:plotly:6.8:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-plotly:6.8:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_plotly:6.8:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_plotly:plotly:6.8:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:plotly:plotly:6.8:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:plotly:6.8:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=6.8,<7"
+}
+],
+"purl": "pkg:pypi/plotly@6.8",
+"type": "library",
+"version": "6.8"
+},
+{
+"bom-ref": "pkg:pypi/pydyf@0.12",
+"cpe": "cpe:2.3:a:python-pydyf:python-pydyf:0.12:*:*:*:*:*:*:*",
+"name": "pydyf",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-pydyf:python_pydyf:0.12:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pydyf:python-pydyf:0.12:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pydyf:python_pydyf:0.12:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-pydyf:0.12:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_pydyf:0.12:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pydyf:python-pydyf:0.12:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pydyf:python_pydyf:0.12:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-pydyf:pydyf:0.12:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pydyf:pydyf:0.12:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:pydyf:0.12:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pydyf:pydyf:0.12:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=0.12,<1"
+}
+],
+"purl": "pkg:pypi/pydyf@0.12",
+"type": "library",
+"version": "0.12"
+},
+{
+"bom-ref": "pkg:pypi/pyshark@0.6",
+"cpe": "cpe:2.3:a:python-pyshark:python-pyshark:0.6:*:*:*:*:*:*:*",
+"name": "pyshark",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-pyshark:python_pyshark:0.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pyshark:python-pyshark:0.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pyshark:python_pyshark:0.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pyshark:python-pyshark:0.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pyshark:python_pyshark:0.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-pyshark:pyshark:0.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pyshark:pyshark:0.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-pyshark:0.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_pyshark:0.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pyshark:pyshark:0.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:pyshark:0.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=0.6,<1"
+}
+],
+"purl": "pkg:pypi/pyshark@0.6",
+"type": "library",
+"version": "0.6"
+},
+{
+"bom-ref": "pkg:pypi/pytesseract@0.3.13",
+"cpe": "cpe:2.3:a:python-pytesseract:python-pytesseract:0.3.13:*:*:*:*:*:*:*",
+"name": "pytesseract",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-pytesseract:python_pytesseract:0.3.13:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pytesseract:python-pytesseract:0.3.13:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pytesseract:python_pytesseract:0.3.13:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pytesseract:python-pytesseract:0.3.13:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pytesseract:python_pytesseract:0.3.13:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-pytesseract:pytesseract:0.3.13:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pytesseract:pytesseract:0.3.13:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-pytesseract:0.3.13:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_pytesseract:0.3.13:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pytesseract:pytesseract:0.3.13:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:pytesseract:0.3.13:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-docs.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=0.3.13,<1.0"
+}
+],
+"purl": "pkg:pypi/pytesseract@0.3.13",
+"type": "library",
+"version": "0.3.13"
+},
+{
+"bom-ref": "pkg:pypi/pytest@9.0.3",
+"cpe": "cpe:2.3:a:python-pytest:python-pytest:9.0.3:*:*:*:*:*:*:*",
+"name": "pytest",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-pytest:python_pytest:9.0.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pytest:python-pytest:9.0.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pytest:python_pytest:9.0.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pytest:python-pytest:9.0.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pytest:python_pytest:9.0.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-pytest:pytest:9.0.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-pytest:9.0.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_pytest:9.0.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pytest:pytest:9.0.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pytest:pytest:9.0.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:pytest:9.0.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-dev.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=9.0.3,<10"
+}
+],
+"purl": "pkg:pypi/pytest@9.0.3",
+"type": "library",
+"version": "9.0.3"
+},
+{
+"bom-ref": "pkg:pypi/pytest-cov@7",
+"cpe": "cpe:2.3:a:python-pytest-cov:python-pytest-cov:7:*:*:*:*:*:*:*",
+"name": "pytest-cov",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-pytest-cov:python_pytest_cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pytest_cov:python-pytest-cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pytest_cov:python_pytest_cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-pytest:python-pytest-cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-pytest:python_pytest_cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pytest:python-pytest-cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pytest:python_pytest_cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pytest-cov:python-pytest-cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pytest-cov:python_pytest_cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pytest_cov:python-pytest-cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pytest_cov:python_pytest_cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-pytest-cov:pytest-cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-pytest-cov:pytest_cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pytest_cov:pytest-cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pytest_cov:pytest_cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pytest:python-pytest-cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pytest:python_pytest_cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-pytest:pytest-cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-pytest:pytest_cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-pytest-cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_pytest_cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pytest:pytest-cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pytest:pytest_cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pytest-cov:pytest-cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pytest-cov:pytest_cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pytest_cov:pytest-cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pytest_cov:pytest_cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pytest:pytest-cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pytest:pytest_cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:pytest-cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:pytest_cov:7:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-dev.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=7,<8"
+}
+],
+"purl": "pkg:pypi/pytest-cov@7",
+"type": "library",
+"version": "7"
+},
+{
+"bom-ref": "pkg:pypi/python-dateutil@2.9",
+"cpe": "cpe:2.3:a:python-dateutil:python-dateutil:2.9:*:*:*:*:*:*:*",
+"name": "python-dateutil",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-dateutil:python_dateutil:2.9:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_dateutil:python-dateutil:2.9:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_dateutil:python_dateutil:2.9:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-dateutil:2.9:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_dateutil:2.9:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=2.9,<3"
+}
+],
+"purl": "pkg:pypi/python-dateutil@2.9",
+"type": "library",
+"version": "2.9"
+},
+{
+"bom-ref": "pkg:pypi/python-multipart@0.0.22",
+"cpe": "cpe:2.3:a:python-multipart:python-multipart:0.0.22:*:*:*:*:*:*:*",
+"name": "python-multipart",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-multipart:python_multipart:0.0.22:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_multipart:python-multipart:0.0.22:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_multipart:python_multipart:0.0.22:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-multipart:0.0.22:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_multipart:0.0.22:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=0.0.22,<1"
+}
+],
+"purl": "pkg:pypi/python-multipart@0.0.22",
+"type": "library",
+"version": "0.0.22"
+},
+{
+"bom-ref": "pkg:pypi/python-whois@0.9",
+"cpe": "cpe:2.3:a:python-whois:python-whois:0.9:*:*:*:*:*:*:*",
+"name": "python-whois",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-whois:python_whois:0.9:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_whois:python-whois:0.9:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_whois:python_whois:0.9:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-whois:0.9:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_whois:0.9:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=0.9,<1"
+}
+],
+"purl": "pkg:pypi/python-whois@0.9",
+"type": "library",
+"version": "0.9"
+},
+{
+"bom-ref": "pkg:pypi/pyyaml@6",
+"cpe": "cpe:2.3:a:python-pyyaml:python-pyyaml:6:*:*:*:*:*:*:*",
+"name": "pyyaml",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-pyyaml:python_pyyaml:6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pyyaml:python-pyyaml:6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pyyaml:python_pyyaml:6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-pyyaml:pyyaml:6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-pyyaml:6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_pyyaml:6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_pyyaml:pyyaml:6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pyyaml:python-pyyaml:6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pyyaml:python_pyyaml:6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:pyyaml:6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:pyyaml:pyyaml:6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=6,<7"
+}
+],
+"purl": "pkg:pypi/pyyaml@6",
+"type": "library",
+"version": "6"
+},
+{
+"bom-ref": "pkg:pypi/requests@2.32.5",
+"cpe": "cpe:2.3:a:python:requests:2.32.5:*:*:*:*:*:*:*",
+"name": "requests",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=2.32.5,<3"
+}
+],
+"purl": "pkg:pypi/requests@2.32.5",
+"type": "library",
+"version": "2.32.5"
+},
+{
+"bom-ref": "pkg:pypi/ruff@0.15",
+"cpe": "cpe:2.3:a:python-ruff:python-ruff:0.15:*:*:*:*:*:*:*",
+"name": "ruff",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-ruff:python_ruff:0.15:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_ruff:python-ruff:0.15:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_ruff:python_ruff:0.15:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-ruff:0.15:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_ruff:0.15:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-ruff:ruff:0.15:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_ruff:ruff:0.15:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:ruff:python-ruff:0.15:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:ruff:python_ruff:0.15:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:ruff:0.15:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:ruff:ruff:0.15:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-dev.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=0.15,<0.16"
+}
+],
+"purl": "pkg:pypi/ruff@0.15",
+"type": "library",
+"version": "0.15"
+},
+{
+"bom-ref": "pkg:pypi/scapy@2.6",
+"cpe": "cpe:2.3:a:python-scapy:python-scapy:2.6:*:*:*:*:*:*:*",
+"name": "scapy",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-scapy:python_scapy:2.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_scapy:python-scapy:2.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_scapy:python_scapy:2.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-scapy:2.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_scapy:2.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-scapy:scapy:2.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_scapy:scapy:2.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:scapy:python-scapy:2.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:scapy:python_scapy:2.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:scapy:2.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:scapy:scapy:2.6:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=2.6,<3"
+}
+],
+"purl": "pkg:pypi/scapy@2.6",
+"type": "library",
+"version": "2.6"
+},
+{
+"bom-ref": "pkg:pypi/setuptools@80.9",
+"cpe": "cpe:2.3:a:python:setuptools:80.9:*:*:*:*:*:*:*",
+"name": "setuptools",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-build.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=80.9,<100"
+}
+],
+"purl": "pkg:pypi/setuptools@80.9",
+"type": "library",
+"version": "80.9"
+},
+{
+"bom-ref": "pkg:pypi/streamlit@1.66.1",
+"cpe": "cpe:2.3:a:python-streamlit:python-streamlit:1.66.1:*:*:*:*:*:*:*",
+"name": "streamlit",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-streamlit:python_streamlit:1.66.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_streamlit:python-streamlit:1.66.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_streamlit:python_streamlit:1.66.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-streamlit:streamlit:1.66.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_streamlit:streamlit:1.66.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:streamlit:python-streamlit:1.66.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:streamlit:python_streamlit:1.66.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-streamlit:1.66.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_streamlit:1.66.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:streamlit:streamlit:1.66.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:streamlit:1.66.1:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=1.66.1,<2"
+}
+],
+"purl": "pkg:pypi/streamlit@1.66.1",
+"type": "library",
+"version": "1.66.1"
+},
+{
+"bom-ref": "pkg:pypi/tqdm@4.66",
+"cpe": "cpe:2.3:a:python-tqdm:python-tqdm:4.66:*:*:*:*:*:*:*",
+"name": "tqdm",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-tqdm:python_tqdm:4.66:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_tqdm:python-tqdm:4.66:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_tqdm:python_tqdm:4.66:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-tqdm:4.66:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_tqdm:4.66:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-tqdm:tqdm:4.66:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_tqdm:tqdm:4.66:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:tqdm:python-tqdm:4.66:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:tqdm:python_tqdm:4.66:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:tqdm:4.66:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:tqdm:tqdm:4.66:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=4.66,<5"
+}
+],
+"purl": "pkg:pypi/tqdm@4.66",
+"type": "library",
+"version": "4.66"
+},
+{
+"bom-ref": "pkg:pypi/ujson@5.9",
+"cpe": "cpe:2.3:a:python-ujson:python-ujson:5.9:*:*:*:*:*:*:*",
+"name": "ujson",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-ujson:python_ujson:5.9:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_ujson:python-ujson:5.9:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_ujson:python_ujson:5.9:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-ujson:5.9:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_ujson:5.9:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-ujson:ujson:5.9:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_ujson:ujson:5.9:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:ujson:python-ujson:5.9:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:ujson:python_ujson:5.9:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:ujson:5.9:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:ujson:ujson:5.9:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=5.9,<6"
+}
+],
+"purl": "pkg:pypi/ujson@5.9",
+"type": "library",
+"version": "5.9"
+},
+{
+"bom-ref": "pkg:pypi/urllib3@2.8",
+"cpe": "cpe:2.3:a:python:urllib3:2.8:*:*:*:*:*:*:*",
+"name": "urllib3",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=2.8,<3"
+}
+],
+"purl": "pkg:pypi/urllib3@2.8",
+"type": "library",
+"version": "2.8"
+},
+{
+"bom-ref": "pkg:pypi/uvicorn@0.30",
+"cpe": "cpe:2.3:a:python-uvicorn:python-uvicorn:0.30:*:*:*:*:*:*:*",
+"name": "uvicorn",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-uvicorn:python_uvicorn:0.30:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_uvicorn:python-uvicorn:0.30:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_uvicorn:python_uvicorn:0.30:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-uvicorn:uvicorn:0.30:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_uvicorn:uvicorn:0.30:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:uvicorn:python-uvicorn:0.30:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:uvicorn:python_uvicorn:0.30:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-uvicorn:0.30:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_uvicorn:0.30:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:uvicorn:uvicorn:0.30:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:uvicorn:0.30:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=0.30,<1"
+}
+],
+"purl": "pkg:pypi/uvicorn@0.30",
+"type": "library",
+"version": "0.30"
+},
+{
+"bom-ref": "pkg:pypi/weasyprint@70",
+"cpe": "cpe:2.3:a:python-weasyprint:python-weasyprint:70:*:*:*:*:*:*:*",
+"name": "weasyprint",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-weasyprint:python_weasyprint:70:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_weasyprint:python-weasyprint:70:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_weasyprint:python_weasyprint:70:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-weasyprint:weasyprint:70:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_weasyprint:weasyprint:70:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:weasyprint:python-weasyprint:70:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:weasyprint:python_weasyprint:70:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-weasyprint:70:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_weasyprint:70:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:weasyprint:weasyprint:70:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:weasyprint:70:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=70,<71"
+}
+],
+"purl": "pkg:pypi/weasyprint@70",
+"type": "library",
+"version": "70"
+},
+{
+"bom-ref": "pkg:pypi/wheel@0.45",
+"cpe": "cpe:2.3:a:python-wheel:python-wheel:0.45:*:*:*:*:*:*:*",
+"name": "wheel",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-wheel:python_wheel:0.45:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_wheel:python-wheel:0.45:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_wheel:python_wheel:0.45:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-wheel:0.45:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_wheel:0.45:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-wheel:wheel:0.45:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_wheel:wheel:0.45:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:wheel:python-wheel:0.45:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:wheel:python_wheel:0.45:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:wheel:0.45:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:wheel:wheel:0.45:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-build.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=0.45,<1"
+}
+],
+"purl": "pkg:pypi/wheel@0.45",
+"type": "library",
+"version": "0.45"
+},
+{
+"bom-ref": "pkg:pypi/yara-python@4.3",
+"cpe": "cpe:2.3:a:python-yara-python:python-yara-python:4.3:*:*:*:*:*:*:*",
+"name": "yara-python",
+"properties": [
+{
+"name": "syft:package:foundBy",
+"value": "python-package-cataloger"
+},
+{
+"name": "syft:package:language",
+"value": "python"
+},
+{
+"name": "syft:package:type",
+"value": "python"
+},
+{
+"name": "syft:package:metadataType",
+"value": "python-pip-requirements-entry"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-yara-python:python_yara_python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_yara_python:python-yara-python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_yara_python:python_yara_python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-yara-python:yara-python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-yara-python:yara_python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-yara:python-yara-python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-yara:python_yara_python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_yara:python-yara-python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_yara:python_yara_python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_yara_python:yara-python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_yara_python:yara_python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:yara-python:python-yara-python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:yara-python:python_yara_python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:yara_python:python-yara-python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:yara_python:python_yara_python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python-yara-python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:python_yara_python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-yara:yara-python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python-yara:yara_python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_yara:yara-python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python_yara:yara_python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:yara-python:yara-python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:yara-python:yara_python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:yara:python-yara-python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:yara:python_yara_python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:yara_python:yara-python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:yara_python:yara_python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:yara-python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:python:yara_python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:yara:yara-python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:cpe23",
+"value": "cpe:2.3:a:yara:yara_python:4.3:*:*:*:*:*:*:*"
+},
+{
+"name": "syft:location:0:path",
+"value": "/requirements-runtime.txt"
+},
+{
+"name": "dss:version_source",
+"value": "range_lower_bound"
+},
+{
+"name": "dss:version_constraint",
+"value": ">=4.3,<5"
+}
+],
+"purl": "pkg:pypi/yara-python@4.3",
+"type": "library",
+"version": "4.3"
+}
+],
+"dependencies": [
+{
+"dependsOn": [
+"pkg:github/actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+"pkg:github/actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+"pkg:pypi/anthropic@0.49",
+"pkg:pypi/brotli@1.2.1",
+"pkg:pypi/certifi@2026.10.23",
+"pkg:pypi/cryptography@50.0.2",
+"pkg:github/docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc",
+"pkg:github/docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069",
+"pkg:pypi/fastapi@0.135",
+"pkg:pypi/filelock@4.2.1",
+"pkg:pypi/httpx@0.28",
+"pkg:pypi/jinja2@3.1.6",
+"pkg:pypi/kaleido@1.5",
+"pkg:pypi/markdown@3.5",
+"pkg:pypi/matplotlib@3.10",
+"pkg:pypi/maxminddb-geolite2@2018.703",
+"pkg:pypi/mcp@2.3.0",
+"pkg:pypi/numpy@1.26",
+"pkg:pypi/openai@2.0",
+"pkg:pypi/pandas@2.3",
+"pkg:pypi/pillow@10.0",
+"pkg:pypi/pillow@13",
+"pkg:pypi/playwright@1.50",
+"pkg:pypi/plotly@6.8",
+"pkg:pypi/pydyf@0.12",
+"pkg:pypi/pyshark@0.6",
+"pkg:pypi/pytesseract@0.3.13",
+"pkg:pypi/pytest@9.0.3",
+"pkg:pypi/pytest-cov@7",
+"pkg:pypi/python-dateutil@2.9",
+"pkg:pypi/python-multipart@0.0.22",
+"pkg:pypi/python-whois@0.9",
+"pkg:pypi/pyyaml@6",
+"pkg:pypi/requests@2.32.5",
+"pkg:pypi/ruff@0.15",
+"pkg:pypi/scapy@2.6",
+"pkg:pypi/setuptools@80.9",
+"pkg:pypi/streamlit@1.66.1",
+"pkg:pypi/tqdm@4.66",
+"pkg:pypi/ujson@5.9",
+"pkg:pypi/urllib3@2.8",
+"pkg:pypi/uvicorn@0.30",
+"pkg:pypi/weasyprint@70",
+"pkg:pypi/wheel@0.45",
+"pkg:pypi/yara-python@4.3"
+],
+"ref": "pkg:github/ninedter/pcap-hunter@cf839a43f6747e3f8d8ad021889d74e0cdbd10a6"
+}
+],
+"metadata": {
+"authors": [
+{
+"name": "DevSecShield"
+}
+],
+"component": {
+"bom-ref": "pkg:github/ninedter/pcap-hunter@cf839a43f6747e3f8d8ad021889d74e0cdbd10a6",
+"externalReferences": [
+{
+"type": "vcs",
+"url": "https://github.com/ninedter/pcap-hunter"
+}
+],
+"name": "ninedter/pcap-hunter",
+"properties": [
+{
+"name": "dss:vcs_branch",
+"value": "main"
+},
+{
+"name": "dss:vcs_commit",
+"value": "cf839a43f6747e3f8d8ad021889d74e0cdbd10a6"
+}
+],
+"purl": "pkg:github/ninedter/pcap-hunter@cf839a43f6747e3f8d8ad021889d74e0cdbd10a6",
+"type": "application",
+"version": "cf839a43f6747e3f8d8ad021889d74e0cdbd10a6"
+},
+"lifecycles": [
+{
+"phase": "pre-build"
+}
+],
+"properties": [
+{
+"name": "dss:inventory_tools",
+"value": "syft,cdxgen"
+}
+],
+"timestamp": "2026-11-23T18:45:50Z",
+"tools": {
+"components": [
+{
+"description": "SBOM / SCA scan: Syft and cdxgen inventory, Grype vulnerability matching",
+"name": "DevSecShield",
+"publisher": "DevSecShield",
+"type": "application",
+"version": "rev489-local"
+},
+{
+"name": "syft",
+"publisher": "anchore",
+"type": "application",
+"version": "1.18.1"
+},
+{
+"name": "cdxgen",
+"publisher": "OWASP Foundation",
+"type": "application",
+"version": "12.9.3"
+},
+{
+"name": "grype",
+"publisher": "anchore",
+"type": "application",
+"version": "0.87.0"
+}
+]
+}
+},
+"serialNumber": "urn:uuid:e5be8f84-efef-4e7e-9237-e6e7534d0f49",
+"specVersion": "1.6",
+"version": 1
+}
+}

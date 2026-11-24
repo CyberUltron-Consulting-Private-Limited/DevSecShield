@@ -88,6 +88,18 @@ export function formatComponentVersion(version: string | undefined): string {
   return v.split("/")[0].trim() || v;
 }
 
+/**
+ * The version cell: a version the scanner guessed from a manifest range (dss:version_source=range_lower_bound,
+ * review 6028132826 B2) reads "≥ 10.0 (range >=10.0,<11)", never as a pin.
+ */
+export function componentVersionText(comp: { version?: string; properties?: { name?: string; value?: string }[] }): string {
+  const base = formatComponentVersion(comp.version);
+  const prop = (name: string) => (comp.properties || []).find((p) => p.name === name)?.value || "";
+  if (prop("dss:version_source") !== "range_lower_bound" || base === "—") return base;
+  const constraint = prop("dss:version_constraint").trim();
+  return constraint ? `≥ ${base} (range ${constraint})` : `≥ ${base} (range)`;
+}
+
 const GITHUB_MIT_ORGS = new Set(["actions", "github", "pypa"]);
 
 function licenseText(comp: CdxComponent): string {
@@ -196,6 +208,33 @@ function propStatus(props: CdxProp[] | undefined): SbomComplianceStatus | null {
 export function overallComplianceFromBom(bom: unknown): SbomComplianceStatus {
   if (!bom || typeof bom !== "object") return "unknown";
   return propStatus((bom as CdxBom).metadata?.properties) || "unknown";
+}
+
+// the PDF's minimum-elements table counts the same way (backend/utilities/compliance/sbom_minimum_elements.py)
+const UNKNOWN_LICENCE = new Set(["", "noassertion", "none", "unknown", "not_declared", "licenseref-not-declared"]);
+
+export type BomCoverage = { total: number; licensed: number; hashed: number; registry: string };
+
+/**
+ * How many components carry a licence and a hash (review 6032108510 M-1): an offline scan resolves fewer, and the
+ * licence-risk checks report the unlicensed ones as not assessed, so the table says how complete it is.
+ */
+export function bomCoverage(bom: unknown): BomCoverage {
+  const doc = (bom && typeof bom === "object" ? bom : {}) as CdxBom;
+  const comps = (Array.isArray(doc.components) ? doc.components : []).filter(
+    (c) => c && typeof c === "object" && String(c.name || "").trim(),
+  );
+  const licensed = comps.filter((c) =>
+    (Array.isArray(c.licenses) ? c.licenses : []).some((item) => {
+      const token = item?.license?.id || item?.license?.name || item?.expression || "";
+      return !UNKNOWN_LICENCE.has(String(token).trim().toLowerCase());
+    }),
+  ).length;
+  const hashed = comps.filter((c) =>
+    (Array.isArray(c.hashes) ? c.hashes : []).some((h) => String(h?.content || "").trim()),
+  ).length;
+  const registry = (doc.metadata?.properties || []).find((p) => p?.name === "dss:registry")?.value || "";
+  return { total: comps.length, licensed, hashed, registry };
 }
 
 function nameByRef(bom: CdxBom): Map<string, string> {
@@ -333,7 +372,7 @@ export function inventoryRowsFromCycloneDx(bom: unknown): SbomInventoryRow[] {
     return {
       name: c.name!.trim(),
       supplier: dash(supplierText(c)),
-      version: formatComponentVersion(c.version),
+      version: componentVersionText(c),
       uniqueId: dash(uniqueIdText(c)),
       relationship: relationshipText(c, doc, names, parents),
       subDependencies: joinList(direct, knownLeaf ? "None" : "—"),

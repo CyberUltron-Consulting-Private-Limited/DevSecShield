@@ -254,7 +254,7 @@ function SbomDashboardCharts({ dashboard }: { dashboard: SbomScanDashboardData }
   return (
     <div className="space-y-6">
       {/* 1. Card data */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8 gap-4">
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardContent className="pt-4 pb-4 flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400">
@@ -329,6 +329,17 @@ function SbomDashboardCharts({ dashboard }: { dashboard: SbomScanDashboardData }
             <div className="min-w-0">
               <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1">Reachable issues <InfoTip id="sbom.res.kpi.reachable" /></p>
               <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums">{card.total_reachable_issues ?? 0}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-zinc-200 dark:border-zinc-800" data-testid="sbom-kpi-unverified">
+          <CardContent className="pt-4 pb-4 flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300">
+              <HelpCircle className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1">Unverified version <InfoTip id="sbom.res.kpi.unverified" /></p>
+              <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums" title="Matched on a version guessed from a manifest range; not counted in the totals">{card.total_unverified_version_findings ?? 0}</p>
             </div>
           </CardContent>
         </Card>
@@ -768,8 +779,8 @@ function SbomResultsView({
     const tid = parseInt(teamId ?? "0", 10);
     if (!conversationId || Number.isNaN(tid)) return;
     try {
-      const cached = (scanMetadata as SbomScanMetadata | null)?.vex_json;
-      const vex = cached ?? (await getCertInVex(tid, "sbom_sca", conversationId));
+      // always the API: it rebuilds a VEX stored by older rules (a blanket not_affected per component)
+      const vex = await getCertInVex(tid, "sbom_sca", conversationId);
       downloadBlob(
         new Blob([JSON.stringify(vex, null, 2)], { type: "application/json" }),
         `sbom-vex-${conversationId}.json`,
@@ -1321,6 +1332,16 @@ function SbomResultsView({
                           >
                             {(f.title ?? "").trim() || "Untitled"}
                           </button>
+                          {f.version_guessed_from ? (
+                            <Badge
+                              variant="outline"
+                              className="ml-2 border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+                              title={`Matched on the lower bound of the manifest range ${f.version_guessed_from}; not counted in the totals. Pin the dependency and rescan.`}
+                              data-testid="sbom-finding-unverified"
+                            >
+                              Unverified version
+                            </Badge>
+                          ) : null}
                         </TableCell>
                         <TableCell className="text-sm text-zinc-600 dark:text-zinc-400 max-w-[120px] truncate" title={f.dependency ?? undefined}>
                           {(f.dependency ?? "").trim() || "—"}

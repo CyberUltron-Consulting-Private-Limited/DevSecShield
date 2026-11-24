@@ -1,8 +1,9 @@
 # Base images. scripts/deploy/build_images.sh passes UV_BASE_IMAGE / GO_BASE_IMAGE when they are set: behind a
 # TLS-intercepting proxy, bases that trust the proxy's CA (deploy/staging/README.md).
 # Every third-party input of this image is pinned and verified (#69): base images by digest, cbomkit-theia by tag and
-# commit with upstream's go.sum and the Go checksum database, rustup / grype / syft by version and SHA-256. To update
-# one, change its version and its checksum together; a mismatch fails the build.
+# commit with upstream's go.sum and the Go checksum database, rustup / grype / syft / Node.js by version and SHA-256,
+# cdxgen and its npm dependencies by RabbitMQ/worker/tools/cdxgen/package-lock.json (sha512 integrity per package).
+# To update one, change its version and its checksum together; a mismatch fails the build.
 ARG UV_BASE_IMAGE=ghcr.io/astral-sh/uv:python3.12-bookworm-slim@sha256:e5b65587bce7de595f299855d7385fe7fca39b8a74baa261ba1b7147afa78e58
 ARG GO_BASE_IMAGE=golang:1.26.10-bookworm@sha256:5de7c99eb78ca5e515a4c340235d0955ec5964a5071c492c15503d7c267da473
 
@@ -85,6 +86,42 @@ RUN set -eu; \
     go build -trimpath -buildvcs=false -o /usr/local/bin/cbomkit-theia .
 
 # ============================================================
+# Stage 1c: cdxgen (CycloneDX generator, SBOM inventory next to Syft)
+# ============================================================
+# Node.js from nodejs.org by version and SHA-256 (SHASUMS256.txt of the release); cdxgen and every dependency from the
+# committed lockfile: npm ci refuses a package whose sha512 differs. --ignore-scripts: no install script runs;
+# --omit=optional: cdxgen's optional native plugins are not needed to read manifests and lock files. The SBOM scan
+# runs it with --no-install-deps (helpers/tools/sca_sbom_agent/cdxgen_run.py), so nothing is fetched at scan time.
+FROM ${UV_BASE_IMAGE} AS cdxgen-builder
+ARG TARGETARCH
+ARG NODE_VERSION=24.22.3
+ARG NODE_SHA256_AMD64=061ec3e3062115705b56b51fa9cc330ab50d34b6969387d4e4b1a50c6809acc2
+ARG NODE_SHA256_ARM64=261af2af250dfd7e9f25cf151d1b2713a0adf8f10a9ad116c4947f68627affe8
+# No apt step: the base image's Python fetches the archive (an HTTP error fails the step), sha256sum checks it.
+RUN set -eu; \
+    case "${TARGETARCH:-amd64}" in \
+      amd64) narch=x64; sum="${NODE_SHA256_AMD64}" ;; \
+      arm64) narch=arm64; sum="${NODE_SHA256_ARM64}" ;; \
+      *) echo "no pinned Node.js for ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    file="node-v${NODE_VERSION}-linux-${narch}.tar.gz"; \
+    python3 -c 'import sys, urllib.request; urllib.request.urlretrieve(sys.argv[1], sys.argv[2])' \
+      "https://nodejs.org/dist/v${NODE_VERSION}/${file}" "/tmp/${file}"; \
+    printf '%s  /tmp/%s\n' "${sum}" "${file}" > /tmp/node.sha256; \
+    sha256sum -c /tmp/node.sha256; \
+    mkdir -p /opt/node; \
+    tar -xzf "/tmp/${file}" -C /opt/node --strip-components=1; \
+    rm "/tmp/${file}" /tmp/node.sha256
+ENV PATH="/opt/node/bin:${PATH}"
+WORKDIR /opt/cdxgen
+COPY RabbitMQ/worker/tools/cdxgen/package.json RabbitMQ/worker/tools/cdxgen/package-lock.json /opt/cdxgen/
+# --use-system-ca: behind a TLS-intercepting proxy the base image's trust store holds the proxy CA (see UV_BASE_IMAGE).
+# package.json "overrides" lift cdxgen's glob / minimatch / body-parser to releases with the advisories fixed
+# (cdxgen output checked identical on peva3/SmarterRouter and ninedter/pcap-hunter).
+RUN NODE_OPTIONS=--use-system-ca npm ci --omit=dev --omit=optional --ignore-scripts --no-audit --no-fund \
+    && node node_modules/@cyclonedx/cdxgen/bin/cdxgen.js --version
+
+# ============================================================
 # Stage 2: Runtime — minimal image with only what's needed
 # ============================================================
 FROM ${UV_BASE_IMAGE}
@@ -135,6 +172,12 @@ RUN set -eu; \
     get syft "${SYFT_VERSION}" "${syft_sum}"; \
     grype version; syft version
 
+# cdxgen (SBOM inventory): the Node.js runtime binary and the npm ci tree (no npm in the runtime image)
+COPY --from=cdxgen-builder /opt/node/bin/node /usr/local/bin/node
+COPY --from=cdxgen-builder /opt/cdxgen /opt/cdxgen
+RUN ln -s /opt/cdxgen/node_modules/@cyclonedx/cdxgen/bin/cdxgen.js /usr/local/bin/cdxgen \
+    && cdxgen --version
+
 # Install cbomkit-theia (CBOM binary/directory scanning)
 COPY --from=cbomkit-builder /usr/local/bin/cbomkit-theia /usr/local/bin/cbomkit-theia
 
@@ -145,6 +188,18 @@ COPY --from=builder /build/aibom /build/aibom
 # The CBOM SSRF guard's address rule (#53): MCP and LLM scans check every address they connect to with the file the API
 # runs. Standard library only; helpers/net/guard.py loads it from this path (the same path as in a checkout).
 COPY backend/utilities/cbom_sources/address_rule.py /build/backend/utilities/cbom_sources/address_rule.py
+# The SBOM scan resolves licences, authors and hashes once with the API's own files (sca_sbom_agent/registry_enrich.py
+# loads them from these paths; standard library only): the package-registry lookup, the SPDX licence-id rules (they read
+# /build/aibom/src/aibom/schemas/spdx.schema.json) and the licence risk categories the dashboard counts.
+COPY backend/utilities/compliance/sbom_registry.py backend/utilities/compliance/spdx_license.py /build/backend/utilities/compliance/
+COPY backend/utilities/dashboard/sbom_license.py /build/backend/utilities/dashboard/sbom_license.py
+
+# Build identity: the SBOM's metadata.tools names DevSecShield with this version (sca_sbom_agent/merge_inventory.py).
+# scripts/deploy/build_images.sh passes both, as for the backend. Declared last so a new commit reuses every layer.
+ARG DSS_BUILD_SHA=""
+ARG DSS_BUILD_VERSION=""
+ENV DSS_BUILD_SHA=${DSS_BUILD_SHA} \
+    DSS_BUILD_VERSION=${DSS_BUILD_VERSION}
 
 # Build identity: the release the AI BOM / CBOM documents name as their tool version (aibom/src/aibom/emit/identity.py,
 # "DevSecShield AI BOM <version>"). scripts/deploy/build_images.sh passes both, as for the backend. Declared last, so a

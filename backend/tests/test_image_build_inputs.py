@@ -18,6 +18,7 @@ REPO = Path(__file__).resolve().parents[2]
 WORKER = (REPO / "RabbitMQ" / "worker" / "Dockerfile").read_text()
 DAST = (REPO / "RabbitMQ" / "dast_worker" / "Dockerfile").read_text()
 BUILD = (REPO / "scripts" / "deploy" / "build_images.sh").read_text()
+IGNORE = (REPO / "RabbitMQ" / "worker" / "Dockerfile.dockerignore").read_text()
 
 
 def froms(text: str) -> list[str]:
@@ -28,9 +29,22 @@ def test_worker_images_take_the_base_image_build_arguments():
     # #69 (#335) pins the scan worker's base images by digest; the defaults stay build arguments a proxy build overrides
     assert re.search(r"^ARG UV_BASE_IMAGE=ghcr\.io/astral-sh/uv:python3\.12-bookworm-slim@sha256:[0-9a-f]{64}$", WORKER, re.M)
     assert re.search(r"^ARG GO_BASE_IMAGE=golang:1\.26(\.\d+)?-bookworm@sha256:[0-9a-f]{64}$", WORKER, re.M)
-    assert froms(WORKER) == ["${UV_BASE_IMAGE}", "${GO_BASE_IMAGE}", "${UV_BASE_IMAGE}"]
+    # builder, cbomkit-theia, cdxgen (FIX-C1), runtime
+    assert froms(WORKER) == ["${UV_BASE_IMAGE}", "${GO_BASE_IMAGE}", "${UV_BASE_IMAGE}", "${UV_BASE_IMAGE}"]
     assert re.search(r"^ARG UV_BASE_IMAGE=ghcr\.io/astral-sh/uv:python3\.12-bookworm-slim$", DAST, re.M)
     assert froms(DAST) == ["${UV_BASE_IMAGE}", "${UV_BASE_IMAGE}"]
+
+
+def test_worker_node_and_cdxgen_are_pinned_and_verified():
+    """FIX-C1: cdxgen (SBOM inventory) runs from the image, never ``npx --yes`` at scan time: Node.js by version and
+    SHA-256, cdxgen and its dependencies by the committed lockfile (npm ci), no install scripts."""
+    assert re.search(r"^ARG NODE_VERSION=\d+\.\d+\.\d+$", WORKER, re.M)
+    assert re.search(r"^ARG NODE_SHA256_AMD64=[0-9a-f]{64}$", WORKER, re.M)
+    assert re.search(r"^ARG NODE_SHA256_ARM64=[0-9a-f]{64}$", WORKER, re.M)
+    step = WORKER[WORKER.index("ARG NODE_VERSION"):WORKER.index("Stage 2: Runtime")]
+    assert "https://nodejs.org/dist/v${NODE_VERSION}/" in step and "sha256sum -c /tmp/node.sha256" in step
+    assert "npm ci --omit=dev --omit=optional --ignore-scripts" in step
+    assert "npm install" not in WORKER and "npx" not in WORKER
 
 
 def test_build_script_passes_the_go_base_image_to_the_scan_worker_only():
@@ -56,3 +70,30 @@ def test_backend_image_secret_check_covers_every_copied_tree():
     line = re.search(r"^\s+assert_no_secrets backend (.+)$", BUILD, re.MULTILINE)
     assert line, "build_images.sh does not check the backend image"
     assert set(line.group(1).split()) == {"/backend", "/prod_database_migrations", "/opt/aibom"}
+
+
+def test_worker_image_copies_the_files_the_sbom_scan_loads_by_path():
+    """Review 6028132826 M4: the SBOM scan resolves licences once with the API's own files, loaded by path
+    (RabbitMQ/worker/helpers/tools/sca_sbom_agent/registry_enrich.py); the image must hold them at the same paths."""
+    loader = (REPO / "RabbitMQ/worker/helpers/tools/sca_sbom_agent/registry_enrich.py").read_text()
+    for rel in ("backend/utilities/compliance/sbom_registry.py", "backend/utilities/compliance/spdx_license.py",
+                "backend/utilities/dashboard/sbom_license.py"):
+        assert f'"{rel}"' in loader
+        name = rel.rsplit("/", 1)[1]
+        assert re.search(rf"^COPY .*\b{re.escape(rel)}\b.* /build/{re.escape(rel.rsplit('/', 1)[0])}/(?:{re.escape(name)})?$",
+                         WORKER, re.M), rel
+        # the build context is an allowlist (RabbitMQ/worker/Dockerfile.dockerignore): a COPY of a file it leaves out
+        # fails the image build ("not found")
+        assert re.search(rf"^!{re.escape(rel)}$", IGNORE, re.M), rel
+
+
+def test_ci_installs_the_syft_and_grype_the_worker_image_ships():
+    """Review 6028132826 M3: CI's Syft / Grype are the Dockerfile's versions and checksums, never a second pin."""
+    script = (REPO / ".github/ci/install-sbom-tools.sh").read_text()
+    ci = (REPO / ".github/workflows/ci.yml").read_text()
+    assert 'RabbitMQ/worker/Dockerfile' in script and 'sha256sum -c' in script
+    assert re.search(r"[0-9a-f]{64}", script) is None and re.search(r"\d+\.\d+\.\d+_linux", script) is None
+    assert 'setup-command: bash "$GITHUB_WORKSPACE/.github/ci/install-sbom-tools.sh"' in ci
+    for tool in ("GRYPE", "SYFT"):
+        assert re.search(rf"^ARG {tool}_VERSION=\d+\.\d+\.\d+$", WORKER, re.M)
+        assert re.search(rf"^ARG {tool}_SHA256_AMD64=[0-9a-f]{{64}}$", WORKER, re.M)

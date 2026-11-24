@@ -56,7 +56,10 @@ def extract_finding_summary(finding_data: dict | None) -> str:
     ):
         value = data.get(key)
         if isinstance(value, str) and value.strip():
-            return value.strip()[:_SUMMARY_MAX]
+            summary = value.strip()
+            if data.get("version_guessed_from") and "unverified" not in summary.lower():
+                summary += " - unverified version"  # an SBOM match on a range's lower bound (review 6032108510 m2)
+            return summary[:_SUMMARY_MAX]
     return "Security finding"
 
 
@@ -67,10 +70,15 @@ def finding_ticket_description(scan_type: str, scan_id: int, finding: dict | Non
     desc = (data.get("description") or data.get("message") or "").strip()
     if len(desc) > 1200:
         desc = desc[:1200] + "…"
+    guessed = str(data.get("version_guessed_from") or "").strip()
+    unverified = (f"Version: unverified. It was read from the manifest range {guessed} (its lower bound), so the "
+                  "installed version may not be affected; pin the dependency and rescan. Not counted in the scan's "
+                  "totals.\n") if guessed else ""
     return (
         f"DevSecShield {scan_type} finding from scan {scan_id}.\n"
         f"Impact: {impact}\n"
-        f"Location: {url}\n\n"
+        f"Location: {url}\n"
+        f"{unverified}\n"
         f"{desc}"
     )
 

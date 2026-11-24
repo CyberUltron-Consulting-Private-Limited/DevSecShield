@@ -13,7 +13,12 @@ from backend.utilities.dashboard.sbom_license import (
     resolve_sbom_license_category,
     resolve_sbom_reachability,
 )
-from backend.utilities.dashboard.sbom_rows import vulnerability_findings, vulnerability_rows
+from backend.utilities.dashboard.sbom_rows import (
+    component_licence_categories,
+    severity_rows,
+    unverified_version_rows,
+    vulnerability_findings,
+)
 console = Console()
 
 
@@ -953,17 +958,22 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
     
     """
     sbom_scans = [s for s in scans if s.scan_type == "sbom_sca"]
+    license_counts: dict[str, int] = defaultdict(int)
     all_results: list[dict] = []  # known vulnerabilities only: the inventoried packages are the SBOM (#46)
     all_findings: list = []  # their stored findings, without the inventory rows' findings (#46)
+    unverified_total = 0  # matches on a version guessed from a range: counted apart (review 6028132826 M2)
     for scan in sbom_scans:
         if scan.scan_status == "success":
-            all_results.extend(vulnerability_rows(_sbom_results(scan)))
+            all_results.extend(severity_rows(_sbom_results(scan)))
+            unverified_total += len(unverified_version_rows(_sbom_results(scan)))
+            # licences over each scan's SBOM components (review 6028132826 M4), not over its vulnerability rows
+            for lic in component_licence_categories(scan.scan_data or {}):
+                license_counts[lic] += 1
         all_findings.extend(vulnerability_findings(get_findings_for_scan_id(scan.id)))
 
     severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
     reachability_counts: dict[str, int] = defaultdict(int)
     vulnerability_trends_over_time: dict[str, dict[str, int]] = {}
-    license_counts: dict[str, int] = defaultdict(int)
     policy_compliance_counts: dict[str, int] = defaultdict(int)
     total_policy_violations = 0
     risk_score_weighted_sum = 0.0
@@ -980,7 +990,7 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
     for scan in sbom_scans:
         if scan.scan_status != "success":
             continue
-        results = vulnerability_rows(_sbom_results(scan))
+        results = severity_rows(_sbom_results(scan))  # confirmed versions only (review 6028132826 M2)
         if not results:
             continue
         date_key = str(scan.created_at.date()) if scan.created_at else ""
@@ -1000,8 +1010,6 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
             reachability_counts[reach] += 1
             if reach == "reachable":
                 total_reachable += 1
-            lic = resolve_sbom_license_category(item)
-            license_counts[lic] += 1
             cc = item.get("compliance_controls")
             if isinstance(cc, dict):
                 total_policy_violations += len(cc)
@@ -1083,6 +1091,7 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
         "total_high_risk_licenses": total_high_license,
         "average_risk_score": average_risk_score,
         "total_reachable_issues": total_reachable,
+        "total_unverified_version_findings": unverified_total,
     }
     average_risk_score_per_reachability_level = {}
     for r in ["reachable", "potentially_reachable", "not_reachable", "not_assessed"]:

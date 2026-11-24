@@ -4,6 +4,7 @@
  */
 import assert from "node:assert/strict";
 import {
+  componentVersionText,
   inventoryRowsFromCycloneDx,
   overallComplianceFromBom,
 } from "./sbomInventory";
@@ -239,5 +240,23 @@ assert.equal(caffeine.relationship, "Included in Spring Framework—Spring Core"
 
 const empty = inventoryRowsFromCycloneDx({ components: [] });
 assert.deepEqual(empty, []);
+
+// review 6028132826 B2: a version guessed from a manifest range never reads as a pin
+{
+  const guessed = {
+    version: "10.0",
+    properties: [
+      { name: "dss:version_source", value: "range_lower_bound" },
+      { name: "dss:version_constraint", value: ">=10.0,<11" },
+    ],
+  };
+  assert.equal(componentVersionText(guessed), "≥ 10.0 (range >=10.0,<11)");
+  assert.equal(componentVersionText({ version: "13.0.0", properties: [{ name: "dss:version_source", value: "lock_file" }] }), "13.0.0");
+  const rows = inventoryRowsFromCycloneDx({
+    vulnerabilities: [],
+    components: [{ name: "pillow", purl: "pkg:pypi/pillow@10.0", "bom-ref": "pkg:pypi/pillow@10.0", ...guessed }],
+  });
+  assert.equal(rows[0].version, "≥ 10.0 (range >=10.0,<11)");
+}
 
 console.log("sbomInventory.test.ts: ok");

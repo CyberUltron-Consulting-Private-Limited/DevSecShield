@@ -11,10 +11,11 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid5
 
 from backend.utilities.compliance.sbom_identity import parse_pkg
 from backend.utilities.compliance import sbom_advisory, sbom_registry
+from backend.utilities.compliance.spdx_license import licence_choice, sanitize_licenses
 
 _CVE_RE = re.compile(r"CVE-\d{4}-\d+", re.I)
 _LICENSE_REF = re.compile(r"^LicenseRef-", re.I)
@@ -22,7 +23,6 @@ _HIGH_IMPACT = frozenset({"critical", "high"})
 _HIGH_LICENSE = frozenset(
     {"strong_copyleft", "network_copyleft", "source_available"}
 )
-_SPDX_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.+-]*$")
 _HASH_ALG = {
     "sha256": "SHA-256",
     "sha-256": "SHA-256",
@@ -48,6 +48,20 @@ _PURL_SUPPLIER = {
     "github": "GitHub",
 }
 _GIT_SHA = re.compile(r"^[0-9a-f]{40}$", re.I)
+CDX_SCHEMA_16 = "http://cyclonedx.org/schema/bom-1.6.schema.json"
+_IMPACT_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+_CVSS_METHOD = {"2.0": "CVSSv2", "3.0": "CVSSv3", "3.1": "CVSSv31", "4.0": "CVSSv4"}
+# component properties a downloaded SBOM keeps (FIX-C1: a version guessed from a manifest range says so; the
+# action tag a SHA-pinned GitHub Action was named by)
+_KEEP_PROPS = frozenset({"declared:depends", "dss:version_source", "dss:version_constraint", "dss:version_tag"})
+# metadata properties the worker writes and the download keeps (review 6028132826: graph state M1, registry M4,
+# Grype database build date and coverage note m3, SPDX conversion M5)
+_KEEP_META_PROPS = frozenset({"dss:inventory_tools", "dss:dependency_graph", "dss:registry", "dss:grype_db_built",
+                              "dss:grype_db_schema", "dss:coverage_note", "dss:converted_from",
+                              "dss:llm_enrichment", "dss:spdx_packages_without_id", "dss:spdx_invalid_entries",
+                              "dss:licence_coverage", "dss:hash_coverage",
+                              "dss:spdx_relationships_unmapped"})
+_GUESSED = "range_lower_bound"
 _SYFT_LOC = re.compile(r"^syft:location:\d+:path$")
 
 
@@ -180,13 +194,21 @@ def _index_findings(
             dependency=str(row.get("dependency") or row.get("package_name") or ""),
             purl=str(row.get("purl") or "") if isinstance(row.get("purl"), str) else "",
         )
+        # one package can have several rows (one per advisory since FIX-C1): keep its worst one for the verdict
         if ident.purl:
-            by_purl[ident.purl.lower()] = row
+            _keep_worst(by_purl, ident.purl.lower(), row)
         if ident.name:
-            by_name[ident.name.lower()] = row
+            _keep_worst(by_name, ident.name.lower(), row)
             if ident.version:
-                by_nv[f"{ident.name.lower()}@{ident.version}"] = row
+                _keep_worst(by_nv, f"{ident.name.lower()}@{ident.version}", row)
     return by_purl, by_nv, by_name
+
+
+def _keep_worst(index: dict[str, dict[str, Any]], key: str, row: dict[str, Any]) -> None:
+    cur = index.get(key)
+    rank = _IMPACT_RANK.get(str(row.get("impact") or "").strip().lower(), 0)
+    if cur is None or rank >= _IMPACT_RANK.get(str(cur.get("impact") or "").strip().lower(), 0):
+        index[key] = row
 
 
 def _match_finding(
@@ -223,8 +245,13 @@ def keep_software_component(comp: dict[str, Any]) -> bool:
     return True
 
 
+_CLONE_DIR = re.compile(r"^repo_[a-z0-9_]{8}$")  # the worker's clone temp dir (scan_context.clone_repo)
+
+
 def _clean_subject_name(name: str, subject: str | None) -> str:
     raw = (name or "").strip()
+    if _CLONE_DIR.match(raw) or raw in {"", "."}:
+        return subject or raw or ""
     if raw.startswith("/tmp/"):
         if subject:
             return subject
@@ -255,7 +282,7 @@ def _usable_license_list(existing: Any) -> list[dict[str, Any]] | None:
         if _LICENSE_REF.match(token):
             continue
         out.append(copy.deepcopy(item))
-    return out or None
+    return sanitize_licenses(out) if out else None
 
 
 def _license_objects(comp: dict[str, Any], row: dict[str, Any] | None) -> list[dict[str, Any]] | None:
@@ -264,12 +291,10 @@ def _license_objects(comp: dict[str, Any], row: dict[str, Any] | None) -> list[d
         return existing
     lic = str((row or {}).get("license") or "").strip()
     if lic and not _LICENSE_REF.match(lic) and lic.lower() not in {"not_declared", "noassertion", "none", "unknown"}:
-        if _SPDX_ID.match(lic):
-            return [{"license": {"id": lic}}]
-        return [{"license": {"name": lic[:200]}}]
+        return licence_choice(lic)  # review 6028132826 B1: license.id only for a listed SPDX id
     mapped = _curated_spdx(str(comp.get("name") or ""))
     if mapped:
-        return [{"license": {"id": mapped}}]
+        return licence_choice(mapped)
     org = _github_org(str(comp.get("purl") or ""))
     if org in {"actions", "github", "pypa"}:
         return [{"license": {"id": "MIT"}}]
@@ -430,8 +455,8 @@ def _clean_component(
     for prop in comp.get("properties") or []:
         if not isinstance(prop, dict):
             continue
-        if str(prop.get("name") or "") == "declared:depends":
-            props.append({"name": "declared:depends", "value": str(prop.get("value") or "")})
+        if str(prop.get("name") or "") in _KEEP_PROPS:
+            props.append({"name": str(prop["name"]), "value": str(prop.get("value") or "")})
     out["properties"] = props
     return out
 
@@ -491,8 +516,13 @@ def _clean_metadata_component(raw: Any, subject: str | None) -> dict[str, Any] |
     for key in ("type", "name", "version", "bom-ref", "purl", "group"):
         if raw.get(key) not in (None, ""):
             out[key] = raw[key]
-    name = _clean_subject_name(str(out.get("name") or ""), subject)
+    raw_name = str(out.get("name") or "").strip()
+    name = _clean_subject_name(raw_name, subject)
     if name:
+        if raw_name and name != raw_name and raw_name in str(out.get("bom-ref") or ""):
+            # the worker's clone directory never reaches the served document through the subject's ref either
+            # (review 6032108510 m5); the old ref is mapped to this one in dependencies / compositions
+            out["bom-ref"] = f"urn:dss:subject:{name}"
         out["name"] = name
     out.setdefault("type", "application")
     return out
@@ -620,9 +650,11 @@ def _apply_registry(comp: dict[str, Any]) -> None:
     if meta.get("author") and not comp.get("author"):
         comp["author"] = str(meta["author"])
     if meta.get("license") and not _usable_license_list(comp.get("licenses")):
-        comp["licenses"] = [{"license": {"id": str(meta["license"])}}]
+        choice = licence_choice(str(meta["license"]))  # "LGPL" is not an SPDX id: license.name (B1)
+        if choice:
+            comp["licenses"] = choice
     hashed = meta.get("hash")
-    if hashed and not comp.get("hashes"):
+    if hashed and not comp.get("hashes") and not _is_guessed(comp):  # never a hash for a guessed version (B2)
         alg, content = hashed
         if content:
             comp["hashes"] = [{"alg": str(alg), "content": str(content)}]
@@ -631,6 +663,42 @@ def _apply_registry(comp: dict[str, Any]) -> None:
         props = list(comp.get("properties") or [])
         props.append({"name": "declared:depends", "value": ", ".join(depends)})
         comp["properties"] = props
+
+
+def _is_guessed(comp: dict[str, Any]) -> bool:
+    return any(isinstance(p, dict) and p.get("name") == "dss:version_source" and p.get("value") == _GUESSED
+               for p in comp.get("properties") or [])
+
+
+def _meta_prop(meta: dict[str, Any], name: str) -> str | None:
+    for prop in meta.get("properties") or [] if isinstance(meta, dict) else []:
+        if isinstance(prop, dict) and prop.get("name") == name:
+            return str(prop.get("value") or "")
+    return None
+
+
+def _graph_completeness(root_ref: str, refs: list[str], deps: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
+    """``(declared | partial | none, compositions)``: the subject's dependencies are ``incomplete`` when a component
+    is not reachable through the edges the document holds, and a component with no entry has ``unknown`` ones. The
+    worker's ``merge_inventory.graph_completeness`` writes the same for a new scan (review 6028132826 M1)."""
+    graph = {str(d.get("ref")): [str(k) for k in d.get("dependsOn") or []] for d in deps if d.get("ref")}
+    seen: set[str] = set()
+    todo = [root_ref]
+    while todo:
+        for kid in graph.get(todo.pop(), []):
+            if kid not in seen:
+                seen.add(kid)
+                todo.append(kid)
+    if not refs:
+        return "none", []
+    reached = sum(1 for r in refs if r in seen)
+    if reached == len(refs):
+        return "declared", []
+    comps: list[dict[str, Any]] = [{"aggregate": "incomplete", "dependencies": [root_ref]}]
+    unknown = [r for r in refs if r not in graph]
+    if unknown:
+        comps.append({"aggregate": "unknown", "dependencies": unknown})
+    return ("partial" if reached else "none"), comps
 
 
 def _graph_from_declared(comps: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -693,6 +761,130 @@ def _vulnerabilities(
     return out
 
 
+def _devsecshield_tool(tools: Any) -> dict[str, Any]:
+    """``metadata.tools`` in the 1.6 object form, with DevSecShield and its build version first."""
+    from backend.utilities.build_info import build_version
+
+    items: list[dict[str, Any]] = []
+    if isinstance(tools, dict):
+        items = [copy.deepcopy(t) for t in tools.get("components") or [] if isinstance(t, dict)]
+    elif isinstance(tools, list):  # the 1.4 array form
+        for t in tools:
+            if isinstance(t, dict) and t.get("name"):
+                entry = {"type": "application", "name": str(t["name"])}
+                if t.get("version"):
+                    entry["version"] = str(t["version"])
+                if t.get("vendor"):
+                    entry["publisher"] = str(t["vendor"])
+                items.append(entry)
+    for t in items:
+        t.setdefault("type", "application")
+    if not any(str(t.get("name") or "").lower() == "devsecshield" for t in items):
+        items.insert(0, {"type": "application", "name": "DevSecShield", "version": build_version(),
+                         "publisher": "DevSecShield"})
+    return {"components": items}
+
+
+def _remap_dependencies(deps: Any, ref_map: dict[str, str]) -> Any:
+    if not isinstance(deps, list):
+        return deps
+    out = []
+    for item in deps:
+        if not isinstance(item, dict):
+            continue
+        ref = str(item.get("ref") or "").split("?", 1)[0]
+        row: dict[str, Any] = {"ref": ref_map.get(ref, ref)}
+        kids = [ref_map.get(k, k) for k in (str(x).split("?", 1)[0] for x in item.get("dependsOn") or [])]
+        if kids or "dependsOn" in item:
+            row["dependsOn"] = list(dict.fromkeys(kids))
+        out.append(row)
+    return out
+
+
+def _advisory_source(vid: str, url: str = "") -> dict[str, str]:
+    if vid.upper().startswith("CVE-"):
+        return {"name": "NVD", "url": url or f"https://nvd.nist.gov/vuln/detail/{vid}"}
+    if vid.upper().startswith("GHSA-"):
+        return {"name": "GitHub Advisory Database", "url": url or f"https://github.com/advisories/{vid}"}
+    return {"name": "OSV", "url": url or f"https://osv.dev/vulnerability/{vid}"}
+
+
+def _grype_vulnerabilities(components: list[dict[str, Any]], rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """CycloneDX ``vulnerabilities`` from the scan's Grype rows: one entry per advisory id, its aliases as
+    ``references``, CVSS rating, CWEs, fix recommendation, and the components it affects (by bom-ref)."""
+    by_purl: dict[str, str] = {}
+    by_nv: dict[str, str] = {}
+    for comp in components:
+        ref = str(comp.get("bom-ref") or "")
+        if not ref:
+            continue
+        purl = _canonical_purl(str(comp.get("purl") or "")).lower()
+        if purl:
+            by_purl.setdefault(purl, ref)
+        name = str(comp.get("name") or "").strip().lower()
+        if name:
+            by_nv.setdefault(f"{name}@{str(comp.get('version') or '').strip()}", ref)
+    out: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        vid = str(row.get("vuln_id") or "").strip()
+        ident = parse_pkg(dependency=str(row.get("dependency") or ""), purl=str(row.get("purl") or ""))
+        ref = by_purl.get(ident.purl.lower()) or by_nv.get(f"{ident.name.lower()}@{ident.version}")
+        if not vid or not ref:
+            continue
+        item = out.get(vid)
+        if item is None:
+            impact = str(row.get("impact") or "unknown").lower()
+            ratings: list[dict[str, Any]] = []
+            source = _advisory_source(vid, str(row.get("vuln_url") or ""))
+            score = row.get("cvss_score")
+            if isinstance(score, (int, float)):
+                rating: dict[str, Any] = {"source": {"name": source["name"]}, "score": float(score),
+                                          "severity": impact if impact in _IMPACT_RANK else "unknown",
+                                          "method": _CVSS_METHOD.get(str(row.get("cvss_version") or ""), "other")}
+                if row.get("cvss_vector"):
+                    rating["vector"] = str(row["cvss_vector"])
+                ratings.append(rating)
+            else:
+                ratings.append({"severity": impact if impact in _IMPACT_RANK else "unknown", "method": "other"})
+            item = {"bom-ref": f"vuln:{vid}", "id": vid, "source": source, "ratings": ratings, "affects": []}
+            aliases = [str(a) for a in row.get("vuln_aliases") or [] if str(a).strip()]
+            if aliases:
+                item["references"] = [{"id": a, "source": _advisory_source(a)} for a in aliases]
+            cwes = sorted({int(c.split("-", 1)[1]) for c in row.get("cwes") or []
+                           if re.fullmatch(r"CWE-\d+", str(c))})
+            if cwes:
+                item["cwes"] = cwes
+            if row.get("description"):
+                item["description"] = str(row["description"])[:2000]
+            if row.get("suggested_fix"):
+                item["recommendation"] = str(row["suggested_fix"])
+            props = [{"name": "dss:detected_by", "value": "grype"},
+                     {"name": "dss:fix_state", "value": str(row.get("fix_state") or "unknown")}]
+            if row.get("fix_versions"):
+                props.append({"name": "dss:fixed_versions", "value": ", ".join(map(str, row["fix_versions"]))})
+            if row.get("epss") is not None:
+                props.append({"name": "dss:epss", "value": str(row["epss"])})
+            if row.get("known_exploited"):
+                props.append({"name": "dss:known_exploited", "value": "true"})
+            if row.get("version_guessed_from"):
+                props.append({"name": "dss:version_guessed_from", "value": str(row["version_guessed_from"])})
+            item["properties"] = props
+            out[vid] = item
+        if all(a["ref"] != ref for a in item["affects"]):
+            aff: dict[str, Any] = {"ref": ref}
+            if ident.version:
+                aff["versions"] = [{"version": ident.version, "status": "affected"}]
+            item["affects"].append(aff)
+    return [out[k] for k in sorted(out)]
+
+
+def _matched_by_grype(meta: dict[str, Any]) -> bool:
+    """The worker names Grype in ``metadata.tools`` once Grype matched the inventory (FIX-C1)."""
+    tools = meta.get("tools") if isinstance(meta, dict) else None
+    items = tools.get("components") if isinstance(tools, dict) else tools if isinstance(tools, list) else []
+    return any(isinstance(t, dict) and str(t.get("name") or "").lower() == "grype" for t in items or [])
+
+
 def sanitize_industry_sbom(
     bom: dict[str, Any] | None,
     *,
@@ -700,38 +892,53 @@ def sanitize_industry_sbom(
     findings: list[Any] | None = None,
     subject_name: str | None = None,
 ) -> dict[str, Any]:
+    """The downloadable SBOM: CycloneDX 1.6 (SOW 3.2; a stored 1.7 Syft document is re-emitted as 1.6), with
+    DevSecShield in ``metadata.tools``, the dependency graph completed from the subject, and (FIX-C1) one
+    vulnerability per Grype advisory."""
     src = copy.deepcopy(bom) if isinstance(bom, dict) else {}
     verdict = overall_verdict(compliance)
     indexes = _index_findings(findings)
-    spec = str(src.get("specVersion") or "1.6")
     meta_in = src.get("metadata") if isinstance(src.get("metadata"), dict) else {}
     meta: dict[str, Any] = {}
     if meta_in.get("timestamp"):
         meta["timestamp"] = meta_in["timestamp"]
     else:
         meta["timestamp"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    if meta_in.get("tools"):
-        meta["tools"] = copy.deepcopy(meta_in["tools"])
+    if isinstance(meta_in.get("lifecycles"), list) and meta_in["lifecycles"]:
+        meta["lifecycles"] = copy.deepcopy(meta_in["lifecycles"])
+    meta["tools"] = _devsecshield_tool(meta_in.get("tools"))
     if meta_in.get("authors"):
         meta["authors"] = copy.deepcopy(meta_in["authors"])
     else:
         meta["authors"] = [{"name": "DevSecShield"}]
     cleaned_subject = _clean_metadata_component(meta_in.get("component"), subject_name)
     if cleaned_subject:
+        for key in ("externalReferences", "properties"):
+            if isinstance((meta_in.get("component") or {}).get(key), list):
+                cleaned_subject[key] = copy.deepcopy(meta_in["component"][key])
+        if cleaned_subject.get("type") == "file":  # Syft's "." directory subject
+            cleaned_subject["type"] = "application"
+        cleaned_subject.setdefault("bom-ref", f"urn:dss:subject:{cleaned_subject.get('name') or 'application'}")
         meta["component"] = cleaned_subject
-    meta["properties"] = [{"name": "dss:compliance", "value": verdict}]
+    meta["properties"] = [{"name": "dss:compliance", "value": verdict}] + [
+        {"name": str(p["name"]), "value": str(p.get("value") or "")} for p in meta_in.get("properties") or []
+        if isinstance(p, dict) and str(p.get("name") or "") in _KEEP_META_PROPS]
+    # a scan the worker resolved (licences, authors, hashes once, review 6028132826 M4) is served as stored: no
+    # registry lookup at download time, so /bom, the findings, the dashboard and the stored compliance agree
+    worker_resolved = _meta_prop(meta_in, "dss:registry") is not None
 
     components: list[dict[str, Any]] = []
+    renamed: list[tuple[str, dict[str, Any]]] = []
     for raw in src.get("components") or []:
         if not isinstance(raw, dict) or not keep_software_component(raw):
             continue
         row = _match_finding(raw, indexes)
-        components.append(
-            _clean_component(raw, row, component_verdict(row) if row else "pass")
-        )
+        cleaned = _clean_component(raw, row, component_verdict(row) if row else "pass")
+        components.append(cleaned)
+        renamed.append((str(raw.get("bom-ref") or "").split("?", 1)[0], cleaned))
 
     components = _dedupe_components(components)
-    need = [c for c in components if _needs_registry(c)]
+    need = [] if worker_resolved else [c for c in components if _needs_registry(c)]
     if need:
         workers = min(8, len(need))
         if workers == 1:
@@ -739,35 +946,66 @@ def sanitize_industry_sbom(
         else:
             with ThreadPoolExecutor(max_workers=workers) as pool:
                 list(pool.map(_apply_registry, need))
+    key_to_ref = {_identity_key(c): str(c.get("bom-ref") or "") for c in components}
+    ref_map = {old: key_to_ref.get(_identity_key(c)) or str(c.get("bom-ref") or "")
+               for old, c in renamed if old}
     valid_refs = {str(c.get("bom-ref") or c.get("purl") or "") for c in components}
     valid_refs.discard("")
     if cleaned_subject and cleaned_subject.get("bom-ref"):
         valid_refs.add(str(cleaned_subject["bom-ref"]))
+        old_root = str((meta_in.get("component") or {}).get("bom-ref") or "")
+        if old_root:
+            ref_map.setdefault(old_root, str(cleaned_subject["bom-ref"]))
 
+    serial = str(src.get("serialNumber") or "")
+    if not serial.startswith("urn:uuid:"):  # stable across downloads (the signature and VEX BOM-Links use it)
+        seed = "dss-sbom|" + str(meta["timestamp"]) + "|" + "|".join(sorted(valid_refs))
+        serial = f"urn:uuid:{uuid5(NAMESPACE_URL, seed)}"
     out: dict[str, Any] = {
+        "$schema": CDX_SCHEMA_16,
         "bomFormat": "CycloneDX",
-        "specVersion": spec if spec in {"1.4", "1.5", "1.6", "1.7"} else "1.6",
-        "serialNumber": str(src.get("serialNumber") or f"urn:uuid:{uuid4()}"),
-        "version": src.get("version") if isinstance(src.get("version"), int) else 1,
+        "specVersion": "1.6",
+        "serialNumber": serial,
+        "version": src.get("version") if isinstance(src.get("version"), int) and src.get("version") > 0 else 1,
         "metadata": meta,
         "components": components,
     }
-    if src.get("$schema"):
-        out["$schema"] = src["$schema"]
-    deps = _clean_dependencies(src.get("dependencies"), valid_refs) or []
-    seen_refs = {d.get("ref") for d in deps}
-    for extra in _graph_from_declared(components):
-        if extra.get("ref") not in seen_refs:
-            deps.append(extra)
-            seen_refs.add(extra.get("ref"))
+    deps = _clean_dependencies(_remap_dependencies(src.get("dependencies"), ref_map), valid_refs) or []
+    if not worker_resolved:
+        # an older scan: edges from the packages' registry metadata, matched by name, marked as such (M1)
+        seen_refs = {d.get("ref") for d in deps}
+        inferred = 0
+        for extra in _graph_from_declared(components):
+            if extra.get("ref") not in seen_refs:
+                deps.append(extra)
+                seen_refs.add(extra.get("ref"))
+                inferred += 1
+        if inferred:
+            meta["properties"].append({"name": "dss:dependency_edges_inferred",
+                                       "value": f"{inferred} entries from package registry metadata (by name)"})
+    # review 6028132826 M1: no edge is made up to reach a component; an incomplete graph says so (compositions)
     if deps:
         out["dependencies"] = deps
-    vulns = sbom_advisory.merge_vulnerabilities(
-        _vulnerabilities(components, indexes, polluted=_polluted_cves(findings)),
-        sbom_advisory.attach_advisories(components),
-    )
-    if vulns:
-        out["vulnerabilities"] = vulns
+    if cleaned_subject and cleaned_subject.get("bom-ref"):
+        state, compositions = _graph_completeness(
+            str(cleaned_subject["bom-ref"]), [str(c.get("bom-ref")) for c in components if c.get("bom-ref")], deps)
+        if compositions:
+            out["compositions"] = compositions
+        if _meta_prop(meta, "dss:dependency_graph") is None:
+            meta["properties"].append({"name": "dss:dependency_graph", "value": state})
+    grype_rows = [r for r in findings or [] if isinstance(r, dict) and r.get("detected_by") == "grype"]
+    if grype_rows or _matched_by_grype(meta_in):
+        # the scan's own Grype result is the vulnerability list (also when empty): no lookup at download time, so
+        # /bom, the findings, the PDF and the signature agree and the document does not change between downloads
+        vulns = _grype_vulnerabilities(components, grype_rows)
+    else:  # scans from before FIX-C1 (LLM rows) keep the earlier linkage
+        vulns = sbom_advisory.merge_vulnerabilities(
+            _vulnerabilities(components, indexes, polluted=_polluted_cves(findings)),
+            sbom_advisory.attach_advisories(components),
+        )
+    if vulns or grype_rows or _matched_by_grype(meta_in) or any(
+            isinstance(r, dict) and r.get("vuln_assessed") for r in findings or []):
+        out["vulnerabilities"] = vulns  # present (maybe empty): the inventory was assessed
     return out
 
 

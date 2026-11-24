@@ -42,8 +42,33 @@ function asProps(raw: unknown): Prop[] {
   return out;
 }
 
+/**
+ * dss: properties the SBOM keeps, the same list as aibom/sbom/cyclonedx_export.KEEP_DSS_PROPS and the API's
+ * sbom_cyclonedx._KEEP_PROPS / _KEEP_META_PROPS (review 6028132826 B2: a version guessed from a range must say so in
+ * every copy of the SBOM, this page's table and its "Download CycloneDX" file included).
+ */
+const KEEP_DSS_PROPS = new Set([
+  "dss:compliance",
+  "dss:version_source",
+  "dss:version_constraint",
+  "dss:version_tag",
+  "dss:inventory_tools",
+  "dss:dependency_graph",
+  "dss:registry",
+  "dss:grype_db_built",
+  "dss:grype_db_schema",
+  "dss:coverage_note",
+  "dss:llm_enrichment",
+  "dss:spdx_packages_without_id",
+  "dss:spdx_invalid_entries",
+  "dss:licence_coverage",
+  "dss:hash_coverage",
+  "dss:converted_from",
+  "dss:spdx_relationships_unmapped",
+]);
+
 function keepPropName(name: string): boolean {
-  if (name === "dss:compliance" || name.startsWith("declared:")) return true;
+  if (KEEP_DSS_PROPS.has(name) || name.startsWith("declared:")) return true;
   if (name.startsWith("dss:") || name.startsWith("syft:")) return false;
   return Boolean(name);
 }

@@ -160,4 +160,37 @@ assert.ok(
   assert.deepEqual(out.components[2].evidence?.occurrences, [{ location: "src/b.py", line: 3 }]);
 }
 
+// review 6028132826 B2: the range flags survive the page's overlay (table and "Download CycloneDX")
+{
+  const out = overlayBomCompliance(
+    {
+      bomFormat: "CycloneDX",
+      specVersion: "1.6",
+      metadata: { properties: [{ name: "dss:dependency_graph", value: "partial" }, { name: "dss:scratch", value: "x" }] },
+      components: [
+        {
+          type: "library",
+          "bom-ref": "pkg:pypi/fastapi@0.109.0",
+          name: "fastapi",
+          version: "0.109.0",
+          purl: "pkg:pypi/fastapi@0.109.0",
+          properties: [
+            { name: "dss:version_source", value: "range_lower_bound" },
+            { name: "dss:version_constraint", value: ">=0.109.0" },
+            { name: "syft:package:foundBy", value: "python-package-cataloger" },
+          ],
+        },
+      ],
+    },
+    { ntia_minimum_elements: { pass: 1, fail: 0 } },
+  ) as {
+    metadata: { properties: Array<{ name: string; value: string }> };
+    components: Array<{ properties?: Array<{ name: string; value: string }> }>;
+  };
+  const names = (out.components[0].properties || []).map((p) => p.name).sort();
+  assert.deepEqual(names, ["dss:compliance", "dss:version_constraint", "dss:version_source"]);
+  const meta = out.metadata.properties.map((p) => p.name).sort();
+  assert.deepEqual(meta, ["dss:compliance", "dss:dependency_graph"]);
+}
+
 console.log("overlayBomCompliance.test.ts: ok");

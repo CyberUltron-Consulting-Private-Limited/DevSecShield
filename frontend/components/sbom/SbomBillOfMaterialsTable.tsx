@@ -8,7 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Download, Search } from "lucide-react";
+import { DEFAULT_BOM_VIEW, emptyBomMessage, filterBomRows, isVulnerableRow, type BomView } from "./bomTableFilter";
 import {
+  bomCoverage,
   inventoryRowsFromCycloneDx,
   overallComplianceFromBom,
   type SbomComplianceStatus,
@@ -59,26 +61,14 @@ export default function SbomBillOfMaterialsTable({
   onDownload?: () => void;
 }) {
   const [query, setQuery] = useState("");
-  const [vulnerableOnly, setVulnerableOnly] = useState(true);
+  // every component by default (an SBOM with no known vulnerability must not look empty); the filter stays visible
+  const [view, setView] = useState<BomView>(DEFAULT_BOM_VIEW);
   const rows = useMemo(() => inventoryRowsFromCycloneDx(bom), [bom]);
   const overall = useMemo(() => overallComplianceFromBom(bom), [bom]);
-  const vulnerableCount = useMemo(
-    () => rows.filter((row) => row.cves !== "None" && row.cves !== "N/A" && row.cves !== "—").length,
-    [rows],
-  );
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return rows.filter((row) => {
-      if (vulnerableOnly && (row.cves === "None" || row.cves === "N/A" || row.cves === "—")) {
-        return false;
-      }
-      if (!q) return true;
-      return [row.name, row.supplier, row.version, row.uniqueId, row.cves, row.relationship, row.author]
-        .join(" ")
-        .toLowerCase()
-        .includes(q);
-    });
-  }, [rows, query, vulnerableOnly]);
+  const coverage = useMemo(() => bomCoverage(bom), [bom]);
+  const unlicensed = coverage.total - coverage.licensed;
+  const vulnerableCount = useMemo(() => rows.filter(isVulnerableRow).length, [rows]);
+  const filtered = useMemo(() => filterBomRows(rows, query, view), [rows, query, view]);
 
   if (!rows.length) return null;
 
@@ -94,11 +84,32 @@ export default function SbomBillOfMaterialsTable({
               Vulnerable packages are listed first. RBI, SEBI, and CERT-In detail
               stays in the dashboard and PDF.
             </CardDescription>
+            {unlicensed > 0 ? (
+              <p className="mt-1 max-w-3xl text-xs text-amber-700 dark:text-amber-300" data-testid="sbom-coverage-note">
+                {unlicensed} of {coverage.total} components have no licence
+                {coverage.registry.startsWith("off") ? " (package-registry lookups are off for this scan)" : ""}
+                ; the licence-risk checks report them as not assessed.
+              </p>
+            ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={overall} />
             <Badge variant="outline" data-testid="sbom-vuln-count">
               {vulnerableCount} with known vulns
+            </Badge>
+            <Badge
+              variant="outline"
+              data-testid="sbom-licence-coverage"
+              title={coverage.registry ? `Package registries: ${coverage.registry}` : undefined}
+            >
+              Licences {coverage.licensed}/{coverage.total}
+            </Badge>
+            <Badge
+              variant="outline"
+              data-testid="sbom-hash-coverage"
+              title={coverage.registry ? `Package registries: ${coverage.registry}` : undefined}
+            >
+              Hashes {coverage.hashed}/{coverage.total}
             </Badge>
             {onDownload ? (
               <Button
@@ -114,8 +125,8 @@ export default function SbomBillOfMaterialsTable({
             ) : null}
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative max-w-sm flex-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div className="relative w-full min-w-0 sm:max-w-sm sm:flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
             <Input
               type="search"
@@ -126,15 +137,29 @@ export default function SbomBillOfMaterialsTable({
               aria-label="Search software bill of materials"
             />
           </div>
-          <Button
-            type="button"
-            variant={vulnerableOnly ? "default" : "outline"}
-            className="h-9 cursor-pointer"
-            onClick={() => setVulnerableOnly((v) => !v)}
-            data-testid="sbom-vulnerable-only"
-          >
-            {vulnerableOnly ? "Vulnerable only" : "Show all components"}
-          </Button>
+          {/* 390 px: the toggle takes the row's full width and its two halves share it (review 6028132826 m2) */}
+          <div role="group" aria-label="Components shown" className="flex w-full min-w-0 overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-800 sm:inline-flex sm:w-auto">
+            <Button
+              type="button"
+              variant={view === "all" ? "default" : "ghost"}
+              className="h-9 min-w-0 flex-1 cursor-pointer whitespace-normal rounded-none px-2 text-xs leading-tight sm:flex-none sm:px-4 sm:text-sm"
+              aria-pressed={view === "all"}
+              onClick={() => setView("all")}
+              data-testid="sbom-view-all"
+            >
+              All components ({rows.length})
+            </Button>
+            <Button
+              type="button"
+              variant={view === "vulnerable" ? "default" : "ghost"}
+              className="h-9 min-w-0 flex-1 cursor-pointer whitespace-normal rounded-none px-2 text-xs leading-tight sm:flex-none sm:px-4 sm:text-sm"
+              aria-pressed={view === "vulnerable"}
+              onClick={() => setView("vulnerable")}
+              data-testid="sbom-view-vulnerable"
+            >
+              Vulnerable only ({vulnerableCount})
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -153,13 +178,7 @@ export default function SbomBillOfMaterialsTable({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={COLUMNS.length} className="py-8 text-center text-zinc-500">
-                    No components match this search
-                  </TableCell>
-                </TableRow>
-              ) : (
+              {filtered.length === 0 ? null : (
                 filtered.map((row) => (
                   <TableRow
                     key={`${row.name}@${row.version}`}
@@ -187,6 +206,12 @@ export default function SbomBillOfMaterialsTable({
           </Table>
           <ScrollBar orientation="horizontal" />
         </ScrollArea>
+        {filtered.length === 0 ? (
+          // outside the horizontally scrolling table, so it stays in view on a phone (review 6028132826 m2)
+          <p className="py-8 text-center text-sm text-zinc-500" role="status" data-testid="sbom-bom-empty">
+            {emptyBomMessage(view, query, rows.length)}
+          </p>
+        ) : null}
       </CardContent>
     </Card>
   );
