@@ -155,10 +155,10 @@ _KEY_CUSTODY_KINDS = _CLOUD_KINDS | {"key_manager"}
 def collections_in_scope(view: object) -> tuple:
     """The view's CBOM Sources collections whose source still exists (``TeamCbomView.collections`` without the deleted
     ones: ``collections_view.is_deleted_source``, staging QA2 Q1-01), () for a hand-made view."""
-    from backend.utilities.cbom_sources.collections_view import is_deleted_source
+    from backend.utilities.dashboard.cbom_team_rollup import current_collections
 
     found = getattr(view, "collections", ()) or ()
-    return tuple(c for c in found if not is_deleted_source(c)) if isinstance(found, (tuple, list)) else ()
+    return current_collections(view) if isinstance(found, (tuple, list)) else ()
 
 
 def endpoints_probed(view: object) -> int:

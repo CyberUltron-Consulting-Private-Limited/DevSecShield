@@ -22,8 +22,6 @@ import re
 import sys
 from pathlib import Path
 
-import pytest
-
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import test_cbom_deliverable_methodology as H
 from backend.tests.support import sources_every_type as FX
@@ -63,7 +61,7 @@ def test_section13_numbers_and_formats_come_from_the_manifest():
         if spec.number == 2:
             continue  # D2 is this document
         produced = plan[f"D{spec.number}"][2]
-        assert produced.startswith(f"Team CBOM deliverable #{spec.number} ("), (spec.slug, produced)
+        assert produced.startswith(f"Team CBOM deliverable #{spec.number} (PDF)"), (spec.slug, produced)
         assert ("CSV" in produced.split(";")[0]) == (spec.build_csv is not None), produced
     assert M.EVIDENCE_PLAN == M.evidence_plan()  # the module name still reads the same rows
 

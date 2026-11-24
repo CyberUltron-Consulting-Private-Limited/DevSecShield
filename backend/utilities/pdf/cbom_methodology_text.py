@@ -529,8 +529,8 @@ def evidence_plan() -> tuple[tuple[str, str, str, str], ...]:
         if produced is TEAM_DELIVERABLE:
             spec = by_number.get(int(sow[1:]))
             produced = ("Not produced by the deliverables menu" if spec is None else
-                        f"Team CBOM deliverable #{spec.number} ({', '.join(f.upper() for f in spec.formats)})"
-                        + _ELSEWHERE.get(sow, ""))
+                        f"Team CBOM deliverable #{spec.number} (PDF)"
+                        + (" and its CSV" if "csv" in spec.formats else "") + _ELSEWHERE.get(sow, ""))
         rows.append((sow, name, produced, evidence))
     return tuple(rows)
 
@@ -598,10 +598,9 @@ NETWORK_KINDS = frozenset({"network_range", "appliance"})
 def coverage(view: Any) -> dict[str, Any]:
     """What this edition's collections actually did: kinds collected, endpoints probed (by any collector, and by the
     network collections alone), collections in scope."""
-    from backend.utilities.cbom_sources.collections_view import is_deleted_source
+    from backend.utilities.dashboard.cbom_team_rollup import current_collections
 
-    # a deleted source's last collection is not in this edition (staging QA2 Q1-01: "19 collections" beside 18)
-    found = tuple(c for c in (getattr(view, "collections", ()) or ()) if not is_deleted_source(c))
+    found = current_collections(view)  # a deleted source's collection is not in this edition (staging QA2 Q1-01)
     kinds = {str(_attr(c, "source_kind", "") or "") for c in found}
     probed = sum(int(_attr(c, "endpoints_probed", 0) or 0) for c in found)
     network = sum(int(_attr(c, "endpoints_probed", 0) or 0) for c in found

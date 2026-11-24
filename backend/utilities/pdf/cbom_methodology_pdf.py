@@ -326,7 +326,8 @@ def _not_applicable_labels(view: TeamCbomView) -> list[str]:
 def _applicability_note(view: TeamCbomView) -> str:
     """The profile, the frameworks left out, and the RBI instrument cited for this entity type: D14 section 5's
     words, so an NBFC's and a bank's D2 differ exactly where their applicability differs."""
-    from backend.utilities.pdf import cbom_board_report_pdf as board  # lazy: one wording with D14 section 5
+    # lazy: one wording with D14 section 5
+    from backend.utilities.pdf import cbom_board_report_pdf as board
 
     shown = f"Frameworks that apply to this team's regulatory profile ({board.profile_text(view)})."
     hidden = _not_applicable_labels(view)
