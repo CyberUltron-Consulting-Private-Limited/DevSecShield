@@ -25,6 +25,7 @@ from aibom.cbom.weakness import (
     cert_expiry_finding,
     certificate_findings,
     cipher_suite_findings,
+    kdf_parameter_findings,
     material_misuse_findings,
     weak_finding,
     weak_padding_finding,
@@ -68,6 +69,8 @@ class WeakCryptoScanner(Scanner):
             # C6: related-crypto-material misuse (weak RNG / static IV / reused
             # nonce / hardcoded key) — pure predicate over the emitted props.
             findings.extend(material_misuse_findings(comp))
+            # a KDF's captured cost below NIST SP 800-132 / OWASP minimums
+            findings.extend(kdf_parameter_findings(comp))
             # C13: cipher-suite / SSH-algo / IKE-transform negotiation weakness —
             # pure predicate over the emitted crypto:cipherSuite bag (stacks onto
             # a weak-version protocol, e.g. IKEv1 + 3des-md5-modp1024).

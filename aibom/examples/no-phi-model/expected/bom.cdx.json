@@ -9,14 +9,15 @@
       "components": [
         {
           "type": "application",
-          "supplier": {
-            "name": "Zero Shield",
-            "url": [
-              "https://zeroshield.ai"
-            ]
-          },
+          "publisher": "Zero Shield",
           "name": "DevSecShield AI BOM",
-          "version": "0.1.0"
+          "version": "0.1.0",
+          "externalReferences": [
+            {
+              "type": "website",
+              "url": "https://zeroshield.ai"
+            }
+          ]
         }
       ]
     },

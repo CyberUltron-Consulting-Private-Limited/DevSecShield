@@ -26,10 +26,59 @@ from urllib.parse import quote
 
 from aibom.cbom import crypto_kb, pkgdb
 from aibom.cbom.files import file_walk
+from aibom.cbom.image_refs import image_references
 from aibom.cbom.registry import cbom_register
 from aibom.cbom.rules import algo_info
-from aibom.model.component import CryptoAssetComponent, FrameworkComponent
+from aibom.model.component import (
+    ContainerComponent,
+    CryptoAssetComponent,
+    FrameworkComponent,
+)
 from aibom.scan.registry import ScanContext, Scanner
+
+
+def _image_references(ctx: ScanContext, walk) -> None:
+    """One ``container`` component per image a Dockerfile ``FROM`` or a Compose
+    ``image:`` names (SOW D3: container images, up to 50 per source). The reference
+    is inventoried as written; reading the image itself needs the image in the tree
+    and the "scan binaries" option."""
+    refs, total = image_references(walk)
+    for ref in refs:
+        slug = re.sub(r"[^a-z0-9]+", "-", ref.reference.lower()).strip("-")
+        bom_ref = "container-image-" + slug[:150]
+        if ctx.has_ref(bom_ref):
+            continue
+        props = {
+            "image:reference": ref.reference,
+            "image:origin": (
+                "Dockerfile FROM" if ref.origin == "dockerfile" else "Compose image"
+            ),
+            "discovery:source": ref.source,
+        }
+        if ref.line:
+            props["discovery:line"] = str(ref.line)
+        if ref.digest:
+            props["image:digest"] = ref.digest
+        if ref.unresolved:
+            # a variable with no value in the repository: kept, never dropped
+            props["image:unresolved"] = ",".join(ref.unresolved)
+            if ref.repository != ref.reference:
+                props["image:tag"] = f"unresolved ({', '.join(ref.unresolved)})"
+        elif not ref.tag and not ref.digest:
+            props["image:tag"] = "latest (implicit)"
+        ctx.add_component(
+            ContainerComponent(
+                bom_ref=bom_ref,
+                name=ref.repository,
+                version=ref.tag or ref.digest,
+                purl=ref.purl,
+                properties=props,
+            )
+        )
+    if total > len(refs):
+        ctx.properties["cbom:container_images_total"] = str(total)
+        ctx.properties["cbom:container_images_listed"] = str(len(refs))
+
 
 LIBRARY_CVE_RANGE = "LIBRARY_CVE_RANGE"
 EOL_CRYPTO_LIBRARY = "EOL_CRYPTO_LIBRARY"
@@ -84,7 +133,12 @@ def _purl(pkg) -> str | None:
 
 
 def _advisories(pkg):
-    from aibom.cbom.advisories import _pin, group_by_pin, load_advisories, match_advisories
+    from aibom.cbom.advisories import (
+        _pin,
+        group_by_pin,
+        load_advisories,
+        match_advisories,
+    )
 
     pin = _pin(pkg.ecosystem, pkg.name, version_spec(pkg), pkg.where, direct=False)
     if pin is None:
@@ -120,6 +174,8 @@ class ArtifactScanner(Scanner):
 
     def scan(self, ctx: ScanContext) -> None:
         walk = file_walk(ctx)
+        # always: the images the Dockerfiles and Compose files name
+        _image_references(ctx, walk)
         if not getattr(walk, "scan_binaries", False):
             return
         report = walk.artifacts()
