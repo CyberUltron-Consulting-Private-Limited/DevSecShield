@@ -1383,6 +1383,14 @@
     "aibom/src/aibom/cbom/weakness.py cipher_suite_findings (suites of protocol components built from source)"
    ]
   },
+  "WEAK_KDF_COST": {
+   "class": "code-fixed",
+   "capability": false,
+   "basis": "the scrypt cost parameters are fixed in the team's own source code: the code changes, then a rebuild and release",
+   "sources": [
+    "kb:findings.code.WEAK_KDF_COST.remediation"
+   ]
+  },
   "WEAK_KDF_ITERATIONS": {
    "class": "code-fixed",
    "capability": false,

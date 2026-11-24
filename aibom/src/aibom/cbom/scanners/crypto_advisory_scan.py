@@ -5,7 +5,7 @@ from __future__ import annotations
 from aibom.cbom.advisories import VulnerablePin, find_vulnerable, group_by_pin
 from aibom.cbom.files import file_walk
 from aibom.cbom.gate import VULNERABLE_CRYPTO_LIBRARY
-from aibom.cbom.library_versions import _label_of
+from aibom.cbom.library_versions import _label_of, purl_of
 from aibom.cbom.registry import cbom_register
 from aibom.cbom.scanners.algorithm_scan import _slug
 from aibom.model.component import FrameworkComponent
@@ -39,10 +39,31 @@ def _library_row(ctx: ScanContext, pin):
     return next((c for c in ctx.components if c.bom_ref == ref), None)
 
 
+# A declared range (``cryptography>=38.0.0``) names no installed version: an advisory
+# that only its lower bound falls
+# in is not a finding. The library row says so (the version is unverified) and lists
+# those advisories; nothing is
+# counted, as the SBOM does for a version read from a manifest range (#489).
+UNVERIFIED_REASON = (
+    "only a version range is declared and no lockfile resolves it: the advisories below match the "
+    "range's lower bound, not an installed version"
+)
+
+
+def _unverified(props: dict[str, str], row: VulnerablePin) -> None:
+    props["crypto:versionVerified"] = "false"
+    props["crypto:unverifiedAdvisories"] = ",".join(a.id for a in row.advisories)
+    props["crypto:unverifiedAdvisoryCount"] = str(len(row.advisories))
+    props["crypto:versionUnverifiedReason"] = UNVERIFIED_REASON
+
+
 @cbom_register
 class CryptoAdvisoryScanner(Scanner):
-    """Direct and lockfile-transitive versions. No network and no install. One row per declared package version,
-    carrying every advisory it matches."""
+    """Direct and lockfile-transitive versions. No network and no install. One row per
+    crypto library, carrying every
+    advisory its exact version matches. The code lane's row for the package
+    (pyca/cryptography for pypi
+    "cryptography") is that row: a library is never listed twice (staging QA Q2-09)."""
 
     name = "crypto_advisory"
     order = 16
@@ -50,30 +71,80 @@ class CryptoAdvisoryScanner(Scanner):
 
     def scan(self, ctx: ScanContext) -> None:
         for row in group_by_pin(find_vulnerable(ctx.root, file_walk(ctx))):
-            ref = row.ref
-            if ctx.has_ref(ref):
-                continue
             pin = row.pin
+            library = _library_row(ctx, pin)
+            if library is not None and library.version not in (None, pin.version):
+                library = (
+                    None  # another version of the package (a lockfile's) is its own row
+                )
+            if pin.version is None:
+                self._range(ctx, row, library)
+                continue
             props = {
                 "crypto:role": "library",
                 "crypto:vulnerable": "true",
                 "crypto:advisory": ",".join(a.id for a in row.advisories),
                 "crypto:advisoryCount": str(len(row.advisories)),
-                "crypto:version": pin.declared,
+                "crypto:version": pin.version,
                 "crypto:ecosystem": pin.ecosystem,
                 "crypto:dependencyScope": "direct" if pin.direct else "transitive",
-                "discovery:source": pin.path,
             }
-            if pin.line > 0:
-                props["crypto:line"] = str(pin.line)
             if row.upgrade_to:
                 props["crypto:fixedVersion"] = row.upgrade_to
-            library = _library_row(ctx, pin)
             if library is not None:
-                # the code lane's row for the same package (pyca/cryptography for
-                # pypi "cryptography"): the report lists the two as one library
-                # (review of #491 m6); the BOM keeps the vulnerable pin as its own
-                # component, linked to it
-                props["crypto:libraryRef"] = library.bom_ref
-            ctx.add_component(FrameworkComponent(bom_ref=ref, name=f"{pin.name}@{pin.declared}", properties=props))
+                library.properties = {**(library.properties or {}), **props}
+                if library.version is None:
+                    library.version = pin.version
+                    library.purl = (
+                        library.purl
+                        if library.purl and "@" in library.purl
+                        else purl_of(pin.ecosystem, pin.name, pin.version)
+                    )
+                ref = library.bom_ref
+            else:
+                ref = row.ref
+                if ctx.has_ref(ref):
+                    continue
+                props["discovery:source"] = pin.path
+                if pin.line > 0:
+                    props["crypto:line"] = str(pin.line)
+                ctx.add_component(
+                    FrameworkComponent(
+                        bom_ref=ref,
+                        name=pin.name,
+                        version=pin.version,
+                        purl=purl_of(pin.ecosystem, pin.name, pin.version),
+                        properties=props,
+                    )
+                )
             ctx.add_flag(VULNERABLE_CRYPTO_LIBRARY, ref, severity="error", message=_message(row))
+
+    @staticmethod
+    def _range(ctx: ScanContext, row: VulnerablePin, library) -> None:
+        pin = row.pin
+        if library is not None:
+            props = dict(library.properties or {})
+            _unverified(props, row)
+            library.properties = props
+            return
+        ref = row.ref
+        if ctx.has_ref(ref):
+            return
+        props = {
+            "crypto:role": "library",
+            "crypto:ecosystem": pin.ecosystem,
+            "crypto:versionConstraint": pin.declared,
+            "crypto:dependencyScope": "direct" if pin.direct else "transitive",
+            "discovery:source": pin.path,
+        }
+        if pin.line > 0:
+            props["crypto:line"] = str(pin.line)
+        _unverified(props, row)
+        ctx.add_component(
+            FrameworkComponent(
+                bom_ref=ref,
+                name=pin.name,
+                purl=purl_of(pin.ecosystem, pin.name, None),
+                properties=props,
+            )
+        )

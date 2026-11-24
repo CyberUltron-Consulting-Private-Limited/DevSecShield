@@ -138,6 +138,10 @@ def scan_crypto(
     )
     result.sort()
     score_crypto(result)  # C8: weight crypto flags -> result.scores (stacked severity)
+    from aibom.cbom.normalize import stamp_algorithm_oids
+
+    # crypto:oid on the graph: the CERT-In OID check and the CycloneDX oid agree
+    stamp_algorithm_oids(result)
     run_cbom_compliance(result)  # C7: fill the compliance seam (tri-state, graph-only)
     return result
 

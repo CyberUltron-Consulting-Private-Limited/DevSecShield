@@ -408,7 +408,11 @@ LITERAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     # letter before "DSA" is the PQC form, graded separately as dilithium/sphincs).
     ("dsa", re.compile(r"(?<![-\w])DSA\b", _F)),
     ("pbkdf2", re.compile(r"\bPBKDF2", _F)),
-    ("scrypt", re.compile(r"\bscrypt\b", _F)),
+    # Node ``crypto.scryptSync`` too. scrypt / argon2 / bcrypt are plain words that UI
+    # labels and config keys use
+    # ("Scrypt Tier", ``kdf: "scrypt"``): these three count only in a call or API
+    # context (``_api_word_hits``).
+    ("scrypt", re.compile(r"\bscrypt(?:Sync)?\b", _F)),
     ("argon2", re.compile(r"\bargon2\b", _F)),
     ("bcrypt", re.compile(r"\bbcrypt\b", _F)),
     ("hkdf", re.compile(r"\bHKDF\b", _F)),
@@ -1057,6 +1061,155 @@ _WORD = re.compile(r"[A-Za-z]{3,}")
 def _is_prose(body: str) -> bool:
     words = body.split()
     return len(words) >= 3 and len(_WORD.findall(body)) >= 2 and not re.search(r"[/=;{}()]", body)
+
+
+# --------------------------------------------------------------------------- #
+# Labels and configuration words (staging QA Q2-02). In Kotlin / Java and JS / TS
+# a string literal with whitespace in it is a label, a message or a template
+# ("Scrypt Tier (GPU-Proof)", `Scrypt (${mb}MB RAM) + AES-256-GCM AEAD`), never an
+# API argument: JCA, Node, WebCrypto and JWT names have no spaces ("AES/GCM/
+# NoPadding", 'aes-256-gcm', "RSA-OAEP"). A command line passed to a shell
+# ("openssl enc -des3 ...") or a SQL statement keeps its words.
+# --------------------------------------------------------------------------- #
+_LABEL_LANGS = frozenset({_JAVA, _JS})
+_COMMAND_STRING = re.compile(
+    r"^\s*(?:openssl|ssh-keygen|keytool|gpg|certutil|select|insert|update|create)\b",
+    re.I,
+)
+
+
+def _is_label(body: str) -> bool:
+    return bool(re.search(r"\s", body.strip())) and not _COMMAND_STRING.match(body)
+
+
+# A string shown to the user: the value of a UI text property (Compose ``text =
+# "AES-256-GCM"``, DOM
+# ``el.textContent = "..."``, ``title: '...'``) or the argument of a UI / log call
+# (``Text("...")``,
+# ``console.log("...")``). It names an algorithm without using it, also without spaces.
+_UI_TEXT_BEFORE = re.compile(
+    r"(?:\b(?:text|label|title|subtitle|description|message|contentDescription|placeholder|tooltip|hint|caption"
+    r"|textContent|innerText|innerHTML|statusMessage)\s*[:=]\s*"
+    r"|\b(?:Text|makeText|alert|println|print|setText|showToast|toast|addAuditLog|updateStatus)\s*\(\s*"
+    r"|\b(?:console|Log|log|logger|Timber)\s*\.\s*\w+\s*\(\s*)$")
+
+
+def blank_labels(line: str, lang: str) -> str:
+    """``line`` with label strings (see above) blanked, in the Kotlin / Java and JS / TS
+    lanes only."""
+    if lang not in _LABEL_LANGS or len(line) > _MAX_STRING_SCAN:
+        return line
+
+    def blank(m: re.Match[str]) -> str:
+        lit = m.group(0)
+        shown = _is_label(lit[1:-1]) or _UI_TEXT_BEFORE.search(line[:m.start()])
+        return lit[0] + " " * (len(lit) - 2) + lit[-1] if shown else lit
+
+    return _STR_LIT.sub(blank, line)
+
+
+# Words that name a password KDF in labels and settings as often as in code. A hit
+# counts only where the code
+# calls or reaches the API: ``hashlib.scrypt(``, ``Scrypt.scrypt(``,
+# ``crypto.scryptSync(``, ``bcrypt.hashpw(``,
+# ``argon2.PasswordHasher``, ``SCrypt.generate(``, ``scrypt::scrypt(``, ``new SCrypt``;
+# or where the bare name is the
+# argument of a hashing call (passlib ``CryptContext(schemes=["bcrypt"])``). A settings
+# value (``kdf: "scrypt"``,
+# ``put("kdf", "scrypt")``) or a label is not a use of the algorithm.
+_API_WORD_KEYS = frozenset({"scrypt", "argon2", "bcrypt"})
+_API_AFTER = re.compile(r"^\s*(?:\(|\.|::)")
+_API_BEFORE = re.compile(r"(?:\.|::|\bnew\s+)$")
+_HASHING_CALLEE = re.compile(
+    r"crypt|hash|kdf|derive|password|getInstance|CryptContext", re.I
+)
+
+
+def _blank_strings(line: str) -> str:
+    return _STR_LIT.sub(
+        lambda m: m.group(0)[0] + " " * (len(m.group(0)) - 2) + m.group(0)[-1], line
+    )
+
+
+def _api_word_hit(pat: re.Pattern[str], line: str) -> bool:
+    """Whether ``pat`` (one of the ``_API_WORD_KEYS`` patterns) names the algorithm in
+    an API context on ``line``."""
+    if len(line) > _MAX_STRING_SCAN:
+        return any(_api_word_hit(pat, w) for w in _windows(line))
+    code = _blank_strings(line)
+    for m in pat.finditer(code):
+        if _API_AFTER.match(code[m.end():]) or _API_BEFORE.search(code[:m.start()]):
+            return True
+    for lit in _STR_LIT.finditer(line):
+        body = lit.group(0)[1:-1].strip()
+        if not pat.fullmatch(body):
+            continue
+        callee = re.search(r"([A-Za-z_][\w.]*)\s*\((?:[^()]*)$", line[:lit.start()])
+        if callee and _HASHING_CALLEE.search(callee.group(1)):
+            return True
+    return False
+
+
+# Sizes a bare number on the line may give (``RSA 2048``): only public-key families,
+# whose modulus or parameter
+# set is often a separate argument. A symmetric cipher, hash, MAC or KDF never takes its
+# size from an unrelated
+# integer (``KeyProfile("Key 10", 32, 512, ...)``: 512 MB of memory is no AES-512,
+# staging QA Q2-02).
+_SIZE_FROM_NAME = {
+    "aes": (128, 192, 256),
+    "camellia": (128, 192, 256),
+    "aria": (128, 192, 256),
+}  # valid sizes
+_KEYWORD_SIZE = re.compile(
+    r"key[_-]?size\s*=\s*(\d{3,5})|\b(?:bits?|length)\s*=\s*(\d{3,5})", re.I
+)
+_NO_BARE_SIZE = frozenset(
+    {
+        "aes",
+        "camellia",
+        "aria",
+        "des",
+        "3des",
+        "rc4",
+        "rc2",
+        "blowfish",
+        "chacha20",
+        "chacha20-poly1305",
+        "hmac",
+        "pbkdf2",
+        "scrypt",
+        "argon2",
+        "bcrypt",
+        "hkdf",
+        "md5",
+        "sha1",
+        "sha256",
+        "sha384",
+        "sha512",
+        "sha3_256",
+        "blake2b",
+        "blake2s",
+    }
+)
+
+
+def _literal_key_size(key: str, line: str, explicit: int | None) -> int | None:
+    """The key size a literal-lane hit on ``line`` states for ``key``."""
+    sized = _SIZED_KEY.match(key)
+    if sized:
+        return int(sized.group(2))
+    allowed = _SIZE_FROM_NAME.get(key)
+    if (
+        allowed is not None
+    ):  # the name's own size ("AES-256") is read where the asset is named, not here
+        kw = _KEYWORD_SIZE.search(line)
+        size = int(next(g for g in kw.groups() if g)) if kw else None
+        return size if size in allowed else None
+    if key in _NO_BARE_SIZE:
+        kw = _KEYWORD_SIZE.search(line)
+        return int(next(g for g in kw.groups() if g)) if kw else None
+    return explicit
 
 
 def blank_prose(line: str, lang: str) -> str:
@@ -2157,7 +2310,7 @@ def detect_crypto(text: str, lang: str, external: Mapping[str, Any] | None = Non
         # Prose inside string literals / JSX text ("AES-256 encryption at rest", "MD5 is not allowed") names an
         # algorithm without using it: blank it for this lane only (API strings such as "AES/GCM/NoPadding" have
         # no spaces and stay).
-        lit_line = blank_prose(line, lang)
+        lit_line = blank_labels(blank_prose(line, lang), lang)
         if lang == _C and "_set_cipher_list" in lit_line:
             # CB-28: an OpenSSL cipher-list string is a TLS suite policy (the
             # protocol lane reads it, with ``!RC4`` / ``-3DES`` as removals), not a
@@ -2186,10 +2339,13 @@ def detect_crypto(text: str, lang: str, external: Mapping[str, Any] | None = Non
         for key, pat in (*LITERAL_PATTERNS, *LITERAL_BY_LANG.get(lang, ())):
             if not pat.search(lit_line):
                 continue
+            if key in _API_WORD_KEYS and not _api_word_hit(pat, lit_line):
+                # a label or a settings value names the KDF; nothing calls it here
+                continue
             lit = Detection(
                 key=key,
                 line_no=line_no,
-                key_size=explicit_ks,
+                key_size=_literal_key_size(key, lit_line, explicit_ks),
                 mode=mode,
                 curve=curve,
                 padding=_lang_padding(lit_line, lang, key),

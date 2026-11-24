@@ -738,7 +738,10 @@ def _kdf_parameters(
             continue
         if isinstance(value, int) and not isinstance(value, bool):
             params[_PROP_OF[name]] = str(value)
-    if prf:
+    # only a KDF built on a PRF has one (PBKDF2, HKDF); scrypt and Argon2 take no hash
+    # argument, so a stray
+    # ``algorithm=`` keyword on them names no PRF (staging QA Q2-11)
+    if prf and base_key not in ("scrypt", "argon2", "bcrypt"):
         params["crypto:kdfPrf"] = prf
     if base_key == "argon2" and "crypto:argon2Variant" not in params:
         params["crypto:argon2Variant"] = "Argon2id (library default)"

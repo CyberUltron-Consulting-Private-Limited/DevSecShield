@@ -553,7 +553,10 @@ entry("WEAK_ALGORITHM", title="Weak algorithm in code", category="code", default
       description="The code uses a broken or deprecated algorithm (for example MD5, SHA-1, DES, 3DES, RC4, Blowfish).",
       attack="Depending on the algorithm: hash collisions forge signatures or integrity checks; weak ciphers let recorded data be decrypted.",
       cwe=["CWE-327", "CWE-328"], owasp=["crypto"], cves=[],
-      cve_rules=[{"match": "MD5", "cves": ["CVE-2004-2761"]}, {"match": "SHA-?1\\b|SHA1", "cves": ["CVE-2005-4900"]},
+      # CVE-2004-2761 is MD5 in an X.509 certificate signature: it applies to MD5 in a signature, never to an MD5
+      # cache key, checksum or ID (staging QA G-D3-6; a certificate signed with MD5 is WEAK_CERTIFICATE_SIGNATURE)
+      cve_rules=[{"match": "signature over an? MD5|MD5 ?with ?RSA|MD5with|with ?MD5", "cves": ["CVE-2004-2761"]},
+                 {"match": "SHA-?1\\b|SHA1", "cves": ["CVE-2005-4900"]},
                  {"match": "(?<![a-z0-9])(?:a?rc4|arcfour)(?![0-9])", "cves": ["CVE-2013-2566"]}, {"match": "3DES|TRIPLEDES|DESEDE|\\bDES\\b", "cves": ["CVE-2016-2183"]}],
       standards=["NIST SP 800-131A Rev. 2"], compliance=["algorithms"],
       summary_rules=[{"match": "RSA|DSA|\\bDH\\b|Diffie", "summary": "Use RSA-3072 or larger (or ECDSA P-256 / X25519) now, and plan the post-quantum move to ML-KEM / ML-DSA.",

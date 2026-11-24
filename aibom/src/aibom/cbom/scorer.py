@@ -16,8 +16,10 @@ from __future__ import annotations
 
 from importlib import resources
 from pathlib import Path
+from typing import Any
 
 from aibom.model.result import ScanResult
+from aibom.score.posture import posture_grade, posture_label, posture_score
 from aibom.score.scorer import score_result
 
 
@@ -55,4 +57,60 @@ def score_crypto(result: ScanResult) -> ScanResult:
     return score_result(result, str(_CBOM_WEIGHTS_PATH), posture=False)
 
 
-__all__ = ["score_crypto", "_CBOM_WEIGHTS_PATH"]
+_SEVERITIES = ("critical", "high", "medium", "low")
+
+
+def finding_severity_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    """Findings by severity over the run-object's result rows, by the rule every D3
+    surface counts with (the
+    backend's ``cbom_rows.is_finding`` / ``cbom_metrics.finding_severity``): a row with
+    a finding code, or one
+    still marked weak or quantum-vulnerable, is a finding; its impact, Low when it has
+    none it recognises."""
+    counts = dict.fromkeys(_SEVERITIES, 0)
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        codes = [c for c in row.get("finding_codes") or [] if isinstance(c, str) and c]
+        if (
+            "finding_codes" in row
+            and not codes
+            and not (row.get("weak") is True or row.get("quantum_vulnerable") is True)
+        ):
+            continue  # clean inventory
+        impact = str(row.get("impact") or "").strip().lower()
+        counts[impact if impact in counts else "low"] += 1
+    return counts
+
+
+def posture_scores(
+    scores: dict[str, Any], rows: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """The D3 risk score (staging QA Q2-01, Rule P): the engine's one posture function
+    (``score/posture.py``, with its
+    worst-severity cap) over the scan's findings by severity. ``risk_normalized`` /
+    ``risk_band`` / ``risk_grade`` /
+    ``risk_label`` are what the PDF headline, the PDF summary page, the results page and
+    the API show; the flag-weight
+    sum stays in ``risk_total`` and ``by_flag`` / ``by_component`` /
+    ``component_severity`` are unchanged."""
+    counts = finding_severity_counts(rows)
+    score = posture_score(**counts)
+    grade, band = posture_grade(score)
+    return {
+        **scores,
+        "risk_normalized": float(score),
+        "risk_band": band,
+        "risk_grade": grade,
+        "risk_label": posture_label(band),
+        "severity_counts": counts,
+        "risk_scale": "posture",
+    }
+
+
+__all__ = [
+    "finding_severity_counts",
+    "posture_scores",
+    "score_crypto",
+    "_CBOM_WEIGHTS_PATH",
+]

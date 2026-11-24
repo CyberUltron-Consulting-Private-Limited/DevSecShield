@@ -105,6 +105,25 @@ _FIELD_BY_ID: dict[str, tuple[str, str | None]] = {
 }
 
 
+def _has_mode(comp: AIComponent) -> bool:
+    """A mode of operation applies to a block cipher (CycloneDX ``mode``: "the mode of
+    operation in which the
+    cryptographic algorithm (block cipher) is used"), or to an asset whose mode the scan
+    read (AES-GCM). A hash, MAC,
+    KDF, signature or stream cipher has none, so its missing mode is not a gap (staging
+    QA Q2-04)."""
+    return prop(comp, "crypto:primitive") == "block-cipher" or has_nonempty(
+        prop(comp, "crypto:mode")
+    )
+
+
+# Requirements that apply only to some assets of their class, and what those are.
+_APPLIES: dict[str, Callable[[AIComponent], bool]] = {"T9-Algorithms-Mode": _has_mode}
+_APPLIES_TEXT = {
+    "T9-Algorithms-Mode": "a mode of operation applies only to block-cipher algorithms"
+}
+
+
 def _make_auto_check(
     *,
     asset_type: str,
@@ -116,6 +135,12 @@ def _make_auto_check(
 
     def _check(r: ScanResult, req: Requirement) -> CheckResult:
         assets = _of_type(r, asset_type)
+        if rid in _APPLIES:
+            assets = [c for c in assets if _APPLIES[rid](c)]
+            if not assets:
+                return PASS(
+                    f"{rid}: {_APPLIES_TEXT[rid]}; no such asset in the inventory"
+                )
         if not assets:
             return PASS(
                 f"no {asset_type} assets in inventory; {rid} vacuously satisfied"
@@ -172,6 +197,30 @@ def _make_auto_check(
     return _check
 
 
+# Process requirements the code scan's own outputs evidence: every CBOM code scan is
+# emitted as a schema-validated
+# CycloneDX 1.6 document (JSON, and XML on download), and its VEX (CycloneDX 1.6) is
+# issued with it (GET .../vex and
+# the evidence pack's vex.json) for every finding code and matched CVE. Not "not BOM-
+# evidenceable": the BOM is the
+# evidence.
+_PRODUCT_EVIDENCED = {
+    "8.4.1.5": "this CBOM is emitted in CycloneDX 1.6 (JSON and XML), validated "
+    "against the CycloneDX schema",
+    "8.4.1.6": "a CycloneDX 1.6 VEX is issued with this CBOM (the VEX download and the "
+    "evidence pack's vex.json) for its finding codes and matched CVEs",
+}
+
+
+def _product_check(rid: str) -> Callable[[ScanResult, Requirement], CheckResult]:
+    def _check(r: ScanResult, req: Requirement) -> CheckResult:
+        return PASS(f"{rid}: {_PRODUCT_EVIDENCED[rid]} ({CERTIN_DISCLAIMER})")
+
+    _check.__name__ = f"_certin_{rid.replace('.', '_')}_product"
+    _check.__qualname__ = _check.__name__
+    return _check
+
+
 def _register_from_ledger() -> None:
     doc = load_ledger()
     for raw in doc.get("requirements") or []:
@@ -180,6 +229,13 @@ def _register_from_ledger() -> None:
         missing = str(raw.get("missing") or "fail")
         title = str(raw.get("title") or rid)
         source = str(raw.get("pdf") or "CERT-In TG v2.0")
+
+        if rid in _PRODUCT_EVIDENCED:
+            # the scan itself produces this evidence (staging QA N7): a CycloneDX 1.6
+            # CBOM and its VEX
+            req = Requirement(id=rid, framework=_FW, title=title, source=source)
+            register_check(req)(_product_check(rid))
+            continue
 
         if mode == "manual" and rid.startswith("8.4.1."):
             req = Requirement(

@@ -807,7 +807,9 @@ def _emit_crypto_asset(
             _add(
                 crypto,
                 "oid",
-                algorithm_oid(
+                # the graph's crypto:oid (cbom.normalize.stamp_algorithm_oids) when the
+                # pipeline stamped it
+                props.get("crypto:oid") or algorithm_oid(
                     comp.name,
                     props.get("crypto:primitive"),
                     key_size,

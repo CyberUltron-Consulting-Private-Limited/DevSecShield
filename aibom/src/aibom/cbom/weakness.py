@@ -52,6 +52,14 @@ SELF_SIGNED_LEAF = "SELF_SIGNED_LEAF"
 # SELF_SIGNED_LEAF (Medium) is no longer raised; it stays defined for scans stored before (integrator decisions).
 CERT_SELF_SIGNED = "CERT_SELF_SIGNED"
 _SEV_LOW = "note"  # SARIF note == Low impact
+# ``crypto:purpose`` (aibom.cbom.purpose) in a finding's words
+_PURPOSE_TEXT = {
+    "cache-key": "cache key",
+    "etag": "ETag",
+    "checksum": "checksum",
+    "partition": "partition key",
+    "usedforsecurity=False": "non-security digest (usedforsecurity=False)",
+}
 # C6 related-crypto-material misuse codes (source-derived; see
 # :mod:`aibom.cbom.misuse` for detection). Each is a present-day break:
 #   * WEAK_RNG      — key/IV/nonce/salt from a non-crypto PRNG (CWE-338);
@@ -68,6 +76,12 @@ HARDCODED_KEY = "HARDCODED_KEY"
 # Medium: they make an offline guess cheaper, they do not hand over the key.
 STATIC_SALT = "STATIC_SALT"
 WEAK_KDF_ITERATIONS = "WEAK_KDF_ITERATIONS"
+# A memory-hard KDF (scrypt) whose cost parameters (N, r, p) are below the OWASP
+# Password Storage minimum (CWE-916).
+# Not an iteration count: scrypt is graded by its memory / CPU cost N, block size r and
+# parallelism p (staging QA
+# Q2-11), so it has its own code.
+WEAK_KDF_COST = "WEAK_KDF_COST"
 # CB-28: an RSA key generated with public exponent 3 (FIPS 186-5 requires
 # 2^16 < e < 2^256; e = 3 enables Bleichenbacher's 2006 signature forgery on lax
 # PKCS#1 v1.5 verifiers and cube-root recovery of small unpadded messages).
@@ -88,9 +102,20 @@ WEAK_PADDING = "WEAK_PADDING"
 
 WEAK_CRYPTO_CODES = frozenset(
     {
-        WEAK_ALGORITHM, WEAK_CIPHER_MODE, WEAK_KEY_SIZE, WEAK_PROTOCOL,
-        WEAK_RNG, STATIC_IV, REUSED_NONCE, HARDCODED_KEY, WEAK_CIPHER_SUITE,
-        WEAK_PADDING, STATIC_SALT, WEAK_KDF_ITERATIONS, WEAK_RSA_EXPONENT,
+        WEAK_ALGORITHM,
+        WEAK_CIPHER_MODE,
+        WEAK_KEY_SIZE,
+        WEAK_PROTOCOL,
+        WEAK_RNG,
+        STATIC_IV,
+        REUSED_NONCE,
+        HARDCODED_KEY,
+        WEAK_CIPHER_SUITE,
+        WEAK_PADDING,
+        STATIC_SALT,
+        WEAK_KDF_ITERATIONS,
+        WEAK_KDF_COST,
+        WEAK_RSA_EXPONENT,
     }
 )
 
@@ -223,7 +248,23 @@ def weak_finding(component: AIComponent) -> tuple[str, str, str] | None:
         return None
     if props.get("crypto:nonSecurityUse") == "true" and props.get("crypto:primitive") == "hash":
         # A hash used only to name or check content (a cache key, an ETag, a checksum; ``usedforsecurity=False``)
-        # with no secret input: collisions there are not an attack on a secret. Inventoried, not flagged.
+        # with no secret input: collisions there are not an attack on a secret, so the
+        # weak-hash finding is Low
+        # (staging QA G-D3-6: an MD5 cache key is still a broken hash in the inventory,
+        # not a High finding).
+        key = _base_key(name)
+        if key is not None and key in WEAK_ALGORITHMS:
+            purpose = _PURPOSE_TEXT.get(
+                props.get("crypto:purpose") or "", "non-security digest"
+            )
+            return (
+                WEAK_ALGORITHM,
+                _SEV_LOW,
+                f"Broken hash {name} used as a {purpose} with no secret input: "
+                f"collisions here do not expose a secret, but {name} is disallowed "
+                "by NIST SP 800-131A; use SHA-256 or BLAKE2 (or pass "
+                "usedforsecurity=False) so the inventory holds no broken hash.",
+            )
         return None
 
     # 1) Deprecated/broken algorithm by canonical corpus (covers MD5, SHA-1, DES,
@@ -473,7 +514,7 @@ def kdf_parameter_findings(component: AIComponent) -> list[tuple[str, str, str]]
         r = _int_prop(props, "crypto:scryptR")
         p = _int_prop(props, "crypto:scryptP")
         got = f"N = {n:,}" + (f", r = {r}" if r else "") + (f", p = {p}" if p else "")
-        return [(WEAK_KDF_ITERATIONS, _SEV_LOW,
+        return [(WEAK_KDF_COST, _SEV_LOW,
                  f"scrypt cost {component.name}{at}: {got}, below the OWASP "
                  f"Password Storage minimum (N = 2^17 with r = 8, p = 1, or an "
                  f"equal-strength pair: 2^16 / p 2, 2^15 / p 3, 2^14 / p 5, "
@@ -1061,6 +1102,7 @@ __all__ = [
     "HARDCODED_KEY",
     "STATIC_SALT",
     "WEAK_KDF_ITERATIONS",
+    "WEAK_KDF_COST",
     "WEAK_RSA_EXPONENT",
     "WEAK_CIPHER_SUITE",
     "WEAK_PADDING",

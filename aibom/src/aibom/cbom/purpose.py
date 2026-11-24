@@ -23,7 +23,13 @@ _USED_FOR_SECURITY_FALSE = re.compile(r"\busedforsecurity\s*=\s*False\b")
 _PURPOSE_WORDS = (
     ("cache-key", re.compile(r"cache|memo", re.I)),
     ("etag", re.compile(r"e_?tag", re.I)),
-    ("checksum", re.compile(r"checksum|check_?sum|\bcrc|content_?hash|content_?address", re.I)),
+    (
+        "checksum",
+        re.compile(
+            r"checksum|check_?sum|\bcrc|content_?hash|content_?address|file_?hash|hash_?file",
+            re.I,
+        ),
+    ),
     ("partition", re.compile(r"dedup|de_dup|bucket|shard|partition", re.I)),
 )
 # ``fingerprint`` is deliberately absent: a certificate / key fingerprint used for pinning is a security use.
@@ -85,7 +91,29 @@ def hash_purpose(lines: list[str], line_no: int, lang: str) -> str | None:
         for label, pattern in _PURPOSE_WORDS:
             if pattern.search(name):
                 return label
+    if target and _keys_a_cache(target.group(1), lines[line_no:line_no + _USE_WINDOW]):
+        return "cache-key"
     return None
+
+
+_USE_WINDOW = 8
+_CACHE_NAME = r"[\w.$]*(?:cache|memo)[\w$]*"
+
+
+def _keys_a_cache(var: str, following: list[str]) -> bool:
+    """The digest assigned to ``var`` is used as the key of a cache in the next lines:
+    ``var in _CACHE``,
+    ``_cache[var]``, ``cache.get(var)`` (staging QA G-D3-6: ``prompt_hash =
+    md5(prompt)`` keying
+    ``_PROMPT_ANALYSIS_CACHE``)."""
+    name = re.escape(var.split(".")[-1])
+    use = re.compile(
+        rf"\b{name}\s+(?:not\s+)?in\s+{_CACHE_NAME}"
+        rf"|{_CACHE_NAME}\s*\[\s*{name}\s*\]"
+        rf"|{_CACHE_NAME}\s*\.\s*(?:get|set|has|pop|setdefault|put|containsKey|move_to_end)\s*\(\s*{name}\b",
+        re.I,
+    )
+    return any(use.search(line) for line in following)
 
 
 __all__ = ["hash_purpose"]

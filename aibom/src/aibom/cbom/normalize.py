@@ -25,6 +25,7 @@ from aibom.cbom.posture.assemble import build_posture_block
 from aibom.cbom.posture.context import CbomScanResult
 from aibom.cbom.posture.findings import POSTURE_CODES
 from aibom.cbom.pqc import QUANTUM_VULNERABLE
+from aibom.cbom.scorer import posture_scores
 from aibom.cbom.weakness import (
     CERT_NEAR_EXPIRY,
     EXPIRED_CERTIFICATE,
@@ -61,7 +62,10 @@ def _weakens(flag: Any) -> bool:
     """A finding that makes the asset weak (classically broken). A KDF cost above
     the NIST floor but below the OWASP minimum (WEAK_KDF_ITERATIONS at note, Low)
     asks for a higher cost; it does not make PBKDF2 / scrypt / Argon2 broken today."""
-    if flag.code == "WEAK_KDF_ITERATIONS" and flag.severity == "note":
+    if (
+        flag.code in ("WEAK_KDF_ITERATIONS", "WEAK_KDF_COST")
+        and flag.severity == "note"
+    ):
         return False
     return flag.code in _WEAKNESS_CODES
 _IMPACT_RANK = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
@@ -214,6 +218,20 @@ def _weakness_distribution(result: ScanResult) -> dict[str, int]:
         if f.code in _WEAKNESS_CODES:
             dist[f.code] = dist.get(f.code, 0) + 1
     return dict(sorted(dist.items()))
+
+
+def _weakness_impacts(result: ScanResult) -> dict[str, dict[str, int]]:
+    """The same flags by code and by their own impact (High / Medium / Low): the
+    weak-crypto chart colours each bar by
+    severity from this (staging QA N2: every bar was red, a Low KDF cost and a Medium
+    static salt included)."""
+    out: dict[str, dict[str, int]] = {}
+    for f in result.flags:
+        if f.code in _WEAKNESS_CODES:
+            impact = _SEVERITY_IMPACT.get(f.severity, "Medium")
+            by = out.setdefault(f.code, {})
+            by[impact] = by.get(impact, 0) + 1
+    return {code: dict(sorted(by.items())) for code, by in sorted(out.items())}
 
 
 def _pqc_migration_rows(
@@ -541,6 +559,66 @@ def _bom(result: ScanResult) -> dict[str, Any]:
     return json.loads(get_reporter("cyclonedx").render(result))
 
 
+def algid_oid(name: Any) -> str | None:
+    """algid's OID for an algorithm name: its own, else (a key-size-suffixed name such
+    as RSA-2048) its family's key
+    algorithm OID. One function for the CycloneDX ``oid`` and the graph's ``crypto:oid``
+    the CERT-In checks read."""
+    from aibom.cbom import algid
+
+    ident = algid.resolve(name)
+    if ident is None:
+        return None
+    oid = ident.oid
+    sized = rf"{re.escape(ident.family_label or '')}[-_ ]?\d+"
+    if (
+        not oid
+        and ident.family_label
+        and ident.name
+        and re.fullmatch(sized, ident.name, re.IGNORECASE)
+    ):
+        family = algid.resolve(ident.family_label)
+        oid = family.oid if family is not None else None
+    return oid or None
+
+
+def algorithm_identity_oid(name: str, props: dict[str, str]) -> str | None:
+    """The OID of an algorithm asset as the CBOM states it: the emitter's table (name +
+    parameters), else algid's."""
+    from aibom.emit.crypto_oid import algorithm_oid
+
+    raw = props.get("crypto:keySize")
+    size = int(raw) if raw is not None and str(raw).isdigit() else None
+    return algorithm_oid(
+        name,
+        props.get("crypto:primitive"),
+        size,
+        props.get("crypto:mode"),
+        props.get("crypto:curve"),
+        props.get("crypto:parameterSet"),
+    ) or algid_oid(name)
+
+
+def stamp_algorithm_oids(result: ScanResult) -> None:
+    """Graph fact ``crypto:oid`` on every algorithm asset whose identity is known
+    (staging QA Q2-04): the CERT-In
+    Table 9 OID check reads the graph, and the CycloneDX ``cryptoProperties.oid`` is
+    this same value."""
+    for comp in result.components:
+        props = comp.properties
+        if (
+            comp.kind != "crypto_asset"
+            or not props
+            or props.get("crypto:assetType") != "algorithm"
+        ):
+            continue
+        if props.get("crypto:oid"):
+            continue
+        oid = algorithm_identity_oid(comp.name, props)
+        if oid:
+            props["crypto:oid"] = oid
+
+
 def _algid_identities(bom: dict[str, Any]) -> None:
     """D11 / A-14: algid's identity on algorithms the emitter's OID table missed.
 
@@ -558,12 +636,7 @@ def _algid_identities(bom: dict[str, Any]) -> None:
         ident = algid.resolve(comp.get("name"))
         if ident is None:
             continue
-        oid = ident.oid
-        sized = rf"{re.escape(ident.family_label or '')}[-_ ]?\d+"
-        if not oid and ident.family_label and ident.name and re.fullmatch(
-                sized, ident.name, re.IGNORECASE):
-            family = algid.resolve(ident.family_label)
-            oid = family.oid if family is not None else None
+        oid = algid_oid(comp.get("name"))
         if oid and not cp.get("oid"):
             cp["oid"] = oid
         props = cp.setdefault("algorithmProperties", {})
@@ -672,7 +745,9 @@ def normalize_crypto(result: ScanResult, *, duration_of_scan: float) -> dict[str
         # --- carried-through, never flattened ---
         "cbom_json": bom,
         "cbom_compliance": result.compliance or {},
-        "cbom_scores": result.scores or {},
+        # the D3 risk score: the engine's posture function over these findings (Q2-01,
+        # Rule P)
+        "cbom_scores": posture_scores(result.scores or {}, findings),
         "cbom_graph": full_graph,
         # Detailed views (folders -> assets <- libraries, assets -> algorithm families) within a node budget;
         # the extra layers exist only in these pictures, never in the inventory graph or the CycloneDX file.
@@ -685,6 +760,7 @@ def normalize_crypto(result: ScanResult, *, duration_of_scan: float) -> dict[str
         "cbom_distributions": {
             "algorithms": _algorithm_distribution(assets),
             "weakness": _weakness_distribution(result),
+            "weakness_impacts": _weakness_impacts(result),
             "pqc": _pqc_readiness(assets, result),
             "certificates": _certificate_expiry(assets, result),
             "key_material": _key_material_rows(assets),
@@ -700,4 +776,10 @@ def normalize_crypto(result: ScanResult, *, duration_of_scan: float) -> dict[str
     return payload
 
 
-__all__ = ["gate_rows", "normalize_crypto"]
+__all__ = [
+    "algid_oid",
+    "algorithm_identity_oid",
+    "gate_rows",
+    "normalize_crypto",
+    "stamp_algorithm_oids",
+]
