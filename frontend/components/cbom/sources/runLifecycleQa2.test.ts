@@ -12,15 +12,17 @@ const read = (rel: string) => readFileSync(join(__dirname, rel), "utf8");
 
 // item 11: a Trigger column, one cell per run, from the same label the run page prints
 const review = read("ReviewRunTab.tsx");
-assert.ok(review.includes('<TableHead>Trigger <InfoTip id="cbsrc.rr.col.trigger" /></TableHead>'), "the column");
-assert.ok(review.includes("data-testid={`review-run-trigger-${run.id}`}"), "a cell per run");
+// under the run number, not a column of its own: the table fits its card at 1366 px (review of #497, m2)
+assert.ok(!review.includes("<TableHead>Trigger"), "no column of its own");
+assert.ok(review.includes("data-testid={`review-run-trigger-${run.id}`}"), "a line per run");
+assert.ok(review.indexOf("review-run-trigger-") < review.indexOf("formatDateTime(run.created_at)"), "under the number");
 assert.ok(review.includes('{runTriggerLabel(run) ?? "—"}'), "the run page's own label");
 assert.equal(runTriggerLabel({ trigger: "scheduled", schedule_id: 2, schedule_name: "qa2-q1-daily-drift-db-net" }),
   "Scheduled: qa2-q1-daily-drift-db-net");
 assert.equal(runTriggerLabel({ trigger: "manual" }), "Manual");
 assert.equal(runTriggerLabel({ trigger: "scheduled", schedule_id: 9, schedule_name: null }), "Scheduled (schedule #9, deleted)");
 const tips = read("../../../content/infotips/text/cbsrc-run.ts");
-assert.ok(tips.includes('"cbsrc.rr.col.trigger": {'), "the column has its tip");
+assert.ok(tips.includes("and under it what started the run"), "the run column's tip says so");
 
 // item 13: the badge is the one state word; no "Running" text beside a "Queued" badge
 const header = read("../results/RunSections.tsx");

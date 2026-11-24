@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import functools
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Request
@@ -202,13 +202,21 @@ def _truthy(value: Any) -> bool:
     return str(value or "").strip().lower() in ("1", "true", "yes")
 
 
-def _active_runs(session: Session, team_id: int) -> int:
+ACTIVE_RUN_WINDOW = timedelta(hours=24)  # an open run older than this never holds a formal issue back
+
+
+def _active_runs(session: Session, team_id: int, now: datetime | None = None) -> int:
+    """Open runs (queued or running) that changed in the last ``ACTIVE_RUN_WINDOW``: a run that waits for days on an
+    offline scan node (staging run #50, open since 18 Nov) changes nothing the report reads, so it never freezes the
+    trend at "first issue" (#497 review m1)."""
     from sqlalchemy import func
 
     from backend.new_models import CbomCollectionRun
 
+    since = (now or _utcnow()).replace(tzinfo=None) - ACTIVE_RUN_WINDOW
     return int(session.exec(select(func.count()).select_from(CbomCollectionRun).where(
-        CbomCollectionRun.team_id == team_id, CbomCollectionRun.status.in_(("queued", "running")))).one() or 0)  # type: ignore[attr-defined]
+        CbomCollectionRun.team_id == team_id, CbomCollectionRun.status.in_(("queued", "running")),  # type: ignore[attr-defined]
+        func.coalesce(CbomCollectionRun.last_updated, CbomCollectionRun.created_at) >= since)).one() or 0)
 
 
 def _record_issue(engine: Any, team_id: int, number: int, snapshot: dict[str, Any], user_id: int | None, *,
@@ -351,7 +359,8 @@ _PDF_DESCRIPTION = (
     "Cover options (prepared_for, label): query parameters of a GET, or the JSON body of a POST, which keeps a "
     "client name out of URLs and access logs. Board report (D14) only: `issue=1` records the download as a formal "
     "issue (the next issue's trend compares with it); `preview=1` never does; a plain download is a formal issue "
-    "when it is the Document ID's first download of the day and no CBOM Sources run is queued or running."
+    "when it is the Document ID's first download of the day and no CBOM Sources run that changed in the last 24 "
+    "hours is queued or running."
 )
 _PDF_RESPONSES: dict[int | str, dict[str, Any]] = {
     200: {

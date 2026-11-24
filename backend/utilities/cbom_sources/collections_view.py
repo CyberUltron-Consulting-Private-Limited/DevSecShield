@@ -277,33 +277,58 @@ def attempt_reason(status: Any, error: Any, outcome: Any = None) -> str | None:
 def collection_history(session: Any, team_id: int, sources: Mapping[int, Any]) -> dict[str, dict[str, Any]]:
     """Per source ref (``identity.job_source_ref``): how many collections succeeded (``scans``), when the first one
     finished (``first_scanned``) and the latest attempt whatever its status (``last_attempt_*``: run, job, status,
-    reason, time). One column read of the team's collect jobs; D1's Sources rows print it (staging QA2 Q1-02)."""
-    from types import SimpleNamespace
+    reason, time). D1's Sources rows print it (staging QA2 Q1-02).
 
-    from sqlmodel import select
+    Aggregated in SQL (#497 review M3: reading every job's params was 2.1 s and 529 MB at 60k jobs): one GROUP BY per
+    source (a job of a deleted source is grouped by the source uid its params kept), then the latest job of each
+    source by id, reading only its status, error and outcome."""
+    import sqlalchemy as sa
 
     from backend.new_models import CbomCollectionJob as J
-    from backend.utilities.cbom_sources import identity as ID
 
+    base = (J.team_id == team_id, J.kind == "collect", J.run_id.is_not(None))  # type: ignore[union-attr]
+    ok = J.status == "success"
+    done_at = sa.func.coalesce(J.finished_at, J.created_at)
+    aggregates = (sa.func.sum(sa.case((ok, 1), else_=0)), sa.func.min(sa.case((ok, done_at), else_=None)),
+                  sa.func.max(J.id))
+    groups: dict[str, tuple[int, Any, int]] = {}  # ref -> (scans, first success, latest job id)
+
+    def add(ref: str, scans: Any, first: Any, latest: Any) -> None:
+        held = groups.get(ref)
+        scans, latest = int(scans or 0), int(latest)
+        if held is not None:  # a live source's jobs and its detached ones (rare): one history
+            first = min([f for f in (first, held[1]) if f is not None], default=None)
+            scans, latest = scans + held[0], max(latest, held[2])
+        groups[ref] = (scans, first, latest)
+
+    for source_id, scans, first, latest in session.execute(
+            sa.select(J.source_id, *aggregates).where(*base, J.source_id.is_not(None))  # type: ignore[union-attr]
+            .group_by(J.source_id)).all():
+        source = sources.get(source_id)
+        add((source.source_uid if source is not None and source.source_uid else f"source-{source_id}"),
+            scans, first, latest)
+    uid = J.params["source_uid"].as_string()  # type: ignore[index]
+    name = J.params["source_name"].as_string()  # type: ignore[index]
+    for ref_uid, ref_name, scans, first, latest in session.execute(
+            sa.select(uid, name, *aggregates).where(*base, J.source_id.is_(None))  # type: ignore[union-attr]
+            .group_by(uid, name)).all():
+        add(ref_uid or f"deleted:{ref_name or latest}", scans, first, latest)
+    latest_ids = sorted(g[2] for g in groups.values())
+    rows: dict[int, Any] = {}
+    for start in range(0, len(latest_ids), 500):
+        for row in session.execute(sa.select(J.id, J.run_id, J.status, J.error, J.outcome, J.created_at,
+                                             J.finished_at).where(J.id.in_(latest_ids[start:start + 500]))).all():  # type: ignore[union-attr]
+            rows[int(row[0])] = row
     out: dict[str, dict[str, Any]] = {}
-    for job_id, run_id, source_id, status, params, error, outcome, created, finished in session.exec(
-            select(J.id, J.run_id, J.source_id, J.status, J.params, J.error, J.outcome, J.created_at, J.finished_at)
-            .where(J.team_id == team_id, J.kind == "collect", J.run_id.is_not(None))).all():  # type: ignore[union-attr]
-        job = SimpleNamespace(params=params if isinstance(params, dict) else {}, source_id=source_id, id=job_id)
-        ref = ID.job_source_ref(job, sources.get(source_id or 0))  # type: ignore[arg-type]
-        h = out.setdefault(ref, {"scans": 0, "first_scanned": None, "_rank": None})
-        at = _aware(finished or created)
-        if status == "success":
-            h["scans"] += 1
-            if h["first_scanned"] is None or at < h["first_scanned"]:
-                h["first_scanned"] = at
-        rank = (_aware(created), int(job_id))
-        if h["_rank"] is None or rank > h["_rank"]:
-            h.update(_rank=rank, last_attempt_run_id=int(run_id), last_attempt_job_id=int(job_id),
-                     last_attempt_status=str(status), last_attempt_at=at,
+    for ref, (scans, first, latest) in groups.items():
+        row = rows.get(latest)
+        h: dict[str, Any] = {"scans": scans, "first_scanned": _aware(first) if first is not None else None}
+        if row is not None:
+            job_id, run_id, status, error, outcome, created, finished = row
+            h.update(last_attempt_run_id=int(run_id), last_attempt_job_id=int(job_id), last_attempt_status=str(status),
+                     last_attempt_at=_aware(finished or created),
                      last_attempt_reason=attempt_reason(status, error, outcome))
-    for h in out.values():
-        h.pop("_rank", None)
+        out[ref] = h
     return out
 
 

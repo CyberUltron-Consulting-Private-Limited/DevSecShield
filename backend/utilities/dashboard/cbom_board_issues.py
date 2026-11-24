@@ -22,7 +22,10 @@ issue"). The choice, documented here and in the route (``formal_issue``):
 
 * an explicit issue: the request says ``issue=1`` (the board pack is being issued): always recorded;
 * otherwise the FIRST download of a Document ID on a UTC day, and only while its content is stable: no CBOM Sources run
-  of the team is queued or running (a run that lands changes the content, so a download taken mid-run is a draft);
+  of the team is queued or running AND changed in the last 24 hours (a run that lands changes the content, so a
+  download taken mid-run is a draft; a run stuck for days on an offline scan node changes nothing and never freezes
+  the trend: #497 review m1);
+* the deliverables menu's "Issue to the board" sends ``issue=1``;
 * a preview (``preview=1``) is never recorded, whatever else holds; a re-download of a Document ID already recorded
   that day is never recorded again (``record``).
 

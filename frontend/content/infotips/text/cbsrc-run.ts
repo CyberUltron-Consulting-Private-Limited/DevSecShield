@@ -81,21 +81,15 @@ const TEXT = {
   },
   // src: frontend/components/cbom/sources/ReviewRunTab.tsx:449 — run number
   "cbsrc.rr.col.run": {
-    what: "The run's number, unique within ZeroShield.",
-    why: "Reports and exports name the run by this number.",
-    example: "#42, the run started on 13 Nov.",
+    what: "The run's number, unique within ZeroShield, and under it what started the run: a person (Manual) or a schedule, named.",
+    why: "Reports and exports name the run by this number; a scheduled run is compared with the previous comparable run for drift (S4).",
+    example: "#42, Scheduled: Daily drift check.",
   },
   // src: frontend/components/cbom/sources/ReviewRunTab.tsx:450 — when the run was created
   "cbsrc.rr.col.started": {
     what: "When the run was started.",
     why: "Findings reflect the estate at this time.",
     example: "13 Nov 2026, 11:05 pm IST.",
-  },
-  // src: frontend/components/cbom/results/resultRows.ts:364-371, frontend/components/cbom/sources/ReviewRunTab.tsx:472-475 — run.trigger and run.schedule_name
-  "cbsrc.rr.col.trigger": {
-    what: "Who started the run: a person (Manual) or a schedule, named.",
-    why: "A scheduled run is compared with the previous comparable run for drift (S4).",
-    example: "Scheduled: Daily drift check.",
   },
   // src: frontend/components/cbom/sources/shared.tsx:118-125, backend/utilities/cbom_sources/jobs.py:121-133 — jobs.py run status: partial also when every job succeeded but one reported a partial or failed outcome
   "cbsrc.rr.col.run_status": {

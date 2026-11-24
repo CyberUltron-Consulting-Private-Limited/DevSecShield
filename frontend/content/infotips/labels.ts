@@ -573,7 +573,6 @@ export const INFO_TIP_LABELS = {
   "cbsrc.rr.runs": "Runs",
   "cbsrc.rr.col.run": "Run",
   "cbsrc.rr.col.started": "Started",
-  "cbsrc.rr.col.trigger": "Trigger",
   "cbsrc.rr.col.run_status": "Status",
   "cbsrc.rr.col.jobs": "Jobs",
   "cbsrc.rr.col.assets": "Assets",

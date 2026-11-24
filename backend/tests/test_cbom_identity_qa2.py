@@ -178,3 +178,117 @@ def test_the_first_run_after_the_change_moves_every_stored_key_and_removes_nothi
     with Session(world.engine) as s:
         assert M.remap(s, 1, {ref: {old_key: new_key}}) == {"observations": 0, "assignments": 0}
     assert [o.observation_key for o in world.observations() if o.presence == "present"] == [new_key]
+
+
+# ----------------------------------------------------------------------------- #497 review M1: stored spelling, at deploy
+JSON_SUBJECT = '{"CommonName": "ZeroShield-AWS-PCA-Test", "Organization": "ZeroShield"}'
+CN_SUBJECT = "CN=ZeroShield-AWS-PCA-Test,O=ZeroShield"
+
+
+def _pca_row(subject: str, dated: bool) -> dict:
+    row = _pca(subject)
+    if dated:  # a notAfter gives it a CB-21 cross key (cn/dn: the name), else it is keyed per source (obs:)
+        row["facts"] = {**row["facts"], "not_after": "2036-11-01T00:00:00Z"}
+    return row
+
+
+def _store(world: World, ref_source: int, dated: bool, monkeypatch) -> tuple[int, str, str]:
+    """Run #52 written with the identity before this change, the subject spelt as JSON (before #481); an accepted risk
+    on its key. Returns (run, old estate key, old node key)."""
+    with monkeypatch.context() as patch:
+        patch.setattr(ID, "node_identity", ID.legacy_node_identity)
+        patch.setattr(E.AK, "asset_key", E.AK.legacy_asset_key)
+        patch.setattr(E.AK, "_cert_analysis_of", lambda fields, raw_names=True: _LEGACY(fields, True))
+        E.AK._cert_analysed.cache_clear()
+        run52 = world.run({ref_source: {"rows": [_pca_row(JSON_SUBJECT, dated)]}})
+        world.finalise(run52)
+    E.AK._cert_analysed.cache_clear()
+    E._INDEXES.clear()
+    (old_asset,) = world.assets()
+    old_obs = world.observations()[0].observation_key
+    with Session(world.engine) as s:
+        s.add(CbomRemediationAssignment(team_id=1, asset_key=old_obs, status="accepted_risk", owner="risk-office"))
+        s.commit()
+    return run52, old_asset, old_obs
+
+
+_LEGACY = E.AK._cert_analysis_of
+
+
+def _expected_keys(world: World, dated: bool) -> tuple[str, str]:
+    with Session(world.engine) as s:
+        job = s.exec(select(CbomCollectionJob)).first()
+        ref = ID.job_source_ref(job, None)
+    row = SimpleNamespace(**{**_pca_row(CN_SUBJECT, dated), "asset_type": "cloud_ca", "asset_key": "k"})
+    okey = ID.stable_key("node", ref, f"cert|aws:111122223333|{ARN.lower()}")
+    obs = E.AK.Observation(kind="cloud_ca", facts=row.facts, location=ARN, target="aws:111122223333",
+                           cdx_type="certificate", scope=ref)
+    cross = E.AK.asset_key(obs)
+    return (cross if isinstance(cross, str) else "obs:" + okey), okey
+
+
+@pytest.mark.parametrize("dated", [True, False], ids=["cross key", "per-source key"])
+def test_the_backfill_moves_every_stored_key_at_deploy_before_any_run(estate: World, monkeypatch, dated):
+    """Stored as JSON only (a source last collected before #481); the scheduler's backfill runs before any new run."""
+    from backend.new_models import CbomRiskRegister
+    from backend.utilities.cbom_sources.risk_register import public_row
+
+    src = estate.source("aws_account", "stgqa-aws-ap-south-1")
+    run52, old_asset, old_obs = _store(estate, src, dated, monkeypatch)
+    new_asset, new_obs = _expected_keys(estate, dated)
+    assert old_asset != new_asset and old_obs != new_obs
+    first_seen = estate.assets()[old_asset].first_seen_run_id
+    assert M.backfill_due(estate.engine)["teams"] == 1
+    # readers see the moved keys before any run: the asset, its observation, its register row, the accepted risk
+    assert set(estate.assets()) == {new_asset} and estate.assets()[new_asset].first_seen_run_id == first_seen == run52
+    assert [o.observation_key for o in estate.observations()] == [new_obs]
+    with Session(estate.engine) as s:
+        assert [(a.asset_key, a.status) for a in s.exec(select(CbomRemediationAssignment))] == [
+            (new_obs, "accepted_risk")]
+        assert [public_row(r)["item_key"] for r in s.execute(select(CbomRiskRegister)).scalars()] in ([new_asset], [])
+    # safe twice: nothing more moves (and a second process's pass is a no-op)
+    M._DONE.clear()
+    with Session(estate.engine) as s:
+        assert M.backfill_team(s, 1)["estate"] == 0
+    # the first run after deploy reads CN=: nothing removed, nothing inserted
+    seen = []
+    E.register_hook(hook := (lambda s, write: seen.append(write)))
+    try:
+        estate.finalise(estate.run({src: {"rows": [_pca_row(CN_SUBJECT, dated)]}}))
+    finally:
+        E.unregister_hook(hook)
+    assert seen[0].counts["removed"] == 0 and seen[0].counts["inserted"] == 0 and seen[0].rekeyed == []
+    assert set(estate.assets()) == {new_asset} and estate.assets()[new_asset].first_seen_run_id == run52
+
+
+@pytest.mark.parametrize("dated", [True, False], ids=["cross key", "per-source key"])
+def test_stored_as_json_only_the_first_run_with_cn_moves_the_keys_without_the_backfill(estate: World, monkeypatch,
+                                                                                        dated):
+    src = estate.source("aws_account", "stgqa-aws-ap-south-1")
+    run52, old_asset, old_obs = _store(estate, src, dated, monkeypatch)
+    new_asset, new_obs = _expected_keys(estate, dated)
+    seen = []
+    E.register_hook(hook := (lambda s, write: seen.append(write)))
+    try:
+        estate.finalise(estate.run({src: {"rows": [_pca_row(CN_SUBJECT, dated)]}}))
+    finally:
+        E.unregister_hook(hook)
+    write = seen[0]
+    assert write.counts["removed"] == 0 and write.counts["inserted"] == 0
+    assert write.identity_moves["assignments"] == 1 and write.identity_moves["estate"] == 1
+    assert set(estate.assets()) == {new_asset} and estate.assets()[new_asset].first_seen_run_id == run52
+    with Session(estate.engine) as s:
+        assert [(a.asset_key, a.status, a.owner) for a in s.exec(select(CbomRemediationAssignment))] == [
+            (new_obs, "accepted_risk", "risk-office")]
+
+
+def test_a_json_map_name_and_its_dn_give_one_cross_key():
+    facts = {"not_after": "2036-11-01T00:00:00Z", "issuer": JSON_SUBJECT}
+    json_obs = E.AK.Observation(kind="certificate", facts={**facts, "subject": JSON_SUBJECT}, location="x", target="t")
+    dn_obs = E.AK.Observation(kind="certificate", facts={**facts, "subject": CN_SUBJECT, "issuer": CN_SUBJECT},
+                              location="y", target="t")
+    assert E.AK.asset_key(json_obs) == E.AK.asset_key(dn_obs)
+    assert E.AK.legacy_asset_key(json_obs) != E.AK.asset_key(json_obs)
+    plain = E.AK.Observation(kind="certificate", facts={**facts, "subject": CN_SUBJECT, "issuer": CN_SUBJECT},
+                             location="z", target="t")
+    assert E.AK.legacy_asset_key(plain) == E.AK.asset_key(plain)  # a DN-text name keys as before: no KEY_VERSION bump

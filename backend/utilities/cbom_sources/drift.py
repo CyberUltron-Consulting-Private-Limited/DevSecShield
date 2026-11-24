@@ -895,14 +895,25 @@ def grade_rule_changes(before: Mapping[str, View], after: Mapping[str, View], *,
 NOT_COMPARED_CODES = ("outside_scope", "first_collection", "outside_baseline_scope", "incomplete")
 
 
-def _collected_before(session: Session, job: CbomCollectionJob) -> bool:
+def _first_successes(session: Session, jobs: list[CbomCollectionJob]) -> dict[int, int]:
+    """source id -> its first successful collect job, for the sources a comparison's later run alone holds (one query)."""
+    ids = sorted({int(j.source_id) for j in jobs if j.source_id is not None})
+    if not ids:
+        return {}
+    team_id = jobs[0].team_id
+    return {int(sid): int(first) for sid, first in session.exec(
+        select(CbomCollectionJob.source_id, func.min(CbomCollectionJob.id)).where(
+            CbomCollectionJob.team_id == team_id, CbomCollectionJob.source_id.in_(ids),  # type: ignore[union-attr]
+            CbomCollectionJob.kind == "collect", CbomCollectionJob.status == "success")
+        .group_by(CbomCollectionJob.source_id)).all()}
+
+
+def _collected_before(job: CbomCollectionJob, first_success: dict[int, int]) -> bool:
     """Whether the job's source has an earlier successful collection (else this run is its first)."""
     if job.source_id is None:
         return True  # a deleted source: never called "first"
-    return session.exec(select(CbomCollectionJob.id).where(
-        CbomCollectionJob.team_id == job.team_id, CbomCollectionJob.source_id == job.source_id,
-        CbomCollectionJob.kind == "collect", CbomCollectionJob.status == "success",
-        CbomCollectionJob.id < (job.id or 0)).limit(1)).first() is not None
+    first = first_success.get(int(job.source_id))
+    return first is not None and first < int(job.id or 0)
 
 
 def run_diff(session: Session, run: CbomCollectionRun, base: CbomCollectionRun) -> dict[str, Any]:
@@ -934,6 +945,7 @@ def run_diff(session: Session, run: CbomCollectionRun, base: CbomCollectionRun) 
     before_all: dict[str, View] = {}
     after_all: dict[str, View] = {}
     rejudged_any, carried_unread = reclassify, 0
+    first_success = _first_successes(session, [j for r, j in sides["after"].items() if r not in sides["before"]])
     for ref in sorted(set(sides["before"]) | set(sides["after"]), key=lambda r: names.get(r, r)):
         b_job, a_job = sides["before"].get(ref), sides["after"].get(ref)
         entry: dict[str, Any] = {"source_ref": ref, "name": names.get(ref), "status": "not_compared", "reason": None}
@@ -942,7 +954,7 @@ def run_diff(session: Session, run: CbomCollectionRun, base: CbomCollectionRun) 
             if a_job is None:
                 entry.update(reason=f"outside this run's scope: run #{run.id} did not collect it",
                              reason_code="outside_scope")
-            elif not _collected_before(session, a_job):
+            elif not _collected_before(a_job, first_success):
                 entry.update(reason=f"collected only once: run #{run.id} is its first collection",
                              reason_code="first_collection")
             else:

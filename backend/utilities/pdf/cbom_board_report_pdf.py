@@ -818,6 +818,16 @@ def _grade_card(posture: PostureGrade, styles: Styles, width: float) -> Table:
     return card
 
 
+def removed_register_text(view: TeamCbomView) -> str | None:
+    """The register assets only deleted sources read: outside the register's total (#497 review M2, Rule P)."""
+    found = (_register_summary(view) or {}).get("removed_from_scope")
+    n = int((found or {}).get("total", 0) or 0) if isinstance(found, dict) else 0
+    if not n:
+        return None
+    return (f"Not counted: {_count(n, 'asset')} only deleted sources read (removed from scope; listed in D12 section G "
+            "and named in D1).")
+
+
 def _issue_breakdown(view: TeamCbomView) -> tuple[int, str]:
     """``(issue assets, "Critical 1 · High 23 · Medium 5 · Low 0")``; unknown impacts as Other."""
     known = [int(view.issue_by_impact.get(level, 0) or 0) for level in IMPACT_LEVELS]
@@ -1079,6 +1089,9 @@ def _quantum_section(view: TeamCbomView, styles: Styles, w: float):
     reasons = q0_reason_text(view)
     if reasons:
         story += [_gap(3), _para(reasons, styles, "muted")]
+    removed = removed_register_text(view)
+    if removed:
+        story += [_gap(2), _para(removed, styles, "muted")]
     return story
 
 

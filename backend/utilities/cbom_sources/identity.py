@@ -71,23 +71,26 @@ def is_certificate(row: CbomCollectedAsset) -> bool:
     return row.cdx_type == CERT_CDX or row.asset_type in ("certificate", "k8s_certificate")
 
 
-def canonical_dn(value: Any) -> str:
-    """A subject or issuer as compared: an attribute map (a dict, or the JSON text of one, as AWS returns
-    ``ASN1Subject``) becomes its RFC 4514 DN (``cert_estate.dn_from_mapping``, the AWS collector's own formatter);
-    then lower case, whitespace collapsed. A DN text is unchanged by the first step, so its identity is as before."""
+def mapping_dn(value: Any) -> str | None:
+    """The RFC 4514 DN an attribute map denotes (a dict, or the JSON text of one, as AWS returns ``ASN1Subject``;
+    ``cert_estate.dn_from_mapping``, the AWS collector's own formatter), else None (a DN text, or anything else)."""
     mapping: Any = value if isinstance(value, Mapping) else None
     if mapping is None and isinstance(value, str) and value.lstrip().startswith("{"):
         try:
             mapping = json.loads(value)
         except ValueError:
             mapping = None
-    if isinstance(mapping, Mapping):
-        from backend.utilities.cbom_sources.cert_estate import dn_from_mapping
+    if not isinstance(mapping, Mapping):
+        return None
+    from backend.utilities.cbom_sources.cert_estate import dn_from_mapping
 
-        text = dn_from_mapping(mapping)
-        if text:
-            return _norm(text)
-    return _norm(value)
+    return dn_from_mapping(mapping) or None
+
+
+def canonical_dn(value: Any) -> str:
+    """A subject or issuer as compared: an attribute map becomes its RFC 4514 DN (``mapping_dn``); then lower case,
+    whitespace collapsed. A DN text is unchanged by the first step, so its identity is as before."""
+    return _norm(mapping_dn(value) or value)
 
 
 def legacy_node_identity(row: CbomCollectedAsset) -> str:
@@ -166,5 +169,5 @@ def code_source_ref(scan_metadata: Mapping[str, Any] | None, title: str, scan_id
     return key, label
 
 
-__all__ = ["canonical_dn", "code_identity", "code_label", "code_source_ref", "is_certificate", "job_source_name",
+__all__ = ["canonical_dn", "mapping_dn", "code_identity", "code_label", "code_source_ref", "is_certificate", "job_source_name",
            "job_source_ref", "legacy_node_identity", "node_identity", "node_label", "rekeyed_observations", "stable_key"]

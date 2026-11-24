@@ -208,6 +208,14 @@ def grade_split_text(summary: Mapping[str, Any]) -> str:
     return ", ".join(f"{label} {int(grades.get(key, 0) or 0)}" for key, label in names)
 
 
+def _removed_note(summary: Mapping[str, Any]) -> str:
+    """The register assets only deleted sources read, left out of its total (#497 review M2)."""
+    found = summary.get("removed_from_scope")
+    n = int(found.get("total", 0) or 0) if isinstance(found, Mapping) else 0
+    return (f" Not counted: {_plural(n, 'asset')} only deleted sources read (removed from scope, D12 section G)."
+            if n else "")
+
+
 def reconciliation_steps(view: TeamCbomView) -> list[str]:
     """The reconciliation as arithmetic, one step per line: run assets -> occurrences -> distinct register assets ->
     Q-grade split (SOW audit A-09, review M6)."""
@@ -232,7 +240,8 @@ def reconciliation_steps(view: TeamCbomView) -> list[str]:
         steps.append(
             f"{len(steps) + 1}. The quantum risk register (D12) holds {_plural(total, 'distinct asset')}: the Sources "
             "occurrences, each estate asset once (an asset observed by several sources or runs is one asset); "
-            f"code-scan rows are not held. Grades: {grade_split_text(c['register'])}.")
+            f"code-scan rows are not held. Grades: {grade_split_text(c['register'])}."
+            + _removed_note(c["register"]))
     else:
         steps.append(f"{len(steps) + 1}. The quantum risk register (D12) was not loaded for this document.")
     steps.append(f"{len(steps) + 1}. The estate CBOM (D11) lists one component per distinct asset plus the "

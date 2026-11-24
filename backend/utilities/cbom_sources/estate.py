@@ -480,6 +480,21 @@ def record_run(session: Session, run: CbomCollectionRun, now: _dt.datetime, *,
     write.source_refs = sorted(jobs)
     write.previous = {ref: (int(prev[0]), int(prev[1] or 1)) if prev is not None else None
                       for ref, (_job, prev) in jobs.items()}
+    # 0b. #497 review M1: the keys the certificate identity rule changed move IN PLACE from each source's STORED latest
+    # rows (their own spelling), before the store is read, so nothing below is read as removed and added
+    for ref, prev_job in write.previous.items():
+        if prev_job is None:
+            continue
+        stored_rows = session.execute(sa.select(*_ROW_COLUMNS).where(  # certificates only: no other key changed
+            CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.job_id == prev_job[0],
+            CbomCollectedAsset.attempt == prev_job[1], sa.or_(
+                CbomCollectedAsset.asset_type.in_(sorted(AK.CERT_TYPES)),  # type: ignore[attr-defined]
+                CbomCollectedAsset.cdx_type == "certificate"))).all()
+        if stored_rows:
+            from backend.utilities.cbom_sources import identity_migration
+
+            for k, v in identity_migration.migrate_source(session, team_id, ref, stored_rows).items():
+                write.identity_moves[k] = write.identity_moves.get(k, 0) + v
     marks = {"sources": time.perf_counter()}
 
     # 1. what the run read: rows of its successful collections, keyed across sources
@@ -497,17 +512,15 @@ def record_run(session: Session, run: CbomCollectionRun, now: _dt.datetime, *,
     marks["read"] = time.perf_counter()
     keyed = _keys_for_run(team_id, seen_rows)
     alias_to_key = keyed.alias_to_key
-    # staging QA2 Q1-09: a certificate key the identity rule changed moves with it (``identity_migration``): an
-    # ``obs:`` observation through the re-keying path below (``rekeyed``, never a removal), the rest in place
+    # staging QA2 Q1-09: a key the current rows' spelling changed (a row first collected after #481 under its old
+    # identity); the stored rows' own keys moved before the store was read (``identity_migration``, step 0b)
     moves = {ref: found for ref, rows in job_rows.items()
              if (found := ID.rekeyed_observations((r for r in rows if r.asset_type != "coverage"), ref))}
     if moves:
         from backend.utilities.cbom_sources import identity_migration
 
-        for found in moves.values():
-            for old, new in found.items():
-                alias_to_key.setdefault("obs:" + old, "obs:" + new)
-        write.identity_moves = identity_migration.remap(session, team_id, moves)
+        for k, v in identity_migration.remap(session, team_id, moves).items():
+            write.identity_moves[k] = write.identity_moves.get(k, 0) + v
     seen: dict[tuple[str, str], _Seen] = {}
     for i, (row, ref) in enumerate(seen_rows):
         key, kind, basis = _key_of(keyed.keys[i])

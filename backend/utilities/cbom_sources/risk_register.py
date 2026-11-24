@@ -697,6 +697,40 @@ def list_register(session: Session, team_id: int, filters: dict[str, Any], *, af
             "next_after": encode_after(rows[-1].q_rank, rows[-1].item_key) if more and rows else None}
 
 
+REMOVED_ITEMS_MAX = 200  # rows of the D12 "Removed from scope" table (the counts are always complete)
+
+
+def _removed_condition(team_id: int) -> Any:
+    """Register rows whose estate asset only deleted sources still hold: every observation not ``removed`` is
+    ``not_read`` with reason "source deleted" (``estate.SOURCE_DELETED``), and there is at least one. Staging QA2
+    Q1-01 / #497 review M2: they are history, never current population (the roll-up's ``is_deleted_source`` rule)."""
+    from backend.new_models import CbomEstateObservation
+    from backend.utilities.cbom_sources.estate import SOURCE_DELETED
+
+    eo = CbomEstateObservation.__table__
+    own = sa.and_(eo.c.team_id == _RT.c.team_id, eo.c.asset_key == _RT.c.item_key)
+    deleted = sa.and_(eo.c.presence == "not_read", eo.c.presence_reason == SOURCE_DELETED)
+    return sa.and_(_RT.c.team_id == team_id, _RT.c.presence != "removed",
+                   sa.exists(sa.select(eo.c.id).where(own, deleted)),
+                   ~sa.exists(sa.select(eo.c.id).where(own, eo.c.presence != "removed", ~deleted)))
+
+
+def removed_from_scope(session: Session, team_id: int, *, items: int = 0) -> dict[str, Any]:
+    """``{"total", "q_grades", "items"}``: the register rows of assets only deleted sources read (``items``: up to
+    that many rows, worst first). ``summary`` leaves them out of ``total`` and ``q_grades``."""
+    from backend.utilities.cbom_sources import qgrade as QG
+
+    grades = dict(session.execute(sa.select(_RT.c.q_grade, sa.func.count()).where(_removed_condition(team_id))
+                                  .group_by(_RT.c.q_grade)).all())
+    out: dict[str, Any] = {"total": int(sum(grades.values())),
+                           "q_grades": {g or "none": int(grades.get(g, 0)) for g in (*QG.GRADES, None)}, "items": []}
+    if items and out["total"]:
+        out["items"] = [public_row(r) for r in session.execute(sa.select(_RT).where(_removed_condition(team_id))
+                                                               .order_by(_RT.c.q_rank, _RT.c.item_key)
+                                                               .limit(items)).all()]
+    return out
+
+
 def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 12) -> dict[str, Any]:
     from backend.new_models import CbomQ0Gap
     from backend.utilities.cbom_sources import estate as E
@@ -754,9 +788,17 @@ def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 1
             week_end = _dt.datetime.fromisoformat(monday) + _dt.timedelta(weeks=1)
             if opened_at < week_end and (closed_at is None or closed_at >= week_end):
                 open_end[monday] += 1
+    # #497 review M2 (Rule P): the assets only deleted sources read are not current population; D1, D12 and D14 print
+    # this total, so they are left out here and returned apart (D12's "Removed from scope" table)
+    removed = removed_from_scope(session, team_id)
+    for grade, n in removed["q_grades"].items():
+        key = None if grade == "none" else grade
+        if n:
+            grades[key] = max(int(grades.get(key, 0)) - n, 0)
     total = sum(int(v) for v in grades.values())
     return {
         "total": total, "q_grades": {g or "none": int(grades.get(g, 0)) for g in (*QG.GRADES, None)},
+        "removed_from_scope": {"total": removed["total"], "q_grades": removed["q_grades"]},
         "q0_reasons": {k: int(v) for k, v in sorted(q0_reasons.items())},
         "q0_gaps_open": {k: int(v) for k, v in sorted(gaps_open.items())},
         "families": dict(sorted(families.items())),
@@ -868,7 +910,16 @@ def report(session: Session, team_id: int, now: _dt.datetime) -> dict[str, Any]:
     gaps = session.exec(select(CbomQ0Gap).where(CbomQ0Gap.team_id == team_id, CbomQ0Gap.closed_at.is_(None))  # type: ignore[union-attr]
                         .order_by(CbomQ0Gap.reason, CbomQ0Gap.opened_at, CbomQ0Gap.id).limit(REPORT_Q0)).all()
     every = list_register(session, team_id, {}, after=None, limit=REPORT_ALL, detail=True, now=now)
+    # #497 review M2: an asset only deleted sources read is listed under "Removed from scope", outside every table
+    # and total of the document (the summary leaves it out of ``total`` / ``q_grades``)
+    removed = removed_from_scope(session, team_id, items=REMOVED_ITEMS_MAX)
+    gone = {r["item_key"] for r in removed["items"]}
+    for page, less in ((top, removed["q_grades"].get("Q1", 0)), (every, removed["total"])):
+        page["items"] = [r for r in page["items"] if r["item_key"] not in gone]
+        if page["total"] is not None:
+            page["total"] = max(int(page["total"]) - int(less), 0)
     return {"summary": summary(session, team_id, now), "heatmap": heatmap(session, team_id),
+            "removed_from_scope": removed,
             "top_q1": top["items"], "top_q1_total": top["total"],
             "q0_gaps": [public_gap(g, now) for g in gaps],
             # SOW D12 "every asset with its grade": worst first, the same rows and columns as the CSV

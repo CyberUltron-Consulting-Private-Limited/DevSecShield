@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import datetime as dt
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -139,3 +140,27 @@ def test_a_preview_is_never_an_issue_and_a_run_in_progress_holds_the_plain_downl
     assert api("GET", R485.D14 + "?issue=1").status_code == 200
     assert _issues(engine) == 1
     assert api("GET", R485.D14).status_code == 200 and _issues(engine) == 1  # a re-download: the same issue
+
+
+def test_a_run_stuck_for_days_never_holds_a_formal_issue_back(tmp_path):
+    """#497 review m1: staging run #50 has been "running" since 18 Nov (an offline node); only an open run that
+    changed in the last 24 hours makes a plain download a draft."""
+    from sqlmodel import SQLModel, create_engine
+
+    from backend.routers.cbom_deliverables import ACTIVE_RUN_WINDOW, _active_runs
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'runs.db'}")
+    SQLModel.metadata.create_all(engine, tables=[CbomCollectionRun.__table__])
+    now = dt.datetime(2026, 11, 24, 12, 0, tzinfo=dt.timezone.utc)
+    with Session(engine) as s:
+        s.add(CbomCollectionRun(team_id=1, owner_user_id=1, client_request_id="stuck", status="running",
+                                created_at=dt.datetime(2026, 11, 18, 5, 11), last_updated=dt.datetime(2026, 11, 18, 5, 12)))
+        s.commit()
+        assert _active_runs(s, 1, now) == 0
+        assert ISSUES.formal_issue(explicit=False, preview=False, active_runs=_active_runs(s, 1, now)) == \
+            ISSUES.FIRST_DOWNLOAD
+        s.add(CbomCollectionRun(team_id=1, owner_user_id=1, client_request_id="live", status="queued",
+                                created_at=now.replace(tzinfo=None) - ACTIVE_RUN_WINDOW / 2,
+                                last_updated=now.replace(tzinfo=None) - ACTIVE_RUN_WINDOW / 2))
+        s.commit()
+        assert _active_runs(s, 1, now) == 1
