@@ -111,6 +111,7 @@ _LIBRARY_SUMMARY = (
 _NOT_CAPTURED = "not captured"
 _STATUS_NONE = "none recorded"
 _STATUS_UNASSESSED = "not assessed (no version)"
+_STATUS_PRODUCT = "product: see the vendor assurance columns"
 _VENDOR_NONE = "No vendor questionnaire is recorded in the Evidence tab of CBOM Sources yet."
 _VENDOR_SOME = (
     "{count} recorded in the Evidence tab of CBOM Sources (attestation date = the day the vendor "
@@ -344,6 +345,8 @@ def _status_cell(lib: LibAgg) -> str:
         status += " (" + ", ".join(advisories) + (f" +{more} more" if more > 0 else "") + ")"
     if status:
         return status
+    if str(getattr(lib, "ecosystem", "")).startswith("crypto product"):
+        return _STATUS_PRODUCT  # a product, not a package: its assurance is the vendor columns (QA Q3-11)
     return _STATUS_NONE if getattr(lib, "version", "") else _STATUS_UNASSESSED
 
 

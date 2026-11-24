@@ -137,7 +137,7 @@ def _store_register(view: object, styles: Styles, width: float) -> list[Flowable
                 "Location",
             ),
             rows,
-            (85, 50, 45, 100, 75, 50, 45, 45, 50, 45, 70, 80),
+            (85, 60, 45, 90, 75, 50, 45, 45, 50, 45, 70, 80),
             width,
             styles,
             manual=(5, 6, 7, 8, 9),

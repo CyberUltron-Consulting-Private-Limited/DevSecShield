@@ -196,6 +196,12 @@ def test_d10_lists_crypto_products_with_every_source_that_uses_them():
     assert products["AWS Key Management Service (KMS)"].source_labels == ("AWS production",)
     rows = rows_under(story(d10, folded), "Component")
     assert {"SoftHSM v2", "Azure Key Vault"} <= {r["Component"] for r in rows}
+    hsm = next(r for r in rows if r["Component"] == "SoftHSM v2")
+    assert hsm["Known-vulnerability / end-of-life status"] == "product: see the vendor assurance columns"
+    # the two AWS roles of run #57: the KMS product row names both, not only the newest reader
+    both = merge_collections(_empty(), *AWS2.build())
+    kms = next(lib for lib in both.libs if lib.name == "AWS Key Management Service (KMS)")
+    assert set(kms.source_labels) == {NEWER, OLDER}
 
 
 def test_d10_ledger_pools_every_live_source_with_crypto():

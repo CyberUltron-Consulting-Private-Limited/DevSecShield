@@ -3435,6 +3435,8 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
             component = mapper.crypto_product(item.node_type, item.facts, name=item.row.get("title"),
                                               location=item.row.get("location"), source_kind=agg.source_kind,
                                               finding_codes=asset.finding_codes)
+            if component is not None:  # every source that read the resource relies on the product, not only the newest
+                components.extend((aggs[k], component) for k in item.also_seen_keys if k in aggs)
         if component is not None:
             components.append((agg, component))
     assets.sort(key=lambda a: (a.source_key, a.asset_type, a.ident))
