@@ -52,7 +52,7 @@ assert.deepEqual(explainRows(explain).find((r) => r.label === "Inputs"),
 
 console.log("grade inputs tests passed");
 
-// staging QA2 Q1-06: unset Mosca inputs are filled with the documented defaults (never "grade as Unknown")
+// staging QA round 2 (lane one, item 06): unset Mosca inputs are filled with the documented defaults (never "grade as Unknown")
 assert.equal(moscaDefaultsText({ x: 10, y: 5, z: 12 }), null);
 assert.equal(moscaDefaultsText({ x: null, y: null, z: null }),
   "Not set: grades use default Mosca assumptions (X 7 years, 10 for a high or critical source; Y 5 years; Z the years " +

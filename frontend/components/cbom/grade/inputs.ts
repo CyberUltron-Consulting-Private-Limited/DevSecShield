@@ -19,7 +19,7 @@ export function moscaText(m: Mosca | null | undefined): string {
 // DEFAULT_Y / DEFAULT_Z_YEAR, DEFAULTS_TEXT; pinned by inputs.test.ts against qgrade.py).
 export const MOSCA_DEFAULTS = { x: 7, xCritical: 10, y: 5, zYear: 2035 } as const;
 
-/** What the grade does with unset Mosca inputs (staging QA2 Q1-06: the card said "grade as Unknown", but the grade
+/** What the grade does with unset Mosca inputs (staging QA round 2 (lane one, item 06): the card said "grade as Unknown", but the grade
  * applies documented defaults), or null when X, Y and Z are all set. */
 export function moscaDefaultsText(m: Mosca | null | undefined): string | null {
   const unset = (["x", "y", "z"] as const).filter((k) => m?.[k] == null).map((k) => k.toUpperCase());

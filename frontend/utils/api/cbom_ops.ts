@@ -51,7 +51,7 @@ export interface CbomDiff {
   rule_changes?: { key: string; label: string; code: string; direction: string; label_change: string }[]
   /** findings that vanished only because a collector started sending a new fact (CB-33): not drift, no event */
   /** a finding a newly sent fact explains (code = the finding code), or a label the collector now spells differently
-   *  (code "label", ``label_before`` the old label): never drift (staging QA2 Q1-09) */
+   *  (code "label", ``label_before`` the old label): never drift (staging QA round 2 (lane one, item 09)) */
   collector_changes?: { key: string; label: string; code: string; direction: string; label_change: string; label_before?: string }[]
   readiness?: { before: number | null; after: number | null; delta: number | null }
   counts?: Record<string, number>

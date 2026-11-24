@@ -91,7 +91,7 @@ const TEXT = {
     why: "Findings reflect the estate at this time.",
     example: "13 Nov 2026, 11:05 pm IST.",
   },
-  // src: frontend/components/cbom/results/resultRows.ts runTriggerLabel — run.trigger and run.schedule_name
+  // src: frontend/components/cbom/results/resultRows.ts:364-371, frontend/components/cbom/sources/ReviewRunTab.tsx:472-475 — run.trigger and run.schedule_name
   "cbsrc.rr.col.trigger": {
     what: "Who started the run: a person (Manual) or a schedule, named.",
     why: "A scheduled run is compared with the previous comparable run for drift (S4).",

@@ -88,7 +88,7 @@ export function RunHeaderMeta({ teamId, run, sources }: { teamId: number; run: C
     <>
       <span data-testid="run-results-status"><RunStatusBadge status={run.status} reason={run.status_reason} /></span>
       <span>Started {formatDateTime(run.created_at)}</span>
-      {/* the badge says queued or running; no second state word beside it (staging QA2 Q1-13) */}
+      {/* the badge says queued or running; no second state word beside it (staging QA round 2 (lane one, item 13)) */}
       {run.finished_at ? <span>Finished {formatDateTime(run.finished_at)}</span> : null}
       <span data-testid="run-results-credits">{credits(run.credits?.charged)} credits charged, {credits(run.credits?.refunded)} refunded</span>
       {runTriggerLabel(run) && (
