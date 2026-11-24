@@ -301,6 +301,7 @@ FINDING_LABELS = {
     "HARDCODED_KEY": "Hard-coded key material",
     "STATIC_SALT": "Constant salt for password-based key derivation",
     "WEAK_KDF_ITERATIONS": "Too few key-derivation iterations",
+    "WEAK_KDF_COST": "scrypt cost below the minimum",
     "WEAK_RSA_EXPONENT": "RSA public exponent 3",
     "WEAK_PADDING": "Weak RSA encryption padding",
     "WEAK_CERTIFICATE_SIGNATURE": "Certificate signed with a weak hash",
@@ -377,6 +378,11 @@ FINDING_ACTIONS = {
     "WEAK_KDF_ITERATIONS": (
         "Raise the iteration count well above the 1,000 minimum (for example 600,000 for "
         "PBKDF2-HMAC-SHA256) or use a memory-hard function such as Argon2id or scrypt."
+    ),
+    # Source: CWE-916, password hash with insufficient computational effort: https://cwe.mitre.org/data/definitions/916.html
+    "WEAK_KDF_COST": (
+        "Raise the scrypt cost to at least N = 2^17 with r = 8 and p = 1 (or an equal-strength pair), or use "
+        "Argon2id, and keep the cost in configuration so it can rise."
     ),
     # Source: FIPS 186-5, the RSA public exponent shall exceed 2^16: https://csrc.nist.gov/pubs/fips/186-5/final
     "WEAK_RSA_EXPONENT": (

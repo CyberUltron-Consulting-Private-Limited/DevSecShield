@@ -279,6 +279,17 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
                 cbom_compliance = scan.scan_data["cbom_compliance"]
             if "cbom_scores" in scan.scan_data:
                 cbom_scores = scan.scan_data["cbom_scores"]
+            if isinstance(cbom_scores, dict) and isinstance(scan.scan_data.get("results"), list):
+                # one D3 risk score (Q2-01, Rule P): a scan stored before the engine wrote the posture score carries
+                # the old flag-weight number; the API serves the engine's posture function over the scan's findings,
+                # the number the PDF and the results page show (equal to what the engine stores today)
+                from backend.utilities.cbom_sources.cbom_metrics import summarize_code_rows
+
+                risk = summarize_code_rows(scan.scan_data["results"]).risk
+                cbom_scores = {**(cbom_scores if isinstance(cbom_scores, dict) else {}),
+                               "risk_normalized": float(risk["risk_score"]), "risk_band": risk["risk_band"],
+                               "risk_grade": risk["risk_grade"], "risk_label": risk["risk_label"],
+                               "severity_counts": risk["severity_counts"], "risk_scale": "posture"}
             if "cbom_graph" in scan.scan_data:
                 cbom_graph = scan.scan_data["cbom_graph"]
             if "cbom_graph_compact" in scan.scan_data:

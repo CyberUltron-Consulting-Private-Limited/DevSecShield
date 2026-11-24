@@ -152,6 +152,10 @@ def _library_rows(components: List[Dict[str, Any]]) -> List[List[str]]:
         for pin in advisories:
             basis += f"; {pin.get('crypto:version') or 'the declared version'} matches " \
                      f"{pin.get('crypto:advisoryCount') or 'known'} advisories"
+        if props.get("crypto:versionVerified") == "false" and props.get("crypto:unverifiedAdvisoryCount"):
+            # a range's lower bound is no installed version: listed, not a finding (staging QA Q2-09)
+            basis += (f"; version unverified: the range's lower bound matches "
+                      f"{props['crypto:unverifiedAdvisoryCount']} advisories (not counted)")
         rows.append([str(comp.get("name") or ""), version or "not known", basis, _location(props)])
     return sorted(rows, key=lambda r: r[0].lower())
 

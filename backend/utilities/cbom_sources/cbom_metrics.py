@@ -54,6 +54,8 @@ def code_row_quantum_vulnerable(row: dict[str, Any]) -> bool | None:
     qs = row.get("quantum_safe") if isinstance(row, dict) else None
     if qs is True and str(row.get("crypto_strength") or "").strip().lower() == "unknown":
         return None
+    if code_row_broken_today(row):
+        return False  # judged, and not quantum-vulnerable: the caller counts it as broken today
     if qs is True:
         return False
     if qs is False:
@@ -66,9 +68,12 @@ def code_row_broken_today(row: dict[str, Any]) -> bool:
 
     The results table's Quantum column calls these rows "Broken today", never "Safe" (frontend quantumFilter.ts
     ``isBrokenToday``): an algorithm that is broken today is not quantum-ready."""
-    if not isinstance(row, dict):
+    if not isinstance(row, dict) or str(row.get("crypto_strength") or "").strip().lower() != "weak":
         return False
-    return row.get("quantum_safe") is True and str(row.get("crypto_strength") or "").strip().lower() == "weak"
+    qs = row.get("quantum_safe")
+    # rows stored before G-D3-6 say quantum_safe true; newer ones say false with quantum_vulnerable false (MD5 is not
+    # safe on any computer) - a weak quantum-vulnerable row (RSA-1024) stays quantum-vulnerable
+    return qs is True or (qs is False and row.get("quantum_vulnerable") is False)
 
 
 def finding_severity(row: dict[str, Any]) -> str | None:
@@ -77,6 +82,19 @@ def finding_severity(row: dict[str, Any]) -> str | None:
         return None
     impact = str(row.get("impact") or "").strip().lower()
     return impact if impact in IMPACT_RISK else "low"
+
+
+def risk_posture(severity: dict[str, int]) -> dict[str, Any]:
+    """The D3 risk score of a code scan from its findings by severity (staging QA Q2-01, Rule P): the engine's one
+    posture function (``aibom/src/aibom/score/posture.py``, worst-severity cap; loaded by ``aibom_posture``), the same
+    number, grade and words the engine stores in ``cbom_scores`` for these rows. The PDF headline, the PDF summary
+    page, the scan dashboard's KPI and the API (``cbom_scores``) all read this."""
+    from backend.utilities.pdf.aibom_posture import posture_risk
+
+    counts = {s: int(severity.get(s, 0) or 0) for s in SEVERITIES}
+    score, grade, label = posture_risk(counts["critical"], counts["high"], counts["medium"], counts["low"])
+    return {"risk_score": score, "risk_grade": grade, "risk_label": label,
+            "risk_band": label.split(" ")[0].lower(), "severity_counts": counts}
 
 
 def average_risk(severity: dict[str, int]) -> float:
@@ -180,6 +198,11 @@ class CodeRowSummary:
     def average_risk(self) -> float:
         return average_risk(self.severity)
 
+    @property
+    def risk(self) -> dict[str, Any]:
+        """``risk_posture`` of these findings: the one D3 risk score."""
+        return risk_posture(self.severity)
+
     def severity_distribution(self) -> dict[str, int]:
         """Findings by severity, plus the inventory rows under ``informational`` (never in a severity)."""
         return {**self.severity, INFORMATIONAL: self.informational}
@@ -198,6 +221,6 @@ def finding_rows(rows: Iterable[Any]) -> list[dict[str, Any]]:
 
 
 __all__ = [
-    "CodeRowSummary", "IMPACT_RISK", "INFORMATIONAL", "INFORMATIONAL_LABEL", "SEVERITIES", "average_risk",
+    "CodeRowSummary", "IMPACT_RISK", "INFORMATIONAL", "INFORMATIONAL_LABEL", "SEVERITIES", "average_risk", "risk_posture",
     "code_row_broken_today", "code_row_quantum_vulnerable", "finding_rows", "finding_severity", "quantum_readiness_pct", "summarize_code_rows",
 ]

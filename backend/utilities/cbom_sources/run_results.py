@@ -75,7 +75,7 @@ from backend.utilities.cbom_sources import collections_view as CV
 from backend.utilities.cbom_sources import crypto_kb
 from backend.utilities.cbom_sources import identity as ID
 from backend.utilities.cbom_sources import posture as POSTURE
-from backend.utilities.cbom_sources.cbom_metrics import INFORMATIONAL, average_risk
+from backend.utilities.cbom_sources.cbom_metrics import INFORMATIONAL, average_risk, risk_posture
 from backend.utilities.cbom_sources.common import console, iso_z, utcnow
 
 ACTIVE_STATUSES = ("queued", "running")
@@ -269,6 +269,7 @@ class _Acc:
     controls: Counter = field(default_factory=Counter)
     primitives: Counter = field(default_factory=Counter)
     weakness: Counter = field(default_factory=Counter)
+    weakness_impacts: dict = field(default_factory=dict)  # code -> Counter of the asset's impact (the chart's colours)
     nist_levels: Counter = field(default_factory=Counter)  # levels of ready assets ("0" comes from posture)
     protocols: Counter = field(default_factory=Counter)
     expiry: dict = field(default_factory=lambda: {b: 0 for b in _EXPIRY_BUCKETS})
@@ -357,6 +358,7 @@ def _add(acc: _Acc, memo: _Memo, row: CbomCollectedAsset, view: dict[str, Any], 
         for code in codes:
             if code not in _NOT_WEAKNESS:
                 acc.weakness[code] += 1
+                acc.weakness_impacts.setdefault(code, Counter())[str(impact).capitalize()] += 1
 
     texts = [t for t in (row.algorithm, facts.get("key_alg"), facts.get("group"), facts.get("kex"),
                          facts.get("sig_alg")) if t]
@@ -506,6 +508,9 @@ def _assemble(acc: _Acc, posture: dict[str, Any], top_risks: list[dict[str, Any]
             "quantum_readiness_judged": readiness is not None,
             "quantum_readiness_status": basis.get("status"),
             "average_risk_score": average_risk(severity),
+            # the risk score tile: the engine's posture function over the same severity counts, as a code scan's
+            # (staging QA Q2-01; one KPI definition for both pages)
+            **{k: v for k, v in risk_posture(severity).items() if k in ("risk_score", "risk_grade", "risk_label")},
         },
         "severity_distribution": {**severity, INFORMATIONAL: assets - findings},
         "algorithm_type_distribution": dict(sorted(acc.algorithm_types.items())),
@@ -539,6 +544,8 @@ def _assemble(acc: _Acc, posture: dict[str, Any], top_risks: list[dict[str, Any]
     distributions = {
         "algorithms": dict(sorted(acc.primitives.items())),
         "weakness": dict(sorted(acc.weakness.items())),
+        # by impact, so the weak-crypto chart colours each bar by severity (staging QA N2), as a code scan's
+        "weakness_impacts": {code: dict(sorted(by.items())) for code, by in sorted(acc.weakness_impacts.items())},
         "weakness_labels": {code: _title(code) for code in sorted(acc.weakness)},
         "pqc": pqc,
         "certificates": calendar,

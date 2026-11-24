@@ -144,9 +144,13 @@ def _build_vex(engine, scan: Scan, scan_type: str, bom: dict | None, findings: l
             return VEX.bom_link(identity[0], identity[1], str(ref)) if identity and ref else None
 
         stored = scan.scan_data.get("vex_json") if isinstance(scan.scan_data, dict) else None
+        # every affected asset is a BOM-Link into the served CBOM (A-13d); a scan with no stored CBOM has no document
+        # to link into, so its rows keep their bare refs
+        serial = (bom or {}).get("serialNumber") if isinstance(bom, dict) and bom.get("components") else None
         return VEX.code_scan_vex(rows, scan_id=scan.id, components=components, resolved=resolved, ref_of=ref_of,
                                  link_of=link_of, truncated=truncated,
-                                 supersedes=stored if isinstance(stored, dict) else None)
+                                 supersedes=stored if isinstance(stored, dict) else None,
+                                 bom_serial=serial, bom_version=(bom or {}).get("version") or 1)
     if vex_mod is None:
         vex_mod = _load_certin_module("vex")
     return vex_mod.build_vex(bom=bom, findings=findings, scan_type=scan_type)
@@ -593,6 +597,9 @@ def _verify_scan_file(scan_type: str, scan_id: int, data: dict, upload: Any, sen
     sign_mod = _load_certin_module("sign")
     try:
         ok = bool(sign_mod.verify_signature(doc, stored, secret=_hmac_secret()))
+    except UnicodeError:  # never the codec's own words in the answer (staging QA N8)
+        raise _malformed("the document holds text that is not valid Unicode, so it has no canonical form to check")\
+            from None
     except (TypeError, ValueError) as exc:
         raise _malformed(f"cannot be canonicalised for the HMAC check: {str(exc)[:200]}") from None
     # the stored HMAC is this scan's own: a match is a file of this scan
@@ -656,12 +663,18 @@ def _build_evidence_pack(engine, team_id: int, scan_type: str, scan_id: int) -> 
 
     with Session(engine) as session:
         ctx = ReportContext(branding=load_report_branding(session, team_id))
+        profile = None
+        if scan_type == "cbom":
+            from backend.utilities.cbom_sources.regulated_entity import team_profile as _team_profile
+
+            profile = _team_profile(session, team_id)
 
     tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
     tmp_path = tmp.name
     tmp.close()
     try:
-        files = _pack_members(scan_type, scan_id, team_id, data, bom, ctx, subject_name=subject)
+        files = _pack_members(scan_type, scan_id, team_id, data, bom, ctx, subject_name=subject,
+                              team_profile=profile)
         with zipfile.ZipFile(tmp_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             for name, body in files:
                 zf.writestr(name, body)
@@ -675,7 +688,8 @@ def _build_evidence_pack(engine, team_id: int, scan_type: str, scan_id: int) -> 
 
 
 def _pack_members(scan_type: str, scan_id: int, team_id: int, data: dict, bom: dict | None,
-                  ctx: ReportContext, *, subject_name: str | None = None) -> list[tuple[str, bytes]]:
+                  ctx: ReportContext, *, subject_name: str | None = None,
+                  team_profile: dict | None = None) -> list[tuple[str, bytes]]:
     """The pack's files in zip order. D11 / C G-X-3: the JSON BOM carries its embedded JSF signature; with a signing
     key the pack also holds the public key, the offline verifier, the detached signature of each BOM file and a
     signed ``manifest.json`` (SHA-256 and size of every file) and ``SHA256SUMS`` (``bom_signing.pack_files``)."""
@@ -706,6 +720,11 @@ def _pack_members(scan_type: str, scan_id: int, team_id: int, data: dict, bom: d
 
         pdf_data = {**data, SUBJECT_NAME_KEY: subject_name,
                     SERVED.SCAN_IDENTITY_KEY: SERVED.pdf_identity(scan_type, scan_id, team_id, subject_name)}
+    elif scan_type == "cbom" and team_profile is not None:
+        # the report's framework table lists the frameworks that bind the team, as GET /export does (Q2-03)
+        from backend.utilities.pdf.rbi_compliance_pdf import TEAM_PROFILE_KEY
+
+        pdf_data = {**data, TEAM_PROFILE_KEY: team_profile}
     pdf = _pack_pdf(scan_type, pdf_data, ctx)
     if pdf is not None:
         files.append(("report.pdf", pdf))

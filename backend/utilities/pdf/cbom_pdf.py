@@ -21,6 +21,8 @@ from backend.utilities.pdf.report_branding import (
     append_executive_summary,
     append_findings_catalog,
     build_finding_section,
+    compute_posture_risk_score,
+    enum_label,
     count_label,
     escape_html,
     finding_location,
@@ -176,7 +178,8 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     quantum_vulnerable = summary.quantum["quantum_vulnerable"]
     quantum_safe_count = summary.quantum["quantum_safe"]
     broken_today = summary.quantum["broken_today"]  # the results table's "Broken today": not counted as quantum-safe
-    avg_risk = summary.average_risk
+    risk = summary.risk  # the D3 risk score: the engine's posture function over these findings (Q2-01, Rule P)
+    risk_text = f"{risk['risk_score']} / 100 · grade {risk['risk_grade']} · {risk['risk_label']}"
     readiness = summary.readiness_pct  # one definition for every CBOM surface (cbom_metrics.quantum_readiness_pct)
     readiness_text = "n/a" if readiness is None else f"{readiness:.1f}%"  # as the team deliverables print it
     informational = summary.informational
@@ -198,7 +201,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
             (
                 "Algorithm type distribution",
                 ["Algorithm type", "Count"],
-                [[alg_type.title(), str(cnt)] for alg_type, cnt in sorted(by_type.items(), key=lambda x: -x[1])],
+                [[enum_label(alg_type), str(cnt)] for alg_type, cnt in sorted(by_type.items(), key=lambda x: -x[1])],
                 [4.0 * inch, 1.5 * inch],
             )
         )
@@ -214,7 +217,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                 ["Broken today (classically broken, not quantum-safe)", str(broken_today)],
                 ["Quantum readiness", readiness_text],
                 ["Weak algorithms", str(summary.weak)],
-                ["Average risk score", f"{avg_risk:.1f} / 10"],
+                ["Risk score", risk_text],
             ],
             [4.0 * inch, 1.5 * inch],
         )
@@ -227,7 +230,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         ("Quantum-vulnerable", str(quantum_vulnerable)),
         ("Quantum-safe", str(quantum_safe_count)),
         ("Broken today", str(broken_today)),
-        ("Average risk score (0–10)", f"{avg_risk:.1f}"),
+        ("Risk score (0–100)", risk_text),
         ("Report generated", report_generated(long=True)),
     ]
     advisory = advisory_text(raw)
@@ -258,6 +261,8 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         extra_tables=extra_tables,
         project_name="CBOM Findings",
         scan_time=format_scan_duration(duration),
+        # the headline is the same engine function as the summary rows above and the results page's KPI
+        risk_score_fn=compute_posture_risk_score,
         meta_chips=[
             ("Scan type", "CBOM"),
             ("Total findings", str(total)),
@@ -335,9 +340,9 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                     detail_rows=[
                         ("Severity", impact),
                         ("Algorithm", alg_name),
-                        ("Type", alg_type),
+                        ("Type", enum_label(alg_type) if alg_type != "—" else alg_type),
                         ("Key size", key_size_text),
-                        ("Strength", strength.title()),
+                        ("Strength", enum_label(strength)),
                         ("Quantum status", _quantum_label(v.get("quantum_safe"), strength)),
                         ("Where it was found", location),
                         *([("CWE", ", ".join(map(str, v.get("cwe") or [])))] if v.get("cwe") else []),

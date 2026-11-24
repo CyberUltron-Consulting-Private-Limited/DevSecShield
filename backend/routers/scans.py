@@ -947,6 +947,12 @@ def _build_scan_report(engine, team_id: int, type: str, scan_id: int, options) -
             subject = subject_name_for(scan.scan_metadata)
             scan_data = {**scan_data, SUBJECT_NAME_KEY: subject,
                          served_bom.SCAN_IDENTITY_KEY: served_bom.pdf_identity(type, scan_id, team_id, subject)}
+        elif type == "cbom" and isinstance(scan_data, dict):
+            # the D3 compliance table lists the frameworks that bind the team (staging QA Q2-03, as D14 / #485)
+            from backend.utilities.cbom_sources.regulated_entity import team_profile
+            from backend.utilities.pdf.rbi_compliance_pdf import TEAM_PROFILE_KEY
+
+            scan_data = {**scan_data, TEAM_PROFILE_KEY: team_profile(session, team_id)}
         started_at, completed_at = scan.created_at, scan.last_updated
 
     if type not in TYPE_SECTIONS:  # leakage, agent discovery...: "not supported" (400) before any status read

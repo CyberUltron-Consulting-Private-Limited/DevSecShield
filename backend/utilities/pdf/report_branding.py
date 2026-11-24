@@ -16,6 +16,7 @@ import io
 import logging
 import os
 import re
+import unicodedata
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -513,6 +514,35 @@ def count_label(severity: str) -> str:
     return severity_label(severity).title()
 
 
+# Stored enum values (an algorithm type, a crypto strength, an AI asset type) in a reader's words: the PDFs printed
+# them through str.title() ("Quantum_Safe", "Ml_Framework", "Ae", "Pke"; staging QA Q2-10).
+_ENUM_LABELS = {
+    "quantum_safe": "Quantum-safe", "not-applicable": "Not applicable", "ae": "Authenticated encryption (AEAD)",
+    "pke": "Public-key encryption", "kdf": "Key derivation (KDF)", "mac": "Message authentication (MAC)",
+    "kem": "Key encapsulation (KEM)", "key-agree": "Key agreement", "xof": "Extendable-output function (XOF)",
+    "drbg": "Random bit generator (DRBG)", "block-cipher": "Block cipher", "stream-cipher": "Stream cipher",
+    "ml_framework": "ML framework", "llm": "LLM", "external_provider": "External provider",
+    "local_model_file": "Local model file", "huggingface_model": "Hugging Face model",
+}
+_ACRONYMS = {"ml", "ai", "llm", "api", "sdk", "kdf", "mac", "aead", "rsa", "tls", "ssh", "pqc", "jwt", "mcp", "rag",
+             "gpu", "url", "id"}
+
+
+def enum_label(value: Any) -> str:
+    """``quantum_safe`` -> "Quantum-safe", ``ml_framework`` -> "ML framework", ``vector_store`` -> "Vector store"."""
+    text = str(value or "").strip()
+    if not text:
+        return "—"
+    known = _ENUM_LABELS.get(text.lower())
+    if known:
+        return known
+    words = [w for w in re.split(r"[_\-\s]+", text) if w]
+    out = [w.upper() if w.lower() in _ACRONYMS else w.lower() for w in words]
+    if out and out[0] == out[0].lower():
+        out[0] = out[0][:1].upper() + out[0][1:]
+    return " ".join(out)
+
+
 def color_to_hex(color: colors.Color) -> str:
     """Return ``#rrggbb`` for Paragraph markup. ``Color.hexval()`` is ``0xRRGGBB``."""
     r, g, b = color.bitmap_rgb()
@@ -550,7 +580,10 @@ def mapping_rows(val: Any, *, label: str, limit: int = 6) -> List[List[str]]:
     entries = mapping_entries(val)
     rows: List[List[str]] = []
     for k, v in entries[:limit]:
-        text = f"{k}: {v}" if k else v
+        # a stored enum key (CRYPTOGRAPHIC_FAILURES, ISO27001_A10_CRYPTOGRAPHY) next to its own readable label
+        # ("A02:2021 - Cryptographic Failures") is not printed (staging QA Q2-10: raw enums in the PDF)
+        enum_key = bool(re.fullmatch(r"[A-Z0-9]+(?:_[A-Z0-9]+)+", str(k or ""))) and bool(v)
+        text = f"{k}: {v}" if k and not enum_key else v
         rows.append([label, text])
     leftover = len(entries) - limit
     if leftover > 0:
@@ -2174,6 +2207,58 @@ def append_findings_catalog(
             story.append(Spacer(1, 0.08 * inch))
 
 
+def _code_markup(text: str, style: ParagraphStyle) -> str:
+    """XPreformatted markup of a code window whose text Courier (Windows-1252) cannot draw in full: each other
+    character in the report's Noto Sans when it has the glyph (Turkish, Greek, Cyrillic comments), else written as a
+    visible ``\\uXXXX`` escape, never a black box (staging QA Q2-10)."""
+    from backend.utilities.pdf.report_options import is_cp1252
+
+    noto, glyphs = _evidence_font()
+    out: List[str] = []
+    for ch in text:
+        if ch in "\n\t" or is_cp1252(ch):
+            out.append(escape_html(ch) if ch not in "\n\t" else ch)
+        elif ord(ch) in glyphs and unicodedata.category(ch)[0] in "LNPSZ" and not 0x0900 <= ord(ch) <= 0x097F:
+            out.append(f'<font face="{noto}">{escape_html(ch)}</font>')
+        else:
+            out.append(f"\\u{ord(ch):04x}" if ord(ch) <= 0xFFFF else f"\\U{ord(ch):08x}")
+    return "".join(out)
+
+
+_EVIDENCE_FONT = "DssEvidenceNotoSans"
+
+
+def _evidence_font() -> Tuple[str, Any]:
+    """The vendored Noto Sans (report_fonts' Latin face file) registered as a plain TrueType font: evidence is drawn
+    unshaped, so it needs no HarfBuzz; ReportLab embeds only the glyphs used. Returns (font name, its cmap)."""
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    from backend.utilities.pdf.report_fonts import FONT_DIR
+
+    if _EVIDENCE_FONT not in pdfmetrics.getRegisteredFontNames():
+        pdfmetrics.registerFont(TTFont(_EVIDENCE_FONT, str(FONT_DIR / "NotoSans-Regular.ttf")))
+    return _EVIDENCE_FONT, pdfmetrics.getFont(_EVIDENCE_FONT).face.charToGlyph
+
+
+def evidence_flowable(code_text: str, style: ParagraphStyle) -> Flowable:
+    """The evidence window: Preformatted (verbatim) when Courier draws every character, as before; otherwise an
+    XPreformatted of ``_code_markup`` with the same style, so the code keeps its lines and indentation."""
+    from backend.utilities.pdf.report_options import is_cp1252
+
+    if is_cp1252(code_text):
+        return Preformatted(code_text, style, maxLineLength=90)
+    from reportlab.platypus import XPreformatted
+
+    lines = []
+    for line in code_text.split("\n"):  # Preformatted's maxLineLength=90, kept
+        while len(line) > 90:
+            lines.append(line[:90])
+            line = line[90:]
+        lines.append(line)
+    return XPreformatted(_code_markup("\n".join(lines), style), style)
+
+
 def build_finding_section(
     *,
     index: int,
@@ -2261,7 +2346,7 @@ def build_finding_section(
         code_box = Table(
             # Preformatted draws its text verbatim (no markup is parsed), so the evidence goes in as written: escaping
             # it printed "&lt;redacted:21&gt;" (review of #491 m1), and unescaped text cannot inject markup here
-            [[Preformatted(code_text, styles["code"], maxLineLength=90)]],
+            [[evidence_flowable(code_text, styles["code"])]],
             colWidths=[CONTENT_WIDTH - 3.0 - 28],
         )
         code_box.setStyle(

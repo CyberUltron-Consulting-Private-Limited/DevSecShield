@@ -48,6 +48,7 @@ import io
 import json
 import math
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -124,6 +125,12 @@ def density_problem(containers: int, commas: int, size: int) -> str | None:
     return None
 
 
+# A \\uD800-\\uDBFF escape not followed by a \\uDC00-\\uDFFF one, or the second without the first (RFC 7493 section 2.1).
+_LONE_SURROGATE = re.compile(
+    r"\\u[dD][89abAB][0-9a-fA-F]{2}(?!\\u[dD][c-fC-F][0-9a-fA-F]{2})"
+    r"|(?<!\\u[dD][89abAB][0-9a-fA-F]{2})\\u[dD][c-fC-F][0-9a-fA-F]{2}")
+
+
 def loads(data: "bytes | str") -> Any:
     """Parse JSON as I-JSON (RFC 7493): UTF-8, no duplicate member names, no NaN / Infinity, numbers inside the double
     range, integers inside +-(2^53 - 1). Raises ``InputError`` otherwise (the strict reading every check here uses),
@@ -135,6 +142,11 @@ def loads(data: "bytes | str") -> Any:
         if dense:  # counted on what was given: a refused body is never decoded or parsed
             raise InputError(dense)
         text = data.decode("utf-8") if isinstance(data, (bytes, bytearray)) else data
+        if "\\u" in text:
+            lone = _LONE_SURROGATE.search(text)
+            if lone:  # Python reads it, no UTF-8 encoder writes it (staging QA N8: a raw codec error came back)
+                raise InputError(f"the escape {lone.group(0)} is a lone UTF-16 surrogate, not a Unicode character: "
+                                 "not I-JSON (RFC 7493), refused")
         return json.loads(text, object_pairs_hook=_no_duplicates, parse_constant=_no_constant, parse_float=_finite,
                           parse_int=_bounded_int)
     except InputError:
@@ -153,6 +165,12 @@ def loads_file(fh: Any) -> Any:
         text = fh.read().decode("utf-8")  # the bytes object is released as soon as it is decoded
     except UnicodeDecodeError as exc:
         raise NotJSON(f"not JSON: {str(exc)[:200]}") from None
+    # A UTF-8 byte-order mark before the JSON (a file saved by a Windows editor) is not part of the document: it is
+    # skipped, as RFC 8259 section 8.1 allows a parser to. The embedded signature covers the canonical JSON (RFC 8785),
+    # which the mark is not part of, so the genuine file still verifies (staging QA N8); ``sha256`` stays the digest
+    # of the bytes sent.
+    if text.startswith("\ufeff"):
+        text = text[1:]
     return loads(text)
 
 

@@ -7,7 +7,7 @@ from typing import Any
 from reportlab.lib import colors
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import KeepTogether, Paragraph, Spacer, Table, TableStyle
 
 _CERTIN_DISCLAIMER = (
     "Advisory mapping to CERT-In Technical Guidelines on SBOM, QBOM & CBOM, "
@@ -28,6 +28,18 @@ def _compliance_blob(payload: dict[str, Any]) -> dict[str, Any] | None:
         if isinstance(val, dict) and val:
             return val
     return None
+
+
+_VERDICTS = {"pass_with_evidence": "pass (attested)", "not_bom_evidenceable": "not BOM-evidenceable",
+             "pass": "pass", "fail": "fail", "out_of_scope": "out of scope"}
+
+
+def _label(key: str) -> str:
+    """A readable framework name (``cert_in_cbom`` -> "CERT-In CBOM (Guidelines v2.0)"), never the raw key."""
+    from backend.utilities.pdf.cbom_deliverable_text import framework_label
+
+    names = {"cert_in_sbom": "CERT-In SBOM (Guidelines v2.0)", "cert_in_aibom": "CERT-In AIBOM (Guidelines v2.0)"}
+    return names.get(key) or framework_label(key)
 
 
 def append_certin_compliance_pdf_section(
@@ -51,8 +63,8 @@ def append_certin_compliance_pdf_section(
         return
 
     story.append(Spacer(1, 0.2 * inch))
-    story.append(Paragraph("CERT-In Technical Guidelines (Advisory)", heading_style))
-    story.append(Paragraph(_escape(_CERTIN_DISCLAIMER), small_style))
+    heading = Paragraph("CERT-In Technical Guidelines (Advisory)", heading_style)
+    lead = Paragraph(_escape(_CERTIN_DISCLAIMER), small_style)
 
     rows = [["Framework", "Pass", "Fail", "NBE", "Coverage"]]
     for key, fw in frameworks:
@@ -60,14 +72,14 @@ def append_certin_compliance_pdf_section(
         cov_s = "n/a" if cov is None else f"{round(float(cov) * 100)}%"
         rows.append(
             [
-                _escape(key),
+                _escape(_label(key)),
                 str(int(fw.get("pass", 0)) + int(fw.get("pass_with_evidence", 0) or 0)),
                 str(fw.get("fail", 0)),
                 str(fw.get("not_bom_evidenceable", 0)),
                 cov_s,
             ]
         )
-    table = Table(rows, colWidths=[2.2 * 72, 0.7 * 72, 0.7 * 72, 0.7 * 72, 0.9 * 72])
+    table = Table(rows, colWidths=[2.2 * 72, 0.7 * 72, 0.7 * 72, 0.7 * 72, 0.9 * 72], repeatRows=1)
     table.setStyle(
         TableStyle(
             [
@@ -79,7 +91,7 @@ def append_certin_compliance_pdf_section(
             ]
         )
     )
-    story.append(table)
+    story.append(KeepTogether([heading, lead, table]))  # the heading never sits alone at a page foot
 
     # Optional: first few attested / NBE rows for audit trail
     for key, fw in frameworks:
@@ -92,15 +104,15 @@ def append_certin_compliance_pdf_section(
         if not reqs:
             continue
         story.append(Spacer(1, 0.1 * inch))
-        story.append(
-            Paragraph(_escape(f"{key} — sample requirements"), normal_style)
-        )
+        block = [Paragraph(_escape(f"{_label(key)}: sample requirements"), normal_style)]
         for r in reqs:
-            story.append(
+            block.append(
                 Paragraph(
                     _escape(
-                        f"{r.get('id')}: {r.get('verdict')} — {r.get('title') or ''}"
+                        f"{r.get('id')}: {_VERDICTS.get(str(r.get('verdict')), r.get('verdict'))} "
+                        f"— {r.get('title') or ''}"
                     ),
                     small_style,
                 )
             )
+        story.append(KeepTogether(block))

@@ -1229,6 +1229,7 @@ def generate_scan_dashboard(
                         compliance_controls_metrics[_label] += int(_fail)
 
             readiness = summary.readiness_pct
+            risk = summary.risk
 
             # Remediation metrics: the Mongo read path keeps finding rows only (old and new scans alike)
             findings = get_findings_for_scan_id(scan_id=scan_id, scan_type="cbom")
@@ -1255,6 +1256,11 @@ def generate_scan_dashboard(
                     "quantum_readiness_score": 0 if readiness is None else readiness,
                     "quantum_readiness_judged": readiness is not None,
                     "average_risk_score": summary.average_risk,
+                    # the D3 risk score (Q2-01, Rule P): the engine's posture function over these findings, the
+                    # number, grade and words of the PDF headline and of cbom_scores
+                    "risk_score": risk["risk_score"],
+                    "risk_grade": risk["risk_grade"],
+                    "risk_label": risk["risk_label"],
                 },
                 "severity_distribution": summary.severity_distribution(),
                 "algorithm_type_distribution": dict(summary.algorithm_types),
