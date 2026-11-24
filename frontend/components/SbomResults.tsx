@@ -56,7 +56,8 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { updateScan, createTicket, toggleFindingState, postCertInAttestation, postCertInSign, getCertInVex, getCertInEvidencePack, type SbomScanDashboardData, type SbomFinding, type SbomScanMetadata, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
+import { updateScan, createTicket, toggleFindingState, postCertInAttestation, postCertInSign, getCertInEvidencePack, type SbomScanDashboardData, type SbomFinding, type SbomScanMetadata, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
+import { downloadOutcome, downloadServedBom, downloadServedVex } from "@/utils/api/bomDownload";
 import { showErrorToast } from "@/utils/error-handler";
 import { filterFindingsByRelatedRefs } from "@/utils/relatedFindingMatch";
 import { overlayBomCompliance } from "@/utils/overlayBomCompliance";
@@ -756,22 +757,17 @@ function SbomResultsView({
     });
   };
 
-  const handleDownloadSbomJson = () => {
-    const meta = scanMetadata as SbomScanMetadata | null;
-    const raw = meta?.sbom_json;
-    if (!raw) {
-      toast.error("No SBOM JSON available");
-      return;
-    }
+  // The server's signed CycloneDX document, byte for byte (GET /bom): the file bom_signature and X-ZS-Signature
+  // cover. A copy rebuilt here from scan_metadata.sbom_json had other bytes and none of the server's stamps.
+  const handleDownloadSbomJson = async () => {
+    const tid = parseInt(teamId ?? "0", 10);
+    if (!conversationId || Number.isNaN(tid) || tid <= 0) return;
     try {
-      const bom = overlayBomCompliance(raw, meta?.sbom_compliance);
-      downloadBlob(
-        new Blob([JSON.stringify(bom, null, 2)], { type: "application/json" }),
-        `sbom-cyclonedx-${conversationId}.json`,
-      );
-      toast.success("CycloneDX SBOM downloaded");
+      const saved = await downloadServedBom(tid, "sbom_sca", conversationId, "json");
+      const said = downloadOutcome("CycloneDX SBOM", saved);
+      toast[said.level](said.text);
     } catch (err) {
-      showErrorToast(err, "Failed to download SBOM JSON");
+      showErrorToast(err, "Failed to download the CycloneDX SBOM");
     }
   };
 
@@ -779,13 +775,10 @@ function SbomResultsView({
     const tid = parseInt(teamId ?? "0", 10);
     if (!conversationId || Number.isNaN(tid)) return;
     try {
-      // always the API: it rebuilds a VEX stored by older rules (a blanket not_affected per component)
-      const vex = await getCertInVex(tid, "sbom_sca", conversationId);
-      downloadBlob(
-        new Blob([JSON.stringify(vex, null, 2)], { type: "application/json" }),
-        `sbom-vex-${conversationId}.json`,
-      );
-      toast.success("VEX downloaded");
+      // always the API, saved as served: it rebuilds a VEX stored by older rules and signs it like the BOM
+      const saved = await downloadServedVex(tid, "sbom_sca", conversationId);
+      const said = downloadOutcome("VEX", saved);
+      toast[said.level](said.text);
       queryClient.invalidateQueries({
         queryKey: ["sbom_sca-conversation-data", tid, conversationId],
       });
@@ -975,7 +968,8 @@ function SbomResultsView({
             <Button
               variant="outline"
               className="cursor-pointer"
-              onClick={handleDownloadSbomJson}
+              onClick={() => void handleDownloadSbomJson()}
+              data-testid="sbom-download-bom"
             >
               <Download className="h-4 w-4 mr-2" />
               Download SBOM
@@ -984,6 +978,7 @@ function SbomResultsView({
               variant="outline"
               className="cursor-pointer"
               onClick={() => void handleDownloadVex()}
+              data-testid="sbom-download-vex"
             >
               <Download className="h-4 w-4 mr-2" />
               VEX
@@ -1157,7 +1152,7 @@ function SbomResultsView({
           />
         )}
 
-      <SbomBillOfMaterialsTable bom={inventoryBom} onDownload={handleDownloadSbomJson} />
+      <SbomBillOfMaterialsTable bom={inventoryBom} onDownload={() => void handleDownloadSbomJson()} />
 
       <Card id="bom-findings">
         <CardHeader>
