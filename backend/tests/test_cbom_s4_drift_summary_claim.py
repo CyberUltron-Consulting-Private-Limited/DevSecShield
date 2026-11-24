@@ -41,6 +41,16 @@ from backend.new_models import (
 globals().update(api=SOURCES_API.api, world=SOURCES_API.world)
 
 
+@pytest.fixture(autouse=True)
+def _no_tick_waiting():
+    """DRIFT.TICK_WANTS_HEAVY is process-wide: no test starts with a tick asking for the lock."""
+    from backend.utilities.cbom_sources import drift as DRIFT
+
+    DRIFT.TICK_WANTS_HEAVY.clear()
+    yield
+    DRIFT.TICK_WANTS_HEAVY.clear()
+
+
 def _now() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
 
@@ -83,7 +93,30 @@ def _count_diffs(monkeypatch):
 
 
 # ============================================================================ minor A: claim
-def test_two_concurrent_passes_compute_a_run_once(recorded, monkeypatch):
+class _OwnLock:
+    """DRIFT.HEAVY is per process; threads that stand for two scheduler PROCESSES each get their own."""
+
+    def __init__(self):
+        self._locks: dict[int, threading.Lock] = {}
+
+    def _mine(self) -> threading.Lock:
+        return self._locks.setdefault(threading.get_ident(), threading.Lock())
+
+    def acquire(self, *a, **k):
+        return self._mine().acquire(*a, **k)
+
+    def release(self):
+        self._mine().release()
+
+
+@pytest.fixture()
+def two_processes(monkeypatch):
+    from backend.utilities.cbom_sources import drift as DRIFT
+
+    monkeypatch.setattr(DRIFT, "HEAVY", _OwnLock())
+
+
+def test_two_concurrent_passes_compute_a_run_once(recorded, monkeypatch, two_processes):
     """Reviewer's race (REV486B RACE: run_diff called by sched-A and sched-B for run 2): B starts while A is inside
     run 2's comparison. A's claim keeps run 2 out of B's pass, so the comparison runs once and both documents are
     stored once."""
@@ -115,7 +148,7 @@ def test_two_concurrent_passes_compute_a_run_once(recorded, monkeypatch):
         assert isinstance(held.get("doc"), dict) and "pending" not in held and "failed" not in held, held
 
 
-def test_a_failure_marker_never_overwrites_a_good_document(recorded, monkeypatch):
+def test_a_failure_marker_never_overwrites_a_good_document(recorded, monkeypatch, two_processes):
     """Reviewer's REV486B RACE-MARKER: A's claim on run 2 goes stale (A stalls past 15 min), B takes it over and
     stores the document, then A fails. A's marker is written only while the claim is A's: the document stays."""
     from backend.utilities.cbom_sources import drift as DRIFT
@@ -314,10 +347,154 @@ def test_the_scheduling_loop_never_waits_for_the_summary_pass(monkeypatch):
         t.join(5)
 
 
+def test_a_summary_comparison_and_the_ticks_heavy_steps_never_overlap(recorded, monkeypatch):
+    """Review 6032466269 major 1: while the summary pass compares a run (under DRIFT.HEAVY), a tick fires schedules
+    but skips its drift recording and estate repair; the pass yields before its next run, and the next tick runs them."""
+    from backend.utilities.cbom_sources import drift as DRIFT
+    from backend.utilities.cbom_sources import estate as ESTATE
+    from backend.utilities.cbom_sources import schedules
+    from backend.workers.cbom_scheduler import tick
+
+    engine, r1, _r2, now = recorded
+    inside, peak, fired = [0], [0], []
+    in_diff, release = threading.Event(), threading.Event()
+    real_diff, real_record, real_repair = DRIFT.run_diff, DRIFT.record_pending_drift, ESTATE.repair_due
+
+    def enter():
+        inside[0] += 1
+        peak[0] = max(peak[0], inside[0])
+
+    def diff(*a, **k):
+        enter()
+        try:
+            in_diff.set()
+            release.wait(10)
+            return real_diff(*a, **k)
+        finally:
+            inside[0] -= 1
+
+    def heavy(real):
+        def wrapped(*a, **k):
+            enter()
+            try:
+                return real(*a, **k)
+            finally:
+                inside[0] -= 1
+        return wrapped
+
+    monkeypatch.setattr(DRIFT, "run_diff", diff)
+    monkeypatch.setattr(DRIFT, "record_pending_drift", heavy(real_record))
+    monkeypatch.setattr(ESTATE, "repair_due", heavy(real_repair))
+    monkeypatch.setattr(schedules, "fire_due", lambda engine_, now_: fired.append(now_) or [])
+    out = {}
+    t = threading.Thread(target=lambda: out.__setitem__("pass", DRIFT.store_pending_summaries(engine, now)))
+    t.start()
+    assert in_diff.wait(10)
+    busy = tick(engine, now, summaries=False)  # the summary thread holds HEAVY: heavy steps deferred, schedules fire
+    assert len(fired) == 1 and busy["drift_runs"] == "busy" and DRIFT.TICK_WANTS_HEAVY.is_set()
+    release.set()
+    t.join(30)
+    assert out["pass"] == 1  # run 2 stored; it yielded before run 1 (the tick asked for HEAVY)
+    assert _held(engine, r1) is None
+    free = tick(engine, now, summaries=False)
+    assert free["drift_runs"] == 0 and not DRIFT.TICK_WANTS_HEAVY.is_set()
+    assert peak[0] == 1  # never two heavy steps at once
+    assert DRIFT.store_pending_summaries(engine, now) == 1  # run 1 next
+
+
+def test_a_stop_before_the_next_run_starts_nothing(recorded):
+    from backend.utilities.cbom_sources import drift as DRIFT
+
+    engine, r1, r2, now = recorded
+    stop = threading.Event()
+    stop.set()
+    assert DRIFT.store_pending_summaries(engine, now, stop=stop) == 0
+    assert _held(engine, r1) is None and _held(engine, r2) is None  # no claim taken
+
+
+def test_a_shutdown_mid_comparison_releases_the_claim_without_a_try(recorded, monkeypatch):
+    """Review 6032466269 minor 4: loop() returns only after its summary thread (bounded wait); a comparison still
+    running then has its claim released, so the next process takes the run without counting a try, and the
+    interrupted pass's late write changes nothing."""
+    from backend.utilities.cbom_sources import drift as DRIFT
+    from backend.utilities.cbom_sources import schedules
+    from backend.workers import cbom_scheduler as SCHED
+
+    engine, r1, r2, now = recorded
+    _set(engine, r1, {"v": 1, "baseline_id": None, "doc": {"format": "x"}})
+    in_diff, release = threading.Event(), threading.Event()
+    real = DRIFT.run_diff
+
+    def diff(*a, **k):
+        in_diff.set()
+        release.wait(20)
+        return real(*a, **k)
+
+    monkeypatch.setattr(DRIFT, "run_diff", diff)
+    monkeypatch.setattr(SCHED, "TICK_S", 0.05)
+    monkeypatch.setattr(SCHED, "SHUTDOWN_WAIT_S", 0.5)
+    monkeypatch.setattr(SCHED, "utcnow", lambda: now)
+    monkeypatch.setattr(schedules, "fire_due", lambda engine_, now_: [])
+    stop = threading.Event()
+    loop = threading.Thread(target=SCHED.loop, args=(engine, stop), daemon=True)
+    loop.start()
+    assert in_diff.wait(20)
+    assert _held(engine, r2)["pending"] is True and _held(engine, r2)["tries"] == 1
+    stop.set()
+    loop.join(10)
+    assert not loop.is_alive()
+    assert _held(engine, r2) is None  # released: as before the claim (no try counted)
+    release.set()  # the interrupted comparison finishes: its write finds no claim
+    for thread, _eng in list(SCHED._SUMMARY_THREADS):
+        thread.join(10)
+    assert _held(engine, r2) is None
+    monkeypatch.setattr(DRIFT, "run_diff", real)
+    assert DRIFT.store_pending_summaries(engine, now) == 1
+    assert _held(engine, r2)["baseline_id"] == r1
+
+
+def test_the_budget_is_checked_after_a_failed_run_too(recorded, monkeypatch):
+    """Review 6032466269 nit 5: a first run that fails after a long statement timeout ends the pass."""
+    from backend.utilities.cbom_sources import drift as DRIFT
+
+    engine, r1, r2, now = recorded
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(DRIFT, "_monotonic", lambda: clock["t"])
+
+    def timeout(*_a, **_k):
+        clock["t"] += DRIFT.SUMMARY_BUDGET_S + 1
+        raise sa.exc.OperationalError("SELECT", {}, Exception("canceling statement due to statement timeout"))
+
+    monkeypatch.setattr(DRIFT, "run_diff", timeout)
+    assert DRIFT.store_pending_summaries(engine, now, started=1000.0) == 0
+    assert _held(engine, r2)["failed"] is True and _held(engine, r1) is None  # run 1 not started
+
+
+def test_refresh_baselines_checks_the_newest_later_runs_first(recorded, monkeypatch):
+    """Review 6032466269 nit 6: with more later runs than REFRESH_RUNS, the newest are the ones checked."""
+    from backend.utilities.cbom_sources import drift as DRIFT
+    from backend.utilities.cbom_sources import drift_report as DR
+
+    engine, r1, r2, now = recorded
+    assert DRIFT.store_pending_summaries(engine, now) == 2
+    _jobs_status(engine, r1, "failure")  # run 2's stored baseline (run 1) no longer holds
+    with Session(engine) as s:  # an older later run would be checked first if the order were ascending
+        assert DR.refresh_baselines(s, 1, 0, now) == 1
+        s.commit()
+    monkeypatch.setattr(DR, "REFRESH_RUNS", 1)
+    _set(engine, r2, {"v": 1, "baseline_id": r1, "doc": {"format": "x"}})
+    _set(engine, r1, {"v": 1, "baseline_id": 999, "doc": {"format": "x"}})
+    with Session(engine) as s:
+        assert DR.refresh_baselines(s, 1, 0, now) == 1
+        s.commit()
+    assert _held(engine, r2) is None and _held(engine, r1)["baseline_id"] == 999  # the newest (run 2) was checked
+
+
 # ============================================================================ minor B
 def _seed_mosca_closable(engine, r1):
-    """Reviewer's seed: run 1 recorded (its write opens inputs:mosca); the team's Mosca inputs are then saved directly
-    (no close_mosca), so run 2's own estate hook (sync_mosca, run_id=run 2) is what closes the gap."""
+    """Reviewer's seed: run 1 recorded with the inputs:mosca item open (its write opened it before #490's documented
+    defaults; now the item is opened here); the team's Mosca inputs are saved directly (no close_mosca), so run 2's
+    own estate hook (sync_mosca, run_id=run 2) is what closes the gap."""
     from backend.utilities.cbom_sources import drift as DRIFT
     from backend.utilities.cbom_sources.settings import get_or_create_settings
 
@@ -331,6 +508,12 @@ def _seed_mosca_closable(engine, r1):
         s.add(st)
         s.commit()
         gap = s.exec(sa.select(CbomQ0Gap).where(CbomQ0Gap.item_key == "inputs:mosca")).scalars().first()
+        if gap is None:  # #490: documented Mosca defaults, so a write no longer opens the item; open it as before
+            run1 = s.get(CbomCollectionRun, r1)
+            s.add(CbomQ0Gap(team_id=1, item_kind="inputs", item_key="inputs:mosca", reason="mosca_missing",
+                            detail={"count": 1}, opened_at=run1.drift_at, run_id=r1))
+            s.commit()
+            gap = s.exec(sa.select(CbomQ0Gap).where(CbomQ0Gap.item_key == "inputs:mosca")).scalars().first()
         assert gap is not None and gap.closed_at is None
 
 
@@ -388,9 +571,9 @@ def test_a_failed_estate_write_repaired_30s_later_keeps_the_runs_closures(finish
         assert run.drift_summary["doc"]["q0"]["register_closed"] == {"inputs": 1}
 
 
-def test_a_download_while_the_team_is_stale_is_not_cached(finished, monkeypatch):
-    """Before the repair a download computes the document live (no LRU entry), so after the repair the same process
-    serves the repaired number."""
+def test_a_download_while_the_team_is_stale_is_cached_and_recomputed_once_after_the_repair(finished, monkeypatch):
+    """Review 6032466269 major 2: while the store is stale a download computes once per process (not on every
+    download); after the repair the same process computes once more and serves the repaired number."""
     from backend.utilities.cbom_sources import drift as DRIFT
     from backend.utilities.cbom_sources import drift_report as DR
     from backend.utilities.cbom_sources import estate as ESTATE
@@ -409,13 +592,52 @@ def test_a_download_while_the_team_is_stale_is_not_cached(finished, monkeypatch)
     t0 = _now()
     DRIFT.record_pending_drift(engine, t0)
     DR._CACHE.clear()
-    with Session(engine) as s:
-        before = DR.run_drift(s, s.get(CbomCollectionRun, r2))
-    assert before["q0"]["register_closed"] == {} and not DR._CACHE
+    calls = _count_diffs(monkeypatch)
+    for _ in range(5):
+        with Session(engine) as s:
+            before = DR.run_drift(s, s.get(CbomCollectionRun, r2))
+    assert before["q0"]["register_closed"] == {} and len(calls) == 1
     ESTATE.repair_due(engine, t0 + dt.timedelta(seconds=30))
+    for _ in range(3):
+        with Session(engine) as s:
+            after = DR.run_drift(s, s.get(CbomCollectionRun, r2))
+    assert after["q0"]["register_closed"] == {"inputs": 1} and len(calls) == 2
+
+
+def test_a_repair_that_keeps_failing_neither_starves_the_team_nor_blocks_others(finished, monkeypatch):
+    """Review 6032466269 major 2 (reviewer's REV492 STARVE): run 2's estate write fails every time. The repair failure
+    is caught per team and moves the team to the back, so another stale team is repaired on the next tick; after
+    SUMMARY_STALE_WAIT run 2's document is stored anyway."""
+    from backend.utilities.cbom_sources import drift as DRIFT
+    from backend.utilities.cbom_sources import estate as ESTATE
+    from backend.workers.cbom_scheduler import tick
+
+    engine, r1, r2 = finished
+    real = ESTATE.record_run
+
+    def poisoned(session, run, now, **kw):
+        if run.id == r2:
+            raise RuntimeError("estate write fails every time (poisoned row)")
+        return real(session, run, now, **kw)
+
+    monkeypatch.setattr(ESTATE, "record_run", poisoned)
+    t0 = _now()
+    assert DRIFT.record_pending_drift(engine, t0) == 2
+    with Session(engine) as s:  # a second team, marked stale just after team 1 (a deferred write, say)
+        ESTATE.mark_stale(s, 2, 10**6, "run #1000000 deferred to the scheduler", t0 + dt.timedelta(seconds=1))
+        s.commit()
+    first = tick(engine, t0 + dt.timedelta(seconds=10))
+    assert first["estate_repair"] == {"teams": 0, "runs": 0, "failed": 1}  # team 1 first (oldest), fails, no raise
+    second = tick(engine, t0 + dt.timedelta(seconds=40))
+    assert second["estate_repair"]["teams"] == 1  # team 2, behind the failing team, is repaired
     with Session(engine) as s:
-        after = DR.run_drift(s, s.get(CbomCollectionRun, r2))
-    assert after["q0"]["register_closed"] == {"inputs": 1}
+        teams = {t.team_id: t.stale for t in s.exec(sa.select(CbomEstateTeam)).scalars()}
+    assert teams == {1: True, 2: False}
+    assert _held(engine, r2) is None  # still within SUMMARY_STALE_WAIT: waiting for the repair
+    later = t0 + DRIFT.SUMMARY_STALE_WAIT + dt.timedelta(minutes=1)
+    out = tick(engine, later)
+    assert out["estate_repair"]["failed"] == 1 and out["drift_summaries"] == 1
+    assert _held(engine, r2)["baseline_id"] == r1
 
 
 def test_a_backfill_replay_of_a_written_run_closes_nothing_in_its_name(finished):
@@ -474,20 +696,6 @@ def test_an_earlier_run_finishing_later_clears_the_stored_document(api, world, m
     assert _held(engine, r2) is None
     assert DRIFT.store_pending_summaries(engine, now + dt.timedelta(minutes=5)) == 2
     assert _held(engine, r2)["baseline_id"] == r1
-
-
-def test_cancelling_the_baseline_run_re_stores_the_document(api, recorded):
-    engine, r1, r2, now = recorded
-    from backend.utilities.cbom_sources import drift as DRIFT
-
-    assert DRIFT.store_pending_summaries(engine, now) == 2
-    assert _held(engine, r2)["baseline_id"] == r1
-    _jobs_status(engine, r1, "cancelled")  # what the cancel leaves: run 1 is no longer comparable
-    r = api("POST", f"/1/cbom/sources/runs/{r1}/cancel")
-    assert r.status_code == 200, r.text
-    assert _held(engine, r2) is None
-    assert DRIFT.store_pending_summaries(engine, now) == 1
-    assert _held(engine, r2)["baseline_id"] is None
 
 
 def test_an_unchanged_baseline_keeps_the_stored_document(recorded):

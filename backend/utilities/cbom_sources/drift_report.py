@@ -166,8 +166,9 @@ def _compute(session: Session, run: CbomCollectionRun, base: CbomCollectionRun |
 
 
 def _estate_stale(session: Session, run: CbomCollectionRun) -> bool:
-    """The team's estate store missed this run's write (or an earlier one): its register closures are not all
-    written yet, so its document is neither cached nor stored until ``estate.repair_due`` has replayed it."""
+    """The team's estate store missed this run's write (or an earlier one): its register closures may not all be
+    written yet. Part of the per-process cache key, so a download computes once while the store is stale and once
+    again after ``estate.repair_due`` has written the run (review 6032466269 major 2: never on every download)."""
     from backend.new_models import CbomEstateTeam
 
     return session.exec(select(CbomEstateTeam.id).where(
@@ -190,8 +191,8 @@ def run_drift(session: Session, run: CbomCollectionRun) -> dict[str, Any]:
     ``drift.store_pending_summaries`` (review #486 minor 8); a download serves that document as long as the baseline
     is the same, so report.pdf and drift.json neither run the full comparison again nor change afterwards. A recorded
     run without one (not reached yet, claimed, failed, or recorded before the column existed) is computed once per
-    process (LRU of CACHE_SIZE), unless its team's estate store is stale for it (computed on every call until the
-    repair). A run not recorded yet is computed on every call, as before."""
+    process (LRU of CACHE_SIZE, keyed also by whether its team's estate store is stale for it, so the repair's
+    closures are served after it). A run not recorded yet is computed on every call, as before."""
     if run.status not in DRIFT.FINISHED:
         return summarise(run, None, None, message="The run is still collecting: drift is computed when it ends")
     base = DRIFT.previous_comparable_run(session, run)
@@ -200,14 +201,14 @@ def run_drift(session: Session, run: CbomCollectionRun) -> dict[str, Any]:
     if held is not None:
         return held
     key = ((str(session.get_bind().url), run.team_id, run.id, run.client_request_id, iso_z(run.created_at), base_id,
-            iso_z(run.drift_at), STORED_VERSION) if run.drift_at is not None else None)
+            iso_z(run.drift_at), STORED_VERSION, _estate_stale(session, run)) if run.drift_at is not None else None)
     if key is not None:
         with _CACHE_LOCK:
             if key in _CACHE:
                 _CACHE.move_to_end(key)
                 return copy.deepcopy(_CACHE[key])
     doc = _compute(session, run, base)
-    if key is not None and not _estate_stale(session, run):
+    if key is not None:
         with _CACHE_LOCK:
             _CACHE[key] = copy.deepcopy(doc)
             while len(_CACHE) > CACHE_SIZE:
@@ -215,8 +216,11 @@ def run_drift(session: Session, run: CbomCollectionRun) -> dict[str, Any]:
     return doc
 
 
+REFRESH_RUNS = 200  # later runs a baseline change checks (newest first; older ones keep serving by baseline key)
+
+
 def refresh_baselines(session: Session, team_id: int, run_id: int, now: _dt.datetime) -> int:
-    """Run ``run_id`` changed what it can be a baseline for (its drift was just recorded, or it was cancelled): clear
+    """Run ``run_id`` changed what it can be a baseline for (its drift was just recorded, e.g. it finished late): clear
     the stored document of every later run of the team, recorded within the summary window, whose stored baseline is
     no longer the one ``drift.previous_comparable_run`` picks (review 6030475121 nit 3). The summary pass then stores
     it again; a document whose baseline still holds keeps its bytes. Returns the documents cleared; the caller
@@ -226,7 +230,7 @@ def refresh_baselines(session: Session, team_id: int, run_id: int, now: _dt.date
         CbomCollectionRun.team_id == team_id, CbomCollectionRun.id > run_id,
         CbomCollectionRun.drift_at.is_not(None), CbomCollectionRun.drift_at >= since,  # type: ignore[union-attr,operator]
         CbomCollectionRun.drift_summary.is_not(None))  # type: ignore[union-attr]
-        .order_by(CbomCollectionRun.id).limit(200)).all()
+        .order_by(CbomCollectionRun.id.desc()).limit(REFRESH_RUNS)).all()  # the newest first (review 6032466269 nit 6)
     cleared = 0
     for run in later:
         held = run.drift_summary if isinstance(run.drift_summary, dict) else {}

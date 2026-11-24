@@ -858,13 +858,27 @@ def backfill(engine, now: _dt.datetime, *, team_id: int | None = None, hooks: bo
 
 def repair_due(engine, now: _dt.datetime, *, teams: int = 1) -> dict[str, int]:
     """Scheduler tick: write the runs a stale team's store missed (a deferred or failed write), hooks included, from
-    its first missed run on; the oldest stale team first, ``teams`` per tick."""
+    its first missed run on; ``teams`` per tick, the team waiting longest since its mark or its last attempt first. A
+    team whose repair fails is logged and moved to the back of the queue (its ``updated_at`` is the attempt), so one
+    broken team never blocks the others (review 6032466269 major 2)."""
     with Session(engine) as session:
         stale = session.execute(sa.select(_ET.c.team_id, _ET.c.stale_run_id).where(_ET.c.stale.is_(True))
-                                .order_by(_ET.c.stale_at, _ET.c.team_id).limit(teams)).all()
-    out = {"teams": 0, "runs": 0}
+                                .order_by(sa.func.coalesce(_ET.c.updated_at, _ET.c.stale_at), _ET.c.team_id)
+                                .limit(teams)).all()
+    out = {"teams": 0, "runs": 0, "failed": 0}
     for team_id, since in stale:
-        done = backfill(engine, now, team_id=team_id, hooks=True, since_run_id=since)
+        try:
+            done = backfill(engine, now, team_id=team_id, hooks=True, since_run_id=since)
+        except Exception as exc:  # noqa: BLE001 - the team stays stale; the next tick takes another team first
+            out["failed"] += 1
+            _LOG.error("cbom estate repair failed for team %s: %s; retried after the other stale teams", team_id,
+                       type(exc).__name__)
+            log("estate repair FAILED", team=team_id, since_run=since, error=type(exc).__name__)
+            with Session(engine) as session:
+                session.execute(sa.update(_ET).where(_ET.c.team_id == team_id, _ET.c.stale.is_(True))
+                                .values(updated_at=now))
+                session.commit()
+            continue
         out["teams"] += done["repaired_teams"]
         out["runs"] += done["runs"]
     return out

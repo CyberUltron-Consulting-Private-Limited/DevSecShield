@@ -51,7 +51,6 @@ from backend.utilities.cbom_sources import limits as LIM
 from backend.utilities.cbom_sources import pqc_targets as PQT
 from backend.utilities.cbom_sources import held as HELD
 from backend.utilities.cbom_sources import host_key_resets as HKR  # #150
-from backend.utilities.cbom_sources import drift as DRIFT
 from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources import source_cap as SOURCE_CAP
 from backend.utilities.cbom_sources import targets as T
@@ -2047,10 +2046,6 @@ def _cancel_run(engine, team_id: int, user_id: int, run_id: int) -> dict:
             audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="run.cancel",
                   object_type="run", object_id=run.id)
         session.commit()
-        # a cancelled run may no longer be the baseline of a later run's stored drift document: clear those it was
-        # (review 6030475121 nit 3; the summary pass stores them again). After the cancel commits, in its own short
-        # transaction, before this session reads again: never part of the cancel, and never holding its lock
-        DRIFT.refresh_later_baselines_after(engine, team_id, run_id, now)
         session.refresh(run)
         if refunded:
             log("run cancelled", team=team_id, run=run.id, refunded=credits(refunded), by=user_id)
