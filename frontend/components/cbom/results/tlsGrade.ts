@@ -1,4 +1,4 @@
-// QA Q3-05: a probed TLS endpoint's grade in the run's endpoint dialog, exactly as D7 prints it. The backend sends the
+// Staging QA round 2 (D7 grade, item 5): a probed TLS endpoint's grade in the run's endpoint dialog, exactly as D7 prints it. The backend sends the
 // record (network_estate.Grade.record: grade, letter, score, caps, warnings); these helpers only format it.
 import type { CbomTlsGrade } from "@/utils/backend_api";
 

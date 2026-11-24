@@ -5159,9 +5159,9 @@ export interface CbomRunAssetItem extends CbomAsset {
     fix_class_floor?: string | null
     ticket_key?: string | null
     ticket_url?: string | null
-    /** QA Q3-05: a probed TLS endpoint's grade, exactly as D7 prints it (network_estate.grade_tls); null otherwise */
+    /** Staging QA round 2 (D7 grade, item 5): a probed TLS endpoint's grade, exactly as D7 prints it (network_estate.grade_tls); null otherwise */
     tls_grade?: CbomTlsGrade | null
-    /** QA Q3-01: the other sources of the run that read the same resource (the row is the newest read) */
+    /** Staging QA round 2 (one resource once, item 1): the other sources of the run that read the same resource (the row is the newest read) */
     also_seen?: string[]
     /** W2b (PARITY.md S13): the code page's finding fields for a run asset */
     bom_ref?: string | null
