@@ -48,9 +48,9 @@ def cloud_resource_id(location: Any) -> bool:
     where = str(location or "").strip()
     if not where:
         return False
-    return (where.startswith(("arn:aws", "arn:aws-cn:", "arn:aws-us-gov:", "projects/", "//", "oci://",
+    return (where.startswith(("arn:aws", "arn:aws-cn:", "arn:aws-us-gov:", "projects/", "//", "oci://", "ocid1.",
                               "https://www.googleapis.com/", "https://compute.googleapis.com/"))
-            or "/subscriptions/" in where or ".vault.azure.net" in where or where.startswith("ocid1."))
+            or "/subscriptions/" in where or ".vault.azure.net" in where)
 
 
 def resource_identity(asset_type: Any, target: Any, location: Any, facts: Mapping[str, Any] | None = None, *,
@@ -178,7 +178,11 @@ def run_fold(session: Any, team_id: int, run_id: int) -> RunFold:
 def _run_fold(session: Any, team_id: int, run_id: int) -> RunFold:
     from sqlmodel import select
 
-    from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionSource
+    from backend.new_models import (
+        CbomCollectedAsset,
+        CbomCollectionJob,
+        CbomCollectionSource,
+    )
     from backend.utilities.cbom_sources import identity as ID
 
     jobs = session.exec(select(CbomCollectionJob).where(CbomCollectionJob.team_id == team_id,
@@ -219,7 +223,7 @@ def _sortable(moment: Any) -> Any:
 
     if isinstance(moment, _dt.datetime):
         return moment.replace(tzinfo=None) if moment.tzinfo is not None else moment
-    return _dt.datetime(1970, 1, 1)
+    return _dt.datetime(1970, 1, 1)  # noqa: DTZ001 - compared with the jobs' naive UTC times
 
 
 def kept_clause(fold_: RunFold):
@@ -233,5 +237,16 @@ def kept_clause(fold_: RunFold):
     return CbomCollectedAsset.id.notin_(fold_.dropped_ids)  # type: ignore[union-attr]
 
 
-__all__ = ["Fold", "Observation", "PREFIX", "RunFold", "also_seen_text", "cloud_resource_id", "fold", "kept_clause",
-           "rank", "resource_identity", "run_fold"]
+__all__ = [
+    "PREFIX",
+    "Fold",
+    "Observation",
+    "RunFold",
+    "also_seen_text",
+    "cloud_resource_id",
+    "fold",
+    "kept_clause",
+    "rank",
+    "resource_identity",
+    "run_fold",
+]

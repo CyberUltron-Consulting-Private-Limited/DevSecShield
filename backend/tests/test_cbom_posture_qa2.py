@@ -26,14 +26,21 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from backend.tests.support import sources_every_type as FX  # noqa: E402
-from backend.tests.support import two_aws_roles as AWS2  # noqa: E402
-from backend.tests.test_cbom_sources_posture_d6_d9_d10 import kpi_cards, rows_under, story  # noqa: E402
-from backend.utilities.dashboard.cbom_team_rollup import TeamCbomView, merge_collections  # noqa: E402
-from backend.utilities.pdf import cbom_assurance_register_pdf as d10  # noqa: E402
-from backend.utilities.pdf import cbom_data_at_rest_pdf as d9  # noqa: E402
-from backend.utilities.pdf import cbom_infra_posture_pdf as d6  # noqa: E402
-from backend.utilities.pdf import cbom_network_tls_pdf as d7  # noqa: E402
+from backend.tests.support import sources_every_type as FX
+from backend.tests.support import two_aws_roles as AWS2
+from backend.tests.test_cbom_sources_posture_d6_d9_d10 import (
+    kpi_cards,
+    rows_under,
+    story,
+)
+from backend.utilities.dashboard.cbom_team_rollup import (
+    TeamCbomView,
+    merge_collections,
+)
+from backend.utilities.pdf import cbom_assurance_register_pdf as d10
+from backend.utilities.pdf import cbom_data_at_rest_pdf as d9
+from backend.utilities.pdf import cbom_infra_posture_pdf as d6
+from backend.utilities.pdf import cbom_network_tls_pdf as d7
 
 NOW = dt.datetime(2026, 11, 24, 6, 0, tzinfo=dt.timezone.utc)
 NEWER, OLDER = "aws-pca-test", "stgqa-aws-ap-south-1"  # job 521 finished 30 s after job 520
@@ -145,7 +152,9 @@ def test_one_collection_reporting_a_location_twice_is_not_folded():
 
 
 def test_resource_identity_rules():
-    from backend.utilities.cbom_sources.resource_identity import resource_identity as rid
+    from backend.utilities.cbom_sources.resource_identity import (
+        resource_identity as rid,
+    )
 
     arn = "arn:aws:kms:ap-south-1:444455556666:key/1"
     assert rid("kms_key", "aws:444455556666", arn) == rid("kms_key", "aws:other-label", arn) == f"res|kms_key|{arn}"
@@ -208,7 +217,10 @@ def _with_estate(**kwargs) -> TeamCbomView:
 
 
 def test_d8_weak_crypto_counts_the_classifiers_weak_key_or_signature():
-    from backend.utilities.cbom_sources.cert_estate import unique_certificates, weak_crypto
+    from backend.utilities.cbom_sources.cert_estate import (
+        unique_certificates,
+        weak_crypto,
+    )
     from backend.utilities.pdf import cbom_cert_register_pdf as d8
 
     folded = _with_estate()
@@ -230,7 +242,10 @@ def test_d8_weak_crypto_counts_the_classifiers_weak_key_or_signature():
                                               "signature_algorithm": "sha256WithRSAEncryption"}, False),
 ])
 def test_weak_crypto_rule(codes, fields, weak):
-    from backend.utilities.cbom_sources.cert_estate import unique_certificates, weak_crypto
+    from backend.utilities.cbom_sources.cert_estate import (
+        unique_certificates,
+        weak_crypto,
+    )
     from backend.utilities.dashboard.cbom_team_rollup import CertAgg
 
     cert = CertAgg(key="c1", identity_strong=True, name="CN=x", finding_codes=codes, current=True, **fields)
@@ -389,7 +404,14 @@ def test_acm_certificates_get_their_sha256_from_get_certificate():
     import ssl
 
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from test_cbom_aws_cb33 import ACM_PREFIX, Plan, _cert_detail, _cert_summary, _body_pem, run  # noqa: E402
+    from test_cbom_aws_cb33 import (
+        ACM_PREFIX,
+        Plan,
+        _body_pem,
+        _cert_detail,
+        _cert_summary,
+        run,
+    )
 
     pem = _body_pem()
     plan = Plan()

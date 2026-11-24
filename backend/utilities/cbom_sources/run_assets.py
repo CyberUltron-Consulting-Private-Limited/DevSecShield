@@ -427,7 +427,7 @@ def add_tls_grades(session: Session, team_id: int, rows: dict[int, CbomCollected
             base, _sep, rest = str(location or "").partition("#chain[")
             index = int(rest.split("]", 1)[0]) if rest.split("]", 1)[0].isdigit() else 0
             chains.setdefault((int(job_id), base), []).append((index, facts if isinstance(facts, dict) else {}))
-    day = today or _dt.datetime.utcnow().date()
+    day = today or _dt.datetime.now(_UTC).date()
     for item in items:
         row = graded.get(int(item["id"]))
         if row is None:

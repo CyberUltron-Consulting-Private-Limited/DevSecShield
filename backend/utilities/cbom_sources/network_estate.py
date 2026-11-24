@@ -56,53 +56,53 @@ HSTS_A_PLUS_SECONDS = 15_552_000  # SSL Labs 2009e: HSTS max-age of at least 6 m
 # read 24 Nov 2026: changes 2009c to 2009r, 16 May 2025).  Every place this product grades differently is a
 # "Divergence" row below (staging QA Q3-06).
 RUBRIC = (
-    ("Protocol (30 %)", "Average of the best and the worst version offered: TLS 1.3 / 1.2 = 100, TLS 1.1 = 95, "
-                        "TLS 1.0 = 90, SSL 3 = 80, SSL 2 = 0."),
-    ("Key exchange (30 %)", "Strength of the negotiated key exchange in RSA-equivalent bits: < 512 = 20, < 1024 = 40, "
+    ("Protocol (30 %)", ("Average of the best and the worst version offered: TLS 1.3 / 1.2 = 100, TLS 1.1 = 95, "
+                        "TLS 1.0 = 90, SSL 3 = 80, SSL 2 = 0.")),
+    ("Key exchange (30 %)", ("Strength of the negotiated key exchange in RSA-equivalent bits: < 512 = 20, < 1024 = 40, "
                             "< 2048 = 80, < 4096 = 90, >= 4096 = 100 (X25519 / P-256 count as 3072, P-384 / P-521 / "
                             "X448 as 7680, a finite-field DH group as its modulus size, a post-quantum hybrid group as "
                             "100). Static RSA key exchange counts the certificate key. When the probe recorded no key "
                             "exchange it scores 80 (the < 2048 tier), the grade is capped at B and the endpoint says "
-                            "'key exchange not recorded'."),
-    ("Cipher strength (40 %)", "Average of the strongest and the weakest accepted suite: 0 bits (NULL) = 0, < 128 = 20, "
-                               "< 256 = 80, >= 256 = 100 (3DES counts 112 bits, RC4 128)."),
+                            "'key exchange not recorded'.")),
+    ("Cipher strength (40 %)", ("Average of the strongest and the weakest accepted suite: 0 bits (NULL) = 0, < 128 = 20, "
+                               "< 256 = 80, >= 256 = 100 (3DES counts 112 bits, RC4 128).")),
     ("Letter", "A >= 80, B >= 65, C >= 50, D >= 35, E >= 20, else F; then the caps below (the lowest cap wins)."),
-    ("Cap F", "SSL 2 offered; SSL 3 the best protocol offered; a NULL, EXPORT or anonymous suite accepted; only RC4 "
+    ("Cap F", ("SSL 2 offered; SSL 3 the best protocol offered; a NULL, EXPORT or anonymous suite accepted; only RC4 "
               "suites; certificate RSA key < 1024 bits; key exchange < 1024 bits; an MD5 or MD2 signature in the "
-              "served chain."),
-    ("Cap C", "No TLS 1.2 or TLS 1.3; RC4 accepted with TLS 1.1 or later; 3DES or another 64-bit block cipher "
-              "accepted with TLS 1.1 or later."),
-    ("Cap B", "SSL 3 offered; TLS 1.0 or 1.1 offered; RC4 accepted (TLS 1.0 or SSL 3 only); no forward secrecy at all "
+              "served chain.")),
+    ("Cap C", ("No TLS 1.2 or TLS 1.3; RC4 accepted with TLS 1.1 or later; 3DES or another 64-bit block cipher "
+              "accepted with TLS 1.1 or later.")),
+    ("Cap B", ("SSL 3 offered; TLS 1.0 or 1.1 offered; RC4 accepted (TLS 1.0 or SSL 3 only); no forward secrecy at all "
               "(no ECDHE, DHE or TLS 1.3 suite); no AEAD suite; certificate RSA key < 2048 or EC key < 224 bits; a "
               "finite-field DH group < 2048 bits; an incomplete chain (the server does not send an intermediate); key "
-              "exchange not recorded."),
-    ("A-", "An A with a warning: TLS 1.3 not offered (2009r); static RSA key exchange accepted next to forward-secret "
-           "suites (2009e warning); the HTTP service's HSTS header absent or invalid (2009r, when the probe read it)."),
-    ("A+", "An A with no warning, TLS 1.3 offered and an HSTS max-age of at least 180 days (2009e), and no SHA-1 "
-           "signature in the chain (2009f)."),
-    ("M", "Certificate name mismatch: the probe connected with a server name (SNI) that the leaf certificate's "
+              "exchange not recorded.")),
+    ("A-", ("An A with a warning: TLS 1.3 not offered (2009r); static RSA key exchange accepted next to forward-secret "
+           "suites (2009e warning); the HTTP service's HSTS header absent or invalid (2009r, when the probe read it).")),
+    ("A+", ("An A with no warning, TLS 1.3 offered and an HSTS max-age of at least 180 days (2009e), and no SHA-1 "
+           "signature in the chain (2009f).")),
+    ("M", ("Certificate name mismatch: the probe connected with a server name (SNI) that the leaf certificate's "
           "subject alternative names (or, without them, its common name) do not cover. The letter it would have "
-          "is shown beside it."),
-    ("T", "Certificate not trusted: the leaf is expired or self-signed, the chain ends at a CA the scan node's trust "
+          "is shown beside it.")),
+    ("T", ("Certificate not trusted: the leaf is expired or self-signed, the chain ends at a CA the scan node's trust "
           "store does not hold, or a certificate in the chain is signed with SHA-1 (2009n). The letter it would have "
-          "is shown beside it."),
-    ("Provisional", "A grade followed by * was computed on an incomplete suite enumeration (handshake budget used up "
-                    "or a version not read); the endpoint may accept more suites than listed."),
-    ("Divergence", "Not tested, so never a cap: Heartbleed, ROBOT, POODLE (TLS), DROWN, Ticketbleed, CVE-2014-0224, "
+          "is shown beside it.")),
+    ("Provisional", ("A grade followed by * was computed on an incomplete suite enumeration (handshake budget used up "
+                    "or a version not read); the endpoint may accept more suites than listed.")),
+    ("Divergence", ("Not tested, so never a cap: Heartbleed, ROBOT, POODLE (TLS), DROWN, Ticketbleed, CVE-2014-0224, "
                    "CVE-2016-2107, the 2019 padding oracles, insecure renegotiation, CRIME, a Debian weak key, RSA "
-                   "exponent 1 and HPKP (the scan node sends handshakes only, SOW 7.2)."),
-    ("Divergence", "HSTS is read only when the probe records it (``hsts_max_age``); a TLS endpoint without that reading "
+                   "exponent 1 and HPKP (the scan node sends handshakes only, SOW 7.2).")),
+    ("Divergence", ("HSTS is read only when the probe records it (``hsts_max_age``); a TLS endpoint without that reading "
                    "is neither A+ nor capped to A- for HSTS, and a non-HTTP service (SMTP, LDAPS, a database) is never "
-                   "judged on HSTS."),
-    ("Divergence", "Trust is judged against the scan node's own system trust store (a private CA is 'not trusted'), and "
+                   "judged on HSTS.")),
+    ("Divergence", ("Trust is judged against the scan node's own system trust store (a private CA is 'not trusted'), and "
                    "an incomplete chain is any served certificate whose issuer is neither served nor trusted while a "
                    "served certificate sits above it, or a lone leaf that names an AIA issuer; SSL Labs fetches the "
-                   "missing intermediate and judges trust with browser stores."),
-    ("Divergence", "M is judged only when the probe sent a server name: an endpoint probed by IP address has no host "
-                   "name to compare (SSL Labs always tests a host name)."),
-    ("Divergence", "Forward secrecy and AEAD are judged on the suites the server accepts, not on what the SSL Labs "
+                   "missing intermediate and judges trust with browser stores.")),
+    ("Divergence", ("M is judged only when the probe sent a server name: an endpoint probed by IP address has no host "
+                   "name to compare (SSL Labs always tests a host name).")),
+    ("Divergence", ("Forward secrecy and AEAD are judged on the suites the server accepts, not on what the SSL Labs "
                    "reference browsers negotiate: 'no forward secrecy' means no forward-secret suite is accepted at "
-                   "all."),
+                   "all.")),
 )
 
 

@@ -265,7 +265,7 @@ def weak_crypto(cert: EstateCert) -> bool:
         size = int(cert.key_size) if str(cert.key_size or "").isdigit() else None
         graded = STD.grade([("key", cert.key_algorithm or None, size), ("signature", cert.signature_algorithm or None,
                                                                        None)])
-    except Exception:  # a verdict never costs a certificate its row
+    except Exception:  # noqa: BLE001 - a verdict never costs a certificate its row
         return False
     return bool(graded) and graded.get("sp800_131a", {}).get("status") == "disallowed"
 
@@ -452,7 +452,7 @@ def _estate_from_group(view: TeamCbomView, inputs: EstateInputs, items: Sequence
                        aggs: Mapping[str, CertAgg]) -> EstateCert:
     head = items[0]
     facts_list = [i.facts if isinstance(i.facts, Mapping) else {} for i in items]
-    pick = lambda *names: _first(f.get(n) for f in facts_list for n in names)  # noqa: E731 - newest row first
+    pick = lambda *names: _first(f.get(n) for f in facts_list for n in names)
     fp = next((thumbprint(f) for f in facts_list if thumbprint(f)), "")
     subject = _dn_first(f.get("subject") for f in facts_list) or _text(head.row.get("title"))
     issuer = _dn_first(f.get("issuer") for f in facts_list)
@@ -576,6 +576,23 @@ def count_phrase(count: int) -> str:
     return f"{count} unique certificate" + ("" if count == 1 else "s")
 
 
-__all__ = ["PROVIDER_LIFECYCLE", "WEAK_CERT_CODES", "lifecycle_of", "weak_crypto", "CERT_NODE_TYPES", "DELETED_SOURCE", "EstateCert", "EstateInputs", "EstateResult", "Sighting",
-           "count_phrase", "dn_from_mapping", "inputs_of", "is_certificate_record", "is_deleted", "load_inputs",
-           "thumbprint", "unique_certificates"]
+__all__ = [
+    "CERT_NODE_TYPES",
+    "DELETED_SOURCE",
+    "PROVIDER_LIFECYCLE",
+    "WEAK_CERT_CODES",
+    "EstateCert",
+    "EstateInputs",
+    "EstateResult",
+    "Sighting",
+    "count_phrase",
+    "dn_from_mapping",
+    "inputs_of",
+    "is_certificate_record",
+    "is_deleted",
+    "lifecycle_of",
+    "load_inputs",
+    "thumbprint",
+    "unique_certificates",
+    "weak_crypto",
+]

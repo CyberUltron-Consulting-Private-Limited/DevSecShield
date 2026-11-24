@@ -160,7 +160,8 @@ def _body_pem() -> str:
         key = ec.generate_private_key(ec.SECP256R1())
         name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "acm-body.example.com")])
         cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key())
-                .serial_number(7).not_valid_before(dt.datetime(2026, 1, 1)).not_valid_after(dt.datetime(2027, 6, 1))
+                .serial_number(7).not_valid_before(dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc))
+                .not_valid_after(dt.datetime(2027, 6, 1, tzinfo=dt.timezone.utc))
                 .sign(key, hashes.SHA256()))
         _PEM = cert.public_bytes(serialization.Encoding.PEM).decode()
     return _PEM

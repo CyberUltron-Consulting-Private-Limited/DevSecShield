@@ -25,7 +25,12 @@ from typing import Any, Callable, Iterable, Mapping
 from sqlalchemy import or_
 from sqlmodel import Session, select
 
-from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionSource, CbomScanNode
+from backend.new_models import (
+    CbomCollectedAsset,
+    CbomCollectionJob,
+    CbomCollectionSource,
+    CbomScanNode,
+)
 from backend.utilities.cbom_sources import agility as AGILITY
 from backend.utilities.cbom_sources import algid, crypto_kb
 from backend.utilities.cbom_sources import clause_evidence as CE
@@ -546,10 +551,9 @@ def framework_verdict(clauses: list[dict[str, Any]]) -> str | None:
 
 def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict[str, Any] | None,
                 top: int = 10) -> dict[str, Any]:
+    from backend.utilities.cbom_sources import resource_identity as RI
     from backend.utilities.cbom_sources.classify import shown
     from backend.utilities.cbom_sources.qgrade import RunGrades
-
-    from backend.utilities.cbom_sources import resource_identity as RI
 
     # a resource two jobs of the run read is one asset (staging QA Q3-01): the run list's rows, counted once
     fold = RI.run_fold(session, team_id, run_id)

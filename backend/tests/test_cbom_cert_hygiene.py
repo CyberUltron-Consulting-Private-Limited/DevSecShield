@@ -13,12 +13,11 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import test_cbom_sources_api as HARNESS  # noqa: E402
-from test_cbom_sources_api import enroll_node, linux_body  # noqa: E402
-from test_cbom_wp10_outputs import _claim, _collect, _run  # noqa: E402
-
-from backend.utilities.cbom_sources import cert_hygiene as HYG  # noqa: E402
-from backend.utilities.cbom_sources import drift as DRIFT  # noqa: E402
+import test_cbom_sources_api as HARNESS
+from backend.utilities.cbom_sources import cert_hygiene as HYG
+from backend.utilities.cbom_sources import drift as DRIFT
+from test_cbom_sources_api import enroll_node, linux_body
+from test_cbom_wp10_outputs import _claim, _collect, _run
 
 api, world = HARNESS.api, HARNESS.world
 
@@ -149,10 +148,9 @@ def test_formula_like_cells_are_neutralised():
 def test_the_list_is_the_d8_list_when_a_source_reads_nothing_later(api, estate):
     """Staging QA Q3-04: the list is ``cert_estate.unique_certificates`` (D8's), not the estate store: a certificate
     only a source's older collection held is in neither (the drift report states it), so nothing listed is stale."""
-    from sqlmodel import Session
-
     from backend.utilities.cbom_sources.cert_estate import unique_certificates
     from backend.utilities.dashboard.cbom_team_rollup import load_core_view
+    from sqlmodel import Session
 
     engine, hdr = estate["engine"], estate["hdr"]
     for n in range(2, 5):  # three more runs: the probe sees its endpoints; the file collector reads nothing

@@ -26,7 +26,6 @@ Computed per request from the team view (nothing stored), memoised per team on a
 from __future__ import annotations
 
 import base64
-import bisect
 import csv
 import datetime as _dt
 import io
@@ -35,8 +34,6 @@ import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Iterator
-
-import sqlalchemy as sa
 
 UTC = _dt.timezone.utc
 FLAGS = ("unmanaged", "prober_only", "orphaned", "no_owner", "expired_served", "stale")
@@ -164,7 +161,7 @@ def decode_after(text: str | None) -> tuple[str, str] | None:
         return None
     try:
         value = json.loads(base64.urlsafe_b64decode(text + "=" * (-len(text) % 4)))
-    except Exception as exc:  # noqa: BLE001 - any malformed cursor is the client's error
+    except Exception as exc:
         raise ValueError("after: not a cursor from this list") from exc
     if not (isinstance(value, list) and len(value) == 2 and all(isinstance(v, str) for v in value)):
         raise ValueError("after: not a cursor from this list")
