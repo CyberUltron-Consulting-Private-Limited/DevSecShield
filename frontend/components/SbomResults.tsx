@@ -57,7 +57,7 @@ import { Progress } from "@/components/ui/progress";
 import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { updateScan, createTicket, toggleFindingState, postCertInAttestation, postCertInSign, getCertInEvidencePack, type SbomScanDashboardData, type SbomFinding, type SbomScanMetadata, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
-import { downloadServedBom, downloadServedVex, signatureNote } from "@/utils/api/bomDownload";
+import { downloadOutcome, downloadServedBom, downloadServedVex } from "@/utils/api/bomDownload";
 import { showErrorToast } from "@/utils/error-handler";
 import { filterFindingsByRelatedRefs } from "@/utils/relatedFindingMatch";
 import { overlayBomCompliance } from "@/utils/overlayBomCompliance";
@@ -764,7 +764,8 @@ function SbomResultsView({
     if (!conversationId || Number.isNaN(tid) || tid <= 0) return;
     try {
       const saved = await downloadServedBom(tid, "sbom_sca", conversationId, "json");
-      toast.success(`CycloneDX SBOM downloaded (${signatureNote(saved)})`);
+      const said = downloadOutcome("CycloneDX SBOM", saved);
+      toast[said.level](said.text);
     } catch (err) {
       showErrorToast(err, "Failed to download the CycloneDX SBOM");
     }
@@ -776,7 +777,8 @@ function SbomResultsView({
     try {
       // always the API, saved as served: it rebuilds a VEX stored by older rules and signs it like the BOM
       const saved = await downloadServedVex(tid, "sbom_sca", conversationId);
-      toast.success(`VEX downloaded (${signatureNote(saved)})`);
+      const said = downloadOutcome("VEX", saved);
+      toast[said.level](said.text);
       queryClient.invalidateQueries({
         queryKey: ["sbom_sca-conversation-data", tid, conversationId],
       });

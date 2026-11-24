@@ -59,7 +59,7 @@ import { Progress } from "@/components/ui/progress";
 import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { updateScan, toggleFindingState, createTicket, postCertInAttestation, postCertInSign, getCertInEvidencePack, type AiBomScanDashboardData, type AiBomFinding, type AiBomScanMetadata, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
-import { downloadServedBom, downloadServedVex, signatureNote } from "@/utils/api/bomDownload";
+import { downloadOutcome, downloadServedAiBomArtifact, downloadServedBom, downloadServedVex } from "@/utils/api/bomDownload";
 import { showErrorToast } from "@/utils/error-handler";
 import {
   buildRefAliasMap,
@@ -205,7 +205,6 @@ const RISK_SCORE_LABELS: Record<RiskScoreFilter, string> = {
 };
 
 export default function AiBomResults({
-  data,
   conversationId,
   teamId,
   dashboard,
@@ -425,34 +424,22 @@ export default function AiBomResults({
     if (Number.isNaN(tid) || Number.isNaN(sid) || !tid || !sid) return;
     try {
       const saved = await downloadServedBom(tid, "ai_bom", sid, "json");
-      toast.success(`AI BOM CycloneDX downloaded (${signatureNote(saved)})`);
+      const said = downloadOutcome("AI BOM CycloneDX", saved);
+      toast[said.level](said.text);
     } catch (err) {
       showErrorToast(err, "Failed to download the AI BOM CycloneDX");
     }
   };
 
-  // Raw BOM artifacts (SPDX 3.0 / SARIF 2.1.0): the worker's stored files; the API serves no signed copy of these
-  // formats, so they are saved from the scan data (the CycloneDX above is the signed document).
-  const handleDownloadArtifact = (
-    key: "ai_bom_spdx" | "ai_bom_sarif",
-    ext: string,
-    label: string,
-  ) => {
-    const metaRecord = scanMetadata as Record<string, unknown> | null;
-    const artifact =
-      metaRecord?.[key] ?? (data as Record<string, unknown> | null)?.[key];
-    if (!artifact) { toast.error(`No ${label} available`); return; }
+  // SPDX 3.0 / SARIF 2.1.0: the server's stored files, signed detached (GET /spdx, /sarif), saved byte for byte
+  const handleDownloadArtifact = async (artifact: "spdx" | "sarif", label: string) => {
+    if (Number.isNaN(tid) || Number.isNaN(sid) || !tid || !sid) return;
     try {
-      const blob = new Blob([JSON.stringify(artifact, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `ai-bom-${scan_id}.${ext}`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success(`${label} downloaded`);
+      const saved = await downloadServedAiBomArtifact(tid, sid, artifact);
+      const said = downloadOutcome(label, saved);
+      toast[said.level](said.text);
     } catch (err) {
-      showErrorToast(err, `Failed to download ${label}`);
+      showErrorToast(err, `Failed to download the ${label} file`);
     }
   };
 
@@ -481,7 +468,8 @@ export default function AiBomResults({
     try {
       // always the API, saved as served: it rebuilds a VEX stored by older rules and signs it like the BOM
       const saved = await downloadServedVex(tid, "ai_bom", sid);
-      toast.success(`VEX downloaded (${signatureNote(saved)})`);
+      const said = downloadOutcome("VEX", saved);
+      toast[said.level](said.text);
       queryClient.invalidateQueries({ queryKey: ["ai_bom-conversation-data"] });
     } catch (err) {
       showErrorToast(err, "Failed to download VEX");
@@ -683,13 +671,15 @@ export default function AiBomResults({
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="cursor-pointer"
-                onClick={() => handleDownloadArtifact("ai_bom_spdx", "spdx.json", "SPDX 3.0")}
+                onClick={() => void handleDownloadArtifact("spdx", "SPDX 3.0")}
+                data-testid="aibom-download-spdx"
               >
                 SPDX 3.0 (JSON-LD)
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="cursor-pointer"
-                onClick={() => handleDownloadArtifact("ai_bom_sarif", "sarif", "SARIF 2.1.0")}
+                onClick={() => void handleDownloadArtifact("sarif", "SARIF 2.1.0")}
+                data-testid="aibom-download-sarif"
               >
                 SARIF 2.1.0
               </DropdownMenuItem>
