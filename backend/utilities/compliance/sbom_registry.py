@@ -7,8 +7,9 @@ import re
 import urllib.error
 import urllib.parse
 import urllib.request
+import threading
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
-from functools import lru_cache
 from typing import Any
 
 _TIMEOUT = 4.0
@@ -72,12 +73,15 @@ def _person_name(raw: Any) -> str:
     return text[:200]
 
 
+def registry_enabled() -> bool:
+    """Public package-registry lookups are opt-in: ``DSS_SBOM_REGISTRY=1`` turns them on; unset (or anything else)
+    means no call to PyPI, npm, api.github.com or deps.dev (review 6032108510 B-1: production allows Bedrock egress
+    only, and a firewall that drops the packets made each SBOM scan wait for every lookup's timeout)."""
+    return (os.environ.get("DSS_SBOM_REGISTRY") or "").strip() == "1"
+
+
 def _network_allowed() -> bool:
-    if os.environ.get("DSS_SBOM_REGISTRY") == "0":
-        return False
-    if os.environ.get("PYTEST_CURRENT_TEST") and os.environ.get("DSS_SBOM_REGISTRY") != "1":
-        return False
-    return True
+    return registry_enabled()
 
 
 def normalize_license(raw: str | None) -> str | None:
@@ -373,8 +377,38 @@ def _from_native(eco: str, name: str, version: str) -> dict[str, Any] | None:
     return None
 
 
-@lru_cache(maxsize=1024)
+_CACHE: "OrderedDict[tuple[str, str, str], tuple[tuple[str, Any], ...]]" = OrderedDict()
+_CACHE_LOCK = threading.Lock()
+_CACHE_MAX = 1024
+
+
 def _fetch(eco: str, name: str, version: str) -> tuple[tuple[str, Any], ...]:
+    """The registry answer for a package, cached per process. Only an answer is cached, never a failure: a timeout or
+    a network blip must not leave the package unresolved for the rest of the worker's life (review 6032108510 B-1)."""
+    key = (eco, name, version)
+    with _CACHE_LOCK:
+        hit = _CACHE.get(key)
+        if hit is not None:
+            _CACHE.move_to_end(key)
+            return hit
+    packed = _fetch_uncached(eco, name, version)
+    if packed:
+        with _CACHE_LOCK:
+            _CACHE[key] = packed
+            while len(_CACHE) > _CACHE_MAX:
+                _CACHE.popitem(last=False)
+    return packed
+
+
+def _cache_clear() -> None:
+    with _CACHE_LOCK:
+        _CACHE.clear()
+
+
+_fetch.cache_clear = _cache_clear  # type: ignore[attr-defined]
+
+
+def _fetch_uncached(eco: str, name: str, version: str) -> tuple[tuple[str, Any], ...]:
     if not _network_allowed() or not name:
         return ()
     data = _from_native(eco, name, version)

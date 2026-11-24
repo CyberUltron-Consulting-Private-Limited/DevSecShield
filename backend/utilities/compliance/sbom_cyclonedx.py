@@ -58,6 +58,8 @@ _KEEP_PROPS = frozenset({"declared:depends", "dss:version_source", "dss:version_
 # Grype database build date and coverage note m3, SPDX conversion M5)
 _KEEP_META_PROPS = frozenset({"dss:inventory_tools", "dss:dependency_graph", "dss:registry", "dss:grype_db_built",
                               "dss:grype_db_schema", "dss:coverage_note", "dss:converted_from",
+                              "dss:llm_enrichment", "dss:spdx_packages_without_id", "dss:spdx_invalid_entries",
+                              "dss:licence_coverage", "dss:hash_coverage",
                               "dss:spdx_relationships_unmapped"})
 _GUESSED = "range_lower_bound"
 _SYFT_LOC = re.compile(r"^syft:location:\d+:path$")
@@ -514,8 +516,13 @@ def _clean_metadata_component(raw: Any, subject: str | None) -> dict[str, Any] |
     for key in ("type", "name", "version", "bom-ref", "purl", "group"):
         if raw.get(key) not in (None, ""):
             out[key] = raw[key]
-    name = _clean_subject_name(str(out.get("name") or ""), subject)
+    raw_name = str(out.get("name") or "").strip()
+    name = _clean_subject_name(raw_name, subject)
     if name:
+        if raw_name and name != raw_name and raw_name in str(out.get("bom-ref") or ""):
+            # the worker's clone directory never reaches the served document through the subject's ref either
+            # (review 6032108510 m5); the old ref is mapped to this one in dependencies / compositions
+            out["bom-ref"] = f"urn:dss:subject:{name}"
         out["name"] = name
     out.setdefault("type", "application")
     return out

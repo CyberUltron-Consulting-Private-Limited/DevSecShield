@@ -50,3 +50,19 @@ test("the component uses the shared default and shows both views", () => {
   assert.match(src, /data-testid="sbom-view-all"/);
   assert.match(src, /data-testid="sbom-view-vulnerable"/);
 });
+
+test("licence and hash coverage are counted like the PDF's minimum-elements table (review 6032108510 M-1)", async () => {
+  const { bomCoverage } = await import("../../utils/sbomInventory");
+  const offline = {
+    ...bom,
+    metadata: { ...bom.metadata, properties: [{ name: "dss:registry", value: "off: no registry lookup" }] },
+    components: [
+      { ...bom.components[0], licenses: [{ license: { id: "MIT" } }] },
+      { ...bom.components[1], licenses: [{ license: { id: "LicenseRef-not-declared" } }], hashes: [{ alg: "SHA-256", content: "ab" }] },
+      { ...bom.components[2] },
+      { name: "" },
+    ],
+  };
+  assert.deepEqual(bomCoverage(offline), { total: 3, licensed: 1, hashed: 1, registry: "off: no registry lookup" });
+  assert.deepEqual(bomCoverage(null), { total: 0, licensed: 0, hashed: 0, registry: "" });
+});

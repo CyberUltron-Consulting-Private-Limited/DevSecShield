@@ -30,6 +30,20 @@ _REVERSED = frozenset({"DEPENDENCY_OF", "RUNTIME_DEPENDENCY_OF", "BUILD_DEPENDEN
                        "OPTIONAL_DEPENDENCY_OF", "PROVIDED_DEPENDENCY_OF", "TEST_DEPENDENCY_OF"})
 
 
+def _list(value: Any) -> list[Any]:
+    """A field that should be a list: anything else (a number, a string, an object from a hostile or broken
+    document) is read as empty, never iterated (review 6032108510 m4)."""
+    return value if isinstance(value, list) else []
+
+
+def _dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _text(value: Any) -> str:
+    return value.strip() if isinstance(value, str) else (str(value) if isinstance(value, (int, float)) else "")
+
+
 def is_spdx(doc: Any) -> bool:
     if not isinstance(doc, dict):
         return False
@@ -41,7 +55,7 @@ def is_spdx(doc: Any) -> bool:
 
 
 def _supplier(raw: Any) -> dict[str, str] | None:
-    text = str(raw or "").strip()
+    text = _text(raw)
     if text.upper() in _NONE:
         return None
     for prefix in ("Organization:", "Person:", "Tool:"):
@@ -53,11 +67,11 @@ def _supplier(raw: Any) -> dict[str, str] | None:
 
 def _hashes(checksums: Any) -> list[dict[str, str]]:
     out = []
-    for c in checksums or []:
+    for c in _list(checksums):
         if not isinstance(c, dict):
             continue
-        alg = _HASH_ALG.get(str(c.get("algorithm") or "").upper())
-        value = str(c.get("checksumValue") or c.get("hashValue") or "").strip()
+        alg = _HASH_ALG.get(_text(c.get("algorithm")).upper())
+        value = _text(c.get("checksumValue") or c.get("hashValue"))
         if alg and value and _HEX.match(value):
             out.append({"alg": alg, "content": value.lower()})
     return out
@@ -65,25 +79,25 @@ def _hashes(checksums: Any) -> list[dict[str, str]]:
 
 def _licence(pkg: dict[str, Any]) -> str:
     for key in ("licenseConcluded", "licenseDeclared"):
-        text = str(pkg.get(key) or "").strip()
+        text = _text(pkg.get(key))
         if text.upper() not in _NONE:
             return text
     return ""
 
 
 def _package_component(pkg: dict[str, Any]) -> dict[str, Any]:
-    comp: dict[str, Any] = {"type": "library", "name": str(pkg.get("name") or "").strip()}
-    version = str(pkg.get("versionInfo") or "").strip()
+    comp: dict[str, Any] = {"type": "library", "name": _text(pkg.get("name"))}
+    version = _text(pkg.get("versionInfo"))
     if version and version.upper() not in _NONE:
         comp["version"] = version
-    purpose = str(pkg.get("primaryPackagePurpose") or "").upper()
+    purpose = _text(pkg.get("primaryPackagePurpose")).upper()
     if purpose in {"APPLICATION", "FRAMEWORK", "CONTAINER", "OPERATING-SYSTEM", "DEVICE", "FIRMWARE", "FILE"}:
         comp["type"] = {"OPERATING-SYSTEM": "operating-system"}.get(purpose, purpose.lower())
-    for ref in pkg.get("externalRefs") or []:
+    for ref in _list(pkg.get("externalRefs")):
         if not isinstance(ref, dict):
             continue
-        rtype = str(ref.get("referenceType") or "").lower()
-        loc = str(ref.get("referenceLocator") or "").strip()
+        rtype = _text(ref.get("referenceType")).lower()
+        loc = _text(ref.get("referenceLocator"))
         if rtype == "purl" and loc and "purl" not in comp:
             comp["purl"] = loc
         elif rtype in {"cpe23type", "cpe22type"} and loc and "cpe" not in comp:
@@ -97,18 +111,19 @@ def _package_component(pkg: dict[str, Any]) -> dict[str, Any]:
     lic = _licence(pkg)
     if lic:
         comp["licenses"] = [{"expression": lic}] if re.search(r"\s(AND|OR|WITH)\s", lic) else [{"license": {"id": lic}}]
-    desc = str(pkg.get("description") or pkg.get("summary") or "").strip()
+    desc = _text(pkg.get("description")) or _text(pkg.get("summary"))
     if desc:
         comp["description"] = desc[:2000]
-    dl = str(pkg.get("downloadLocation") or "").strip()
+    dl = _text(pkg.get("downloadLocation"))
     if dl and dl.upper() not in _NONE and re.match(r"^[a-z][a-z0-9+.-]*://", dl, re.I):
         comp["externalReferences"] = [{"type": "distribution", "url": dl}]
-    comp["bom-ref"] = str(pkg.get("SPDXID") or "")
+    comp["bom-ref"] = _text(pkg.get("SPDXID"))
     return comp
 
 
 def _assemble(packages: list[dict[str, Any]], edges: list[tuple[str, str]], root_ids: list[str],
-              unmapped: dict[str, int], created: str, creators: list[str], name: str) -> dict[str, Any]:
+              unmapped: dict[str, int], created: str, creators: list[str], name: str,
+              counts: dict[str, int] | None = None) -> dict[str, Any]:
     by_id = {c["bom-ref"]: c for c in packages if c.get("bom-ref")}
     root_id = next((r for r in root_ids if r in by_id), None)
     subject = None
@@ -125,16 +140,14 @@ def _assemble(packages: list[dict[str, Any]], edges: list[tuple[str, str]], root
         comp = dict(comp)
         comp["bom-ref"] = ref_of[sid]
         components.append(comp)
-    graph: dict[str, list[str]] = {}
+    graph: dict[str, dict[str, None]] = {}  # insertion-ordered sets: de-duplication is linear (m4)
     for src, dst in edges:
         a, b = ref_of.get(src), ref_of.get(dst)
         if a and b and a != b:
-            kids = graph.setdefault(a, [])
-            if b not in kids:
-                kids.append(b)
+            graph.setdefault(a, {})[b] = None
     tools = []
     for c in creators:
-        if str(c).startswith("Tool:"):
+        if isinstance(c, str) and c.startswith("Tool:"):
             tool = str(c)[5:].strip()
             tname, _, tver = tool.rpartition("-") if re.search(r"-\d", tool) else (tool, "", "")
             entry = {"type": "application", "name": tname or tool}
@@ -150,51 +163,76 @@ def _assemble(packages: list[dict[str, Any]], edges: list[tuple[str, str]], root
     if unmapped:
         props.append({"name": "dss:spdx_relationships_unmapped",
                       "value": ", ".join(f"{k}:{v}" for k, v in sorted(unmapped.items()))})
+    for key, value in sorted((counts or {}).items()):
+        if value:  # dss:spdx_packages_without_id, dss:spdx_invalid_entries: reported, never dropped silently
+            props.append({"name": key, "value": str(value)})
     meta["properties"] = props
     return {
         "bomFormat": "CycloneDX",
         "specVersion": "1.6",
         "metadata": meta,
         "components": components,
-        "dependencies": [{"ref": k, "dependsOn": v} for k, v in graph.items()],
+        "dependencies": [{"ref": k, "dependsOn": list(v)} for k, v in graph.items()],
     }
 
 
+def _packages(raw_packages: Any, counts: dict[str, int]) -> list[dict[str, Any]]:
+    """Every package with a name becomes a component; one without an SPDXID gets a generated ref and is counted
+    (``dss:spdx_packages_without_id``), not dropped; non-object entries are counted as invalid."""
+    out: list[dict[str, Any]] = []
+    for i, pkg in enumerate(_list(raw_packages)):
+        if not isinstance(pkg, dict) or not _text(pkg.get("name")):
+            counts["dss:spdx_invalid_entries"] = counts.get("dss:spdx_invalid_entries", 0) + 1
+            continue
+        comp = _package_component(pkg)
+        if not comp["bom-ref"]:
+            comp["bom-ref"] = f"urn:dss:spdx-package:{i}"
+            counts["dss:spdx_packages_without_id"] = counts.get("dss:spdx_packages_without_id", 0) + 1
+        out.append(comp)
+    return out
+
+
 def _from_spdx2(doc: dict[str, Any]) -> dict[str, Any]:
-    packages = [_package_component(p) for p in doc.get("packages") or [] if isinstance(p, dict) and p.get("name")]
+    if "packages" in doc and not isinstance(doc.get("packages"), list):
+        raise ValueError("SPDX 'packages' is not a list")
+    counts: dict[str, int] = {}
+    packages = _packages(doc.get("packages"), counts)
     ids = {c["bom-ref"] for c in packages}
-    roots = [str(x) for x in doc.get("documentDescribes") or []]
+    roots = [_text(x) for x in _list(doc.get("documentDescribes")) if _text(x)]
     edges: list[tuple[str, str]] = []
     unmapped: dict[str, int] = {}
-    doc_id = str(doc.get("SPDXID") or "SPDXRef-DOCUMENT")
-    rels = [r for r in doc.get("relationships") or [] if isinstance(r, dict)]
+    doc_id = _text(doc.get("SPDXID")) or "SPDXRef-DOCUMENT"
+    rels = [r for r in _list(doc.get("relationships")) if isinstance(r, dict)]
     for r in rels:
-        kind = str(r.get("relationshipType") or "").upper()
-        a, b = str(r.get("spdxElementId") or ""), str(r.get("relatedSpdxElement") or "")
+        kind = _text(r.get("relationshipType")).upper()
+        a, b = _text(r.get("spdxElementId")), _text(r.get("relatedSpdxElement"))
         if kind == "DESCRIBES" and a == doc_id:
             roots.append(b)
         elif kind == "DESCRIBED_BY" and b == doc_id:
             roots.append(a)
+    root_set = set(roots)
     for r in rels:
-        kind = str(r.get("relationshipType") or "").upper()
-        a, b = str(r.get("spdxElementId") or ""), str(r.get("relatedSpdxElement") or "")
+        kind = _text(r.get("relationshipType")).upper()
+        a, b = _text(r.get("spdxElementId")), _text(r.get("relatedSpdxElement"))
         if kind in _FORWARD:
             edges.append((a, b))
         elif kind in _REVERSED:
             edges.append((b, a))
         elif kind in {"DESCRIBES", "DESCRIBED_BY"}:
             continue
-        elif kind == "CONTAINS" and a in roots and b in ids:
+        elif kind == "CONTAINS" and a in root_set and b in ids:
             continue  # the subject contains the package: it is a component of this SBOM
         else:
             unmapped[kind] = unmapped.get(kind, 0) + 1
-    info = doc.get("creationInfo") if isinstance(doc.get("creationInfo"), dict) else {}
-    return _assemble(packages, edges, roots, unmapped, str(info.get("created") or ""),
-                     [str(c) for c in info.get("creators") or []], str(doc.get("spdxVersion") or "SPDX-2"))
+    info = _dict(doc.get("creationInfo"))
+    return _assemble(packages, edges, roots, unmapped, _text(info.get("created")),
+                     [c for c in _list(info.get("creators")) if isinstance(c, str)],
+                     _text(doc.get("spdxVersion")) or "SPDX-2", counts)
 
 
 def _from_spdx3(doc: dict[str, Any]) -> dict[str, Any]:
     graph = doc.get("@graph") if isinstance(doc.get("@graph"), list) else [doc]
+    counts: dict[str, int] = {}
     packages: list[dict[str, Any]] = []
     edges: list[tuple[str, str]] = []
     roots: list[str] = []
@@ -202,21 +240,22 @@ def _from_spdx3(doc: dict[str, Any]) -> dict[str, Any]:
     created = ""
     for el in graph:
         if not isinstance(el, dict):
+            counts["dss:spdx_invalid_entries"] = counts.get("dss:spdx_invalid_entries", 0) + 1
             continue
-        etype = str(el.get("type") or el.get("@type") or "")
-        sid = str(el.get("spdxId") or el.get("@id") or "")
+        etype = _text(el.get("type")) or _text(el.get("@type"))
+        sid = _text(el.get("spdxId")) or _text(el.get("@id"))
         if etype in {"SpdxDocument", "software_Sbom"}:
-            roots.extend(str(x) for x in el.get("rootElement") or [])
+            roots.extend(_text(x) for x in _list(el.get("rootElement")) if _text(x))
         elif etype == "software_Package" and el.get("name"):
             pkg = {"name": el.get("name"), "versionInfo": el.get("software_packageVersion"), "SPDXID": sid,
                    "description": el.get("description") or el.get("summary"),
                    "downloadLocation": el.get("software_downloadLocation"),
                    "checksums": [{"algorithm": h.get("algorithm"), "checksumValue": h.get("hashValue")}
-                                 for h in el.get("verifiedUsing") or [] if isinstance(h, dict)],
+                                 for h in _list(el.get("verifiedUsing")) if isinstance(h, dict)],
                    "externalRefs": []}
             if el.get("software_packageUrl"):
                 pkg["externalRefs"].append({"referenceType": "purl", "referenceLocator": el["software_packageUrl"]})
-            for ident in el.get("externalIdentifier") or []:
+            for ident in _list(el.get("externalIdentifier")):
                 if isinstance(ident, dict):
                     kind = str(ident.get("externalIdentifierType") or "").lower()
                     if kind in {"packageurl", "cpe23"}:
@@ -225,11 +264,11 @@ def _from_spdx3(doc: dict[str, Any]) -> dict[str, Any]:
             supplier = el.get("suppliedBy")
             if isinstance(supplier, str):
                 pkg["supplier"] = supplier
-            packages.append(_package_component(pkg))
+            packages.extend(_packages([pkg], counts))
         elif etype in {"Relationship", "LifecycleScopedRelationship"}:
-            kind = str(el.get("relationshipType") or "")
-            src = str(el.get("from") or "")
-            tos = el.get("to") if isinstance(el.get("to"), list) else [el.get("to")]
+            kind = _text(el.get("relationshipType"))
+            src = _text(el.get("from"))
+            tos = [_text(t) for t in (el.get("to") if isinstance(el.get("to"), list) else [el.get("to")])]
             if kind == "dependsOn":
                 edges.extend((src, str(t)) for t in tos if t)
             elif kind == "describes":
@@ -239,8 +278,12 @@ def _from_spdx3(doc: dict[str, Any]) -> dict[str, Any]:
             else:
                 unmapped[kind] = unmapped.get(kind, 0) + 1
         elif etype == "CreationInfo" and not created:
-            created = str(el.get("created") or "")
-    return _assemble(packages, edges, roots, unmapped, created, [], "SPDX-3.0")
+            created = _text(el.get("created"))
+        elif etype:
+            continue
+        else:
+            counts["dss:spdx_invalid_entries"] = counts.get("dss:spdx_invalid_entries", 0) + 1
+    return _assemble(packages, edges, roots, unmapped, created, [], "SPDX-3.0", counts)
 
 
 def spdx_to_cyclonedx(doc: dict[str, Any]) -> dict[str, Any]:

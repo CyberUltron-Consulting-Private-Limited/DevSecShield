@@ -241,6 +241,7 @@ def test_registry_resolved_once_with_spdx_safe_licences_and_no_hash_for_a_guess(
 
     reg = registry_enrich.backend_module("registry")
     answers = {"scapy": "GPL-2.0-only", "chardet": "LGPL", "acme-dual": "MPL-2.0 AND MIT"}
+    monkeypatch.setenv("DSS_SBOM_REGISTRY", "1")  # opt-in (review 6032108510 B-1)
     monkeypatch.setattr(reg, "_network_allowed", lambda: True)
     monkeypatch.setattr(reg, "lookup_package", lambda eco, name, ver: {
         "license": answers.get(name, "MIT"), "author": f"{name} team", "hash": ("SHA-256", "ab" * 32),
@@ -272,6 +273,7 @@ def test_registry_budget_bounds_the_lookup(monkeypatch):
     from helpers.tools.sca_sbom_agent import registry_enrich
 
     reg = registry_enrich.backend_module("registry")
+    monkeypatch.setenv("DSS_SBOM_REGISTRY", "1")  # opt-in (review 6032108510 B-1)
     monkeypatch.setattr(reg, "_network_allowed", lambda: True)
 
     def slow(eco, name, ver):

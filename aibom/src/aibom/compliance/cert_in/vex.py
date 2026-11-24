@@ -93,10 +93,12 @@ _VEX_NS = uuid.UUID("0f4d6c52-7a3e-4b8f-9d21-5c6e7f8a9b0c")
 # Any OSV-schema advisory id Grype or an OSV source reports (review 6028132826 m3):
 # CVE, GHSA, PYSEC, GO, RUSTSEC, OSV, GMS, CGA, DLA, DSA, ALSA, RHSA, MAL, USN, SUSE-SU,
 # BIT ...: a letter-and-digit prefix, then dash-separated parts, at least one digit;
-# ':' may appear inside (ALSA-2023:1234, SUSE-SU-2023:0001-1).
+# ':' may appear inside (ALSA-2023:1234, SUSE-SU-2023:0001-1). A GHSA id is three groups
+# of four from GitHub's alphabet, which may hold no digit at all (review 6032108510 m1).
 _ADVISORY = re.compile(
     r"^(?=.*\d)[A-Za-z][A-Za-z0-9]{1,15}(?:-[A-Za-z0-9][A-Za-z0-9.:_]*){1,6}$"
 )
+_GHSA = re.compile(r"^GHSA(?:-[23456789cfghjmpqrvwx]{4}){3}$", re.I)
 _UPPER_PREFIXES = frozenset({"CVE", "PYSEC", "GO", "RUSTSEC", "OSV"})
 _UUID = re.compile(
     r"^urn:uuid:([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}"
@@ -109,7 +111,7 @@ def normalise_advisory_id(raw: Any) -> str | None:
     """The advisory id in its canonical form (GHSA body lower-case, CVE / PYSEC / GO /
     RUSTSEC / OSV upper-case, others as given), or None for text that is not one."""
     text = str(raw or "").strip()
-    if len(text) > 80 or not _ADVISORY.match(text):
+    if len(text) > 80 or not (_ADVISORY.match(text) or _GHSA.match(text)):
         return None
     head, _, body = text.partition("-")
     if head.upper() == "GHSA":
@@ -244,17 +246,27 @@ def _entry(
 
 
 def _finding_vulnerabilities(
-    findings: list[dict[str, Any]], bom: dict[str, Any] | None
+    findings: list[dict[str, Any]],
+    bom: dict[str, Any] | None,
+    *,
+    advisories_only: bool = True,
 ) -> list[dict[str, Any]]:
+    """One statement per id across the finding rows. An SBOM scan
+    (``advisories_only``) keeps advisory ids only, in canonical form, and skips
+    inventory rows; an AI BOM keeps every id its findings carry as given (#487),
+    e.g. ``AI-SUPPLY-CHAIN``."""
     refs = _component_refs(bom)
     by_id: dict[str, dict[str, Any]] = {}
     for i, row in enumerate(findings):
         if not isinstance(row, dict):
             continue
-        if row.get("inventory_only"):
+        if advisories_only and row.get("inventory_only"):
             continue
-        raw_ids = [row["vuln_id"]] if row.get("vuln_id") else _cve_ids_from_finding(row)
-        ids = [v for v in (normalise_advisory_id(r) for r in raw_ids) if v]
+        if advisories_only:
+            raw = [row["vuln_id"]] if row.get("vuln_id") else _cve_ids_from_finding(row)
+            ids = [v for v in (normalise_advisory_id(r) for r in raw) if v]
+        else:
+            ids = _cve_ids_from_finding(row)
         if not ids:
             continue
         ref = _affects_ref(row, i, refs)
@@ -309,6 +321,49 @@ def _bom_vulnerabilities(bom: dict[str, Any] | None) -> list[dict[str, Any]]:
             entry["ratings"] = v["ratings"]
         out.append(entry)
     return out
+
+
+_PEP440_OPS = ("===", "~=", "==", "!=", ">=", "<=", ">", "<")
+
+
+def _release(version: str) -> tuple[int, ...] | None:
+    parts = version.split(".")
+    return tuple(int(p) for p in parts) if all(p.isdigit() for p in parts) else None
+
+
+def _vers_range(comp: dict[str, Any], constraint: str) -> str | None:
+    """A PEP 440 requirement range as a ``vers`` range (``>=10.0,<13.0`` ->
+    ``vers:pypi/>=10.0|<13.0``), or None when it cannot be written as one."""
+    purl = str(comp.get("purl") or "")
+    eco = purl[4:].split("/", 1)[0].lower() if purl.startswith("pkg:") else ""
+    spec = str(constraint or "").split(";", 1)[0].replace(" ", "")
+    if eco != "pypi" or not spec:
+        return None
+    out: list[tuple[str, str]] = []
+    for part in spec.split(","):
+        op = next((o for o in _PEP440_OPS if part.startswith(o)), "")
+        ver = part[len(op) :]
+        if not op or not ver or op == "===":
+            return None
+        if op in {"==", "~="} or ver.endswith(".*"):
+            base = ver[:-2] if ver.endswith(".*") else ver
+            rel = _release(base)
+            if op == "!=" or rel is None or (op == "~=" and len(rel) < 2):
+                return None
+            if op == "==" and not ver.endswith(".*"):
+                out.append(("", ver))
+                continue
+            top = rel[:-1] if op == "~=" else rel
+            upper = ".".join(str(x) for x in (*top[:-1], top[-1] + 1))
+            out += [(">=", base), ("<", upper)]
+        else:
+            out.append((op, ver))
+    if not out:
+        return None
+    keys = [_release(v) for _, v in out]
+    if all(k is not None for k in keys):
+        out = [c for _, c in sorted(zip(keys, out, strict=True))]
+    return "vers:pypi/" + "|".join(f"{op}{quote(v, safe='.')}" for op, v in out)
 
 
 def _sbom_bom_vulnerabilities(
@@ -388,7 +443,17 @@ def _sbom_bom_vulnerabilities(
         for ref in refs:
             comp = names.get(ref) or {}
             aff: dict[str, Any] = {"ref": _bom_link(bom, ref)}
-            if comp.get("version"):
+            if "dss:version_guessed_from" in props:
+                # the installed version is not known, only the manifest's range
+                # (review 6032108510 m3): state the range, status unknown
+                vers = _vers_range(comp, props["dss:version_guessed_from"])
+                if vers:
+                    aff["versions"] = [{"range": vers, "status": "unknown"}]
+                elif comp.get("version"):
+                    aff["versions"] = [
+                        {"version": str(comp["version"]), "status": "unknown"}
+                    ]
+            elif comp.get("version"):
                 aff["versions"] = [
                     {"version": str(comp["version"]), "status": "affected"}
                 ]
@@ -481,16 +546,21 @@ def build_vex(
         first_issued = str(
             (meta_in.get("timestamp") if isinstance(meta_in, dict) else None) or stamp
         )
-        # the BOM's own statements are authoritative for their ids: an SBOM's Grype
-        # vulnerabilities with BOM-Links; an AI BOM's recorded ones as given
+        # an SBOM's own Grype statements (with BOM-Links) are authoritative for their
+        # ids; an AI BOM's recorded ones are merged with its findings' affects, as
+        # #487 does (review 6032108510 m1)
+        sbom = scan_type == "sbom_sca" and isinstance(bom, dict)
         own = (
             _sbom_bom_vulnerabilities(bom, first_issued, stamp)
-            if scan_type == "sbom_sca" and isinstance(bom, dict)
+            if sbom
             else _bom_vulnerabilities(bom)
         )
+        authoritative = {e["id"] for e in own} if sbom else set()
         merged: dict[str, dict[str, Any]] = {e["id"]: e for e in own}
-        for entry in _finding_vulnerabilities(findings or [], bom):
-            if entry["id"] in {e["id"] for e in own}:
+        for entry in _finding_vulnerabilities(
+            findings or [], bom, advisories_only=scan_type == "sbom_sca"
+        ):
+            if entry["id"] in authoritative:
                 continue
             if entry["id"] in merged:
                 merged[entry["id"]]["affects"] += [

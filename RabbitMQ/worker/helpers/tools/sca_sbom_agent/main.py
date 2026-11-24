@@ -33,7 +33,7 @@ from helpers.tools.sca_sbom_agent.merge_inventory import (
     subject_from_repo,
 )
 from helpers.tools.sca_sbom_agent.pip_lock import lock_document
-from helpers.tools.sca_sbom_agent.registry_enrich import licence_fields, resolve_components, stamp_rows
+from helpers.tools.sca_sbom_agent.registry_enrich import licence_fields, registry_note, resolve_components, stamp_rows
 from helpers.tools.sca_sbom_agent.spdx_convert import is_spdx, spdx_to_cyclonedx
 import tempfile
 import threading
@@ -68,11 +68,15 @@ def combine_rows(inventory: list[dict], vuln_rows: list[dict]) -> list[dict]:
     rows of packages that have no vulnerability. Keying by package (the old ``_finalize_sbom``) kept only one
     advisory per package."""
     vulnerable = {str(r.get("dependency") or "").strip().lower() for r in vuln_rows if isinstance(r, dict)}
+    # a guessed version's finding names the range, not "name==version" (review 6032108510 m2): match by purl too
+    vulnerable_purls = {str(r.get("purl") or "").split("?", 1)[0].lower() for r in vuln_rows
+                        if isinstance(r, dict) and r.get("purl")}
     out = [r for r in vuln_rows if isinstance(r, dict)]
     seen: set[str] = set()
     for row in inventory:
         dep = str((row or {}).get("dependency") or "").strip().lower()
-        if not dep or dep in vulnerable or dep in seen:
+        purl = str((row or {}).get("purl") or "").split("?", 1)[0].lower()
+        if not dep or dep in vulnerable or dep in seen or (purl and purl in vulnerable_purls):
             continue
         seen.add(dep)
         out.append(row)
@@ -153,6 +157,10 @@ class SCASBOMAgent(BaseAgent):
         self.vulnerabilities = rows
         self.bom_properties["sbom:vuln_source"] = "grype"
         self.bom_properties["sbom:llm_enrichment"] = self._enrich(rows)
+        if isinstance(self.sbom_json, dict):
+            # review 6032108510 m6: the stored scan says whether the optional LLM pass touched the rows (its OWASP /
+            # compliance mappings feed "Policy violations"): applied / failed / timeout / disabled / skipped
+            _set_prop(self.sbom_json, "dss:llm_enrichment", self.bom_properties["sbom:llm_enrichment"])
         descriptor = (self.grype_document or {}).get("descriptor") or {}
         db = grype_db_info(self.grype_document)
         if isinstance(self.sbom_json, dict) and descriptor.get("version"):
@@ -170,7 +178,8 @@ class SCASBOMAgent(BaseAgent):
                 self.bom_properties["sbom:grype_db_built"] = db["built"]
             if db.get("schema"):
                 _set_prop(self.sbom_json, "dss:grype_db_schema", db["schema"])
-            _set_prop(self.sbom_json, "dss:coverage_note", GO_STDLIB_NOTE)
+            extra = getattr(self, "_coverage_extra", "")
+            _set_prop(self.sbom_json, "dss:coverage_note", GO_STDLIB_NOTE + (f". {extra}" if extra else ""))
         console.print(f"Vulnerabilities (Grype): {len(rows)}", style="bold yellow")
 
     def _enrich(self, rows: list[dict]) -> str:
@@ -223,8 +232,22 @@ class SCASBOMAgent(BaseAgent):
             return
         comps = self.sbom_json.get("components") or []
         stats = resolve_components(comps)
-        _set_prop(self.sbom_json, "dss:registry", "{registry}: {resolved}/{looked_up} resolved, {timed_out} timed out"
-                  .format(**stats))
+        _set_prop(self.sbom_json, "dss:registry", registry_note(stats))
+        # review 6032108510 M-1: say how much of the inventory carries a licence and a hash, and why not all of it
+        total = len(comps)
+        licensed = sum(1 for c in comps if c.get("licenses"))
+        hashed = sum(1 for c in comps if c.get("hashes"))
+        _set_prop(self.sbom_json, "dss:licence_coverage", f"{licensed}/{total}")
+        _set_prop(self.sbom_json, "dss:hash_coverage", f"{hashed}/{total}")
+        self._coverage_extra = ""
+        if licensed < total or hashed < total:
+            why = {"off": "package-registry lookups are off (DSS_SBOM_REGISTRY is not 1)",
+                   "unreachable": "the package registries did not answer"}.get(stats["registry"], "")
+            self._coverage_extra = (
+                f"{total - licensed} of {total} components have no licence and {total - hashed} no hash"
+                + (f" ({why}; licences and hashes come from the inventory tools and the built-in list only)"
+                   if why else "")
+                + "; licence-risk checks report those components as not assessed")
         self.bom_properties["sbom:registry"] = stats["registry"]
         self.inventory_rows = inventory_to_finding_rows(comps, vuln_assessed=True,
                                                         dependency_types=dependency_types(self.sbom_json))
@@ -367,7 +390,12 @@ class SCASBOMAgent(BaseAgent):
                     _set_prop(self.sbom_json, str(prop["name"]), str(prop.get("value") or ""))
             self.bom_properties["sbom:timestamp"] = str(self.sbom_json["metadata"]["timestamp"])
             self._finalize_inventory({})
-            grype_document = self._run_grype(fallback_file=self.sbom_json_file)
+            if self.sbom_json.get("components"):
+                grype_document = self._run_grype(fallback_file=self.sbom_json_file)
+            else:
+                # no readable package (review 6032108510 m4): nothing to match, so an empty result, not
+                # Grype's "unable to decode sbom" on the raw upload
+                grype_document = {"matches": []}
             self._set_findings(grype_document)
 
         except Exception as e:

@@ -364,7 +364,7 @@ Rotation (details: `docs/security/secret-rotation.md`): change the value in Secr
   peer); X-Powered-By is dropped and the Server header says `nginx` without a version (removing it needs a module the
   stock image lacks); HSTS without `includeSubDomains`/`preload` (other zeroshield.ai hosts are not ours to pin);
   uploads 64 MB except `POST /{team}/cbom/sources/runs/{run}/signature/verify`, which accepts the API's 512 MB.
-* `DSS_SBOM_REGISTRY=0`: the instance cannot reach public package registries. `DSS_ENV=production` (lab mode refused).
+* `DSS_SBOM_REGISTRY=0` (in `backend.env` and `scan-worker.env`; unset is off too): the instance cannot reach public package registries. `DSS_ENV=production` (lab mode refused).
   The dast-worker gets `UV_NO_SYNC=1` / `UV_OFFLINE=1` (its image lacks them; the instance cannot reach PyPI).
 
 ## 9. What the instance's egress rules block (not fixed by this kit)

@@ -323,6 +323,8 @@ export interface SbomFinding {
   reachability?: string | null
   dependency_type?: string | null
   license_type?: string | null
+  /** the manifest range a guessed version came from: the match is unverified and not counted (review 6032108510 m2) */
+  version_guessed_from?: string | null
   remediation?: RemediationData | null
 }
 

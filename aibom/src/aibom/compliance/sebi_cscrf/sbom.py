@@ -185,15 +185,10 @@ def _lic(r: ScanResult, req: Requirement) -> CheckResult:
 
 @register_check(R_LIC_RISK)
 def _lic_risk(r: ScanResult, req: Requirement) -> CheckResult:
-    comps = _sbom_components(r)
-    bad = [
-        c
-        for c in comps
-        if (c.properties or {}).get("sbom:license_type") in _HIGH_LICENSE
-    ]
-    if bad:
-        return FAIL(f"{len(bad)} high-risk license(s)", _refs(bad))
-    return PASS("no high-risk copyleft / source-available licenses")
+    # review 6032108510 M-1: unknown licences make this partial, never a pass
+    from aibom.sbom.compliance import licence_risk_check
+
+    return licence_risk_check(_sbom_components(r))
 
 
 @register_check(R_DEPS)

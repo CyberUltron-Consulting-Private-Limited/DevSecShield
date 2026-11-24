@@ -10,6 +10,7 @@ import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Download, Search } from "lucide-react";
 import { DEFAULT_BOM_VIEW, emptyBomMessage, filterBomRows, isVulnerableRow, type BomView } from "./bomTableFilter";
 import {
+  bomCoverage,
   inventoryRowsFromCycloneDx,
   overallComplianceFromBom,
   type SbomComplianceStatus,
@@ -64,6 +65,8 @@ export default function SbomBillOfMaterialsTable({
   const [view, setView] = useState<BomView>(DEFAULT_BOM_VIEW);
   const rows = useMemo(() => inventoryRowsFromCycloneDx(bom), [bom]);
   const overall = useMemo(() => overallComplianceFromBom(bom), [bom]);
+  const coverage = useMemo(() => bomCoverage(bom), [bom]);
+  const unlicensed = coverage.total - coverage.licensed;
   const vulnerableCount = useMemo(() => rows.filter(isVulnerableRow).length, [rows]);
   const filtered = useMemo(() => filterBomRows(rows, query, view), [rows, query, view]);
 
@@ -81,11 +84,32 @@ export default function SbomBillOfMaterialsTable({
               Vulnerable packages are listed first. RBI, SEBI, and CERT-In detail
               stays in the dashboard and PDF.
             </CardDescription>
+            {unlicensed > 0 ? (
+              <p className="mt-1 max-w-3xl text-xs text-amber-700 dark:text-amber-300" data-testid="sbom-coverage-note">
+                {unlicensed} of {coverage.total} components have no licence
+                {coverage.registry.startsWith("off") ? " (package-registry lookups are off for this scan)" : ""}
+                ; the licence-risk checks report them as not assessed.
+              </p>
+            ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={overall} />
             <Badge variant="outline" data-testid="sbom-vuln-count">
               {vulnerableCount} with known vulns
+            </Badge>
+            <Badge
+              variant="outline"
+              data-testid="sbom-licence-coverage"
+              title={coverage.registry ? `Package registries: ${coverage.registry}` : undefined}
+            >
+              Licences {coverage.licensed}/{coverage.total}
+            </Badge>
+            <Badge
+              variant="outline"
+              data-testid="sbom-hash-coverage"
+              title={coverage.registry ? `Package registries: ${coverage.registry}` : undefined}
+            >
+              Hashes {coverage.hashed}/{coverage.total}
             </Badge>
             {onDownload ? (
               <Button

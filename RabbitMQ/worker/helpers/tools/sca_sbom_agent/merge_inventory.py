@@ -142,20 +142,46 @@ def _eco_name(c: dict[str, Any]) -> tuple[str, str] | None:
     return eco.lower(), _norm_name(path)
 
 
+def satisfies(version: str, constraint: str) -> bool:
+    """Whether ``version`` is allowed by a requirement's version constraint (PEP 440, ``packaging``); False when either
+    cannot be parsed, so an unreadable constraint never lets a pin replace a guess."""
+    try:
+        from packaging.specifiers import SpecifierSet
+        from packaging.version import Version
+    except ImportError:  # pragma: no cover - packaging is in the worker's lock
+        return False
+    spec = str(constraint or "").split(";", 1)[0].replace(" ", "")
+    try:
+        return Version(str(version)) in SpecifierSet(spec, prereleases=True)
+    except Exception:
+        return False
+
+
+def _version_of(c: dict[str, Any]) -> str:
+    purl = str(c.get("purl") or "").split("?", 1)[0]
+    return str(c.get("version") or (purl.rsplit("@", 1)[1] if "@" in purl else "")).strip()
+
+
 def prefer_pinned(
     components: list[dict[str, Any]], constraints: dict[str, str]
 ) -> tuple[list[dict[str, Any]], dict[str, str], list[str]]:
-    """Drop a version guessed from a range when a lock file or a pin names the same package (review M2).
+    """Drop a version guessed from a range when a lock file or a pin names the same package AT A VERSION THE RANGE
+    ALLOWS (review 6028132826 M2, review 6032108510 M-2).
 
-    Returns ``(components, constraints, dropped purls)``; the guessed component's manifest location moves to the
-    pinned one, so the SBOM still says which manifest asked for the package.
+    A lock compiled for another manifest can pin a version outside this range (pcap-hunter: requirements-docs.txt
+    ``pillow>=10.0,<13.0`` next to requirements.lock ``pillow==13.0.0`` for requirements-runtime.txt): 13.0.0 cannot be
+    the docs' pillow, so the guess stays (unverified) and keeps its manifest and its advisories.
+
+    Returns ``(components, constraints, dropped purls)``; a dropped guess's manifest location moves to the pinned
+    component that satisfies it, so the SBOM still says which manifest asked for the package.
     """
     # a lock that pins exactly the range's lower bound (certifi>=2026.10.23 and certifi==2026.10.23) merged into the
-    # same component: its version is confirmed, not a guess
+    # same component: its version is confirmed, not a guess (when the range allows it)
     confirmed = {str(c.get("purl") or "").split("?", 1)[0] for c in components
                  if any(isinstance(p, dict) and p.get("name") == "dss:version_source" and p.get("value") == "lock_file"
                         for p in c.get("properties") or [])}
-    constraints = {k: v for k, v in constraints.items() if k not in confirmed}
+    constraints = {k: v for k, v in constraints.items()
+                   if not (k in confirmed and satisfies(k.rsplit("@", 1)[-1], v))}
     pinned: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for c in components:
         key = _eco_name(c)
@@ -168,10 +194,12 @@ def prefer_pinned(
         purl = str(c.get("purl") or "").split("?", 1)[0]
         key = _eco_name(c)
         if purl in constraints and key in pinned:
-            dropped.append(purl)
-            for target in pinned[key]:
-                _merge_extras(target, {"evidence": c.get("evidence") or {}})
-            continue
+            matching = [t for t in pinned[key] if satisfies(_version_of(t), constraints[purl])]
+            if matching:
+                dropped.append(purl)
+                for target in matching:
+                    _merge_extras(target, {"evidence": c.get("evidence") or {}})
+                continue
         kept.append(c)
     left = {k: v for k, v in constraints.items() if k not in set(dropped)}
     return kept, left, dropped

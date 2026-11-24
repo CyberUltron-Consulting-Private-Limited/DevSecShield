@@ -1332,6 +1332,16 @@ function SbomResultsView({
                           >
                             {(f.title ?? "").trim() || "Untitled"}
                           </button>
+                          {f.version_guessed_from ? (
+                            <Badge
+                              variant="outline"
+                              className="ml-2 border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+                              title={`Matched on the lower bound of the manifest range ${f.version_guessed_from}; not counted in the totals. Pin the dependency and rescan.`}
+                              data-testid="sbom-finding-unverified"
+                            >
+                              Unverified version
+                            </Badge>
+                          ) : null}
                         </TableCell>
                         <TableCell className="text-sm text-zinc-600 dark:text-zinc-400 max-w-[120px] truncate" title={f.dependency ?? undefined}>
                           {(f.dependency ?? "").trim() || "—"}

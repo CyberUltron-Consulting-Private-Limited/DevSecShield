@@ -7,6 +7,7 @@ from backend.utilities.db.s3_utils import upload_file
 from io import BytesIO
 from rich.console import Console
 from backend.utilities.scan.sanitize_path_patterns import sanitize_path_patterns
+from backend.utilities.scan.sbom_upload import sbom_shape_error
 from backend.utilities.dast.ssrf import DastSsrfError, assert_manual_dast_allowed
 from backend.utilities.scan.target_address import TargetAddressRefused, check_scan_target
 from backend.utilities.log_redaction import redact, redact_secrets, safe_repr
@@ -154,9 +155,12 @@ async def format_input_for_scan(
                     if len(uploaded_file_bytes) > 50 * 1024 * 1024:
                         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="uploaded file too large (max 50MB)")
                     try:
-                        json.loads(uploaded_file_bytes)
+                        uploaded_sbom = json.loads(uploaded_file_bytes)
                     except Exception:
                         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="uploaded file is not valid JSON")
+                    shape_error = sbom_shape_error(uploaded_sbom)  # review 6032108510 m4: refuse before the worker
+                    if shape_error:
+                        raise HTTPException(status_code=422, detail=shape_error)
                     bytes_io_sbom_file_object = BytesIO(uploaded_file_bytes)
                     s3_upload_response = upload_file(bytes_io_sbom_file_object, extension=".json")
                     if not s3_upload_response:

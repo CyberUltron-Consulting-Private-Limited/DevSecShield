@@ -661,7 +661,11 @@ scan tries to reach the Internet or refuses an older database. Import a newer ar
 
 Air-gapped sites: `GIT_ALLOWED_HOSTS` (self-hosted Git; same value for backend and workers),
 `CBOM_IDP_ALLOWED_PRIVATE` + `CBOM_EXTRA_CA_FILE` (identity provider on a private network with a private CA),
-`DSS_SBOM_REGISTRY=0` (no public registry lookups).
+`DSS_SBOM_REGISTRY=0` (no public registry lookups). Public-registry lookups (PyPI, npm, api.github.com,
+deps.dev) are opt-in: they run only where `DSS_SBOM_REGISTRY=1`, and the variable is read in two places, so set it
+the same in both: `backend.env` (the API, for SBOMs stored before the worker resolved licences) **and** `.env`, which
+the scan worker and the CI/CD worker read (they resolve an SBOM's licences, authors and hashes once, when the scan
+finishes). Unset means off in both.
 
 Integrations (Settings > Integrations: ServiceNow, syslog / Splunk HEC, signed webhooks, OSCAL push). Every
 connection goes through one SSRF guard (`backend/utilities/integrations/outbound.py`): loopback, link-local / cloud

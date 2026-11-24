@@ -247,6 +247,9 @@ def test_render_env_files():
     assert (b["CBOM_AI_PROVIDER"], b["CBOM_AI_AWS_CREDENTIALS"], b["CBOM_AI_MODEL"]) == \
         ("bedrock", "env", "openai.gpt-oss-120b-1:0")
     assert env["scan-worker.env"]["LLM_MODEL"] == "openai.gpt-oss-120b-1:0"
+    # review 6032108510 B-1: the scan and CI/CD workers resolve SBOM licences too (registry_enrich.py); production
+    # reaches no public registry, so they never look one up (the workers read scan-worker.env)
+    assert env["scan-worker.env"]["DSS_SBOM_REGISTRY"] == "0"
     for text in files.values():
         assert not re.search(r"^(DSS_DEV_MODE|LOCAL_DEV_VERIFICATION_)", text, re.MULTILINE)
         assert not re.search(r"^(TENANT_ID|CLIENT_ID|CLIENT_SECRET)=", text, re.MULTILINE)  # Graph is unreachable

@@ -211,11 +211,20 @@ def finding_rows(
         constraint = guessed_versions.get(purl) or guessed_versions.get(_component_key(name, version))
         lic, lic_type = licenses.get(purl) or licenses.get(_component_key(name, version)) or ("LicenseRef-not-declared", "not_declared")
         ids_text = {i: (description or i)[:400] for i in [vid, *aliases]}
+        if constraint and version:
+            # review 6032108510 m2: a version guessed from a range never reads as a pin, in the Findings table, the
+            # Jira ticket and the PDF catalogue alike (the purl keeps the guessed version for matching)
+            shown = f"≥ {version} (range {constraint})"
+            title = f"{vid} in {name} {shown} - unverified version"
+            dependency = f"{name} (≥ {version}, range {constraint})"
+        else:
+            title = f"{vid} in {name} {version}".strip()
+            dependency = f"{name}=={version}" if version else name
         row: dict[str, Any] = {
-            "title": f"{vid} in {name} {version}".strip(),
+            "title": title,
             "description": description or f"{vid} affects {name} {version}.",
             "impact": impact,
-            "dependency": f"{name}=={version}" if version else name,
+            "dependency": dependency,
             "purl": purl or None,
             "reachability": "not_assessed",
             "dependency_type": types.get(purl, "unknown"),

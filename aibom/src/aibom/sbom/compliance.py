@@ -449,6 +449,7 @@ def findings_to_scan_result(
 from aibom.compliance.base import (  # noqa: E402
     FAIL,
     NA,
+    NOT_EVIDENCEABLE,
     PASS,
     CheckResult,
     Requirement,
@@ -526,19 +527,50 @@ def _supply3(r: ScanResult, req: Requirement) -> CheckResult:
     return PASS("no reachable critical/high vulnerabilities")
 
 
-@register_check(R_S4)
-def _supply4(r: ScanResult, req: Requirement) -> CheckResult:
-    comps = _sbom_components(r)
-    if not comps:
-        return NA("no dependencies to assess")
+_UNKNOWN_LICENCE = frozenset(
+    {"", "not_declared", "licenseref-not-declared", "noassertion", "none", "unknown"}
+)
+
+
+def licence_unknown(c: FrameworkComponent) -> bool:
+    """No resolved licence: neither a licence text nor a licence risk category."""
+    props = c.properties or {}
+    lic = str(props.get("sbom:license") or "").strip().lower()
+    kind = str(props.get("sbom:license_type") or "").strip().lower()
+    return lic in _UNKNOWN_LICENCE and kind in _UNKNOWN_LICENCE
+
+
+def licence_risk_check(
+    comps: list[FrameworkComponent], suffix: str = ""
+) -> CheckResult:
+    """FAIL on a high-risk licence; PASS only when every component's licence is known
+    (review 6032108510 M-1: an SBOM built offline, with licences left unresolved, used
+    to pass "no high-risk licence" although the GPL packages had simply lost theirs);
+    otherwise partial, as not BOM-evidenceable, with the coverage."""
     bad = [
         c.bom_ref
         for c in comps
         if (c.properties or {}).get("sbom:license_type") in _HIGH_LICENSE
     ]
     if bad:
-        return FAIL(f"{len(bad)} high-risk license(s)", bad)
-    return PASS("no high-risk copyleft / source-available licenses")
+        return FAIL(f"{len(bad)} high-risk license(s){suffix}", bad)
+    unknown = [c.bom_ref for c in comps if licence_unknown(c)]
+    if unknown:
+        return NOT_EVIDENCEABLE(
+            f"partial: {len(unknown)}/{len(comps)} component(s) have no resolved "
+            f"licence, so a high-risk licence cannot be ruled out; none of the "
+            f"{len(comps) - len(unknown)} with a licence is high-risk{suffix}",
+            unknown,
+        )
+    return PASS(f"no high-risk copyleft / source-available licenses{suffix}")
+
+
+@register_check(R_S4)
+def _supply4(r: ScanResult, req: Requirement) -> CheckResult:
+    comps = _sbom_components(r)
+    if not comps:
+        return NA("no dependencies to assess")
+    return licence_risk_check(comps)
 
 
 _CRYPTO_DEP_HINTS = (

@@ -8,8 +8,9 @@ result in the SBOM document; the finding rows are stamped from the same document
 another lookup (``dss:registry`` in ``metadata.properties`` says so).
 
 Order, offline first: the inventory tools' licence, then the curated package map, then the package registry
-(``backend/utilities/compliance/sbom_registry.py``: PyPI, npm, GitHub, deps.dev; ``DSS_SBOM_REGISTRY=0`` turns it
-off, as in the API) within a wall-clock budget (``SBOM_REGISTRY_BUDGET_S``, default 90 s). A version guessed from a
+(``backend/utilities/compliance/sbom_registry.py``: PyPI, npm, GitHub, deps.dev) ONLY when ``DSS_SBOM_REGISTRY=1``
+(opt-in, review 6032108510 B-1: by default the worker makes no egress), within a wall-clock budget
+(``SBOM_REGISTRY_BUDGET_S``, default 90 s). ``dss:registry`` says off, on or unreachable (nothing resolved). A version guessed from a
 range never gets a registry hash: the hash would be of a release nobody showed is installed (B2).
 
 The backend files are standard library only and loaded by path, as ``helpers/net/guard.py`` loads
@@ -145,7 +146,8 @@ def registry_budget() -> float:
 def resolve_components(components: list[dict[str, Any]], *, budget_s: float | None = None) -> dict[str, Any]:
     """Fill licences (SPDX-valid entries), authors, hashes and ``declared:depends`` in place.
 
-    Returns ``{"looked_up", "resolved", "timed_out", "registry"}`` for ``metadata.properties``.
+    Returns ``{"looked_up", "resolved", "timed_out", "registry"}`` for ``metadata.properties``; ``registry`` is
+    ``off`` (not enabled), ``on`` or ``unreachable`` (lookups made, none answered).
     """
     for comp in components:
         lic = _licences(comp)
@@ -158,7 +160,7 @@ def resolve_components(components: list[dict[str, Any]], *, budget_s: float | No
                 comp["licenses"] = offline
     registry = backend_module("registry")
     budget = registry_budget() if budget_s is None else budget_s
-    network = bool(registry and registry._network_allowed() and budget > 0)
+    network = bool(registry and registry.registry_enabled() and registry._network_allowed() and budget > 0)
     jobs = [(c, lookup_args(c)) for c in components if _needs_lookup(c)]
     jobs = [(c, a) for c, a in jobs if a]
     stats = {"looked_up": 0, "resolved": 0, "timed_out": 0, "registry": "on" if network else "off"}
@@ -179,7 +181,16 @@ def resolve_components(components: list[dict[str, Any]], *, budget_s: float | No
             stats["resolved"] += int(_apply(futures[fut], meta))
     finally:
         pool.shutdown(wait=False, cancel_futures=True)
+    if stats["looked_up"] and not stats["resolved"]:
+        stats["registry"] = "unreachable"
     return stats
+
+
+def registry_note(stats: dict[str, Any]) -> str:
+    """``dss:registry``: ``off`` (no lookup made), or ``on`` / ``unreachable`` with what resolved."""
+    if stats.get("registry") == "off":
+        return "off: no registry lookup (DSS_SBOM_REGISTRY is not 1); licences and hashes from the inventory only"
+    return "{registry}: {resolved}/{looked_up} resolved, {timed_out} timed out".format(**stats)
 
 
 def licence_fields(comp: dict[str, Any] | None) -> tuple[str, str]:

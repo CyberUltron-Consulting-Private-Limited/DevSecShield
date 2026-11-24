@@ -344,6 +344,15 @@ def _append_sbom_elements_section(story: List[Any], raw: Dict[str, Any], styles:
     db_built = _meta_prop(bom, "dss:grype_db_built")
     if db_built:
         facts.append(f"Vulnerability database: Grype database built {db_built}.")
+    # licence and hash coverage counted in this file (review 6032108510 M-1), and where they came from
+    present = {r["element"]: r for r in report["rows"]}
+    lic, sha = present.get("Licence"), present.get("Hash / checksum (when known)")
+    if lic and sha and report["components"]:
+        registry = _meta_prop(bom, "dss:registry")
+        facts.append(f"Licence coverage: {lic['present']}/{lic['total']} components; hash coverage: "
+                     f"{sha['present']}/{sha['total']}" + (f"; package registries: {registry}." if registry else ".")
+                     + (" Licence-risk checks report the components without a licence as not assessed."
+                        if lic["present"] < lic["total"] else ""))
     note = _meta_prop(bom, "dss:coverage_note")
     if note:
         facts.append(f"Coverage: {note}.")
@@ -540,12 +549,19 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
             ("Fixable", str(fixable_count)),
         ],
         ctx=ctx,
+        unverified=unverified,  # review 6032108510 m2: the headline agrees with the catalogue
       )
 
     catalog_part: List[Any] = []
     catalog: List[List[Any]] = []
+    shown_unverified = 0
     for idx, v in shown if ctx.has("catalog") else ():
         title = v.get("title") or "Untitled"
+        if is_unverified_version(v):
+            shown_unverified += 1
+            if "unverified" not in title.lower():  # scans stored before the worker labelled it
+                title += " - unverified version"
+            title += " (not counted)"
         impact = (v.get("impact") or "Unknown").strip()
         location = finding_location(v)
         catalog.append(
@@ -557,7 +573,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
             ]
         )
     if ctx.has("catalog"):
-        append_findings_catalog(catalog_part, catalog_rows=catalog, styles=styles, ctx=ctx)
+        append_findings_catalog(catalog_part, catalog_rows=catalog, styles=styles, ctx=ctx, unverified=shown_unverified)
 
     details: List[Any] = []
     if ctx.has("details"):

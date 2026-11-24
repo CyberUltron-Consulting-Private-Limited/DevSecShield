@@ -149,6 +149,8 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
                 "reachability": resolve_sbom_reachability(fd),
                 "dependency_type": fd.get("dependency_type"),
                 "license_type": resolve_sbom_license_category(fd),
+                # a match on a version read from a manifest range (review 6032108510 m2): the table marks it unverified
+                "version_guessed_from": fd.get("version_guessed_from") or None,
                 "remediation": finding.get("remediation", None),
             })
     

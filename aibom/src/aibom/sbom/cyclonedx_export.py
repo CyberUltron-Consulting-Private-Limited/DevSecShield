@@ -48,6 +48,11 @@ KEEP_DSS_PROPS = frozenset({
     "dss:grype_db_built",
     "dss:grype_db_schema",
     "dss:coverage_note",
+    "dss:llm_enrichment",
+    "dss:spdx_packages_without_id",
+    "dss:spdx_invalid_entries",
+    "dss:licence_coverage",
+    "dss:hash_coverage",
     "dss:converted_from",
     "dss:spdx_relationships_unmapped",
 })
