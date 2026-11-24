@@ -626,7 +626,8 @@ def _dashboard_top_risks(session: Session, team_id: int, risks: list[dict[str, A
     for risk in risks:
         row = by_id.get(risk.get("id"))
         item = {"algorithm_name": risk.get("name") or risk.get("location") or "", "algorithm_type": "configuration",
-                "crypto_strength": "not-applicable", "quantum_safe": False, "impact": risk.get("impact"),
+                "crypto_strength": "not-applicable", "quantum_safe": False, "quantum_vulnerable": None,
+                "impact": risk.get("impact"),
                 "risk_score": risk.get("score"), "asset_id": risk.get("id"), "location": risk.get("location"),
                 "exposure": risk.get("exposure"), "hndl": risk.get("hndl"), "source_name": risk.get("source_name"),
                 "pqc_class": None}
@@ -636,7 +637,11 @@ def _dashboard_top_risks(session: Session, team_id: int, risks: list[dict[str, A
             klass = POSTURE.graded_class(row, codes)[0]
             item.update({"algorithm_name": row.algorithm or row.name or item["algorithm_name"],
                          "algorithm_type": _algorithm_type(row), "crypto_strength": strength(klass, codes, memo),
-                         "quantum_safe": klass in _READY, "pqc_class": klass})
+                         "quantum_safe": klass in _READY, "pqc_class": klass,
+                         # the class's verdict (the results page's badge reads it, as for a code-scan row): judged
+                         # vulnerable or ready, else None (unknown / not applicable)
+                         "quantum_vulnerable": True if klass == "quantum-vulnerable" else
+                         (False if klass in _READY else None)})
         out.append(item)
     return out
 

@@ -75,10 +75,13 @@ def test_engine_api_pdf_and_ui_show_one_risk_score(scan_data, tmp_path, monkeypa
 def test_ui_kpi_reads_the_api_risk_score_not_the_average():
     src = (_REPO / "frontend" / "components" / "cbom" / "results" / "CbomDashboardCharts.tsx").read_text()
     tile = next(line for line in src.splitlines() if 'key: "avg_risk"' in line)
-    assert "riskScoreText" in tile and "risk_label" in tile and "average_risk_score" not in tile
+    assert "riskScoreText" in tile and "riskScoreHint" in tile and "average_risk_score" not in tile
     fn = src[src.index("export function riskScoreText"):]
     fn = fn[: fn.index("\n}\n")]
     assert "c.risk_score" in fn and "c.risk_grade" in fn
+    hint = src[src.index("export function riskScoreHint"):]
+    hint = hint[: hint.index("\n}\n")]
+    assert "of 100" in hint and "c.risk_label" in hint
 
 
 def test_cap_keeps_securenote_out_of_critical():
@@ -104,6 +107,28 @@ def test_md5_stored_either_way_is_broken_today_not_quantum_vulnerable():
     assert not code_row_broken_today(rsa1024) and code_row_quantum_vulnerable(rsa1024) is True
     summary = summarize_code_rows([{**new, "finding_codes": ["WEAK_ALGORITHM"], "impact": "Low"}])
     assert summary.quantum == {"quantum_safe": 0, "quantum_vulnerable": 0, "broken_today": 1}
+
+
+def test_pdf_card_and_row_score_read_md5_as_broken_today_in_both_encodings():
+    """The PDF detail card printed "Quantum-Vulnerable" for the new MD5 encoding while p2 counted it broken today
+    (SmarterRouter router.py, re-render on this branch), and the 0-10 row score added the quantum bump for it."""
+    from backend.utilities.dashboard.bom_risk_score import cbom_finding_risk_score
+    from backend.utilities.pdf.cbom_pdf import _quantum_label
+
+    base = {"crypto_strength": "weak", "finding_codes": ["WEAK_ALGORITHM"], "impact": "Low"}
+    old = {**base, "quantum_safe": True}
+    new = {**base, "quantum_safe": False, "quantum_vulnerable": False}
+    rsa1024 = {**base, "quantum_safe": False, "quantum_vulnerable": True}
+    for row in (old, new):
+        assert _quantum_label(row).startswith("Broken today")
+    assert _quantum_label(rsa1024) == "Quantum-Vulnerable"
+    assert _quantum_label({"quantum_safe": True, "crypto_strength": "strong"}) == "Quantum-Safe"
+    assert _quantum_label({"quantum_safe": None}) == "Unknown"
+    assert cbom_finding_risk_score(new) == cbom_finding_risk_score(old)
+    assert cbom_finding_risk_score(rsa1024) > cbom_finding_risk_score(new)
+    # the results page's "Top cryptographic risks" badge needs the engine's verdict too (it said "No" for MD5)
+    top = summarize_code_rows([{**new, "algorithm_name": "MD5"}]).top(1)[0]
+    assert top["quantum_safe"] is False and top["quantum_vulnerable"] is False
 
 
 # ----------------------------------------------------------------------------- Q2-03 compliance table

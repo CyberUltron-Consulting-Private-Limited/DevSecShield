@@ -24,16 +24,16 @@ const card = (extra: Partial<Card>): Card => ({
 const tile = KPI_TILES.find((t) => t.key === "avg_risk")!;
 const c = card({ risk_score: 36, risk_grade: "C", risk_label: "Elevated risk" });
 assert.equal(tile.label, "Risk score");
-assert.equal(tile.value(c), "36 / 100 · C");
-assert.equal(tile.hint?.(c), "Elevated risk");
+assert.equal(tile.value(c), "36 · C");
+assert.equal(tile.hint?.(c), "of 100 · Elevated risk");
 assert.equal(riskScoreText(card({})), "N/A", "an API without the score shows N/A, never the average");
-assert.equal(riskScoreText(card({ risk_score: 0, risk_grade: "A", risk_label: "Low risk" })), "0 / 100 · A");
+assert.equal(riskScoreText(card({ risk_score: 0, risk_grade: "A", risk_label: "Low risk" })), "0 · A");
 
 // the backend fixture's engine score is what the tile prints (PDF / API / UI agree; backend test_cbom_d3_qa2)
 const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, "../../../../backend/tests/fixtures/cbom_d3_bank_scandata.json"), "utf8"));
 const scores = fixture.cbom_scores;
 assert.equal(riskScoreText(card({ risk_score: scores.risk_normalized, risk_grade: scores.risk_grade, risk_label: scores.risk_label })),
-  `${scores.risk_normalized} / 100 · ${scores.risk_grade}`);
+  `${scores.risk_normalized} · ${scores.risk_grade}`);
 
 // G-D3-6: MD5 is "Broken today" whether stored before (quantum_safe true) or after (false + quantum_vulnerable false)
 const md5Old = { quantum_safe: true, crypto_strength: "weak" };

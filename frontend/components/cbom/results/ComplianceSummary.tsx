@@ -55,12 +55,13 @@ export function AssetCount({ count, drill, onDrill, testId }: {
 }
 
 /** Requirement verdicts as one stacked bar (the readiness matrix's colours), with the counts in its tooltip. */
-export function VerdictBar({ fw }: { fw: FrameworkSummary }) {
+export function VerdictBar({ fw, testSuffix = "" }: { fw: FrameworkSummary; testSuffix?: string }) {
   const segments = verdictSegments(fw.counts);
-  if (!segments.length) return <span className="text-xs text-zinc-500" data-testid={`compliance-bar-${slug(fw.framework)}`}>No requirement judged</span>;
+  const testId = `compliance-bar-${slug(fw.framework)}${testSuffix}`;
+  if (!segments.length) return <span className="text-xs text-zinc-500" data-testid={testId}>No requirement judged</span>;
   const title = segments.map((s) => `${VERDICT_LABEL[s.verdict]} ${s.count}`).join(" · ");
   return (
-    <div className="flex items-center gap-2 min-w-[140px]" data-testid={`compliance-bar-${slug(fw.framework)}`}>
+    <div className="flex items-center gap-2 min-w-[140px]" data-testid={testId}>
       <div className="flex h-2.5 w-full min-w-[96px] overflow-hidden rounded-sm bg-zinc-100 dark:bg-zinc-800" title={title} role="img"
            aria-label={`${fw.framework} requirements: ${title}`}>
         {segments.map((s) => (
@@ -162,8 +163,10 @@ export function ComplianceMappingSection({ frameworks, onDrill, note, footnote, 
                   <tr>
                     <th className="text-left font-medium px-3 py-2">Framework</th>
                     <th className="text-left font-medium px-3 py-2">Verdict</th>
-                    <th className="text-left font-medium px-3 py-2">Requirements passed</th>
-                    <th className="text-right font-medium px-3 py-2">Clauses touched</th>
+                    {/* phones: the bar and the clause count sit under the framework name, so Verdict and Assets fit 390 px
+                        without a sideways scroll (staging QA N6, Playwright run) */}
+                    <th className="hidden sm:table-cell text-left font-medium px-3 py-2">Requirements passed</th>
+                    <th className="hidden sm:table-cell text-right font-medium px-3 py-2">Clauses touched</th>
                     <th className="text-right font-medium px-3 py-2">Assets affected</th>
                   </tr>
                 </thead>
@@ -177,6 +180,10 @@ export function ComplianceMappingSection({ frameworks, onDrill, note, footnote, 
                           {fw.engineFrameworks.length > 0 && (
                             <span className="block text-xs text-zinc-500" title="Compliance checks behind the verdict">{fw.engineFrameworks.join(", ")}</span>
                           )}
+                          <span className="mt-1.5 block space-y-1 sm:hidden [&_div]:min-w-0" data-testid={`${tid}-mobile`}>
+                            <VerdictBar fw={fw} testSuffix="-mobile" />
+                            <span className="block text-xs text-zinc-500 tabular-nums">{fw.clausesTouched} clause{fw.clausesTouched === 1 ? "" : "s"} touched</span>
+                          </span>
                         </td>
                         <td className="px-3 py-2 align-top">
                           <span className="inline-flex flex-wrap items-center gap-1">
@@ -186,8 +193,8 @@ export function ComplianceMappingSection({ frameworks, onDrill, note, footnote, 
                             )}
                           </span>
                         </td>
-                        <td className="px-3 py-2 align-top"><VerdictBar fw={fw} /></td>
-                        <td className="px-3 py-2 align-top text-right tabular-nums" data-testid={`${tid}-clauses`}>{fw.clausesTouched}</td>
+                        <td className="hidden sm:table-cell px-3 py-2 align-top"><VerdictBar fw={fw} /></td>
+                        <td className="hidden sm:table-cell px-3 py-2 align-top text-right tabular-nums" data-testid={`${tid}-clauses`}>{fw.clausesTouched}</td>
                         <td className="px-3 py-2 align-top text-right">
                           <AssetCount count={fw.assets} drill={fw.drill} onDrill={onDrill} testId={`${tid}-assets`} />
                         </td>

@@ -48,15 +48,19 @@ def _impact_color(impact: str):
     return severity_color(impact)
 
 
-def _quantum_label(quantum_safe: Any, strength: Any = None) -> str:
+def _quantum_label(row: dict[str, Any]) -> str:
     # The results page's Quantum column rule: an algorithm a quantum computer does not break but that is already
     # broken (MD5, SHA-1, DES, RC4, ECB ...) is "Broken today", never "Quantum-Safe" (the PDF said Quantum-Safe for
-    # every weak symmetric finding: lab UI run u2, round 5).
-    if quantum_safe is True and str(strength or "").lower() == "weak":
+    # every weak symmetric finding: lab UI run u2, round 5). The cbom_metrics readers decide, so the card agrees with
+    # p2's counts for both stored encodings of MD5 (G-D3-6).
+    from backend.utilities.cbom_sources.cbom_metrics import code_row_broken_today, code_row_quantum_vulnerable
+
+    if code_row_broken_today(row):
         return "Broken today (classically broken: replace now)"
-    if quantum_safe is True:
+    verdict = code_row_quantum_vulnerable(row)
+    if verdict is False:
         return "Quantum-Safe"
-    if quantum_safe is False:
+    if verdict is True:
         return "Quantum-Vulnerable"
     return "Unknown"
 
@@ -343,7 +347,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                         ("Type", enum_label(alg_type) if alg_type != "—" else alg_type),
                         ("Key size", key_size_text),
                         ("Strength", enum_label(strength)),
-                        ("Quantum status", _quantum_label(v.get("quantum_safe"), strength)),
+                        ("Quantum status", _quantum_label(v)),
                         ("Where it was found", location),
                         *([("CWE", ", ".join(map(str, v.get("cwe") or [])))] if v.get("cwe") else []),
                         *([("CVE", ", ".join(map(str, v.get("cves") or [])))] if v.get("cves") else []),

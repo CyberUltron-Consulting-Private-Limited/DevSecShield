@@ -2228,6 +2228,8 @@ export interface CbomScanDashboardData {
     algorithm_type: string
     crypto_strength: string
     quantum_safe: boolean
+    /** the engine's quantum verdict; false with quantum_safe false is "Broken today" (absent on older responses) */
+    quantum_vulnerable?: boolean | null
     impact: string
   }>
 }
@@ -2292,6 +2294,8 @@ export interface CBOMDashboardData {
     algorithm_type: string
     crypto_strength: string
     quantum_safe: boolean
+    /** the engine's quantum verdict; false with quantum_safe false is "Broken today" (absent on older responses) */
+    quantum_vulnerable?: boolean | null
     impact: string
     /** where the row came from: a code scan or a CBOM Sources run (absent on older responses) */
     origin?: CbomResultOrigin | null

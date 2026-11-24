@@ -5,7 +5,8 @@
  * redesign: codeModeSnapshot.base.json was written from that commit by this file (`WRITE_BASE=1`) and is never
  * regenerated on a later commit, except deliberately: staging QA round 2 on D3 (fix/cbom-d3-qa2) changed code mode on
  * purpose (the risk tile shows the API's 0-100 risk score and words, the weak-crypto bars are coloured by impact, a
- * scan lists its own certificates, the findings table shows impact and risk under the name on phones).
+ * scan lists its own certificates, the findings table shows impact and risk under the name on phones, the KPI tiles
+ * take one row only from 2xl and the risk tile reads "56 · D" over "of 100 · High risk").
  * Run (frontend/): npx --yes tsx@4.23.15 components/cbom/results/codeModeSnapshot.test.ts
  */
 import "./__tests__/cssStub";

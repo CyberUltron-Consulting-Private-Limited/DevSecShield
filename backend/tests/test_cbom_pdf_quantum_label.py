@@ -19,12 +19,14 @@ _FIXTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", 
 
 
 def test_quantum_label_rule():
-    assert _quantum_label(True, "weak") == "Broken today (classically broken: replace now)"
-    assert _quantum_label(True, "WEAK") == "Broken today (classically broken: replace now)"
-    assert _quantum_label(True, "strong") == "Quantum-Safe"
-    assert _quantum_label(True) == "Quantum-Safe"
-    assert _quantum_label(False, "weak") == "Quantum-Vulnerable"
-    assert _quantum_label(None, "weak") == "Unknown"
+    # the label reads the row through cbom_metrics (G-D3-6): same answers as before for the stored shapes
+    broken = "Broken today (classically broken: replace now)"
+    assert _quantum_label({"quantum_safe": True, "crypto_strength": "weak"}) == broken
+    assert _quantum_label({"quantum_safe": True, "crypto_strength": "WEAK"}) == broken
+    assert _quantum_label({"quantum_safe": True, "crypto_strength": "strong"}) == "Quantum-Safe"
+    assert _quantum_label({"quantum_safe": True}) == "Quantum-Safe"
+    assert _quantum_label({"quantum_safe": False, "crypto_strength": "weak"}) == "Quantum-Vulnerable"
+    assert _quantum_label({"quantum_safe": None, "crypto_strength": "weak"}) == "Unknown"
 
 
 def test_the_pdf_never_calls_a_broken_algorithm_quantum_safe(tmp_path):

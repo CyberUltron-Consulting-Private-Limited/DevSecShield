@@ -244,6 +244,10 @@ export default function CbomResults({
   // #267: the code findings table's visible columns (per user, localStorage); select and Actions always show
   const scanColumns = useColumnPrefs("scan", SCAN_TABLE_COLUMNS);
   const showCol = scanColumns.isVisible;
+  // phones: the Algorithm cell carries the impact and risk score (cbom-finding-mobile-meta), so their own columns
+  // hide below sm instead of sitting behind a sideways scroll cut at "Mediu" (staging QA N6, Playwright at 390 px);
+  // with the Algorithm column turned off they stay
+  const metaOnPhones = showCol("algorithm") ? "hidden sm:table-cell" : "";
 
   // Jira ticketing state
   const jiraFromSettings =
@@ -1104,11 +1108,11 @@ export default function CbomResults({
                       </TableHead>
                       {showCol("algorithm") && <TableHead data-col="algorithm" className="min-w-[160px]">Algorithm <InfoTip id="cbom.res.col.algorithm" /></TableHead>}
                       {showCol("type") && <TableHead data-col="type" className="min-w-[120px]">Type <InfoTip id="cbom.res.col.type" /></TableHead>}
-                      {showCol("impact") && <TableHead data-col="impact" className="min-w-[90px]">Impact <InfoTip id="results.table.impact" /></TableHead>}
+                      {showCol("impact") && <TableHead data-col="impact" className={`min-w-[90px] ${metaOnPhones}`}>Impact <InfoTip id="results.table.impact" /></TableHead>}
                       {showCol("strength") && <TableHead data-col="strength" className="min-w-[110px]">Strength <InfoTip id="cbom.res.col.strength" /></TableHead>}
                       {showCol("quantum") && <TableHead data-col="quantum" className="min-w-[100px]">Quantum <InfoTip id="cbom.res.col.quantum" /></TableHead>}
                       {showCol("fixclass") && <TableHead data-col="fixclass" className="min-w-[110px]">Fix class <InfoTip id="cbom.res.col.fix_class" /></TableHead>}
-                      {showCol("risk") && <TableHead data-col="risk" className="min-w-[90px] text-center">Risk score <InfoTip id="cbom.res.col.risk" /></TableHead>}
+                      {showCol("risk") && <TableHead data-col="risk" className={`min-w-[90px] text-center ${metaOnPhones}`}>Risk score <InfoTip id="cbom.res.col.risk" /></TableHead>}
                       {showCol("location") && <TableHead data-col="location" className="min-w-[140px]">Location <InfoTip id="cbom.res.col.location" /></TableHead>}
                       {showCol("status") && <TableHead data-col="status" className="min-w-[100px]">Status <InfoTip id="results.table.status" /></TableHead>}
                       <TableHead data-col="actions" className={`min-w-[150px] text-right ${STICKY_ACTIONS}`}>
@@ -1177,7 +1181,7 @@ export default function CbomResults({
                             </TableCell>
                             )}
                             {showCol("impact") && (
-                            <TableCell data-col="impact">
+                            <TableCell data-col="impact" className={metaOnPhones}>
                               <Badge variant="outline" className={`whitespace-nowrap ${getImpactBadgeClass(finding.impact)}`}>{finding.impact}</Badge>
                             </TableCell>
                             )}
@@ -1199,7 +1203,7 @@ export default function CbomResults({
                             </TableCell>
                             )}
                             {showCol("risk") && (
-                            <TableCell data-col="risk" className="text-center">
+                            <TableCell data-col="risk" className={`text-center ${metaOnPhones}`}>
                               <span
                                 className={`inline-flex items-center justify-center min-w-9 px-2 py-1 rounded-md text-xs font-semibold tabular-nums ${getRiskScoreBoxClass(finding.risk_score)}`}
                                 title="Risk score"
@@ -1272,28 +1276,29 @@ export default function CbomResults({
               </CardHeader>
               <CardContent>
                 <ScrollArea className="h-[320px] w-full rounded-md border border-zinc-200 dark:border-zinc-800">
-                  <Table className="min-w-max">
+                  <Table className="w-full sm:min-w-max">
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="min-w-[160px]">Algorithm <InfoTip id="cbom.res.col.algorithm" /></TableHead>
-                        <TableHead className="min-w-[120px]">Type <InfoTip id="cbom.res.col.type" /></TableHead>
-                        <TableHead className="min-w-[110px]">Strength <InfoTip id="cbom.res.col.strength" /></TableHead>
-                        <TableHead className="min-w-[110px]">Quantum safe <InfoTip id="cbom.res.col.quantum_safe" /></TableHead>
-                        <TableHead className="min-w-[120px]">Impact <InfoTip id="results.table.impact" /></TableHead>
+                        {/* phones: Algorithm, Quantum safe and Impact fit the card; Type and Strength from sm up (staging QA N6) */}
+                        <TableHead className="whitespace-normal sm:whitespace-nowrap sm:min-w-[160px]">Algorithm <InfoTip id="cbom.res.col.algorithm" /></TableHead>
+                        <TableHead className="hidden sm:table-cell min-w-[120px]">Type <InfoTip id="cbom.res.col.type" /></TableHead>
+                        <TableHead className="hidden sm:table-cell min-w-[110px]">Strength <InfoTip id="cbom.res.col.strength" /></TableHead>
+                        <TableHead className="whitespace-normal sm:whitespace-nowrap sm:min-w-[110px]">Quantum safe <InfoTip id="cbom.res.col.quantum_safe" /></TableHead>
+                        <TableHead className="whitespace-normal sm:whitespace-nowrap sm:min-w-[120px]">Impact <InfoTip id="results.table.impact" /></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {dashboard.top_risks.map((risk, i) => (
                         <TableRow key={i} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
-                          <TableCell className="font-medium text-zinc-900 dark:text-zinc-100">{risk.algorithm_name}</TableCell>
-                          <TableCell className="text-sm text-zinc-600 dark:text-zinc-400">{risk.algorithm_type?.replace(/_/g, " ")}</TableCell>
-                          <TableCell>
+                          <TableCell className="font-medium text-zinc-900 dark:text-zinc-100 break-all sm:break-normal">{risk.algorithm_name}</TableCell>
+                          <TableCell className="hidden sm:table-cell text-sm text-zinc-600 dark:text-zinc-400">{risk.algorithm_type?.replace(/_/g, " ")}</TableCell>
+                          <TableCell className="hidden sm:table-cell">
                             <Badge variant="outline" className={getStrengthBadgeClass(risk.crypto_strength)}>
                               {risk.crypto_strength}
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            <QuantumBadge quantumSafe={risk.quantum_safe} strength={risk.crypto_strength} yesNo />
+                            <QuantumBadge quantumSafe={risk.quantum_safe} strength={risk.crypto_strength} quantumVulnerable={risk.quantum_vulnerable} yesNo />
                           </TableCell>
                           <TableCell className="text-sm text-zinc-600 dark:text-zinc-400 max-w-[200px] truncate" title={risk.impact}>{risk.impact}</TableCell>
                         </TableRow>

@@ -99,10 +99,16 @@ export function mttrText(totalDays: number, totalFixed: number | null | undefine
   return totalDays < 0.1 && totalDays >= 0 ? "<0.1 days" : `${totalDays.toFixed(1)} days`;
 }
 
-/** "52 / 100 · D" from the API's risk score and grade; "N/A" when the API sent none. */
+/** "52 · D" from the API's risk score and grade; "N/A" when the API sent none. The scale and label go in the hint
+ * (riskScoreHint), so the value fits one line in the seven-tile row at 1366 px (Playwright run, round 2). */
 export function riskScoreText(c: KpiCardData): string {
   if (typeof c.risk_score !== "number") return "N/A";
-  return c.risk_grade ? `${c.risk_score} / 100 · ${c.risk_grade}` : `${c.risk_score} / 100`;
+  return c.risk_grade ? `${c.risk_score} · ${c.risk_grade}` : `${c.risk_score}`;
+}
+/** "of 100 · High risk": the 0-100 scale of the score and the API's label. */
+export function riskScoreHint(c: KpiCardData): string | null {
+  if (typeof c.risk_score !== "number") return null;
+  return c.risk_label ? `of 100 · ${c.risk_label}` : "of 100";
 }
 /** The seven KPI tiles (label, icon, colours, tip, raw value): one definition for the code scan's dashboard and the
  * Sources run summary (views/SummaryKpis.tsx), so the two cannot drift. */
@@ -116,7 +122,7 @@ export const KPI_TILES: ReadonlyArray<{ key: string; label: string; icon: Lucide
   { key: "ready", label: "Quantum ready", value: (cardData) => readinessText(cardData), icon: Shield, box: "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400", tip: "cbom.res.kpi.ready" },
   // the D3 risk score (staging QA round 2, item 01; Rule P): the API's risk_score / risk_grade / risk_label, the engine's posture
   // number the PDF headline prints; never recomputed here
-  { key: "avg_risk", label: "Risk score", value: riskScoreText, hint: (c) => c.risk_label ?? null, icon: Activity, box: "bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400", tip: "cbom.res.kpi.avg_risk" },
+  { key: "avg_risk", label: "Risk score", value: riskScoreText, hint: riskScoreHint, icon: Activity, box: "bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400", tip: "cbom.res.kpi.avg_risk" },
 ];
 
 /** The parts of CbomDashboardCharts a caller can ask for (`parts`); all of them when `parts` is left out. */
@@ -249,8 +255,10 @@ export function CbomDashboardCharts({
   const notStartedPct = totalAll > 0 ? Math.round(((remediation?.total_not_started ?? 0) / totalAll) * 100) : 0;
   const ignoredPct = totalAll > 0 ? Math.round(((remediation?.total_ignored ?? 0) / totalAll) * 100) : 0;
 
+  // seven tiles in one row only from 2xl: at 1366 px (content ~1010 px) a seven-column row left ~40 px per value, so
+  // "56 · D" and labels such as "Quantum vulnerable" wrapped or were cut (Playwright run, staging QA round 2)
   const kpiCards = (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7 gap-4">
       {KPI_TILES.map((t) => ({ ...t, value: t.value(cardData), hintText: t.hint?.(cardData) ?? null })).map(({ label, tip, value, hintText, icon: Icon, box }) => (
         <Card key={label} className="border-zinc-200 dark:border-zinc-800">
           <CardContent className="pt-4 pb-4 flex items-center gap-3">

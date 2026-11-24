@@ -169,6 +169,8 @@ class CodeRowSummary:
                 "algorithm_type": algo_type,
                 "crypto_strength": strength,
                 "quantum_safe": row.get("quantum_safe", False),
+                # the engine's verdict: MD5 stored as quantum_safe false + this false is "Broken today" (G-D3-6)
+                "quantum_vulnerable": row.get("quantum_vulnerable"),
                 "impact": row.get("impact") or severity.capitalize(),
                 "risk_score": cbom_finding_risk_score(row),
                 "origin": row.get("origin") or origin,

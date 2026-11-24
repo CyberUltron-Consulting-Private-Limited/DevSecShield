@@ -6,6 +6,7 @@
  */
 
 import { useMemo, useState } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   Bar,
   BarChart,
@@ -68,6 +69,9 @@ export function CertInLanePosture({
 }) {
   const laneKeys = CERTIN_LANE_DIMS[lane];
   const meta = CERTIN_LANE_META[lane];
+  // phones: a narrower label column (labels wrap), so the bars keep most of the card (staging QA N6: a 220 px label
+  // column left the code-scan page's bars ~40 px of a 292 px card at 390 px)
+  const narrow = useIsMobile();
 
   const dims = useMemo(() => {
     const raw = rollup?.certin_posture;
@@ -147,7 +151,7 @@ export function CertInLanePosture({
             <BarChart
               data={chartData}
               layout="vertical"
-              margin={{ top: 4, right: 16, bottom: 4, left: 8 }}
+              margin={{ top: 4, right: narrow ? 4 : 16, bottom: 4, left: narrow ? 0 : 8 }}
             >
               <CartesianGrid
                 horizontal={false}
@@ -157,7 +161,7 @@ export function CertInLanePosture({
               <YAxis
                 dataKey="name"
                 type="category"
-                width={220}
+                width={narrow ? 104 : 220}
                 tickLine={false}
                 axisLine={false}
                 className="text-xs"
