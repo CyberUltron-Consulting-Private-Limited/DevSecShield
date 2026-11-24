@@ -70,6 +70,9 @@ def test_every_lane_reaches_its_own_branch_and_nothing_falls_through_to_cloud_ca
     """Review point 1: a type added to ``_LANES`` without its own branch silently became a private CA."""
     assert {"kerberos_account", "ad_domain"} <= M.MAPPED_TYPES
     assert M._LANES["kerberos_account"] == M._LANES["ad_domain"] == "sources_identity"
+    from backend.utilities.pdf import cbom_posture_text as text
+
+    assert text.KERBEROS_KINDS == M.KERBEROS_KINDS  # D6 keeps its own copy (the PDF import allow-list)
     sample = {}
     for _s, _k, _r, asset in FX.assets():
         sample.setdefault(asset["type"], asset["facts"])

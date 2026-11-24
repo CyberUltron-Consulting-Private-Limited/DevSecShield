@@ -17,7 +17,6 @@ from reportlab.platypus import Flowable
 
 import datetime as _dt
 
-from backend.utilities.cbom_sources.posture_mapper import KERBEROS_KINDS as _KERBEROS_KINDS
 from backend.utilities.dashboard.cbom_team_rollup import PROBED_EVIDENCE, TeamCbomView
 from backend.utilities.pdf import cbom_posture_common as common
 from backend.utilities.pdf import cbom_posture_text as text
@@ -82,7 +81,7 @@ def scope_facts(view: object) -> list[dict[str, Any]]:
         or common.kind_of(fact) in _SECRET_KINDS
         or _is_at_rest(fact)
         or _is_managed_tls(fact)
-        or common.kind_of(fact) in _KERBEROS_KINDS  # #488 review 6031264030 (D6); verdict None: not at rest
+        or common.kind_of(fact) in text.KERBEROS_KINDS  # #488 review 6031264030 (D6); verdict None: not at rest
     ]
     if cacheable:
         block.__dict__[_SCOPE_ATTR] = (raw, found)  # not a dataclass field: replace() / asdict() never copy it
@@ -615,7 +614,7 @@ def _kerberos(view: object, styles: Styles, width: float) -> list[Flowable]:
 
 
 def _has_kerberos(view: object) -> bool:
-    return any(common.kind_of(fact) in _KERBEROS_KINDS for fact in scope_facts(view))
+    return any(common.kind_of(fact) in text.KERBEROS_KINDS for fact in scope_facts(view))
 
 
 def _findings(view: object, styles: Styles, width: float) -> list[Flowable]:

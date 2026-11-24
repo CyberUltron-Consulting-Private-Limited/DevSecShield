@@ -296,6 +296,8 @@ AT_REST_KINDS = DATA_STORE_KINDS | frozenset(
     {"backup", "k8s_secrets_etcd", "k8s_storage_class", "disk_encryption"}
 )
 MANAGED_TLS_PROVIDERS = frozenset({"aws", "azure", "gcp", "oci", "kubernetes"})
+# the AD collector's posture kinds (posture_mapper.KERBEROS_KINDS; test_cbom_ad_followups keeps them equal): D6 only
+KERBEROS_KINDS = frozenset({"kerberos_account", "ad_domain"})
 DATABASE_KINDS = frozenset({"relational_db", "nosql_db", "cache", "search_index"})
 
 
