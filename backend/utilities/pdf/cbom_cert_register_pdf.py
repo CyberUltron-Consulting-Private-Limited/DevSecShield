@@ -91,7 +91,7 @@ from backend.utilities.pdf.cbom_pdf_outline import Bookmark
 from backend.utilities.pdf.report_branding import COLOR_BODY, COLOR_SLATE, REPORT_META
 
 REPORT_KEY = "cbom_cert_register"
-NUMBER = 8  # SOW Table 7: D8 Certificate Estate Register
+NUMBER = 8  # SOW D8 (REPORT_META sow_id; the Document ID reads it)
 TITLE = REPORT_META[REPORT_KEY]["title"]
 
 MAX_REGISTER_ROWS = 2000  # decision D-04: table cap for the certificate and PQC registers

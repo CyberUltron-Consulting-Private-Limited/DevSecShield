@@ -72,7 +72,9 @@ def test_c1_clause_findings_and_framework_assets(api, world, no_mongo):
         {(RR._framework(f["framework"]), c["id"]): (c["assets"], c["codes"]) for f in p["compliance"]
          for c in f["clauses"]}
     touched = [f for f in frameworks if f["clauses"]]
-    assert {f["framework"] for f in touched} >= {"NIST", "CERT-In", "RBI", "SEBI CSCRF"}
+    assert {f["framework"] for f in touched} >= {"NIST", "CERT-In", "RBI"}
+    # the default profile (an NBFC, not SEBI-regulated): SEBI CSCRF binds nobody here (PR #485 M4)
+    assert "SEBI CSCRF" not in {f["framework"] for f in touched}
     for fw in frameworks:
         codes = {code for c in fw["clauses"] for code in c["codes"]}
         assert fw["assets"] == len(_assets_with(engine, run_id, codes)), fw["framework"]
@@ -192,6 +194,8 @@ def test_c5_clause_filter_equals_each_clause_count(api, world, no_mongo):
     """A rule-based code: SSH_CBC_CIPHER cites TDEA only on the asset that offers 3des-cbc, so the code filter is wider
     than the clause; the clause filter lists exactly the assets the clause counts (same clause_evidence function)."""
     engine, ids = world
+    # a SEBI-regulated team: SEBI CSCRF binds it (PR #485 M4 filters every surface by the team's profile)
+    assert api("PATCH", "/1/cbom/sources/settings", json={"sebi_regulated": True}).status_code == 200
     run_id, by_name = _seed_clause_run(engine, ids, "c5")
     out = _get(api, f"/1/cbom/sources/runs/{run_id}/results")
     path = f"/1/cbom/sources/runs/{run_id}/assets"

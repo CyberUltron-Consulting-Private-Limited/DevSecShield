@@ -710,9 +710,11 @@ def test_build_pdf_is_a_landscape_pdf_with_its_own_identity(team_view, team_pdf,
     assert info_field(team_pdf, "Author") == "DevSecShield CBOM engine"
     assert "CBOM PQC Migration Roadmap" in team_text  # its OWN footer label ...
     assert "SAST Report" not in team_text  # ... never the fallback one
-    match = re.search(r"CBOM-D15-T1-20261019-([0-9a-f]{8})", team_text)
+    # SOW Table 7 D13 (PR #485: the registry prints SOW IDs as two digits); the ID reads the document digest, which
+    # equals the scan fingerprint only while the view carries no profile, metadata or register
+    match = re.search(r"CBOM-D13-T1-20261019-([0-9a-f]{8})", team_text)
     assert match, "Document ID missing"
-    assert match.group(1) == team_view.fingerprint[:8]
+    assert match.group(1) == team_view.document_digest[:8]
 
 
 def test_shell_basis_box_reports_the_appendix_b_scan_counts(team_text):

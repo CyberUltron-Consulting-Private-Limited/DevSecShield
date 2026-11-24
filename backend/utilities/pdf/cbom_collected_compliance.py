@@ -14,6 +14,7 @@ from dataclasses import dataclass
 
 from backend.utilities.cbom_sources import crypto_kb
 from backend.utilities.dashboard.cbom_team_rollup import TeamCbomView
+from backend.utilities.pdf import cbom_kb_text as kb_text
 
 SOURCES_PREFIX = "sources:"  # AssetAgg.source_key of a CBOM Sources collection
 
@@ -27,9 +28,16 @@ class ClauseRow:
     unrecorded: int = 0  # assets cited for review: the algorithm behind the finding was not recorded (#289)
 
 
-def collected_clauses(view: TeamCbomView) -> list[ClauseRow]:
+def collected_clauses(view: TeamCbomView, entity: str | None = None) -> list[ClauseRow]:
     """Clauses touched by the current collected assets' codes (findings and the informational codes the collector
-    gave, ``AssetAgg.collector_codes``, as the run API counts them): by framework, then most assets first."""
+    gave, ``AssetAgg.collector_codes``, as the run API counts them): by framework, then most assets first.
+
+    Only the clauses that bind the team are cited (``crypto_kb.clauses_for`` with the view's regulatory profile, the
+    filter the run API, the asset detail and OSCAL apply too): an NBFC is mapped to the NBFC Directions 2026, never
+    to the Commercial Banks Directions (SOW audit A-11). ``entity`` overrides the profile's entity type."""
+    team = kb_text.view_profile(view)
+    if entity:
+        team = {**team, "entity": entity}
     assets: dict[tuple[str, str], set[str]] = defaultdict(set)
     codes: dict[tuple[str, str], set[str]] = defaultdict(set)
     recorded: dict[tuple[str, str], set[str]] = defaultdict(set)  # cited on a recorded algorithm by any of its codes
@@ -40,7 +48,7 @@ def collected_clauses(view: TeamCbomView) -> list[ClauseRow]:
         for code in dict.fromkeys((*asset.finding_codes, *asset.collector_codes)):
             if code.startswith("COVERAGE_"):  # a check that was not collected is not a finding
                 continue
-            for ref in crypto_kb.clauses_for("node", code, evidence.get(code)):  # the clauses it breaks (#269)
+            for ref in crypto_kb.clauses_for("node", code, evidence.get(code), team=team):  # (#269, A-11)
                 key = (str(ref["framework"]), str(ref["id"]))
                 ident = f"{asset.source_key}|{asset.asset_type}|{asset.ident}"
                 assets[key].add(ident)

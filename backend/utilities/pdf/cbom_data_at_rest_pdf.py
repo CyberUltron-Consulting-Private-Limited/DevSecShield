@@ -25,7 +25,7 @@ from backend.utilities.pdf.cbom_deliverable_common import (
 )
 from backend.utilities.pdf.report_branding import REPORT_META
 
-DOCUMENT_NUMBER = 9  # SOW Table 7: D9
+DOCUMENT_NUMBER = 9  # SOW D9 (REPORT_META sow_id; the Document ID reads it)
 REPORT_KEY = "cbom_data_at_rest"
 _SIGNOFF = ("Prepared by", "Reviewed by", "Approved by")
 
@@ -347,7 +347,7 @@ def _classification(view: object, styles: Styles, width: float) -> list[Flowable
 
 
 def build_story(view: TeamCbomView, styles: Styles, width: float) -> list[Flowable]:
-    """Document body for SOW D9."""
+    """Document body for SOW deliverable D9."""
     return [
         common.note(REPORT_META[REPORT_KEY]["how_to_read"], styles),
         common.note(text.DECLARED_SETTINGS_NOTE, styles),
@@ -381,7 +381,7 @@ def build_story(view: TeamCbomView, styles: Styles, width: float) -> list[Flowab
 
 
 def build_pdf(view: TeamCbomView, *, ctx: Any = None) -> bytes:
-    """Render SOW D9. Returns PDF bytes."""
+    """Render SOW deliverable D9. Returns PDF bytes."""
     return build_document(ctx=ctx, 
         view=view,
         number=DOCUMENT_NUMBER,

@@ -34,7 +34,7 @@ from backend.utilities.pdf.cbom_deliverable_common import section_heading as _se
 from backend.utilities.pdf.cbom_pdf_outline import Bookmark
 from backend.utilities.pdf.report_branding import REPORT_META
 
-DOCUMENT_NUMBER = 7  # SOW Table 7: D7 Network, TLS and Crypto Protocol Assessment
+DOCUMENT_NUMBER = 7  # SOW D7 (REPORT_META sow_id; the Document ID reads it)
 REPORT_KEY = "cbom_network_tls"
 _SIGNOFF = ("Prepared by", "Reviewed by", "Approved by")
 _OFFERED = {"offered": "offered", "not_offered": "not offered", "unknown": "unknown"}

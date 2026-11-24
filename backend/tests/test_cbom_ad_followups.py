@@ -34,7 +34,7 @@ from test_cbom_sources_posture_d6_d9_d10 import cell_text, iter_tables, kpi_card
 NOW = dt.datetime(2026, 11, 23, 12, 0, tzinfo=dt.UTC)
 WIDTH = 720.0
 AD_SOURCE = "Corp Active Directory"
-AD_LABEL = f"Sources run #52 · {AD_SOURCE}"
+AD_LABEL = AD_SOURCE  # a source is labelled by its name (PR #485 m8)
 
 
 def _view(sources=None) -> TeamCbomView:
@@ -328,7 +328,7 @@ def test_m2_two_sources_reading_one_domain_each_list_their_own_accounts_once():
     sources["Corp AD (site B)"] = (kind, run, copy.deepcopy(items))
     rows = rows_under(_story(d6, _view(sources)), "Domain")
     by = {(r["Source"], r["Check"]): r["Reading"] for r in rows}
-    for label in (AD_LABEL, "Sources run #52 · Corp AD (site B)"):
+    for label in (AD_LABEL, "Corp AD (site B)"):
         assert by[(label, "Accounts with RC4 only")] == "1: svc-rc4only"
         assert by[(label, "Accounts on the DC default")] == "6: svc-sql, svc-zero and 4 more not listed"
     assert len(rows) == 10

@@ -594,7 +594,7 @@ def test_build_pdf_is_a_valid_landscape_pdf(base_pdf):
 
 def test_document_identity_metadata_and_footer(base_pdf, base_text):
     title = REPORT_META["cbom_assurance_register"]["title"]
-    assert title == "Third-Party Cryptographic Assurance & Attestation Register"
+    assert title == "Third-Party Cryptographic Assurance and Attestation Register"
     assert title in (info_field(base_pdf, "Title") or "")
     assert "E2E Demo Team" in (info_field(base_pdf, "Title") or "")
     assert "CBOM-D10-T1-20261019" in (info_field(base_pdf, "Subject") or "")

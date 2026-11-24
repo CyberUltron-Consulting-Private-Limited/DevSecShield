@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 
 from backend.utilities.cbom_sources.common import NAME_RE, log
 from backend.utilities.cbom_sources.kinds import KIND_NAMES, check_http_url, check_pem_certificates, check_timezone, check_window_grid
@@ -247,6 +247,15 @@ class SettingsUpdate(_Body):
     soc_email: str | None = Field(default=None, max_length=254)
     emergency_contact: str | None = Field(default=None, max_length=64)
     risk_model: RiskModel | None = None
+    # the team's regulatory profile (regulated_entity.py), stored beside the Mosca inputs: which RBI instrument the
+    # regulatory mapping cites, and the facts that decide whether PCI DSS, SEBI CSCRF and the CERT-In Guidelines for
+    # Government Entities bind the team (SOW audit A-11). null leaves a value as it is.
+    regulated_entity: Literal["nbfc", "bank", "sfb", "payments_bank", "ucb", "aifi", "credit_info_company",
+                              "other"] | None = None
+    # strict: "yes", 1 or "true" is a 422, never a silently switched-on framework (PR #485 review 2 m2)
+    processes_card_data: StrictBool | None = None
+    sebi_regulated: StrictBool | None = None
+    government_entity: StrictBool | None = None
     require_signed_nodes: bool | None = None
     expected_version: int | None = None
 

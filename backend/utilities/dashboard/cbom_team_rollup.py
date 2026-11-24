@@ -334,6 +334,15 @@ class AssetAgg:
     # the classifier flagged; collections_view.SourcesRow.clause_evidence), so the deliverables cite as the run API
     # does and never on the asset's title or sentence (#289); None or a missing code: not recorded
     clause_evidence: Mapping[str, Any] | None = field(default=None, compare=False, repr=False)
+    # the results[] row's own kind (``algorithm_type``: "library", "configuration", "key", "protocol", a primitive ...)
+    # and, for a CBOM Sources row, the collector's asset type (``tls_endpoint``, ``kms_key`` ...): D1 counts the
+    # population by SOW layer and by what each asset is, so a library or a setting never lands in "Other"
+    row_kind: str | None = field(default=None, compare=False, repr=False)
+    node_type: str | None = field(default=None, compare=False, repr=False)
+    # CBOM Sources rows only: the asset's identity across sources (``collections_view`` identity without the source:
+    # two sources reading one AWS account observe the same parameter; a certificate's link key), so the board report
+    # lists an asset once among its material risks (review M7b). None for code-scan rows.
+    asset_key: str | None = field(default=None, compare=False, repr=False)
 
 
 @dataclass
@@ -650,7 +659,7 @@ class CollectionAgg:
     """One CBOM Sources source's latest completed collection (``collections_view.Collection``), as documents name it."""
 
     key: str  # "sources:<source uid>" (the SourceAgg / AssetAgg source_key)
-    label: str  # "Sources run #8 · range-10.0.0.0-24"
+    label: str  # the source's name, e.g. "range-10.0.0.0-24" (the run is ``run_id``)
     source_name: str
     source_kind: str  # CbomCollectionSource.kind ("network", "servers", "aws" ...), "" for a deleted source
     run_id: int
@@ -658,6 +667,11 @@ class CollectionAgg:
     observed_at: datetime  # job finished_at, tz-aware UTC
     asset_count: int = 0  # assets of the collection, before cross-scope de-duplication
     endpoints_probed: int = 0  # TLS / SSH endpoints the scan node connected to
+    # the source's metadata (C5: owner, application, data_classification, data_lifetime_years, business_criticality,
+    # exposure, environment), as the source holds it now; D1 prints it instead of blank owner cells
+    metadata: Mapping[str, Any] = field(default_factory=dict, compare=False, repr=False)
+    # how the collection was made (``collections_view.collection_info``: method, window, credential reference by name)
+    info: Mapping[str, Any] = field(default_factory=dict, compare=False, repr=False)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -735,8 +749,24 @@ class TeamCbomView:
     # Not part of the fold: excluded from equality and repr (a DB-loaded view equals the in-memory fold of its scans).
     remediation: dict[str, Any] | None = field(default=None, compare=False, repr=False)
     # the team's quantum risk register (``cbom_sources.risk_register.report``: summary, heat-map, top Q1 items, open
-    # Q0 gaps) for deliverable #2; None = not loaded. Not part of the fold, like ``remediation``.
+    # Q0 gaps) for SOW deliverable D12; None = not loaded. Not part of the fold, like ``remediation``.
     register: dict[str, Any] | None = field(default=None, compare=False, repr=False)
+    # the team's regulated-entity type (CBOM settings, ``regulated_entity.ENTITY_TYPES``): selects the RBI instrument
+    # the regulatory mapping cites (an NBFC is not bound by the Commercial Banks Directions). Not part of the fold.
+    regulated_entity: str = field(default="nbfc", compare=False)
+    # the team's whole regulatory profile (``regulated_entity.profile_of``: jurisdiction, entity, flags such as
+    # processes_card_data); None = the default profile of ``regulated_entity``. Decides which frameworks and clauses
+    # bind the team (SOW audit A-11). Not part of the fold.
+    regulatory_profile: dict[str, Any] | None = field(default=None, compare=False)
+    # the quantum risk register's grade inputs (``risk_register.team_inputs``: Mosca X/Y/Z and per-source data
+    # lifetime / exposure digest) and the grade model version; None = not loaded. Not part of the fold.
+    grade_inputs: dict[str, Any] | None = field(default=None, compare=False)
+    # how ``merge_collections`` counted the Sources collections (D1 reconciliation, SOW audit A-09):
+    # ``code_certs_superseded``: code-scan certificate rows counted from a Sources observation instead. Not compared.
+    cross_scope: dict[str, int] = field(default_factory=dict, compare=False)
+    # the previous board report issued to the team (``board_issues.previous``: its Document ID, as-of day and headline
+    # figures), None for the first issue. Read by D14 only. Not part of the fold.
+    previous_issue: dict[str, Any] | None = field(default=None, compare=False)
     # D2's live collection set-up (``cbom_sources.methodology_facts.load``: sources by kind and provider, ports, scan
     # window, nodes, schedules, runs by trigger); None = not loaded. Not part of the fold, like ``register``.
     methodology: dict[str, Any] | None = field(default=None, compare=False, repr=False)
@@ -746,6 +776,23 @@ class TeamCbomView:
     # the vendor attestation register of SOW D10 (``cbom_sources.evidence.vendor_register``: the Evidence tab's vendor
     # questionnaires); empty = none recorded or not loaded. Not part of the fold, like ``remediation``.
     vendors: tuple[dict[str, Any], ...] = field(default=(), compare=False, repr=False)
+
+    @property
+    def document_digest(self) -> str:
+        """The fingerprint the Document ID and ``X-Cbom-Fingerprint`` print (12 hex characters, SOW review M1).
+
+        ``fingerprint`` covers the scans and collections only. The documents also print what the team's settings
+        and the register decide: the regulatory profile (which RBI instrument and frameworks bind the team), each
+        Sources source's metadata (owner, data lifetime, exposure ...), the register's grade inputs and grade model
+        version, the register's grade counts, D2's live collection set-up (``methodology``), D10's vendor register
+        (``vendors``) and, for D14, the previous issue's Document ID. Any change there gives another digest, so two
+        documents with different content never share an ID. A view without any of them (a fold of scans only, as the
+        tests build) keeps ``fingerprint`` itself, and so does the default profile: its documents are the same."""
+        content = _document_content(self)
+        if not content:
+            return self.fingerprint
+        text = json.dumps(content, sort_keys=True, separators=(",", ":"), default=str)
+        return hashlib.sha256(f"{self.fingerprint}|content|{text}".encode("utf-8", "replace")).hexdigest()[:12]
 
     @property
     def is_empty(self) -> bool:
@@ -762,6 +809,37 @@ class TeamCbomView:
         if self.fidelity_full == 0:
             return "reduced"
         return "mixed"
+
+
+def _document_content(view: TeamCbomView) -> dict[str, Any]:
+    """What a document prints beyond the scans: only the parts that differ from an empty / default view."""
+    out: dict[str, Any] = {}
+    profile = view.regulatory_profile
+    if profile is not None:
+        default = {"jurisdiction": "IN", "entity": "nbfc", "flags": []}
+        if {k: profile.get(k) for k in default} != default:
+            out["profile"] = {k: profile.get(k) for k in default}
+    elif view.regulated_entity not in ("", "nbfc"):
+        out["profile"] = {"entity": view.regulated_entity}
+    metadata = {c.key: {**dict(c.metadata), "credential": (c.info or {}).get("credential")}
+                for c in view.collections if c.metadata or (c.info or {}).get("credential")}
+    if metadata:
+        out["metadata"] = metadata
+    if view.grade_inputs:
+        out["grade_inputs"] = dict(view.grade_inputs)
+    summary = (view.register or {}).get("summary") if isinstance(view.register, dict) else None
+    if isinstance(summary, dict):
+        out["register"] = {k: summary.get(k) for k in ("total", "q_grades", "q0_reasons", "model_version")}
+    # D2 prints the live collection set-up (ports, window, nodes, schedules) and D10 the vendor attestation register:
+    # a change there is new content, so a new ID (PR #485 review 2, B1' / M1)
+    if isinstance(view.methodology, dict) and view.methodology:
+        out["methodology"] = view.methodology
+    if view.vendors:
+        out["vendors"] = [dict(v) for v in view.vendors]
+    # D14 prints a trend against the previous issue: an ID names one trend (review 2 m5)
+    if isinstance(view.previous_issue, dict) and view.previous_issue.get("document_id"):
+        out["previous_issue"] = str(view.previous_issue["document_id"])
+    return out
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1140,6 +1218,7 @@ def _asset_from_row(row: Mapping[str, Any], facts: ScanFacts) -> AssetAgg:
         not_valid_after=_text(row.get("not_valid_after")),
         security_strength_bits=_int(row.get("security_strength_bits")),
         risk_score=_float(row.get("risk_score")),
+        row_kind=_text(row.get("algorithm_type")),
         quantum_vulnerable=quantum_vulnerable,
         broken_today=quantum_vulnerable is False and code_row_broken_today(plain),
         quantum_safe=quantum_safe,
@@ -3134,6 +3213,14 @@ def _pool_sources_compliance(code_frameworks: Sequence[FrameworkPool], code_requ
     return tuple(ordered), tuple(sorted(merged.values(), key=lambda r: (r.framework, r.req_id)))
 
 
+def _cross_source_key(identity: str) -> str | None:
+    """``node|<source>|<own identity>`` -> ``node|<own identity>``; a certificate's link key is already cross-source."""
+    if not identity:
+        return None
+    if identity.startswith("node|"):
+        parts = identity.split("|", 2)
+        return f"node|{parts[2]}" if len(parts) == 3 else identity
+    return identity
 def _lib_name_version(name: str, version: str) -> tuple[str, str]:
     """``("pyjwt", "2.3.0")`` for ``pyjwt@2.3.0`` (the engine's advisory components name the version) or a name with
     a separate version."""
@@ -3243,7 +3330,7 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
     vocabulary, judged as the run page judges them).  The rule of ``collections_view`` applies: a certificate
     observed by a code scan and by a Sources collection is ONE asset and the latest observation is counted (the
     other is left out of every count); every other Sources asset is its own asset of its own source
-    ("sources:<uid>", labelled "Sources run #<run> · <name>").  Headline counts are recomputed by ``_headline`` over
+    ("sources:<uid>", labelled by the source's name).  Headline counts are recomputed by ``_headline`` over
     the merged current assets, so every document agrees with the CBOM dashboard.  TLS endpoints a scan node probed
     become posture facts with evidence ``probed:CBOM Sources`` (the Network TLS document lists them)."""
     import backend.utilities.cbom_sources.posture_mapper as mapper
@@ -3254,7 +3341,9 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
         return view
     aggs = {c.key: CollectionAgg(key=c.key, label=c.label, source_name=c.source_name, source_kind=c.source_kind,
                                  run_id=int(c.run_id), job_id=int(c.job_id), observed_at=_utc(c.observed_at) or _EPOCH,
-                                 asset_count=int(c.asset_count), endpoints_probed=int(c.endpoints_probed))
+                                 asset_count=int(c.asset_count), endpoints_probed=int(c.endpoints_probed),
+                                 metadata=dict(getattr(c, "metadata", None) or {}),
+                                 info=dict(getattr(c, "info", None) or {}))
             for c in collections}
     # 1. code certificates with a cross-scope identity; latest observation wins
     code_ident: dict[str, str] = {}
@@ -3292,6 +3381,8 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
         asset = _asset_from_row(item.row, shell)  # a fresh object: set in place (dataclasses.replace copies it)
         asset.current, asset.tier, asset.latest_scan_id, asset.scan_ids = True, TIER_A, None, ()
         asset.clause_evidence = getattr(item, "clause_evidence", None) or None
+        asset.node_type = getattr(item, "node_type", None) or None
+        asset.asset_key = _cross_source_key(str(getattr(item, "identity", "") or ""))
         assets.append(asset)
         if asset.asset_type == ASSET_CERTIFICATE:
             f = item.facts if isinstance(item.facts, Mapping) else {}
@@ -3395,6 +3486,11 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
         collections=tuple(sorted(aggs.values(), key=lambda a: (a.label.casefold(), a.key))), **_headline(live))
     merged.remediation = view.remediation
     merged.register = view.register
+    merged.regulated_entity = view.regulated_entity
+    merged.regulatory_profile = view.regulatory_profile
+    merged.grade_inputs = view.grade_inputs
+    merged.previous_issue = view.previous_issue
+    merged.cross_scope = {**view.cross_scope, "code_certs_superseded": len(dropped_certs)}
     return merged
 
 
@@ -3457,6 +3553,21 @@ def load_team_cbom_view(engine: Any, team_id: int, *, now: datetime | None = Non
 
         found = load_sources_result(session, team_id, moment)
         view = merge_collections(view, found.rows, found.collections)
+        try:  # the regulatory profile the mapping cites (CBOM settings; an NBFC with no flags when not set)
+            from backend.utilities.cbom_sources.regulated_entity import team_profile
+
+            view.regulatory_profile = team_profile(session, team_id)
+            view.regulated_entity = view.regulatory_profile["entity"]
+        except Exception as exc:  # noqa: BLE001  # pragma: no cover - defensive: the default (NBFC) stays
+            view.warnings = (*view.warnings, f"regulated-entity setting not read: {type(exc).__name__}")
+        try:  # the register's grade inputs (Mosca, per-source lifetime / exposure) and model: in the Document ID (M1)
+            from backend.utilities.cbom_sources.qgrade import GRADE_MODEL_VERSION
+            from backend.utilities.cbom_sources.risk_register import team_inputs
+
+            view.grade_inputs = {"digest": team_inputs(session, team_id).digest, "model_version": GRADE_MODEL_VERSION}
+        except Exception as exc:  # pragma: no cover - defensive
+            view.grade_inputs = None
+            view.warnings = (*view.warnings, f"grade inputs not read: {type(exc).__name__}")
         try:  # every latest-collection row with its facts, for D7 (network) and D8 (certificates)
             from backend.utilities.cbom_sources.cert_estate import load_inputs as estate_inputs
 

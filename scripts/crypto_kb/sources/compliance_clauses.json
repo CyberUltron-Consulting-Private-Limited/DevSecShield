@@ -9,8 +9,13 @@
   "CA_ALLOWS_WEAK_KEY": {
    "clauses": [
     "nist-800-131a-below-112-bit",
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "the CA issues certificates for RSA < 2048 / EC < 224 keys: below 112-bit security (SP 800-131A) and not a strong key length (RBI)",
    "rules": []
@@ -28,8 +33,13 @@
   "CA_WEAK_SIGNING": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "the CA signs certificate chains with MD5 or SHA-1, a deprecated algorithm (CERT-In 8.4.2.2 approved certificate chains; RBI); SHA-1 signature generation only when the evidence names SHA-1",
    "rules": [
@@ -46,8 +56,13 @@
   "CBC_ACCEPTED": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "CBC-mode (MAC-then-encrypt) TLS suites are weak cipher suites (CERT-In 8.4.2.2, RBI); the algorithm itself is AES, so no NIST or SEBI algorithm clause",
    "rules": []
@@ -55,8 +70,13 @@
   "CBC_ONLY": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "as CBC_ACCEPTED, with no AEAD alternative offered",
    "rules": []
@@ -131,8 +151,13 @@
   },
   "DB_10G_VERIFIER": {
    "clauses": [
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "a DES-based password verifier is a deprecated algorithm for an authentication purpose (RBI cryptographic controls)",
    "rules": []
@@ -142,9 +167,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
+    "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "the password crosses the network unencrypted: data in transit not protected",
+   "basis": "the password crosses the network unencrypted: data in transit not protected; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "DB_EOL_VERSION": {
@@ -161,8 +192,13 @@
   },
   "DB_LEGACY_PW_HASH": {
    "clauses": [
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "a SHA-1 based password hash is a deprecated algorithm for an authentication purpose",
    "rules": []
@@ -174,24 +210,39 @@
   },
   "DB_MD5_ACCEPTED": {
    "clauses": [
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "MD5 password authentication is a deprecated algorithm for an authentication purpose",
    "rules": []
   },
   "DB_MD5_DEFAULT": {
    "clauses": [
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "new passwords hashed with MD5, a deprecated algorithm for an authentication purpose",
    "rules": []
   },
   "DB_NATIVE_PW": {
    "clauses": [
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "mysql_native_password (SHA-1 based, deprecated by MySQL) for an authentication purpose",
    "rules": []
@@ -211,15 +262,26 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
+    "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "the database accepts plaintext connections only: data in transit not protected",
+   "basis": "the database accepts plaintext connections only: data in transit not protected; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "DB_OLD_PASSWORD": {
    "clauses": [
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "the pre-4.1 MySQL hash is a broken algorithm for an authentication purpose",
    "rules": []
@@ -229,9 +291,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-pr-ds-s1-s3-1a",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-120",
+    "rbi-nbfc-2026-para-95",
     "certin-gov-7.1"
    ],
-   "basis": "passwords stored unhashed: sensitive data at rest without protection",
+   "basis": "passwords stored unhashed: sensitive data at rest without protection; RBI: each entity type's own data-at-rest paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 120 for Level II and above, NBFC 95(4) secure storage)",
    "rules": []
   },
   "DB_TDE_OFF": {
@@ -244,9 +312,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
+    "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "the TLS mode allows plaintext connections: data in transit not protected",
+   "basis": "the TLS mode allows plaintext connections: data in transit not protected; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "DB_TLS_OPTIONAL": {
@@ -254,9 +328,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
+    "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "TLS is not required, so plaintext connections are accepted",
+   "basis": "TLS is not required, so plaintext connections are accepted; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "DB_TRUST": {
@@ -266,8 +346,13 @@
   },
   "DB_WEAK_HASH": {
    "clauses": [
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "MD5 password hashing is a deprecated algorithm for an authentication purpose",
    "rules": []
@@ -275,8 +360,13 @@
   "DH_LT_2048": {
    "clauses": [
     "nist-800-131a-below-112-bit",
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "Diffie-Hellman below 2048 bits: key agreement below 112-bit security (SP 800-131A); not a strong key length (RBI)",
    "rules": []
@@ -291,9 +381,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-pr-ds-s1-s3-1a",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-120",
+    "rbi-nbfc-2026-para-95",
     "certin-gov-7.1"
    ],
-   "basis": "with BitLocker suspended the volume key sits unprotected on the disk, so the data is effectively not encrypted at rest",
+   "basis": "with BitLocker suspended the volume key sits unprotected on the disk, so the data is effectively not encrypted at rest; RBI: each entity type's own data-at-rest paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 120 for Level II and above, NBFC 95(4) secure storage)",
    "rules": []
   },
   "DISK_UNENCRYPTED": {
@@ -301,9 +397,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-pr-ds-s1-s3-1a",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-120",
+    "rbi-nbfc-2026-para-95",
     "certin-gov-7.1"
    ],
-   "basis": "no encryption at rest",
+   "basis": "no encryption at rest; RBI: each entity type's own data-at-rest paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 120 for Level II and above, NBFC 95(4) secure storage)",
    "rules": []
   },
   "DISK_XTS_128": {
@@ -316,8 +418,13 @@
   "DOTNET_WEAK_TLS": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "sebi-annexure-i"
    ],
    "basis": ".NET may offer SSL 3.0 / TLS 1.0 and RC4: deprecated protocols and weak suites, not strong transport encryption",
@@ -332,8 +439,13 @@
   },
   "DSA": {
    "clauses": [
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "DSA is no longer approved for signature generation (FIPS 186-5): a deprecated algorithm (RBI); the 112-bit clause is not cited because this code does not carry the key size",
    "rules": []
@@ -346,8 +458,13 @@
   "EC_LT_224": {
    "clauses": [
     "nist-800-131a-below-112-bit",
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "EC below 224 bits: below 112-bit security (SP 800-131A); not a strong key length (RBI)",
    "rules": []
@@ -357,9 +474,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-pr-ds-s1-s3-1a",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-120",
+    "rbi-nbfc-2026-para-95",
     "certin-gov-7.1"
    ],
-   "basis": "catalog metadata (including connection properties) not encrypted at rest",
+   "basis": "catalog metadata (including connection properties) not encrypted at rest; RBI: each entity type's own data-at-rest paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 120 for Level II and above, NBFC 95(4) secure storage)",
    "rules": []
   },
   "GLUE_JDBC_NO_TLS": {
@@ -367,9 +490,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
+    "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "Glue may connect to the database without TLS: data in transit not protected",
+   "basis": "Glue may connect to the database without TLS: data in transit not protected; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "GLUE_PLAINTEXT_PASSWORD": {
@@ -377,16 +506,27 @@
     "sebi-pr-ds-standard-1",
     "sebi-pr-ds-s1-s3-1a",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-120",
+    "rbi-nbfc-2026-para-95",
     "certin-gov-7.1"
    ],
-   "basis": "a database password stored unencrypted: sensitive data at rest without protection (a password, not an encryption key, so not SEBI Annexure-H item 5)",
+   "basis": "a database password stored unencrypted: sensitive data at rest without protection (a password, not an encryption key, so not SEBI Annexure-H item 5); RBI: each entity type's own data-at-rest paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 120 for Level II and above, NBFC 95(4) secure storage)",
    "rules": []
   },
   "IKEV1_ENABLED": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "IKEv1 is deprecated (RFC 9395): a deprecated protocol (CERT-In 8.4.2.2, RBI)",
    "rules": []
@@ -394,8 +534,13 @@
   "IKE_AGGRESSIVE": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "Aggressive Mode with a PSK exposes an offline-crackable hash: a protocol configuration demonstrated to be insecure",
    "rules": []
@@ -414,8 +559,13 @@
   "IKE_WEAK_DH": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "weak or suspect DH groups (RFC 8247 MUST NOT / SHOULD NOT); below 112-bit security only for MODP-768/1024/1536 and ECP-192 (the RFC 5114 2048-bit groups are 112-bit)",
    "rules": [
@@ -432,8 +582,13 @@
   "IKE_WEAK_ENCR": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "every algorithm the classifier flags for this code is in node_net.WEAK_ENCR (DES, 3DES, Blowfish, IDEA, CAST, NULL; RFC 8247 MUST NOT / SHOULD NOT): a deprecated algorithm (CERT-In, RBI); SEBI H-5 for an encryption algorithm (not NULL); TDEA only when 3DES is named",
    "rules": [
@@ -465,8 +620,13 @@
      "match": "md5|des-mac",
      "clauses": [
       "certin-bom-8.4.2.2",
-      "rbi-md-2023-para-16",
-      "rbi-cb-2026-para-140"
+      "rbi-sfb-2026-para-139",
+      "rbi-pb-2026-para-139",
+      "rbi-ucb-2026-para-25",
+      "rbi-aifi-2026-para-135",
+      "rbi-cic-2026-para-135",
+      "rbi-cb-2026-para-140",
+      "rbi-nbfc-2026-para-118"
      ],
      "example": "HMAC-MD5",
      "basis": "MD5-based integrity or PRF in IKE is MUST NOT (RFC 8247), as node_net._md5_class decides: a deprecated algorithm"
@@ -481,8 +641,13 @@
      "match_from": "classify_ext/node_net.py:WEAK_ENCR",
      "clauses": [
       "certin-bom-8.4.2.2",
-      "rbi-md-2023-para-16",
-      "rbi-cb-2026-para-140"
+      "rbi-sfb-2026-para-139",
+      "rbi-pb-2026-para-139",
+      "rbi-ucb-2026-para-25",
+      "rbi-aifi-2026-para-135",
+      "rbi-cic-2026-para-135",
+      "rbi-cb-2026-para-140",
+      "rbi-nbfc-2026-para-118"
      ],
      "example": "CAST",
      "basis": "a deprecated ESP encryption transform, read from the classifier's own list (node_net.WEAK_ENCR)"
@@ -491,8 +656,13 @@
      "match": "md5|des-mac",
      "clauses": [
       "certin-bom-8.4.2.2",
-      "rbi-md-2023-para-16",
-      "rbi-cb-2026-para-140"
+      "rbi-sfb-2026-para-139",
+      "rbi-pb-2026-para-139",
+      "rbi-ucb-2026-para-25",
+      "rbi-aifi-2026-para-135",
+      "rbi-cic-2026-para-135",
+      "rbi-cb-2026-para-140",
+      "rbi-nbfc-2026-para-118"
      ],
      "example": "HMAC-MD5",
      "basis": "MD5-based or DES-MAC integrity (RFC 8221 MUST NOT), as node_net._md5_class decides"
@@ -501,8 +671,13 @@
      "match_from": "classify_ext/node_net.py:WEAK_GROUPS",
      "clauses": [
       "certin-bom-8.4.2.2",
-      "rbi-md-2023-para-16",
-      "rbi-cb-2026-para-140"
+      "rbi-sfb-2026-para-139",
+      "rbi-pb-2026-para-139",
+      "rbi-ucb-2026-para-25",
+      "rbi-aifi-2026-para-135",
+      "rbi-cic-2026-para-135",
+      "rbi-cb-2026-para-140",
+      "rbi-nbfc-2026-para-118"
      ],
      "example": "PFS MODP-1024",
      "basis": "a weak PFS group, read from the classifier's own list (node_net.WEAK_GROUPS)"
@@ -589,8 +764,13 @@
   },
   "KEY_WEAK_SYMMETRIC": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "sebi-annexure-h-5"
    ],
    "basis": "a stored key or data encrypted with a broken or deprecated cipher (RBI; SEBI strong encryption algorithms); TDEA only when the evidence names Triple DES",
@@ -675,9 +855,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
+    "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "clients without a mesh TLS identity are admitted, so their traffic is not mTLS-protected in transit",
+   "basis": "clients without a mesh TLS identity are admitted, so their traffic is not mTLS-protected in transit; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "LUKS1": {
@@ -690,9 +876,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
+    "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "sidecars send plaintext: data in transit not protected",
+   "basis": "sidecars send plaintext: data in transit not protected; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "MESH_MTLS_OFF": {
@@ -700,9 +892,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
+    "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "mTLS off: data in transit not protected",
+   "basis": "mTLS off: data in transit not protected; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "MESH_MTLS_PERMISSIVE": {
@@ -710,16 +908,27 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
+    "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "plaintext still accepted",
+   "basis": "plaintext still accepted; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "MIN_SSLv2": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "sebi-annexure-i"
    ],
    "basis": "a deprecated protocol version (RFC 6176 / 7568 / 8996) is allowed: not a strict TLS configuration (CERT-In 8.4.2.2), not strong transport encryption (SEBI Annexure-I), a deprecated protocol (RBI)",
@@ -728,8 +937,13 @@
   "MIN_SSLv3": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "sebi-annexure-i"
    ],
    "basis": "a deprecated protocol version (RFC 6176 / 7568 / 8996) is allowed: not a strict TLS configuration (CERT-In 8.4.2.2), not strong transport encryption (SEBI Annexure-I), a deprecated protocol (RBI)",
@@ -738,8 +952,13 @@
   "MIN_TLS10": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "sebi-annexure-i"
    ],
    "basis": "a deprecated protocol version (RFC 6176 / 7568 / 8996) is allowed: not a strict TLS configuration (CERT-In 8.4.2.2), not strong transport encryption (SEBI Annexure-I), a deprecated protocol (RBI)",
@@ -748,8 +967,13 @@
   "MIN_TLS11": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "sebi-annexure-i"
    ],
    "basis": "a deprecated protocol version (RFC 6176 / 7568 / 8996) is allowed: not a strict TLS configuration (CERT-In 8.4.2.2), not strong transport encryption (SEBI Annexure-I), a deprecated protocol (RBI)",
@@ -760,9 +984,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
+    "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "Modbus/TCP has no encryption: data in transit not protected",
+   "basis": "Modbus/TCP has no encryption: data in transit not protected; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "NO_FALLBACK_SCSV": {
@@ -788,16 +1018,27 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
+    "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "plaintext only: data in transit not protected",
+   "basis": "plaintext only: data in transit not protected; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "NO_TLS12": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "sebi-annexure-i"
    ],
    "basis": "only deprecated protocol versions are offered",
@@ -811,8 +1052,13 @@
   "OPCUA_DEPRECATED_POLICY": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "nist-800-131a-sha1-signatures"
    ],
    "basis": "Basic128Rsa15 and Basic256 (deprecated in OPC UA 1.04) both sign with RSA-SHA1 (SP 800-131A Table 8); PKCS#1 v1.5 key transport only for Basic128Rsa15",
@@ -832,9 +1078,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
+    "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "messages neither signed nor encrypted: data in transit not protected",
+   "basis": "messages neither signed nor encrypted: data in transit not protected; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "OPCUA_USERNAME_PLAINTEXT": {
@@ -842,15 +1094,26 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
+    "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "the password is sent unencrypted",
+   "basis": "the password is sent unencrypted; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "OPENSSL_ENC_WEAK_KDF": {
    "clauses": [
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "EVP_BytesToKey (one MD5/SHA-256 round) is a key derivation demonstrated to be weak (RBI cryptographic controls for processing of data)",
    "rules": []
@@ -860,16 +1123,27 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
+    "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "the application is also served over plaintext HTTP",
+   "basis": "the application is also served over plaintext HTTP; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "POLICY_LEGACY": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "nist-800-131a-sha1-signatures"
    ],
    "basis": "LEGACY re-enables TLS 1.0/1.1 and SHA-1 signatures host-wide: deprecated protocols and SHA-1 signature generation (SP 800-131A Table 8)",
@@ -878,8 +1152,13 @@
   "PROTO_SSLv2": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "sebi-annexure-i"
    ],
    "basis": "a deprecated protocol version (RFC 6176 / 7568 / 8996) is negotiated: not a strict TLS configuration (CERT-In 8.4.2.2), not strong transport encryption (SEBI Annexure-I), a deprecated protocol (RBI)",
@@ -888,8 +1167,13 @@
   "PROTO_SSLv3": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "sebi-annexure-i"
    ],
    "basis": "a deprecated protocol version (RFC 6176 / 7568 / 8996) is negotiated: not a strict TLS configuration (CERT-In 8.4.2.2), not strong transport encryption (SEBI Annexure-I), a deprecated protocol (RBI)",
@@ -898,8 +1182,13 @@
   "PROTO_TLS10": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "sebi-annexure-i"
    ],
    "basis": "a deprecated protocol version (RFC 6176 / 7568 / 8996) is negotiated: not a strict TLS configuration (CERT-In 8.4.2.2), not strong transport encryption (SEBI Annexure-I), a deprecated protocol (RBI)",
@@ -908,8 +1197,13 @@
   "PROTO_TLS11": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "sebi-annexure-i"
    ],
    "basis": "a deprecated protocol version (RFC 6176 / 7568 / 8996) is negotiated: not a strict TLS configuration (CERT-In 8.4.2.2), not strong transport encryption (SEBI Annexure-I), a deprecated protocol (RBI)",
@@ -936,17 +1230,28 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
+    "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7",
     "certin-gov-4.5.7"
    ],
-   "basis": "the legacy RDP security layer (RC4, no server certificate) instead of TLS for a remote connection to a server (CERT-In 4.5.7, 6.2.7; SEBI; RBI para 106)",
+   "basis": "the legacy RDP security layer (RC4, no server certificate) instead of TLS for a remote connection to a server (CERT-In 4.5.7, 6.2.7; SEBI; RBI para 106); RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "RSA_LT_1024": {
    "clauses": [
     "nist-800-131a-below-112-bit",
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "RSA below 1024 bits: below 112-bit security; not a strong key length",
    "rules": []
@@ -954,8 +1259,13 @@
   "RSA_LT_2048": {
    "clauses": [
     "nist-800-131a-below-112-bit",
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "RSA below 2048 bits: below 112-bit security (SP 800-131A); not a strong key length",
    "rules": []
@@ -982,16 +1292,27 @@
     "sebi-pr-ds-standard-1",
     "sebi-pr-ds-s1-s3-1a",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-120",
+    "rbi-nbfc-2026-para-95",
     "certin-gov-7.1"
    ],
-   "basis": "a secret stored and returned unencrypted: sensitive data at rest without protection",
+   "basis": "a secret stored and returned unencrypted: sensitive data at rest without protection; RBI: each entity type's own data-at-rest paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 120 for Level II and above, NBFC 95(4) secure storage)",
    "rules": []
   },
   "SIG_MD5": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "certin-gov-6.1.7"
    ],
    "basis": "an MD5-signed certificate: a broken algorithm in the certificate chain (CERT-In 8.4.2.2, RBI), not a valid certificate for clients (CERT-In 6.1.7); no NIST clause names MD5",
@@ -1000,8 +1321,13 @@
   "SIG_SHA1": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "certin-gov-6.1.7",
     "nist-800-131a-sha1-signatures"
    ],
@@ -1011,8 +1337,13 @@
   "SSH_CBC_CIPHER": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "CBC-mode SSH ciphers are weak (plaintext-recovery attacks): CERT-In 8.4.2.2, RBI. TDEA and SEBI only when 3des-cbc is among them; no PKCS#1 or SHA-1 clause",
    "rules": [
@@ -1030,8 +1361,13 @@
   "SSH_DH_GROUP1": {
    "clauses": [
     "nist-800-131a-below-112-bit",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "certin-bom-8.4.2.2",
     "nist-800-131a-sha1-signatures"
    ],
@@ -1044,8 +1380,13 @@
   "SSH_DH_SHA1": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "nist-800-131a-sha1-signatures"
    ],
    "basis": "SHA-1 key exchange (RFC 9142 SHOULD NOT): the SHA-1 exchange hash is what the server's host key signs, so the signature rests on SHA-1 (SP 800-131A Table 8); no TDEA or PKCS#1 clause",
@@ -1057,8 +1398,13 @@
   "SSH_DSS": {
    "clauses": [
     "nist-800-131a-below-112-bit",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "certin-bom-8.4.2.2"
    ],
    "basis": "1024-bit DSA host keys: signature generation below 112-bit security; removed by OpenSSH",
@@ -1083,8 +1429,13 @@
   "SSH_RSA_SHA1": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "nist-800-131a-sha1-signatures"
    ],
    "basis": "ssh-rsa signs with SHA-1: SHA-1 signature generation (SP 800-131A Table 8)",
@@ -1098,8 +1449,13 @@
   "SSH_V1_ENABLED": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "certin-gov-4.5.7"
    ],
    "basis": "SSH-1 is a broken protocol for remote connections (CERT-In 4.5.7 asks for secure protocols such as SSH)",
@@ -1108,8 +1464,13 @@
   "SSH_WEAK_CIPHER": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "sebi-annexure-h-5"
    ],
    "basis": "arcfour, 3DES, Blowfish, CAST128 or none: broken encryption ciphers; TDEA only when 3DES is named",
@@ -1128,8 +1489,13 @@
   "SSH_WEAK_MAC": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "hmac-md5 or truncated MACs: deprecated integrity algorithms",
    "rules": []
@@ -1137,8 +1503,13 @@
   "STATIC_RSA_KEX": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "nist-800-131a-pkcs1-v1_5",
     "nist-ir-8547",
     "cnsa-2.0",
@@ -1154,9 +1525,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
+    "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "requests without TLS are not denied",
+   "basis": "requests without TLS are not denied; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "STORAGE_UNENCRYPTED": {
@@ -1164,16 +1541,27 @@
     "sebi-pr-ds-standard-1",
     "sebi-pr-ds-s1-s3-1a",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-120",
+    "rbi-nbfc-2026-para-95",
     "certin-gov-7.1"
    ],
-   "basis": "no encryption at rest",
+   "basis": "no encryption at rest; RBI: each entity type's own data-at-rest paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 120 for Level II and above, NBFC 95(4) secure storage)",
    "rules": []
   },
   "TLS_ANON_CIPHER": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "anonymous suites authenticate no one: strict TLS (CERT-In 8.4.2.2) and a configuration demonstrated insecure (RBI); the cipher itself may be strong (AES), so no SEBI clause",
    "rules": []
@@ -1181,8 +1569,13 @@
   "TLS_EXPORT_CIPHER": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "sebi-annexure-h-5"
    ],
    "basis": "EXPORT suites are deliberately weakened (40/56-bit ciphers, 512-bit key exchange): strict TLS (CERT-In 8.4.2.2), deprecated and demonstrated insecure (RBI), not strong encryption (SEBI Annexure-H item 5)",
@@ -1191,8 +1584,13 @@
   "TLS_NULL_CIPHER": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "sebi-annexure-h-5"
    ],
    "basis": "a NULL suite does not encrypt at all: strict TLS (CERT-In 8.4.2.2), demonstrated insecure (RBI), no strong encryption (SEBI Annexure-H item 5)",
@@ -1201,8 +1599,13 @@
   "TLS_POLICY_OVERRIDE": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "sebi-annexure-i"
    ],
    "basis": "a per-service override re-enables protocols and algorithms the system policy forbids",
@@ -1211,8 +1614,13 @@
   "WEAK_CIPHER": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "weak TLS suites are accepted (CERT-In 8.4.2.2, RBI); SEBI and TDEA follow the ciphers the evidence names",
    "rules": [
@@ -1237,29 +1645,44 @@
   },
   "KERBEROS_DES_ENABLED": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "sebi-annexure-h-5"
    ],
-   "basis": "Kerberos tickets encrypted with single DES, a broken cipher, for authentication (RBI; SEBI strong encryption algorithms)",
+   "basis": "Kerberos tickets encrypted with single DES, a broken cipher, for authentication (RBI: each entity type's 2026 cryptographic-controls paragraph, the 2023 Master Direction being superseded; SEBI strong encryption algorithms)",
    "rules": []
   },
   "KERBEROS_RC4_ONLY": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "sebi-annexure-h-5"
    ],
-   "basis": "Kerberos tickets encrypted with RC4-HMAC, a deprecated cipher, for authentication (RBI; SEBI strong encryption algorithms)",
+   "basis": "Kerberos tickets encrypted with RC4-HMAC, a deprecated cipher, for authentication (RBI: each entity type's 2026 cryptographic-controls paragraph, the 2023 Master Direction being superseded; SEBI strong encryption algorithms)",
    "rules": []
   },
   "KERBEROS_RC4_ENABLED": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "sebi-annexure-h-5"
    ],
-   "basis": "RC4-HMAC, a deprecated cipher, is still accepted for Kerberos authentication (RBI; SEBI strong encryption algorithms)",
+   "basis": "RC4-HMAC, a deprecated cipher, is still accepted for Kerberos authentication (RBI: each entity type's 2026 cryptographic-controls paragraph, the 2023 Master Direction being superseded; SEBI strong encryption algorithms)",
    "rules": []
   },
   "KERBEROS_ENCTYPES_DEFAULT": {
@@ -1308,8 +1731,13 @@
   },
   "CUSTOM_CRYPTO": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "sebi-annexure-h-5"
    ],
    "basis": "a home-made cipher or hash is not an internationally accepted, published standard (RBI) nor an industry-standard algorithm (SEBI Annexure-H item 5)",
@@ -1368,8 +1796,13 @@
    "clauses": [
     "certin-bom-8.4.1.6",
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "a named TLS vulnerability: a protocol configuration demonstrated to be vulnerable (RBI, CERT-In 8.4.2.2) and a VEX status is due (CERT-In 8.4.1.6)",
    "rules": []
@@ -1386,9 +1819,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
+    "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "a listener without TLS: data in transit not protected",
+   "basis": "a listener without TLS: data in transit not protected; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "PROVIDER_MANAGED_KEY": {
@@ -1409,8 +1848,13 @@
   },
   "REUSED_NONCE": {
    "clauses": [
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "nonce reuse with an approved cipher (GCM, CTR, CBC) is a configuration demonstrated to be insecure (it leaks the XOR of the plaintexts and, in GCM, the authentication key), the same basis as ECB (WEAK_CIPHER_MODE): RBI; the cipher itself may be strong, so no SEBI clause",
    "rules": []
@@ -1424,16 +1868,26 @@
   },
   "STATIC_IV": {
    "clauses": [
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "IV reuse with an approved cipher (GCM, CTR, CBC) is a configuration demonstrated to be insecure (it leaks the XOR of the plaintexts and, in GCM, the authentication key), the same basis as ECB (WEAK_CIPHER_MODE): RBI; the cipher itself may be strong, so no SEBI clause",
    "rules": []
   },
   "STATIC_SALT": {
    "clauses": [
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "a constant salt in a password-based key derivation is a configuration demonstrated to be insecure (one precomputed table or guessing run serves every password; NIST SP 800-132 section 5.1 requires a random salt), the same basis as a reused IV (STATIC_IV): RBI; the KDF itself may be an approved one, so no SEBI clause",
    "rules": []
@@ -1451,9 +1905,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-pr-ds-s1-s3-1a",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-120",
+    "rbi-nbfc-2026-para-95",
     "certin-gov-7.1"
    ],
-   "basis": "no encryption at rest",
+   "basis": "no encryption at rest; RBI: each entity type's own data-at-rest paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 120 for Level II and above, NBFC 95(4) secure storage)",
    "rules": []
   },
   "UNENCRYPTED_IN_TRANSIT": {
@@ -1461,9 +1921,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
+    "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "no TLS: data in transit not protected",
+   "basis": "no TLS: data in transit not protected; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "VULNERABLE_CRYPTO_LIBRARY": {
@@ -1475,8 +1941,13 @@
   },
   "WEAK_ALGORITHM": {
    "clauses": [
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "a broken or deprecated algorithm (RBI). Algorithm-specific clauses follow the evidence: TDEA for 3DES, SEBI for weak ciphers, SHA-1 signatures only for a SHA-1 signature algorithm, 112-bit for small public keys",
    "rules": [
@@ -1518,16 +1989,26 @@
   "WEAK_CERTIFICATE_KEY": {
    "clauses": [
     "nist-800-131a-below-112-bit",
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "a certificate key below RSA 2048 / EC 224: below 112-bit security",
    "rules": []
   },
   "WEAK_CERTIFICATE_SIGNATURE": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "certin-gov-6.1.7"
    ],
    "basis": "an MD5 or SHA-1 certificate signature: deprecated (RBI), not valid for clients (CERT-In 6.1.7); SHA-1 signature generation only when SHA-1 is named",
@@ -1544,8 +2025,13 @@
   },
   "WEAK_CIPHER_MODE": {
    "clauses": [
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "ECB is demonstrated to be insecure for multi-block data (RBI); the cipher itself may be strong, so no SEBI clause",
    "rules": []
@@ -1553,8 +2039,13 @@
   "WEAK_CIPHER_SUITE": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "weak suites or legacy SSH / IKE algorithms configured (CERT-In 8.4.2.2, RBI); SEBI and TDEA follow the ciphers the evidence names",
    "rules": [
@@ -1579,16 +2070,26 @@
   },
   "WEAK_KDF_ITERATIONS": {
    "clauses": [
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "an iteration count below the published minimum for the KDF is a configuration that does not follow internationally accepted guidance and is demonstrated to be insecure against offline guessing: below 1,000 for Java PBE (NIST SP 800-132 section 5.2), below 100,000 for .NET Rfc2898DeriveBytes, whose default is 1,000 (Microsoft CA5387, OWASP Password Storage Cheat Sheet: 600,000 for PBKDF2-HMAC-SHA256): RBI; the KDF itself may be an approved one, so no SEBI clause",
    "rules": []
   },
   "WEAK_KEY_SIZE": {
    "clauses": [
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "a key below the minimum size (RBI key length); the 112-bit clause only for public keys the evidence names",
    "rules": [
@@ -1604,8 +2105,13 @@
   },
   "WEAK_PADDING": {
    "clauses": [
-    "rbi-md-2023-para-16",
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118",
     "nist-800-131a-pkcs1-v1_5"
    ],
    "basis": "RSA encryption with PKCS#1 v1.5 (or no) padding: SP 800-131A Sec. 6 Table 5 disallows PKCS#1 v1.5 key transport",
@@ -1614,8 +2120,13 @@
   "WEAK_PROTOCOL": {
    "clauses": [
     "certin-bom-8.4.2.2",
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "SSLv3, TLS 1.0/1.1, SSH-1 or IKEv1: deprecated protocols; SEBI Annexure-I only for SSL/TLS",
    "rules": [
@@ -1631,16 +2142,26 @@
   },
   "WEAK_RNG": {
    "clauses": [
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "a non-cryptographic generator for key material is an algorithm demonstrated to be insecure",
    "rules": []
   },
   "WEAK_RSA_EXPONENT": {
    "clauses": [
-    "rbi-md-2023-para-16",
-    "rbi-cb-2026-para-140"
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
    ],
    "basis": "RSA keys with public exponent 3 are outside the published standard (FIPS 186-5 requires 2^16 < e < 2^256) and demonstrated to be insecure (Bleichenbacher's e = 3 signature forgery, cube-root recovery of small unpadded messages): RBI; RSA itself with e = 65537 is an approved algorithm, so no SEBI clause",
    "rules": []

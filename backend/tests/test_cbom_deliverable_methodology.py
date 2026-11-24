@@ -373,21 +373,21 @@ def test_build_pdf_returns_a_portrait_letter_pdf(pdf):
 
 def test_module_constants_identify_deliverable_three():
     assert methodology.SLUG == "methodology-evidence-plan"
-    assert methodology.NUMBER == 3
+    assert methodology.NUMBER == 2  # SOW D2
     assert methodology.REPORT_KEY == "cbom_methodology"
-    assert methodology.TITLE == "Cryptographic Discovery Methodology & Evidence Plan"
+    assert methodology.TITLE == "Discovery Methodology and Evidence Plan"
     assert methodology.MAX_SCAN_ROWS == 500
 
 
 def test_pdf_metadata_and_document_control_name_the_methodology(view, pdf):
     title = info_field(pdf, "Title")
-    assert title and "Cryptographic Discovery Methodology & Evidence Plan" in title
+    assert title and "Discovery Methodology and Evidence Plan" in title
     assert "E2E Demo Team" in title
     subject = info_field(pdf, "Subject")
-    assert subject and f"CBOM-D2-T1-20261019-{view.fingerprint[:8]}" in subject
+    assert subject and f"CBOM-D02-T1-20261019-{view.fingerprint[:8]}" in subject
     everything = full_text(pdf)
-    assert f"CBOM-D2-T1-20261019-{view.fingerprint[:8]}" in everything
-    assert "Cryptographic Discovery Methodology & Evidence Plan" in everything
+    assert f"CBOM-D02-T1-20261019-{view.fingerprint[:8]}" in everything
+    assert "Discovery Methodology and Evidence Plan" in everything
 
 
 def test_page_chrome_uses_the_methodology_footer_not_the_sast_one(pdf):
@@ -592,10 +592,11 @@ def test_raci_table_is_blank(text):
 def test_retention_paragraph_versioning_and_blank_retention_fields(view, text):
     nine = section(text, 15)
     assert norm(authored.METHOD_RETENTION) in nine
-    assert f"Document ID CBOM-D2-T1-20261019-{view.fingerprint[:8]}" in nine
+    assert f"Document ID CBOM-D02-T1-20261019-{view.fingerprint[:8]}" in nine
     assert f"data fingerprint {view.fingerprint}" in nine
     assert "template version 1.0" in nine
-    assert "a new successful scan or an attestation upload changes it" in nine
+    assert ("a new successful scan, an attestation upload or a change to the regulatory profile, source metadata or "
+            "quantum risk inputs changes it") in nine
     assert (
         "The roll-up reads up to 200 of the newest successful scans for first-seen and "
         "last-seen history, plus the latest scan of every source." in nine

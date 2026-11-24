@@ -325,7 +325,7 @@ def test_kb_remediation_has_the_panel_shape_and_no_model(no_network):
     row = {"title": "TLS", "description": "Weak transport protocol TLS 1.0: TLS below 1.2 / SSL is deprecated",
            "impact": "Critical", "location": "nginx/conf.d/site.conf:14",
            "finding_codes": ["WEAK_CIPHER_SUITE", "WEAK_PROTOCOL"], "suggested_fix": "x"}
-    out = remediation(row, "code")
+    out = remediation(row, "code", team=None)
     assert out["status"] == "completed" and out["source"] == "knowledge_base" and out["kb_version"] == kb.version()
     assert set(out["fix"]) == {"description", "original_code", "fixed_code", "language", "confidence",
                                "validation_notes", "references"}
@@ -340,14 +340,15 @@ def test_kb_remediation_has_the_panel_shape_and_no_model(no_network):
 
 def test_kb_remediation_for_clean_inventory_and_quantum_note_last():
     from backend.utilities.cbom_sources.kb_remediation import explain, remediation
-    clean = remediation({"title": "SHA-256", "finding_codes": []})
+    clean = remediation({"title": "SHA-256", "finding_codes": []}, team=None)
     assert clean["status"] == "completed" and clean["details"] == [] and clean["exploit_payload"] is None
-    codes = [d["code"] for d in explain({"title": "RSA-1024", "finding_codes": ["QUANTUM_VULNERABLE", "WEAK_ALGORITHM"]})]
+    codes = [d["code"] for d in explain({"title": "RSA-1024", "finding_codes": ["QUANTUM_VULNERABLE", "WEAK_ALGORITHM"]},
+                                        team=None)]
     assert codes == ["WEAK_ALGORITHM", "QUANTUM_VULNERABLE"]
 
 
 def test_node_assets_render_host_and_port():
     from backend.utilities.cbom_sources.kb_remediation import remediation
     out = remediation({"title": "db.example.com:5432", "location": "db.example.com:5432", "impact": "High",
-                       "finding_codes": ["DB_TLS_OPTIONAL"]}, "node")
+                       "finding_codes": ["DB_TLS_OPTIONAL"]}, "node", team=None)
     assert "-p 5432 db.example.com" in out["exploit_payload"]["payload"]

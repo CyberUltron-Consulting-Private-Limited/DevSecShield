@@ -318,7 +318,7 @@ def test_integration_logs_carry_the_stored_verdict_and_never_invent_one(ci, monk
     monkeypatch.setattr(router, "get_user_from_header_or_raise_exception",
                         lambda *_a, **_k: _async(types.SimpleNamespace(id=1)))
     monkeypatch.setattr(router, "check_if_user_is_in_team", lambda *_a, **_k: None)
-    monkeypatch.setattr(router, "project_cbom_ci_page", lambda _run: None)
+    monkeypatch.setattr(router, "project_cbom_ci_page", lambda _run, **_kw: None)
     monkeypatch.setattr(router, "get_cicd_vuln_chart_data", lambda **_k: {})
     from backend.tests.support.rbac import stand_in_principal
     stand_in_principal(monkeypatch, user_id=1, role="viewer")  # F4 route policy: cicd.read, the lowest role
