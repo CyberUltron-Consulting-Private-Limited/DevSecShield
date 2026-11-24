@@ -30,8 +30,13 @@ def _severity_dist(fixture: str, level: int = 1) -> Counter:
 
 def test_synthetic_fixture_spans_all_four_bands() -> None:
     dist = _severity_dist("scoring-calibration")
-    for band in ("critical", "high", "medium", "low"):
+    # QA round 2 (Q2-07): the fixture's only medium came from a library whose licence
+    # the offline manifest does not know; an unresolved licence is unknown / partial
+    # and no longer scored, so the fixture spans critical / high / low and the medium
+    # band is covered by the stacking tests (component_severity(5 / 6) == medium).
+    for band in ("critical", "high", "low"):
         assert dist.get(band, 0) >= 1, f"missing >=1 {band}: {dict(dist)}"
+    assert dist.get("medium", 0) == 0, dict(dist)  # the unknown licence is not scored
 
 
 def test_planted_secret_is_critical() -> None:

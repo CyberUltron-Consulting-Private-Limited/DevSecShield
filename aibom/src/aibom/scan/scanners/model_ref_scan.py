@@ -22,7 +22,7 @@ from typing import Any
 from aibom.model.component import ModelCard, ModelComponent, PedigreeAncestor
 from aibom.scan.parsers import model_kb
 from aibom.scan.parsers.licenses import license_choice
-from aibom.scan.parsers.model_refs import find_model_refs_ctx
+from aibom.scan.parsers.model_refs import find_model_refs_ctx, parse_bedrock_id
 from aibom.scan.path_roles import (
     evidence_rank,
     is_doc_path,
@@ -64,7 +64,11 @@ _MODEL_LICENSE_BY_VENDOR: dict[str, str] = {
     "Anthropic": "LicenseRef-proprietary",
     "Google": "LicenseRef-proprietary",
     "Cohere": "LicenseRef-proprietary",
-    "Mistral": "Apache-2.0",
+    # Amazon Titan / Nova: AWS service models, offered only through Amazon Bedrock
+    "Amazon": "LicenseRef-proprietary",
+    # no "Mistral" entry: its licence depends on the model (Apache-2.0 for Mistral
+    # 7B / Mixtral / Small, MNPL for Codestral, MRL for Large 2407 / 2411, premier
+    # API models): the model KB states each one (QA round 2, Q2-07)
     "Meta": "LicenseRef-llama-community",
     "sentence-transformers": "Apache-2.0",
     "HuggingFace": "Apache-2.0",
@@ -126,6 +130,41 @@ def _slug(name: str) -> str:
 # lists it, only test code names it.
 _TYPE_RANK = {"usage": 0, "catalog": 1, "test": 2}
 
+# A gateway that serves other vendors' models, named next to the reference (QA round
+# 2, Q2-06): zsh_codex's ``GROQ_DEFAULT_MODEL = "llama-3.2-11b-text-preview"`` is
+# Llama served by Groq, not by Meta. Read from the reference's own line, then back
+# to the start of its class / function (at most _HINT_LINES lines), nearest first.
+# The linker uses a hint only when a service of that gateway is in the scan.
+_GATEWAY_HINT = re.compile(
+    r"(groq|bedrock|together|openrouter|ollama|deepseek|azure|vertex)", re.IGNORECASE
+)
+_BLOCK_START = re.compile(
+    r"^\s*(?:class|def|async\s+def|function|export\s+(?:async\s+)?function)\b"
+)
+_HINT_LINES = 15
+
+
+def _gateway_hint(text: str, name: str) -> str | None:
+    """The gateway named nearest a reference, within its code block, or None."""
+    # the reference itself, never the same text inside a longer id
+    # ("claude-3-7-sonnet-…" inside a Bedrock "us.anthropic.claude-3-7-sonnet-…")
+    found = re.search(
+        rf"(?<![\w.-]){re.escape(name)}(?![\w:-]|\.\w)", text, re.IGNORECASE
+    )
+    if found is None:
+        return None
+    idx = found.start()
+    lines = text[: idx + len(name)].splitlines()
+    for back, line in enumerate(reversed(lines[-_HINT_LINES:])):
+        if back == 0:
+            line = line.replace(name, " ")  # "openrouter/…" ids aside, the id itself
+        hits = _GATEWAY_HINT.findall(line)
+        if hits:
+            return hits[-1].lower()
+        if back and _BLOCK_START.match(line):
+            return None
+    return None
+
 
 def _walk(root: Path) -> Iterator[Path]:
     # ``.env`` / ``.env.example`` have no usable suffix: matched by name
@@ -177,7 +216,8 @@ class ModelRefScanner(Scanner):
                     # usage evidenced by application code outranks configuration
                     # (m11): discovery:source names the strongest evidence
                     seen[low] = {"name": name, "vendor": vendor, "type": kind,
-                                 "source": source, "rank": rank}
+                                 "source": source, "rank": rank,
+                                 "gateway": _gateway_hint(text, name)}
         for kind in ("catalog", "test"):
             n = sum(1 for v in seen.values() if v["type"] == kind)
             if n:
@@ -198,6 +238,16 @@ class ModelRefScanner(Scanner):
             spdx = (kb.get("license") if kb else None) or _MODEL_LICENSE_BY_VENDOR.get(
                 vendor
             )
+            props = {"model:reference_type": rtype, "discovery:source": source}
+            bedrock = parse_bedrock_id(name)
+            if bedrock is not None:
+                # a Bedrock model id: the vendor makes it, Amazon Bedrock serves it
+                props["model:provider"] = "bedrock"
+                if "profile" in bedrock:
+                    props["model:bedrock_inference_profile"] = bedrock["profile"]
+            elif entry.get("gateway") and rtype == "usage":
+                # read and removed by the model-graph linker
+                props["discovery:gateway"] = entry["gateway"]
             comp = ModelComponent(
                 bom_ref=bom_ref,
                 name=name,
@@ -206,7 +256,7 @@ class ModelRefScanner(Scanner):
                 # usage = the code loads/calls it; catalog = listed in a
                 # supported-model registry / doc / example; test = test code only
                 # (catalog and test are NOT models in use).
-                properties={"model:reference_type": rtype, "discovery:source": source},
+                properties=props,
             )
             _apply_card(comp.model_card, card_fields)
             ctx.add_component(comp)

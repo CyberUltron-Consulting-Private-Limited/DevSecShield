@@ -51,6 +51,9 @@ _FINDING_FIELDS = {
     "suggested_fix", "component_name", "component_type", "framework", "version",
     "source", "license", "location", "snippet", "risk_category",
     "owasp_top_10_llm", "model_card", "risk_score", "bom_ref",
+    # additive (QA round 2): the engine kind (a provider-served model is still a
+    # model) and whether the licence was resolved
+    "component_kind", "license_status",
 }
 _LOCKED_KEYS = {"results", "ai_bom_json", "ai_bom_compliance", "duration_of_scan"}
 _ADDITIVE_KEYS = {"ai_bom_spdx", "ai_bom_sarif", "ai_bom_graph", "ai_bom_scores"}

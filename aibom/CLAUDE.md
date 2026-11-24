@@ -44,7 +44,7 @@ the PDF grade say the same word:
 ```
 risk_normalized = min(100, 4 x (10 critical + 5 high + 2 medium + 1 low)),
                   capped by the worst severity: no critical <= 69, no critical/high <= 49,
-                  low only <= 29, nothing -> 0
+                  low only <= 14 (grade A), nothing -> 0
 grade / risk_band: >=70 F critical, >=50 D high, >=30 C elevated, >=15 B moderate, else A low
 ```
 

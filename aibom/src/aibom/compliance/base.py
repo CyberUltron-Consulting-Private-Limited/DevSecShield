@@ -22,7 +22,9 @@ from typing import Literal
 
 from aibom.emit._disclaimer import ADVISORY_DISCLAIMER, CBOM_DISCLAIMER
 from aibom.model.component import (
+    CloudServiceComponent,
     DatasetComponent,
+    EndpointComponent,
     FrameworkComponent,
     InfraComponent,
     ModelComponent,
@@ -69,6 +71,7 @@ __all__ = [
     "deployed_sites",
     "depends_on_frameworks",
     "is_deidentified",
+    "external_serving_services",
     "has_license",
 ]
 
@@ -203,7 +206,7 @@ def vendor_accountability(r: ScanResult, ms: list[ModelComponent]) -> CheckResul
     records the contract (``service:dpa``, ``service:contract`` or ``service:baa``
     = ``"true"``) passes. The contract itself is never visible in code, so without
     that fact the requirement needs evidence (attestable), never a fail."""
-    served = [m for m in ms if serving_services(r, m)]
+    served = [m for m in ms if external_serving_services(r, m)]
     if not served:
         return NA("no externally-served models to assess vendor accountability")
     keys = ("service:dpa", "service:contract", "service:baa")
@@ -212,7 +215,7 @@ def vendor_accountability(r: ScanResult, ms: list[ModelComponent]) -> CheckResul
         for m in served
         if not any(
             (s.properties or {}).get(k) == "true"
-            for s in serving_services(r, m)
+            for s in external_serving_services(r, m)
             for k in keys
         )
     ]
@@ -333,11 +336,32 @@ def trained_datasets(r: ScanResult, m: ModelComponent) -> list[DatasetComponent]
     ]
 
 
-def serving_services(r: ScanResult, m: ModelComponent) -> list[ServiceComponent]:
+_SERVING_KINDS = (ServiceComponent, CloudServiceComponent, EndpointComponent)
+
+
+def serving_services(
+    r: ScanResult, m: ModelComponent
+) -> list[ServiceComponent | CloudServiceComponent | EndpointComponent]:
+    """The services a model is ``served_by``: a carded inference service, a vendor
+    API the code calls (net-env ``cloud_service``) or an endpoint. QA round 2 Q2-06:
+    only ``ServiceComponent`` counted, so a model served by the OpenAI API or Amazon
+    Bedrock read as "not externally served" (RBI FREEAI-19-1, NIST GV-2: na)."""
     return [
         c
         for c in r.neighbors(m.bom_ref, REL_SERVED_BY)
-        if isinstance(c, ServiceComponent)
+        if isinstance(c, _SERVING_KINDS)
+    ]
+
+
+def external_serving_services(
+    r: ScanResult, m: ModelComponent
+) -> list[ServiceComponent | CloudServiceComponent | EndpointComponent]:
+    """Serving services outside the application's trust boundary: a loopback
+    endpoint (``service:trust_zone`` local, e.g. Ollama) is not a third party."""
+    return [
+        c
+        for c in serving_services(r, m)
+        if (c.properties or {}).get("service:trust_zone") != "local"
     ]
 
 

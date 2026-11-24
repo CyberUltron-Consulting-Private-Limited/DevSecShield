@@ -49,10 +49,10 @@ from aibom.graph_view import (
     compact_aibom_graph,
 )
 from aibom.model.component import AIComponent, is_model_mention
-from aibom.scan.parsers.license_resolver import resolve_license
-from aibom.model.result import Flag, ScanResult
+from aibom.model.result import REL_SERVED_BY, Flag, ScanResult
 from aibom.owasp import OWASP_LLM_LABELS as _OWASP_2025_LABELS
 from aibom.owasp import categories_for_component as _owasp_categories
+from aibom.scan.parsers.license_resolver import resolve_license
 from aibom.scan.pipeline import scan_repo
 
 # --- enum mappings (values mirror worker helpers/context/enums.py) ---------- #
@@ -60,7 +60,10 @@ from aibom.scan.pipeline import scan_repo
 # component.kind -> AIComponentType value. Unknown kinds fall back to the
 # closest umbrella, external_provider (a discovered external AI surface).
 _KIND_TO_AI_TYPE = {
+    # a model the scan saw served by a provider is external_provider (see
+    # _component_type); a model with no serving service, and a weight file, are local
     "model": "local_model_file",
+    "model_file": "local_model_file",
     "dataset": "dataset",
     "framework": "ml_framework",
     "prompt": "prompt_asset",
@@ -84,7 +87,8 @@ _SEVERITY_IMPACT = {"error": "High", "warning": "Medium", "note": "Low", "none":
 # (an ungoverned/under-documented component) — the conservative governance bucket.
 _CODE_RISK = {
     "MODEL_NO_LICENSE": "license_compliance_gap",
-    "FRAMEWORK_NO_LICENSE": "license_compliance_gap",  # unresolved library license
+    "FRAMEWORK_NO_LICENSE": "license_compliance_gap",  # library declaring no licence
+    "FRAMEWORK_LICENSE_UNKNOWN": "license_compliance_gap",  # not resolved offline
     "MODEL_LICENSE_UNKNOWN": "license_compliance_gap",  # model with no known license
     "HARDCODED_SECRET": "model_theft_exposure",  # leaked credential -> model access
     "DATASET_NO_DEIDENT": "data_privacy_training_config",
@@ -134,6 +138,7 @@ _PRIVACY_FLAG_CODES = frozenset(
 _SUPPLY_FLAG_CODES = frozenset(
     {
         "FRAMEWORK_NO_LICENSE",
+        "FRAMEWORK_LICENSE_UNKNOWN",
         "MODEL_NO_LICENSE",
         "MODEL_LICENSE_UNKNOWN",
         "UNSANCTIONED_COMPONENT",
@@ -159,6 +164,11 @@ def _provider(
     (cloud vendor, ``pypi``, ``credential``, or ``local``).
     """
     props = props or {}
+    # where the model runs, as the linker resolved it (Bedrock for an
+    # ``anthropic.claude-…`` id, Groq for Llama behind the Groq API): never the
+    # vendor's name when another platform serves it (QA round 2, Q2-06)
+    if props.get("model:provider"):
+        return str(props["model:provider"])
     text = " ".join(
         str(x)
         for x in (
@@ -229,8 +239,28 @@ def _provider(
     return "local"
 
 
-def _component_type(kind: str) -> str:
+def _component_type(
+    kind: str, comp: AIComponent | None = None, result: ScanResult | None = None
+) -> str:
+    """The AIComponentType of a component. A model is ``external_provider`` when it
+    is provider-served (``model:provider``, or ``served_by`` a service outside the
+    trust boundary), else ``local_model_file``; a weight file is
+    ``local_model_file`` (QA round 2, Q2-06; first noted on #487)."""
+    if kind == "model" and comp is not None and _provider_served(comp, result):
+        return "external_provider"
     return _KIND_TO_AI_TYPE.get(kind, "external_provider")
+
+
+def _provider_served(comp: AIComponent, result: ScanResult | None) -> bool:
+    provider = (comp.properties or {}).get("model:provider")
+    if provider:
+        return provider not in ("ollama", "local")
+    if result is None:
+        return False
+    return any(
+        (svc.properties or {}).get("service:trust_zone") != "local"
+        for svc in result.neighbors(comp.bom_ref, REL_SERVED_BY)
+    )
 
 
 def _is_catalog_model(comp: AIComponent) -> bool:
@@ -283,6 +313,9 @@ def _license_str(licenses: Any) -> str | None:
 
 
 _ARTIFACT_SUFFIXES = (".bin", ".safetensors", ".gguf", ".pt", ".pth", ".onnx")
+# SPDX's word for "not determined": a library whose licence the offline manifest does
+# not know. Unknown / partial, which is not the same as a library with no licence.
+LICENSE_UNKNOWN = "NOASSERTION"
 
 
 def _finding_license(comp: AIComponent) -> str:
@@ -305,7 +338,8 @@ def _finding_license(comp: AIComponent) -> str:
         spdx = resolve_license(name)
         if spdx:
             return spdx
-        return "LicenseRef-not-declared"
+        # not resolved offline: unknown, never "not declared" (QA round 2, Q2-07)
+        return LICENSE_UNKNOWN
 
     # Hosted services / external surfaces without a package license.
     if kind in ("service", "cloud_service", "endpoint") or _component_type(kind) == (
@@ -409,6 +443,7 @@ def _finding_from_component(comp: AIComponent, result: ScanResult) -> dict[str, 
         risk_category = _DEFAULT_RISK
         suggested_fix = _DEFAULT_FIX
         description = _inventory_description(comp)
+    license_label = _finding_license(comp)
     return {
         "title": comp.name,
         "description": description,
@@ -422,7 +457,9 @@ def _finding_from_component(comp: AIComponent, result: ScanResult) -> dict[str, 
         "compliance_controls": _legacy_compliance(flags),
         "suggested_fix": suggested_fix,
         "component_name": comp.name,
-        "component_type": _component_type(comp.kind),
+        "component_type": _component_type(comp.kind, comp, result),
+        # the engine kind: a provider-served model is still a model (model counts)
+        "component_kind": comp.kind,
         # populated model-card fields (None if absent) — the dashboard's
         # governance-readiness score credits models that carry BOTH a license + card.
         "model_card": _card_summary(comp),
@@ -435,7 +472,9 @@ def _finding_from_component(comp: AIComponent, result: ScanResult) -> dict[str, 
             location=props.get("discovery:source") or props.get("discovery:host") or "",
             props=props,
         ),
-        "license": _finding_license(comp),
+        "license": license_label,
+        # "unknown" when the licence was not resolved (offline manifest only)
+        "license_status": "unknown" if license_label == LICENSE_UNKNOWN else "resolved",
         "location": props.get("discovery:source") or props.get("discovery:host") or "",
         "snippet": props.get("discovery:snippet", ""),
         "risk_category": risk_category,
@@ -474,7 +513,7 @@ def _graph(result: ScanResult) -> dict[str, list[dict[str, str]]]:
             "id": c.bom_ref,
             "label": c.name,
             "kind": c.kind,
-            "type": _component_type(c.kind),
+            "type": _component_type(c.kind, c, result),
         }
         for c in result.components
     ]

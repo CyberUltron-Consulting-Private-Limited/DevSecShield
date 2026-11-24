@@ -60,6 +60,7 @@ OWASP_LLM_LABELS: dict[str, str] = {
 _FLAG_OWASP: dict[str, frozenset[str]] = {
     "HARDCODED_SECRET": frozenset({"LLM02"}),  # leaked credential -> sensitive-info
     "FRAMEWORK_NO_LICENSE": frozenset({"LLM03"}),
+    "FRAMEWORK_LICENSE_UNKNOWN": frozenset({"LLM03"}),
     "MODEL_NO_LICENSE": frozenset({"LLM03"}),
     "MODEL_LICENSE_UNKNOWN": frozenset({"LLM03"}),  # unverifiable model supply chain
     "UNSANCTIONED_COMPONENT": frozenset({"LLM03"}),

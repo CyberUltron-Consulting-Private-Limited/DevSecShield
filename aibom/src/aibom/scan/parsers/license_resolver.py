@@ -66,6 +66,13 @@ _LICENSE_MAP: dict[str, str] = {
     # ── LLM providers / agent frameworks ──
     "openai": "Apache-2.0",
     "anthropic": "MIT",
+    # PyPI JSON, 24 Nov 2026 (QA round 2, Q2-07): boto3 / botocore 1.44.10
+    # license "Apache-2.0"; groq 1.7.0 "Apache-2.0" + "License :: OSI Approved ::
+    # Apache Software License"; replicate 1.0.7 "Apache License" (Apache-2.0)
+    "boto3": "Apache-2.0",
+    "botocore": "Apache-2.0",
+    "groq": "Apache-2.0",
+    "replicate": "Apache-2.0",
     "cohere": "MIT",
     "mistralai": "Apache-2.0",
     "google-generativeai": "Apache-2.0",
@@ -244,4 +251,15 @@ def resolve_license(
     return None
 
 
-__all__ = ["resolve_license", "normalize_pkg"]
+def unknown_licence_message(name: str, *, imported: bool = False) -> str:
+    """The finding text for a library whose licence was not resolved offline."""
+    where = " (imported in code)" if imported else ""
+    return (
+        f"Licence unknown / partial for {name!r}{where}: not in the offline licence "
+        "manifest, and no package registry is consulted (no egress). It was not "
+        "resolved, which is not the same as having no licence; confirm it from the "
+        "package's own metadata."
+    )
+
+
+__all__ = ["resolve_license", "normalize_pkg", "unknown_licence_message"]

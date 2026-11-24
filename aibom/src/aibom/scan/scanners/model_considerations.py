@@ -1,0 +1,125 @@
+"""Finalize scanner: model-card ``considerations`` from facts the scan holds.
+
+CycloneDX 1.6 ``modelCard.considerations`` (QA round 2, G-D5-5: no model card had
+any). A model referenced in code has no author-written card, so this fills only
+what is KNOWN, never invented, and marks the block ``derived``:
+
+* ``useCases``: the task the model KB records, the service it is served by (the
+  model-graph linker's ``served_by``) and the application file that calls it;
+* ``technicalLimitations``: facts of the reference and the serving graph: a
+  provider-hosted model's weights, training data and evaluation are not in the
+  repository; a moving alias (``…-latest``) can change model without a code change;
+  a Bedrock cross-Region (geographic) inference profile can serve the request from
+  another AWS Region of that geography (AWS Bedrock user guide, "Geographic
+  cross-Region inference");
+* ``out_of_scope``: uses the model's licence excludes, from the licence's published
+  terms, as the model KB records them (Codestral: Mistral AI Non-Production License).
+
+Ethical, fairness and environmental considerations are never derived: nothing in a
+code reference states them, so they are omitted. Only models referenced in code
+(``modelref-``) are filled: a carded model's author decides what its card says. A
+model only named in a catalog, doc or test, and a model with none of the facts
+above, gets no considerations.
+
+Runs after the linker (order 90). Lanes: components only, never flags or scores.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from aibom.model.component import Considerations, ModelComponent, is_model_mention
+from aibom.model.result import REL_SERVED_BY
+from aibom.scan.parsers import model_kb
+from aibom.scan.registry import ScanContext, Scanner, register
+
+_HOSTED = (
+    "provider-hosted: the weights, training data and evaluation results are not in "
+    "this repository; the provider's model documentation states its limitations"
+)
+
+
+def _alias(name: str) -> str | None:
+    if name.lower().endswith("-latest"):
+        return (
+            f"{name!r} is a moving alias: the provider can change the model behind it "
+            "without a code change, so this BOM cannot pin the model version"
+        )
+    return None
+
+
+def _profile(geo: str | None) -> str | None:
+    if not geo:
+        return None
+    return (
+        f"Amazon Bedrock cross-Region inference profile {geo + '.'!r}: a request can "
+        f"be served from any AWS Region of the {geo!r} geography, not only the "
+        "calling Region"
+    )
+
+
+@register
+class ModelConsiderations(Scanner):
+    name = "model-considerations"
+    order = 95  # after model-graph-link (90): the serving service is known
+    level = 1
+
+    def matches(self, root: Path) -> bool:
+        return True
+
+    def scan(self, ctx: ScanContext) -> None:
+        by_ref = {c.bom_ref: c for c in ctx.components}
+        served: dict[str, list[str]] = {}
+        for e in ctx.edges:
+            if e.rel == REL_SERVED_BY and e.dst in by_ref:
+                served.setdefault(e.src, []).append(e.dst)
+        for comp in ctx.components:
+            if not isinstance(comp, ModelComponent) or is_model_mention(comp):
+                continue
+            if not comp.bom_ref.startswith("modelref-"):
+                continue  # a carded model: its author's card says what is known
+            if comp.model_card.considerations is not None:
+                continue
+            cons = self._derive(comp, [by_ref[r] for r in served.get(comp.bom_ref, [])])
+            if cons is not None:
+                comp.model_card.considerations = cons
+
+    @staticmethod
+    def _derive(comp: ModelComponent, services: list) -> Considerations | None:
+        props = comp.properties or {}
+        kb = model_kb.lookup(comp.name) or {}
+        source = props.get("discovery:source")
+        task = comp.model_card.task or kb.get("task")
+        use_cases: list[str] = []
+        if task and source:
+            via = ", ".join(sorted({s.name for s in services}))
+            use_cases.append(
+                f"{task} through {via}, called from {source}"
+                if via
+                else f"{task}, called from {source}"
+            )
+        external = [
+            s for s in services
+            if (s.properties or {}).get("service:trust_zone") != "local"
+        ]
+        limitations = [
+            text
+            for text in (
+                _HOSTED if external else None,
+                _alias(comp.name),
+                _profile(props.get("model:bedrock_inference_profile")),
+            )
+            if text
+        ]
+        out_of_scope = list(kb.get("out_of_scope") or [])
+        if not (use_cases or limitations or out_of_scope):
+            return None
+        return Considerations(
+            use_cases=use_cases,
+            technical_limitations=limitations,
+            out_of_scope=out_of_scope,
+            derived=True,
+        )
+
+
+__all__ = ["ModelConsiderations"]

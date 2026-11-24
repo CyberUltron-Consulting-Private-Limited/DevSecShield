@@ -8,16 +8,19 @@ dashboard) and the PDF's grade say the same word for the same score (review of
 
 score = min(100, 4 x (10 critical + 5 high + 2 medium + 1 low)), capped by the
 worst severity present: no critical -> at most 69 (D), no critical or high -> at
-most 49 (C), low only -> at most 29 (B), nothing -> 0 (A). Without the cap 32 low
+most 49 (C), low only -> at most 14 (A), nothing -> 0 (A). Without the cap 32 low
 and 10 medium inventory rows scored 100 / F "Critical risk" with zero critical or
-high findings (audit-C G-D5-4).
+high findings (audit-C G-D5-4). Low only was capped at 29 (B, "Moderate risk")
+until staging QA round 2: every unflagged inventory item counts as Low, so a
+repository with no finding at all read "29 / B Moderate risk" (SmarterRouter). A
+posture whose worst severity is Low is graded Low risk (A).
 """
 
 from __future__ import annotations
 
 POSTURE_WEIGHTS = {"critical": 10, "high": 5, "medium": 2, "low": 1}
 POSTURE_MULTIPLIER = 4
-POSTURE_CAPS = (("critical", 100), ("high", 69), ("medium", 49), ("low", 29))
+POSTURE_CAPS = (("critical", 100), ("high", 69), ("medium", 49), ("low", 14))
 # (lowest score of the grade, grade, band word). The PDF prints "<Band> risk".
 POSTURE_GRADES = (
     (70, "F", "critical"),

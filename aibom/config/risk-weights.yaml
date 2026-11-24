@@ -18,12 +18,14 @@ flags:
   # ── medium-tier ──
   UNSANCTIONED_COMPONENT: 6     # shadow-AI: component not on the allowlist
   MODEL_EU_AI_ACT_HIGH_RISK: 6  # declared EU AI Act high-risk
-  FRAMEWORK_NO_LICENSE: 5       # a library whose license could not be resolved
+  FRAMEWORK_NO_LICENSE: 5       # a library that declares no licence (stored scans)
   DATASET_DECLARED_NOT_FOUND: 4 # provenance gap (declared dataset missing)
   # ── low-tier ──
   SERVICE_REF_COLLISION: 3
   SITE_REF_COLLISION: 3
   MODEL_LICENSE_UNKNOWN: 2      # model with no known license — SOFT (not a library)
+  # ── informational (weight 0: never drives the score) ──
+  FRAMEWORK_LICENSE_UNKNOWN: 0  # library licence not resolved offline: unknown / partial
 
 # Per-component SEVERITY bands, on the STACKED raw weight (inclusive lower bound).
 # A component with no flags scores 0 -> low (the inventory floor; e.g. a licensed
@@ -31,13 +33,13 @@ flags:
 severity:
   critical: 13      # >= 13 -> critical (a leaked secret=14, or heavy stacking)
   high: 8           # >= 8  -> high     (no-license model, un-de-identified data=12)
-  medium: 4         # >= 4  -> medium   (unsanctioned=6, unknown-license library=5)
+  medium: 4         # >= 4  -> medium   (unsanctioned=6, no-licence library=5)
   low: 1            # >= 1  -> low       (model-license-unknown=2; 0 -> low / info)
 
 # Global 0-100 score: aibom.score.scorer.posture_score over every component's
 # severity (see aibom/CLAUDE.md): min(100, 4 x (10C + 5H + 2M + 1L)), capped by
 # the worst severity present (no critical <= 69, no critical/high <= 49, low only
-# <= 29). Bands are inclusive upper bounds on that score for the OVERALL risk_band.
+# <= 14, grade A). Bands are inclusive upper bounds on that score for the OVERALL risk_band.
 # (`max_raw` only scales normalize_score, the raw flag-weight helper.)
 scale:
   bands:

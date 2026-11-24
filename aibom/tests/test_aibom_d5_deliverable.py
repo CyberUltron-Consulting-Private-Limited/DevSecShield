@@ -234,7 +234,7 @@ def test_risk_score_is_bounded_by_the_findings(run: dict) -> None:
             (0, 0, 10, 32),
             49,
         ),  # SmarterRouter on staging: 100 / F with zero critical or high
-        ((0, 0, 0, 500), 29),
+        ((0, 0, 0, 500), 14),  # low only: grade A since staging QA round 2
         ((0, 3, 50, 0), 69),
         ((1, 0, 0, 0), 40),
         ((0, 0, 0, 0), 0),

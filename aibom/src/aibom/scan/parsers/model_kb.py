@@ -8,11 +8,20 @@ resolve to the same card. Models not covered here get an empty card ("—").
 Each entry's keys map onto :class:`aibom.model.component.ModelCard`:
 ``approach_type`` (a ModelCard Literal or omitted), ``task``,
 ``architecture_family``, ``model_architecture``, ``license`` (SPDX / LicenseRef),
-and ``lineage`` (pedigree ancestor names). "proprietary" is a *license*, never an
+``lineage`` (pedigree ancestor names) and ``out_of_scope`` (uses the model's
+licence excludes, from the licence's published terms; model-card
+``considerations``). "proprietary" is a *license*, never an
 ``approach_type`` (hosted models' training approach is undisclosed -> omitted).
 """
 
 from __future__ import annotations
+
+import re
+
+from aibom.scan.parsers.model_refs import parse_bedrock_id
+
+# "[<geo>.]<provider>." in front of a Bedrock model id
+_BEDROCK_PREFIX = re.compile(r"^(?:(?:us-gov|us|eu|apac|global)\.)?[a-z0-9]+\.")
 
 _PROPRIETARY = "LicenseRef-proprietary"
 
@@ -147,6 +156,68 @@ _KB: tuple[tuple[str, dict], ...] = (
             "lineage": [],
         },
     ),
+    # ── Mistral families whose licence is not Apache-2.0 (QA round 2, Q2-07) ──
+    # Sources: Mistral's model weights page (docs.mistral.ai/getting-started/models/
+    # weights): Codestral-22B-v0.1 MNPL, Mistral-Large-Instruct-2407 / -2411 Mistral
+    # Research License, Codestral-Mamba-7B Apache 2.0; mistral.ai/news/codestral:
+    # "Codestral is a 22B open-weight model licensed under the new Mistral AI
+    # Non-Production License" (research and testing; commercial licence on request).
+    # docs.mistral.ai lists codestral-latest as the alias of codestral-2508 (code
+    # completion, fill-in-the-middle).
+    (
+        "codestral-mamba",
+        {
+            "task": "code generation",
+            "model_architecture": "Codestral Mamba",
+            "license": "Apache-2.0",
+            "lineage": [],
+        },
+    ),
+    (
+        "codestral",
+        {
+            "task": "code completion and generation (fill-in-the-middle)",
+            "model_architecture": "Codestral",
+            "license": "LicenseRef-Mistral-AI-Non-Production-License",
+            "lineage": [],
+            "out_of_scope": [
+                "production / commercial use: the Mistral AI Non-Production License "
+                "permits research and testing only; production use needs a commercial "
+                "licence from Mistral AI"
+            ],
+        },
+    ),
+    *(
+        (
+            token,
+            {
+                "task": "chat/completion",
+                "architecture_family": "transformer",
+                "model_architecture": "Mistral Large",
+                "license": "LicenseRef-Mistral-Research-License",
+                "lineage": [],
+            },
+        )
+        for token in (
+            "mistral-large-2407",
+            "mistral-large-instruct-2407",
+            "mistral-large-2411",
+            "mistral-large-instruct-2411",
+        )
+    ),
+    # other Mistral Large / Medium versions: the licence depends on the version (a
+    # hosted premier model, or an open-weight release under its own licence), so it
+    # is not stated (the scanner raises the soft MODEL_LICENSE_UNKNOWN for usage)
+    (
+        "mistral-large",
+        {"task": "chat/completion", "model_architecture": "Mistral Large",
+         "lineage": []},
+    ),
+    (
+        "mistral-medium",
+        {"task": "chat/completion", "model_architecture": "Mistral Medium",
+         "lineage": []},
+    ),
     # ── open generative ──
     (
         "mixtral",
@@ -193,6 +264,9 @@ def lookup(name: str) -> dict | None:
     if not name:
         return None
     low = name.lower().split("/")[-1]
+    # a Bedrock id: the model part only ("mistral.pixtral-…" is no "mistral" model)
+    if parse_bedrock_id(low) is not None:
+        low = _BEDROCK_PREFIX.sub("", low)
     for token, fields in _KB:
         if token in low:
             return dict(fields)

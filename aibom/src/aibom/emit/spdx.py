@@ -162,9 +162,13 @@ def _ai_package(
     elif card.model_architecture:
         type_of_model.append(card.model_architecture)
 
+    cons = card.considerations
     limitations = (
-        "; ".join(card.considerations.technical_limitations)
-        if card.considerations and card.considerations.technical_limitations
+        "; ".join(
+            list(cons.technical_limitations)
+            + [f"Out of scope: {u}" for u in cons.out_of_scope]
+        )
+        if cons and (cons.technical_limitations or cons.out_of_scope)
         else None
     )
     metrics = []

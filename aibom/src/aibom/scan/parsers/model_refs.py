@@ -41,6 +41,50 @@ _SEG = r"[a-z0-9]+(?:\.\d+[a-z0-9]*)*"
 # optional version, then more '-'-joined segments.
 _TAIL = rf"[a-z0-9]*(?:\.\d+[a-z0-9]*)*(?:-{_SEG})*"
 
+# Amazon Bedrock model ids (QA round 2, Q2-05): ``[<geo>.]<provider>.<model>[:N]``,
+# e.g. ``anthropic.claude-3-5-sonnet-20240620-v1:0``,
+# ``us.anthropic.claude-3-7-sonnet-20250219-v1:0`` (a cross-Region inference
+# profile), ``meta.llama3-70b-instruct-v1:0``, ``amazon.nova-pro-v1:0`` and the
+# provisioned-throughput form ``…-v1:0:200k``. The whole id is the model's
+# identifier: the bare ``claude-…`` family pattern below used to keep only
+# ``claude-3-5-sonnet-20240620-v1``. Each Bedrock provider prefix must be followed
+# by one of its model families, so ``meta.json``, ``amazon.com`` or ``mistral.ai``
+# are never model ids. Provider prefix -> (model family words, vendor).
+_BEDROCK_PROVIDERS: dict[str, tuple[str, str]] = {
+    "anthropic": ("claude", "Anthropic"),
+    "meta": ("llama", "Meta"),
+    "amazon": ("titan|nova", "Amazon"),
+    "mistral": ("mistral|mixtral|pixtral|ministral|codestral", "Mistral"),
+    "cohere": ("command|embed|rerank", "Cohere"),
+    "ai21": ("jamba|j2", "AI21 Labs"),
+}
+# Cross-Region inference profile geographies (the id's first label).
+_BEDROCK_GEOS = ("us-gov", "us", "eu", "apac", "global")
+_BEDROCK_SUFFIX = r"(?::\d+(?::\d+k)?)?"  # ":0", ":1", ":0:200k"
+_BEDROCK_RE = re.compile(
+    rf"(?<![\w-])(?:(?P<geo>{'|'.join(_BEDROCK_GEOS)})\.)?"
+    r"(?P<provider>"
+    + "|".join(rf"{p}\.(?:{fam})" for p, (fam, _v) in _BEDROCK_PROVIDERS.items())
+    + rf")[a-z0-9]*(?:-[a-z0-9]+)*{_BEDROCK_SUFFIX}"
+    # end of the id: no further id character (a sentence's full stop is fine)
+    r"(?![\w:-]|\.\w)",
+    re.IGNORECASE,
+)
+
+
+def parse_bedrock_id(name: str) -> dict[str, str] | None:
+    """``{"vendor", "provider_prefix", "profile"?}`` for a whole Bedrock model id, else
+    None. ``profile`` is the cross-Region inference profile geography (``us``)."""
+    m = _BEDROCK_RE.fullmatch(name or "")
+    if m is None:
+        return None
+    prefix = m.group("provider").split(".", 1)[0].lower()
+    out = {"vendor": _BEDROCK_PROVIDERS[prefix][1], "provider_prefix": prefix}
+    if m.group("geo"):
+        out["profile"] = m.group("geo").lower()
+    return out
+
+
 # (raw pattern, vendor, org_prefix). ``org_prefix`` True prepends the optional
 # HuggingFace "org/" repo prefix (_ORG). Compiled with the _B boundary below.
 # Family first-segments are constrained to real model-name starts (a digit or a
@@ -109,6 +153,24 @@ _FAMILIES: list[tuple[re.Pattern[str], str]] = [
 ]
 
 
+def _matches(text: str):
+    """``(start, name, vendor)`` for every model reference in ``text``: Bedrock ids
+    first, then the family patterns in order. A span one pattern claimed is not
+    matched again by a later one, so a Bedrock id never also yields its bare
+    ``claude-…`` tail."""
+    claimed: list[tuple[int, int]] = []
+    for m in _BEDROCK_RE.finditer(text):
+        prefix = m.group("provider").split(".", 1)[0].lower()
+        claimed.append(m.span())
+        yield m.start(), m.group(0), _BEDROCK_PROVIDERS[prefix][1]
+    for pattern, vendor in _FAMILIES:
+        for m in pattern.finditer(text):
+            start, end = m.span()
+            if any(a < end and start < b for a, b in claimed):
+                continue
+            yield start, m.group(0), vendor
+
+
 def find_model_refs(text: str) -> dict[str, str]:
     """Map every model reference in ``text`` to its vendor (first match wins).
 
@@ -117,13 +179,11 @@ def find_model_refs(text: str) -> dict[str, str]:
     """
     found: dict[str, str] = {}
     lowered_seen: set[str] = set()
-    for pattern, vendor in _FAMILIES:
-        for m in pattern.finditer(text):
-            name = m.group(0)
-            low = name.lower()
-            if low not in lowered_seen:
-                lowered_seen.add(low)
-                found[name] = vendor
+    for _start, name, vendor in _matches(text):
+        low = name.lower()
+        if low not in lowered_seen:
+            lowered_seen.add(low)
+            found[name] = vendor
     return found
 
 
@@ -177,13 +237,19 @@ _CATALOG_HINT = re.compile(
     r"models\s*[:=]\s*[\[{(]|model_list|choices|enum|mapping|alias)",
     re.IGNORECASE,
 )
+# An environment lookup split over lines (black style): ``os.getenv(`` ends the line
+# before, ``"NAME", "<model>"`` starts this one.
+_ENV_CALL_OPEN = re.compile(r"\b(?:getenv|environ\.get|env\.get)\s*\(\s*$")
+_ENV_DEFAULT_ARG = re.compile(r"""^\s*['"][^'"]*['"]\s*,\s*['"]""")
 _COMMENT = re.compile(r"^\s*(?:#|//|\*|/\*|-{1,}|\|)")  # comment / md table / list row
 
 
 def _classify(line: str, prev: str, before: str = "") -> str:
     """usage | catalog for a reference, from its line (+ the preceding line);
     ``before`` is the text of the line before the reference."""
-    if _USAGE_CONTEXT.search(line):
+    if _USAGE_CONTEXT.search(line) or (
+        _ENV_CALL_OPEN.search(prev) and _ENV_DEFAULT_ARG.match(line)
+    ):
         return "usage"
     if _COMMENT.match(line) or _CATALOG_HINT.search(line) or _CATALOG_HINT.search(prev):
         return "catalog"
@@ -226,21 +292,19 @@ def find_model_refs_ctx(text: str) -> dict[str, tuple[str, str]]:
 
     found: dict[str, tuple[str, str]] = {}
     casing: dict[str, str] = {}
-    for pattern, vendor in _FAMILIES:
-        for m in pattern.finditer(text):
-            name = m.group(0)
-            low = name.lower()
-            li = line_index(m.start()) if offsets else 0
-            line = lines[li] if li < len(lines) else ""
-            prev = lines[li - 1] if li > 0 else ""
-            start = offsets[li] if offsets else 0
-            rtype = _classify(line, prev, text[start:m.start()])
-            casing.setdefault(low, name)
-            if low not in found:
-                found[low] = (vendor, rtype)
-            elif rtype == "usage" and found[low][1] != "usage":
-                found[low] = (found[low][0], "usage")  # promote to usage
+    for pos, name, vendor in _matches(text):
+        low = name.lower()
+        li = line_index(pos) if offsets else 0
+        line = lines[li] if li < len(lines) else ""
+        prev = lines[li - 1] if li > 0 else ""
+        start = offsets[li] if offsets else 0
+        rtype = _classify(line, prev, text[start:pos])
+        casing.setdefault(low, name)
+        if low not in found:
+            found[low] = (vendor, rtype)
+        elif rtype == "usage" and found[low][1] != "usage":
+            found[low] = (found[low][0], "usage")  # promote to usage
     return {casing[low]: v for low, v in found.items()}
 
 
-__all__ = ["find_model_refs", "find_model_refs_ctx"]
+__all__ = ["find_model_refs", "find_model_refs_ctx", "parse_bedrock_id"]

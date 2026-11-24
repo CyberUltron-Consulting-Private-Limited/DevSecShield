@@ -175,7 +175,12 @@ def _model_card_dict(card: ModelCard) -> dict[str, Any]:
     if c is not None:
         _add(considerations, "users", list(c.users))
         _add(considerations, "useCases", list(c.use_cases))
-        _add(considerations, "technicalLimitations", list(c.technical_limitations))
+        _add(
+            considerations,
+            "technicalLimitations",
+            list(c.technical_limitations)
+            + [f"Out of scope: {u}" for u in c.out_of_scope],
+        )
         if c.ethical_considerations:
             ethical = []
             for e in c.ethical_considerations:

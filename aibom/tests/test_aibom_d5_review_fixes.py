@@ -276,7 +276,8 @@ def test_healthcare_profile_keeps_the_healthcare_wording() -> None:
 @pytest.mark.parametrize(
     ("counts", "expected"),
     [
-        ((0, 0, 0, 7), (28, "B", "Moderate risk")),
+        # low only is Low risk (A) since staging QA round 2 (was 28 / B)
+        ((0, 0, 0, 7), (14, "A", "Low risk")),
         ((0, 0, 10, 32), (49, "C", "Elevated risk")),
         ((0, 3, 50, 0), (69, "D", "High risk")),
         ((2, 0, 0, 0), (80, "F", "Critical risk")),

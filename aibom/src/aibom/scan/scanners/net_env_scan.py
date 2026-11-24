@@ -99,6 +99,26 @@ _HOSTS: tuple[tuple[str, str, str, str, bool | None], ...] = (
     (r"127\.0\.0\.1:11434", "endpoint", "Ollama (local)", "local", False),
     (r"localhost:8000", "endpoint", "Local inference (:8000)", "local", None),
 )
+# Service label -> the platform's ModelProvider value (worker enums.py), so a model
+# served by the service can say where it runs (``model:provider``).
+PROVIDER_KEY: dict[str, str] = {
+    "OpenAI API": "openai",
+    "Anthropic API": "anthropic",
+    "Google Gemini API": "google",
+    "Google Vertex AI": "vertex",
+    "Cohere API": "cohere",
+    "Mistral API": "mistral",
+    "Azure OpenAI": "azure",
+    "Amazon Bedrock Runtime": "bedrock",
+    "Groq API": "groq",
+    "Together AI API": "together",
+    "OpenRouter API": "openrouter",
+    "DeepSeek API": "deepseek",
+    "xAI API": "xai",
+    "Hugging Face Inference API": "huggingface",
+    "Hugging Face Hub": "huggingface",
+    "Ollama (local)": "ollama",
+}
 # Bedrock is reached through the AWS SDK as often as by URL.
 _BEDROCK_SDK = re.compile(
     r"""client\(\s*(?:service_name\s*=\s*)?['"]bedrock-runtime['"]|"""
@@ -110,6 +130,73 @@ _BEDROCK_REGION = re.compile(
     r"""region(?:_name)?\s*[=:]\s*['"](?P<region>[a-z]{2}(?:-gov)?-[a-z]+-\d)['"]""",
     re.IGNORECASE,
 )
+# A vendor SDK client the application constructs IS a call to that vendor's API
+# (QA round 2, Q2-06: zsh_codex calls Gemini, Groq and Mistral through their SDKs
+# and named none of their hosts, so none of them was a service). A file must both
+# import the SDK and construct its client; an import alone is not a call. The
+# endpoint is the SDK's documented default base URL, marked
+# ``service:endpoint_basis = sdk-default``; a client given another base URL
+# (``OpenAI(base_url="https://api.deepseek.com")``) is not that vendor's API, and
+# the host it names is found by the URL patterns above.
+# (import regex, client-construction regex, label, vendor, default endpoint)
+_SDK_CLIENTS: tuple[tuple[str, str, str, str, str], ...] = (
+    (
+        r"""(?:^|\n)\s*(?:from\s+openai\b|import\s+openai\b)|from\s+['"]openai['"]|"""
+        r"""require\(\s*['"]openai['"]\s*\)""",
+        r"""(?<!\w)(?:new\s+)?(?:Async)?OpenAI\s*\(|\bopenai\.(?:chat\.completions|"""
+        r"""completions|responses|embeddings|ChatCompletion|Completion|Embedding)\."""
+        r"""create\s*\(""",
+        "OpenAI API", "OpenAI", "https://api.openai.com/v1",
+    ),
+    (
+        r"""(?:^|\n)\s*(?:from\s+anthropic\b|import\s+anthropic\b)|"""
+        r"""from\s+['"]@anthropic-ai/sdk['"]|require\(\s*['"]@anthropic-ai/sdk['"]\s*\)""",
+        r"""(?<!\w)(?:new\s+)?(?:Async)?Anthropic\s*\(""",
+        "Anthropic API", "Anthropic", "https://api.anthropic.com",
+    ),
+    (
+        r"""(?:^|\n)\s*(?:from\s+google\s+import\s+genai\b|import\s+google\.generativeai\b|"""
+        r"""from\s+google\.generativeai\b|from\s+google\.genai\b)|"""
+        r"""from\s+['"]@google/(?:generative-ai|genai)['"]""",
+        r"""\bgenai\.(?:configure|GenerativeModel|Client)\s*\(|"""
+        r"""\bnew\s+(?:GoogleGenerativeAI|GoogleGenAI)\s*\(""",
+        "Google Gemini API", "Google", "https://generativelanguage.googleapis.com",
+    ),
+    (
+        r"""(?:^|\n)\s*(?:from\s+groq\b|import\s+groq\b)|from\s+['"]groq-sdk['"]|"""
+        r"""require\(\s*['"]groq-sdk['"]\s*\)""",
+        r"""(?<!\w)(?:new\s+)?(?:Async)?Groq\s*\(""",
+        "Groq API", "Groq", "https://api.groq.com",
+    ),
+    (
+        r"""(?:^|\n)\s*(?:from\s+mistralai\b|import\s+mistralai\b)|"""
+        r"""from\s+['"]@mistralai/mistralai['"]""",
+        r"""(?<!\w)(?:new\s+)?(?:Mistral|MistralClient|MistralAsyncClient)\s*\(""",
+        "Mistral API", "Mistral", "https://api.mistral.ai",
+    ),
+    (
+        r"""(?:^|\n)\s*(?:from\s+cohere\b|import\s+cohere\b)|"""
+        r"""from\s+['"]cohere-ai['"]""",
+        r"""\bcohere\.(?:Async)?Client(?:V2)?\s*\(|(?<!\w)(?:new\s+)?"""
+        r"""CohereClient(?:V2)?\s*\(""",
+        "Cohere API", "Cohere", "https://api.cohere.com",
+    ),
+)
+_SDK_RES = [
+    (re.compile(imp, re.IGNORECASE), re.compile(call), label, vendor, endpoint)
+    for imp, call, label, vendor, endpoint in _SDK_CLIENTS
+]
+# The arguments of one call, with one level of nested parentheses (os.getenv(...)).
+_CALL_ARGS = re.compile(r"\((?P<args>[^()]*(?:\([^()]*\)[^()]*)*)\)")
+_OTHER_BASE = re.compile(
+    r"\b(?:base_url|baseURL|api_base|vertexai)\s*[=:]", re.IGNORECASE
+)
+_DEFINITION = re.compile(r"\b(?:class|def|function|interface|type)\s+$")
+# module-level configuration that points the legacy SDK elsewhere (openai.api_base = …)
+_MODULE_BASE = re.compile(r"\bopenai\.(?:api_base|base_url)\s*=")
+# Anthropic's Bedrock / Vertex clients are those platforms, never the Anthropic API.
+_ANTHROPIC_BEDROCK = re.compile(r"(?<!\w)(?:new\s+)?(?:Async)?AnthropicBedrock\s*\(")
+_ANTHROPIC_VERTEX = re.compile(r"(?<!\w)(?:new\s+)?(?:Async)?AnthropicVertex\s*\(")
 # A bare ``localhost:8000`` is any development web server, not necessarily an
 # inference endpoint: recorded, at low confidence.
 _LOW_CONFIDENCE_HOSTS = frozenset({"localhost:8000"})
@@ -244,6 +331,20 @@ class NetEnvScanner(Scanner):
             ctx.properties["aibom:services_excluded_test_example"] = str(len(excluded))
 
 
+def _default_client_called(text: str, call: re.Pattern[str], label: str) -> bool:
+    """Whether ``text`` constructs / calls the SDK client at its default base URL."""
+    if label == "OpenAI API" and _MODULE_BASE.search(text):
+        return False
+    for m in call.finditer(text):
+        head = text[text.rfind("\n", 0, m.start()) + 1 : m.start()]
+        if _DEFINITION.search(head):
+            continue  # ``class MistralClient(BaseClient):`` defines, never calls
+        args = _CALL_ARGS.match(text, m.end() - 1)
+        if args is None or not _OTHER_BASE.search(args.group("args")):
+            return True
+    return False
+
+
 def _services_in(
     text: str, source: str
 ) -> list[CloudServiceComponent | EndpointComponent]:
@@ -258,7 +359,18 @@ def _services_in(
                 continue
             claimed.append(span)
             out.append(_component(kind, label, vendor, auth, _endpoint(match), source))
-    if _BEDROCK_SDK.search(text):
+    for imp, call, label, vendor, endpoint in _SDK_RES:
+        if imp.search(text) and _default_client_called(text, call, label):
+            comp = _component("cloud_service", label, vendor, True, endpoint, source)
+            comp.properties["discovery:method"] = "sdk-client"
+            comp.properties["service:endpoint_basis"] = "sdk-default"
+            out.append(comp)
+    if _ANTHROPIC_VERTEX.search(text):
+        comp = _component("cloud_service", "Google Vertex AI", "Google", True, None,
+                          source, host="aiplatform")
+        comp.properties["discovery:method"] = "sdk-client"
+        out.append(comp)
+    if _BEDROCK_SDK.search(text) or _ANTHROPIC_BEDROCK.search(text):
         region = _BEDROCK_REGION.search(text)
         if region:
             host = f"bedrock-runtime.{region.group('region').lower()}.amazonaws.com"
