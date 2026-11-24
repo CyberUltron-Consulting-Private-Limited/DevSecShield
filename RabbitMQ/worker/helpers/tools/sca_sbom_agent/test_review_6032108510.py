@@ -208,7 +208,10 @@ def test_offline_scan_states_its_licence_and_hash_coverage(monkeypatch):
     total = len(agent.sbom_json["components"])
     licensed = sum(1 for c in agent.sbom_json["components"] if c.get("licenses"))
     assert props["dss:licence_coverage"] == f"{licensed}/{total}" and licensed < total
-    assert props["dss:hash_coverage"] == f"0/{total}"
+    hashed = [c["name"] for c in agent.sbom_json["components"] if c.get("hashes")]
+    assert props["dss:hash_coverage"] == f"{len(hashed)}/{total}" and len(hashed) < total
+    # only what is known offline: a commit-pinned component's SHA-1, as /bom states it
+    assert all(c["hashes"][0]["alg"] == "SHA-1" for c in agent.sbom_json["components"] if c.get("hashes"))
     assert "registry lookups are off" in props["dss:coverage_note"]
     assert "not assessed" in props["dss:coverage_note"]
 
@@ -257,3 +260,18 @@ def test_an_unanswered_github_lookup_is_not_counted_as_resolved(monkeypatch):
     assert comps[0]["licenses"] == [{"license": {"id": "MIT"}}]  # the offline first-party licence, as when off
     assert "author" not in comps[0]
     registry._fetch.cache_clear()
+
+
+def test_a_component_pinned_by_commit_has_its_sha1_in_the_worker_sbom_as_in_bom():
+    """M-1: the UI counted 267/384 hashes on /bom while the stamped dss:hash_coverage said 263/384: /bom adds the
+    commit SHA-1 of an action pinned by SHA. The worker now states it too, so the stamp, the file and the page agree."""
+    from helpers.tools.sca_sbom_agent import registry_enrich
+
+    sha = "fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09"
+    comps = [{"bom-ref": f"pkg:github/actions/checkout@{sha}", "type": "library", "name": "actions/checkout",
+              "version": sha, "purl": f"pkg:github/actions/checkout@{sha}"},
+             {"bom-ref": "pkg:pypi/flask@2.0", "type": "library", "name": "flask", "version": "2.0",
+              "purl": "pkg:pypi/flask@2.0"}]
+    registry_enrich.resolve_components(comps, budget_s=0)
+    assert comps[0]["hashes"] == [{"alg": "SHA-1", "content": sha}]
+    assert "hashes" not in comps[1]

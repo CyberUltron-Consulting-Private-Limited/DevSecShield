@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import re
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, wait
@@ -38,6 +39,9 @@ _LOADED: dict[str, ModuleType | None] = {}
 _REGISTRY_ECOSYSTEMS = frozenset({"pypi", "npm", "github", "maven", "nuget", "cargo", "golang"})
 _GITHUB_MIT = frozenset({"actions", "github", "pypa"})
 GUESSED = "range_lower_bound"
+
+
+_GIT_SHA = re.compile(r"^[0-9a-fA-F]{40}$")
 
 
 def backend_module(key: str) -> ModuleType | None:
@@ -158,6 +162,11 @@ def resolve_components(components: list[dict[str, Any]], *, budget_s: float | No
             offline = _offline_licence(comp)
             if offline:
                 comp["licenses"] = offline
+        version = str(comp.get("version") or "").strip()
+        if not comp.get("hashes") and _GIT_SHA.match(version):
+            # a component pinned by commit (an action at its SHA): the commit is its SHA-1, as /bom states it
+            # (sbom_cyclonedx._hashes_for), so the stamped hash coverage counts it too (review 6032108510 M-1)
+            comp["hashes"] = [{"alg": "SHA-1", "content": version.lower()}]
     registry = backend_module("registry")
     budget = registry_budget() if budget_s is None else budget_s
     network = bool(registry and registry.registry_enabled() and registry._network_allowed() and budget > 0)
