@@ -161,7 +161,7 @@ def decode_after(text: str | None) -> tuple[str, str] | None:
         return None
     try:
         value = json.loads(base64.urlsafe_b64decode(text + "=" * (-len(text) % 4)))
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - any malformed cursor is the client's error
         raise ValueError("after: not a cursor from this list") from exc
     if not (isinstance(value, list) and len(value) == 2 and all(isinstance(v, str) for v in value)):
         raise ValueError("after: not a cursor from this list")

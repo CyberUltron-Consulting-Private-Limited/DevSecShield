@@ -452,7 +452,7 @@ def _estate_from_group(view: TeamCbomView, inputs: EstateInputs, items: Sequence
                        aggs: Mapping[str, CertAgg]) -> EstateCert:
     head = items[0]
     facts_list = [i.facts if isinstance(i.facts, Mapping) else {} for i in items]
-    pick = lambda *names: _first(f.get(n) for f in facts_list for n in names)
+    pick = lambda *names: _first(f.get(n) for f in facts_list for n in names)  # noqa: E731 - newest row first
     fp = next((thumbprint(f) for f in facts_list if thumbprint(f)), "")
     subject = _dn_first(f.get("subject") for f in facts_list) or _text(head.row.get("title"))
     issuer = _dn_first(f.get("issuer") for f in facts_list)

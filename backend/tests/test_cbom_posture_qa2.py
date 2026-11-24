@@ -26,21 +26,14 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from backend.tests.support import sources_every_type as FX
-from backend.tests.support import two_aws_roles as AWS2
-from backend.tests.test_cbom_sources_posture_d6_d9_d10 import (
-    kpi_cards,
-    rows_under,
-    story,
-)
-from backend.utilities.dashboard.cbom_team_rollup import (
-    TeamCbomView,
-    merge_collections,
-)
-from backend.utilities.pdf import cbom_assurance_register_pdf as d10
-from backend.utilities.pdf import cbom_data_at_rest_pdf as d9
-from backend.utilities.pdf import cbom_infra_posture_pdf as d6
-from backend.utilities.pdf import cbom_network_tls_pdf as d7
+from backend.tests.support import sources_every_type as FX  # noqa: E402
+from backend.tests.support import two_aws_roles as AWS2  # noqa: E402
+from backend.tests.test_cbom_sources_posture_d6_d9_d10 import kpi_cards, rows_under, story  # noqa: E402
+from backend.utilities.dashboard.cbom_team_rollup import TeamCbomView, merge_collections  # noqa: E402
+from backend.utilities.pdf import cbom_assurance_register_pdf as d10  # noqa: E402
+from backend.utilities.pdf import cbom_data_at_rest_pdf as d9  # noqa: E402
+from backend.utilities.pdf import cbom_infra_posture_pdf as d6  # noqa: E402
+from backend.utilities.pdf import cbom_network_tls_pdf as d7  # noqa: E402
 
 NOW = dt.datetime(2026, 11, 24, 6, 0, tzinfo=dt.timezone.utc)
 NEWER, OLDER = "aws-pca-test", "stgqa-aws-ap-south-1"  # job 521 finished 30 s after job 520

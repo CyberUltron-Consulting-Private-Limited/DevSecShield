@@ -13,11 +13,12 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import test_cbom_sources_api as HARNESS
-from backend.utilities.cbom_sources import cert_hygiene as HYG
-from backend.utilities.cbom_sources import drift as DRIFT
-from test_cbom_sources_api import enroll_node, linux_body
-from test_cbom_wp10_outputs import _claim, _collect, _run
+import test_cbom_sources_api as HARNESS  # noqa: E402
+from test_cbom_sources_api import enroll_node, linux_body  # noqa: E402
+from test_cbom_wp10_outputs import _claim, _collect, _run  # noqa: E402
+
+from backend.utilities.cbom_sources import cert_hygiene as HYG  # noqa: E402
+from backend.utilities.cbom_sources import drift as DRIFT  # noqa: E402
 
 api, world = HARNESS.api, HARNESS.world
 
