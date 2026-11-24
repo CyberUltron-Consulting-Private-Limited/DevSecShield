@@ -32,7 +32,7 @@ export const RUN_DELIVERABLE_ITEMS: { kind: CbomRunDeliverable; label: string; t
   {
     kind: "signature",
     label: "Signature",
-    title: "HMAC-SHA256 signature over the exact bytes of this run's CycloneDX JSON download (the XML is not covered)",
+    title: "ES256 signature over the exact bytes of this run's CycloneDX JSON download, with the public key: verify it offline with openssl (the JSON also carries an embedded JSF signature)",
     done: "BOM signature downloaded",
   },
   {

@@ -341,7 +341,9 @@ def test_the_streamed_download_is_still_the_in_memory_document(seeded):
         doc = inventory.cyclonedx(s, run, now)
         buf = io.BytesIO()
         inventory.write_cyclonedx(s, run, now, "json", buf)
-    assert buf.getvalue() == JSONResponse(doc).body
+    body = buf.getvalue()  # D11: the stream ends with its JSF signature; without it, the in-memory document's bytes
+    unsigned = body[:body.rindex(b',"signature":')] + b"}" if b',"signature":' in body[-600:] else body
+    assert unsigned == JSONResponse(doc).body
     assert _one(doc["metadata"], "zs:grade_model") == "qg-1"
 
 

@@ -44,6 +44,13 @@ def is_rfc3339_date_time(value: Any) -> bool:
     return True
 
 
+_URI = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:\S*$")
+
+
+def is_absolute_uri(value: Any) -> bool:
+    return not isinstance(value, str) or bool(_URI.match(value))
+
+
 def published_files() -> dict[str, Path]:
     """Path of every published schema file, after checking its sha256 against SOURCES.json."""
     out: dict[str, Path] = {}
@@ -68,6 +75,10 @@ def _json_validator():
         (doc["$id"], Resource.from_contents(doc)) for doc in docs.values())
     checker = FormatChecker()
     checker.checks("date-time")(is_rfc3339_date_time)
+    # JSF's signer.algorithm is oneOf(enum ES256..., string format "uri"): jsonschema skips "uri" unless rfc3987 is
+    # installed, so "ES256" would match both branches and fail the oneOf. cyclonedx-python-lib's strict validator
+    # (with jsonschema[format]) asserts "uri"; so does this check (RFC 3986 absolute URI: a scheme is required).
+    checker.checks("uri")(is_absolute_uri)
     return Draft7Validator(docs["bom-1.6.schema.json"], registry=registry, format_checker=checker)
 
 

@@ -5411,11 +5411,18 @@ export interface CbomRunVex {
     vulnerabilities: CbomRunVexEntry[]
 }
 
-/** HMAC-SHA256 over the exact bytes of GET /runs/{id}/cbom (format=json), with the code lane's bom_signature key and
- * fields. The key stays on the server: verify with verifyCbomRunSignature, or compare sha256(file) with ``digest``. */
+/** The run CBOM JSON's signature (D11): ES256 (base64 DER, openssl-verifiable) over the exact bytes of
+ * GET /runs/{id}/cbom (format=json) with the deployment's published key (GET /{team}/bom-signing-keys); the file
+ * also carries an embedded JSF signature. ``legacy_hmac``: the older server-held HMAC. A server without a signing
+ * key answers the HMAC fields alone (alg "HMAC-SHA256"). */
 export interface CbomRunSignature {
-    alg: "HMAC-SHA256"
+    alg: "ES256" | "HMAC-SHA256"
     key_id: string
+    public_key_pem?: string
+    fingerprint?: string
+    keys_route?: string
+    embedded?: { format: string; algorithm: string; keyId: string; covers: string } | null
+    legacy_hmac?: { alg: "HMAC-SHA256"; key_id: string; signature_b64: string }
     digest: string
     signature_b64: string
     signed_at: string
@@ -5469,22 +5476,30 @@ const downloadCbomRunDeliverable = async (team_id: number, run_id: number, kind:
 
 /** The answer of POST /runs/{id}/signature/verify for a downloaded run CycloneDX JSON. */
 export interface CbomRunSignatureVerification {
+    /** the signature is this deployment's AND the file is this run's */
     valid: boolean
     signature_match: boolean
+    /** the signature alone checks out (true for another run's file, which is not valid) */
+    signed_by_deployment?: boolean
+    /** the file is this run's: its current CBOM, or a file whose zs:run_id / pack subject names this run */
+    bound?: boolean
+    reason?: string
     /** the file equals the run's current CBOM JSON (null only when nothing was compared) */
     digest_match: boolean | null
     digest: string
     current_digest: string
     bytes: number
     key_id: string
-    alg: "HMAC-SHA256"
+    alg: "ES256" | "HMAC-SHA256"
     compared_with: string
+    /** the uploaded file's own JSF signature, when it carries one */
+    embedded_signature?: { valid?: boolean; kid?: string; reason?: string }
     run_id: number
     run_status: string
 }
 
 /** Sends a downloaded run CycloneDX JSON, as downloaded, for verification against the signature it came with
- * (``signatureB64``), else against the run's current CBOM. The HMAC key stays on the server. */
+ * (``signatureB64``: ES256 or the older HMAC), else its embedded JSF signature, else the run's current CBOM. */
 const verifyCbomRunSignature = async (team_id: number, run_id: number, file: Blob,
                                       signatureB64?: string): Promise<CbomRunSignatureVerification> => {
     const response = await api.post(`${cbomRunDeliverablePath(team_id, run_id, "signature")}/verify`, file, {
@@ -5675,7 +5690,7 @@ export class ReportDownloadError extends Error {
     readonly field: string | null
     /** 429: when a new build may start (ms since the epoch; 30 s when the server gave no Retry-After) */
     readonly retryAt: number | null
-    /** 429 from a full export-slot pool: its X-Export-Busy header ("pdf" | "cbom"); null for a rate-limit 429 */
+    /** 429 from a full export-slot pool: its X-Export-Busy header ("pdf" | "cbom" | "verify"); null for a rate-limit 429 */
     readonly busy: string | null
 
     constructor(message: string, init: { status: number | null; detail: string | null; retryAfter: number | null; field: string | null; busy?: string | null; cause?: unknown }) {

@@ -212,7 +212,8 @@ function ExportMenu({ children, tips }: { children: ReactNode; tips: ReactNode }
   );
 }
 
-/** "Verify file…": checks a downloaded CycloneDX JSON of this run against its signature (the key stays on the server). */
+/** "Verify file…": checks a downloaded CycloneDX JSON of this run against its signature (ES256 with the published key;
+ * files signed earlier with the HMAC key are checked on the server). */
 export function RunVerifyButton({ teamId, runId }: { teamId: number; runId: number }) {
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -235,7 +236,7 @@ export function RunVerifyButton({ teamId, runId }: { teamId: number; runId: numb
       <input ref={input} type="file" accept=".json,application/json" className="hidden" data-testid="run-verify-signature-file"
              onChange={(e) => void verify(e.target.files?.[0])} />
       <Button variant="outline" className="cursor-pointer" disabled={busy} data-testid="run-verify-signature"
-              title="Check a downloaded CycloneDX JSON of this run against its signature (the key stays on the server)"
+              title="Check a downloaded CycloneDX JSON of this run against its signature (also verifiable offline with the published key)"
               onClick={() => input.current?.click()}>
         {busy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <BadgeCheck className="h-4 w-4 mr-2" />}
         Verify file…

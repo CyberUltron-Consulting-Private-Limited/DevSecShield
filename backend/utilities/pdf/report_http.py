@@ -72,7 +72,7 @@ OUTCOMES = ("ok", "client_gone", "busy", "refused", "error")
 # The CBOM download headers the UI reads (estate SHA-256, deliverable fidelity and logo, ...).
 CBOM_EXPOSED_HEADERS = ("X-Cbom-Assets", "X-Cbom-Fidelity", "X-Cbom-Fingerprint", "X-Cbom-Logo-Sha256",
                         "X-Cbom-Posture", "X-Cbom-Scans-Included", "X-Cbom-Sha256", "X-Cbom-Signature",
-                        "X-Cbom-Sources")
+                        "X-Cbom-Sources", "X-ZS-Signature", "X-ZS-Signature-Alg", "X-ZS-Signature-Key-Id")
 
 # Rows at or above which a code-lane PDF build takes one of the host-wide scan PDF slots (``export_slots.pdf_slot``,
 # a pool of its own: big scan PDFs never hold up CBOM exports, nor CBOM exports them; 429 when all are busy).
@@ -244,8 +244,9 @@ def report_headers(ctx: ReportContext, filename: str, *, findings: bool = True) 
 
 
 def busy_refusal(pool: str) -> HTTPException:
-    """The 429 of a full export-slot pool (``"pdf"``: scan PDFs, ``"cbom"``: CBOM exports), in that pool's words."""
-    detail = EXPORT_SLOTS.PDF_BUSY if pool == "pdf" else EXPORT_SLOTS.CBOM_BUSY
+    """The 429 of a full export-slot pool (``"pdf"``: scan PDFs, ``"cbom"``: CBOM exports, ``"verify"``: uploads the
+    signature verify routes parse), in that pool's words."""
+    detail = {"pdf": EXPORT_SLOTS.PDF_BUSY, "verify": EXPORT_SLOTS.VERIFY_BUSY}.get(pool, EXPORT_SLOTS.CBOM_BUSY)
     return HTTPException(status_code=429, detail=detail, headers={
         **PRIVATE, "Retry-After": str(EXPORT_SLOTS.RETRY_AFTER_S), EXPORT_SLOTS.BUSY_HEADER: pool})
 

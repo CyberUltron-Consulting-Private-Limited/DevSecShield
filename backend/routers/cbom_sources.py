@@ -43,6 +43,7 @@ from backend.new_models import (
 )
 from backend.routers import cbom_node_artifacts as NODE_ARTIFACTS  # install links (one-paste node install)
 from backend.utilities.cbom_sources import agility as AGILITY
+from backend.utilities.cbom_sources.bom_signing import signature_headers
 from backend.utilities.cbom_sources import agility_rollup as AGILITY_ROLLUP
 from backend.utilities.cbom_sources import http as _cbom_http
 from backend.utilities.rbac.policy import Access
@@ -1778,7 +1779,7 @@ async def run_assets(team_id: TeamId, run_id: ObjectId,
 EXPORT_SPOOL_BYTES = 8 * 1024 * 1024  # an export up to this size stays in memory; a larger one goes to a temp file
 
 
-def _run_cbom(engine, team_id: int, run_id: int, fmt: str = "json") -> IO[bytes]:
+def _run_cbom(engine, team_id: int, run_id: int, fmt: str = "json") -> tuple[IO[bytes], bytes]:
     """The run's CycloneDX document written to a temporary file (positioned at its start), checked first: 404 for
     another team's run; 429 with Retry-After when the run is large and every export slot is taken (export_slots).
     The document is written one component at a time (inventory.write_cyclonedx), so a 50,000-component export never
@@ -1791,13 +1792,15 @@ def _run_cbom(engine, team_id: int, run_id: int, fmt: str = "json") -> IO[bytes]
             with EXPORT_SLOTS.slot() if EXPORT_SLOTS.is_large(rows) else contextlib.nullcontext():
                 out = tempfile.SpooledTemporaryFile(max_size=EXPORT_SPOOL_BYTES)
                 try:
-                    # inventory's document with a stable timestamp: the bytes GET .../signature signs (CB-38 PR-8)
-                    RUN_DELIVERABLES.write_run_cbom(session, run, utcnow(), fmt, out)
+                    # inventory's document with a stable timestamp: the bytes GET .../signature signs (CB-38 PR-8);
+                    # hashed while written, for the detached signature header (D11)
+                    tee = RUN_DELIVERABLES.Digests(out)
+                    RUN_DELIVERABLES.write_run_cbom(session, run, utcnow(), fmt, tee)
                     out.seek(0)
                 except BaseException:
                     out.close()
                     raise
-                return out
+                return out, tee.sha.digest()
         except EXPORT_SLOTS.Busy:  # 429 + Retry-After: the UI's error handler already says "try again in N seconds"
             log("run cbom export busy", team=team_id, run=run_id, rows=rows, slots=EXPORT_SLOTS.SLOTS)
             raise busy_refusal("cbom") from None
@@ -1816,13 +1819,14 @@ def _chunks(out: IO[bytes], size: int = 1024 * 1024) -> Iterator[bytes]:
 async def run_cbom(team_id: TeamId, run_id: ObjectId, format: str = Query(default="json", pattern="^(json|xml)$"),
                    Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
-    out = await _run("run cbom", team_id, _run_cbom, engine, team_id, run_id, format)
+    out, digest = await _run("run cbom", team_id, _run_cbom, engine, team_id, run_id, format)
     length = out.seek(0, 2)
     out.seek(0)
-    # The JSON is signed on request (GET .../runs/{id}/signature, CB-38 PR-8); the XML is not covered
+    # D11: the JSON carries an embedded JSF signature; both formats get a detached ES256 signature of their exact
+    # bytes in X-ZS-Signature (base64 DER, openssl-verifiable with the key at GET /{team}/bom-signing-keys)
     media, ext = (CDX_XML.XML_MEDIA_TYPE, "xml") if format == "xml" else ("application/json", "json")
     return StreamingResponse(_chunks(out), media_type=media, headers={
-        **PRIVATE, "Content-Length": str(length),
+        **PRIVATE, "Content-Length": str(length), **signature_headers(digest),
         "Content-Disposition": f'attachment; filename="cbom-sources-run-{run_id}.cdx.{ext}"'})
 
 

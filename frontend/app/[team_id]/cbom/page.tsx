@@ -915,7 +915,7 @@ export default function CBOMPage() {
                 <Card>
                   <CardHeader>
                     <CardTitle>Estate CBOM <InfoTip id="cbom.estate.export" /></CardTitle>
-                    <CardDescription>The whole estate as one CycloneDX 1.6 file: every asset once, however many sources see it, with its current quantum risk grade and VEX. The file is unsigned; its SHA-256 is shown after the download.</CardDescription>
+                    <CardDescription>The whole estate as one CycloneDX 1.6 file: every asset once, however many sources see it, with its current quantum risk grade and VEX. The file is signed with the deployment&apos;s published key (ES256: inside the JSON, and a detached signature for both formats); its SHA-256 is shown after the download.</CardDescription>
                   </CardHeader>
                   <CardContent>
                     {Number.isFinite(teamIdNumber) && <EstateCbomDownload teamId={teamIdNumber} />}
