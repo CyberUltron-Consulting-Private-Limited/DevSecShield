@@ -129,6 +129,8 @@ export interface CbomDistributions {
   algorithms: Record<string, number>;
   /** weak-crypto flags grouped by flag code (WEAK_ALGORITHM, …) */
   weakness: Record<string, number>;
+  /** the same flags by code and impact (High / Medium / Low); absent on scans stored before it */
+  weakness_impacts?: Record<string, Partial<Record<"Critical" | "High" | "Medium" | "Low", number>>>;
   /** post-quantum readiness derived from nistQuantumSecurityLevel */
   pqc: {
     quantum_vulnerable: number;
@@ -233,6 +235,7 @@ const WEAKNESS_LABELS: Record<string, string> = {
   HARDCODED_KEY: "Hardcoded key",
   STATIC_SALT: "Static salt",
   WEAK_KDF_ITERATIONS: "Weak KDF iterations",
+  WEAK_KDF_COST: "Weak KDF cost (scrypt)",
   WEAK_RSA_EXPONENT: "RSA exponent 3",
   WEAK_CERTIFICATE_SIGNATURE: "Weak cert signature",
   WEAK_CERTIFICATE_KEY: "Weak cert key",
@@ -241,14 +244,38 @@ const WEAKNESS_LABELS: Record<string, string> = {
   QUANTUM_VULNERABLE: "Quantum-vulnerable",
 };
 
-// Weakness codes graded Medium (a future/lower-severity exposure) — everything
-// else in the weak-crypto set is High. Mirrors the C8 scorer's severity bands
-// (QUANTUM_VULNERABLE / SELF_SIGNED_LEAF = warning/Medium; the rest = error/High).
+// Bars are coloured by the impact of the flags behind them (the engine's ``weakness_impacts``: High red, Medium
+// orange, Low yellow). A scan stored before that has the code counts only: the code's usual impact (the C8 scorer's
+// bands) is used, a Medium code orange (staging QA N2: every bar was red).
 const WEAKNESS_MEDIUM = new Set<string>([
   "QUANTUM_VULNERABLE",
   "SELF_SIGNED_LEAF",
+  "STATIC_SALT",
+  "WEAK_KDF_ITERATIONS",
+  "WEAK_KDF_COST",
+  "CUSTOM_CRYPTO",
+  "PLAINTEXT_LISTENER",
+  "DOWNGRADE_PROTECTION_MISSING",
+  "AT_REST_ENCRYPTION_WEAK",
 ]);
-const weaknessTone = (k: string) => (WEAKNESS_MEDIUM.has(k) ? C.quantumVuln : C.weak);
+export const IMPACT_TONE = { High: C.weak, Medium: C.quantumVuln, Low: "#eab308" } as const; // yellow-500 for Low
+
+export interface WeaknessBar { name: string; code: string; count: number; High: number; Medium: number; Low: number }
+
+/** One bar per weakness code, split by impact (stacked), largest first. */
+export function weaknessBars(data: Record<string, number> | undefined,
+  impacts: CbomDistributions["weakness_impacts"]): WeaknessBar[] {
+  return Object.entries(data ?? {})
+    .map(([code, count]) => {
+      const by = impacts?.[code];
+      const split = by  // a Critical bar is drawn red with High: the legend has three tones
+        ? { High: (by.Critical ?? 0) + (by.High ?? 0), Medium: by.Medium ?? 0, Low: by.Low ?? 0 }
+        : WEAKNESS_MEDIUM.has(code) ? { High: 0, Medium: count, Low: 0 } : { High: count, Medium: 0, Low: 0 };
+      return { name: labelWeakness(code), code, count, ...split };
+    })
+    .filter((d) => d.count > 0)
+    .sort((a, b) => b.count - a.count);
+}
 
 // ── asset-type breakdown (CycloneDX cryptoProperties.assetType) ──────────────
 const ASSET_TYPE_LABELS: Record<string, string> = {
@@ -341,15 +368,9 @@ function AlgorithmDistribution({ data }: { data: Record<string, number> }) {
 }
 
 /** 2 — Weak-crypto findings: weakness flags by code, toned by severity. */
-function WeakCryptoFindings({ data }: { data: Record<string, number> }) {
-  const rows = useMemo(
-    () =>
-      Object.entries(data ?? {})
-        .map(([k, count]) => ({ name: labelWeakness(k), count, fill: weaknessTone(k) }))
-        .filter((d) => d.count > 0)
-        .sort((a, b) => b.count - a.count),
-    [data],
-  );
+function WeakCryptoFindings({ data, impacts }: { data: Record<string, number>;
+  impacts?: CbomDistributions["weakness_impacts"] }) {
+  const rows = useMemo(() => weaknessBars(data, impacts), [data, impacts]);
   return (
     <Card className="border-zinc-200 dark:border-zinc-800">
       <CardHeader>
@@ -358,7 +379,7 @@ function WeakCryptoFindings({ data }: { data: Record<string, number> }) {
           Weak-crypto findings
         <InfoTip id="cbom.chart.weak" />
         </CardTitle>
-        <CardDescription>Weak / deprecated crypto by category (High red · Medium orange)</CardDescription>
+        <CardDescription>Weak / deprecated crypto by category (High red · Medium orange · Low yellow)</CardDescription>
       </CardHeader>
       <CardContent>
         {rows.length === 0 ? (
@@ -369,11 +390,9 @@ function WeakCryptoFindings({ data }: { data: Record<string, number> }) {
               <XAxis type="number" hide />
               <YAxis dataKey="name" type="category" width={130} tickLine={false} axisLine={false} className="text-[10px]" />
               <ChartTooltip content={<ChartTooltipContent />} />
-              <Bar dataKey="count" radius={3}>
-                {rows.map((d, i) => (
-                  <Cell key={i} fill={d.fill} />
-                ))}
-              </Bar>
+              {(["High", "Medium", "Low"] as const).map((impact) => (
+                <Bar key={impact} dataKey={impact} name={impact} stackId="impact" fill={IMPACT_TONE[impact]} />
+              ))}
             </BarChart>
           </ChartContainer>
         )}
@@ -1185,11 +1204,9 @@ function ProtocolTls({ data }: { data: Record<string, number> }) {
               <XAxis type="number" hide />
               <YAxis dataKey="name" type="category" width={90} tickLine={false} axisLine={false} className="text-[10px]" />
               <ChartTooltip content={<ChartTooltipContent />} />
-              <Bar dataKey="count" radius={3}>
-                {rows.map((d, i) => (
-                  <Cell key={i} fill={d.fill} />
-                ))}
-              </Bar>
+              {(["High", "Medium", "Low"] as const).map((impact) => (
+                <Bar key={impact} dataKey={impact} name={impact} stackId="impact" fill={IMPACT_TONE[impact]} />
+              ))}
             </BarChart>
           </ChartContainer>
         )}
@@ -1233,11 +1250,9 @@ function AssetTypeDistribution({ graph }: { graph: CbomGraph }) {
               <XAxis type="number" hide />
               <YAxis dataKey="name" type="category" width={110} tickLine={false} axisLine={false} className="text-[10px]" />
               <ChartTooltip content={<ChartTooltipContent />} />
-              <Bar dataKey="count" radius={3}>
-                {rows.map((d, i) => (
-                  <Cell key={i} fill={d.fill} />
-                ))}
-              </Bar>
+              {(["High", "Medium", "Low"] as const).map((impact) => (
+                <Bar key={impact} dataKey={impact} name={impact} stackId="impact" fill={IMPACT_TONE[impact]} />
+              ))}
             </BarChart>
           </ChartContainer>
         )}
@@ -1442,7 +1457,7 @@ export function CbomCryptoCharts({
     const cell = "min-w-0 [&>[data-slot=card]]:h-full";
     const cards = [
       has("algorithms") && <div key="algorithms" className={cell}><AlgorithmDistribution data={distributions.algorithms} /></div>,
-      has("weak") && <div key="weak" className={cell}><WeakCryptoFindings data={distributions.weakness} /></div>,
+      has("weak") && <div key="weak" className={cell}><WeakCryptoFindings data={distributions.weakness} impacts={distributions.weakness_impacts} /></div>,
       has("readiness") && (
         <div key="readiness" className={cell}>
           <PqcReadinessGauge pqc={distributions.pqc} rows={inventory ?? findings} scope={readinessScope} />
@@ -1496,7 +1511,7 @@ export function CbomCryptoCharts({
       {row1 && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {has("algorithms") && <AlgorithmDistribution data={distributions.algorithms} />}
-          {has("weak") && <WeakCryptoFindings data={distributions.weakness} />}
+          {has("weak") && <WeakCryptoFindings data={distributions.weakness} impacts={distributions.weakness_impacts} />}
           {has("readiness") && <PqcReadinessGauge pqc={distributions.pqc} rows={inventory ?? findings} scope={readinessScope} />}
         </div>
       )}

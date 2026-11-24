@@ -2098,6 +2098,8 @@ export interface CbomFinding {
   crypto_strength?: string | null
   key_size?: number | null
   quantum_safe?: boolean | null
+  /** false with quantum_safe false and a weak strength: broken today (MD5), not quantum-vulnerable */
+  quantum_vulnerable?: boolean | null
   location?: string | null
   snippet?: string | null
   remediation?: RemediationData | null
@@ -2197,6 +2199,10 @@ export interface CbomScanDashboardData {
     /** a Sources run's posture readiness_basis.status (absent on code scans) */
     quantum_readiness_status?: CbomReadinessBasis["status"]
     average_risk_score: number
+    /** the D3 risk score (0-100), its grade and words: the engine's posture function, as the PDF headline */
+    risk_score?: number | null
+    risk_grade?: string | null
+    risk_label?: string | null
   }
   remediation_metrics: {
     mean_time_to_remediate: [number, number, number]

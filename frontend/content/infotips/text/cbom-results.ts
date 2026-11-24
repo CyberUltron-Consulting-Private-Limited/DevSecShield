@@ -79,11 +79,11 @@ const TEXT = {
     why: "It tracks your post-quantum migration in one number.",
     example: "12 judged: 9 safe, 2 RSA, 1 DES: 9 / 12 = 75%.",
   },
-  // src: backend/utilities/cbom_sources/cbom_metrics.py:26, backend/utilities/cbom_sources/cbom_metrics.py:82-88 — 0-10 over findings: critical 9, high 7, medium 5, low 2
+  // src: aibom/src/aibom/score/posture.py:31-44, backend/utilities/cbom_sources/cbom_metrics.py:87-99 — the engine's one posture formula and the backend wrapper the API and PDF call
   "cbom.res.kpi.avg_risk": {
-    what: "The average risk over this scan's findings, 0 to 10: Critical 9, High 7, Medium 5, Low 2. Clean inventory is left out. One decimal.",
-    why: "A quick severity summary that can be compared across scans.",
-    example: "1 Critical and 1 Low: (9 + 2) / 2 = 5.5.",
+    what: "This scan's risk score, 0 to 100, with its grade and words: 4 x (10 per Critical + 5 per High + 2 per Medium + 1 per Low finding), at most 100, and capped by the worst severity found: no Critical keeps it at 69 or less, no Critical or High at 49 or less, Low only at 29 or less. Clean inventory is left out. The PDF report's headline shows the same number.",
+    why: "One score for the whole scan that never claims a worse posture than its worst finding.",
+    example: "1 High, 1 Medium and 2 Low: 4 x (5 + 2 + 2) = 36, grade C, Elevated risk.",
   },
   // src: backend/utilities/dashboard/scan.py:1233-1239 — finding rows by status
   "cbom.res.remediation": {

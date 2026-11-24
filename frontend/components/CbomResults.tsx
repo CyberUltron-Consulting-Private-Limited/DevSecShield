@@ -30,7 +30,7 @@ import {
   Lock,
   ShieldCheck,
 } from "lucide-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import RemediationPanel from "@/components/RemediationPanel";
 import AiRemediationPanel from "@/components/cbom/results/AiRemediationPanel";
 import {
@@ -72,6 +72,7 @@ import {
 } from "@/components/cbom/CbomCryptoCharts";
 import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRollup";
 import { CertHygieneSection } from "@/components/cbom/certificates/CertHygiene";
+import { ScanCertificates } from "@/components/cbom/certificates/ScanCertificates";
 import { CodeChanges } from "@/components/cbom/sources/ChangesPanel";
 import { CodeWavesPanel } from "@/components/cbom/sources/WavesControls";
 import { CertInLanePosture } from "@/components/certin/CertInLanePosture";
@@ -157,8 +158,8 @@ function matchesRiskScoreFilter(score: number | null, filter: RiskScoreFilter): 
 
 /** Quantum column: "Broken today" for a classically broken algorithm (MD5, SHA-1, DES …) instead of a misleading
  * "Safe"; "—" when quantum readiness does not apply (libraries, configuration, certificates). */
-function QuantumBadge({ quantumSafe, strength, yesNo = false }: { quantumSafe?: boolean | null; strength?: string | null; yesNo?: boolean }) {
-  if (isBrokenToday({ quantum_safe: quantumSafe, crypto_strength: strength })) {
+function QuantumBadge({ quantumSafe, strength, quantumVulnerable, yesNo = false }: { quantumSafe?: boolean | null; strength?: string | null; quantumVulnerable?: boolean | null; yesNo?: boolean }) {
+  if (isBrokenToday({ quantum_safe: quantumSafe, crypto_strength: strength, quantum_vulnerable: quantumVulnerable })) {
     return (
       <Badge variant="outline" className="border-amber-500/60 text-amber-700 dark:text-amber-400"
         title="Already broken without a quantum computer: replace it now; post-quantum readiness does not help">
@@ -939,7 +940,9 @@ export default function CbomResults({
           )}
           {Number.isFinite(tid) && tid > 0 && (
             <div className="mt-6" data-testid="code-cert-hygiene">
-              <CertHygieneSection teamId={tid} />
+              {/* a code scan lists its own certificates; the team estate's hygiene is on the CBOM dashboard (staging
+                  QA N1). A Sources run keeps the estate view. */}
+              {run ? <CertHygieneSection teamId={tid} /> : <ScanCertificates teamId={tid} rows={allRows} />}
             </div>
           )}
           <RbiCsfRollup
@@ -1159,6 +1162,13 @@ export default function CbomResults({
                               >
                                 {finding.algorithm_name || finding.title}
                               </button>
+                              {/* phones: the impact and risk score under the name, never only behind a sideways scroll
+                                  (staging QA N6) */}
+                              <span className="mt-1 flex items-center gap-1.5 sm:hidden" data-testid="cbom-finding-mobile-meta">
+                                <Badge variant="outline" className={`whitespace-nowrap ${getImpactBadgeClass(finding.impact)}`}>{finding.impact}</Badge>
+                                <span className={`inline-flex items-center justify-center min-w-9 px-1.5 py-0.5 rounded-md text-xs font-semibold tabular-nums ${getRiskScoreBoxClass(finding.risk_score)}`}
+                                      title="Risk score">{finding.risk_score?.toFixed(1) ?? "—"}</span>
+                              </span>
                             </TableCell>
                             )}
                             {showCol("type") && (
@@ -1168,7 +1178,7 @@ export default function CbomResults({
                             )}
                             {showCol("impact") && (
                             <TableCell data-col="impact">
-                              <Badge variant="outline" className={getImpactBadgeClass(finding.impact)}>{finding.impact}</Badge>
+                              <Badge variant="outline" className={`whitespace-nowrap ${getImpactBadgeClass(finding.impact)}`}>{finding.impact}</Badge>
                             </TableCell>
                             )}
                             {showCol("strength") && (
@@ -1180,7 +1190,7 @@ export default function CbomResults({
                             )}
                             {showCol("quantum") && (
                             <TableCell data-col="quantum">
-                              <QuantumBadge quantumSafe={finding.quantum_safe} strength={finding.crypto_strength} />
+                              <QuantumBadge quantumSafe={finding.quantum_safe} strength={finding.crypto_strength} quantumVulnerable={finding.quantum_vulnerable} />
                             </TableCell>
                             )}
                             {showCol("fixclass") && (
@@ -1248,6 +1258,7 @@ export default function CbomResults({
                     )}
                   </TableBody>
                 </Table>
+                <ScrollBar orientation="horizontal" />
               </ScrollArea>
             </CardContent>
           </Card>
@@ -1289,6 +1300,7 @@ export default function CbomResults({
                       ))}
                     </TableBody>
                   </Table>
+                  <ScrollBar orientation="horizontal" />
                 </ScrollArea>
               </CardContent>
             </Card>
@@ -1335,7 +1347,7 @@ export default function CbomResults({
                     </div>
                     <div>
                       <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Quantum safe</div>
-                      <QuantumBadge quantumSafe={selectedFinding.quantum_safe} strength={selectedFinding.crypto_strength} yesNo />
+                      <QuantumBadge quantumSafe={selectedFinding.quantum_safe} strength={selectedFinding.crypto_strength} quantumVulnerable={selectedFinding.quantum_vulnerable} yesNo />
                     </div>
                     <div>
                       <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Impact</div>

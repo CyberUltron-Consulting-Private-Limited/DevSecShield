@@ -1,7 +1,8 @@
 /**
  * Owner rule for the results redesign: a code scan (no `?run=1`) renders exactly as before. codeModeSnapshot.html is
  * CbomResults' markup for the code-mode fixture (codeModeFixture.ts), taken on the base commit fbf79f7e before the
- * run-mode views were added; the page must still produce it byte for byte (generated React ids aside).
+ * run-mode views were added; the page must still produce it byte for byte (generated React ids aside). Regenerated
+ * deliberately once, for staging QA round 2 on D3 (fix/cbom-d3-qa2): see codeModeSnapshot.test.ts.
  * Run (frontend/): npx --yes tsx@4.23.15 components/cbom/results/views/codeModeUnchanged.test.ts
  */
 import assert from "node:assert/strict";

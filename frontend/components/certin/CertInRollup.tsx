@@ -6,6 +6,7 @@
  */
 
 import { useMemo, useState } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   Bar,
   BarChart,
@@ -75,6 +76,8 @@ export function CertInRollup({
   }, [rollup]);
 
   const [active, setActive] = useState<string | null>(null);
+  // phones: a narrower label column (labels wrap), so the bars keep most of the card (staging QA N6: ~30 px bars)
+  const narrow = useIsMobile();
 
   if (dims.length === 0) return null;
 
@@ -142,7 +145,7 @@ export function CertInRollup({
             <BarChart
               data={chartData}
               layout="vertical"
-              margin={{ top: 4, right: 16, bottom: 4, left: 8 }}
+              margin={{ top: 4, right: narrow ? 4 : 16, bottom: 4, left: narrow ? 0 : 8 }}
             >
               <CartesianGrid
                 horizontal={false}
@@ -152,7 +155,7 @@ export function CertInRollup({
               <YAxis
                 dataKey="name"
                 type="category"
-                width={220}
+                width={narrow ? 104 : 220}
                 tickLine={false}
                 axisLine={false}
                 className="text-xs"

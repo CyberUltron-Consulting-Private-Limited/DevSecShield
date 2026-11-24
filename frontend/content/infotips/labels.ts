@@ -820,7 +820,7 @@ export const INFO_TIP_LABELS = {
   "cbom.res.kpi.certs": "Certificates",
   "cbom.res.kpi.keys": "Keys",
   "cbom.res.kpi.ready": "Quantum ready",
-  "cbom.res.kpi.avg_risk": "Avg risk score",
+  "cbom.res.kpi.avg_risk": "Risk score",
   "cbom.res.remediation": "Remediation progress",
   "cbom.res.owasp": "OWASP Top 10 issues",
   "cbom.res.severity": "Risk metrics",

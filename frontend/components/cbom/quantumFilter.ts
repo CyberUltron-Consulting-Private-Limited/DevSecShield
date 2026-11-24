@@ -5,12 +5,15 @@ export type QuantumFilter = "all" | "safe" | "broken" | "vulnerable";
 export interface QuantumFields {
   quantum_safe?: boolean | null;
   crypto_strength?: string | null;
+  quantum_vulnerable?: boolean | null;
 }
 
 /** Not broken by a quantum computer but already broken without one (MD5, SHA-1, DES, RC4, ECB ...): the column says
- * "Broken today", never "Safe". */
+ * "Broken today", never "Safe". Rows stored before G-D3-6 say quantum_safe true; newer ones say quantum_safe false
+ * with quantum_vulnerable false (the backend's cbom_metrics.code_row_broken_today rule). */
 export function isBrokenToday(f: QuantumFields): boolean {
-  return f.quantum_safe === true && String(f.crypto_strength ?? "").toLowerCase() === "weak";
+  if (String(f.crypto_strength ?? "").toLowerCase() !== "weak") return false;
+  return f.quantum_safe === true || (f.quantum_safe === false && f.quantum_vulnerable === false);
 }
 
 /** An algorithm the rule base could not identify (strength "unknown"): not judged, never "Safe", even when an engine
@@ -24,7 +27,7 @@ export function isUnidentified(f: QuantumFields): boolean {
 export function matchesQuantumFilter(f: QuantumFields, filter: string): boolean {
   if (filter === "safe") return f.quantum_safe === true && !isBrokenToday(f) && !isUnidentified(f);
   if (filter === "broken") return isBrokenToday(f);
-  if (filter === "vulnerable") return f.quantum_safe === false;
+  if (filter === "vulnerable") return f.quantum_safe === false && !isBrokenToday(f);
   return true;
 }
 

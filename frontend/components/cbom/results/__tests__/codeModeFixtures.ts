@@ -83,6 +83,8 @@ export const DASHBOARD: CbomScanDashboardData = {
   card_data: {
     total_crypto_assets: 12, total_weak_algorithms: 2, total_quantum_vulnerable: 4, total_certificates: 3, total_keys: 2,
     quantum_readiness_score: 42.9, quantum_readiness_judged: true, average_risk_score: 5.2,
+    // the API's D3 risk score of severity_distribution below: posture_risk(2, 3, 4, 1)
+    risk_score: 100, risk_grade: "F", risk_label: "Critical risk",
   },
   remediation_metrics: { mean_time_to_remediate: [2, 4, 0], critical_issues_fixed: 1, remediation_velocity: 6, high_priority_backlog: 12 },
   remediation_actions_required: { total_findings: 10, total_fixed: 3, total_in_progress: 2, total_not_started: 4, total_ignored: 1 },
