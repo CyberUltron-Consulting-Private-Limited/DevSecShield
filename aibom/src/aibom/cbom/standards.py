@@ -61,7 +61,7 @@ def _ir8547_sentence() -> str:
     """IR 8547 as the knowledge base cites it (status and dates in ONE place:
     crypto_kb.json pqc_context.nist_ir_8547)."""
     ir = (crypto_kb.load().get("pqc_context") or {}).get("nist_ir_8547") or {}
-    cite = crypto_kb.ir8547_label(ir)  # name, status and year from the entry's own fields
+    cite = crypto_kb.ir8547_label(ir)  # name, status and year from its own fields
     return (
         f"{cite} deprecates quantum-vulnerable public-key algorithms after "
         f"{ir.get('deprecated_after') or 2030} and disallows them after "
