@@ -369,6 +369,35 @@ def subject_name_for(scan_metadata: Any) -> str | None:
     return path or None
 
 
+def _verdict_props(props: Any, verdict: str) -> list[dict[str, Any]]:
+    """``props`` with one ``dss:compliance`` (first) and no per-framework ``dss:compliance.*`` dump."""
+    def stamp(name: str) -> bool:
+        return name == "dss:compliance" or name.startswith("dss:compliance.")
+
+    kept = [dict(p) for p in props or [] if isinstance(p, dict) and not stamp(str(p.get("name") or ""))]
+    return [{"name": "dss:compliance", "value": verdict}] + kept
+
+
+def overlay_aibom_compliance(bom: dict[str, Any], compliance: dict[str, Any] | None) -> dict[str, Any]:
+    """The AI BOM as served: the scan's advisory compliance verdict stamped as ``dss:compliance`` on the metadata and
+    on every component (a component's own pass / fail verdict, when it states one, else the scan's), the stamp the
+    results page used to add in the browser (review 6036875286 M1). Nothing else of the document changes."""
+    from backend.utilities.compliance.sbom_cyclonedx import overall_verdict
+
+    out = copy.deepcopy(bom)
+    overall = overall_verdict(compliance if isinstance(compliance, dict) else None)
+    meta = out.get("metadata") if isinstance(out.get("metadata"), dict) else {}
+    meta["properties"] = _verdict_props(meta.get("properties"), overall)
+    out["metadata"] = meta
+    for comp in out.get("components") or []:
+        if not isinstance(comp, dict):
+            continue
+        own = next((str(p.get("value")) for p in comp.get("properties") or [] if isinstance(p, dict)
+                    and p.get("name") == "dss:compliance" and p.get("value") in ("pass", "fail")), None)
+        comp["properties"] = _verdict_props(comp.get("properties"), own or overall)
+    return out
+
+
 def bom_dict_from_scan_data(
     scan_type: str,
     scan_data: dict[str, Any],
@@ -404,6 +433,8 @@ def bom_dict_from_scan_data(
         from backend.utilities.cbom_sources.sbom_link import with_library_purls
 
         return served_code_cbom(with_library_purls(bom), findings, subject_name=subject_name, mosca=mosca)
+    if scan_type == "ai_bom":
+        return overlay_aibom_compliance(bom, compliance if isinstance(compliance, dict) else None)
     return bom
 
 
@@ -414,6 +445,7 @@ __all__ = [
     "compliance_key_for",
     "delete_attestation",
     "evidence_map_from_attestations",
+    "overlay_aibom_compliance",
     "overlay_compliance_on_bom",
     "recompute_compliance_for_scan",
     "requirement_ids_in_compliance",

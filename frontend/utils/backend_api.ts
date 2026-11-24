@@ -2493,19 +2493,6 @@ const postCertInSign = async (
   return response.data as { bom_signature: Record<string, unknown> };
 };
 
-const getCertInVex = async (
-  team_id: number,
-  scan_type: CertInBomScanType,
-  scan_id: number,
-  refresh = false,
-) => {
-  const response = await api.get(
-    `/${team_id}/${scan_type}/scan/${scan_id}/vex`,
-    { params: refresh ? { refresh: true } : undefined },
-  );
-  return response.data as Record<string, unknown>;
-};
-
 const getCertInEvidencePack = async (
   team_id: number,
   scan_type: CertInBomScanType,
@@ -2613,7 +2600,6 @@ export {
   reinitializeCBOMScanWithPayload,
   postCertInAttestation,
   postCertInSign,
-  getCertInVex,
   getCertInEvidencePack,
   getCbomDeliverables,
   downloadCbomDeliverable,
