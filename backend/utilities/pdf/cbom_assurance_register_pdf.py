@@ -174,7 +174,7 @@ _LIB_COLUMNS = (
     "Attestation status",
 )
 # Sources fits the longest label; a date one line; every header word on one line (QA Q3-10: "#Sou / rces")
-_LIB_WEIGHTS = (66, 36, 50, 30, 166, 70, 44, 44, 42, 42, 42, 42, 46)
+_LIB_WEIGHTS = (60, 36, 50, 36, 166, 70, 44, 44, 42, 42, 42, 42, 46)
 _LIB_MANUAL = tuple(range(8, len(_LIB_COLUMNS)))  # vendor-assurance columns
 _PREVIOUS_COLUMNS = ("Component", "#Sources", "Sources", "First seen", "Last seen")
 _PREVIOUS_WEIGHTS = (150, 50, 320, 100, 100)

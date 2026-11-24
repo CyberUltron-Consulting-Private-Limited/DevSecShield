@@ -370,7 +370,7 @@ def suite_label(name: Any) -> str:
     """A suite by its IANA registry name, with the name the collector stored beside it when that was an OpenSSL name
     (staging QA Q3-10: D7 mixed ``DES-CBC3-SHA`` and ``TLS_RSA_WITH_3DES_EDE_CBC_SHA``).  ``tls_suites`` is the one
     table of names; a name it does not hold is printed as stored."""
-    from backend.utilities.cbom_sources import tls_suites
+    import backend.utilities.cbom_sources.tls_suites as tls_suites
 
     text = str(name or "").strip()
     hit = tls_suites.lookup(text)
