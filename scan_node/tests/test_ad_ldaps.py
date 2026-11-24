@@ -80,7 +80,10 @@ def test_filters_round_trip_and_refuse_what_is_not_needed():
                                   # #488 review 6031264030 n-1: the OID. prefix, NUL / zero-width names, pwdHistory
                                   "OID.2.5.4.35", "oid.2.5.4.35", "OID.userPassword", "userPassword\x00",
                                   "user\u200bPassword", "unicodePwd\x00;binary", "pwdHistory", "PWDHISTORY;binary",
-                                  "cn\u00e9"])
+                                  "cn\u00e9",
+                                  # #493 review 6032906354 n1: the KDS root key, Samba / FreeIPA / MIT hashes, pekList
+                                  "msKds-RootKeyData", "sambaNTPassword", "sambaLMPassword", "sambaPasswordHistory",
+                                  "krbPrincipalKey", "krbMKey", "pekList", "msKds-RootKeyData;binary"])
 def test_secret_attributes_and_wildcards_are_never_requested(attr):
     with pytest.raises(L.LdapError):
         L.search_request(1, "DC=x", 2, "(objectClass=*)", ["cn", attr])
@@ -434,3 +437,33 @@ def test_the_enctype_strength_order_comes_from_the_one_bit_table():
                            "DES-CBC-CRC")
     assert AD.STRENGTH == tuple(name for bit, name in reversed(AD.ENCTYPE_BITS) if bit not in AD.ENCTYPE_FLAGS)
     assert AD.strongest(["DES-CBC-CRC", "RC4-HMAC", "AES256-CTS-HMAC-SHA1-96-SK"]) == "RC4-HMAC"
+
+
+# ----------------------------------------------------------------------------- #493 review 6032906354
+def test_m1_a_posture_read_the_deadline_stopped_always_writes_the_time_row(stub):
+    """m1: the prober stops 50 ms before the deadline ("handshake budget"), so ``monotonic() >= share`` could be False
+    and the "(time)" row was missing: at 0.35 s per reply and timeout_s=10 the endpoint said "handshake budget (48)"
+    and no coverage row said the read ran out of time."""
+    server = stub(mode="ldaps")
+    proxy = _SlowProxy(server.port, 0.35)
+    try:
+        ctx, status, error = _run(server, port=proxy.port, timeout_s=10)
+    finally:
+        proxy.close()
+    assert (status, error) == ("success", None)
+    posture = [a["facts"] for a in _by_type(ctx)["coverage"] if a["facts"]["check"].startswith("LDAP TLS posture")]
+    assert posture and posture[0]["status"] == "incomplete" and "(time)" in posture[0]["detail"], posture
+
+
+def test_m4_a_connection_the_dc_drops_during_the_directory_read_keeps_the_tls_posture(stub, monkeypatch):
+    """m4: a ConnectionError from the directory read went straight to ``collect`` and the posture read never ran (dev
+    read the posture first, so it kept these facts).  The target still ends unreachable."""
+    def dropped(_client):
+        raise ConnectionError("the server closed the LDAP connection")
+
+    monkeypatch.setattr(AD, "read_root_dse", dropped)
+    server = stub(mode="ldaps")
+    ctx, status, _error = _run(server)
+    assert status == "failure" and [o.status for o in ctx.outcomes] == ["unreachable"]
+    assert _by_type(ctx).get("tls_endpoint"), "the TLS posture read before the drop is kept"
+    assert all(tls_on for _name, tls_on in server.record.binds)

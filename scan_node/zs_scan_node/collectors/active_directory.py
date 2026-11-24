@@ -237,6 +237,9 @@ class _PostureScan(NW.NetworkScan):
     def __init__(self, ctx: Any, scope: dict, deadline: float) -> None:
         super().__init__(ctx, scope)
         self.deadline = deadline
+        # set when the deadline (not the handshake count) stopped a handshake: the read ran out of time even when the
+        # prober reports its own "handshake budget" stop (#493 review 6032906354 m1)
+        self.out_of_time = False
         # no SNI names: a domain controller serves its certificate to a hello without one (the verified session in
         # ``open_session`` checks the name), and the prober never resolves the DC's name a second time
         self._sni_order, self._sni_addresses, self._sni_reported = [], {}, True
@@ -244,6 +247,7 @@ class _PostureScan(NW.NetworkScan):
     def handshake(self, ep: NW.Endpoint, budget: Any, fn: Any, *args: Any) -> Any:
         left = self.deadline - time.monotonic()
         if left <= 0.05:
+            self.out_of_time = True
             return "budget"
         if len(args) >= 5 and isinstance(args[4], (int, float)) and not isinstance(args[4], bool):
             args = (*args[:4], max(0.2, min(float(args[4]), left)), *args[5:])
@@ -282,9 +286,10 @@ class _LdapView:
 
 
 def tls_posture(ctx: JobContext, target: Target, ip: str, port: int, mode: str,
-                deadline: float) -> tuple[str, str | None, int]:
+                deadline: float) -> tuple[str, str | None, int, bool]:
     """Read the DC's LDAP TLS service without credentials with the network prober; its assets are emitted under the
-    target's name.  Returns the prober's (status, detail, assets emitted); ``skipped_never_scan`` raises Blocked."""
+    target's name.  Returns the prober's (status, detail, assets emitted) and whether the deadline stopped a
+    handshake; ``skipped_never_scan`` raises Blocked."""
     checked_ip(ip, ctx.never_scan)  # raises Blocked: the caller's target ends skipped_never_scan
     protocol = "starttls-ldap" if mode == "starttls" else "tls"
     label = f"LDAP {'StartTLS' if mode == 'starttls' else 'LDAPS'}"
@@ -297,7 +302,7 @@ def tls_posture(ctx: JobContext, target: Target, ip: str, port: int, mode: str,
     status, detail, assets = scan.scan_endpoint(endpoint, "full")  # type: ignore[arg-type]
     if status == "skipped_never_scan":
         raise Blocked(f"{ip} is on the never-scan list")
-    return status, detail, assets
+    return status, detail, assets, scan.out_of_time
 
 
 # ----------------------------------------------------------------------------- directory reads
@@ -529,14 +534,14 @@ def _read_posture(ctx: JobContext, target: Target, ip: str, port: int, mode: str
                      scope=[where], incomplete=True)
         return 0
     try:
-        status, detail, assets = tls_posture(ctx, target, ip, port, mode, share)
+        status, detail, assets, out_of_time = tls_posture(ctx, target, ip, port, mode, share)
     except Blocked as exc:
         raise _Fail("skipped_never_scan", str(exc)) from None
     if status != "ok":
         ctx.coverage(target.label, f"LDAP TLS posture {where}", "incomplete",
                      f"the TLS read of {where} ended {status}" + (f": {detail}" if detail else ""), scope=[where],
                      incomplete=True)
-    elif time.monotonic() >= share:
+    elif out_of_time or time.monotonic() >= share:
         ctx.coverage(target.label, f"LDAP TLS posture {where}", "incomplete",
                      f"the TLS posture read of {where} used its share of timeout_s ({timeout / 2:.0f} s) before it "
                      "finished (time); raise timeout_s for a slow link", scope=[where], incomplete=True)
@@ -552,16 +557,18 @@ def collect_target(ctx: JobContext, target: Target, config: dict, password: str,
     port, mode = port_of(config), tls_mode(config)
     timeout = float(min(int(config.get("timeout_s") or 300), max(1, ctx.time_left())))
     deadline = time.monotonic() + timeout
-    failure: _Fail | TimeoutError | None = None
+    failure: Exception | None = None
     n = 0
     try:
         n += _read_directory(ctx, target, ip, config, password, domains, deadline)
+    except (LeaseLost, Blocked):
+        raise
     except _Fail as fail:
         if fail.status == "skipped_never_scan":
             raise
         failure = fail
-    except TimeoutError as exc:
-        failure = exc
+    except OSError as exc:  # TimeoutError, and a DC that drops the connection mid-read (#493 review m4): the
+        failure = exc       # TLS posture is still read, then the target ends as ``collect`` maps the error
     n += _read_posture(ctx, target, ip, port, mode, timeout, deadline)
     if failure is not None:
         raise failure

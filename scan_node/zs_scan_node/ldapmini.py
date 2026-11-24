@@ -37,6 +37,10 @@ SECRET_ATTRIBUTES = frozenset(a.lower() for a in (
     "userPKCS12", "msSFU30Password", "msPKI-CredentialRoamingTokens",
     # #488 review 6031264030 n-1: OpenLDAP ppolicy keeps old password hashes here
     "pwdHistory",
+    # #493 review 6032906354 n1: the KDS root key (every gMSA password derives from it), Samba's NT / LM hashes,
+    # FreeIPA / MIT Kerberos keys in LDAP, the NTDS password encryption key list
+    "msKds-RootKeyData", "sambaNTPassword", "sambaLMPassword", "sambaPasswordHistory", "krbPrincipalKey", "krbMKey",
+    "pekList",
 ))
 _NUMERIC_OID = re.compile(r"^\d+(?:\.\d+)+$")
 _DESCRIPTOR = re.compile(r"^[a-z][a-z0-9-]*$")  # RFC 4512 keystring (lower-cased): ASCII letter, letters/digits/'-'
