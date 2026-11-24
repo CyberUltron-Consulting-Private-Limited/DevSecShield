@@ -64,8 +64,12 @@ CONNECT_TIMEOUT_S = 10.0
 POSTURE_HANDSHAKES = 48  # TLS handshakes for one DC's LDAP endpoint (the network prober's budget; bounded by timeout_s)
 
 # msDS-SupportedEncryptionTypes bits (MS-KILE 2.2.7)
+# The one Kerberos encryption-type table (#488 review 6031264030 n-4): msDS-SupportedEncryptionTypes bit -> name,
+# weakest key type first.  ``STRENGTH`` (strongest first) is derived from it; the backend's
+# ``classify_ext.ad.KERBEROS_ENCTYPES`` lists the same key types in the same order (backend test_cbom_ad_followups).
 ENCTYPE_BITS = ((0x1, "DES-CBC-CRC"), (0x2, "DES-CBC-MD5"), (0x4, "RC4-HMAC"), (0x8, "AES128-CTS-HMAC-SHA1-96"),
                 (0x10, "AES256-CTS-HMAC-SHA1-96"), (0x20, "AES256-CTS-HMAC-SHA1-96-SK"))
+ENCTYPE_FLAGS = frozenset({0x20})  # -SK: session keys may be AES; a flag, not a long-term key type
 USE_DES_KEY_ONLY = 0x200000
 FUNCTIONAL_LEVELS = {0: "Windows 2000", 1: "Windows Server 2003 interim", 2: "Windows Server 2003",
                      3: "Windows Server 2008", 4: "Windows Server 2008 R2", 5: "Windows Server 2012",
@@ -76,7 +80,7 @@ ROOT_DSE_ATTRS = ["defaultNamingContext", "configurationNamingContext", "rootDom
 ACCOUNT_ATTRS = ["sAMAccountName", "dNSHostName", "msDS-SupportedEncryptionTypes", "userAccountControl", "pwdLastSet",
                  "operatingSystem", "operatingSystemVersion", "objectClass"]
 # strongest first: the account's ``algorithm`` (never the lowest bit, which is the weakest); -SK is a flag, not a key
-STRENGTH = ("AES256-CTS-HMAC-SHA1-96", "AES128-CTS-HMAC-SHA1-96", "RC4-HMAC", "DES-CBC-MD5", "DES-CBC-CRC")
+STRENGTH = tuple(name for bit, name in reversed(ENCTYPE_BITS) if bit not in ENCTYPE_FLAGS)  # strongest first
 DC_DEFAULT_NOTE = ("msDS-SupportedEncryptionTypes is not set, so the domain controller's default applies: AES only on a "
                    "DC with the April 2026 update (KB5073381, CVE-2026-20833) unless DefaultDomainSupportedEncTypes "
                    "enables RC4, RC4 on an older DC; neither is readable over LDAP")
@@ -489,24 +493,9 @@ class _Domains:
             return True
 
 
-def collect_target(ctx: JobContext, target: Target, config: dict, password: str, domains: _Domains) -> int:
-    ip = check_name(ctx, target)
-    port, mode = port_of(config), tls_mode(config)
-    timeout = float(min(int(config.get("timeout_s") or 300), max(1, ctx.time_left())))
-    deadline = time.monotonic() + timeout
-    where = f"{target.label}:{port}"
-    n = 0
-    try:
-        status, detail, assets = tls_posture(ctx, target, ip, port, mode, deadline)
-    except Blocked as exc:
-        raise _Fail("skipped_never_scan", str(exc)) from None
-    if status != "ok":
-        ctx.coverage(target.label, f"LDAP TLS posture {where}", "incomplete",
-                     f"the TLS read of {where} ended {status}" + (f": {detail}" if detail else ""), scope=[where],
-                     incomplete=True)
-    n += assets
-    if time.monotonic() >= deadline:
-        raise TimeoutError("the domain controller did not answer within timeout_s")
+def _read_directory(ctx: JobContext, target: Target, ip: str, config: dict, password: str, domains: _Domains,
+                    deadline: float) -> int:
+    """The credentialed read: bind over verified TLS, RootDSE, and the domain once per job.  Returns assets emitted."""
     client = open_session(ctx, target, ip, config, deadline)
     try:
         try:
@@ -516,7 +505,8 @@ def collect_target(ctx: JobContext, target: Target, config: dict, password: str,
         try:
             dse = read_root_dse(client)
             if domains.claim(dse.get("default_nc")):
-                n += read_domain(ctx, client, dse, target.label)
+                return read_domain(ctx, client, dse, target.label)
+            return 0
         except L.LdapError as exc:
             raise _ldap_fail(exc) from None
     finally:
@@ -525,6 +515,56 @@ def collect_target(ctx: JobContext, target: Target, config: dict, password: str,
             client.sock.close()
         except OSError:
             pass
+
+
+def _read_posture(ctx: JobContext, target: Target, ip: str, port: int, mode: str, timeout: float,
+                  deadline: float) -> int:
+    """The credential-free TLS posture read, within at most half of ``timeout`` and never past ``deadline``.  What it
+    could not finish is a coverage row, never the target's failure.  Returns assets emitted."""
+    where = f"{target.label}:{port}"
+    share = min(deadline, time.monotonic() + timeout / 2)
+    if share - time.monotonic() < 0.5:
+        ctx.coverage(target.label, f"LDAP TLS posture {where}", "incomplete",
+                     f"the TLS posture of {where} was not read: no time left of timeout_s after the directory read",
+                     scope=[where], incomplete=True)
+        return 0
+    try:
+        status, detail, assets = tls_posture(ctx, target, ip, port, mode, share)
+    except Blocked as exc:
+        raise _Fail("skipped_never_scan", str(exc)) from None
+    if status != "ok":
+        ctx.coverage(target.label, f"LDAP TLS posture {where}", "incomplete",
+                     f"the TLS read of {where} ended {status}" + (f": {detail}" if detail else ""), scope=[where],
+                     incomplete=True)
+    elif time.monotonic() >= share:
+        ctx.coverage(target.label, f"LDAP TLS posture {where}", "incomplete",
+                     f"the TLS posture read of {where} used its share of timeout_s ({timeout / 2:.0f} s) before it "
+                     "finished (time); raise timeout_s for a slow link", scope=[where], incomplete=True)
+    return assets
+
+
+def collect_target(ctx: JobContext, target: Target, config: dict, password: str, domains: _Domains) -> int:
+    """One DC.  #488 review 6031264030 mi-1: the credentialed directory read (the source's purpose) goes first, with
+    the whole ``timeout_s``; the credential-free TLS posture read follows with at most half of it, so a slow link can
+    no longer spend the budget on handshakes and leave the directory unread.  A directory failure still gets the
+    posture read (what an unverified certificate or a refused bind leaves readable) and then ends the target."""
+    ip = check_name(ctx, target)
+    port, mode = port_of(config), tls_mode(config)
+    timeout = float(min(int(config.get("timeout_s") or 300), max(1, ctx.time_left())))
+    deadline = time.monotonic() + timeout
+    failure: _Fail | TimeoutError | None = None
+    n = 0
+    try:
+        n += _read_directory(ctx, target, ip, config, password, domains, deadline)
+    except _Fail as fail:
+        if fail.status == "skipped_never_scan":
+            raise
+        failure = fail
+    except TimeoutError as exc:
+        failure = exc
+    n += _read_posture(ctx, target, ip, port, mode, timeout, deadline)
+    if failure is not None:
+        raise failure
     return n
 
 

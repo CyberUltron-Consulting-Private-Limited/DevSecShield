@@ -76,7 +76,11 @@ def test_filters_round_trip_and_refuse_what_is_not_needed():
                                   # #488 review m1: options and numeric OIDs slipped past; three attributes were missing
                                   "userPassword;binary", "UNICODEPWD;range=0-*", " userPassword ;x", "2.5.4.35",
                                   "1.2.840.113556.1.4.90", "userPKCS12", "msSFU30Password",
-                                  "msPKI-CredentialRoamingTokens", "userPKCS12;binary"])
+                                  "msPKI-CredentialRoamingTokens", "userPKCS12;binary",
+                                  # #488 review 6031264030 n-1: the OID. prefix, NUL / zero-width names, pwdHistory
+                                  "OID.2.5.4.35", "oid.2.5.4.35", "OID.userPassword", "userPassword\x00",
+                                  "user\u200bPassword", "unicodePwd\x00;binary", "pwdHistory", "PWDHISTORY;binary",
+                                  "cn\u00e9"])
 def test_secret_attributes_and_wildcards_are_never_requested(attr):
     with pytest.raises(L.LdapError):
         L.search_request(1, "DC=x", 2, "(objectClass=*)", ["cn", attr])
@@ -88,10 +92,15 @@ def test_a_secret_attribute_a_server_sends_is_dropped_while_decoding():
         L.seq(L.octets("unicodePwd"), L.seq(L.octets(b"\x00pw"), tag=0x31)),
         L.seq(L.octets("msLAPS-Password;range=0-*"), L.seq(L.octets("x"), tag=0x31)),
         L.seq(L.octets("2.5.4.35"), L.seq(L.octets("x"), tag=0x31)),
-        L.seq(L.octets("userPKCS12;binary"), L.seq(L.octets("x"), tag=0x31))), tag=0x64)
+        L.seq(L.octets("userPKCS12;binary"), L.seq(L.octets("x"), tag=0x31)),
+        # #488 review 6031264030 n-1
+        L.seq(L.octets("OID.2.5.4.35"), L.seq(L.octets("x"), tag=0x31)),
+        L.seq(L.octets("userPassword\x00"), L.seq(L.octets("x"), tag=0x31)),
+        L.seq(L.octets("pwdHistory"), L.seq(L.octets("x"), tag=0x31)),
+        L.seq(L.octets("member;range=0-*"), L.seq(L.octets("CN=b"), tag=0x31))), tag=0x64)
     _t, op, _ = L.read_tlv(entry)
     dn, attrs = L.parse_entry(op)
-    assert dn == "CN=a" and set(attrs) == {"cn"}
+    assert dn == "CN=a" and set(attrs) == {"cn", "member;range=0-*"}
 
 
 def test_the_collector_attribute_lists_pass_the_check():
@@ -160,7 +169,9 @@ def test_collects_tls_posture_kerberos_types_and_ad_cs_read_only(stub, mode, cap
     # the network prober's facts (#488 review M5): every suite per version, groups, the enumeration's completeness
     assert tls["facts"]["versions"].get("TLSv1.0") is False and tls["facts"]["cipher_suites"]
     assert "cipher_suites_complete" in tls["facts"] and "groups" in tls["facts"]
-    assert tls["facts"]["leaf"]["subject"] and assets["certificate"][0]["facts"]["role"] == "domain_controller"
+    # the directory is read first now (#488 review 6031264030 mi-1), so the AD CS CA certificate may come first
+    assert tls["facts"]["leaf"]["subject"]
+    assert "domain_controller" in {c["facts"].get("role") for c in assets["certificate"]}
     domain = assets["ad_domain"][0]["facts"]
     assert domain["domain"] == "lab.test" and domain["domain_functional_level"] == 6
     assert domain["domain_functional_level_name"] == "Windows Server 2012 R2"
@@ -323,3 +334,103 @@ def test_timeout_s_bounds_the_whole_tls_posture_read():
             c.close()
     assert took < 7.5, took
     assert [o.status for o in ctx.outcomes] == ["timeout"]
+
+
+# ----------------------------------------------------------------------------- #488 review 6031264030
+class _SlowProxy:
+    """A TCP proxy that holds the server's first reply on every connection for ``delay`` seconds: a healthy DC across
+    a slow WAN link (the review's ``slow_proxy.py``, in-process)."""
+
+    def __init__(self, upstream_port: int, delay: float) -> None:
+        import socket
+        import threading
+
+        self.upstream, self.delay = upstream_port, delay
+        self.sock = socket.socket()
+        self.sock.bind(("127.0.0.1", 0))
+        self.sock.listen(64)
+        self.port = self.sock.getsockname()[1]
+        self._open: list[socket.socket] = []
+        threading.Thread(target=self._serve, daemon=True).start()
+
+    def _serve(self) -> None:
+        import socket
+        import threading
+
+        while True:
+            try:
+                client, _ = self.sock.accept()
+            except OSError:
+                return
+            try:
+                server = socket.create_connection(("127.0.0.1", self.upstream), timeout=5)
+            except OSError:
+                client.close()
+                continue
+            server.settimeout(None)
+            self._open += [client, server]
+            threading.Thread(target=self._pipe, args=(client, server, 0.0), daemon=True).start()
+            threading.Thread(target=self._pipe, args=(server, client, self.delay), daemon=True).start()
+
+    @staticmethod
+    def _pipe(src, dst, first_delay: float) -> None:
+        first = True
+        try:
+            while True:
+                data = src.recv(65536)
+                if not data:
+                    break
+                if first and first_delay:
+                    time.sleep(first_delay)
+                first = False
+                dst.sendall(data)
+        except OSError:
+            pass
+        finally:
+            for s in (src, dst):
+                try:
+                    s.close()
+                except OSError:
+                    pass
+
+    def close(self) -> None:
+        self.sock.close()
+        for s in self._open:
+            try:
+                s.close()
+            except OSError:
+                pass
+
+
+def test_a_slow_dc_still_yields_the_directory_and_the_posture_read_gets_at_most_half_of_timeout_s(stub):
+    """mi-1: behind a link that delays every reply by 0.6 s, the credential-free TLS posture read (48 handshakes,
+    28.8 s of delays) used the whole timeout_s=20, then the target ended ``timeout`` with no Kerberos, krbtgt or
+    service-account data although the DC answered every request.  Now the directory is read first, the posture read
+    gets at most half of timeout_s, and what it could not finish is a coverage row, not the target's failure."""
+    server = stub(mode="ldaps")
+    proxy = _SlowProxy(server.port, 0.6)
+    try:
+        started = time.monotonic()
+        ctx, status, error = _run(server, port=proxy.port, timeout_s=20)
+        took = time.monotonic() - started
+    finally:
+        proxy.close()
+    assert (status, error) == ("success", None)
+    assert [(o.target, o.status) for o in ctx.outcomes] == [("localhost", "ok")]
+    assets = _by_type(ctx)
+    assert {"svc-sql", "krbtgt", "DC1$"} <= {a["name"] for a in assets["kerberos_account"]}
+    assert assets["ad_domain"][0]["facts"]["accounts"]["service_account_total"] == 3
+    assert assets["tls_endpoint"]  # what the posture read got within its share is kept
+    posture = [a["facts"] for a in assets["coverage"] if a["facts"]["check"].startswith("LDAP TLS posture")]
+    assert posture and posture[0]["status"] == "incomplete" and "time" in posture[0]["detail"], posture
+    assert took < 20 * 0.5 + 6, took  # the directory read (a few seconds) plus at most half of timeout_s
+
+
+def test_the_enctype_strength_order_comes_from_the_one_bit_table():
+    """n-4: the strongest-first order was a second hand-kept table beside ENCTYPE_BITS.  It is now derived from the bit
+    table (the key types, highest bit first; the -SK session-key flag is not a key type), and the backend's
+    KERBEROS_ENCTYPES is checked against it (backend/tests/test_cbom_ad_followups.py)."""
+    assert AD.STRENGTH == ("AES256-CTS-HMAC-SHA1-96", "AES128-CTS-HMAC-SHA1-96", "RC4-HMAC", "DES-CBC-MD5",
+                           "DES-CBC-CRC")
+    assert AD.STRENGTH == tuple(name for bit, name in reversed(AD.ENCTYPE_BITS) if bit not in AD.ENCTYPE_FLAGS)
+    assert AD.strongest(["DES-CBC-CRC", "RC4-HMAC", "AES256-CTS-HMAC-SHA1-96-SK"]) == "RC4-HMAC"

@@ -35,21 +35,29 @@ SECRET_ATTRIBUTES = frozenset(a.lower() for a in (
     "orclCommonAttribute", "os400-password",
     # #488 review m1: a PKCS#12 with its private key, the SFU (NIS) password hash, credential-roaming tokens
     "userPKCS12", "msSFU30Password", "msPKI-CredentialRoamingTokens",
+    # #488 review 6031264030 n-1: OpenLDAP ppolicy keeps old password hashes here
+    "pwdHistory",
 ))
 _NUMERIC_OID = re.compile(r"^\d+(?:\.\d+)+$")
+_DESCRIPTOR = re.compile(r"^[a-z][a-z0-9-]*$")  # RFC 4512 keystring (lower-cased): ASCII letter, letters/digits/'-'
+_REQUEST_NAME = re.compile(r"^[A-Za-z0-9;.-]+$")  # what a requested attribute (with options) may be spelt with
 
 
 def attribute_base(name: str) -> str:
-    """The attribute's description without its options (``userPassword;binary`` -> ``userpassword``), lower-case."""
-    return str(name).split(";", 1)[0].strip().lower()
+    """The attribute's description without its options (``userPassword;binary`` -> ``userpassword``) and without
+    an ``OID.`` prefix (``OID.2.5.4.35`` -> ``2.5.4.35``), lower-case."""
+    base = str(name).split(";", 1)[0].strip().lower()
+    return base[4:] if base.startswith("oid.") else base
 
 
 def is_refused_attribute(name: str) -> bool:
     """A secret-bearing attribute under any spelling the protocol allows: with options (``;binary``, ``;range=``),
-    or as a numeric OID (``2.5.4.35`` is userPassword; the collector names every attribute it needs, so an OID is
-    never needed and is refused whatever it names)."""
+    with an ``OID.`` prefix, or as a numeric OID (``2.5.4.35`` is userPassword; the collector names every attribute it
+    needs, so an OID is never needed and is refused whatever it names).  A name that is not a plain RFC 4512
+    descriptor (a NUL, a zero-width or any non-ASCII character a server might fold away) is refused too (#488 review
+    6031264030 n-1)."""
     base = attribute_base(name)
-    return base in SECRET_ATTRIBUTES or bool(_NUMERIC_OID.match(base))
+    return base in SECRET_ATTRIBUTES or bool(_NUMERIC_OID.match(base)) or not _DESCRIPTOR.match(base)
 RESULT_NAMES = {0: "success", 1: "operationsError", 2: "protocolError", 3: "timeLimitExceeded",
                 4: "sizeLimitExceeded", 7: "authMethodNotSupported", 8: "strongerAuthRequired", 10: "referral",
                 11: "adminLimitExceeded", 12: "unavailableCriticalExtension", 13: "confidentialityRequired",
@@ -207,7 +215,7 @@ def check_attributes(attributes: list[str]) -> list[str]:
     out = []
     for name in attributes:
         clean = str(name).strip()
-        if not clean or clean in ("*", "+") or is_refused_attribute(clean):
+        if not clean or clean in ("*", "+") or not _REQUEST_NAME.match(clean) or is_refused_attribute(clean):
             raise LdapError(f"attribute {clean or '(empty)'} is never requested")
         out.append(clean)
     return out
