@@ -200,8 +200,9 @@ def test_a_document_that_cannot_be_computed_is_marked_and_the_report_still_build
     monkeypatch.setattr(DRIFT, "run_diff", boom)
     assert DRIFT.store_pending_summaries(engine, now) == 1  # run 1 (nothing to compare) is stored; run 2 failed
     with Session(engine) as s:
-        assert s.get(CbomCollectionRun, r2).drift_summary == {"v": 1, "failed": True}
-    assert DRIFT.store_pending_summaries(engine, now) == 0  # the marker keeps it out of the next ticks
+        held = s.get(CbomCollectionRun, r2).drift_summary
+        assert held == {"v": 1, "failed": True, "at": DRIFT.summary_stamp(now), "tries": 1}
+    assert DRIFT.store_pending_summaries(engine, now) == 0  # the marker keeps it out of the ticks of the next hour
     r = api("GET", f"/1/cbom/sources/runs/{r2}/report.pdf")
     assert r.status_code == 200 and "Drift could not be computed" in _flat(_pdf_text(r.content, tmp_path))
 
@@ -219,8 +220,8 @@ def test_a_stored_drift_document_of_another_baseline_is_recomputed(world):
 
 
 def test_register_closures_count_only_the_closures_this_run_caused(world):
-    """Review #486 M1: a closure counts for the run that CAUSED it (``closed_by_run_id``), recorded by the time its
-    drift was (``drift_at``). ``detail.run_id`` alone is the run that last saw the gap: a settings save, an evidence
+    """Review #486 M1: a closure counts for the run that CAUSED it (``closed_by_run_id``), whenever it was written
+    (review 6030475121 minor B); a legacy event only at the run's ``drift_at``. ``detail.run_id`` alone is the run that last saw the gap: a settings save, an evidence
     answer or a source removal that closes the gap later names that run too."""
     from backend.utilities.cbom_sources.drift_report import register_closures
 
@@ -243,7 +244,8 @@ def test_register_closures_count_only_the_closures_this_run_caused(world):
             (now, {"closed_by_run_id": None, "last_seen_run_id": run.id, "run_id": run.id, "cause": "evidence"}),
             # another run's closure
             (now, {"closed_by_run_id": run.id + 999, "run_id": run.id + 999, "cause": "observation"}),
-            # caused by this run but recorded after its drift (an estate backfill replay): not in its report
+            # caused by this run, written after its drift (its estate write deferred or repaired late, review
+            # 6030475121 minor B): still the run's own closure (a backfill replay of a written run closes nothing)
             (now + dt.timedelta(hours=1), {"closed_by_run_id": run.id, "run_id": run.id, "cause": "observation"}),
             # written before closed_by_run_id existed: the run's own estate write is stamped with its drift_at
             (now, {"run_id": run.id, "cause": "inputs"}),
@@ -255,7 +257,7 @@ def test_register_closures_count_only_the_closures_this_run_caused(world):
         s.add(CbomDriftEvent(team_id=2, at=now, scope="register", kind="q0_closed", dedupe_key="other-team",
                              detail={"closed_by_run_id": run.id, "cause": "observation"}))
         s.commit()
-        assert register_closures(s, run) == {"inputs": 1, "observation": 2, "removed": 1}
+        assert register_closures(s, run) == {"inputs": 1, "observation": 3, "removed": 1}
 
 
 def test_a_settings_save_after_the_run_never_changes_its_register_closures_or_report(api, finished_two_runs, tmp_path):

@@ -1689,7 +1689,8 @@ def _list_runs(engine, team_id: int, scan_id: int | None) -> dict:
                                          .where(CbomCollectionSource.team_id == team_id)).all())
         nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
         # S4: the schedule's name for every run a live schedule started (one query for the page; null = deleted)
-        names = schedule_names(session, team_id, (run.schedule_id for run in runs))
+        # (named schedules_by_id, not names: #480 adds source names to this function, review 6030475121 trap C)
+        schedules_by_id = schedule_names(session, team_id, (run.schedule_id for run in runs))
         out = []
         for run in runs:
             counts: dict[str, int] = {}
@@ -1704,7 +1705,7 @@ def _list_runs(engine, team_id: int, scan_id: int | None) -> dict:
                                                 and node_status(nodes[job.node_id], now) == "offline" else None)})
             # FIX-B3: the list says why a run is partial or failed, as the run detail does
             reason = RUN_STATUS.status_reason(run.status, rows)
-            out.append({**public_run(run, schedule_name=names.get(run.schedule_id or 0)), "job_counts": counts,
+            out.append({**public_run(run, schedule_name=schedules_by_id.get(run.schedule_id or 0)), "job_counts": counts,
                         "asset_count": assets.get(int(run.id), 0), "status_reason": reason["status_reason"]})
         return {"runs": out, "server_time": iso_z(now)}
 

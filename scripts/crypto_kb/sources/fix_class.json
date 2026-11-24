@@ -1121,6 +1121,14 @@
     "kb:findings.node.AD_FUNCTIONAL_LEVEL_LEGACY.remediation"
    ]
   },
+  "AD_FUNCTIONAL_LEVEL_PRE2008": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "directory setting (domain / forest mode) once domain controllers older than Windows Server 2008 are retired, then a krbtgt password reset",
+   "sources": [
+    "kb:findings.node.AD_FUNCTIONAL_LEVEL_PRE2008.remediation"
+   ]
+  },
   "KRBTGT_KEY_OLD": {
    "class": "configurable",
    "capability": false,

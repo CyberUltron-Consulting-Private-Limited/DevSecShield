@@ -107,12 +107,32 @@ kb_text.entry(
     references=["https://www.rfc-editor.org/rfc/rfc8429",
                 "https://learn.microsoft.com/en-us/windows-server/security/kerberos/detect-remediate-rc4-kerberos"])
 kb_text.entry(
+    "AD_FUNCTIONAL_LEVEL_PRE2008", title="Active Directory domain functional level is below Windows Server 2008",
+    category="protocol", default_impact="High",
+    description="The domain functional level is below Windows Server 2008, so the krbtgt account cannot hold AES keys "
+                "at all: every ticket-granting ticket in the domain is encrypted with RC4 or DES.",
+    attack="RC4 and DES ticket keys are derived without a salt (RC4) or are too short (DES), so a ticket or a key "
+           "taken from the network or a domain controller is far easier to crack; with the krbtgt key an attacker "
+           "forges ticket-granting tickets for any account (golden tickets).",
+    cwe=["CWE-327", "CWE-326"], owasp=["crypto", "misconfig"], cves=[],
+    standards=["Microsoft Active Directory functional levels (Windows Server 2016 and later supported)"],
+    compliance=["algorithms"],
+    remediation={"summary": "Retire the domain controllers older than Windows Server 2008 (and, as for any level "
+                            "below 2016, the older ones), raise the domain and forest functional levels, then reset "
+                            "the krbtgt password twice so it gets AES keys.", "steps": [
+        {"platform": "Active Directory", "how": "Set-ADDomainMode -Identity <domain> -DomainMode Windows2016Domain; "
+                                                "Set-ADForestMode -Identity <forest> -ForestMode Windows2016Forest"},
+        {"platform": "Active Directory", "how": "Reset the krbtgt password twice, 10 or more hours apart (Microsoft's "
+                                                "New-KrbtgtKeys.ps1), so the account has AES keys"}]},
+    verify=V_DOMAIN,
+    references=["https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/active-directory-functional-levels"])
+kb_text.entry(
     "AD_FUNCTIONAL_LEVEL_LEGACY", title="Active Directory domain functional level is old", category="protocol",
-    default_impact="Medium",
-    description="The domain functional level is below Windows Server 2016. Below Windows Server 2008 the krbtgt "
-                "account cannot hold AES keys at all, so every ticket-granting ticket is RC4 or DES; up to 2012 R2 "
-                "newer Kerberos protections (Protected Users' AES-only rule, claims and compound authentication, "
-                "Kerberos armoring by default) are not available domain-wide.",
+    default_impact="Low",
+    description="The domain functional level is Windows Server 2008 to 2012 R2 (below Windows Server 2016): newer "
+                "Kerberos protections (Protected Users' AES-only rule, claims and compound authentication, Kerberos "
+                "armoring by default) are not available domain-wide. Below Windows Server 2008 the finding is "
+                "AD_FUNCTIONAL_LEVEL_PRE2008 (High).",
     attack="An attacker who obtains or cracks the krbtgt or a service key can forge tickets (golden or silver "
            "tickets); with weak ticket encryption that key is easier to obtain, and the missing protections leave "
            "privileged accounts open to credential theft and delegation abuse.",
@@ -143,4 +163,4 @@ kb_text.entry(
     references=["https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/forest-recovery-guide/ad-forest-recovery-reset-the-krbtgt-password"])
 
 NODE_CODES = ["KERBEROS_DES_ENABLED", "KERBEROS_RC4_ONLY", "KERBEROS_RC4_ENABLED", "KERBEROS_ENCTYPES_DEFAULT", "AD_FUNCTIONAL_LEVEL_LEGACY",
-              "KRBTGT_KEY_OLD"]
+              "AD_FUNCTIONAL_LEVEL_PRE2008", "KRBTGT_KEY_OLD"]

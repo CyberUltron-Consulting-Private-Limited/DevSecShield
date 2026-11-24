@@ -3417,7 +3417,7 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
             location=item.row.get("location"), algorithm=item.row.get("algorithm_name"),
             key_size=item.row.get("key_size"), impact=asset.impact if asset.impact != INFO else None,
             finding_codes=asset.finding_codes, source_label=agg.label,
-            source_kind=agg.source_kind)
+            source_kind=agg.source_kind, code_impacts=getattr(item, "code_impacts", None))
         if fact is not None:
             facts_of.setdefault(agg.key, []).append(fact)
         component = mapper.library_component(item.node_type, item.facts, name=item.row.get("title"),

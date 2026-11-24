@@ -156,7 +156,9 @@ def test_m2_krbtgt_is_judged_by_the_domain_not_by_its_enctype_attribute(facts):
 def test_domain_functional_level_and_krbtgt_age():
     v, codes = _codes("ad_domain", {"domain_functional_level": 2, "domain_functional_level_name": "Windows Server 2003",
                                     "krbtgt_password_last_set": "2024-01-01T00:00:00Z"})
-    assert codes == {"AD_FUNCTIONAL_LEVEL_LEGACY", "KRBTGT_KEY_OLD"} and v["impact"] == "High"
+    # below 2008 its own High code (#493 review 6032906354 M1), so the KB default and D6 say High too
+    assert codes == {"AD_FUNCTIONAL_LEVEL_PRE2008", "KRBTGT_KEY_OLD"} and v["impact"] == "High"
+    assert v["impacts"]["AD_FUNCTIONAL_LEVEL_PRE2008"] == "High"
     v, codes = _codes("ad_domain", {"domain_functional_level": 6, "krbtgt_password_last_set": "2026-10-01T00:00:00Z"})
     assert codes == {"AD_FUNCTIONAL_LEVEL_LEGACY"} and v["impact"] == "Low"
     _v, codes = _codes("ad_domain", {"domain_functional_level": 7, "krbtgt_password_last_set": "2026-11-01T00:00:00Z"})

@@ -99,8 +99,8 @@ def _ad_domain(out, facts: dict[str, Any], _algorithm, _key_size, now) -> bool |
     name = facts.get("domain_functional_level_name") if isinstance(facts.get("domain_functional_level_name"), str) \
         else f"level {level}"
     if isinstance(level, int) and not isinstance(level, bool):
-        if level < LEVEL_2008:
-            out.add("AD_FUNCTIONAL_LEVEL_LEGACY", "High",
+        if level < LEVEL_2008:  # its own code, so every consumer (KB default, D6, VEX) reads High (#493 M1)
+            out.add("AD_FUNCTIONAL_LEVEL_PRE2008", "High",
                     f"Domain functional level is {name}: below Windows Server 2008 the krbtgt account has no AES keys")
         elif level < LEVEL_2016:
             out.add("AD_FUNCTIONAL_LEVEL_LEGACY", "Low",

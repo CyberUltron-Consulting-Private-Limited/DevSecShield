@@ -451,9 +451,13 @@ def _lock_source(session: Session, sql: _Sql, team_id: int, ref: str) -> Any:
 
 # ----------------------------------------------------------------------------- the per-run write
 def record_run(session: Session, run: CbomCollectionRun, now: _dt.datetime, *,
-               loaded: Mapping[int, list[Any]] | None = None, hooks: bool = True) -> EstateWrite:
+               loaded: Mapping[int, list[Any]] | None = None, hooks: bool = True,
+               replay: bool = False) -> EstateWrite:
     """Write ``run`` into the team's estate store (see the module docstring). ``loaded``: job id -> that job
-    attempt's rows already read by the caller (drift), so they are not read twice. The caller commits."""
+    attempt's rows already read by the caller (drift), so they are not read twice. ``replay`` (``backfill``): a run
+    with nothing left to write (every source already written at this job or a newer one) runs no hooks, so a replay
+    never closes register gaps in the name of a run whose own write closed its gaps long ago (review 6030475121
+    minor B: those closures would count in the run's report). The caller commits."""
     t0 = time.perf_counter()
     team_id, run_id = run.team_id, int(run.id or 0)
     sql = _Sql(session)
@@ -639,7 +643,7 @@ def record_run(session: Session, run: CbomCollectionRun, now: _dt.datetime, *,
                     "not_read": sum(1 for p in write.changed.values() if p == "not_read"),
                     "removed": sum(1 for p in write.changed.values() if p == "removed"),
                     "deleted": len(write.removed_keys)}
-    if hooks:
+    if hooks and (jobs or not replay):
         _run_hooks(session, write)
     phases, last_mark = {}, t0
     for name, at in marks.items():  # where the time went (the scale budget's evidence, CB-20)
@@ -834,7 +838,7 @@ def backfill(engine, now: _dt.datetime, *, team_id: int | None = None, hooks: bo
             run = session.get(CbomCollectionRun, run_id)
             if run is None:
                 continue
-            write = record_run(session, run, now, hooks=hooks)
+            write = record_run(session, run, now, hooks=hooks, replay=True)
             session.commit()
         out["runs"] += 1
         out["sources"] += write.counts.get("sources", 0)
@@ -854,13 +858,27 @@ def backfill(engine, now: _dt.datetime, *, team_id: int | None = None, hooks: bo
 
 def repair_due(engine, now: _dt.datetime, *, teams: int = 1) -> dict[str, int]:
     """Scheduler tick: write the runs a stale team's store missed (a deferred or failed write), hooks included, from
-    its first missed run on; the oldest stale team first, ``teams`` per tick."""
+    its first missed run on; ``teams`` per tick, the team waiting longest since its mark or its last attempt first. A
+    team whose repair fails is logged and moved to the back of the queue (its ``updated_at`` is the attempt), so one
+    broken team never blocks the others (review 6032466269 major 2)."""
     with Session(engine) as session:
         stale = session.execute(sa.select(_ET.c.team_id, _ET.c.stale_run_id).where(_ET.c.stale.is_(True))
-                                .order_by(_ET.c.stale_at, _ET.c.team_id).limit(teams)).all()
-    out = {"teams": 0, "runs": 0}
+                                .order_by(sa.func.coalesce(_ET.c.updated_at, _ET.c.stale_at), _ET.c.team_id)
+                                .limit(teams)).all()
+    out = {"teams": 0, "runs": 0, "failed": 0}
     for team_id, since in stale:
-        done = backfill(engine, now, team_id=team_id, hooks=True, since_run_id=since)
+        try:
+            done = backfill(engine, now, team_id=team_id, hooks=True, since_run_id=since)
+        except Exception as exc:  # noqa: BLE001 - the team stays stale; the next tick takes another team first
+            out["failed"] += 1
+            _LOG.error("cbom estate repair failed for team %s: %s; retried after the other stale teams", team_id,
+                       type(exc).__name__)
+            log("estate repair FAILED", team=team_id, since_run=since, error=type(exc).__name__)
+            with Session(engine) as session:
+                session.execute(sa.update(_ET).where(_ET.c.team_id == team_id, _ET.c.stale.is_(True))
+                                .values(updated_at=now))
+                session.commit()
+            continue
         out["teams"] += done["repaired_teams"]
         out["runs"] += done["runs"]
     return out
