@@ -94,8 +94,8 @@ const TEXT = {
   // src: frontend/components/cbom/sources/shared.tsx:118-125, backend/utilities/cbom_sources/jobs.py:121-133 — jobs.py run status: partial also when every job succeeded but one reported a partial or failed outcome
   "cbsrc.rr.col.run_status": {
     what: "Queued, Running, Done (every job succeeded completely), Partial (some jobs failed or expired, or a job finished but reported a partial or failed outcome), Failed or Cancelled.",
-    why: "A Partial run's results miss the sources whose jobs failed.",
-    example: "Partial: 8 of 9 jobs done, 1 expired.",
+    why: "A Partial run's results miss the sources whose jobs failed. The line under the badge says which jobs fell short and why; a job whose scan node stays offline past the deadline (6 h by default) expires, is refunded, and the run finishes.",
+    example: "Partial: 18 of 19 jobs read everything; 1 collected only part of its targets.",
   },
   // src: frontend/components/cbom/sources/ReviewRunTab.tsx:156-160 — job counts by status
   "cbsrc.rr.col.jobs": {

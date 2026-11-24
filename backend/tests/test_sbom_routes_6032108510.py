@@ -7,6 +7,8 @@ rewrites the evidence pack as ``_pack_members``) fails here, not only in a helpe
 * /bom GET /bom names the repository (owner/repo from the scan's URL), never the worker's clone directory.
 * M2  GET /scan: a match on a version read from a manifest range is listed (marked unverified) and not counted.
 * M4  GET /bom serves the licences the worker resolved, with no package-registry call at download time.
+* M-3 the SHA-256 the PDF's minimum-elements page prints (GET /export and the pack's report.pdf) is the digest of the
+      document GET /bom serves (one builder: served_bom.served_bom).
 
 Run (repo root): backend/.venv/bin/python -m pytest backend/tests/test_sbom_routes_6032108510.py -q
 """
@@ -16,6 +18,7 @@ import copy
 import hashlib
 import io
 import json
+import re
 import sys
 import types
 import zipfile
@@ -124,8 +127,14 @@ def _store(engine, scan_id: int, **extra) -> None:
 
 
 def _digest(bom: dict) -> str:
-    canonical = json.dumps(bom, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    """The canonical SHA-256 a stored signature names (sorted keys, compact, the embedded JSF signature left out)."""
+    unsigned = {k: v for k, v in bom.items() if k != "signature"}
+    canonical = json.dumps(unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     return hashlib.sha256(canonical).hexdigest()
+
+
+def _unsigned(bom: dict) -> dict:
+    return {k: v for k, v in bom.items() if k != "signature"}
 
 
 def _pack(http, base) -> zipfile.ZipFile:
@@ -150,7 +159,7 @@ def test_m6_evidence_pack_ships_a_signature_of_the_packed_bom(sbom_api):
     _store(engine, scan_id, bom_signature={"alg": "HMAC-SHA256", "digest": _digest(served), "key_id": "k1"})
     pack = _pack(http, base)
     packed = json.loads(pack.read("bom.cdx.json"))
-    assert packed == served  # the pack's BOM is the /bom document
+    assert _unsigned(packed) == _unsigned(served)  # the pack's BOM is the /bom document
     assert json.loads(pack.read("bom_signature.json"))["digest"] == _digest(packed)
 
 
@@ -198,3 +207,48 @@ def test_m4_bom_route_serves_the_worker_licences_with_no_registry_call(sbom_api,
                 for c in bom["components"]}
     assert licences["flask"] == ["BSD-3-Clause"]
     assert licences["acme-internal"] == []  # not resolved: stays unknown, it is not made up
+
+
+# ------------------------------------------------------------------------------------------------ M-3, route level
+_PRINTED = re.compile(r"SHA-256 \(canonical JSON\) ([0-9a-f]{64})")
+
+
+def _printed_sha(pdf: bytes) -> str:
+    import pypdf
+
+    text = " ".join("\n".join(p.extract_text() or "" for p in pypdf.PdfReader(io.BytesIO(pdf)).pages).split())
+    found = _PRINTED.findall(text)
+    assert len(found) == 1, text[:400]
+    return found[0]
+
+
+def test_m3_pdf_prints_the_sha256_of_the_served_bom(sbom_api):
+    http, base, _engine, _scan_id = sbom_api
+    served = http.get(f"{base}/bom", headers=AUTH)
+    assert served.status_code == 200, served.text
+    digest = _digest(served.json())
+    exported = http.get(f"{base}/export", headers=AUTH)
+    assert exported.status_code == 200, exported.text
+    assert _printed_sha(exported.content) == digest  # GET /export
+    pack = _pack(http, base)
+    assert _printed_sha(pack.read("report.pdf")) == digest  # the evidence pack's report.pdf
+    assert _digest(json.loads(pack.read("bom.cdx.json"))) == digest  # and the pack's bom.cdx.json
+
+
+def test_m3_a_scan_without_a_stored_serial_prints_the_served_serial(sbom_api):
+    """The served document gets the scan's stable serial and the server's zs: properties; a page built from the
+    stored data alone would print another serial and digest."""
+    http, base, engine, scan_id = sbom_api
+    from backend.new_models import Scan
+
+    with Session(engine) as session:
+        scan = session.get(Scan, scan_id)
+        bom = copy.deepcopy(scan.scan_data["sbom_json"])
+    bom.pop("serialNumber")
+    _store(engine, scan_id, sbom_json=bom)
+    served = http.get(f"{base}/bom", headers=AUTH).json()
+    exported = http.get(f"{base}/export", headers=AUTH)
+    assert _printed_sha(exported.content) == _digest(served)
+    text = " ".join("\n".join(p.extract_text() or "" for p in __import__("pypdf").PdfReader(
+        io.BytesIO(exported.content)).pages).split())
+    assert f"serial {served['serialNumber']}" in text

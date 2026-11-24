@@ -5,7 +5,6 @@ Human-readable enterprise report with tabular summary and detailed findings.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 from datetime import datetime
@@ -275,12 +274,19 @@ SUBJECT_NAME_KEY = "sbom_subject_name"
 
 
 def _downloaded_bom(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """The scan's SBOM as ``/bom`` serves it: the same builder with the same subject name."""
+    """The scan's SBOM as ``/bom`` serves it. ``/export`` and the evidence pack name the scan in the data
+    (``served_bom.SCAN_IDENTITY_KEY``), and the page calls the routes' own builder, ``served_bom.served_bom``: the same
+    serial, subject and server-stamped ``zs:`` properties, so the SHA-256 printed is the served document's (review
+    6032108510 M-3). Data that names no scan (a PDF of an unsaved result) gets the stored document with its subject."""
     if not isinstance(raw, dict) or not isinstance(raw.get("sbom_json"), dict):
         return None
     try:
+        from backend.utilities.compliance import served_bom
         from backend.utilities.compliance.certin_attest import bom_dict_from_scan_data
 
+        served = served_bom.served_bom_for_pdf(raw, "sbom_sca")
+        if served is not False:
+            return served if isinstance(served, dict) else None
         subject = raw.get(SUBJECT_NAME_KEY)
         return bom_dict_from_scan_data("sbom_sca", raw, subject_name=subject if isinstance(subject, str) else None)
     except Exception:
@@ -288,9 +294,11 @@ def _downloaded_bom(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 
 def bom_sha256(bom: Dict[str, Any]) -> str:
-    """SHA-256 of the canonical JSON (sorted keys, compact) of the SBOM: the digest a ``bom_signature.json`` names."""
-    return hashlib.sha256(json.dumps(bom, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-                          .encode("utf-8")).hexdigest()
+    """SHA-256 of the canonical JSON (sorted keys, compact, no embedded JSF signature) of the SBOM: the digest a
+    ``bom_signature.json`` names (``served_bom.bom_sha256``)."""
+    from backend.utilities.compliance.served_bom import bom_sha256 as served_sha256
+
+    return served_sha256(bom)
 
 
 def _meta_prop(bom: Dict[str, Any], name: str) -> str:

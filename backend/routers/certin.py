@@ -36,8 +36,9 @@ from sqlmodel import Session, select
 from backend.get_db import get_db
 from backend.new_models import Scan, scan_types
 from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
+from backend.utilities.cbom_sources import bom_signing as SIGN
+from backend.utilities.compliance import served_bom as SERVED
 from backend.utilities.compliance.certin_attest import (
-    bom_dict_from_scan_data,
     compliance_key_for,
     delete_attestation,
     recompute_compliance_for_scan,
@@ -346,7 +347,8 @@ async def sign_scan_bom(
     check_if_user_is_in_team(user.id, team_id, engine)
     scan = _load_success_scan(engine, team_id, type, scan_id)
     data = scan.scan_data if isinstance(scan.scan_data, dict) else {}
-    bom = bom_dict_from_scan_data(type, data, subject_name=subject_name_for(scan.scan_metadata))
+    # the document the downloads serve, so the HMAC covers it
+    bom = _scan_bom(type, scan_id, data, team_id, subject_name=subject_name_for(scan.scan_metadata))
     if not bom:
         raise HTTPException(status_code=409, detail="No BOM JSON available to sign")
     secret = _hmac_secret()
@@ -359,6 +361,31 @@ async def sign_scan_bom(
     data["bom_signature"] = signature
     _save_scan_data(engine, scan_id, team_id, type, data)
     return {"bom_signature": signature}
+
+
+# the one builder of the served document (review 6032108510 M-3): /bom, /vex, /sign, the pack, and the SBOM PDF's
+# minimum-elements page (pdf/sbom_sca_pdf.py, from /export and the pack) all call it
+_scan_serial = SERVED.scan_serial
+_scan_bom = SERVED.served_bom
+
+
+def _served_vex(scan_type: str, scan_id: int, team_id: int, vex: dict, bom: dict | None) -> dict:
+    """The VEX as served (route and pack): the stored document with the identity properties the server asserts
+    (``zs:scan_id``, ``zs:scan_type``, ``zs:team_id`` and ``zs:bom_serial``, the BOM it states about) replacing any it
+    carried, so its signature says which scan of which team it is of (D4 / D7, review 6029745818 N1). Its other
+    ``zs:`` properties are the VEX builder's own rule markers and are kept."""
+    serial = (bom or {}).get("serialNumber")
+    facts = SIGN.scan_facts(scan_type, scan_id, team_id) + ([("zs:bom_serial", serial)] if isinstance(serial, str) else [])
+    return SIGN.stamp_subject(vex, facts, drop_all_zs=False)
+
+
+def _signed_vex_response(scan_type: str, scan_id: int, team_id: int, vex: dict, bom: dict | None) -> Response:
+    """D7: the VEX download signed like a BOM download, an embedded JSF signature and the detached ``X-ZS-Signature``
+    header over the exact bytes."""
+    body = _signed_bom_bytes(_served_vex(scan_type, scan_id, team_id, vex, bom))
+    return Response(body, media_type="application/json", headers={
+        **PRIVATE, **SIGN.signature_headers(hashlib.sha256(body).digest()),
+        "Content-Disposition": f'inline; filename="{scan_type}-vex-{scan_id}.cdx.json"'})
 
 
 @router.get("/{team_id}/{type}/scan/{scan_id}/vex", dependencies=[Depends(read_limiter), access.team("scan.read")])
@@ -375,9 +402,9 @@ async def get_scan_vex(
     check_if_user_is_in_team(user.id, team_id, engine)
     scan = _load_success_scan(engine, team_id, type, scan_id)
     data = scan.scan_data if isinstance(scan.scan_data, dict) else {}
+    bom = _scan_bom(type, scan_id, data, team_id, subject_name=subject_name_for(scan.scan_metadata))
     if not refresh and isinstance(data.get("vex_json"), dict) and _vex_is_current(type, data["vex_json"]):
-        return JSONResponse(data["vex_json"])
-    bom = bom_dict_from_scan_data(type, data, subject_name=subject_name_for(scan.scan_metadata))
+        return await run_in_threadpool(_signed_vex_response, type, scan_id, team_id, data["vex_json"], bom)
     findings = data.get("results") if type in ("sbom_sca", "cbom") else None
     if not isinstance(findings, list):
         findings = None
@@ -386,9 +413,10 @@ async def get_scan_vex(
     except ImportError as e:
         raise HTTPException(status_code=503, detail=f"aibom vex unavailable: {e}") from e
     data = dict(data)
-    data["vex_json"] = vex
+    # stored as served (identity stamped), so the page's copy (scan metadata) and the download are the same document
+    data["vex_json"] = vex = _served_vex(type, scan_id, team_id, vex, bom)
     _save_scan_data(engine, scan_id, team_id, type, data)
-    return JSONResponse(vex)
+    return await run_in_threadpool(_signed_vex_response, type, scan_id, team_id, vex, bom)
 
 
 @router.get("/{team_id}/{type}/scan/{scan_id}/bom", dependencies=[Depends(read_limiter), access.team("scan.read")])
@@ -407,21 +435,169 @@ async def download_scan_bom(
     user = await get_user_from_header_or_raise_exception(engine, Authorization)
     check_if_user_is_in_team(user.id, team_id, engine)
     scan = _load_success_scan(engine, team_id, type, scan_id)
-    bom = bom_dict_from_scan_data(type, scan.scan_data if isinstance(scan.scan_data, dict) else {},
-                                  subject_name=subject_name_for(scan.scan_metadata))
+    bom = _scan_bom(type, scan_id, scan.scan_data if isinstance(scan.scan_data, dict) else {}, team_id,
+                    subject_name=subject_name_for(scan.scan_metadata))
     if not bom:
         raise HTTPException(status_code=409, detail="No CycloneDX document is stored for this scan")
     if format == "json":
-        return JSONResponse(bom, headers={
-            **PRIVATE, "Content-Disposition": f'attachment; filename="{type}-cyclonedx-{scan_id}.cdx.json"'})
+        body = await run_in_threadpool(_signed_bom_bytes, bom)
+        return Response(body, media_type="application/json", headers={
+            **PRIVATE, **SIGN.signature_headers(hashlib.sha256(body).digest()),
+            "Content-Disposition": f'attachment; filename="{type}-cyclonedx-{scan_id}.cdx.json"'})
     if type != "cbom":
         raise HTTPException(status_code=400, detail="format=xml: XML export is available for CBOM scans")
     from backend.utilities.cbom_sources import cdx_xml
 
     body = await run_in_threadpool(cdx_xml.to_xml, bom)
+    signed = SIGN.signature_headers(hashlib.sha256(body).digest())
+    # the scope names the detached signature; an unsigned download (no key) names none (review 6029745818 minor 4)
+    scope = {} if signed["X-ZS-Signature"] == "unsigned" else {"X-ZS-Signature-Scope": cdx_xml.SIGNATURE_SCOPE}
     return Response(body, media_type=cdx_xml.XML_MEDIA_TYPE, headers={
-        **PRIVATE, "Content-Disposition": f'attachment; filename="cbom-cyclonedx-{scan_id}.cdx.xml"',
-        "X-ZS-Signature-Scope": cdx_xml.SIGNATURE_SCOPE})
+        **PRIVATE, "Content-Disposition": f'attachment; filename="cbom-cyclonedx-{scan_id}.cdx.xml"', **scope, **signed})
+
+
+def _signed_bom_bytes(bom: dict, *, indent: int | None = None) -> bytes:
+    """The stored BOM as served: with an embedded JSF ES256 signature (``bom_signing``; D11 / G-X-3) when the
+    deployment has a key, else as stored. The stored ``bom_signature`` HMAC still verifies it (``cert_in/sign.py``
+    leaves the JSF member out of its canonical form)."""
+    try:
+        return SIGN.bom_bytes(bom, indent=indent)
+    except SIGN.SigningUnavailable:
+        seps = (",", ":") if indent is None else (",", ": ")
+        return json.dumps(bom, ensure_ascii=False, indent=indent, separators=seps).encode("utf-8")
+
+
+# D6: the upload is spooled to a temp file and hashed while it is received (never held twice); a JSON body is parsed
+# once, and one this large is the most any scan's BOM, VEX or pack manifest comes to (nginx admits 64 MB uploads).
+VERIFY_MAX_BYTES = SIGN.EMBEDDED_MAX_BYTES
+
+
+@router.post("/{team_id}/{type}/scan/{scan_id}/signature/verify",
+             dependencies=[Depends(write_limiter), access.team("scan.read")])
+async def verify_scan_bom_signature(
+    team_id: int,
+    type: scan_types,
+    scan_id: int,
+    request: Request,
+    Authorization: Annotated[str | None, Header()] = None,
+    x_zs_signature_b64: Annotated[str | None, Header(max_length=512)] = None,
+):
+    """Verify a downloaded file of this scan (the request body, as downloaded; audit C G-X-3): the ES256 detached
+    signature sent in ``X-ZS-Signature-B64`` (the download's ``X-ZS-Signature``, or a pack's ``.sig`` in base64),
+    else the JSF signature embedded in a JSON BOM or VEX, else, for a BOM signed before the ES256 key, the scan's
+    stored HMAC ``bom_signature`` over the same document.
+
+    ``valid`` is true only when the signature is this deployment's AND the file is this scan's (D4): the
+    ``zs:scan_id``, ``zs:scan_type`` and ``zs:team_id`` the server stamped on the BOM / VEX, or the pack manifest's
+    ``subject`` (kind, scan id, team), never a serial number alone (review 6029745818 N1). ``signed_by_deployment``
+    says the first alone (a file of another scan or team is ``valid: false`` with ``signed_by_deployment: true``).
+    JSON that is not I-JSON (duplicate member names, NaN, out-of-range numbers), far denser than any BOM, or carrying a
+    malformed signature member is 400 (a body that is not JSON at all is ``valid: false``, as before); one over 64 MB
+    is 413. Offline checks need only the key at ``GET /{team}/bom-signing-keys``."""
+    _require_bom_type(type)
+    engine = get_db()
+    user = await get_user_from_header_or_raise_exception(engine, Authorization)
+    check_if_user_is_in_team(user.id, team_id, engine)
+    scan = _load_success_scan(engine, team_id, type, scan_id)
+    from backend.utilities.cbom_sources import run_deliverables as RD
+
+    upload = RD.Digests(RD.spool(), count_nodes=True)
+    try:
+        async for chunk in request.stream():
+            upload.write(chunk)
+            if upload.size > VERIFY_MAX_BYTES:
+                raise HTTPException(status_code=413, detail="The file is larger than any BOM this scan produces")
+            dense = upload.dense()
+            if dense:  # minor 2: refused while it arrives, never parsed
+                raise _malformed(dense)
+        if not upload.size:
+            raise HTTPException(status_code=400, detail="Send the downloaded file as the request body")
+        data = scan.scan_data if isinstance(scan.scan_data, dict) else {}
+        result = await run_in_threadpool(_verify_scan_file, type, scan_id, data, upload, x_zs_signature_b64,
+                                         team_id=team_id)
+    finally:
+        upload.out.close()
+    return JSONResponse(result, headers=PRIVATE)
+
+
+SUBJECT_KEYS = ("serial", "scan_id", "scan_type", "team_id", "run_id", "kind", "bom_serial", "ambiguous")
+
+
+def _malformed(reason: str) -> HTTPException:
+    """400 for a body no signature can be checked over (D1, minor 1); the detail is the reason, shown as is."""
+    return HTTPException(status_code=400, detail=f"Not verified: {reason}")
+
+
+def _verify_scan_file(scan_type: str, scan_id: int, data: dict, upload: Any, sent_b64: str | None, *,
+                      team_id: int) -> dict:
+    import base64
+
+    from backend.utilities.cbom_sources import bom_verify as BV
+    from backend.utilities.cbom_sources import export_slots as EXPORT_SLOTS
+    from backend.utilities.pdf.report_http import busy_refusal
+
+    out: dict[str, Any] = {"sha256": upload.sha.hexdigest(), "bytes": upload.size, "scan_id": scan_id}
+    fh = upload.out
+
+    def bound(checked: dict, subject: dict, method: str) -> dict:
+        ok = SIGN.binding(subject, team_id=team_id, scan_id=scan_id, scan_type=scan_type)
+        res = {**out, "method": method, **checked, "signed_by_deployment": True, "bound": ok,
+               "file_subject": {k: v for k, v in subject.items() if k in SUBJECT_KEYS},
+               "valid": ok}
+        if not ok:
+            res["reason"] = "signed by this deployment but not this scan's file (another scan, type or team)"
+        return res
+
+    try:
+        with SIGN.parse_slot(upload.size, team_id):
+            if sent_b64 is not None:
+                try:
+                    der = base64.b64decode(sent_b64.strip(), validate=True)
+                except (ValueError, TypeError):
+                    der = b""
+                if not der:
+                    return {**out, "method": "detached ES256", "valid": False, "signed_by_deployment": False,
+                            "reason": "X-ZS-Signature-B64 is not base64"}
+                try:
+                    checked = SIGN.verify_detached_digest(upload.sha.digest(), der)
+                except SIGN.SigningUnavailable as exc:
+                    return {**out, "method": "detached ES256", "valid": False, "reason": str(exc)}
+                if not checked["valid"]:
+                    return {**out, "method": "detached ES256", **checked, "signed_by_deployment": False}
+                return bound(checked, SIGN.file_subject(fh, upload.size), "detached ES256")
+            try:
+                doc = BV.loads_file(fh)
+            except BV.NotJSON:  # a corrupted or non-JSON file: it does not verify (as before)
+                return {**out, "valid": False, "method": None,
+                        "reason": "not JSON: send the detached signature (X-ZS-Signature) in X-ZS-Signature-B64"}
+            except BV.InputError as exc:  # JSON that two readers could read differently (D1): refused
+                raise _malformed(str(exc)) from None
+            if not isinstance(doc, dict):
+                return {**out, "valid": False, "method": None, "reason": "not a CycloneDX document"}
+            if isinstance(doc.get("signature"), dict):
+                try:
+                    checked = SIGN.verify_document(doc)
+                except SIGN.SigningUnavailable as exc:
+                    return {**out, "valid": False, "method": "embedded JSF", "reason": str(exc)}
+                if checked.get("malformed"):
+                    raise _malformed(checked["reason"])
+                if not checked["valid"]:
+                    return {**out, "method": "embedded JSF", **checked, "signed_by_deployment": False}
+                return bound(checked, BV.subject_of(doc), "embedded JSF")
+    except EXPORT_SLOTS.Busy:
+        raise busy_refusal("verify") from None
+    stored = data.get("bom_signature")
+    if not isinstance(stored, dict):
+        return {**out, "valid": False, "method": None, "reason": "the file carries no signature and the scan has no "
+                                                                   "stored HMAC signature"}
+    sign_mod = _load_certin_module("sign")
+    try:
+        ok = bool(sign_mod.verify_signature(doc, stored, secret=_hmac_secret()))
+    except (TypeError, ValueError) as exc:
+        raise _malformed(f"cannot be canonicalised for the HMAC check: {str(exc)[:200]}") from None
+    # the stored HMAC is this scan's own: a match is a file of this scan
+    return {**out, "valid": ok, "method": "stored HMAC-SHA256 (legacy)", "kid": stored.get("key_id"),
+            "signed_by_deployment": ok, "bound": ok}
 
 
 def _pack_pdf(scan_type: str, data: dict, ctx: ReportContext) -> bytes | None:
@@ -449,8 +625,7 @@ def _signature_matches(bom: dict | None, signature: dict) -> bool:
     a ``bom_signature.json`` that does not match. Signing itself is PR #484's; this only leaves a stale one out."""
     if not isinstance(bom, dict) or not isinstance(signature, dict):
         return False
-    canonical = json.dumps(bom, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    return str(signature.get("digest") or "") == hashlib.sha256(canonical).hexdigest()
+    return str(signature.get("digest") or "") == SERVED.bom_sha256(bom)
 
 
 def _build_evidence_pack(engine, team_id: int, scan_type: str, scan_id: int) -> tuple[str, ReportContext]:
@@ -459,15 +634,17 @@ def _build_evidence_pack(engine, team_id: int, scan_type: str, scan_id: int) -> 
     data = scan.scan_data if isinstance(scan.scan_data, dict) else {}
 
     # Ensure vex + signature exist when possible
-    bom = bom_dict_from_scan_data(scan_type, data, subject_name=subject_name_for(scan.scan_metadata))
+    subject = subject_name_for(scan.scan_metadata)
+    bom = _scan_bom(scan_type, scan_id, data, team_id, subject_name=subject)
     try:
         vex_mod = _load_certin_module("vex")
         sign_mod = _load_certin_module("sign")
 
         if not isinstance(data.get("vex_json"), dict) or not _vex_is_current(scan_type, data["vex_json"]):
             findings = data.get("results") if scan_type in ("sbom_sca", "cbom") else None
-            data["vex_json"] = _build_vex(engine, scan, scan_type, bom,
-                                          findings if isinstance(findings, list) else None, vex_mod)
+            data["vex_json"] = _served_vex(scan_type, scan_id, team_id,
+                                           _build_vex(engine, scan, scan_type, bom,
+                                                      findings if isinstance(findings, list) else None, vex_mod), bom)
         if bom and not isinstance(data.get("bom_signature"), dict):
             try:
                 data["bom_signature"] = sign_mod.sign_bom(bom, secret=_hmac_secret())
@@ -484,33 +661,10 @@ def _build_evidence_pack(engine, team_id: int, scan_type: str, scan_id: int) -> 
     tmp_path = tmp.name
     tmp.close()
     try:
+        files = _pack_members(scan_type, scan_id, team_id, data, bom, ctx, subject_name=subject)
         with zipfile.ZipFile(tmp_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-            if bom:
-                zf.writestr("bom.cdx.json", json.dumps(bom, indent=2))
-                if scan_type == "cbom":  # the same document as CycloneDX XML; bom_signature.json signs the JSON form only
-                    try:
-                        from backend.utilities.cbom_sources import cdx_xml
-
-                        zf.writestr("bom.cdx.xml", cdx_xml.to_xml(bom))
-                    except Exception as e:  # the JSON is the signed original; never fail the pack over the XML copy
-                        console.print(f"evidence-pack XML skipped: {e.__class__.__name__}", style="yellow")
-            if isinstance(data.get("vex_json"), dict):
-                zf.writestr("vex.json", json.dumps(data["vex_json"], indent=2))
-            if isinstance(data.get("bom_signature"), dict) and _signature_matches(bom, data["bom_signature"]):
-                zf.writestr("bom_signature.json", json.dumps(data["bom_signature"], indent=2))
-            ckey = compliance_key_for(scan_type)
-            if isinstance(data.get(ckey), dict):
-                zf.writestr("compliance.json", json.dumps(data[ckey], indent=2))
-            if isinstance(data.get("attestations"), dict):
-                zf.writestr("attestations.json", json.dumps(data["attestations"], indent=2))
-            pdf_data = data
-            if scan_type == "sbom_sca":  # the pack's report.pdf reads the bom.cdx.json packed here (same subject)
-                from backend.utilities.pdf.sbom_sca_pdf import SUBJECT_NAME_KEY
-
-                pdf_data = {**data, SUBJECT_NAME_KEY: subject_name_for(scan.scan_metadata)}
-            pdf = _pack_pdf(scan_type, pdf_data, ctx)
-            if pdf is not None:
-                zf.writestr("report.pdf", pdf)
+            for name, body in files:
+                zf.writestr(name, body)
     except BaseException:
         try:
             os.unlink(tmp_path)
@@ -518,6 +672,50 @@ def _build_evidence_pack(engine, team_id: int, scan_type: str, scan_id: int) -> 
             pass
         raise
     return tmp_path, ctx
+
+
+def _pack_members(scan_type: str, scan_id: int, team_id: int, data: dict, bom: dict | None,
+                  ctx: ReportContext, *, subject_name: str | None = None) -> list[tuple[str, bytes]]:
+    """The pack's files in zip order. D11 / C G-X-3: the JSON BOM carries its embedded JSF signature; with a signing
+    key the pack also holds the public key, the offline verifier, the detached signature of each BOM file and a
+    signed ``manifest.json`` (SHA-256 and size of every file) and ``SHA256SUMS`` (``bom_signing.pack_files``)."""
+    files: list[tuple[str, bytes]] = []
+    if bom:
+        files.append(("bom.cdx.json", _signed_bom_bytes(bom, indent=2)))
+        if scan_type == "cbom":  # the same document as CycloneDX XML, signed detached
+            try:
+                from backend.utilities.cbom_sources import cdx_xml
+
+                files.append(("bom.cdx.xml", cdx_xml.to_xml(bom)))
+            except Exception as e:  # never fail the pack over the XML copy
+                console.print(f"evidence-pack XML skipped: {e.__class__.__name__}", style="yellow")
+    if isinstance(data.get("vex_json"), dict):  # D7: signed inside (JSF) and detached, like the BOM
+        files.append(("vex.json", _signed_bom_bytes(_served_vex(scan_type, scan_id, team_id, data["vex_json"], bom),
+                                                     indent=2)))
+    # a stored HMAC ships only when it signs the bom.cdx.json packed next to it (review 6028132826 M6)
+    if isinstance(data.get("bom_signature"), dict) and _signature_matches(bom, data["bom_signature"]):
+        files.append(("bom_signature.json", json.dumps(data["bom_signature"], indent=2).encode("utf-8")))
+    ckey = compliance_key_for(scan_type)
+    if isinstance(data.get(ckey), dict):
+        files.append(("compliance.json", json.dumps(data[ckey], indent=2).encode("utf-8")))
+    if isinstance(data.get("attestations"), dict):
+        files.append(("attestations.json", json.dumps(data["attestations"], indent=2).encode("utf-8")))
+    pdf_data = data
+    if scan_type == "sbom_sca":  # the report's SBOM pages read this pack's bom.cdx.json: the same builder and subject
+        from backend.utilities.pdf.sbom_sca_pdf import SUBJECT_NAME_KEY
+
+        pdf_data = {**data, SUBJECT_NAME_KEY: subject_name,
+                    SERVED.SCAN_IDENTITY_KEY: SERVED.pdf_identity(scan_type, scan_id, team_id, subject_name)}
+    pdf = _pack_pdf(scan_type, pdf_data, ctx)
+    if pdf is not None:
+        files.append(("report.pdf", pdf))
+    try:
+        files += SIGN.pack_files(files, subject={"kind": f"{scan_type}-scan", "scan_id": scan_id, "team_id": team_id,
+                                                 "bom_serial": (bom or {}).get("serialNumber")},
+                                 detached_for=[n for n, _b in files if n.startswith("bom.cdx.") or n == "vex.json"])
+    except SIGN.SigningUnavailable as exc:  # say so in the pack (review 6029745818 minor 4); the reason names no value
+        files.append(("UNSIGNED.txt", SIGN.unsigned_note(str(exc)).encode("utf-8")))
+    return files
 
 
 @router.get("/{team_id}/{type}/scan/{scan_id}/evidence-pack", dependencies=[Depends(write_limiter), access.team("scan.read")])

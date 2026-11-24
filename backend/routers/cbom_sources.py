@@ -43,14 +43,17 @@ from backend.new_models import (
 )
 from backend.routers import cbom_node_artifacts as NODE_ARTIFACTS  # install links (one-paste node install)
 from backend.utilities.cbom_sources import agility as AGILITY
+from backend.utilities.cbom_sources.bom_signing import signature_headers
 from backend.utilities.cbom_sources import agility_rollup as AGILITY_ROLLUP
 from backend.utilities.cbom_sources import http as _cbom_http
 from backend.utilities.rbac.policy import Access
 from backend.utilities.cbom_sources import agents as AG
 from backend.utilities.cbom_sources import limits as LIM
+from backend.utilities.cbom_sources import pqc_targets as PQT
 from backend.utilities.cbom_sources import held as HELD
 from backend.utilities.cbom_sources import host_key_resets as HKR  # #150
 from backend.utilities.cbom_sources import jobs as J
+from backend.utilities.cbom_sources import run_status as RUN_STATUS
 from backend.utilities.cbom_sources import source_cap as SOURCE_CAP
 from backend.utilities.cbom_sources import targets as T
 from backend.utilities.cbom_sources import vault_support as VAULT_SUPPORT  # #364
@@ -1269,6 +1272,10 @@ def _update_settings(engine, team_id: int, user_id: int, body: SettingsUpdate) -
             # clears all three
             changes["risk_model"] = ({**(row.risk_model or {}), **body.risk_model.model_dump(exclude_unset=True)}
                                      if body.risk_model is not None else {})
+            # the wave windows in force after the merge (a stored value or the KB default fills a field not sent)
+            order = PQT.window_order_error(PQT.fix_windows(changes["risk_model"]))
+            if order:
+                raise HTTPException(status_code=422, detail=order)
         if "require_signed_nodes" in changes and changes["require_signed_nodes"] is None:
             changes.pop("require_signed_nodes")  # null means "leave as is" (the column is NOT NULL)
         if "cert_domains" in changes:
@@ -1666,15 +1673,28 @@ def _list_runs(engine, team_id: int, scan_id: int | None) -> dict:
         runs = session.exec(query.order_by(CbomCollectionRun.id.desc()).limit(50)).all()  # type: ignore[union-attr]
         # issue #159 (Rule P): the asset count the Scans table shows too, from the one function, one query for the page
         assets = RUN_LIST.asset_counts(session, team_id, [int(run.id) for run in runs])
+        # keyed by SOURCE id; kept apart from the schedule-name map below (both ids start at 1)
+        source_names = dict(session.exec(select(CbomCollectionSource.id, CbomCollectionSource.name)
+                                         .where(CbomCollectionSource.team_id == team_id)).all())
+        nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
         # S4: the schedule's name for every run a live schedule started (one query for the page; null = deleted)
         names = schedule_names(session, team_id, (run.schedule_id for run in runs))
         out = []
         for run in runs:
             counts: dict[str, int] = {}
+            rows = []
             for job in session.exec(select(CbomCollectionJob).where(CbomCollectionJob.run_id == run.id)).all():
                 counts[job.status] = counts.get(job.status, 0) + 1
+                rows.append({"id": job.id, "status": job.status, "outcome": job.outcome, "error": job.error,
+                             "summary": (job.result or {}).get("summary"),
+                             "source_name": source_names.get(job.source_id) or (job.params or {}).get("source_name"),
+                             "waiting_reason": (J.offline_wait_reason(job, nodes[job.node_id], now)
+                                                if job.status == "pending" and job.node_id in nodes
+                                                and node_status(nodes[job.node_id], now) == "offline" else None)})
+            # FIX-B3: the list says why a run is partial or failed, as the run detail does
+            reason = RUN_STATUS.status_reason(run.status, rows)
             out.append({**public_run(run, schedule_name=names.get(run.schedule_id or 0)), "job_counts": counts,
-                        "asset_count": assets.get(int(run.id), 0)})
+                        "asset_count": assets.get(int(run.id), 0), "status_reason": reason["status_reason"]})
         return {"runs": out, "server_time": iso_z(now)}
 
 
@@ -1759,7 +1779,7 @@ async def run_assets(team_id: TeamId, run_id: ObjectId,
 EXPORT_SPOOL_BYTES = 8 * 1024 * 1024  # an export up to this size stays in memory; a larger one goes to a temp file
 
 
-def _run_cbom(engine, team_id: int, run_id: int, fmt: str = "json") -> IO[bytes]:
+def _run_cbom(engine, team_id: int, run_id: int, fmt: str = "json") -> tuple[IO[bytes], bytes]:
     """The run's CycloneDX document written to a temporary file (positioned at its start), checked first: 404 for
     another team's run; 429 with Retry-After when the run is large and every export slot is taken (export_slots).
     The document is written one component at a time (inventory.write_cyclonedx), so a 50,000-component export never
@@ -1772,13 +1792,15 @@ def _run_cbom(engine, team_id: int, run_id: int, fmt: str = "json") -> IO[bytes]
             with EXPORT_SLOTS.slot() if EXPORT_SLOTS.is_large(rows) else contextlib.nullcontext():
                 out = tempfile.SpooledTemporaryFile(max_size=EXPORT_SPOOL_BYTES)
                 try:
-                    # inventory's document with a stable timestamp: the bytes GET .../signature signs (CB-38 PR-8)
-                    RUN_DELIVERABLES.write_run_cbom(session, run, utcnow(), fmt, out)
+                    # inventory's document with a stable timestamp: the bytes GET .../signature signs (CB-38 PR-8);
+                    # hashed while written, for the detached signature header (D11)
+                    tee = RUN_DELIVERABLES.Digests(out)
+                    RUN_DELIVERABLES.write_run_cbom(session, run, utcnow(), fmt, tee)
                     out.seek(0)
                 except BaseException:
                     out.close()
                     raise
-                return out
+                return out, tee.sha.digest()
         except EXPORT_SLOTS.Busy:  # 429 + Retry-After: the UI's error handler already says "try again in N seconds"
             log("run cbom export busy", team=team_id, run=run_id, rows=rows, slots=EXPORT_SLOTS.SLOTS)
             raise busy_refusal("cbom") from None
@@ -1797,13 +1819,14 @@ def _chunks(out: IO[bytes], size: int = 1024 * 1024) -> Iterator[bytes]:
 async def run_cbom(team_id: TeamId, run_id: ObjectId, format: str = Query(default="json", pattern="^(json|xml)$"),
                    Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
-    out = await _run("run cbom", team_id, _run_cbom, engine, team_id, run_id, format)
+    out, digest = await _run("run cbom", team_id, _run_cbom, engine, team_id, run_id, format)
     length = out.seek(0, 2)
     out.seek(0)
-    # The JSON is signed on request (GET .../runs/{id}/signature, CB-38 PR-8); the XML is not covered
+    # D11: the JSON carries an embedded JSF signature; both formats get a detached ES256 signature of their exact
+    # bytes in X-ZS-Signature (base64 DER, openssl-verifiable with the key at GET /{team}/bom-signing-keys)
     media, ext = (CDX_XML.XML_MEDIA_TYPE, "xml") if format == "xml" else ("application/json", "json")
     return StreamingResponse(_chunks(out), media_type=media, headers={
-        **PRIVATE, "Content-Length": str(length),
+        **PRIVATE, "Content-Length": str(length), **signature_headers(digest),
         "Content-Disposition": f'attachment; filename="cbom-sources-run-{run_id}.cdx.{ext}"'})
 
 

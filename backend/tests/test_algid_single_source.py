@@ -83,7 +83,7 @@ def count(text: str) -> int:
 # path -> number of matches (strict: a listed file must match exactly this many times)
 ALLOWED = {
     "aibom/src/aibom/cbom/compliance.py": 55,
-    "aibom/src/aibom/cbom/data/crypto_kb.json": 71,
+    "aibom/src/aibom/cbom/data/crypto_kb.json": 74,  # +3: CNSA 2.0 code-signing selector names and the NSA note
     "aibom/src/aibom/cbom/data/named_groups.json": 10,
     # third-party OSV advisory text (CB-29 offline snapshot), quoted verbatim: not an algorithm table
     "aibom/src/aibom/cbom/data/osv_snapshot.json": 8,
@@ -104,7 +104,7 @@ ALLOWED = {
     "aibom/src/aibom/schemas/spdx-3.0.1.schema.json": 3,
     "backend/utilities/ai/remediation.py": 1,
     "backend/utilities/cbom_sources/classify_ext/node_net.py": 5,
-    "backend/utilities/cbom_sources/data/crypto_kb.json": 71,
+    "backend/utilities/cbom_sources/data/crypto_kb.json": 74,  # +3: CNSA 2.0 code signing (as above)
     "backend/utilities/cbom_sources/data/cyclonedx/bom-1.6.xsd": 2,
     "backend/utilities/cbom_sources/exploit_demo.py": 6,
     "backend/utilities/cbom_sources/fixgen.py": 2,

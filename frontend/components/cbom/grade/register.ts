@@ -43,7 +43,9 @@ export interface RegisterSummary {
   q0_reasons: Record<string, number>;
   q0_gaps_open: Record<string, number>;
   families: Record<string, Record<string, number>>;
-  closures_by_week: { week: string; total: number; by_cause: Record<string, number> }[];
+  /** Q0 gap lifecycle per week (total = Q0 gaps closed); not drift's weekly_drift() events */
+  closures_by_week: { week: string; total: number; by_cause: Record<string, number>; q0_gaps_opened?: number;
+    q0_gaps_open_at_week_end?: number }[];
   pending_regrade: number;
   estate: { stale: boolean; stale_reason?: string | null } | null;
   model_version: string;

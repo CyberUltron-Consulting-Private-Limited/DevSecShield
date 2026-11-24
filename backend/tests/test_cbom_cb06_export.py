@@ -531,7 +531,8 @@ def test_asset_count_counts_the_asset_components(exported):
 
 def test_key_algorithm_parts_carry_curve_or_size_and_the_quantum_level(exported):
     """[minor, mutants I7/I13] An EC key's algorithm names its curve and no parameter set; an RSA key's names its
-    size; an algorithm a quantum computer breaks (Shor: RSA, ECDSA) has nistQuantumSecurityLevel 0, ML-DSA has none."""
+    size; an algorithm a quantum computer breaks (Shor: RSA, ECDSA) has nistQuantumSecurityLevel 0, ML-DSA-65 its FIPS 204
+    category (3)."""
     refs = _refs_index(exported["doc"])
 
     def key_alg(location):
@@ -547,7 +548,8 @@ def test_key_algorithm_parts_carry_curve_or_size_and_the_quantum_level(exported)
     assert rsa["parameterSetIdentifier"] == "3072" and "curve" not in rsa
     assert rsa["nistQuantumSecurityLevel"] == 0 and rsa_sig["nistQuantumSecurityLevel"] == 0
     pq, pq_sig = key_alg(CERT_MLDSA["location"])
-    assert "nistQuantumSecurityLevel" not in pq and "nistQuantumSecurityLevel" not in pq_sig
+    # D11 / A-14: a post-quantum set carries its FIPS 204 category from algid (the one algorithm table)
+    assert pq["nistQuantumSecurityLevel"] == 3 and pq_sig["nistQuantumSecurityLevel"] == 3
 
 
 def test_certificates_share_their_algorithm_and_key_parts_by_bom_ref(exported):
@@ -654,7 +656,7 @@ def test_the_products_own_import_counts_each_certificate_once(exported, tmp_path
 def test_every_component_has_a_pqc_class(exported):
     for comp in _assets(exported["doc"]):
         assert _one(comp, "zs:pqc_class") in ("quantum-vulnerable", "hybrid", "quantum-safe", "grover-weakened",
-                                              "not-applicable", "unknown")
+                                              "not-applicable", "unknown", "deprecated")  # pc-3
 
 
 def _strip(component: dict) -> dict:
@@ -967,7 +969,15 @@ def test_the_streamed_download_is_the_in_memory_document(exported):
             inventory.write_cyclonedx(s, run, now, fmt, buf)
             streamed[fmt] = buf.getvalue()
     assert len(doc["components"]) > len(_assets(doc)) > 20  # assets and certificate parts both streamed
-    assert streamed["json"] == JSONResponse(doc).body
+    # D11: the streamed JSON ends with its JSF signature (bom_signing.write_json); without it, the same bytes
+    body = streamed["json"]
+    signed = json.loads(body).get("signature")
+    unsigned = body[:body.rindex(b',"signature":')] + b"}" if signed else body
+    assert unsigned == JSONResponse(doc).body
+    if signed:
+        from backend.utilities.cbom_sources import bom_signing
+
+        assert bom_signing.verify_bom(body)["valid"] is True
     assert _same_xml(streamed["xml"], cdx_xml.to_xml(doc, strict=True))
     assert xml_errors(streamed["xml"]) == []
     for response in (exported["xml"],):

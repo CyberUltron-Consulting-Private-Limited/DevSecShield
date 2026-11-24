@@ -283,8 +283,9 @@ def test_model_only_change_closes_nothing_that_is_forwarded(api, two_runs):
     assert gap.closed_at is not None and gap.close_cause == "model_change" and gap.closed_grade is None
     events = closed_events(engine)
     assert key not in {e.asset_key for e in events}  # not forwarded
-    # the other closures of the same sync are real ones, and forwarded: Mosca set (inputs), the unknown key gone
-    assert {e.detail["cause"] for e in events[before:]} == {"inputs", "observation"}
+    # the other closures of the same sync are real ones, and forwarded: the unknown key gone. SOW D12: run 1 was graded
+    # on the default Mosca assumptions, so no "inputs:mosca" item was open for setting Mosca to close
+    assert {e.detail["cause"] for e in events[before:]} == {"observation"}
     closed = {i["item_key"]: i for i in items(api, status="closed")}
     assert closed[key]["close_cause"] == "model_change" and closed[key]["forwarded"] is False
 

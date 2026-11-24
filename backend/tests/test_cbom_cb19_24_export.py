@@ -241,12 +241,12 @@ def test_a_run_with_a_start_snapshot_exports_the_snapshot_inputs(api, world):
     assert json.loads(_one(doc["metadata"], "zs:q_distribution")) == posture["q_grades"]
 
 
-def test_mosca_unset_grades_quantum_vulnerable_assets_q0_and_says_so(api, world):
+def test_mosca_unset_grades_quantum_vulnerable_assets_on_default_assumptions(api, world):
+    """SOW D12: Mosca unset -> graded on the documented defaults (never Q0 mosca_missing); the inputs say unset."""
     w = _seed(world[0], mosca=None)
     doc = _export(api, w["run"]).json()
     comp = _assets(doc)[w["S-mixed"]["assets"]["10.20.0.1:443"]]
-    assert (_one(comp, "zs:q_grade"), _one(comp, "zs:q_label"), _one(comp, "zs:q_reason")) == (
-        "Q0", "Unknown", "mosca_missing")
+    assert _one(comp, "zs:q_grade") in ("Q1", "Q2") and _one(comp, "zs:q_reason").startswith("qv_exceeds")
     inputs = json.loads(_one(doc["metadata"], "zs:grade_inputs"))
     assert inputs["mosca"] == {"x": None, "y": None, "z": None} and inputs["source"] == "current"
 
@@ -341,7 +341,9 @@ def test_the_streamed_download_is_still_the_in_memory_document(seeded):
         doc = inventory.cyclonedx(s, run, now)
         buf = io.BytesIO()
         inventory.write_cyclonedx(s, run, now, "json", buf)
-    assert buf.getvalue() == JSONResponse(doc).body
+    body = buf.getvalue()  # D11: the stream ends with its JSF signature; without it, the in-memory document's bytes
+    unsigned = body[:body.rindex(b',"signature":')] + b"}" if b',"signature":' in body[-600:] else body
+    assert unsigned == JSONResponse(doc).body
     assert _one(doc["metadata"], "zs:grade_model") == "qg-1"
 
 

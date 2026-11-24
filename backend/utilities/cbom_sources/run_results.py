@@ -626,7 +626,7 @@ def _dashboard_top_risks(session: Session, team_id: int, risks: list[dict[str, A
         if row is not None:
             view = shown(row, now)
             codes = [c for c in view["finding_codes"] or [] if not str(c).startswith("COVERAGE_")]
-            klass = POSTURE.classify_pqc(row, codes)[0]
+            klass = POSTURE.graded_class(row, codes)[0]
             item.update({"algorithm_name": row.algorithm or row.name or item["algorithm_name"],
                          "algorithm_type": _algorithm_type(row), "crypto_strength": strength(klass, codes, memo),
                          "quantum_safe": klass in _READY, "pqc_class": klass})
