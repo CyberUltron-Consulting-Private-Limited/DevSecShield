@@ -119,7 +119,11 @@ def test_every_variant_resolves_to_policies_the_validator_accepts(scope, lambda_
     glue_allow = [s for s in statements if s.get("Sid") == "AllowGlueConnectionMetadata"]
     assert (glue_allow[0]["Action"] if glue_allow else None) == (["glue:GetConnection", "glue:GetConnections"] if glue else None)
     if not lambda_cmk and not glue:
-        assert [p["PolicyName"] for p in policies] == ["ZeroShieldCBOMReaderDeny"]  # no Allow at all by default
+        # by default the only Allow is reading PUBLIC certificate bodies (QA Q3-08: ACM rows had no SHA-256)
+        assert [p["PolicyName"] for p in policies] == ["ZeroShieldCBOMReaderDeny", "ZeroShieldCBOMReaderCertificates"]
+    bodies = next(s for s in statements if s.get("Sid") == "AllowPublicCertificateBodies")
+    assert bodies["Action"] == ["acm:GetCertificate", "acm-pca:GetCertificateAuthorityCertificate"]
+    assert not set(bodies["Action"]) & set(DENY_ACTIONS)
     deny_row, lambda_row = check_role_policies(_docs(policies), lambda_cmk=lambda_cmk)
     assert deny_row[0] == "pass", deny_row
     assert (lambda_row[0] if lambda_row else None) == ("pass" if lambda_cmk else None)

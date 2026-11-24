@@ -68,8 +68,8 @@ export const DRAWER_MANIFEST = {
   ],
   "dialog.overview": [
     "cbom.run.f.type", "cbom.run.f.strength", "cbom.run.f.key_size", "cbom.run.f.quantum", "cbom.run.f.impact",
-    "cbom.run.f.risk", "cbom.run.f.status", "cbom.res.col.fix_class", "cbom.run.col.qgrade", "cbom.run.f.ticket",
-    "cbom.run.col.priority", "cbom.run.f.location", "cbom.run.f.finding", "cbom.run.f.description",
+    "cbom.run.f.risk", "cbom.run.f.tls_grade", "cbom.run.f.status", "cbom.res.col.fix_class", "cbom.run.col.qgrade",
+    "cbom.run.f.ticket", "cbom.run.col.priority", "cbom.run.f.location", "cbom.run.f.finding", "cbom.run.f.description",
     "cbom.run.f.suggested_fix", "cbom.run.f.owasp", "cbom.run.f.compliance", "cbom.run.f.origin",
   ],
   "dialog.issues": ["cbom.run.f.finding"],

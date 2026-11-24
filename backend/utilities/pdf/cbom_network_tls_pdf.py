@@ -366,6 +366,19 @@ def _matrix(view: object, styles: Styles, width: float) -> list[Flowable]:
     ]
 
 
+def suite_label(name: Any) -> str:
+    """A suite by its IANA registry name, with the name the collector stored beside it when that was an OpenSSL name
+    (staging QA Q3-10: D7 mixed ``DES-CBC3-SHA`` and ``TLS_RSA_WITH_3DES_EDE_CBC_SHA``).  ``tls_suites`` is the one
+    table of names; a name it does not hold is printed as stored."""
+    from backend.utilities.cbom_sources import tls_suites
+
+    text = str(name or "").strip()
+    hit = tls_suites.lookup(text)
+    if hit is None or hit.iana.upper() == text.upper():
+        return text
+    return f"{hit.iana} ({text})"
+
+
 def _weak_suites(view: object, styles: Styles, width: float) -> list[Flowable]:
     rows = []
     for fact in _endpoints(view):
@@ -373,7 +386,7 @@ def _weak_suites(view: object, styles: Styles, width: float) -> list[Flowable]:
             mapped = common.as_mapping(suite) or {"suite": suite}
             reasons = mapped.get("reasons") or []
             reason_text = "; ".join(str(item) for item in common.as_rows(reasons))
-            rows.append([common.endpoint_label(fact), mapped.get("suite") or "", reason_text])
+            rows.append([common.endpoint_label(fact), suite_label(mapped.get("suite")), reason_text])
     return [
         *section_heading("Weak cipher suites", styles),
         *common.register(
@@ -589,7 +602,7 @@ def _grades(model: _Model, styles: Styles, width: float) -> list[Flowable]:
         rows.append([
             e.key, e.service, e.grade.text, "" if e.grade.score is None else e.grade.score,
             "; ".join(e.grade.reasons), facts.get("negotiated_version") or "",
-            facts.get("negotiated_cipher") or "", ", ".join(e.groups),
+            suite_label(facts.get("negotiated_cipher")), ", ".join(e.groups),
             "complete" if not e.grade.provisional else "incomplete: " + "; ".join(e.not_read[:3]),
             _seen(e.observed),
         ])
@@ -619,7 +632,8 @@ def _suites(model: _Model, styles: Styles, width: float) -> list[Flowable]:
             done = e.suites_complete.get(version)
             state = "complete" if done else ("incomplete" if done is False else "not reported")
             for position, name in enumerate(names):  # one suite per row: a long list is never cut
-                rows.append([version if position == 0 else "", position + 1, name, state if position == 0 else ""])
+                rows.append([version if position == 0 else "", position + 1, suite_label(name),
+                             state if position == 0 else ""])
                 rows_all += 1
         flow.append(Bookmark(f"{e.key} ({e.grade.text})", f"d7-suites-{index}", 1, closed=True))
         flow.extend(common.register((f"{e.key} · version", "#", "Accepted suite (IANA name)", "Enumeration"),

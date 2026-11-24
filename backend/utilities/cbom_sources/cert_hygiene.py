@@ -100,6 +100,8 @@ class Cert:
     owners: tuple[str, ...] = ()
     applications: tuple[str, ...] = ()
     latest: tuple = ()
+    # the estate-store asset keys of its rows (CB-21 identities): the estate export joins its flags on them
+    aliases: tuple[str, ...] = ()
 
     def public(self, today: _dt.date) -> dict[str, Any]:
         days = (self.not_after.date() - today).days if self.not_after else None
@@ -262,7 +264,8 @@ def from_estate(estate: Any, moment: _dt.datetime, *, stale_runs: int = STALE_RU
         cert = Cert(key=ec.key, label=ec.subject or ec.cert.name or ec.key,
                     key_kind="sha256" if ec.thumbprint else "identity", observations=observations,
                     subject=ec.subject or None, issuer=ec.issuer or None, serial=ec.serial or None,
-                    thumbprint=ec.thumbprint, not_after=_parse(ec.not_after))
+                    thumbprint=ec.thumbprint, not_after=_parse(ec.not_after),
+                    aliases=tuple(dict.fromkeys(str(m.identity) for m in ec.members if getattr(m, "identity", ""))))
         certs.append(cert)
         obs = cert.observations
         obs.sort(key=lambda o: (o["source_name"].casefold(), o["location"]))

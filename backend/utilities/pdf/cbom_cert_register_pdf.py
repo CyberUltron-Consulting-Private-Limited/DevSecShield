@@ -613,11 +613,15 @@ def _certificate_cell(cert: CertAgg, usable: float) -> _TextBlock:
 
 def _expiry_cell(row: RegisterRow, usable: float) -> list[Flowable]:
     band = row.band.band
-    chip = status_chip(
+    lifecycle = row.estate.lifecycle if row.estate is not None else ""
+    # a certificate its provider took out of service (a DELETED AWS Private CA) is never shown as valid (Q3-08)
+    chip = status_chip(lifecycle.upper(), "high") if lifecycle else status_chip(
         authored.EXPIRY_BAND_CHIP_TEXT.get(band, band),
         authored.EXPIRY_BAND_TONE.get(band, "unknown"),
     )
     groups = [_lines(row.expiry_note, usable)]
+    if lifecycle:
+        groups.append(_lines(f"Provider status: {lifecycle}", usable, color=COLOR_SLATE))
     if row.flag_differs:
         groups.append(_lines(authored.CERT_SCAN_FLAG_DIFFERS, usable, color=COLOR_SLATE))
     return [chip, Spacer(1, 2), _block(*groups)]

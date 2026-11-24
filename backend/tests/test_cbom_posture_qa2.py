@@ -379,3 +379,54 @@ def test_run_assets_carry_the_d7_grade_of_a_probed_endpoint():
     assert grade == NE.grade_tls(facts, dt.date(2026, 11, 24)).record()
     assert (grade["grade"], grade["letter"], grade["provisional"]) == ("B*", "B", True)
     assert "TLS 1.0 / 1.1 offered" in grade["caps"] and isinstance(grade["score"], int)
+
+
+# ------------------------------------------------------------------------------------------------ Q3-08 ACM thumbprints
+def test_acm_certificates_get_their_sha256_from_get_certificate():
+    """14 of team 1's D8 rows had no SHA-256: the collector never asked ACM for the (public) certificate body.  Asked
+    after every DescribeCertificate, only for an issued certificate; a denial keeps the row and records a gap."""
+    import hashlib
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from test_cbom_aws_collect_wp4 import ACCOUNT, REGION, _run  # noqa: E402
+    from test_cbom_d7_d8_network_certs import _pem  # noqa: E402
+
+    pem, fp, _serial = _pem()
+    arn = f"arn:aws:acm:{REGION}:{ACCOUNT}:certificate/"
+    summaries = [{"CertificateArn": arn + n, "DomainName": f"{n}.bank.example"} for n in ("ok", "denied", "pending")]
+    calls = [("list_certificates", {"CertificateSummaryList": summaries}, None)]
+    for name, status in (("ok", "ISSUED"), ("denied", "ISSUED"), ("pending", "PENDING_VALIDATION")):
+        calls.append(("describe_certificate", {"Certificate": {
+            "CertificateArn": arn + name, "DomainName": f"{name}.bank.example", "KeyAlgorithm": "EC-prime256v1",
+            "SignatureAlgorithm": "SHA256WITHECDSA", "Status": status, "Type": "AMAZON_ISSUED"}},
+            {"CertificateArn": arn + name}))
+    calls += [("get_certificate", {"Certificate": pem}, {"CertificateArn": arn + "ok"}),
+              ("get_certificate", "AccessDeniedException", {"CertificateArn": arn + "denied"})]
+    stubs, found = _run({"acm": calls})
+    for stub in stubs:
+        stub.assert_no_pending_responses()  # PENDING_VALIDATION: never asked (it has no body)
+    certs = {a["location"].rsplit("/", 1)[-1]: a for a in found if a["type"] == "certificate"}
+    assert certs["ok"]["facts"]["fingerprint_sha256"] == fp == hashlib.sha256(
+        __import__("ssl").PEM_cert_to_DER_cert(pem)).hexdigest()
+    assert certs["ok"]["facts"]["certificate_read"] == "ok"
+    assert "fingerprint_sha256" not in certs["denied"]["facts"]
+    assert certs["denied"]["facts"]["certificate_read"] == "AccessDeniedException"
+    assert "certificate_read" not in certs["pending"]["facts"]
+    gaps = [a for a in found if a["type"] == "coverage" and "#body" in a["location"]]
+    assert gaps and gaps[0]["facts"].get("incomplete") is True  # the certificate is listed, its thumbprint missing
+
+
+def test_the_reader_role_may_read_public_certificate_bodies_only():
+    from backend.utilities.cbom_sources import templates as T
+
+    text = T.cloudformation_template("ZS-EXT-1", "account")
+    assert "acm:ExportCertificate" in T.DENY_ACTIONS  # the private key stays out of reach
+    assert "- acm:GetCertificate" in text and "AllowPublicCertificateBodies" in text
+
+
+def test_a_deleted_aws_private_ca_is_never_listed_as_valid():
+    from backend.utilities.cbom_sources.cert_estate import unique_certificates
+
+    folded = _with_estate()
+    pca = next(c for c in unique_certificates(folded).certificates if "AWS-PCA-Test" in c.subject)
+    assert pca.lifecycle == "deleted" and pca.status == "deleted" and pca.band.band == "VALID"

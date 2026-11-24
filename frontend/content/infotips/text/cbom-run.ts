@@ -325,6 +325,12 @@ const TEXT = {
     why: "Orders findings of the same impact.",
     example: "8.6 out of 10.",
   },
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx — TLS grade (network_estate.grade_tls, as D7 prints it)
+  "cbom.run.f.tls_grade": {
+    what: "The endpoint's TLS grade, A+ to F, worked out from the protocols, key exchange and cipher suites the probe saw, using the SSL Labs Server Rating Guide. M means the certificate does not name the server; T means the certificate is not trusted. A * means the probe did not list every suite.",
+    why: "D7 prints the same grade, score and reasons.",
+    example: "B* (score 92): TLS 1.0 / 1.1 offered.",
+  },
   // src: frontend/components/cbom/results/RunFindingDialog.tsx:98-102 — remediation status
   "cbom.run.f.status": {
     what: "The status of the asset's remediation plan: Not started, In progress, Fixed or Ignored.",

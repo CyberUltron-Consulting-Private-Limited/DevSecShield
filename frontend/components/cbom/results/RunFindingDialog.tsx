@@ -58,6 +58,7 @@ import {
 } from "./findingDialogModel";
 import { FINDING_DIALOG_BODY, FINDING_DIALOG_CONTENT, FINDING_DIALOG_FULLSCREEN_SM } from "./findingTable";
 import { FINDING_STATUS_LABEL, FINDING_STATUSES, dialogItem, findingChips, findingStatusOf } from "./model";
+import { tlsGradeReasons, tlsGradeText } from "./tlsGrade";
 import { assetName, AsOfRunNote, CollectedFacts } from "./RunFindingsTable";
 
 export type { DialogNav } from "./dialogNav";
@@ -351,6 +352,14 @@ export function RunFindingDialog({ teamId, runId, subject, jobs, waveOf, onClose
                                 {typeof item.risk_score === "number" ? item.risk_score.toFixed(1) : "—"}
                               </span>
                             </Fact>
+                            {item.tls_grade && (
+                              <Fact infoId="cbom.run.f.tls_grade" label="TLS grade">
+                                <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200" data-testid="run-finding-tls-grade"
+                                   title={tlsGradeReasons(item.tls_grade) || undefined}>
+                                  {tlsGradeText(item.tls_grade)}
+                                </p>
+                              </Fact>
+                            )}
                             <Fact infoId="cbom.run.f.status" label="Status">
                               {status
                                 ? <span className={`inline-flex px-2.5 py-1 rounded-md text-xs font-medium capitalize ${getFindingStatusBadgeClass(status)}`}>{status.replace(/_/g, " ")}</span>
@@ -386,6 +395,9 @@ export function RunFindingDialog({ teamId, runId, subject, jobs, waveOf, onClose
                                 <span className="block text-[11px] font-sans text-zinc-500">Stored as</span>
                                 {item.location}
                                 {item.target && item.target !== item.location ? <span className="block text-xs text-zinc-500 font-sans mt-1">Target: {item.target}</span> : null}
+                                {item.also_seen && item.also_seen.length > 0
+                                  ? <span className="block text-xs text-zinc-500 font-sans mt-1" data-testid="run-finding-also-seen">Also read by: {item.also_seen.join(", ")}</span>
+                                  : null}
                               </p>
                             </div>
                           </Field>

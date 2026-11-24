@@ -387,8 +387,12 @@ def _library_summary(view: TeamCbomView, current: Sequence[LibAgg]) -> str:
     with_libs = len({key for lib in current for key in lib.current_source_keys})
     sources = max(len(view.sources), with_libs)
     multi = sum(1 for lib in current if len(lib.current_source_keys) > 1)
+    products = sum(1 for lib in current if str(getattr(lib, "ecosystem", "")).startswith("crypto product"))
+    libraries = _plural(len(current) - products, "cryptographic library", "cryptographic libraries")
+    if products:  # QA Q3-11: HSMs, KMIP servers, key managers, appliances and cloud key services are rows too
+        libraries += " and " + _plural(products, "cryptographic product", "cryptographic products")
     return _LIBRARY_SUMMARY.format(
-        libraries=_plural(len(current), "cryptographic library", "cryptographic libraries"),
+        libraries=libraries,
         with_libs=with_libs,
         sources=_plural(sources, "source", "sources"),
         multi=multi,

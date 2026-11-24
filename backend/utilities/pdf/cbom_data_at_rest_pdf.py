@@ -80,7 +80,8 @@ def _kpi(view: object, width: float) -> Flowable:
         ),
         ("Unknown stores", common.kpi_text(view, at_rest["UNKNOWN"]), "Not evidenceable"),
         ("Backups", common.kpi_text(view, len(backups)), f"not encrypted {backup_verdicts['NOT_ENCRYPTED']}"),
-        ("Kubernetes secrets", common.kpi_text(view, len(secrets) or secret_text), secret_text),
+        # a count, never the sentence (staging QA Q3-10: "no cluster configuratio..." was cut in the card)
+        ("Kubernetes secrets", common.kpi_text(view, len(secrets)), secret_text),
         ("Classified", common.kpi_text(view, classified), "Stores with a declared classification"),
         ("Sources", common.kpi_text(view, f"{assessed}/{total}"), "assessed of current sources"),
     ]

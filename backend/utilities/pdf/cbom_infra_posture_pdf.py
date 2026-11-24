@@ -289,12 +289,13 @@ def _kms_rows(view: object) -> list[list[Any]]:
     return [
         [
             common.address_of(fact),
-            common.provider_of(fact),
-            fact.get("specification") or "",
+            text.provider_label(common.provider_of(fact)),
+            # readable words, never the API enum (staging QA Q3-10: "RSA_2048", "SIGN_VERIFY", "PendingImport")
+            text.readable_enum(fact.get("specification")),
             fact.get("algorithm") or "",
-            fact.get("usage") or "",
+            ", ".join(text.readable_enum(part.strip()) for part in str(fact.get("usage") or "").split(",") if part.strip()),
             fact.get("protection") or "",
-            fact.get("state") or "",
+            text.readable_enum(fact.get("state")),
             _rotation_cell(fact),
             fact.get("deletion_protection") or "",
             common.codes_cell(fact),

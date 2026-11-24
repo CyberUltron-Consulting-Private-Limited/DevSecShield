@@ -419,6 +419,22 @@ def _kms_facts(meta: dict[str, Any]) -> dict[str, Any]:
 
 
 ACM_KEY_PAIR_ORIGINS = ["AWS_MANAGED", "CUSTOMER_PROVIDED", "ACME"]
+# ACM statuses whose certificate has a body (PENDING_VALIDATION, VALIDATION_TIMED_OUT and FAILED were never issued)
+ACM_WITH_BODY = frozenset({"ISSUED", "EXPIRED", "INACTIVE", "REVOKED"})
+
+
+def _acm_body(pem: str) -> dict[str, Any]:
+    """The SHA-256 thumbprint of an ACM certificate's DER (``GetCertificate`` returns PEM), and ``certificate_read``."""
+    import hashlib
+
+    try:
+        from cryptography import x509
+        from cryptography.hazmat.primitives.serialization import Encoding
+
+        der = x509.load_pem_x509_certificate(str(pem).encode("ascii", "replace")).public_bytes(Encoding.DER)
+    except Exception as exc:  # noqa: BLE001 - the row keeps DescribeCertificate's facts
+        return {"certificate_read": f"unparsable: {type(exc).__name__}"[:60]}
+    return {"fingerprint_sha256": hashlib.sha256(der).hexdigest(), "certificate_read": "ok"}
 
 
 def _pca_certificate(client: Any, ca: dict[str, Any]) -> dict[str, Any]:
@@ -972,14 +988,27 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
                                                           Includes=everything, CertificateKeyPairOrigins=ACM_KEY_PAIR_ORIGINS,
                                                           PaginationConfig={"PageSize": PER_SERVICE_CAP})
         items = _Items("acm", region, acct.account, label, tick)
+        read: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
         for summary in summaries:
             items.step()
             arn = summary["CertificateArn"]
             status, detail = items.call("metadata", arn,
                                         lambda: client.describe_certificate(CertificateArn=arn)["Certificate"])
             if status == "ok":
-                emit(_cert_asset(arn, label, detail, summary=summary))
-        items.flush(emit, {"metadata": ("certificate", False)})
+                read.append((arn, detail, _cert_asset(arn, label, detail, summary=summary)))
+        # the public certificate (GetCertificate: read-only, never the private key) gives its SHA-256 thumbprint, so
+        # D8 and its CSV carry one for every ACM row (staging QA Q3-08: 14 rows had none); asked after every
+        # DescribeCertificate, so a role without acm:GetCertificate still lists every certificate
+        for arn, detail, asset in read:
+            if detail.get("Status") in ACM_WITH_BODY:
+                items.step()
+                body_status, pem = items.call("body", arn, lambda arn=arn: client.get_certificate(
+                    CertificateArn=arn).get("Certificate") or "")
+                asset["facts"].update(_acm_body(pem) if body_status == "ok" else
+                                      {"certificate_read": str(pem or body_status)[:60]})
+            emit(asset)
+        items.flush(emit, {"metadata": ("certificate", False),
+                           "body": ("certificate body (SHA-256 thumbprint)", True)})
         if page_error:
             emit(_gap(label, f"{prefix}certificate#list", f"acm certificates in {region}",
                       "throttled" if page_error in _THROTTLE else ("denied" if page_error in _DENIED else "error"),

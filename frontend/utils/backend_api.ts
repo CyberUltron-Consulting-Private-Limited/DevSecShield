@@ -5128,6 +5128,18 @@ const getCbomAssetDetail = async (team_id: number, asset_id: number): Promise<Cb
 /** The code lane's finding status, the unified status of a run asset (assignment open/in_progress/done/accepted_risk). */
 export type CbomFindingStatus = "not_started" | "in_progress" | "fixed" | "ignored"
 
+/** The SSL Labs-style grade of a probed TLS endpoint (backend network_estate.Grade.record). */
+export interface CbomTlsGrade {
+    grade: string
+    letter: string
+    score: number | null
+    provisional: boolean
+    if_trusted: string | null
+    caps: string[]
+    warnings: string[]
+    model: string
+}
+
 /** One item of GET /runs/{id}/assets with the CB-38 additions (W1) and the CB-19 / CB-24 / CB-38 PR-4 passthroughs. */
 export interface CbomRunAssetItem extends CbomAsset {
     asset_key?: string | null
@@ -5147,6 +5159,10 @@ export interface CbomRunAssetItem extends CbomAsset {
     fix_class_floor?: string | null
     ticket_key?: string | null
     ticket_url?: string | null
+    /** QA Q3-05: a probed TLS endpoint's grade, exactly as D7 prints it (network_estate.grade_tls); null otherwise */
+    tls_grade?: CbomTlsGrade | null
+    /** QA Q3-01: the other sources of the run that read the same resource (the row is the newest read) */
+    also_seen?: string[]
     /** W2b (PARITY.md S13): the code page's finding fields for a run asset */
     bom_ref?: string | null
     title?: string | null

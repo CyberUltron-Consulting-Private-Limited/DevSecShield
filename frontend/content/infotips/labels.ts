@@ -934,6 +934,7 @@ export const INFO_TIP_LABELS = {
   "cbom.run.f.quantum": "Quantum",
   "cbom.run.f.impact": "Impact",
   "cbom.run.f.risk": "Risk score",
+  "cbom.run.f.tls_grade": "TLS grade",
   "cbom.run.f.status": "Status",
   "cbom.run.f.ticket": "Ticket",
   "cbom.run.f.location": "Location",

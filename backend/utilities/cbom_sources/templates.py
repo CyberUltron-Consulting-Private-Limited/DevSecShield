@@ -913,6 +913,19 @@ Resources:
                   Effect: Deny
                   Action: kms:Decrypt
                   Resource: "*"
+        # SecurityAudit (v94) lists and describes ACM certificates and Private CAs but cannot read their PUBLIC
+        # certificates. These two return the certificate and chain only (never a private key: acm:ExportCertificate
+        # stays denied above); the DER gives the SHA-256 thumbprint the certificate register prints (QA Q3-08)
+        - PolicyName: ZeroShieldCBOMReaderCertificates
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: AllowPublicCertificateBodies
+                Effect: Allow
+                Action:
+                  - acm:GetCertificate
+                  - acm-pca:GetCertificateAuthorityCertificate
+                Resource: "*"
         - !If
           - AnyOptIn
           - PolicyName: ZeroShieldCBOMReaderOptIn

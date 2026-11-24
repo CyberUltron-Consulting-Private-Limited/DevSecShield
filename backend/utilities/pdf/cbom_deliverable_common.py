@@ -478,6 +478,27 @@ def _fit_cell(value: Any, width: float, styles: Styles, limit: int, max_height: 
     return Paragraph(pdf_multiline(value, limit=low), style)
 
 
+def header_fit_widths(labels: Sequence[str], widths: Sequence[float], style: Any) -> list[float]:
+    """Column widths in which every header word fits on one line (staging QA Q3-10: "#Sou / rces", "Classificatio / n",
+    "Attestatio / n status" split mid-word).  A column narrower than its longest header word (plus the cell padding)
+    is widened; the points come from the columns with room to spare, in proportion to that room, so the total width
+    never changes.  When the table cannot fit every word the widths are returned unchanged."""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+
+    font, size = style.fontName, style.fontSize
+    need = [max((stringWidth(word, font, size) for word in str(label).split()), default=0.0) + 2 * _DENSE_PAD + 1
+            for label in labels]
+    out = [float(w) for w in widths]
+    short = sum(max(0.0, n - w) for n, w in zip(need, out))
+    if short <= 0:
+        return out
+    room = [max(0.0, w - n) for n, w in zip(need, out)]
+    spare = sum(room)
+    if spare < short:
+        return out
+    return [max(n, w - (r / spare) * short) if w >= n else n for n, w, r in zip(need, out, room)]
+
+
 def dense_table(
     headers: Sequence[str],
     rows: Iterable[Sequence[Any]],
@@ -512,12 +533,16 @@ def dense_table(
     manual = sorted({c for c in manual_cols if isinstance(c, int) and 0 <= c < ncols})
     styles = _shared_styles()
 
-    head: list[Any] = []
+    labels: list[str] = []
     for col, header in enumerate(headers):
         label = pdf_plain(header, limit=80)
         if col in manual and authored.ASSESSOR_SUFFIX not in label:
             label = f"{label} {authored.ASSESSOR_SUFFIX}".strip()
-        head.append(Paragraph(escape_html(label), styles["dense_header"]))
+        labels.append(label)
+    if not any(_is_flowable_cell(value) for row in body_rows for value in row):
+        # ready-made flowables were laid out for the caller's widths: those tables keep them
+        col_widths = header_fit_widths(labels, col_widths, styles["dense_header"])
+    head: list[Any] = [Paragraph(escape_html(label), styles["dense_header"]) for label in labels]
     data: list[list[Any]] = [head]
     commands: list[tuple] = [
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -957,7 +982,9 @@ def _disclaimer_box(
         Paragraph(pdf_text(authored.DISCLAIMER_HEADING), styles["box_title"])
     ]
     rows += [
-        Paragraph(pdf_text(paragraph, limit=600), styles["box_text"]) for paragraph in chosen
+        # 1 600 characters: the method sentence names the collections (capped at "and N more" by its author), so it
+        # is never cut mid-word (staging QA Q3-10: "... is not proof that...")
+        Paragraph(pdf_text(paragraph, limit=1600), styles["box_text"]) for paragraph in chosen
     ]
     return _box(rows, width, accent=BAR_UNKNOWN)
 
