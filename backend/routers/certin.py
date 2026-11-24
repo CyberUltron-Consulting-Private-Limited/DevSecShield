@@ -47,6 +47,8 @@ from backend.utilities.compliance.certin_attest import (
     upsert_attestation,
 )
 from backend.utilities.pdf import generate_pdf_for_type
+from backend.utilities.cbom_sources import regulated_entity as REG_ENTITY
+from backend.utilities.compliance import aibom_applicability as AIBOM_APPLICABILITY
 from backend.utilities.pdf.report_context import ReportContext
 from backend.utilities.pdf.report_http import (
     PRIVATE,
@@ -656,12 +658,13 @@ def _build_evidence_pack(engine, team_id: int, scan_type: str, scan_id: int) -> 
 
     with Session(engine) as session:
         ctx = ReportContext(branding=load_report_branding(session, team_id))
+        team = REG_ENTITY.team_profile(session, team_id)
 
     tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
     tmp_path = tmp.name
     tmp.close()
     try:
-        files = _pack_members(scan_type, scan_id, team_id, data, bom, ctx, subject_name=subject)
+        files = _pack_members(scan_type, scan_id, team_id, data, bom, ctx, subject_name=subject, team=team)
         with zipfile.ZipFile(tmp_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             for name, body in files:
                 zf.writestr(name, body)
@@ -675,7 +678,8 @@ def _build_evidence_pack(engine, team_id: int, scan_type: str, scan_id: int) -> 
 
 
 def _pack_members(scan_type: str, scan_id: int, team_id: int, data: dict, bom: dict | None,
-                  ctx: ReportContext, *, subject_name: str | None = None) -> list[tuple[str, bytes]]:
+                  ctx: ReportContext, *, subject_name: str | None = None,
+                  team: dict | None = None) -> list[tuple[str, bytes]]:
     """The pack's files in zip order. D11 / C G-X-3: the JSON BOM carries its embedded JSF signature; with a signing
     key the pack also holds the public key, the offline verifier, the detached signature of each BOM file and a
     signed ``manifest.json`` (SHA-256 and size of every file) and ``SHA256SUMS`` (``bom_signing.pack_files``)."""
@@ -697,10 +701,15 @@ def _pack_members(scan_type: str, scan_id: int, team_id: int, data: dict, bom: d
         files.append(("bom_signature.json", json.dumps(data["bom_signature"], indent=2).encode("utf-8")))
     ckey = compliance_key_for(scan_type)
     if isinstance(data.get(ckey), dict):
-        files.append(("compliance.json", json.dumps(data[ckey], indent=2).encode("utf-8")))
+        compliance = data[ckey]
+        if scan_type == "ai_bom":  # the frameworks that bind the team's regulatory profile (QA round 2, Q2-08)
+            compliance = AIBOM_APPLICABILITY.pack_document(compliance, team)
+        files.append(("compliance.json", json.dumps(compliance, indent=2).encode("utf-8")))
     if isinstance(data.get("attestations"), dict):
         files.append(("attestations.json", json.dumps(data["attestations"], indent=2).encode("utf-8")))
     pdf_data = data
+    if scan_type == "ai_bom":  # the report's regulatory checks follow the same profile as compliance.json
+        pdf_data = {**data, AIBOM_APPLICABILITY.PROFILE_KEY: team}
     if scan_type == "sbom_sca":  # the report's SBOM pages read this pack's bom.cdx.json: the same builder and subject
         from backend.utilities.pdf.sbom_sca_pdf import SUBJECT_NAME_KEY
 

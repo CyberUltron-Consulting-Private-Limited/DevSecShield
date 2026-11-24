@@ -1,5 +1,6 @@
 from backend.new_models import Scan
 from backend.utilities.dashboard import risk_scale, sbom_rows
+from backend.utilities.dashboard.aibom_provider import is_model_asset
 
 def owner_full_name(user) -> str | None:
     """"First Last" of a scan's owner; a missing part is left out ("alice", never "alice None"); None when both are."""
@@ -490,7 +491,6 @@ def return_cbom_list_item(scan : Scan) -> dict:
 def return_ai_bom_list_item(scan : Scan) -> dict:
     total_critical , total_high , total_medium , total_low , average_risk_score  = 0,0,0,0,0
     total_high_risk_assets , total_models = 0, 0
-    model_component_types = {"local_model_file", "huggingface_model", "embedding_model"}
     if scan.scan_data and scan.scan_data != {} and "results" in scan.scan_data and scan.scan_status == "success":
         for asset in scan.scan_data["results"]:
             impact = (asset.get("impact") or "").lower()
@@ -508,8 +508,7 @@ def return_ai_bom_list_item(scan : Scan) -> dict:
                 total_high_risk_assets += 1
 
             # Count models by component_type
-            component_type = (asset.get("component_type") or "").lower()
-            if component_type in model_component_types:
+            if is_model_asset(asset):  # a provider-served model is typed external_provider (QA round 2)
                 total_models += 1
 
     risk_data = {

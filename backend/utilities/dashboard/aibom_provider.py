@@ -110,6 +110,14 @@ def infer_aibom_provider(
     return "local"
 
 
+def is_model_asset(asset: dict[str, Any]) -> bool:
+    """A model row: a model component type, or a provider-served model the engine types ``external_provider`` with
+    ``component_kind`` "model" (QA round 2, Q2-06). Weight files are ``local_model_file`` (models)."""
+    kind = str(asset.get("component_kind") or asset.get("asset_kind") or "").lower()
+    ctype = str(asset.get("component_type") or asset.get("asset_type") or "").lower()
+    return kind == "model" or ctype in {"local_model_file", "huggingface_model", "embedding_model"}
+
+
 def resolve_aibom_provider(asset: dict[str, Any]) -> str:
     """Return a concrete provider for a finding / scan_data row.
 

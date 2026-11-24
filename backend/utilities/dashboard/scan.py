@@ -14,7 +14,7 @@ from backend.utilities.dashboard.aibom_license import (
     is_unlicensed_library_gap,
     resolve_aibom_license,
 )
-from backend.utilities.dashboard.aibom_provider import resolve_aibom_provider
+from backend.utilities.dashboard.aibom_provider import is_model_asset, resolve_aibom_provider
 from backend.utilities.dashboard.sbom_license import (
     LICENSE_CATEGORIES as LICENSE_ALL_CATEGORIES,
     resolve_sbom_license_category,
@@ -1269,7 +1269,6 @@ def generate_scan_dashboard(
 
         elif scan_type == "ai_bom":
             # =========== AI-BOM Dashboard ===========================
-            model_component_types = {"local_model_file", "huggingface_model", "embedding_model"}
 
             severity_distribution = {"critical": 0, "high": 0, "medium": 0, "low": 0}
             asset_type_distribution = defaultdict(int)
@@ -1317,7 +1316,7 @@ def generate_scan_dashboard(
                 # asset_name comes from the worker field 'component_name'; provider
                 # from 'source' (ModelProvider value, e.g. openai/anthropic).
                 asset_name = asset.get("component_name") or asset.get("title") or "Unknown"
-                if component_type in model_component_types:
+                if is_model_asset(asset):
                     # distinct model by (provider, asset_name). Catalog-only model
                     # references (supported-model registries, not models the app
                     # uses) are already excluded upstream by the aibom adapter's
@@ -1340,7 +1339,7 @@ def generate_scan_dashboard(
                 # (not-applicable / not-declared) do not count as a library gap
                 # when applied to non-libraries; for frameworks, not-declared does.
                 if (
-                    component_type not in model_component_types
+                    not is_model_asset(asset)
                     and component_type != "external_provider"
                     and is_unlicensed_library_gap(license_type)
                 ):

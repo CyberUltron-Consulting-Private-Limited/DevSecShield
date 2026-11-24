@@ -12,6 +12,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.platypus import CondPageBreak, KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer
 
+from backend.utilities.compliance import aibom_applicability as APPLICABILITY
 from backend.utilities.dashboard.aibom_license import (
     is_unlicensed_library_gap,
     resolve_aibom_license,
@@ -386,12 +387,11 @@ def append_aibom_regulatory_checks(story: List[Any], payload: Any, styles: Dict[
     compliance = payload.get("ai_bom_compliance") if isinstance(payload, dict) else None
     if not isinstance(compliance, dict):
         return False
-    shown = [(k, label) for k, label in SOW_FRAMEWORKS if isinstance(compliance.get(k), dict)]
-    for key, label in HEALTHCARE_FRAMEWORKS:
-        fw = compliance.get(key)
-        if isinstance(fw, dict) and any(int(fw.get(n) or 0) for n in ("pass", "pass_with_evidence", "fail",
-                                                                         "not_bom_evidenceable")):
-            shown.append((key, label))
+    # the frameworks that bind the team's regulatory profile (QA round 2, Q2-08): a bank gets no FDA / HIPAA / GMLP
+    team = payload.get(APPLICABILITY.PROFILE_KEY)
+    team = team if isinstance(team, dict) else None
+    binding, not_applicable = APPLICABILITY.split(compliance, team)
+    shown = [(k, label) for k, label in SOW_FRAMEWORKS + HEALTHCARE_FRAMEWORKS if k in binding]
     if not shown:
         return False
     story.append(CondPageBreak(3.5 * inch))  # a new page unless most of one is left (never a blank page)
@@ -400,6 +400,11 @@ def append_aibom_regulatory_checks(story: List[Any], payload: Any, styles: Dict[
         "Each requirement is checked against the fields and relationships recorded in this AI BOM. Pass: the BOM "
         "shows it. Fail: the BOM shows it is missing. Needs evidence: an organisational control the BOM cannot show; "
         "attach an attestation on the results page. Coverage = pass / (pass + fail).", styles["muted"]))
+    if team is not None and not_applicable:
+        names = ", ".join(APPLICABILITY.LABELS.get(k, k) for k in not_applicable)
+        story.append(Paragraph(escape_html(
+            f"Frameworks shown for this team's regulatory profile ({APPLICABILITY.profile_sentence(team)}). "
+            f"Not applicable to it: {names}."), styles["muted"]))
     summary = []
     for key, label in shown:
         fw = compliance[key]
@@ -434,6 +439,10 @@ def append_rbi_pillar_rollup(story: List[Any], payload: Any, styles: Dict[str, A
     """The RBI cyber-security framework pillars over the AI BOM's checks (the RBI appendix's one table the
     regulatory checks above do not already show)."""
     ai = payload.get("ai_bom_compliance") if isinstance(payload, dict) else None
+    team = payload.get(APPLICABILITY.PROFILE_KEY) if isinstance(payload, dict) else None
+    if isinstance(ai, dict) and isinstance(team, dict) and "rbi_free_ai" in ai and \
+            not APPLICABILITY.binds("rbi_free_ai", ai["rbi_free_ai"], team):
+        return  # RBI does not bind the team: no RBI pillar table either
     rollup = (payload.get("rbi_csf_rollup") if isinstance(payload, dict) else None) or build_rbi_csf_rollup(
         ai_bom_compliance=ai if isinstance(ai, dict) else None, cbom_compliance=None, sbom_compliance=None)
     pillars = rollup.get("rbi_csf_rollup") if isinstance(rollup, dict) else None

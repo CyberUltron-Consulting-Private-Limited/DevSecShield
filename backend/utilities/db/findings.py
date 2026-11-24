@@ -275,10 +275,13 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
                 "suggested_fix": fd.get("suggested_fix", ""),
                 "asset_name": fd.get("component_name", ""),
                 "asset_type": fd.get("component_type", ""),
+                # the engine kind: a provider-served model is external_provider and still a model (QA round 2)
+                "asset_kind": fd.get("component_kind", ""),
                 "provider": resolve_aibom_provider(fd),
                 "framework": fd.get("framework", ""),
                 "version": fd.get("version", ""),
                 "license_type": resolve_aibom_license(fd),
+                "license_status": fd.get("license_status", ""),
                 "risk_category": fd.get("risk_category", ""),
                 "location": fd.get("location", ""),
                 "snippet": fd.get("snippet", ""),

@@ -947,6 +947,12 @@ def _build_scan_report(engine, team_id: int, type: str, scan_id: int, options) -
             subject = subject_name_for(scan.scan_metadata)
             scan_data = {**scan_data, SUBJECT_NAME_KEY: subject,
                          served_bom.SCAN_IDENTITY_KEY: served_bom.pdf_identity(type, scan_id, team_id, subject)}
+        if type == "ai_bom" and isinstance(scan_data, dict):
+            # the regulatory checks the team's profile binds (QA round 2, Q2-08), as in the evidence pack
+            from backend.utilities.cbom_sources.regulated_entity import team_profile
+            from backend.utilities.compliance.aibom_applicability import PROFILE_KEY
+
+            scan_data = {**scan_data, PROFILE_KEY: team_profile(session, team_id)}
         started_at, completed_at = scan.created_at, scan.last_updated
 
     if type not in TYPE_SECTIONS:  # leakage, agent discovery...: "not supported" (400) before any status read

@@ -1694,7 +1694,7 @@ from backend.utilities.dashboard.aibom_license import (
     is_unlicensed_library_gap,
     resolve_aibom_license,
 )
-from backend.utilities.dashboard.aibom_provider import resolve_aibom_provider
+from backend.utilities.dashboard.aibom_provider import is_model_asset, resolve_aibom_provider
 from backend.utilities.dashboard.bom_risk_score import cbom_finding_risk_score
 
 CBOM_RISK_SCORE_FOR_IMPACT = {"critical": 9, "high": 7, "medium": 5, "low": 2}
@@ -1890,7 +1890,7 @@ def generate_ai_bom_dashboard_data(scans: list[Scan]) -> dict:
             # asset_name comes from the worker field 'component_name'; provider
             # from 'source' (ModelProvider value, e.g. openai/anthropic).
             asset_name = asset.get("component_name") or asset.get("title") or "Unknown"
-            if component_type in AI_BOM_MODEL_COMPONENT_TYPES:
+            if is_model_asset(asset):
                 # distinct model by (provider, asset_name)
                 distinct_models.add((provider, asset_name))
             if component_type == "external_provider":
@@ -1906,7 +1906,7 @@ def generate_ai_bom_dashboard_data(scans: list[Scan]) -> dict:
 
             # unlicensed assets = libraries still lacking a usable SPDX license
             if (
-                component_type not in AI_BOM_MODEL_COMPONENT_TYPES
+                not is_model_asset(asset)
                 and component_type != "external_provider"
                 and is_unlicensed_library_gap(license_type)
             ):
