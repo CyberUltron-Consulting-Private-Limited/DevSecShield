@@ -80,13 +80,18 @@ def node_status(node: CbomScanNode | None, now: _dt.datetime) -> str:
     return "offline"
 
 
+def segment_members(nodes: dict[int, CbomScanNode], segment: str) -> list[CbomScanNode]:
+    """The nodes that may take a job of ``segment``: enrolled, SIGNED agentless nodes of that segment (S3)."""
+    return [n for n in nodes.values()
+            if (n.segment or "") == segment and (n.mode or "agentless") != "agent" and n.node_token_hash is not None
+            and n.signing_public_key]
+
+
 def segment_status(nodes: dict[int, CbomScanNode], segment: str, now: _dt.datetime) -> str:
     """A segment source's "node" status (F1.1): online when an enrolled, SIGNED agentless node of that segment is
     online, offline when such nodes exist but none is, missing when the team has none (only signed nodes take segment
     jobs, which carry decrypted credentials: security review S3)."""
-    members = [n for n in nodes.values()
-               if (n.segment or "") == segment and (n.mode or "agentless") != "agent" and n.node_token_hash is not None
-               and n.signing_public_key]
+    members = segment_members(nodes, segment)
     if not members:
         return "missing"
     return "online" if any(node_status(n, now) == "online" for n in members) else "offline"
@@ -351,6 +356,9 @@ def plan_run(
             item.reason = kind_problem(node, source.kind)
         elif needs_node and not segment and CAPS.upgrade_reason(node, source.kind, source.config):
             item.reason = CAPS.upgrade_reason(node, source.kind, source.config)  # #488 review m3
+        elif needs_node and segment and (upgrade := CAPS.segment_upgrade_reason(
+                segment_members(nodes, segment), segment, source.kind, source.config)):
+            item.reason = upgrade  # #488 review 6031264030 n-3: every member of the segment is too old
         elif source.kind == "aws_account" and source.last_test_status != "passed":
             item.reason = "Validate the AWS role first; only a role that passed validation is scanned"
         elif source.last_test_status == "failed" and (source.last_test_result or {}).get("credential_refused"):

@@ -483,6 +483,15 @@
     "CycloneDX 1.6.2 impactAnalysisState"
    ]
   },
+  "AD_FUNCTIONAL_LEVEL_PRE2008": {
+   "basis": "posture",
+   "reason": "domain posture: krbtgt has no AES keys, so every ticket is RC4 or DES; no attack on the domain as it is without a captured ticket or a stolen key to crack",
+   "sources": [
+    "kb:findings.node.AD_FUNCTIONAL_LEVEL_PRE2008.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
   "CA_ALLOWS_ANY_NAME": {
    "basis": "observed",
    "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
