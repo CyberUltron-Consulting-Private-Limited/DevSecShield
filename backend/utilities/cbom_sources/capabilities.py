@@ -65,6 +65,24 @@ def upgrade_reason(node, kind: str | None, config: dict[str, Any] | None) -> str
     return None
 
 
+def segment_upgrade_reason(members, segment: str, kind: str | None, config: dict[str, Any] | None) -> str | None:
+    """The plan's skip reason for a segment-routed source when EVERY signed agentless member of ``segment`` lacks a
+    capability ``UPGRADE_HINTS`` names (#488 review 6031264030 n-3): such a job would wait out the queue TTL with no
+    node to claim it.  None when one member has it, when the segment has no member, or for a capability the plan
+    does not name."""
+    members = sorted(members, key=lambda n: str(getattr(n, "name", "") or ""))
+    if not members:
+        return None
+    for cap in sorted(required_capabilities(kind, config)):
+        hint = UPGRADE_HINTS.get(cap)
+        if hint and all(cap in missing_for(n, kind, config) for n in members):
+            shown = ", ".join(f"{n.name} runs {getattr(n, 'node_version', None) or 'an older version'}"
+                              for n in members[:3]) + (f" and {len(members) - 3} more" if len(members) > 3 else "")
+            return (f"Needs a scan node with {hint[0]}: no scan node of segment {segment} has it ({shown}); update "
+                    f"one to a release after {hint[1]} (it reports the {cap} capability)")
+    return None
+
+
 def excluded_for(node) -> tuple[list[str], list[str]]:
     """(source kinds, credential types) whose jobs this node cannot run: the claim's and the hint's runnable
     predicate leaves them out in SQL (DA D1), so such jobs are never locked or counted for this node."""

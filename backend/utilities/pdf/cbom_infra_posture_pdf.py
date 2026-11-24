@@ -4,8 +4,8 @@ Reads a team view. A view with no posture block still renders the shell, empty
 registers and the limits sentence.
 
 Rule P: every number on the page comes from ``scope_facts`` (the facts this document is about: keys, key stores,
-at-rest resources, cloud-managed TLS, secrets and private CAs), so a KPI card always equals the rows listed under
-it.  Probed and server-config TLS endpoints belong to the Network, TLS and Crypto Protocol Assessment (SOW D7).
+at-rest resources, cloud-managed TLS, secrets and private CAs, and the Kerberos / Active Directory posture), so a KPI
+card always equals the rows listed under it.  Probed and server-config TLS endpoints belong to the Network, TLS and Crypto Protocol Assessment (SOW D7).
 """
 
 from __future__ import annotations
@@ -15,7 +15,10 @@ from typing import Any
 
 from reportlab.platypus import Flowable
 
-from backend.utilities.dashboard.cbom_team_rollup import TeamCbomView
+import datetime as _dt
+
+from backend.utilities.cbom_sources.posture_mapper import KERBEROS_KINDS as _KERBEROS_KINDS
+from backend.utilities.dashboard.cbom_team_rollup import PROBED_EVIDENCE, TeamCbomView
 from backend.utilities.pdf import cbom_posture_common as common
 from backend.utilities.pdf import cbom_posture_text as text
 from backend.utilities.pdf.cbom_deliverable_common import (
@@ -79,6 +82,7 @@ def scope_facts(view: object) -> list[dict[str, Any]]:
         or common.kind_of(fact) in _SECRET_KINDS
         or _is_at_rest(fact)
         or _is_managed_tls(fact)
+        or common.kind_of(fact) in _KERBEROS_KINDS  # #488 review 6031264030 (D6); verdict None: not at rest
     ]
     if cacheable:
         block.__dict__[_SCOPE_ATTR] = (raw, found)  # not a dataclass field: replace() / asdict() never copy it
@@ -497,6 +501,123 @@ def _secrets(view: object, styles: Styles, width: float) -> list[Flowable]:
     ]
 
 
+# ----------------------------------------------------------------------------- Kerberos and Active Directory
+_NAMES_SHOWN = 5  # account names printed per check; the rest are counted
+
+
+def _account_total(accounts: Mapping[str, Any], flag: str) -> int | None:
+    """The domain-wide count the collector tallied for ``flag`` over every account type but krbtgt (judged by the
+    functional level and its key age, never by its attribute); None when the domain row has no tally."""
+    if not accounts:
+        return None
+    return sum(v for k, v in accounts.items() if k.endswith(f"_{flag}") and not k.startswith("krbtgt_")
+               and isinstance(v, int) and not isinstance(v, bool))
+
+
+def _names_cell(total: int | None, names: Sequence[str]) -> str:
+    total = len(names) if total is None else max(total, len(names))
+    shown = list(names[:_NAMES_SHOWN])
+    if not total:
+        return "0"
+    cell = f"{total}: {', '.join(shown)}" if shown else str(total)
+    if total > len(shown):
+        cell += f" and {total - len(shown)} more not listed"
+    return cell
+
+
+def _key_age(view: object, last_set: str) -> str:
+    try:
+        moment = _dt.datetime.strptime(last_set, "%Y-%m-%dT%H:%M:%SZ").date()
+    except ValueError:
+        return "not read"
+    as_of = common.grab(view, "as_of")
+    if not isinstance(as_of, _dt.date):
+        as_of = _dt.datetime.now(_dt.UTC).date()
+    return f"{(as_of - moment).days} days (last set {moment.isoformat()})"
+
+
+def _ldaps_cell(view: object, source: str) -> tuple[str, list[str]]:
+    """The LDAPS / StartTLS posture the AD collection probed (D7's endpoints of the same collection, summarised)."""
+    parts, codes = [], set()
+    for fact in _facts(view):
+        if common.kind_of(fact) != "tls_endpoint" or fact.get("evidence") != PROBED_EVIDENCE \
+                or str(fact.get("location") or "") != source:
+            continue
+        net = common.net_of(fact)
+        span = f"{net.get('min') or '?'} to {net.get('max') or '?'}"
+        weak = [str(w.get("suite")) for w in common.as_rows(net.get("weak_suites")) if isinstance(w, Mapping)]
+        weak = list(dict.fromkeys(weak))
+        tail = f"; weak suites accepted: {', '.join(weak[:4])}" + (f" and {len(weak) - 4} more" if len(weak) > 4
+                                                                    else "") if weak else "; no weak suite accepted"
+        parts.append(f"{net.get('endpoint') or common.address_of(fact)}: {span}{tail}")
+        codes.update(str(c) for c in common.as_rows(fact.get("finding_codes")) if c)
+    if not parts:
+        return "not probed in this collection", []
+    return "; ".join(sorted(parts)) + " (assessed in SOW D7)", sorted(codes)
+
+
+def _kerberos_rows(view: object) -> list[list[Any]]:
+    """Five rows per domain: functional level, krbtgt key age, RC4-only accounts, accounts on the DC default and the
+    LDAPS TLS posture.  Counts are the collector's domain-wide tally (computers are counted, not listed); names are
+    the account rows this document lists."""
+    facts = scope_facts(view)
+    accounts = [f for f in facts if common.kind_of(f) == "kerberos_account"]
+    rows: list[list[Any]] = []
+    for domain in sorted((f for f in facts if common.kind_of(f) == "ad_domain"), key=common.address_of):
+        name, source = common.address_of(domain), _source_cell(domain)
+        own = [a for a in accounts if str(a.get("domain") or "") == name
+               or (not a.get("domain") and _source_cell(a) == source)]
+        codes = {str(c) for c in common.as_rows(domain.get("finding_codes"))}
+
+        def picked(rows_of: Sequence[Mapping[str, Any]], code: str) -> str:
+            return code if any(code in common.as_rows(a.get("finding_codes")) for a in rows_of) else ""
+
+        level, level_name = domain.get("domain_functional_level"), str(domain.get("domain_functional_level_name") or "")
+        reading = (f"{level_name} (level {level})" if level_name and level is not None
+                   else level_name or (f"level {level}" if level is not None else "not read"))
+        tally = common.as_mapping(domain.get("accounts"))
+        rc4 = sorted(common.address_of(a) for a in own if a.get("rc4_only") is True)
+        default = sorted(common.address_of(a) for a in own if a.get("dc_default") is True
+                         and a.get("account_type") != "krbtgt")
+        ldaps, ldaps_codes = _ldaps_cell(view, source)
+        last_set = str(domain.get("krbtgt_password_last_set") or "")
+        for check, value, code in (
+            ("Domain functional level", reading, "AD_FUNCTIONAL_LEVEL_LEGACY" if "AD_FUNCTIONAL_LEVEL_LEGACY" in codes
+             else ""),
+            ("krbtgt key age", _key_age(view, last_set) if last_set else "not read",
+             "KRBTGT_KEY_OLD" if "KRBTGT_KEY_OLD" in codes else ""),
+            ("Accounts with RC4 only", _names_cell(_account_total(tally, "rc4_only"), rc4),
+             picked(own, "KERBEROS_RC4_ONLY")),
+            ("Accounts on the DC default", _names_cell(_account_total(tally, "dc_default"), default),
+             picked(own, "KERBEROS_ENCTYPES_DEFAULT")),
+            ("LDAPS TLS posture", ldaps, ", ".join(ldaps_codes)),
+        ):
+            rows.append([name, check, value, code, source])
+    return rows
+
+
+def _kerberos(view: object, styles: Styles, width: float) -> list[Flowable]:
+    return [
+        *section_heading("Kerberos and Active Directory", styles),
+        *common.register(
+            ("Domain", "Check", "Reading", "Finding codes", "Source"),
+            _kerberos_rows(view),
+            (110, 120, 290, 120, 120),
+            width,
+            styles,
+            view=view,
+            cap_key="kerberos",
+            cap=text.REGISTER_ROW_CAP,
+            more=text.FULL_LIST_POINTER,
+            noun="Kerberos and Active Directory rows",
+        ),
+    ]
+
+
+def _has_kerberos(view: object) -> bool:
+    return any(common.kind_of(fact) in _KERBEROS_KINDS for fact in scope_facts(view))
+
+
 def _findings(view: object, styles: Styles, width: float) -> list[Flowable]:
     facts = scope_facts(view)
     rows = [
@@ -578,6 +699,7 @@ def build_story(view: TeamCbomView, styles: Styles, width: float) -> list[Flowab
         *_resources(view, styles, width),
         *_managed_tls(view, styles, width),
         *_secrets(view, styles, width),
+        *_kerberos(view, styles, width),
         *_findings(view, styles, width),
         *common.unknown_flow(view, styles, width),
         *common.previously_seen_flow(view, styles, width),
@@ -600,6 +722,7 @@ def build_story(view: TeamCbomView, styles: Styles, width: float) -> list[Flowab
         common.gap(),
         *section_heading("Limits", styles, min_space=70),
         common.note(text.INFRA_LIMIT, styles),
+        *([common.note(text.KERBEROS_DC_DEFAULT_LIMIT, styles)] if _has_kerberos(view) else []),
         common.note(text.posture_scope_of_method(view), styles, limit=900),
     ]
 

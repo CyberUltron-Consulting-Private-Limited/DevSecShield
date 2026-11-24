@@ -30,6 +30,7 @@ from typing import Any
 
 __all__ = [
     "EVIDENCE",
+    "KERBEROS_KINDS",
     "MAPPED_TYPES",
     "LIBRARY_TYPES",
     "library_component",
@@ -539,11 +540,54 @@ def _cloud_ca(base: dict[str, Any], facts: dict[str, Any], algorithm: Any, key_s
     return base
 
 
+_ACCOUNT_TYPES = {"domain_controller": "Domain controller", "krbtgt": "krbtgt", "service_account": "Service account",
+                  "gmsa": "Group managed service account", "computer": "Computer"}  # the collector's account types
+
+
+def _kerberos(node_type: str, base: dict[str, Any], facts: dict[str, Any]) -> dict[str, Any]:
+    """An Active Directory domain (``ad_domain``) or one Kerberos account (``kerberos_account``) read by the scan
+    node's read-only LDAP collector: the D6 Kerberos and Active Directory register (#488 review 6031264030, D6).
+    ``verdict`` is None: neither is an at-rest or transport fact, so the at-rest KPIs never count it."""
+    base["verdict"] = None
+    if node_type == "ad_domain":
+        accounts = facts.get("accounts")
+        systems = facts.get("dc_operating_systems")
+        level = facts.get("domain_functional_level")
+        base.update({
+            "kind": "ad_domain", "native_type": "Active Directory domain",
+            "address": base["name"] or _text(facts.get("domain"), 200) or base["address"],
+            "domain_functional_level": level if isinstance(level, int) and not isinstance(level, bool) else None,
+            "domain_functional_level_name": _text(facts.get("domain_functional_level_name"), 60),
+            "krbtgt_password_last_set": _text(facts.get("krbtgt_password_last_set"), 25),
+            "accounts": {str(k): v for k, v in accounts.items() if isinstance(v, int) and not isinstance(v, bool)}
+            if isinstance(accounts, Mapping) else {},
+            "dc_operating_systems": [_text(v, 80) for v in systems[:20] if isinstance(v, str)]
+            if isinstance(systems, list) else [],
+        })
+        return base
+    from backend.utilities.cbom_sources.classify_ext.ad import strongest_enctype  # the one enctype order
+
+    names = [str(v) for v in facts.get("enc_types") or [] if isinstance(v, str)] \
+        if isinstance(facts.get("enc_types"), list) else []
+    account_type = _text(facts.get("account_type"), 40)
+    base.update({
+        "kind": "kerberos_account", "native_type": _ACCOUNT_TYPES.get(account_type, account_type or "Kerberos account"),
+        "account_type": account_type, "domain": _text(facts.get("domain"), 200),
+        "key_algorithm": strongest_enctype(names) or "", "enc_types": ", ".join(names),
+        "enc_types_source": _text(facts.get("enc_types_source"), 20), "dc_default": _tri(facts.get("dc_default")),
+        "rc4_only": _tri(facts.get("rc4_only")), "password_last_set": _text(facts.get("password_last_set"), 25),
+    })
+    return base
+
+
 _LANES = {"kms_key": "sources_keys", "managed_key": "sources_keys", "key_store": "sources_keys",
           "storage_encryption": "sources_cloud", "glue_catalog": "sources_cloud", "load_balancer_tls": "sources_cloud",
           "cdn_tls": "sources_cloud", "api_tls": "sources_cloud", "cloud_secret": "sources_cloud",
           "key_vault": "sources_cloud", "cloud_ca": "sources_cloud", "db_encryption": "sources_database",
-          "database_config": "sources_database", "disk_encryption": "sources_host"}
+          "database_config": "sources_database", "disk_encryption": "sources_host",
+          # #488 review 6031264030 (D6): the AD collector's domain and Kerberos accounts
+          "kerberos_account": "sources_identity", "ad_domain": "sources_identity"}
+KERBEROS_KINDS = frozenset({"kerberos_account", "ad_domain"})
 MAPPED_TYPES = frozenset(_LANES)
 
 
@@ -583,7 +627,9 @@ def posture_fact(node_type: str, facts: Any, *, fact_id: str, name: Any = None, 
         return _managed_tls(node_type, base, data)
     if node_type in ("cloud_secret", "key_vault"):
         return _secret(node_type, base, data)
-    return _cloud_ca(base, data, algorithm, key_size)  # cloud_ca
+    if node_type in KERBEROS_KINDS:  # before the fall-through: a type without its branch would print as a private CA
+        return _kerberos(node_type, base, data)
+    return _cloud_ca(base, data, algorithm, key_size)  # cloud_ca (test_cbom_ad_followups: every lane has a branch)
 
 
 # ----------------------------------------------------------------------------------------------- D10 components

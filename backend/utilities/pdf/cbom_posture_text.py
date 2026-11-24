@@ -184,6 +184,12 @@ CAPABILITY_EVIDENCE = "capability evidence, not proof that stored data is protec
 NO_CLASSIFICATION = "no classification was declared; a Business_Mapping_File supplies it"
 NO_RETENTION = "no backup retention or point-in-time recovery setting was declared"
 INFRA_LIMIT = "declared configuration is not proof of operation"
+# D6, when the team view holds an Active Directory collection (#488 review 6031264030): what LDAP cannot say
+KERBEROS_DC_DEFAULT_LIMIT = (
+    "An account without msDS-SupportedEncryptionTypes gets the domain controller's default, which LDAP cannot read: "
+    "AES only on a DC with the April 2026 update (KB5073381) unless DefaultDomainSupportedEncTypes enables RC4, RC4 "
+    "on an older DC. Such accounts are listed as on the DC default, not as RC4 or AES."
+)
 INFRA_FINDINGS_NOTE = (
     "Findings on the keys, key stores, at-rest resources, cloud-managed TLS listeners, secrets and private CAs "
     "listed in this document. Probed and server-configured TLS endpoints are assessed in SOW D7 (TLS and crypto "
