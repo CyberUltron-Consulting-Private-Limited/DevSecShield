@@ -336,20 +336,90 @@ def test_m4_the_chain_adds_up_and_names_every_bucket(team):
     view = _view(team)
     pop = RECON.from_view(view)
     r = RECON.register_numbers(pop.register)
-    assert pop.occurrences == pop.sources_occurrences + pop.code_occurrences
-    # the certificate both lab-mssql places hold is counted once; the endpoint both probes read is one occurrence in
-    # each source and one register asset; the code scan counts once (its latest scan)
-    assert (pop.collected, pop.sources_occurrences, pop.code_occurrences) == (8, 7, 1)
+    # each bucket is counted (review 6038529822 B1): the lab-mssql certificate read at master and msdb is ONE source
+    # reading one certificate at two places; the endpoint both probes read is one estate asset
+    assert (pop.collected, pop.same_source_places, pop.cross_source, pop.sources_occurrences) == (8, 1, 0, 7)
+    assert (pop.code_occurrences, pop.estate_repeats, r["not_present"], r["total"]) == (1, 1, 0, 6)
     assert r["graded"] + r["q0"] + r["none"] == r["total"]
     assert sum(r[c] for c in SC.GRADED_CLASSES) == r["graded"]
     text = " ".join(RECON.lines(pop))
-    for bucket in ("code-scan occurrence", "of an estate asset already counted", "no latest collection holds",
-                   "quantum-broken", "deprecated", "Q0 Unknown", "no grade", "symmetric or hash",
-                   "with no algorithm recorded"):
-        assert bucket in text, bucket
-    assert "8 run assets minus 1 observation of an asset another source also observed" in text
+    assert ("8 run assets minus 1 observation of a certificate the same source read at another place (one "
+            "certificate, counted once) = 7 CBOM Sources occurrences") in text
+    assert "another source also read" not in text  # QA2 review: never the cross-source wording for one source
     assert "minus 1 CBOM Sources occurrence of an estate asset already counted" in text
-    assert f"= {r['total']} distinct assets in the Quantum Risk Register (D12)" in text and r["total"] == 6
+    assert f"= {r['total']} distinct assets in the Quantum Risk Register (D12)" in text
+    assert "Unexplained" not in text
+
+
+# ============================================================================ B1 (review 6038529822)
+REALISTIC = _BACKEND / "tests" / "fixtures" / "cbom_qa2" / "recon_realistic.py"
+
+
+def _realistic(tmp_path):
+    """The reviewer's realistic seed (``fixtures/cbom_qa2/recon_realistic.py``, from review 6038529822): a certificate
+    at two places of one source, an AWS account collected twice, one certificate read by ACM and a Kubernetes secret,
+    two probes of one endpoint, a deleted source with its last collection, a superseded code scan, a code scan
+    repeating one row and a failed scan."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("recon_realistic_seed", REALISTIC)
+    module = importlib.util.module_from_spec(spec)
+    saved = sys.argv
+    sys.argv = ["seed", str(_BACKEND.parent), str(tmp_path / "out")]
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.argv = saved
+    return module.seed(tmp_path / "realistic.db"), module.NOW
+
+
+def test_b1_every_bucket_is_counted_on_the_realistic_team(tmp_path):
+    w, now = _realistic(tmp_path)
+    view = load_team_cbom_view(w.engine, 1, now=now)
+    pop = RECON.from_view(view)
+    r = RECON.register_numbers(pop.register)
+    assert (pop.collections, pop.collected, pop.removed_collections, pop.removed_assets) == (5, 12, 1, 3)
+    assert (pop.same_source_places, pop.cross_source, pop.to_code) == (1, 1, 0)  # master/msdb; ACM + Kubernetes
+    assert (pop.sources_occurrences, pop.code_occurrences, pop.estate_repeats) == (10, 3, 1)
+    assert r["present_removed"] == 3  # the deleted source's keys the register still holds as present
+    text = " ".join(RECON.lines(pop))
+    assert "Removed from scope: 1 collection of deleted sources with 3 assets, outside every total." in text
+    assert "1 observation of a certificate the same source read at another place" in text
+    assert "1 observation of a certificate another source also read" in text
+    assert "Unexplained" not in text and "counted from a code-scan observation instead" not in text
+
+
+def test_b1_the_dashboard_and_the_documents_print_the_same_block(tmp_path, monkeypatch):
+    from backend.utilities.cbom_sources.collections_view import load_sources_result
+    from backend.utilities.dashboard import scan_list
+
+    w, now = _realistic(tmp_path)
+    view = load_team_cbom_view(w.engine, 1, now=now)
+    doc = {s["key"]: s["text"].split(". ", 1)[1] for s in RECON.steps(RECON.from_view(view))}
+    monkeypatch.setattr(scan_list, "get_findings_for_scan_id", lambda **_kw: [])
+    with Session(w.engine) as s:
+        board = scan_list.generate_cbom_dashboard_data(
+            list(s.exec(select(Scan).where(Scan.team_id == 1)).all()), load_sources_result(s, 1, now), team_id=1,
+            register_summary=REG.summary(s, 1, now.replace(tzinfo=None)), now=now)
+    dash = {s["key"]: s["text"].split(". ", 1)[1] for s in board["population"]["steps"]}
+    assert set(dash) == set(doc) | {"dashboard_card"}  # M2: the quantum-vulnerable step is there too
+    for key, text in doc.items():
+        assert dash[key] == text, key
+    card = board["card_data"]  # M1: the cards are the view's headline
+    assert (card["total_crypto_assets"], card["total_quantum_vulnerable"]) == (view.asset_occurrences,
+                                                                              view.pqc_vulnerable)
+    assert card["quantum_readiness_score"] == view.readiness_pct
+
+
+def test_b1_a_chain_that_does_not_close_says_so():
+    pop = RECON.Population(collections=2, collected=10, sources_occurrences=7, code_occurrences=1, occurrences=9,
+                           same_source_places=1, register={"total": 5, "q_grades": {"Q2": 5},
+                                                           "sow_classes": {"quantum-broken": 5},
+                                                           "presence": {"present": 5}})
+    text = " ".join(RECON.lines(pop))
+    assert "Unexplained difference -2" in text  # 10 - 1 = 9 run assets, but 7 occurrences
+    assert "Unexplained difference +1" in text  # 7 + 1 = 8, but 9 occurrences
+    assert "counted from a code-scan observation instead" not in text
 
 
 def _dashboard(team: World, monkeypatch, now: dt.datetime) -> dict:
@@ -433,7 +503,7 @@ def test_m4_repeated_scope_gaps_name_their_check_or_fold():
 
 
 def test_m8_the_asset_column_is_wide_enough_and_addresses_break_only_at_punctuation():
-    assert 720 - sum(RPDF._ASSET_FIXED) >= 150  # was 66 pt: 235 pages of 2-4 rows for team 1
+    assert 720 - sum(RPDF._ASSET_FIXED) >= 120  # was 66 pt (2-4 rows per page); 14 rows per page below
     owner = RPDF._ASSET_FIXED[-1]
     for line in RPDF.breakable("priya.sharma-pki@cholamandalam.example.com", owner).split("\n"):
         assert line[-1:] in ("@", ".", "-") or line.endswith("com"), line  # never mid-word
@@ -451,13 +521,18 @@ def test_m12_a_dispatch_failure_is_logged_with_its_reason_and_no_secret():
     assert router.log_dispatch_failure(logs, 7, StorageUnavailable("InvalidAccessKeyId"), True) == "x1"
     (doc,) = stored
     assert doc["status"] == "failure" and doc["credits_consumed"] is None and doc["ci_cd_integration_id"] == 7
-    assert doc["error"].startswith("HTTP 503: File storage is unavailable (the storage credentials were rejected)")
+    assert doc["error"].startswith("storage_unavailable: file storage is unavailable (the storage credentials were "
+                                   "rejected)")
     assert "No credits were charged." in doc["error"]
     assert "AKIA" not in doc["error"]
     secret = RuntimeError("aws_secret_access_key=abc123 leaked")
     router.log_dispatch_failure(logs, 7, secret, True)
     assert "abc123" not in stored[-1]["error"] and "RuntimeError" in stored[-1]["error"]
-    assert router.dispatch_failure_reason(HTTPException(status_code=400, detail="bad")) == "HTTP 400: bad"
+    assert router.dispatch_failure_reason(HTTPException(status_code=400, detail="bad <x>")) == "rejected: HTTP 400: bad x"
+    # review 6038529822 m3: a 500 that wraps an exception's text never reaches the log
+    wrapped = HTTPException(status_code=500, detail="Error in format_cicd_input: password=hunter2 at /srv")
+    assert router.dispatch_failure_reason(wrapped) == ("dispatch_error: the scan could not be started "
+                                                       "(HTTPException).")
 
 
 @pytest.fixture()
@@ -523,3 +598,80 @@ def test_m14_oscal_has_risks_from_findings_and_a_real_assessment_plan():
                                      views=[("api source", view)], kb_version="kb", description="Run 1 scope",
                                      team=None)
     assert again["assessment-results"]["back-matter"] == ar["back-matter"]  # byte-stable for one run
+
+
+# ============================================================================ review 6038529822: M3 M4 m1 m5 m6
+def test_review_m3_d14_section_7_plans_what_d13_plans(tmp_path):
+    from backend.utilities.pdf import cbom_board_report_pdf as board
+
+    w, now = _realistic(tmp_path)
+    view = load_team_cbom_view(w.engine, 1, now=now)
+    rows, planned, total = board.pqc_plan_rows(view)
+    assert planned == roadmap.planned_count(view, roadmap._roadmap_assets(view))  # D13's card
+    assert total == view.pqc_vulnerable
+    by_target = {r[0]: r for r in rows}
+    assert by_target["Planned public-key migrations (as D13)"][3] == str(planned)
+    sym = RECON.quantum_counts(view)["symmetric"]
+    if sym:
+        assert by_target["Symmetric or hash (not a public-key migration)"][3] == str(sym)
+    assert not any(r[1].startswith("Usage not recorded") for r in rows)  # AES-128 is no longer "usage not recorded"
+    text = _text("board-executive-report", view)
+    assert "occurrences with a quantum-vulnerable verdict" in text and "public-key occurrences to migrate" not in text
+
+
+def test_review_m5_d14_prints_the_block_as_numbered_steps(team):
+    text = _text("board-executive-report", _view(team))
+    assert "Population reconciliation 1. Run assets" in text  # a heading, then the steps, not one run-on paragraph
+    assert "Population reconciliation: 1." not in text
+
+
+def test_review_m4_d13_id_follows_its_own_plan(team):
+    from backend.utilities.cbom_sources.schemas import RiskModel  # noqa: F401  (the team setting the windows live in)
+    from backend.utilities.cbom_sources.settings import get_or_create_settings
+
+    first = _view(team)
+    ids = {n: common.document_id(first, n) for n in (12, 13)}
+    with Session(team.engine) as s:  # the team's wave fix windows (D13's fix-by dates)
+        settings = get_or_create_settings(s, 1)
+        settings.risk_model = {**(settings.risk_model or {}), "wave1_fix_days": 30}
+        s.add(settings)
+        s.commit()
+    second = _view(team)
+    assert common.document_id(second, 13) != ids[13] and common.document_id(second, 12) == ids[12]
+    item = second.remediation["node_rows"][0]
+    with Session(team.engine) as s:  # an owner and a status on one D13 row
+        W.upsert(s, 1, 1, W.AssignmentBulk(run_id=item["run_id"], items=[W.AssignmentItem(
+            asset_key=item["asset_key"], owner="alice@example.com", status="in_progress")]), dt.datetime(2026, 11, 20))  # noqa: DTZ001
+        s.commit()
+    third = _view(team)
+    assert common.document_id(third, 13) != common.document_id(second, 13)
+    assert common.document_id(third, 12) == ids[12]
+
+
+def test_review_m6_d13_lists_every_place_a_certificate_was_read(team):
+    view = _view(team)
+    cert_row = next(r for r in view.remediation["node_rows"] if r["type"] == "certificate")
+    assert cert_row["also_at"] == ["lab-mssql lab-mssql:1433/msdb"]
+    assert "also at: lab-mssql lab-mssql:1433/msdb" in _text("pqc-migration-roadmap", view)
+
+
+def test_review_m1_d12_keeps_14_typical_tls_rows_per_page():
+    from io import BytesIO
+
+    from pypdf import PdfReader
+
+    row = {"item_key": "ep:1", "q_grade": "Q1", "label": "a19773 · host-2824 /k/19773", "asset_type": "tls_endpoint",
+           "sow_class": "quantum-broken", "also_quantum_broken": "no", "algorithm": "ECDHE-RSA-AES128-SHA256",
+           "exposure": "internet", "fips_203_204_205": "not_applicable", "cnsa_2_0": "not_compliant",
+           "sp800_131a": "unknown", "fix_class": "vendor-fixed",
+           "nist_pq_target": "X25519MLKEM768 (hybrid), then ML-KEM-768", "data_lifetime_years": 7,
+           "data_lifetime_basis": "default", "migration_years": 5, "crqc_years": 9,
+           "grade_inputs": "default assumptions: X, Y, Z", "owner": "unassigned — confirm with owner"}
+    assert RPDF.inputs_compact(row) == "X 7, Y 5, Z 9 (defaults)"
+    reg = {"summary": {"total": 140, "q_grades": {"Q1": 140}}, "heatmap": {"cells": []}, "top_q1": [],
+           "q0_gaps": [], "assets": [dict(row, item_key=f"ep:{i}") for i in range(140)], "assets_total": 140}
+    view = TeamCbomView(team_id=1, team_name="T", generated_at=dt.datetime(2026, 11, 24, 9, tzinfo=UTC),
+                        as_of=dt.date(2026, 11, 24))
+    view.register = reg
+    pages = len(PdfReader(BytesIO(RPDF.build_pdf(view))).pages)
+    assert pages <= 14  # front matter and notes (4) + 140 rows at >= 14 per page (base: 13 rows, head 130fea21: 9)

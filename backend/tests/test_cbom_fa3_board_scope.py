@@ -334,7 +334,8 @@ def test_population_reconciliation_line_in_d1_and_d14():
     # PR #485 M6: an occurrence is one per source, except a certificate (counted once); D1 prints the arithmetic
     # staging QA2 M4: D1 and D14 print the one shared block (cbom_sources.reconciliation), the same figures
     expected = "plus 2 code-scan occurrences = 12 asset occurrences (the Scope Baseline D1 and the Board Report D14"
-    assert "Population reconciliation: 1. Run assets" in board_text(view) and expected in board_text(view)
+    # review 6038529822 m5: D14 prints the block as numbered steps under a heading, as D1, D12 and D13 do
+    assert "Population reconciliation 1. Run assets" in board_text(view) and expected in board_text(view)
     assert expected in scope_text(view)
     assert "= 10 distinct assets in the Quantum Risk Register (D12)" in scope_text(view)
     assert "= 10 distinct assets in the Quantum Risk Register (D12)" in board_text(view)

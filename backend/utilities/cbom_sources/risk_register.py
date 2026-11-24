@@ -776,6 +776,9 @@ def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 1
         # per presence (present in a latest collection, not read, removed: the population reconciliation)
         "sow_classes": SC.summary_counts(session, team_id, groups),
         "presence": presence_counts,
+        # present rows whose grade comes from a deleted source's last collection: removed from scope, outside the
+        # reconciliation's totals (review 6038529822 B1)
+        "present_removed_sources": _present_removed(session, team_id),
         "q0_gaps_open": {k: int(v) for k, v in sorted(gaps_open.items())},
         "families": dict(sorted(families.items())),
         # Q0 GAP lifecycle per week (not drift events: drift_report.weekly_drift() counts findings opened / closed by
@@ -788,6 +791,14 @@ def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 1
         "pending_regrade": pending(session, team_id, graded_live=live), "estate": E.stale_status(session, team_id),
         "model_version": QG.GRADE_MODEL_VERSION, "server_time": iso_z(now),
     }
+
+
+def _present_removed(session: Session, team_id: int) -> int:
+    live = sa.select(CbomCollectionSource.source_uid).where(CbomCollectionSource.team_id == team_id,
+                                                            CbomCollectionSource.source_uid.is_not(None))  # type: ignore[union-attr]
+    return int(session.execute(sa.select(sa.func.count()).select_from(_RT).where(
+        _RT.c.team_id == team_id, _RT.c.presence == "present", _RT.c.source_ref.is_not(None),
+        _RT.c.source_ref.not_in(live))).scalar_one())
 
 
 def default_assumptions(session: Session, team_id: int, inputs: TeamInputs | None = None) -> dict[str, Any]:

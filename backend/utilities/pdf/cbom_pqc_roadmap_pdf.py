@@ -803,8 +803,11 @@ def _node_section(view: TeamCbomView, styles: Styles, width: float, title: str, 
     table_rows = []
     for number, item in enumerate(rows[: max(int(max_rows), 0)], start=1):
         collected = (item.get("collected_at") or "")[:10]
+        also = item.get("also_at") or []
         where = "\n".join(x for x in (item.get("source_name") or "", item.get("target") or "",
-                                       item.get("location") or "", f"collected {collected}" if collected else "") if x)
+                                       item.get("location") or "",
+                                       ("also at: " + "; ".join(also)) if also else "",
+                                       f"collected {collected}" if collected else "") if x)
         impact = str(item.get("impact") or "Info")
         plan = {"assigned": item.get("assignment") or {}, "suggested": item.get("suggested_wave")}
         table_rows.append([

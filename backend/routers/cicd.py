@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timezone
 from io import BytesIO
 from typing import Annotated
@@ -410,13 +411,29 @@ async def run_cicd_scan(
 
 
 
+_SAFE_SUMMARY = re.compile(r"[^A-Za-z0-9 .,:;()'/_-]")
+
+
 def dispatch_failure_reason(exc: BaseException) -> str:
-    """What the delivery log says about a scan that could not start: an HTTP error's own detail (a 503 from file
-    storage names what failed and never a key, a bucket or an account: ``s3_utils.StorageUnavailable``), else the
-    error class only (an unexpected exception's text may carry anything, so it is not stored)."""
-    if isinstance(exc, HTTPException) and isinstance(exc.detail, str) and exc.detail:
-        return f"HTTP {exc.status_code}: {exc.detail}"[:500]
-    return f"The scan could not be started ({exc.__class__.__name__})."
+    """What the delivery log says about a scan that could not start: a fixed reason code and a summary built from
+    known text only (review 6038529822 m3: an exception's text, even wrapped in an HTTP 500 detail, may carry
+    anything, so it is never stored).
+
+    * ``storage_unavailable``: file storage refused the upload (``s3_utils.StorageUnavailable``); the summary is the
+      public reason for its AWS error code, which names no key, bucket or account.
+    * ``rejected``: a 4xx the route raised itself (bad input, limits); its detail is redacted, reduced to plain
+      characters and cut to 160.
+    * ``dispatch_error``: anything else; only the exception class is stored."""
+    from backend.utilities.db.s3_utils import _PUBLIC_REASON, StorageUnavailable
+    from backend.utilities.log_redaction import redact
+
+    if isinstance(exc, StorageUnavailable):
+        reason = _PUBLIC_REASON.get(exc.aws_code, "the storage service returned an error")
+        return f"storage_unavailable: file storage is unavailable ({reason}); the file was not stored."
+    if isinstance(exc, HTTPException) and 400 <= int(exc.status_code) < 500 and isinstance(exc.detail, str):
+        summary = _SAFE_SUMMARY.sub("", redact(exc.detail))[:160].strip()
+        return f"rejected: HTTP {exc.status_code}" + (f": {summary}" if summary else "")
+    return f"dispatch_error: the scan could not be started ({exc.__class__.__name__})."
 
 
 def log_dispatch_failure(collection, integration_id, exc: BaseException, refunded: bool) -> str | None:

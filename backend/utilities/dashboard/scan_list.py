@@ -1712,11 +1712,7 @@ def rollup_code_rows(scans: list[Scan], view: Any) -> dict[int, list]:
     """scan id -> the rows the team roll-up counts for it (``cbom_team_rollup``: the CURRENT scan of each repository
     and branch only, a superseded scan is history; within a scan one row per asset identity, ``AssetAgg`` 's
     ``(asset_type, bom_ref or slug(title)#location)``). The dashboard and the documents count these rows (QA2 Q1-08)."""
-    from backend.utilities.dashboard.cbom_team_rollup import (
-        _asset_type_of,
-        _slug,
-        _text,
-    )
+    from backend.utilities.dashboard.cbom_team_rollup import asset_identity
 
     current = {f.scan_id for f in getattr(view, "scans", ()) if f.is_current and f.exclusion is None}
     out: dict[int, list] = {}
@@ -1728,8 +1724,7 @@ def rollup_code_rows(scans: list[Scan], view: Any) -> dict[int, list]:
         for row in _cbom_results(scan):
             if not isinstance(row, dict):
                 continue
-            title = _text(row.get("title")) or _text(row.get("algorithm_name")) or "(unnamed)"
-            key = (_asset_type_of(row), _text(row.get("bom_ref")) or f"{_slug(title)}#{_text(row.get('location')) or ''}")
+            key = asset_identity(row)
             if key in seen:
                 continue
             seen.add(key)
@@ -1806,7 +1801,9 @@ def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None, *, team
     summary.add_rows([item.row for item in resolution.sources_rows])
     for label, count in summary.compliance.items():
         compliance_controls_metrics[label] += count
-    readiness = summary.readiness_pct
+    # Rule P (review 6038529822 M1): the headline is the view's, the one the documents print; the distributions below
+    # are counted over the same rows
+    readiness = view.readiness_pct
 
     # Aggregate remediation across all successful scans (finding rows only)
     total_fixed = 0
@@ -1835,11 +1832,10 @@ def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None, *, team
     all_findings_count += sources_findings
 
     population = None
-    if True:
-        try:  # the reconciliation never costs the dashboard its cards
-            population = RECON.for_dashboard(view, register_summary, summary.crypto_assets)
-        except Exception as exc:  # noqa: BLE001  # pragma: no cover - defensive
-            console.print(f"CBOM population reconciliation failed: {type(exc).__name__}", style="bold red")
+    try:  # the reconciliation never costs the dashboard its cards
+        population = RECON.for_dashboard(view, register_summary, view.asset_occurrences, sources)
+    except Exception as exc:  # noqa: BLE001  # pragma: no cover - defensive
+        console.print(f"CBOM population reconciliation failed: {type(exc).__name__}", style="bold red")
     return {
         "population": population,
         "sources": {
@@ -1848,11 +1844,11 @@ def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None, *, team
             "deduplicated": len(sources.rows) - len(resolution.sources_rows) + len(resolution.dropped_code),
         },
         "card_data": {
-            "total_crypto_assets": summary.crypto_assets,
+            "total_crypto_assets": view.asset_occurrences,
             "total_crypto_vulnerabilities": summary.findings,
             "total_informational": summary.informational,
             "total_weak_algorithms": summary.weak,
-            "total_quantum_vulnerable": summary.quantum["quantum_vulnerable"],
+            "total_quantum_vulnerable": view.pqc_vulnerable,
             "total_certificates": summary.certificates,
             "total_keys": summary.keys,
             "quantum_readiness_score": 0.0 if readiness is None else readiness,
@@ -1862,7 +1858,8 @@ def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None, *, team
         "severity_distribution": summary.severity_distribution(),
         "algorithm_type_distribution": dict(summary.algorithm_types),
         "strength_distribution": dict(summary.strengths),
-        "quantum_readiness": dict(summary.quantum),
+        "quantum_readiness": {"quantum_safe": view.pqc_safe, "quantum_vulnerable": view.pqc_vulnerable,
+                              "broken_today": view.pqc_broken_today},
         "owasp_top_10_issues": dict(summary.owasp),
         "compliance_controls": dict(compliance_controls_metrics),
         "top_risks": summary.top(10),

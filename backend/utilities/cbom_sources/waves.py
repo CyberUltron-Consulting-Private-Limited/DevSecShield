@@ -14,6 +14,8 @@ a row id or inside ``scan_data``, so a plan made on one run still applies to the
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
+import json
 import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -544,6 +546,35 @@ def view_qv_asset_ids(view: Any) -> set[int] | None:
     return out
 
 
+def population_from_rows(rows: Iterable[Any], view: Any) -> dict[str, Any]:
+    """D13's population from in-memory CBOM Sources rows (``collections_view.SourcesRow``: the dashboard, which loads
+    no roadmap): the same rule as ``roadmap_extras`` (the view's current quantum-vulnerable Sources assets, each by
+    its function, ``target_fields`` + ``plan_exclusion``), the same keys (review 6038529822 M2)."""
+    counted = view_qv_asset_ids(view) or set()
+    population: dict[str, Any] = {"sources": 0, "sources_planned": 0, "symmetric": 0, "no_algorithm": 0,
+                                  "by_usage": {}}
+    kinds: set[tuple[str, str]] = set()
+    for item in rows:
+        ref = str(item.row.get("bom_ref") or "")
+        if not (ref.startswith("zs-asset-") and ref[9:].isdigit() and int(ref[9:]) in counted):
+            continue
+        usage = target_fields(item.node_type, item.algorithm, item.facts)["pq_usage"]
+        population["sources"] += 1
+        excluded = plan_exclusion(usage)
+        if excluded:
+            population[excluded] += 1
+            continue
+        population["sources_planned"] += 1
+        kinds.add((str(item.algorithm or item.node_type or "").casefold(), str(item.key_size or "")))
+        slot = population["by_usage"].setdefault(usage, {"assets": 0, "sources": set()})
+        slot["assets"] += 1
+        slot["sources"].add(item.collection.source_name)
+    population["by_usage"] = {u: {"assets": v["assets"], "sources": sorted(v["sources"])}
+                              for u, v in population["by_usage"].items()}
+    population["kinds"] = sorted(f"{a}|{k}" for a, k in kinds)
+    return population
+
+
 def code_asset_key(asset: Any) -> str:
     return ID.stable_key("code", asset.source_key, ID.asset_agg_identity(asset))
 
@@ -586,6 +617,9 @@ def roadmap_extras(session: Session, team_id: int, view: Any = None) -> dict[str
     # verdict (a certificate two sources read counted once, as every count of the view), of which the public-key
     # ones are planned; a symmetric or hash asset, or one with no algorithm recorded, is counted apart, never planned
     counted = view_qv_asset_ids(view)
+    also_at = {int(str(a.bom_ref)[9:]): a.also_at for a in (getattr(view, "assets", None) or ())
+               if getattr(a, "also_at", ()) and str(a.bom_ref or "").startswith("zs-asset-")
+               and str(a.bom_ref)[9:].isdigit()}
     population: dict[str, Any] = {"sources": 0, "sources_planned": 0, "symmetric": 0, "no_algorithm": 0,
                                   "by_usage": {}}
     node_rows: list[dict[str, Any]] = []
@@ -638,6 +672,7 @@ def roadmap_extras(session: Session, team_id: int, view: Any = None) -> dict[str
                               "location": row.location if row else None, "run_id": run.id,
                               # the key-exchange group an endpoint negotiated (the part a quantum computer breaks)
                               "kex_group": _kex_group(row.facts) if row else None,
+                              "also_at": list(also_at.get(item["asset_id"], ())),
                               "collected_at": iso_z(row.created_at) if row else None})
     order = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
     node_rows.sort(key=lambda r: (r["wave"] or 9, order.get(r["impact"] or "", 8), str(r["source_name"]), r["label"]))
@@ -646,10 +681,15 @@ def roadmap_extras(session: Session, team_id: int, view: Any = None) -> dict[str
     population["kinds"] = sorted(f"{a}|{k}" for a, k in kinds)  # distinct algorithm + key size of the planned rows
     return {"code_plans": code_plans, "node_rows": node_rows[:ROADMAP_NODE_CAP],
             "node_rows_omitted": max(len(node_rows) - ROADMAP_NODE_CAP, 0) + omitted,
+            # what D13 prints of the team's plan, as one digest (review 6038529822 M4: D13's Document ID): every
+            # assignment's wave, owner, status and target date
+            "assignments_digest": hashlib.sha256(json.dumps(sorted(
+                [k, a.get("wave"), a.get("owner"), a.get("status"), a.get("target_date"), a.get("note")]
+                for k, a in assignments.items()), separators=(",", ":"), default=str).encode()).hexdigest()[:16],
             "population": population,
             # the days-to-fix per wave the PDF dates classical weaknesses with, from when each asset was first found
             "fix_windows": fix_windows(session, team_id)}
 
 
 __all__ = ["AssignmentBulk", "STATUSES", "WAVES", "WAVE_LABEL", "WAVE_RULE", "WAVE_RULES", "WaveRule", "code_asset_key",
-           "code_disallowed", "code_first_seen", "code_items", "fix_windows", "identity_first_seen", "node_first_seen", "node_items", "plan_exclusion", "view_qv_asset_ids", "matching_rule", "roadmap_extras", "suggested_wave", "upsert"]
+           "code_disallowed", "code_first_seen", "code_items", "fix_windows", "identity_first_seen", "node_first_seen", "node_items", "plan_exclusion", "population_from_rows", "view_qv_asset_ids", "matching_rule", "roadmap_extras", "suggested_wave", "upsert"]

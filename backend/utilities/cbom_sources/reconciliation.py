@@ -23,6 +23,9 @@ card): nothing is recounted here (Rule P). Pure: no database, no clock.
 """
 from __future__ import annotations
 
+import logging
+import threading
+from collections import OrderedDict
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -30,22 +33,29 @@ from typing import Any
 from backend.utilities.cbom_sources import sow_class as SC
 
 TITLE = "Population reconciliation"
+_LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
 class Population:
-    collections: int  # CBOM Sources sources with a latest collection
+    """Every number of the block, each counted from its own source (review 6038529822 B1: no bucket is the difference
+    of two others; when the counts do not close, the block prints the difference as unexplained)."""
+
+    collections: int  # current CBOM Sources collections (a deleted source's is removed from scope)
     collected: int  # their run asset lists
-    sources_occurrences: int
+    sources_occurrences: int  # current assets of current collections in the view
     code_occurrences: int
-    occurrences: int
-    register: Mapping[str, Any] | None = None  # risk_register.summary (total, q_grades, sow_classes, presence)
+    occurrences: int  # the view's current assets (D1 / D14 "asset occurrences")
+    same_source_places: int = 0  # a certificate one source read at another place, counted once
+    cross_source: int = 0  # a certificate another source also read, counted once
+    to_code: int = 0  # a certificate a code scan saw as late or later, counted from the code scan
+    estate_repeats: int = 0  # current Sources occurrences of one estate asset beyond the first
+    removed_collections: int = 0  # deleted sources' last collections: outside every total
+    removed_assets: int = 0
+    removed_counted: int = 0  # of those, occurrences the view still counts (0 once the roll-up drops them, #497)
+    register: Mapping[str, Any] | None = None  # risk_register.summary
     card_assets: int | None = None  # the dashboard's Crypto Assets card (the dashboard only)
     quantum: Mapping[str, int] | None = field(default=None)  # quantum_counts(): D13's population
-
-    @property
-    def counted_once(self) -> int:
-        return self.collected - self.sources_occurrences
 
 
 def _n(number: int, singular: str, plural: str | None = None) -> str:
@@ -53,8 +63,8 @@ def _n(number: int, singular: str, plural: str | None = None) -> str:
 
 
 def quantum_counts(view: Any) -> dict[str, int] | None:
-    """D13's population from the view (``waves.roadmap_extras``' ``population`` and the view's own code-scan assets),
-    None when the roadmap plan was not loaded."""
+    """D13's population from the view (``waves.roadmap_extras``' ``population``, or the dashboard's
+    ``waves.population_from_rows``, and the view's own code-scan assets), None when it was not loaded."""
     rem = getattr(view, "remediation", None)
     pop = rem.get("population") if isinstance(rem, Mapping) else None
     if not isinstance(pop, Mapping):
@@ -74,15 +84,28 @@ def quantum_counts(view: Any) -> dict[str, int] | None:
 
 
 def from_view(view: Any) -> Population:
-    """The population of a document's ``TeamCbomView`` (``load_team_cbom_view``)."""
+    """The population of a ``TeamCbomView`` (``load_team_cbom_view``, or the dashboard's ``team_view``): current
+    collections only (``cbom_team_rollup.current_collections``); a deleted source's collection is removed from scope."""
+    from backend.utilities.dashboard.cbom_team_rollup import current_collections, removed_collections
+
+    current, removed = current_collections(view), removed_collections(view)
+    current_keys = {c.key for c in current}
+    removed_keys = {c.key for c in removed}
     live = [a for a in view.assets if a.current]
-    sources = sum(1 for a in live if a.source_key.startswith("sources:"))
-    collections = tuple(getattr(view, "collections", ()) or ())
+    sources = sum(1 for a in live if a.source_key in current_keys)
+    removed_counted = sum(1 for a in live if a.source_key in removed_keys)
+    code = sum(1 for a in live if not a.source_key.startswith("sources:"))
+    cross = getattr(view, "cross_scope", None) or {}
     register = getattr(view, "register", None)
     summary = (register or {}).get("summary") if isinstance(register, Mapping) else None
     return Population(
-        collections=len(collections), collected=sum(int(getattr(c, "asset_count", 0) or 0) for c in collections),
-        sources_occurrences=sources, code_occurrences=len(live) - sources, occurrences=len(live),
+        collections=len(current), collected=sum(int(getattr(c, "asset_count", 0) or 0) for c in current),
+        sources_occurrences=sources, code_occurrences=code, occurrences=len(live),
+        same_source_places=int(cross.get("same_source_places", 0) or 0),
+        cross_source=int(cross.get("cross_source", 0) or 0), to_code=int(cross.get("to_code", 0) or 0),
+        estate_repeats=int(cross.get("estate_repeats", 0) or 0),
+        removed_collections=len(removed), removed_assets=sum(int(getattr(c, "asset_count", 0) or 0) for c in removed),
+        removed_counted=removed_counted,
         register=summary if isinstance(summary, Mapping) and isinstance(summary.get("total"), int) else None,
         quantum=quantum_counts(view))
 
@@ -91,14 +114,21 @@ def register_numbers(summary: Mapping[str, Any]) -> dict[str, int]:
     grades = summary.get("q_grades") if isinstance(summary.get("q_grades"), Mapping) else {}
     classes = summary.get("sow_classes") if isinstance(summary.get("sow_classes"), Mapping) else {}
     presence = summary.get("presence") if isinstance(summary.get("presence"), Mapping) else {}
-    total = int(summary.get("total") or 0)
-    present = int(presence.get("present", total) or 0)
-    out = {"total": total, "present": present, "not_present": total - present,
+    out = {"total": int(summary.get("total") or 0), "present": int(presence.get("present", 0) or 0),
+           "not_present": int(presence.get("not_read", 0) or 0) + int(presence.get("removed", 0) or 0),
+           "present_removed": int(summary.get("present_removed_sources", 0) or 0),
            "graded": sum(int(grades.get(g, 0) or 0) for g in ("Q1", "Q2", "Q3", "Q4")),
            "q0": int(grades.get("Q0", 0) or 0), "none": int(grades.get("none", 0) or 0)}
     for c in SC.CLASSES:
         out[c] = int(classes.get(c, 0) or 0)
     return out
+
+
+def _unexplained(step: str, gap: int) -> str:
+    if gap == 0:
+        return ""
+    _LOG.warning("population reconciliation: %s does not close, unexplained difference %d", step, gap)
+    return f" Unexplained difference {gap:+d}: the counts above do not account for it."
 
 
 def steps(pop: Population) -> list[dict[str, Any]]:
@@ -112,62 +142,90 @@ def steps(pop: Population) -> list[dict[str, Any]]:
         add("run_assets", pop.collected,
             f"Run assets: the latest collections of the {_n(pop.collections, 'CBOM Sources source')} list "
             f"{_n(pop.collected, 'asset')} (the runs' asset lists).")
-    once = pop.counted_once
-    once_text = (f"minus {_n(once, 'observation')} of an asset another source also observed (a certificate two "
-                 "sources read is one asset, counted once from its latest observation)" if once >= 0 else
-                 f"plus {_n(-once, 'observation')} the collections' asset lists leave out")
-    sources_text = (f"{pop.collected} run assets {once_text} = {_n(pop.sources_occurrences, 'CBOM Sources occurrence')}; "
-                    if pop.collections else "")
+    if pop.removed_collections:
+        still = (f" This view still counts {_n(pop.removed_counted, 'occurrence')} of them."
+                 if pop.removed_counted else "")
+        add("removed", pop.removed_assets,
+            f"Removed from scope: {_n(pop.removed_collections, 'collection')} of deleted sources with "
+            f"{_n(pop.removed_assets, 'asset')}, outside every total.{still}")
+    parts = []
+    if pop.same_source_places:
+        parts.append(f"minus {_n(pop.same_source_places, 'observation')} of a certificate the same source read at "
+                     "another place (one certificate, counted once)")
+    if pop.cross_source:
+        parts.append(f"minus {_n(pop.cross_source, 'observation')} of a certificate another source also read "
+                     "(counted once, from its latest observation)")
+    if pop.to_code:
+        parts.append(f"minus {_n(pop.to_code, 'observation')} of a certificate a code scan found as late or later "
+                     "(counted from the code scan)")
+    if pop.collections:
+        gap = pop.sources_occurrences - (pop.collected - pop.same_source_places - pop.cross_source - pop.to_code)
+        sources_text = (f"{pop.collected} run assets " + (", ".join(parts) + " " if parts else "")
+                        + f"= {_n(pop.sources_occurrences, 'CBOM Sources occurrence')}"
+                        + _unexplained("run assets to occurrences", gap) + "; ")
+    else:
+        sources_text = ""
+    removed_text = (f"plus {_n(pop.removed_counted, 'occurrence')} of removed sources still in this view; "
+                    if pop.removed_counted else "")
+    gap_occ = pop.occurrences - (pop.sources_occurrences + pop.removed_counted + pop.code_occurrences)
     add("occurrences", pop.occurrences,
-        f"Asset occurrences: {sources_text}plus {_n(pop.code_occurrences, 'code-scan occurrence')} = "
-        f"{_n(pop.occurrences, 'asset occurrence')} (the Scope Baseline D1 and the Board Report D14 count these).")
+        f"Asset occurrences: {sources_text}{removed_text}plus {_n(pop.code_occurrences, 'code-scan occurrence')} = "
+        f"{_n(pop.occurrences, 'asset occurrence')} (the Scope Baseline D1 and the Board Report D14 count these)."
+        + _unexplained("occurrences", gap_occ))
     if pop.card_assets is not None:
         extra = pop.card_assets - pop.occurrences
-        if extra == 0:
-            card = "the same occurrences."
-        elif extra > 0:
-            card = (f"the {pop.occurrences} occurrences plus {_n(extra, 'code-scan row')} it counts once per scan (a "
-                    "repository scanned more than once, a row repeated within a scan), which the documents count "
-                    "once.")
-        else:
-            card = (f"the {pop.occurrences} occurrences minus {_n(-extra, 'code-scan occurrence')} the documents "
-                    "count and the card does not.")
+        card = "the same occurrences." if extra == 0 else (
+            f"{pop.occurrences} occurrences{_unexplained('dashboard card', extra)}")
         add("dashboard_card", pop.card_assets, f"The dashboard's Crypto Assets card counts {pop.card_assets}: {card}")
     if pop.register is None:
         add("register", 0, "The quantum risk register (D12) was not loaded.")
     else:
         r = register_numbers(pop.register)
-        repeated = pop.sources_occurrences + r["not_present"] - r["total"]
-        add("register", r["total"],
-            f"Distinct register assets: {pop.occurrences} occurrences minus {_n(pop.code_occurrences, 'code-scan occurrence')} "
-            f"(the register holds collected assets only) "
-            + (f"minus {_n(repeated, 'CBOM Sources occurrence')} of an estate asset already counted (one asset read "
-               "at several places or by several sources)" if repeated >= 0 else
-               f"plus {_n(-repeated, 'estate asset')} counted from a code-scan observation instead")
-            + f" plus {_n(r['not_present'], 'register asset')} no latest collection holds (not read or removed, kept "
-            f"with their last grade) = {_n(r['total'], 'distinct asset')} in the Quantum Risk Register (D12).")
+        expected = (pop.occurrences - pop.code_occurrences - pop.removed_counted - pop.estate_repeats
+                    + r["not_present"] + r["present_removed"])
+        text = (f"Distinct register assets: {pop.occurrences} occurrences minus "
+                f"{_n(pop.code_occurrences, 'code-scan occurrence')} (the register holds collected assets only)")
+        if pop.removed_counted:
+            text += f" minus {_n(pop.removed_counted, 'occurrence')} of removed sources"
+        if pop.estate_repeats:
+            text += (f" minus {_n(pop.estate_repeats, 'CBOM Sources occurrence')} of an estate asset already counted "
+                     "(one asset, such as an endpoint, read by several sources)")
+        if r["not_present"]:
+            text += (f" plus {_n(r['not_present'], 'register asset')} no latest collection holds (not read or "
+                     "removed, kept with their last grade)")
+        if r["present_removed"]:
+            text += f" plus {_n(r['present_removed'], 'register asset')} last read by a removed source"
+        text += (f" = {_n(r['total'], 'distinct asset')} in the Quantum Risk Register (D12)."
+                 + _unexplained("register", r["total"] - expected))
+        add("register", r["total"], text)
         grades = pop.register.get("q_grades") if isinstance(pop.register.get("q_grades"), Mapping) else {}
         split = ", ".join(f"{label} {int(grades.get(key, 0) or 0)}" for key, label in (
             ("Q1", "Q1 Critical"), ("Q2", "Q2 High"), ("Q3", "Q3 Medium"), ("Q4", "Q4 Low"), ("Q0", "Q0 Unknown"),
             ("none", "no grade")))
+        classes = sum(r[c] for c in SC.CLASSES)
         add("classes", r["total"],
-            f"Their grades: {split}. Their SOW classes: {r['graded']} graded Q1 to Q4 ({r[SC.BROKEN]} quantum-broken, {r[SC.DEPRECATED]} "
-            f"deprecated, {r[SC.WEAKENED]} weakened, {r[SC.SAFE]} quantum-safe), {r['q0']} Q0 Unknown, {r['none']} "
-            "no grade (no public-key cryptography).")
+            f"Their grades: {split}. Their SOW classes: {r['graded']} graded Q1 to Q4 ({r[SC.BROKEN]} quantum-broken, "
+            f"{r[SC.DEPRECATED]} deprecated, {r[SC.WEAKENED]} weakened, {r[SC.SAFE]} quantum-safe), {r['q0']} Q0 "
+            "Unknown, {} no grade (no public-key cryptography).".format(r["none"])
+            + _unexplained("SOW classes", r["total"] - classes))
     q = pop.quantum
     if q is not None:
-        parts = [f"{q['code_planned']} code-scan algorithm{'' if q['code_planned'] == 1 else 's'}",
-                 f"{q['sources_planned']} collected"]
+        parts_q = [f"{q['code_planned']} code-scan algorithm{'' if q['code_planned'] == 1 else 's'}",
+                   f"{q['sources_planned']} collected"]
         rest = [f"{q['symmetric']} symmetric or hash", f"{q['no_algorithm']} with no algorithm recorded"]
         if q["code_other"]:
             rest.append(f"{q['code_other']} code-scan certificate or key row{'' if q['code_other'] == 1 else 's'}")
+        # each part counted: the collected rows by their function (waves.plan_exclusion), the code rows by type
+        gap_q = q["occurrences"] - (q["code_planned"] + q["code_other"] + q["sources"])
+        gap_q += q["sources"] - (q["sources_planned"] + q["symmetric"] + q["no_algorithm"])
         add("quantum", q["occurrences"],
             f"Quantum-vulnerable: {_n(q['occurrences'], 'occurrence')} carry a quantum-vulnerable verdict (the "
             f"dashboard card and the readiness figure) = {q['planned']} public-key assets the PQC Migration Roadmap "
-            f"(D13) plans ({', '.join(parts)}) + " + " + ".join(rest) + ", which are not public-key migrations."
+            f"(D13) plans ({', '.join(parts_q)}) + " + " + ".join(rest) + ", which are not public-key migrations."
             + (f" The register counts each estate asset once: {register_numbers(pop.register)[SC.BROKEN]} "
                f"quantum-broken and {register_numbers(pop.register)[SC.DEPRECATED]} deprecated."
-               if pop.register is not None else ""))
+               if pop.register is not None else "")
+            + _unexplained("quantum-vulnerable", gap_q))
     return out
 
 
@@ -180,11 +238,19 @@ def public(pop: Population) -> dict[str, Any]:
     return {"title": TITLE, "steps": steps(pop)}
 
 
+_VIEWS: OrderedDict[tuple, Any] = OrderedDict()  # the dashboard's views, by what they are folded from
+_VIEWS_MAX = 16
+_VIEWS_LOCK = threading.Lock()
+
+
 def team_view(team_id: int, scans: Any, sources: Any, now: Any = None) -> Any:
     """The documents' team roll-up (``load_team_cbom_view``'s fold) from the scans and CBOM Sources collections a
     caller already loaded: ``cbom_team_rollup.fold_scans`` over the team's CBOM scans (latest successful scan per
-    repository and branch is current; a superseded scan is history), then ``merge_collections``. The dashboard reads
-    its cards and this block from it, so it counts what the documents count (staging QA2 Q1-08)."""
+    repository and branch is current; a superseded scan is history), then ``merge_collections`` (counts only: the
+    dashboard reads no posture fact or compliance pool). The dashboard reads its cards and this block from it, so it
+    counts what the documents count (staging QA2 Q1-08). The view is kept in a small per-process cache keyed by what
+    it is folded from (every scan's id, status and last update; every collection's job and time; the UTC day the
+    date-based findings are judged on): a page reload with unchanged data reuses it (review 6038529822 m4)."""
     import datetime as _dt
 
     from backend.utilities.dashboard.cbom_team_rollup import (
@@ -212,18 +278,40 @@ def team_view(team_id: int, scans: Any, sources: Any, now: Any = None) -> Any:
                               last_updated=aware(updated) if updated else made,
                               scan_metadata=getattr(scan, "scan_metadata", None)))
         blobs[scan.id] = scan.scan_data
+    key = (team_id, moment.date(),
+           tuple(sorted((h.id, str(h.status), h.last_updated.isoformat()) for h in heads)),
+           tuple(sorted((c.job_id, c.source_kind, str(c.observed_at), c.asset_count)
+                        for c in (sources.collections if sources is not None else ()))))
+    with _VIEWS_LOCK:
+        cached = _VIEWS.get(key)
+        if cached is not None:
+            _VIEWS.move_to_end(key)
+            return cached
     view = fold_scans(heads, lambda ids: {i: blobs.get(i) for i in ids}, team_id=team_id, team_name="",
                       now=moment)
     if sources is not None:
-        view = merge_collections(view, sources.rows, sources.collections)
+        view = merge_collections(view, sources.rows, sources.collections, counts_only=True)
+    with _VIEWS_LOCK:
+        _VIEWS[key] = view
+        while len(_VIEWS) > _VIEWS_MAX:
+            _VIEWS.popitem(last=False)
     return view
 
 
-def for_dashboard(view: Any, register_summary: Mapping[str, Any] | None, card_assets: int | None) -> dict[str, Any]:
+def for_dashboard(view: Any, register_summary: Mapping[str, Any] | None, card_assets: int | None,
+                  sources: Any = None) -> dict[str, Any]:
     """The dashboard's block: the documents' population of ``view`` (``team_view``), the register summary the
-    Quantum risk tab reads, and the dashboard's own Crypto Assets card."""
-    view.register = {"summary": register_summary} if isinstance(register_summary, Mapping) else None
-    pop = from_view(view)
+    Quantum risk tab reads, the dashboard's own Crypto Assets card and, from the Sources rows, D13's population
+    (``waves.population_from_rows``: the quantum-vulnerable step, review 6038529822 M2). ``view`` is not changed."""
+    import copy
+
+    from backend.utilities.cbom_sources import waves as W
+
+    shown = copy.copy(view)  # a shallow copy: the cached view never carries one request's register summary
+    shown.register = {"summary": register_summary} if isinstance(register_summary, Mapping) else None
+    if sources is not None:
+        shown.remediation = {"population": W.population_from_rows(sources.rows, view)}
+    pop = from_view(shown)
     return public(Population(**{**pop.__dict__, "card_assets": card_assets}))
 
 

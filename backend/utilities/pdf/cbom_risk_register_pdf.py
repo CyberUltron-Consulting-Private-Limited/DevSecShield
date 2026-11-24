@@ -363,7 +363,23 @@ _ASSET_HEADERS = ["Grade", "Asset", "Type", "SOW class", "Algorithm", "Exposure"
                   "FIPS 203/204/205 / CNSA 2.0 / SP 800-131A", "Fix class", "NIST PQ target", "Inputs used", "Owner"]
 # Column widths (points, landscape frame 720): the Asset column takes what the others leave (staging QA2 m8: at 66 pt
 # team 1's register ran to 235 pages of 2-4 rows each)
-_ASSET_FIXED = [50, 0, 48, 64, 48, 40, 74, 42, 70, 66, 62]
+_ASSET_FIXED = [48, 0, 50, 58, 64, 40, 72, 44, 80, 56, 78]
+
+
+def inputs_compact(i: dict[str, Any]) -> str:
+    """The Mosca inputs of a row in one short line ("X 7, Y 5, Z 9 (defaults)"; review 6038529822 m1: the long form
+    wrapped over four lines and cut the register's rows per page by a third). The section's note says what a
+    default is."""
+    if i.get("data_lifetime_years") is None:
+        return ""
+    text = str(i.get("grade_inputs") or "")
+    if text.startswith("not used"):
+        return "not used"
+    head = f"X {i['data_lifetime_years']}, Y {i.get('migration_years')}, Z {i.get('crqc_years')}"
+    if text.startswith("default assumptions"):
+        assumed = text.split(":", 1)[1].strip() if ":" in text else ""
+        return f"{head} (default {assumed})" if assumed and assumed != "X, Y, Z" else f"{head} (defaults)"
+    return head
 
 
 def sow_cell(i: dict[str, Any]) -> str:
@@ -399,7 +415,7 @@ def _assets(reg: dict[str, Any], styles: Styles, width: float) -> list[Flowable]
         algorithm = " ".join(str(x) for x in (i.get("algorithm"), i.get("key_size")) if x not in (None, ""))
         rows.append([_chip(i["q_grade"]), i.get("label") or i["item_key"], i.get("asset_type"),
                      sow_cell(i), algorithm, i.get("exposure"), verdicts_cell(i),
-                     str(i.get("fix_class") or "").replace("_", " "), i.get("nist_pq_target"), inputs_cell(i),
+                     str(i.get("fix_class") or "").replace("_", " "), i.get("nist_pq_target"), inputs_compact(i),
                      i.get("owner")])
     fixed = list(_ASSET_FIXED)
     fixed[1] = width - sum(fixed)

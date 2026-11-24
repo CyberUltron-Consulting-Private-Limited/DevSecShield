@@ -227,6 +227,20 @@ def reconciliation_line(view: TeamCbomView) -> str:
 RECON_TITLE = "Population reconciliation"
 
 
+def quantum_counts(view: TeamCbomView) -> dict[str, int] | None:
+    """D13's population (``cbom_sources.reconciliation.quantum_counts``), for documents that print it (D14 §7)."""
+    import backend.utilities.cbom_sources.reconciliation as RECON
+
+    return RECON.quantum_counts(view)
+
+
+def pq_target_for(usage: str | None) -> dict[str, Any] | None:
+    """The knowledge base's NIST post-quantum target row of a function (``pqc_targets.target_for``)."""
+    import backend.utilities.cbom_sources.pqc_targets as PQT
+
+    return PQT.target_for(usage)
+
+
 # ------------------------------------------------------------------------------------------------ PQC targets
 # Usage of a quantum-vulnerable asset -> what replaces it (SOW review M5). The names are read from algid's own table
 # (test_algid_single_source: post-quantum names come from algid only): the pure FIPS 203 KEM and FIPS 204 signature
@@ -280,11 +294,16 @@ def quantum_vulnerable_assets(view: TeamCbomView) -> list[AssetAgg]:
 
 
 def pqc_target_groups(view: TeamCbomView) -> list[dict[str, Any]]:
+    """``target_groups`` over every current quantum-vulnerable asset of the view."""
+    return target_groups(quantum_vulnerable_assets(view))
+
+
+def target_groups(assets: list[AssetAgg]) -> list[dict[str, Any]]:
     """Every current quantum-vulnerable asset grouped by its migration target (usage-based; the scan's recorded
     target for a code-scan algorithm that has one): ``{"target", "usage", "occurrences", "sources", "kinds"}``, most
     occurrences first. The occurrences add up to ``view.pqc_vulnerable``."""
     groups: dict[tuple[str, str], list[AssetAgg]] = {}
-    for asset in quantum_vulnerable_assets(view):
+    for asset in assets:
         usage = asset_usage(asset)
         recorded = asset.pqc_migration_target if asset.asset_type == ASSET_ALGORITHM else None
         target = recorded or pq_target(usage) or USAGE_LABELS[USAGE_UNKNOWN]
@@ -310,4 +329,4 @@ __all__ = ["KINDS", "KIND_LABELS", "KIND_LAYER", "LAYERS", "LAYER_LABELS", "LAYE
            "USAGE_LABELS", "asset_identity", "asset_kind", "asset_usage", "collections_by_key",
            "current_assets_by_source", "grade_split_text", "kind_counts", "layer_label", "layer_rows", "pq_target",
            "pqc_target_groups", "quantum_vulnerable_assets", "reconciliation_counts", "reconciliation_line",
-           "reconciliation_steps", "source_layer", "source_metadata"]
+           "reconciliation_steps", "source_layer", "source_metadata", "target_groups"]
