@@ -1566,17 +1566,6 @@
     "weak": false
    },
    {
-    "asset_type": null,
-    "id": "crypto-advisory-pypi-cryptography-41-0",
-    "impact": null,
-    "kind": "framework",
-    "label": "cryptography",
-    "location": "requirements.txt",
-    "primitive": null,
-    "quantum_vulnerable": false,
-    "weak": false
-   },
-   {
     "asset_type": "algorithm",
     "id": "crypto-algo-aes-128-cbc-app-encryption-py",
     "impact": null,
@@ -2056,7 +2045,7 @@
    "families": 6,
    "folded_assets": 0,
    "folders": 1,
-   "libraries": 8,
+   "libraries": 7,
    "max_nodes": 40,
    "shown_assets": 17
   },
@@ -2064,12 +2053,11 @@
    {
     "asset_type": "library",
     "cluster": true,
-    "cluster_count": 5,
+    "cluster_count": 4,
     "id": "cluster:libraries",
     "kind": "framework",
-    "label": "5 more libraries",
+    "label": "4 more libraries",
     "member_ids": [
-     "crypto-advisory-pypi-cryptography-41-0",
      "container-image-gcr-io-distroless-python3-debian12-sha256-0f1f7d2c4b3a6e5d8c9b0a1f2e3d4c5b6a7980716253443526170819a0b1c2d3",
      "container-image-ghcr-io-acme-bank-router-1-4-2",
      "container-image-python-3-11-slim",
@@ -2618,7 +2606,7 @@
    "families": 6,
    "folded_assets": 0,
    "folders": 1,
-   "libraries": 8,
+   "libraries": 7,
    "max_nodes": 120,
    "shown_assets": 17
   },
@@ -2626,12 +2614,11 @@
    {
     "asset_type": "library",
     "cluster": true,
-    "cluster_count": 5,
+    "cluster_count": 4,
     "id": "cluster:libraries",
     "kind": "framework",
-    "label": "5 more libraries",
+    "label": "4 more libraries",
     "member_ids": [
-     "crypto-advisory-pypi-cryptography-41-0",
      "container-image-gcr-io-distroless-python3-debian12-sha256-0f1f7d2c4b3a6e5d8c9b0a1f2e3d4c5b6a7980716253443526170819a0b1c2d3",
      "container-image-ghcr-io-acme-bank-router-1-4-2",
      "container-image-python-3-11-slim",
@@ -3006,13 +2993,13 @@
    }
   ],
   "meta": {
-   "clustered_members": 9,
+   "clustered_members": 8,
    "lane": "cbom",
    "max_nodes": 40,
    "raw_edge_count": 16,
-   "raw_node_count": 25,
+   "raw_node_count": 24,
    "view_edge_count": 16,
-   "view_node_count": 19
+   "view_node_count": 18
   },
   "nodes": [
    {
@@ -3030,23 +3017,6 @@
      "container-image-ghcr-io-acme-bank-router-1-4-2",
      "container-image-python-3-11-slim",
      "container-image-redis-7-2-alpine"
-    ],
-    "primitive": null,
-    "quantum_vulnerable": false,
-    "weak": false
-   },
-   {
-    "asset_type": null,
-    "cluster": true,
-    "cluster_count": 1,
-    "clustered_count": 1,
-    "id": "cluster:orphan:library",
-    "impact": null,
-    "is_cluster": true,
-    "kind": "framework",
-    "label": "Unlinked library (1)",
-    "member_ids": [
-     "crypto-advisory-pypi-cryptography-41-0"
     ],
     "primitive": null,
     "quantum_vulnerable": false,
@@ -4865,78 +4835,6 @@
     "type": "cryptographic-asset"
    },
    {
-    "bom-ref": "crypto-advisory-pypi-cryptography-41-0",
-    "evidence": {
-     "occurrences": [
-      {
-       "line": 1,
-       "location": "requirements.txt"
-      }
-     ]
-    },
-    "name": "cryptography",
-    "properties": [
-     {
-      "name": "crypto:dependencyScope",
-      "value": "direct"
-     },
-     {
-      "name": "crypto:ecosystem",
-      "value": "pypi"
-     },
-     {
-      "name": "crypto:language",
-      "value": "pip-requirements"
-     },
-     {
-      "name": "crypto:line",
-      "value": "1"
-     },
-     {
-      "name": "crypto:occurrenceCount",
-      "value": "1"
-     },
-     {
-      "name": "crypto:occurrences",
-      "value": "1"
-     },
-     {
-      "name": "crypto:role",
-      "value": "library"
-     },
-     {
-      "name": "crypto:unverifiedAdvisories",
-      "value": "CVE-2023-38325,CVE-2023-49083,CVE-2023-50782,CVE-2024-0727,CVE-2024-12797,CVE-2024-26130,CVE-2026-26007,CVE-2026-34073,CVE-2026-39892,CVE-2026-69247,CVE-2026-69248,CVE-2026-69249,GHSA-537c-gmf6-5ccf,GHSA-h4gh-qq45-vh27,GHSA-jm77-qphf-c4w8,GHSA-v8gr-m533-ghj9"
-     },
-     {
-      "name": "crypto:unverifiedAdvisoryCount",
-      "value": "16"
-     },
-     {
-      "name": "crypto:versionConstraint",
-      "value": ">=41.0"
-     },
-     {
-      "name": "crypto:versionUnverifiedReason",
-      "value": "only a version range is declared and no lockfile resolves it: the advisories below match the range's lower bound, not an installed version"
-     },
-     {
-      "name": "crypto:versionVerified",
-      "value": "false"
-     },
-     {
-      "name": "discovery:source",
-      "value": "requirements.txt"
-     },
-     {
-      "name": "zs:impact",
-      "value": "Info"
-     }
-    ],
-    "purl": "pkg:pypi/cryptography",
-    "type": "library"
-   },
-   {
     "bom-ref": "crypto-lib-argon2-cffi",
     "evidence": {
      "occurrences": [
@@ -5295,7 +5193,7 @@
      "value": "6da5bf0343477d51cd203d6dea2eab899f995a8682ecfba025ef756286ca3449"
     }
    ],
-   "timestamp": "2026-11-24T06:31:19Z",
+   "timestamp": "2026-11-24T11:09:09Z",
    "tools": {
     "components": [
      {
@@ -5313,7 +5211,7 @@
     ]
    }
   },
-  "serialNumber": "urn:uuid:4b50d636-b44f-5926-847d-0ac2f30aebb9",
+  "serialNumber": "urn:uuid:75cd2e78-fb43-54db-aac1-a0257b7eaf94",
   "specVersion": "1.6",
   "version": 1
  },

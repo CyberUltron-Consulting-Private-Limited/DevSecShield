@@ -3,9 +3,9 @@
   "digests_from": "PR #484 (D11) emit changes on top of base_commit f7385517; regenerate with support/make_goldens.py",
   "trees": {
     "synthetic-crypto-app": {
-      "cyclonedx": "486a697819f2458ab2ccd933abfab0c9cf5c8d7e083e0338bf9ab92fb3127198",
-      "normalize": "dabe1cab4dcf3fab7f48af6cc1748879bef0ca8e38ef32f7f23df1d2e13ca68d",
-      "scan": "897f4d0d53ffe532878717e33db67f96c4652490da684e988631d8c85407a9da"
+      "cyclonedx": "8cd575867ed3c839bc0f0c305bd594b965a6bd2d8e7ea1051a84f855ac41cdab",
+      "normalize": "58721041fd7a8b5998e1378143bf07989027d47a20bccc42207ff1d854db9f0d",
+      "scan": "c884172191805c35dbca4ef646f04bd7560d510716caa95d29eab3926a52e5b1"
     },
     "synthetic-crypto-ast": {
       "cyclonedx": "f18d66068a4b775d46cd171c3dc3b4208361dcc259b8a8176671452a8e5473c6",
@@ -38,9 +38,9 @@
       "scan": "79108c413595af0385e6b682be52bebd0b1b2368120309eeb0d24bb0836e1153"
     },
     "synthetic-crypto-manifests": {
-      "cyclonedx": "0f53f89b66d2016273ffc56c1fb5aa355e011f0570ae8c1235771638a059c021",
-      "normalize": "47d0812099fe24056f4e2be84357d1533101dc5de9f199a879d10acd6a2f3015",
-      "scan": "93386ad0eec73e5f61838fa9fc2a3f3d177214fafcdd74138351978a18dca7d8"
+      "cyclonedx": "e8768ef19712cb5123fbfe306ff7f6914f828250a8201569da87797bc88860d4",
+      "normalize": "34ba5089dee841409fcb6922fcc0f7d0303c5665577a82a853db586fbb112143",
+      "scan": "d177892f516f34c92afb857fd75262706972716d868852cdec11457b90b86076"
     },
     "synthetic-crypto-misuse": {
       "cyclonedx": "df2183ea2a05f54960067059552dd48037fb34479373f6c99cad1c722564da75",

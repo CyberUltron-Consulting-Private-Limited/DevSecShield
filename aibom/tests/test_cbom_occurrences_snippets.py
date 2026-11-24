@@ -34,12 +34,7 @@ def test_every_code_supply_finding_has_a_line_and_window():
         assert r.get("snippet"), r["title"]
         assert r["crypto_strength"] == "weak" and r["weak"] is True, r["title"]
     types = {r["title"]: r["algorithm_type"] for r in rows}
-    # the vulnerable pin is the PyJWT library row itself (one row per library, staging
-    # QA Q2-09)
-    assert (
-        types["PyJWT"] == "library"
-        and types["relational_db:aws_db_instance.plain"] == "configuration"
-    )
+    assert types["pyjwt@2.3.0"] == "library" and types["relational_db:aws_db_instance.plain"] == "configuration"
 
 
 def test_symlink_outside_the_root_is_never_read(tmp_path):

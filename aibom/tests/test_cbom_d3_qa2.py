@@ -313,11 +313,16 @@ def test_range_lower_bound_is_unverified_not_a_finding(tmp_path):
     ]
 
 
-def test_exact_pin_flags_the_library_row_itself(tmp_path):
+def test_a_lockfile_version_wins_over_the_range(tmp_path):
+    """``cryptography>=41.0`` with uv.lock at 43.0.1: the row has a real version, so it
+    is not called unverified and the range's lower-bound advisories are not listed
+    (the bank fixture said "no lockfile resolves it" next to uv.lock's 43.0.1)."""
     out = _scan(
         tmp_path,
         {
-            "requirements.txt": "cryptography==38.0.0\n",
+            "requirements.txt": "cryptography>=41.0\n",
+            "uv.lock": 'version = 1\n\n[[package]]\nname = "cryptography"\n'
+            'version = "43.0.1"\nsource = { registry = "https://pypi.org/simple" }\n',
             "app.py": _FERNET_APP,
         },
     )
@@ -326,17 +331,35 @@ def test_exact_pin_flags_the_library_row_itself(tmp_path):
         for c in out["cbom_json"]["components"]
         if c["type"] == "library" and "cryptography" in c["name"]
     ]
-    assert len(libs) == 1
-    assert (
-        libs[0]["version"] == "38.0.0"
-        and libs[0]["purl"] == "pkg:pypi/cryptography@38.0.0"
+    assert [c["name"] for c in libs] == ["pyca/cryptography"]
+    assert libs[0]["version"] == "43.0.1"
+    props = {p["name"]: p["value"] for p in libs[0].get("properties", [])}
+    assert "crypto:versionVerified" not in props
+    assert "crypto:unverifiedAdvisories" not in props
+
+
+def test_exact_pin_is_its_own_flagged_row_linked_to_the_library(tmp_path):
+    """An exact pin keeps origin/dev's shape: the D1 lane judges the manifest row
+    "cryptography@38.0.0" (bench/cbom/d1 NR-LIB-detected); it links to the code lane's
+    pyca/cryptography row, which the PDF and served BOM list as one library."""
+    out = _scan(
+        tmp_path,
+        {
+            "requirements.txt": "cryptography==38.0.0\n",
+            "app.py": _FERNET_APP,
+        },
     )
+    comps = {c["name"]: c for c in out["cbom_json"]["components"]}
+    pin = comps["cryptography@38.0.0"]
+    props = {p["name"]: p["value"] for p in pin.get("properties", [])}
+    assert props["crypto:libraryRef"] == comps["pyca/cryptography"]["bom-ref"]
+    assert props["discovery:source"] == "requirements.txt"
     flagged = [
         r
         for r in out["results"]
         if "VULNERABLE_CRYPTO_LIBRARY" in (r.get("finding_codes") or [])
     ]
-    assert len(flagged) == 1 and flagged[0]["bom_ref"] == libs[0]["bom-ref"]
+    assert len(flagged) == 1 and flagged[0]["bom_ref"] == pin["bom-ref"]
 
 
 # ----------------------------------------------------------------------------- Q2-04 /
