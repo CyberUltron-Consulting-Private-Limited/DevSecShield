@@ -394,8 +394,18 @@ def test_fernet_is_inventoried_and_only_a_literal_key_is_a_finding(tmp_path: Pat
                   "def f():\n    return Fernet(KEY)\n",
     })
     env = _at(rows, "env9.py")
-    assert set(env) == {"Fernet"} and env["Fernet"]["codes"] == []
-    assert env["Fernet"]["props"]["crypto:primitive"] == "ae" and env["Fernet"]["props"]["crypto:keySize"] == "256"
+    # Fernet is AES-128-CBC + HMAC-SHA256 (its 256-bit key is 128 signing + 128
+    # encryption): graded at the AES-128 key (NIST category 1), parts inventoried
+    assert set(env) == {"Fernet", "AES-128-CBC", "HMAC-SHA256"}
+    assert all(r["codes"] == [] for r in env.values())
+    fernet = env["Fernet"]["props"]
+    assert fernet["crypto:primitive"] == "ae" and fernet["crypto:keySize"] == "128"
+    assert fernet["crypto:keyMaterialBits"] == "256"
+    assert fernet["crypto:nistQuantumSecurityLevel"] == "1"
+    assert fernet["crypto:construction"] == "AES-128-CBC + HMAC-SHA256"
+    aes = env["AES-128-CBC"]["props"]
+    assert (aes["crypto:mode"], aes["crypto:keySize"]) == ("CBC", "128")
+    assert aes["crypto:derived"] == "true"
     assert "HARDCODED_KEY" in _at(rows, "lit.py")["secret-key (KEY, lit.py)"]["codes"]
 
 

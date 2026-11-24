@@ -13,6 +13,12 @@ ARG UV_BASE_IMAGE=ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 FROM scratch AS migrations
 COPY _migrations /
 
+# The aibom engine's src/ and config/, as in backend/Dockerfile: the AI BOM PDF grade loads aibom/score/posture.py by
+# path and the Sources-run results reuse the crypto compliance engine. e2e/scripts/build.sh passes the named context
+# "aibom" (the repository's aibom/ folder) and assert_backend fails a build without it.
+FROM ${UV_BASE_IMAGE} AS aibom
+RUN mkdir -p /src /config
+
 # ============================================================
 # Stage 1: Builder — install dependencies and compile bytecode
 # ============================================================
@@ -57,6 +63,8 @@ COPY --from=builder /backend /backend
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 COPY --from=migrations /alembic.ini /prod_database_migrations/alembic.ini
 COPY --from=migrations /migrations /prod_database_migrations/migrations
+COPY --from=aibom /src /opt/aibom/src
+COPY --from=aibom /config /opt/aibom/config
 RUN chmod +x /docker-entrypoint.sh
 
 EXPOSE 8080
