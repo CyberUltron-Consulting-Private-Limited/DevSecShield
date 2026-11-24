@@ -262,11 +262,12 @@ def _oscal(session: Session, run: CbomCollectionRun, at: _dt.datetime) -> bytes 
     ``integrations._oscal_response``), with ``last-modified`` = the run's stamp; None while the run is active (the
     route answers 400 then)."""
     from backend.utilities.cbom_sources.drift import FINISHED
+    from backend.utilities.cbom_sources.regulated_entity import team_profile
     from backend.utilities.integrations import oscal as OSCAL
 
     if run.status not in FINISHED:
         return None
-    doc = OSCAL.run_document(session, run)
+    doc = OSCAL.run_document(session, run, team=team_profile(session, run.team_id))
     doc["assessment-results"]["metadata"]["last-modified"] = iso_z(at)
     problems = OSCAL.validate(doc)
     if problems:

@@ -34,6 +34,7 @@ from backend.utilities.cicd.api_keys import (
     revoked_marker,
     with_key_record,
 )
+from backend.utilities.cbom_sources.regulated_entity import team_profile
 from backend.utilities.cicd.cbom_page import project_cbom_ci_page
 from backend.utilities.cicd.migrate_dast_logs import migrate_dast_cicd_logs_for_team
 from backend.utilities.cicd.poll import poll_for_results
@@ -783,6 +784,9 @@ async def get_cicd_integration(
             has_dast_profile = session.exec(
                 select(DastScanProfile.id).where(DastScanProfile.team_id == team_id)
             ).first() is not None
+            # the team's regulatory profile: the CBOM page's remediation cites only the clauses that bind the team
+            # (PR #485 review 2 M2; one settings read, only for a CBOM integration)
+            cbom_team = team_profile(session, team_id) if (scan_type or "").lower() == "cbom" else None
 
         # STEP [ 4 ] : ==================================== Get the ci cd integration logs from the mongo db ====================================
         cicd_logs_collection = mongo_db["cicd_logs"]
@@ -858,7 +862,7 @@ async def get_cicd_integration(
                 cbom_page = None
                 if (scan_type or "").lower() == "cbom" and isinstance(log.get("results"), dict):
                     try:
-                        cbom_page = project_cbom_ci_page(log["results"])
+                        cbom_page = project_cbom_ci_page(log["results"], team=cbom_team)
                     except Exception as exc:
                         console.print(f"CBOM CI page projection failed: {exc}", style="bold red")
                         cbom_page = None

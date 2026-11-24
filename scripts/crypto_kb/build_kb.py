@@ -283,6 +283,7 @@ def build(version: str) -> dict:
         "libraries": library_rules(),
         "compliance": compliance,
         "clauses": clause_catalog,
+        "applicability": kb_compliance.applicability(),
         "pqc_context": kb_compliance.pqc_context(research),
     }
 

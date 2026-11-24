@@ -1,4 +1,5 @@
-"""T-1: Scope Baseline & Asset Population Register (deliverable #1), WP3a.
+"""T-1: Scope Baseline and Asset Population Register (SOW D1), WP3a; FIX-A3 (SOW audit A-10): the population
+by SOW layer and by asset kind (no "Other"), and the source metadata table, replace the blank owner columns.
 
 Covers ``backend/utilities/pdf/cbom_scope_register_pdf.py``: ``build_pdf(view) -> bytes`` and the
 ``build_body(view, styles, width)`` flowables behind it.
@@ -30,6 +31,7 @@ import ast
 import base64
 import contextlib
 import copy
+import dataclasses
 import html
 import json
 import re
@@ -103,7 +105,9 @@ SECTION_HEADINGS = (
 SUB_HEADINGS = (
     "Boundary items",
     "Assessment boundary statement and approver",
-    "Assets by type and impact",
+    "Source metadata",
+    "Asset population by SOW layer",
+    "Assets by kind and impact",
     "Asset population by source",
     "How each CBOM scan was treated",
     "Scans not included",
@@ -119,30 +123,21 @@ SOURCES_HEADER = [
     "Last scanned (age)",
     "Last attempt",
     "Fidelity",
+    "Layer",
     "Assets",
-    "Owner (assessor)",
-    "Business system (assessor)",
 ]
-BY_SOURCE_HEADER = [
-    "#",
-    "Source",
-    "Algorithms",
-    "Certificates",
-    "Protocols",
-    "Key material",
-    "Total",
-    "Libraries",
-    "Critical",
-    "High",
-    "Medium",
-    "Low",
-]
-BY_TYPE_HEADER = ["Asset type", "Critical", "High", "Medium", "Low", "Total"]
+METADATA_HEADER = ["#", "Source", "Layer", "Owner", "Application", "Data classification", "Data lifetime",
+                   "Criticality", "Exposure"]
+LAYER_HEADER = ["Layer", "Sources", "Assets", "Algorithms", "Certificates", "Keys and secrets",
+                "Protocols and endpoints", "Libraries", "Encryption settings", "Findings"]
+# kinds: algorithms, certificates, keys, protocols, libraries, settings (cbom_population.KINDS); never "Other"
+BY_SOURCE_HEADER = ["#", "Source", "Layer", "Algo.", "Certs", "Keys", "Proto.", "Libs", "Settings", "Total",
+                    "Critical", "High", "Medium", "Low"]
+BY_TYPE_HEADER = ["Asset kind", "Critical", "High", "Medium", "Low", "Total"]
 # The fixture's clean inventory rows (no finding code) have no impact: they are an "Info" column, never "Low".
-# The WP3a advisory library rows have no crypto assetType ("other"): the renderer adds its
-# "Other types" column after Key material.
-BY_SOURCE_HEADER_INFO = [*BY_SOURCE_HEADER[:6], "Other types", *BY_SOURCE_HEADER[6:], "Info"]
-BY_TYPE_HEADER_INFO = ["Asset type", "Critical", "High", "Medium", "Low", "Info", "Total"]
+# The WP3a advisory library rows have no crypto assetType: they are library assets (kind "Libraries").
+BY_SOURCE_HEADER_INFO = [*BY_SOURCE_HEADER, "Info"]
+BY_TYPE_HEADER_INFO = ["Asset kind", "Critical", "High", "Medium", "Low", "Info", "Total"]
 
 
 def _with_info(counts):
@@ -196,9 +191,10 @@ class Expect:
         return sum(self.types) + self.other
 
     @property
-    def compact(self) -> str:
-        text = "/".join(str(n) for n in (*self.types, self.libs))
-        return f"{text}\n+{self.other} other" if self.other else text
+    def kinds(self) -> tuple[int, ...]:
+        """(algorithms, certificates, keys, protocols, libraries, settings): ``cbom_population.KINDS`` order."""
+        algorithms, certificates, protocols, keys = self.types
+        return (algorithms, certificates, keys, protocols, self.other, 0)
 
 
 SOURCES = (
@@ -236,6 +232,7 @@ PAYMENTS = SOURCES[3]
 # WP13 regeneration (round-5 engine): 68 - 1 (WP2 AES-CBC duplicate) + 2 (WP3a advisory rows).
 HEADLINE_OCCURRENCES = 69
 HEADLINE_BY_TYPE = (36, 17, 2, 12)  # algorithms, certificates, protocols, key material
+HEADLINE_BY_KIND = (36, 17, 12, 2, 2, 0)  # algorithms, certificates, keys, protocols, libraries, settings
 HEADLINE_OTHER = 2  # the two advisory library rows (no crypto assetType)
 HEADLINE_BY_IMPACT = (1, 25, 5, 38)  # Critical, High, Medium, clean inventory (Info)
 UNIQUE_CERTIFICATES = 14
@@ -245,9 +242,10 @@ SOURCE_LEVEL_LIBRARIES = 30  # 3 + 0 + 4 + 5 + 0 + 18 + 0
 CROSS_TAB = (
     ("Algorithms", (0, 10, 3, 23)),
     ("Certificates", (1, 5, 2, 9)),
-    ("Protocols", (0, 2, 0, 0)),
-    ("Key material", (0, 6, 0, 6)),
-    ("Other types", (0, 2, 0, 0)),
+    ("Keys and secrets", (0, 6, 0, 6)),
+    ("Protocols and endpoints", (0, 2, 0, 0)),
+    ("Libraries", (0, 2, 0, 0)),
+    ("Encryption settings", (0, 0, 0, 0)),
 )
 
 FAILED_LATEST_SENTENCE = (
@@ -566,10 +564,10 @@ def test_document_identity_title_footer_and_metadata(view, pdf, text):
     meta = REPORT_META["cbom_scope_register"]
     assert scope.REPORT_KEY == "cbom_scope_register"
     assert scope.DELIVERABLE_NUMBER == 1
-    assert scope.TITLE == meta["title"] == "Scope Baseline & Asset Population Register"
+    assert scope.TITLE == meta["title"] == "Scope Baseline and Asset Population Register"  # SOW D1 title
     assert info_field(pdf, "Title") == f"{scope.TITLE} - E2E Demo Team"
     expected_id = document_id(view, 1)
-    assert expected_id == f"CBOM-D01-T1-20261019-{view.fingerprint[:8]}"
+    assert expected_id == f"CBOM-D01-T1-20261019-{view.fingerprint[:8]}"  # SOW D1
     assert expected_id in norm(text)
     assert expected_id in (info_field(pdf, "Subject") or "")
     assert authored.TOOL_NAME in norm(text)
@@ -687,7 +685,8 @@ def test_each_source_row_matches_plan_appendix_b(story, expected):
     assert row[4] == expected.first
     assert row[5].split("\n") == [expected.last, expected.age]
     assert row[7] == expected.fidelity
-    assert row[8] == expected.compact
+    assert row[8] == "L1"  # every code-scan source is SOW layer L1
+    assert row[9] == str(expected.total)
     # the scan the figures come from is named in the attempt cell (or, for payments, the note)
     assert f"#{expected.scan_id}" in row[6]
 
@@ -726,11 +725,14 @@ def test_unparseable_repository_url_is_shown_as_a_dash_not_echoed():
     assert "not a url" not in deep_text(row)
 
 
-def test_manual_owner_and_business_system_cells_are_blank_for_every_source(story):
+def test_source_metadata_is_to_confirm_for_code_sources_that_carry_none(story):
+    """FIX-A3: no blank (assessor) owner cells; the platform's metadata, else "to confirm" (code repositories)."""
     table = sources_table(story)
-    assert header_of(table)[-2:] == ["Owner (assessor)", "Business system (assessor)"]
-    for row in rows_of(table):
-        assert row[9] == "" and row[10] == ""
+    assert not [h for h in header_of(table) if h.endswith(authored.ASSESSOR_SUFFIX)]
+    rows = rows_of(find_table(story, METADATA_HEADER))
+    assert [row[1] for row in rows] == [s.label for s in SOURCES]
+    for row in rows:
+        assert row[2] == "L1" and row[3:] == ["to confirm"] * 6, row
 
 
 def test_payments_row_says_the_latest_attempt_failed_and_figures_reflect_scan_2(story, text):
@@ -763,7 +765,8 @@ def test_source_limits_and_legends_are_printed(text):
     flat = norm(text)
     assert "the same repository on two branches is two sources" in flat
     assert "two uploaded archives with the same title are one source" in flat
-    assert "Assets: algorithms / certificates / protocols / key material / libraries" in flat
+    assert "Layer: the SOW scope layer of the source" in flat
+    assert "Assets: the asset occurrences in the source's current result" in flat
     assert "Legacy: the scan predates the current CBOM engine" in flat
 
 
@@ -798,14 +801,14 @@ def test_population_kpi_strip_shows_the_headline_numbers(story):
     assert value_after("Asset occurrences") == "69"
     assert value_after("Algorithms") == "36"
     assert value_after("Certificates") == "17"
-    assert value_after("Protocols") == "2"
-    assert value_after("Key material") == "12"
+    assert value_after("Protocols and endpoints") == "2"
+    assert value_after("Keys and secrets") == "12"
     assert f"{UNIQUE_CERTIFICATES} unique" in lines  # the certificate card's hint
 
 
 def test_assets_by_type_and_impact_matrix_equals_the_raw_fixture_cross_tab(story):
     rows = rows_of(find_table(story, BY_TYPE_HEADER_INFO))
-    assert [row[0] for row in rows] == [name for name, _ in CROSS_TAB] + ["All asset types"]
+    assert [row[0] for row in rows] == [name for name, _ in CROSS_TAB] + ["All kinds"]
     for row, (name, impacts) in zip(rows, CROSS_TAB, strict=False):
         assert row[1:6] == [str(n) for n in _with_info(impacts)], name
         assert row[6] == str(sum(impacts)), name
@@ -816,10 +819,10 @@ def test_assets_by_type_and_impact_matrix_equals_the_raw_fixture_cross_tab(story
 def test_population_by_source_row_matches_the_raw_fixture(story, expected):
     rows = {row[1]: row for row in rows_of(find_table(story, BY_SOURCE_HEADER_INFO))}
     row = rows[expected.label]
-    assert row[2:7] == [str(n) for n in (*expected.types, expected.other)]  # + Other types
-    assert row[7] == str(expected.total)
-    assert row[8] == str(expected.libs)
-    assert row[9:14] == [str(n) for n in _with_info(expected.impacts)]
+    assert row[2] == "L1"
+    assert row[3:9] == [str(n) for n in expected.kinds]  # the advisory library rows are Libraries, not Other
+    assert row[9] == str(expected.total)
+    assert row[10:15] == [str(n) for n in _with_info(expected.impacts)]
 
 
 def test_population_by_source_total_row_reconciles_with_the_rows_and_the_headline(story, view):
@@ -829,28 +832,24 @@ def test_population_by_source_total_row_reconciles_with_the_rows_and_the_headlin
     body, total = rows[:-1], rows[-1]
     assert [row[1] for row in body] == [s.label for s in SOURCES]
     assert total[1] == "All sources"
-    # column 7 is Total (types + Other types), column 8 Libraries
-    for index in (2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13):  # everything except the libraries column
+    for index in range(3, 15):  # every kind, the total and every impact column add up
         assert total[index] == str(sum(int(row[index]) for row in body)), index
-    assert total[2:7] == [str(n) for n in (*HEADLINE_BY_TYPE, HEADLINE_OTHER)]
-    assert total[7] == str(HEADLINE_OCCURRENCES)
-    assert total[9:14] == [str(n) for n in _with_info(HEADLINE_BY_IMPACT)]
-    # libraries are de-duplicated across sources: 25 unique, not the sum of the rows
-    assert total[8] == f"{UNIQUE_LIBRARIES} unique"
-    assert sum(int(row[8]) for row in body) == SOURCE_LEVEL_LIBRARIES > UNIQUE_LIBRARIES
-    # the printed figures are the aggregator's own (renderer neither recomputes nor drops)
+    assert total[3:9] == [str(n) for n in HEADLINE_BY_KIND]
+    assert total[9] == str(HEADLINE_OCCURRENCES)
+    assert total[10:15] == [str(n) for n in _with_info(HEADLINE_BY_IMPACT)]
+    # the printed figures agree with the aggregator's own per-source counts (renderer neither adds nor drops)
     for source in view.sources:
         row = next(r for r in body if r[1] == source.label)
-        assert row[2:7] == [str(source.asset_counts.get(t, 0)) for t in (
-            "algorithm", "certificate", "protocol", "related-crypto-material", "other")]
-        assert row[9:14] == [str(source.impact_counts.get(i, 0)) for i in (
+        assert int(row[9]) == sum(source.asset_counts.values()), source.label
+        assert row[10:15] == [str(source.impact_counts.get(i, 0)) for i in (
             "Critical", "High", "Medium", "Low", "Info")]
 
 
 def test_population_basis_and_library_statements(text):
     flat = norm(text)
-    assert "latest successful scan of each source" in flat
-    assert "counted twice because each source's use is a separate exposure" in flat
+    assert "latest successful result of each source" in flat
+    assert "is one occurrence in each, because each source's use is a separate exposure" in flat
+    assert "A certificate is the exception" in flat  # PR #485 M6: certificates are counted once across sources
     assert (
         f"Crypto libraries: {UNIQUE_LIBRARIES} unique across sources "
         f"({SOURCE_LEVEL_LIBRARIES} source-level" in flat
@@ -977,7 +976,7 @@ def test_every_assessor_column_carries_the_suffix_and_every_assessor_cell_is_emp
         for row in rows_of(table):
             for index in manual:
                 assert row[index] == "", (header[index], row)
-    assert seen == 4  # sources, boundary items, statement form, checklist (sign-off has none)
+    assert seen == 3  # boundary items, statement form, checklist (sign-off has none; FIX-A3: sources have metadata)
 
 
 def test_nothing_in_the_manual_parts_is_pre_filled_with_a_placeholder_word(text):
@@ -1003,15 +1002,15 @@ def test_works_with_zero_scans():
         assert heading in flat
     story = body_of(empty)
     # live tables degrade to the helper's single "No entries" line; every count is zero
-    assert rows_of(sources_table(story)) == [[authored.EMPTY_TABLE_TEXT] + [""] * 10]
+    assert rows_of(sources_table(story)) == [[authored.EMPTY_TABLE_TEXT] + [""] * 9]
     assert rows_of(find_table(story, BASIS_HEADER))[:3] == [
         ["CBOM scans of the team", "0"],
         ["Eligible: completed successfully", "0"],
         ["Included in this register", "0"],
     ]
     placeholder = authored.EMPTY_TABLE_TEXT
-    assert rows_of(find_table(story, BY_SOURCE_HEADER)) == [[placeholder] + [""] * 11]
-    zeros = ["All asset types", "0", "0", "0", "0", "0"]
+    assert rows_of(find_table(story, BY_SOURCE_HEADER)) == [[placeholder] + [""] * 13]
+    zeros = ["All kinds", "0", "0", "0", "0", "0"]
     assert rows_of(find_table(story, BY_TYPE_HEADER))[-1] == zeros
     manual_forms = (BOUNDARY_HEADER, CHECKLIST_HEADER)  # still printed for an empty team
     assert [len(rows_of(find_table(story, h))) for h in manual_forms] == [5, 6]
@@ -1047,7 +1046,7 @@ def test_legacy_only_team_gets_the_reduced_fidelity_banner(raw_fixture):
     assert "NOT-A-REAL-TOKEN-CANARY" not in flat and "x-access-token" not in flat
     story = body_of(legacy)
     (row,) = rows_of(sources_table(story))
-    assert row[7] == "LEGACY" and row[8] == "9/1/1/1/4"
+    assert row[7] == "LEGACY" and row[8:] == ["L1", "12"]
     assert find_table(story, QUALITY_HEADER) is not None
 
 
@@ -1110,23 +1109,22 @@ def test_zip_file_and_bare_scan_sources_use_their_kind_labels_and_no_repository(
     assert [r[2] for r in rows] == [DASH, DASH, DASH]
 
 
-def test_unknown_asset_types_and_impacts_still_reconcile_through_an_other_bucket():
-    source = make_source(
-        1,
-        asset_counts={"algorithm": 2, "other": 3},
-        impact_counts={"High": 1, "Low": 2, "Severe": 2},
+def test_unknown_asset_types_become_encryption_settings_and_unknown_impacts_an_other_column():
+    """FIX-A3: an asset with no crypto asset type is a library or an encryption setting, never "Other types"."""
+    source = make_source(1)
+    assets = (
+        make_asset("AES-128", "algorithm", "High", current=True),
+        make_asset("AES-256", "algorithm", "Low", current=True),
+        make_asset("tls-config", "other", "Low", current=True),
+        make_asset("disk", "other", "Severe", current=True),
+        make_asset("odd", "something-new", "Severe", current=True),
     )
-    view = make_view(
-        sources=(source,),
-        asset_occurrences=5,
-        assets_by_type={"algorithm": 2, "other": 3},
-        assets_by_impact={"High": 1, "Low": 2, "Severe": 2},
-    )
-    header = [*BY_SOURCE_HEADER[:6], "Other types", *BY_SOURCE_HEADER[6:], "Other"]
-    table = find_table(body_of(view), header)
-    row = rows_of(table)[0]
-    assert row[6] == "3" and row[7] == "5"  # the extra type column and the total add up
-    assert row[-1] == "2"
+    view = make_view(sources=(source,), assets=assets, asset_occurrences=5)
+    header = [*BY_SOURCE_HEADER, "Other"]
+    row = rows_of(find_table(body_of(view), header))[0]
+    assert row[3:10] == ["2", "0", "0", "0", "0", "3", "5"]  # algorithms 2, settings 3, total 5
+    assert row[-1] == "2"  # the two "Severe" impacts
+    assert "Other types" not in norm("\n".join(story_texts(body_of(view))))
 
 
 # =============================================================================================
@@ -1135,12 +1133,16 @@ def test_unknown_asset_types_and_impacts_still_reconcile_through_an_other_bucket
 def test_source_rows_are_capped_with_an_omission_notice(monkeypatch):
     monkeypatch.setattr(scope, "MAX_SOURCE_ROWS", 3)
     sources = tuple(make_source(i) for i in range(1, 8))
-    flowables = body_of(make_view(sources=sources))
+    assets = tuple(
+        dataclasses.replace(make_asset(f"{kind}-{i}-{n}", kind, "High", current=True), source_key=src.key,
+                            source_label=src.label)
+        for i, src in enumerate(sources) for n, kind in enumerate(("algorithm", "algorithm", "certificate")))
+    flowables = body_of(make_view(sources=sources, assets=assets))
     assert len(rows_of(sources_table(flowables))) == 3
     by_source = rows_of(find_table(flowables, BY_SOURCE_HEADER))
     assert len(by_source) == 3 + 1  # the capped rows + the total row
     assert by_source[-1][1] == "All sources"
-    assert by_source[-1][6] == "21"  # the total still covers all seven sources (7 x 3 assets)
+    assert by_source[-1][9] == "21"  # the total still covers all seven sources (7 x 3 assets)
     notice = norm("\n".join(story_texts(flowables)))
     # one notice under the sources table AND one under the population-by-source table
     assert notice.count("4 further sources are not listed") == 2
@@ -1179,7 +1181,7 @@ def test_assets_seen_only_in_older_scans_stay_out_of_the_matrix_and_are_counted_
     rows = {r[0]: r[1:] for r in rows_of(find_table(flowables, BY_TYPE_HEADER))}
     assert rows["Algorithms"] == ["0", "1", "0", "0", "1"]  # only the current RSA-2048
     assert rows["Certificates"] == ["0", "0", "0", "1", "1"]
-    assert rows["All asset types"] == ["0", "1", "0", "1", "2"]
+    assert rows["All kinds"] == ["0", "1", "0", "1", "2"]
     quality = dict(rows_of(find_table(flowables, QUALITY_HEADER)))
     assert quality["Asset occurrences seen only in older scans"] == "2"
 
@@ -1203,10 +1205,12 @@ def test_many_legacy_sources_are_named_up_to_a_limit_then_counted():
     assert quality["Sources represented by a legacy-format scan"] == f"12: {named}; and 2 more"
 
 
-def test_other_asset_types_in_a_source_are_summarised_in_the_compact_cell():
-    source = make_source(1, asset_counts={"algorithm": 2, "other": 3}, library_count=4)
-    row = rows_of(sources_table(body_of(make_view(sources=(source,)))))[0]
-    assert row[8].split("\n") == ["2/0/0/0/4", "+3 other"]
+def test_the_sources_table_prints_the_layer_and_the_asset_total_not_a_cryptic_tuple():
+    """FIX-A3 (SOW audit A-18): "0/3/5/0/0 +3 other" is replaced by the layer and the asset count."""
+    source = make_source(1)
+    assets = tuple(make_asset(f"a{n}", "algorithm", "High", current=True) for n in range(4))
+    row = rows_of(sources_table(body_of(make_view(sources=(source,), assets=assets))))[0]
+    assert row[8:] == ["L1", "4"]
 
 
 @pytest.mark.parametrize(
@@ -1292,7 +1296,7 @@ def test_control_characters_nul_and_huge_strings_cannot_break_the_document():
 
 def test_every_table_fits_inside_the_frame(story):
     tables = list(iter_tables(story))
-    assert len(tables) == 11  # KPI strip + 10 data / form tables
+    assert len(tables) == 13  # KPI strip + 12 data / form tables (FIX-A3: + source metadata, + layers)
     for table in tables:
         assert sum(table._colWidths) <= FRAME_WIDTH + 0.01, header_of(table)
 

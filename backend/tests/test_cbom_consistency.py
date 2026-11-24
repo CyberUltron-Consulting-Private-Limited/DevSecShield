@@ -149,7 +149,7 @@ def test_jira_candidates_are_the_findings(run, expected, mongo):
 def test_ci_page_lists_the_same_findings(run, expected, mongo):
     from backend.utilities.cicd.cbom_page import project_cbom_ci_page
 
-    page = project_cbom_ci_page(run)
+    page = project_cbom_ci_page(run, team=None)  # every clause: this test counts findings, not clauses
     assert len(page["findings"]) == expected["findings"]
     assert page["dashboard"]["remediation_actions_required"]["total_findings"] == expected["findings"]
     assert page["dashboard"]["card_data"]["total_crypto_vulnerabilities"] == expected["findings"]

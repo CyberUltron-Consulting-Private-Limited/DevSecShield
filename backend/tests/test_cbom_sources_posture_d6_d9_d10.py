@@ -240,7 +240,7 @@ def test_d6_registers_list_what_the_sources_collected(view):
                                   "oci-master", "legacy-rsa", "aes256-data", "lab-3des", "LabTdes"}
     by_key = {row["Key"]: row for row in keys}
     assert by_key["payments-cmk"]["Rotation"] == "disabled"
-    assert by_key["payments-cmk"]["Source"] == "Sources run #52 · AWS production"
+    assert by_key["payments-cmk"]["Source"] == "AWS production"  # a source is labelled by its name (PR #485 m8)
     assert by_key["tde-protector"]["Algorithm and size"] == "RSA-3072"
     assert by_key["lab-3des"]["State"] == "Pre-Active"
     stores = rows_under(body, "Key store")
@@ -350,7 +350,7 @@ def test_d10_merges_a_code_scan_library_and_a_sources_package_of_the_same_name_a
     merged = merge_collections(dataclasses.replace(_empty_view(), libs=(code,)), rows, collections)
     same = [lib for lib in merged.libs if lib.name.startswith("libssl3t64")]
     assert len(same) == 1
-    assert set(same[0].source_labels) == {"github.com/acme/app (main)", "Sources run #52 · Linux web server"}
+    assert set(same[0].source_labels) == {"github.com/acme/app (main)", "Linux web server"}
 
 
 def test_d10_vendor_register_is_built_from_the_evidence_tab():
@@ -559,7 +559,7 @@ def test_team_view_loads_the_vendor_register_and_the_collected_posture(sources_r
     assert (unencrypted["at_rest"], unencrypted["impact"], unencrypted["key_management"]) == (
         "NOT_ENCRYPTED", "High", "none")
     assert "STORAGE_UNENCRYPTED" in unencrypted["finding_codes"]
-    assert unencrypted["source"] == f"Sources run #{run_id} · " + unencrypted["source"].split(" · ", 1)[1]
+    assert unencrypted["source"] == "x1-ssh-lab"  # the collecting source's name, never "Sources run #N" (PR #485 m8)
     assert (view.vendors[0]["attested_on"], view.vendors[0]["evidence_ref"]) == (
         "2026-11-12", "https://acme.example/security")
     keys = [r for r in rows_under(story(d6, view), "Key")]
@@ -701,9 +701,9 @@ def test_a_deleted_sources_collection_is_never_current_posture_evidence(seeded_v
     from backend.utilities.pdf import cbom_network_tls_pdf as d7
 
     gone = [c.key for c in seeded_view.collections if not c.source_kind]
-    assert [c.label.split(" · ", 1)[1] for c in seeded_view.collections if not c.source_kind] == [GONE_LABEL]
+    assert [c.label for c in seeded_view.collections if not c.source_kind] == [GONE_LABEL]
     # the posture: no source row, no fact of the deleted collection
-    assert [row.label.split(" · ", 1)[1] for row in seeded_view.posture.sources] == [
+    assert [row.label for row in seeded_view.posture.sources] == [
         "AWS PCA only", "AWS prod", "AWS prod (second role)", "Lab network", "SQL Server 2022"]
     assert not [f for f in seeded_view.posture.facts if f.source_key in gone]
     assert not [f for f in seeded_view.posture.facts if GONE_LB in str(f.fact.get("name") or "")]
@@ -759,9 +759,9 @@ def test_d7_prints_a_listener_two_sources_collected_once_and_names_both(seeded_v
     assert len(register) == 1
     where = re.sub(r"\s+", " ", register[0]["Location"])
     # the newest read wins (the second role, 4 h ago) and the other source is named
-    assert "Sources run #1 · AWS prod (second role) (also: Sources run #1 · AWS prod)" in where
+    assert "AWS prod (second role) (also: AWS prod)" in where
     # both sources stay in the D7 source table: each holds evidence printed here
-    assert [s.label.split(" · ", 1)[1] for s in scoped.posture.sources] == [
+    assert [s.label for s in scoped.posture.sources] == [
         "AWS prod", "AWS prod (second role)", "Lab network"]
 
 

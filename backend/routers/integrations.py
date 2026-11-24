@@ -44,6 +44,7 @@ from backend.utilities.cbom_sources.http import (
     server_error,
     write_limiter,
 )
+from backend.utilities.cbom_sources import regulated_entity as REG_ENTITY
 from backend.utilities.cbom_sources.kinds import check_pem_certificates
 from backend.utilities.integrations import cmdb as CMDB
 from backend.utilities.integrations import oscal as OSCAL
@@ -426,7 +427,7 @@ def _run_oscal(engine, team_id: int, run_id: int) -> Response:
             raise HTTPException(status_code=404, detail="Run not found")
         if run.status not in FINISHED:
             raise HTTPException(status_code=400, detail="The run has not finished yet")
-        doc = OSCAL.run_document(session, run)
+        doc = OSCAL.run_document(session, run, team=REG_ENTITY.team_profile(session, team_id))
     return _oscal_response(doc, f"zeroshield-cbom-run-{run_id}-oscal-assessment-results.json")
 
 
@@ -444,7 +445,8 @@ def _scan_oscal(engine, team_id: int, scan_id: int) -> Response:
             raise HTTPException(status_code=404, detail="Scan not found")
         if scan.scan_status != "success":
             raise HTTPException(status_code=400, detail="The scan has not finished successfully")
-        doc = OSCAL.scan_document(scan)
+        # the team's own RBI instrument, as the push feed (document_for) and every page (review 2 M1)
+        doc = OSCAL.scan_document(scan, team=REG_ENTITY.team_profile(session, team_id))
     return _oscal_response(doc, f"zeroshield-cbom-scan-{scan_id}-oscal-assessment-results.json")
 
 

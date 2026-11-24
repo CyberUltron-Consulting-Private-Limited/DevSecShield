@@ -51,6 +51,7 @@ from backend.utilities.cbom_sources import agents as AG
 from backend.utilities.cbom_sources import limits as LIM
 from backend.utilities.cbom_sources import pqc_targets as PQT
 from backend.utilities.cbom_sources import held as HELD
+from backend.utilities.cbom_sources import regulated_entity as REG_ENTITY
 from backend.utilities.cbom_sources import host_key_resets as HKR  # #150
 from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources import run_status as RUN_STATUS
@@ -1267,15 +1268,25 @@ def _update_settings(engine, team_id: int, user_id: int, body: SettingsUpdate) -
                     seen.add(canonical)
                     items.append({"cidr": canonical, "reason": item.reason})
             changes["network_exclusions"] = items
+        entity = changes.pop("regulated_entity", None)  # stored in the risk_model JSON (regulated_entity.py)
+        flags = {f: changes.pop(f) for f in REG_ENTITY.FLAGS if f in changes}
+        flags = {f: bool(v) for f, v in flags.items() if v is not None}  # null leaves the flag as it is
         if "risk_model" in changes:
             # merge: a field the request leaves out keeps its value; an explicit null clears it; risk_model: null
-            # clears all three
+            # clears all three (the regulatory profile stored beside them is not a Mosca input: it stays)
+            profile_keys = (REG_ENTITY.SETTINGS_KEY, *REG_ENTITY.FLAGS)
+            kept = {k: v for k, v in (row.risk_model or {}).items() if k in profile_keys}
             changes["risk_model"] = ({**(row.risk_model or {}), **body.risk_model.model_dump(exclude_unset=True)}
-                                     if body.risk_model is not None else {})
+                                     if body.risk_model is not None else kept)
             # the wave windows in force after the merge (a stored value or the KB default fills a field not sent)
             order = PQT.window_order_error(PQT.fix_windows(changes["risk_model"]))
             if order:
                 raise HTTPException(status_code=422, detail=order)
+        if entity is not None:
+            changes["risk_model"] = {**(changes.get("risk_model", row.risk_model) or {}),
+                                     REG_ENTITY.SETTINGS_KEY: REG_ENTITY.normalise(entity)}
+        if flags:
+            changes["risk_model"] = {**(changes.get("risk_model", row.risk_model) or {}), **flags}
         if "require_signed_nodes" in changes and changes["require_signed_nodes"] is None:
             changes.pop("require_signed_nodes")  # null means "leave as is" (the column is NOT NULL)
         if "cert_domains" in changes:
@@ -1897,7 +1908,8 @@ def _run_asset_remediation(engine, team_id: int, run_id: int, asset_id: int) -> 
                    "description": view.get("finding") or "", "title": row.algorithm or row.name or row.location,
                    "algorithm_name": row.algorithm or row.name, "location": row.location,
                    "asset_type": row.asset_type, "target": row.target}
-    return remediation(finding, "node")
+        team = REG_ENTITY.team_profile(session, team_id)  # the clauses that bind the team (SOW audit A-11)
+    return remediation(finding, "node", team=team)
 
 
 @router.get(BASE + "/runs/{run_id}/assets/{asset_id}/remediation", dependencies=[*READ, access.team("cbom.read")],

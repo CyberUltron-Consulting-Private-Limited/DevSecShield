@@ -202,7 +202,7 @@ def test_code_scan_and_sources_run_agree_and_the_shared_certificate_counts_once(
     assert view.assets_by_type.get("certificate", 0) == 1
     assert len([c for c in view.certs if c.current]) == 1
     current_cert = next(c for c in view.certs if c.current)
-    winner = "github.com/acme/x1" if code_newer else "Sources run"
+    winner = "github.com/acme/x1" if code_newer else "x1-ssh-lab"  # the Sources source, named by its name (PR #485 m8)
     assert any(winner in label for label, _path in current_cert.locations)
     assert sum(view.issue_by_impact.values()) == sum(data["severity_distribution"][s]
                                                      for s in ("critical", "high", "medium", "low"))

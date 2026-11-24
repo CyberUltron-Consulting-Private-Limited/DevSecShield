@@ -161,7 +161,7 @@ def test_javascript_fixes_still_parse(tmp_path):
 
 
 def test_remediation_response_carries_fix_diff_and_demo():
-    out = kb_remediation.remediation(row("import hashlib\nh = hashlib.md5(x)", 2))
+    out = kb_remediation.remediation(row("import hashlib\nh = hashlib.md5(x)", 2), team=None)
     assert out["engine"] == kb_remediation.ENGINE and out["source"] == "knowledge_base"
     assert out["fix"]["fixed_code"].endswith("hashlib.sha256(x)") and out["fix"]["language"] == "python"
     assert out["diff"].startswith("--- a/src/app.py") and out["code_fix"]["rules"] == ["py-hashlib-call"]

@@ -178,6 +178,30 @@ const TEXT = {
     why: "Without X, Y and Z, quantum-vulnerable assets grade as Unknown, and the record lets an old run's grade be explained later.",
     example: "X 10, Y 3, Z 12; Core banking DB keeps data 25 y; 2 Q0 gaps.",
   },
+  // src: backend/utilities/cbom_sources/regulated_entity.py:24-35, frontend/components/cbom/sources/regulatedEntity.ts:9-21 — the seven entity types RBI issued 2026 cybersecurity directions for, plus other; NBFC by default
+  "cbsrc.rr.regulated_entity": {
+    what: "The kind of RBI-regulated entity the team is: NBFC (the default), commercial bank, small finance bank, payments bank, urban co-operative bank, All India Financial Institution, credit information company, or other. The run page, the asset detail, OSCAL and the deliverables cite the RBI directions for that kind only.",
+    why: "RBI issued separate 2026 directions per entity type; citing the Commercial Banks Directions for an NBFC would misstate its obligations.",
+    example: "NBFC: the RBI NBFC Directions 2026, para 118 (cryptographic controls; Middle Layer and above).",
+  },
+  // src: backend/utilities/cbom_sources/regulated_entity.py:37-43, scripts/crypto_kb/kb_compliance.py (POOLED_FRAMEWORKS pci_dss_4)
+  "cbsrc.rr.flag.processes_card_data": {
+    what: "Whether the team stores, processes or transmits payment-card data. PCI DSS 4.0 rows are shown only when it does.",
+    why: "PCI DSS binds card-data environments only; showing it to a team without card data overstates its obligations.",
+    example: "A lender with a card issuing business: on.",
+  },
+  // src: backend/utilities/cbom_sources/regulated_entity.py:37-43, scripts/crypto_kb/kb_compliance.py (CLAUSE_FRAMEWORKS SEBI CSCRF)
+  "cbsrc.rr.flag.sebi_regulated": {
+    what: "Whether the team is a SEBI-regulated entity (broker, depository participant, mutual fund ...). SEBI CSCRF clauses are cited only when it is.",
+    why: "SEBI CSCRF binds SEBI's regulated entities; an NBFC that is not one is not bound by it.",
+    example: "An NBFC with a broking arm registered with SEBI: on.",
+  },
+  // src: backend/utilities/cbom_sources/regulated_entity.py:37-43, scripts/crypto_kb/kb_compliance.py (clause_applicability)
+  "cbsrc.rr.flag.government_entity": {
+    what: "Whether the team is a government entity (ministry, department, government institution or public sector enterprise). The CERT-In Guidelines for Government Entities (2023) are cited only when it is.",
+    why: "Those guidelines apply to government entities only; citing them to a private lender misstates its obligations.",
+    example: "A public sector enterprise: on.",
+  },
 } as const satisfies TipAreaText;
 
 export default TEXT;

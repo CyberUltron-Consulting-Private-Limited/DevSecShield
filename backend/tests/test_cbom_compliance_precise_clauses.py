@@ -40,9 +40,25 @@ CERTIN_617 = ("CERT-In", "Guidelines for Government Entities (2023), 6.1.7")
 CERTIN_627 = ("CERT-In", "Guidelines for Government Entities (2023), 6.2.7")
 CERTIN_71 = ("CERT-In", "Guidelines for Government Entities (2023), 7.1")
 CERTIN_457 = ("CERT-In", "Guidelines for Government Entities (2023), 4.5.7")
-RBI_16 = ("RBI", "Master Direction on IT Governance (2023), para 16 Cryptographic controls")
+# PR #485 m2: the 2023 Master Direction is superseded for every entity type it covered and cited by no finding; RBI's
+# 31 July 2026 Directions for the other entity types cite the same obligation (UCB para 25: deprecated algorithms only)
+RBI_SFB = ("RBI", "Small Finance Banks Cybersecurity Directions 2026, para 139")
+RBI_PB = ("RBI", "Payments Banks Cybersecurity Directions 2026, para 139")
+RBI_UCB = ("RBI", "Urban Co-operative Banks Cybersecurity Directions 2026, para 25")
+RBI_AIFI = ("RBI", "AIFI Cybersecurity Directions 2026, para 135")
+RBI_CIC = ("RBI", "Credit Information Companies Cybersecurity Directions 2026, para 135")
+RBI_OTHERS = (RBI_SFB, RBI_PB, RBI_UCB, RBI_AIFI, RBI_CIC)
 RBI_140 = ("RBI", "Commercial Banks Cybersecurity Directions 2026, para 140")
 RBI_106 = ("RBI", "Commercial Banks Cybersecurity Directions 2026, para 106")
+# the other entity types' counterparts of CB para 106 (PR #485 review 2 m3): data in transit and data at rest
+_RBI_105 = tuple(("RBI", f"{name} Cybersecurity Directions 2026, para 105") for name in (
+    "Small Finance Banks", "Payments Banks", "AIFI", "Credit Information Companies"))
+RBI_TRANSIT = (*_RBI_105, ("RBI", "Urban Co-operative Banks Cybersecurity Directions 2026, para 23"))
+RBI_REST = (*_RBI_105, ("RBI", "Urban Co-operative Banks Cybersecurity Directions 2026, para 120"),
+            ("RBI", "NBFC Cybersecurity, Technology: Risk, Resilience and Assurance Framework Directions 2026, "
+                    "para 95(4)"))
+# FIX-A3: NBFCs (RBI NBFC Directions 2026 para 118, cryptographic controls; transmission channels, not data at rest)
+RBI_118 = ("RBI", "NBFC Cybersecurity, Technology: Risk, Resilience and Assurance Framework Directions 2026, para 118")
 SEBI_PRDS1 = ("SEBI CSCRF", "PR.DS Standard 1")
 SEBI_PRDS_1A = ("SEBI CSCRF", "PR.DS.S1-S3 guideline 1.a")
 SEBI_S4_5 = ("SEBI CSCRF", "PR.DS.S4 item 5")
@@ -57,18 +73,18 @@ ALLOW: dict[str, dict[str, set[tuple[str, str]]]] = {
         # level and the krbtgt key age are hygiene no clause in the knowledge base names; a DC-default encryption type
         # is unknown (KB5073381), not an observed weak cipher, so it cites nothing until the default is known
         "AD_FUNCTIONAL_LEVEL_LEGACY": set(),
-        "KERBEROS_DES_ENABLED": {RBI_140, RBI_16, SEBI_H5},
+        "KERBEROS_DES_ENABLED": {RBI_140, RBI_118, *RBI_OTHERS, SEBI_H5},
         "KERBEROS_ENCTYPES_DEFAULT": set(),
-        "KERBEROS_RC4_ENABLED": {RBI_140, RBI_16, SEBI_H5},
-        "KERBEROS_RC4_ONLY": {RBI_140, RBI_16, SEBI_H5},
+        "KERBEROS_RC4_ENABLED": {RBI_140, RBI_118, *RBI_OTHERS, SEBI_H5},
+        "KERBEROS_RC4_ONLY": {RBI_140, RBI_118, *RBI_OTHERS, SEBI_H5},
         "KRBTGT_KEY_OLD": set(),
         "CA_ALLOWS_ANY_NAME": set(),
-        "CA_ALLOWS_WEAK_KEY": {NIST_112, RBI_140, RBI_16},
+        "CA_ALLOWS_WEAK_KEY": {NIST_112, RBI_140, *RBI_OTHERS, RBI_118},
         "CA_LONG_VALIDITY": set(),
         "CA_TEMPLATE_WRITABLE": set(),
-        "CA_WEAK_SIGNING": {CERTIN_8422, NIST_SHA1_SIG, RBI_140, RBI_16},
-        "CBC_ACCEPTED": {CERTIN_8422, RBI_140, RBI_16},
-        "CBC_ONLY": {CERTIN_8422, RBI_140, RBI_16},
+        "CA_WEAK_SIGNING": {CERTIN_8422, NIST_SHA1_SIG, RBI_140, *RBI_OTHERS, RBI_118},
+        "CBC_ACCEPTED": {CERTIN_8422, RBI_140, *RBI_OTHERS, RBI_118},
+        "CBC_ONLY": {CERTIN_8422, RBI_140, *RBI_OTHERS, RBI_118},
         "CERT_EXPIRED": {CERTIN_617, SEBI_S4_5},
         "CERT_CHAIN_EXTRA_EXPIRED": set(),
         "CERT_EXPIRES_30D": {SEBI_S4_5},
@@ -80,45 +96,45 @@ ALLOW: dict[str, dict[str, set[tuple[str, str]]]] = {
         "CERT_UNUSED": set(),
         "CHAIN_INCOMPLETE": {CERTIN_8422},
         "CERT_WILDCARD_SPRAWL": set(),
-        "DB_10G_VERIFIER": {RBI_140, RBI_16},
-        "DB_CLEARTEXT_PW": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1},
+        "DB_10G_VERIFIER": {RBI_140, *RBI_OTHERS, RBI_118},
+        "DB_CLEARTEXT_PW": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1, RBI_118, *RBI_TRANSIT},
         "DB_EOL_VERSION": set(),
         "DB_LEGACY_NNE": {CERTIN_627},
-        "DB_LEGACY_PW_HASH": {RBI_140, RBI_16},
+        "DB_LEGACY_PW_HASH": {RBI_140, *RBI_OTHERS, RBI_118},
         "DB_LOGIN_NO_POLICY": set(),
-        "DB_MD5_ACCEPTED": {RBI_140, RBI_16},
-        "DB_MD5_DEFAULT": {RBI_140, RBI_16},
-        "DB_NATIVE_PW": {RBI_140, RBI_16},
+        "DB_MD5_ACCEPTED": {RBI_140, *RBI_OTHERS, RBI_118},
+        "DB_MD5_DEFAULT": {RBI_140, *RBI_OTHERS, RBI_118},
+        "DB_NATIVE_PW": {RBI_140, *RBI_OTHERS, RBI_118},
         "DB_NO_AUTH": set(),
         "DB_NO_TDE": set(),
-        "DB_NO_TLS": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1},
-        "DB_OLD_PASSWORD": {RBI_140, RBI_16},
-        "DB_PLAINTEXT_PW": {CERTIN_71, RBI_106, SEBI_PRDS1, SEBI_PRDS_1A},
+        "DB_NO_TLS": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1, RBI_118, *RBI_TRANSIT},
+        "DB_OLD_PASSWORD": {RBI_140, *RBI_OTHERS, RBI_118},
+        "DB_PLAINTEXT_PW": {CERTIN_71, RBI_106, SEBI_PRDS1, SEBI_PRDS_1A, *RBI_REST},
         "DB_TDE_OFF": set(),
-        "DB_TLS_MODE": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1},
-        "DB_TLS_OPTIONAL": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1},
+        "DB_TLS_MODE": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1, RBI_118, *RBI_TRANSIT},
+        "DB_TLS_OPTIONAL": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1, RBI_118, *RBI_TRANSIT},
         "DB_TRUST": set(),
-        "DB_WEAK_HASH": {RBI_140, RBI_16},
-        "DH_LT_2048": {NIST_112, RBI_140, RBI_16},
+        "DB_WEAK_HASH": {RBI_140, *RBI_OTHERS, RBI_118},
+        "DH_LT_2048": {NIST_112, RBI_140, *RBI_OTHERS, RBI_118},
         "DISK_CBC": set(),
-        "DISK_PROTECTION_OFF": {CERTIN_71, RBI_106, SEBI_PRDS1, SEBI_PRDS_1A},
-        "DISK_UNENCRYPTED": {CERTIN_71, RBI_106, SEBI_PRDS1, SEBI_PRDS_1A},
+        "DISK_PROTECTION_OFF": {CERTIN_71, RBI_106, SEBI_PRDS1, SEBI_PRDS_1A, *RBI_REST},
+        "DISK_UNENCRYPTED": {CERTIN_71, RBI_106, SEBI_PRDS1, SEBI_PRDS_1A, *RBI_REST},
         "DISK_XTS_128": {CNSA2},
-        "DOTNET_WEAK_TLS": {CERTIN_8422, RBI_140, RBI_16, SEBI_I},
+        "DOTNET_WEAK_TLS": {CERTIN_8422, RBI_140, *RBI_OTHERS, SEBI_I, RBI_118},
         "DOWNGRADE": {CERTIN_8422},
-        "DSA": {RBI_140, RBI_16},
+        "DSA": {RBI_140, *RBI_OTHERS, RBI_118},
         "EBS_DEFAULT_OFF": set(),
-        "EC_LT_224": {NIST_112, RBI_140, RBI_16},
-        "GLUE_CATALOG_UNENCRYPTED": {CERTIN_71, RBI_106, SEBI_PRDS1, SEBI_PRDS_1A},
-        "GLUE_JDBC_NO_TLS": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1},
-        "GLUE_PLAINTEXT_PASSWORD": {CERTIN_71, RBI_106, SEBI_PRDS1, SEBI_PRDS_1A},
-        "IKEV1_ENABLED": {CERTIN_8422, RBI_140, RBI_16},
-        "IKE_AGGRESSIVE": {CERTIN_8422, RBI_140, RBI_16},
+        "EC_LT_224": {NIST_112, RBI_140, *RBI_OTHERS, RBI_118},
+        "GLUE_CATALOG_UNENCRYPTED": {CERTIN_71, RBI_106, SEBI_PRDS1, SEBI_PRDS_1A, *RBI_REST},
+        "GLUE_JDBC_NO_TLS": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1, RBI_118, *RBI_TRANSIT},
+        "GLUE_PLAINTEXT_PASSWORD": {CERTIN_71, RBI_106, SEBI_PRDS1, SEBI_PRDS_1A, *RBI_REST},
+        "IKEV1_ENABLED": {CERTIN_8422, RBI_140, *RBI_OTHERS, RBI_118},
+        "IKE_AGGRESSIVE": {CERTIN_8422, RBI_140, *RBI_OTHERS, RBI_118},
         "IKE_NO_PQ": {CERTIN_851, CNSA2, NIST_IR8547, SEBI_BOX7, SEBI_RA2},
-        "IKE_WEAK_DH": {CERTIN_8422, NIST_112, RBI_140, RBI_16},
-        "IKE_WEAK_ENCR": {CERTIN_8422, NIST_TDEA, RBI_140, RBI_16, SEBI_H5},
-        "IKE_WEAK_INTEG": {CERTIN_8422, RBI_140, RBI_16},
-        "IPSEC_WEAK_TRANSFORM": {CERTIN_8422, NIST_112, NIST_TDEA, RBI_140, RBI_16, SEBI_H5},
+        "IKE_WEAK_DH": {CERTIN_8422, NIST_112, RBI_140, *RBI_OTHERS, RBI_118},
+        "IKE_WEAK_ENCR": {CERTIN_8422, NIST_TDEA, RBI_140, *RBI_OTHERS, SEBI_H5, RBI_118},
+        "IKE_WEAK_INTEG": {CERTIN_8422, RBI_140, *RBI_OTHERS, RBI_118},
+        "IPSEC_WEAK_TRANSFORM": {CERTIN_8422, NIST_112, NIST_TDEA, RBI_140, *RBI_OTHERS, SEBI_H5, RBI_118},
         "KEYSTORE_JKS": {SEBI_H5},
         "KEY_COMPROMISED": set(),
         "KEY_EXTRACTABLE": {SEBI_H5},
@@ -127,7 +143,7 @@ ALLOW: dict[str, dict[str, set[tuple[str, str]]]] = {
         "KEY_NO_ROTATION": set(),
         "KEY_PLAINTEXT_EXPORT": {SEBI_H5},
         "KEY_READABLE": {SEBI_H5},
-        "KEY_WEAK_SYMMETRIC": {NIST_TDEA, RBI_140, RBI_16, SEBI_H5},
+        "KEY_WEAK_SYMMETRIC": {NIST_TDEA, RBI_140, *RBI_OTHERS, SEBI_H5, RBI_118},
         "KEY_WORLD_READABLE": {SEBI_H5},
         "KMS_KEY_MATERIAL_EXPIRES": set(),
         "KMS_KEY_NO_MATERIAL": set(),
@@ -140,68 +156,68 @@ ALLOW: dict[str, dict[str, set[tuple[str, str]]]] = {
         "LIB_EOL": set(),
         "LIB_KNOWN_CVE": {CERTIN_8416},
         "LIB_STATIC": set(),
-        "LINKERD_UNAUTHENTICATED_SERVER": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1},
+        "LINKERD_UNAUTHENTICATED_SERVER": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1, RBI_118, *RBI_TRANSIT},
         "LUKS1": set(),
-        "MESH_DR_TLS_DISABLED": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1},
-        "MESH_MTLS_OFF": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1},
-        "MESH_MTLS_PERMISSIVE": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1},
-        "MIN_SSLv2": {CERTIN_8422, RBI_140, RBI_16, SEBI_I},
-        "MIN_SSLv3": {CERTIN_8422, RBI_140, RBI_16, SEBI_I},
-        "MIN_TLS10": {CERTIN_8422, RBI_140, RBI_16, SEBI_I},
-        "MIN_TLS11": {CERTIN_8422, RBI_140, RBI_16, SEBI_I},
-        "MODBUS_PLAINTEXT": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1},
+        "MESH_DR_TLS_DISABLED": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1, RBI_118, *RBI_TRANSIT},
+        "MESH_MTLS_OFF": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1, RBI_118, *RBI_TRANSIT},
+        "MESH_MTLS_PERMISSIVE": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1, RBI_118, *RBI_TRANSIT},
+        "MIN_SSLv2": {CERTIN_8422, RBI_140, *RBI_OTHERS, SEBI_I, RBI_118},
+        "MIN_SSLv3": {CERTIN_8422, RBI_140, *RBI_OTHERS, SEBI_I, RBI_118},
+        "MIN_TLS10": {CERTIN_8422, RBI_140, *RBI_OTHERS, SEBI_I, RBI_118},
+        "MIN_TLS11": {CERTIN_8422, RBI_140, *RBI_OTHERS, SEBI_I, RBI_118},
+        "MODBUS_PLAINTEXT": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1, RBI_118, *RBI_TRANSIT},
         "NO_FALLBACK_SCSV": {CERTIN_8422},
         "NO_PQ_KEX": {CERTIN_851, CNSA2, NIST_IR8547, SEBI_BOX7, SEBI_RA2},
-        "NO_TLS": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1},
-        "NO_TLS12": {CERTIN_8422, RBI_140, RBI_16, SEBI_I},
+        "NO_TLS": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1, RBI_118, *RBI_TRANSIT},
+        "NO_TLS12": {CERTIN_8422, RBI_140, *RBI_OTHERS, SEBI_I, RBI_118},
         "OPCUA_ANON": set(),
-        "OPCUA_DEPRECATED_POLICY": {CERTIN_8422, NIST_PKCS1, NIST_SHA1_SIG, RBI_140, RBI_16},
-        "OPCUA_NONE_POLICY": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1},
-        "OPCUA_USERNAME_PLAINTEXT": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1},
-        "OPENSSL_ENC_WEAK_KDF": {RBI_140, RBI_16},
-        "PLAINTEXT_LISTENER": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1},
-        "POLICY_LEGACY": {CERTIN_8422, NIST_SHA1_SIG, RBI_140, RBI_16},
-        "PROTO_SSLv2": {CERTIN_8422, RBI_140, RBI_16, SEBI_I},
-        "PROTO_SSLv3": {CERTIN_8422, RBI_140, RBI_16, SEBI_I},
-        "PROTO_TLS10": {CERTIN_8422, RBI_140, RBI_16, SEBI_I},
-        "PROTO_TLS11": {CERTIN_8422, RBI_140, RBI_16, SEBI_I},
+        "OPCUA_DEPRECATED_POLICY": {CERTIN_8422, NIST_PKCS1, NIST_SHA1_SIG, RBI_140, *RBI_OTHERS, RBI_118},
+        "OPCUA_NONE_POLICY": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1, RBI_118, *RBI_TRANSIT},
+        "OPCUA_USERNAME_PLAINTEXT": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1, RBI_118, *RBI_TRANSIT},
+        "OPENSSL_ENC_WEAK_KDF": {RBI_140, *RBI_OTHERS, RBI_118},
+        "PLAINTEXT_LISTENER": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1, RBI_118, *RBI_TRANSIT},
+        "POLICY_LEGACY": {CERTIN_8422, NIST_SHA1_SIG, RBI_140, *RBI_OTHERS, RBI_118},
+        "PROTO_SSLv2": {CERTIN_8422, RBI_140, *RBI_OTHERS, SEBI_I, RBI_118},
+        "PROTO_SSLv3": {CERTIN_8422, RBI_140, *RBI_OTHERS, SEBI_I, RBI_118},
+        "PROTO_TLS10": {CERTIN_8422, RBI_140, *RBI_OTHERS, SEBI_I, RBI_118},
+        "PROTO_TLS11": {CERTIN_8422, RBI_140, *RBI_OTHERS, SEBI_I, RBI_118},
         "QUANTUM_VULNERABLE": {CERTIN_851, CNSA2, NIST_IR8547, SEBI_BOX7, SEBI_RA2},
         "RDP_NO_NLA": set(),
-        "RDP_NO_TLS": {CERTIN_457, CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1},
-        "RSA_LT_1024": {NIST_112, RBI_140, RBI_16},
-        "RSA_LT_2048": {NIST_112, RBI_140, RBI_16},
+        "RDP_NO_TLS": {CERTIN_457, CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1, RBI_118, *RBI_TRANSIT},
+        "RSA_LT_1024": {NIST_112, RBI_140, *RBI_OTHERS, RBI_118},
+        "RSA_LT_2048": {NIST_112, RBI_140, *RBI_OTHERS, RBI_118},
         "SAML_METADATA_UNSIGNED": set(),
         "SECRET_IN_CONFIG": {SEBI_H5},
         "SECRET_NO_ROTATION": set(),
-        "SECRET_PLAINTEXT_PARAM": {CERTIN_71, RBI_106, SEBI_PRDS1, SEBI_PRDS_1A},
-        "SIG_MD5": {CERTIN_617, CERTIN_8422, RBI_140, RBI_16},
-        "SIG_SHA1": {CERTIN_617, CERTIN_8422, NIST_SHA1_SIG, RBI_140, RBI_16},
-        "SSH_CBC_CIPHER": {CERTIN_8422, NIST_TDEA, RBI_140, RBI_16, SEBI_H5},
-        "SSH_DH_GROUP1": {CERTIN_8422, NIST_112, NIST_SHA1_SIG, RBI_140, RBI_16},
-        "SSH_DH_SHA1": {CERTIN_8422, NIST_SHA1_SIG, RBI_140, RBI_16},
-        "SSH_DSS": {CERTIN_8422, NIST_112, RBI_140, RBI_16},
+        "SECRET_PLAINTEXT_PARAM": {CERTIN_71, RBI_106, SEBI_PRDS1, SEBI_PRDS_1A, *RBI_REST},
+        "SIG_MD5": {CERTIN_617, CERTIN_8422, RBI_140, *RBI_OTHERS, RBI_118},
+        "SIG_SHA1": {CERTIN_617, CERTIN_8422, NIST_SHA1_SIG, RBI_140, *RBI_OTHERS, RBI_118},
+        "SSH_CBC_CIPHER": {CERTIN_8422, NIST_TDEA, RBI_140, *RBI_OTHERS, SEBI_H5, RBI_118},
+        "SSH_DH_GROUP1": {CERTIN_8422, NIST_112, NIST_SHA1_SIG, RBI_140, *RBI_OTHERS, RBI_118},
+        "SSH_DH_SHA1": {CERTIN_8422, NIST_SHA1_SIG, RBI_140, *RBI_OTHERS, RBI_118},
+        "SSH_DSS": {CERTIN_8422, NIST_112, RBI_140, *RBI_OTHERS, RBI_118},
         "SSH_HMAC_SHA1": set(),
         "SSH_NO_PQ_KEX": {CERTIN_851, CNSA2, NIST_IR8547, SEBI_BOX7, SEBI_RA2},
-        "SSH_RSA_SHA1": {CERTIN_8422, NIST_SHA1_SIG, RBI_140, RBI_16},
+        "SSH_RSA_SHA1": {CERTIN_8422, NIST_SHA1_SIG, RBI_140, *RBI_OTHERS, RBI_118},
         "SSH_UMAC64": set(),
-        "SSH_V1_ENABLED": {CERTIN_457, CERTIN_8422, RBI_140, RBI_16},
-        "SSH_WEAK_CIPHER": {CERTIN_8422, NIST_TDEA, RBI_140, RBI_16, SEBI_H5},
-        "SSH_WEAK_MAC": {CERTIN_8422, RBI_140, RBI_16},
-        "STATIC_RSA_KEX": {CERTIN_8422, CERTIN_851, CNSA2, NIST_IR8547, NIST_PKCS1, RBI_140, RBI_16, SEBI_BOX7, SEBI_RA2},
-        "STORAGE_NO_TLS_ONLY": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1},
-        "STORAGE_UNENCRYPTED": {CERTIN_71, RBI_106, SEBI_PRDS1, SEBI_PRDS_1A},
-        "TLS_POLICY_OVERRIDE": {CERTIN_8422, RBI_140, RBI_16, SEBI_I},
-        "WEAK_CIPHER": {CERTIN_8422, NIST_TDEA, RBI_140, RBI_16, SEBI_H5},
+        "SSH_V1_ENABLED": {CERTIN_457, CERTIN_8422, RBI_140, *RBI_OTHERS, RBI_118},
+        "SSH_WEAK_CIPHER": {CERTIN_8422, NIST_TDEA, RBI_140, *RBI_OTHERS, SEBI_H5, RBI_118},
+        "SSH_WEAK_MAC": {CERTIN_8422, RBI_140, *RBI_OTHERS, RBI_118},
+        "STATIC_RSA_KEX": {CERTIN_8422, CERTIN_851, CNSA2, NIST_IR8547, NIST_PKCS1, RBI_140, *RBI_OTHERS, SEBI_BOX7, SEBI_RA2, RBI_118},
+        "STORAGE_NO_TLS_ONLY": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1, RBI_118, *RBI_TRANSIT},
+        "STORAGE_UNENCRYPTED": {CERTIN_71, RBI_106, SEBI_PRDS1, SEBI_PRDS_1A, *RBI_REST},
+        "TLS_POLICY_OVERRIDE": {CERTIN_8422, RBI_140, *RBI_OTHERS, SEBI_I, RBI_118},
+        "WEAK_CIPHER": {CERTIN_8422, NIST_TDEA, RBI_140, *RBI_OTHERS, SEBI_H5, RBI_118},
         # CB-34: EXPORT and NULL suites are never strong encryption (SEBI H5); anonymous ones may use AES
-        "TLS_EXPORT_CIPHER": {CERTIN_8422, RBI_140, RBI_16, SEBI_H5},
-        "TLS_NULL_CIPHER": {CERTIN_8422, RBI_140, RBI_16, SEBI_H5},
-        "TLS_ANON_CIPHER": {CERTIN_8422, RBI_140, RBI_16},
+        "TLS_EXPORT_CIPHER": {CERTIN_8422, RBI_140, *RBI_OTHERS, SEBI_H5, RBI_118},
+        "TLS_NULL_CIPHER": {CERTIN_8422, RBI_140, *RBI_OTHERS, SEBI_H5, RBI_118},
+        "TLS_ANON_CIPHER": {CERTIN_8422, RBI_140, *RBI_OTHERS, RBI_118},
     },
     "code": {
         "AT_REST_ENCRYPTION_WEAK": {SEBI_PRDS1, SEBI_PRDS_1A},
         "CERT_NEAR_EXPIRY": {SEBI_S4_5},
         "CERT_SELF_SIGNED": {CERTIN_617},
-        "CUSTOM_CRYPTO": {RBI_140, RBI_16, SEBI_H5},
+        "CUSTOM_CRYPTO": {RBI_140, *RBI_OTHERS, SEBI_H5, RBI_118},
         "DOWNGRADE_PROTECTION_MISSING": {CERTIN_8422},
         "EOL_BASE_IMAGE": set(),
         "EOL_CRYPTO_LIBRARY": set(),
@@ -210,32 +226,32 @@ ALLOW: dict[str, dict[str, set[tuple[str, str]]]] = {
         "KMS_KEY_DELETION_UNPROTECTED": set(),
         "KMS_KEY_POLICY_PUBLIC": {SEBI_H5},
         "KMS_KEY_ROTATION_DISABLED": set(),
-        "KNOWN_TLS_VULNERABILITY": {CERTIN_8416, CERTIN_8422, RBI_140, RBI_16},
+        "KNOWN_TLS_VULNERABILITY": {CERTIN_8416, CERTIN_8422, RBI_140, *RBI_OTHERS, RBI_118},
         "LIBRARY_CVE_RANGE": {CERTIN_8416},
-        "PLAINTEXT_LISTENER": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1},
+        "PLAINTEXT_LISTENER": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1, RBI_118, *RBI_TRANSIT},
         "PROVIDER_MANAGED_KEY": set(),
         "QUANTUM_VULNERABLE": {CERTIN_851, CNSA2, NIST_IR8547, SEBI_BOX7, SEBI_RA2},
-        "REUSED_NONCE": {RBI_140, RBI_16},
+        "REUSED_NONCE": {RBI_140, *RBI_OTHERS, RBI_118},
         "SELF_SIGNED_LEAF": {CERTIN_617},
-        "STATIC_IV": {RBI_140, RBI_16},
+        "STATIC_IV": {RBI_140, *RBI_OTHERS, RBI_118},
         # CB-27: a constant PBE salt, a PBE iteration count below 1,000 (configurations, like STATIC_IV)
-        "STATIC_SALT": {RBI_140, RBI_16},
+        "STATIC_SALT": {RBI_140, *RBI_OTHERS, RBI_118},
         "TLS_VERIFICATION_DISABLED": {CERTIN_627, CERTIN_8422},
-        "UNENCRYPTED_AT_REST": {CERTIN_71, RBI_106, SEBI_PRDS1, SEBI_PRDS_1A},
-        "UNENCRYPTED_IN_TRANSIT": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1},
+        "UNENCRYPTED_AT_REST": {CERTIN_71, RBI_106, SEBI_PRDS1, SEBI_PRDS_1A, *RBI_REST},
+        "UNENCRYPTED_IN_TRANSIT": {CERTIN_627, RBI_106, SEBI_I, SEBI_PRDS1, RBI_118, *RBI_TRANSIT},
         "VULNERABLE_CRYPTO_LIBRARY": {CERTIN_8416},
-        "WEAK_ALGORITHM": {NIST_112, NIST_SHA1_SIG, NIST_TDEA, RBI_140, RBI_16, SEBI_H5},
-        "WEAK_CERTIFICATE_KEY": {NIST_112, RBI_140, RBI_16},
-        "WEAK_CERTIFICATE_SIGNATURE": {CERTIN_617, NIST_SHA1_SIG, RBI_140, RBI_16},
-        "WEAK_CIPHER_MODE": {RBI_140, RBI_16},
-        "WEAK_CIPHER_SUITE": {CERTIN_8422, NIST_TDEA, RBI_140, RBI_16, SEBI_H5},
-        "WEAK_KDF_ITERATIONS": {RBI_140, RBI_16},
-        "WEAK_KEY_SIZE": {NIST_112, RBI_140, RBI_16},
-        "WEAK_PADDING": {NIST_PKCS1, RBI_140, RBI_16},
-        "WEAK_PROTOCOL": {CERTIN_8422, RBI_140, RBI_16, SEBI_I},
+        "WEAK_ALGORITHM": {NIST_112, NIST_SHA1_SIG, NIST_TDEA, RBI_140, *RBI_OTHERS, SEBI_H5, RBI_118},
+        "WEAK_CERTIFICATE_KEY": {NIST_112, RBI_140, *RBI_OTHERS, RBI_118},
+        "WEAK_CERTIFICATE_SIGNATURE": {CERTIN_617, NIST_SHA1_SIG, RBI_140, *RBI_OTHERS, RBI_118},
+        "WEAK_CIPHER_MODE": {RBI_140, *RBI_OTHERS, RBI_118},
+        "WEAK_CIPHER_SUITE": {CERTIN_8422, NIST_TDEA, RBI_140, *RBI_OTHERS, SEBI_H5, RBI_118},
+        "WEAK_KDF_ITERATIONS": {RBI_140, *RBI_OTHERS, RBI_118},
+        "WEAK_KEY_SIZE": {NIST_112, RBI_140, *RBI_OTHERS, RBI_118},
+        "WEAK_PADDING": {NIST_PKCS1, RBI_140, *RBI_OTHERS, RBI_118},
+        "WEAK_PROTOCOL": {CERTIN_8422, RBI_140, *RBI_OTHERS, SEBI_I, RBI_118},
         # CB-28: RSA public exponent 3 (FIPS 186-5)
-        "WEAK_RSA_EXPONENT": {RBI_140, RBI_16},
-        "WEAK_RNG": {RBI_140, RBI_16},
+        "WEAK_RSA_EXPONENT": {RBI_140, *RBI_OTHERS, RBI_118},
+        "WEAK_RNG": {RBI_140, *RBI_OTHERS, RBI_118},
     },
 }
 
@@ -301,8 +317,8 @@ def test_every_code_cites_only_allow_listed_clauses(namespace, code):
 def test_issue_269_ssh_findings_cite_only_what_they_break():
     cbc, dh, hmac = ("aes128-cbc, aes256-cbc", "diffie-hellman-group14-sha1", "hmac-sha1")
     nist = {NIST_SHA1_SIG, NIST_TDEA, NIST_PKCS1, NIST_112}
-    assert _cited("node", "SSH_CBC_CIPHER", f"SSH server offers CBC-mode SSH ciphers ({cbc})") == {CERTIN_8422, RBI_16,
-                                                                                                   RBI_140}
+    assert _cited("node", "SSH_CBC_CIPHER", f"SSH server offers CBC-mode SSH ciphers ({cbc})") == {CERTIN_8422, *RBI_OTHERS,
+                                                                                                   RBI_140, RBI_118}
     assert _cited("node", "SSH_DH_SHA1", f"SSH server offers SHA-1 key exchange ({dh})") & nist == {NIST_SHA1_SIG}
     assert _cited("node", "SSH_HMAC_SHA1", f"SSH server offers HMAC-SHA1 ({hmac})") == set()
     # 3des-cbc is CBC *and* TDEA: only then is the TDEA clause cited
@@ -328,7 +344,7 @@ def test_a_framework_a_finding_does_not_break_is_not_cited():
     # a finding that breaks no clause of a framework appears under no clause of it
     assert {c[0] for c in _cited("node", "PROTO_TLS10", "TLS 1.0 accepted")} == {"CERT-In", "RBI", "SEBI CSCRF"}
     assert CERTIN_617 not in _cited("node", "PROTO_TLS10", "")  # a valid certificate is not about the TLS version
-    assert _cited("node", "RSA_LT_2048", "RSA-1024") == {NIST_112, RBI_16, RBI_140}
+    assert _cited("node", "RSA_LT_2048", "RSA-1024") == {NIST_112, *RBI_OTHERS, RBI_140, RBI_118}
     assert _cited("node", "DISK_XTS_128", "") == {CNSA2}  # AES-128: CNSA 2.0 only, not the public-key PQC clauses
     assert _cited("node", "KMS_NO_ROTATION", "") == set()
 
@@ -350,6 +366,8 @@ SSH_SERVERS = [
 def test_run_compliance_mapping_for_ssh_servers(api, world):  # noqa: F811  (pytest fixtures)
     """The run of #269: SSH servers with CBC ciphers, DH-SHA1 and HMAC-SHA1 (plus one with 3des-cbc)."""
     engine, _ = world
+    # a SEBI-regulated team: SEBI CSCRF binds it (PR #485 M4 filters every surface by the team's profile)
+    assert api("PATCH", "/1/cbom/sources/settings", json={"sebi_regulated": True}).status_code == 200
     _src, run = _store(api, engine, SSH_SERVERS)
     posture = api("GET", f"/1/cbom/sources/runs/{run['id']}/posture").json()["posture"]
     shown = {(fw["framework"], c["id"]): (c["assets"], set(c["codes"])) for fw in posture["compliance"]

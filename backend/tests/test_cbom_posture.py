@@ -121,7 +121,8 @@ def test_run_posture_endpoint(api, world):
     assert (top["criticality"], top["score"], top["exposure"]) == ("medium", 10.0, "internal")
     assert top["exposure_basis"] == "private IP address 10.20.0.1"
     frameworks = {f["framework"] for f in out["compliance"]}
-    assert {"NIST", "RBI", "SEBI CSCRF", "CERT-In"} <= frameworks
+    assert {"NIST", "RBI", "CERT-In"} <= frameworks
+    assert "SEBI CSCRF" not in frameworks  # the default team is not SEBI-regulated (PR #485 M4)
     patched = api("PATCH", "/1/cbom/sources/settings", json={"risk_model": {"data_shelf_life_years": 10,
                                                                               "migration_years": 5, "threat_years": 12}})
     assert patched.status_code == 200 and patched.json()["settings"]["risk_model"]["threat_years"] == 12

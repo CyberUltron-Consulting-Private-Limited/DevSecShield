@@ -298,7 +298,7 @@ def test_d8_aws_private_ca_is_one_row_with_a_dn_subject_not_raw_json(d8_csv, d8_
     rows = [r for r in _csv_rows(d8_csv) if "ZeroShield-AWS-PCA-Test" in r["subject"]]
     assert len(rows) == 1
     assert rows[0]["subject"] == "CN=ZeroShield-AWS-PCA-Test,O=ZeroShield"
-    assert rows[0]["sources"] == "Sources run #1 · AWS prod (second role); Sources run #1 · AWS prod"
+    assert rows[0]["sources"] == "AWS prod (second role); AWS prod"
     assert '{"CommonName"' not in _text(d8_pdf)
 
 
@@ -341,8 +341,8 @@ def test_d7_endpoint_probed_by_two_sources_is_one_row_naming_both(view):
     keys = [e.key for e in model.tls]
     assert keys == ["10.0.0.10:443", "10.0.0.11:443", "10.0.0.12:25", "10.0.0.13:1521"]
     first = model.tls[0].observed
-    assert first.source == "Sources run #1 · Lab network rescan"  # the newest observation wins
-    assert first.also_seen == ("Sources run #1 · Lab network",)
+    assert first.source == "Lab network rescan"  # the newest observation wins
+    assert first.also_seen == ("Lab network",)
 
 
 def test_d7_leaves_deleted_sources_out_and_says_so(view, d7_text):
@@ -351,7 +351,7 @@ def test_d7_leaves_deleted_sources_out_and_says_so(view, d7_text):
     assert model.deleted_rows == 1
     text = _squash(d7_text)
     assert "10.0.0.99" not in text
-    assert _squash("deleted source (1 network row): Sources run #1 · Rate test fleet") in text
+    assert _squash("deleted source (1 network row): Rate test fleet") in text
 
 
 def test_d7_grades_follow_the_rubric(view):
@@ -382,8 +382,8 @@ def test_d7_has_collapsible_bookmarks_for_the_suite_lists(view):
 def test_d7_source_table_lists_every_current_network_source_and_no_deleted_one(view):
     scoped, _model = D7._scoped(view)
     labels = [s.label for s in scoped.posture.sources]
-    assert labels == ["Sources run #1 · Lab appliances", "Sources run #1 · Lab network",
-                      "Sources run #1 · Lab network rescan"]
+    assert labels == ["Lab appliances", "Lab network",
+                      "Lab network rescan"]
 
 
 # ----------------------------------------------------------------------------- grade rubric, unit level

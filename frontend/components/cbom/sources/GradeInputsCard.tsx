@@ -11,6 +11,7 @@ import { getCbomEvidence, getCbomSourcesSettings, listCbomSources } from "@/util
 import { moscaText } from "@/components/cbom/grade/inputs";
 import { cbomSourcesKeys } from "./keys";
 import { pluralize } from "./logic";
+import RegulatedEntitySelect from "./RegulatedEntitySelect";
 import { MoscaEditor } from "./RunPosture";
 import { SectionCard, StatusBadge, Truncate } from "./shared";
 
@@ -43,6 +44,7 @@ export default function GradeInputsCard({ teamId, isAdmin }: { teamId: number; i
           )}
         </div>
         {edit && isAdmin && <MoscaEditor teamId={teamId} onDone={() => setEdit(false)} />}
+        <RegulatedEntitySelect teamId={teamId} isAdmin={isAdmin} />
         <div>
           <p className="text-xs text-zinc-500">
             Data lifetime per source (X for that source&apos;s assets; others use the team&apos;s X)

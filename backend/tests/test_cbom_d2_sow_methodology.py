@@ -104,7 +104,9 @@ def _norm(text: str) -> str:
 
 # ----------------------------------------------------------------------------- identity
 def test_document_id_is_the_sow_identifier_d2(sview, spdf):
-    assert f"CBOM-D2-T1-20261019-{sview.fingerprint[:8]}" in H.full_text(spdf)
+    # SOW D2 prints as D02 (two digits, like every deliverable); this view carries source metadata, so the ID reads
+    # the document digest, not the scan fingerprint (PR #485 M1)
+    assert f"CBOM-D02-T1-20261019-{sview.document_digest[:8]}" in H.full_text(spdf)
     assert "CBOM-D03-" not in H.full_text(spdf)
 
 
