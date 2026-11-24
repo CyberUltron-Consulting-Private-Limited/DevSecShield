@@ -3373,6 +3373,7 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
     # 2. Sources assets (and their certificates, probed endpoints, posture facts and library components)
     facts_of: dict[str, list[dict[str, Any]]] = {}
     components: list[tuple[CollectionAgg, dict[str, Any]]] = []
+    products_seen: set[tuple[str, str, str, str]] = set()
     shells: dict[str, ScanFacts] = {}  # one per collection (50k rows: built once, not per row)
     for item in resolution.sources_rows:
         agg = aggs[item.collection.key]
@@ -3435,8 +3436,15 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
             component = mapper.crypto_product(item.node_type, item.facts, name=item.row.get("title"),
                                               location=item.row.get("location"), source_kind=agg.source_kind,
                                               finding_codes=asset.finding_codes)
-            if component is not None:  # every source that read the resource relies on the product, not only the newest
-                components.extend((aggs[k], component) for k in item.also_seen_keys if k in aggs)
+            if component is not None:
+                # one row per product, place and source (every key of one account is the same product), and every
+                # source that read the resource relies on it, not only the newest
+                for owner in (agg.key, *item.also_seen_keys):
+                    mark = (owner, component["name"], component["version"], component["where"])
+                    if owner in aggs and mark not in products_seen:
+                        products_seen.add(mark)
+                        components.append((aggs[owner], component))
+                continue
         if component is not None:
             components.append((agg, component))
     assets.sort(key=lambda a: (a.source_key, a.asset_type, a.ident))

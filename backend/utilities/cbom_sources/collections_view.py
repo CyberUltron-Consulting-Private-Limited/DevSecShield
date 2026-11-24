@@ -553,14 +553,17 @@ def resolve(code_observations: Iterable[tuple[int, _dt.datetime, str]], rows: It
             newest_code[canon] = at
     link_resources(rows)  # idempotent: rows built without load_sources_result get their resource identities too
     best: dict[str, SourcesRow] = {}
-    members: dict[str, list[SourcesRow]] = {}
+    members: dict[str, list[SourcesRow]] = {}  # only identities read more than once (50k rows: no list per row)
     for item in rows:
-        members.setdefault(item.identity, []).append(item)
         held = best.get(item.identity)
-        if held is None or _rank(item) > _rank(held):
+        if held is None:
             best[item.identity] = item
-    for ident, item in best.items():  # the other sources that read it (deleted sources are never named)
-        group = members[ident]
+            continue
+        members.setdefault(item.identity, [held]).append(item)
+        if _rank(item) > _rank(held):
+            best[item.identity] = item
+    for ident, group in members.items():  # the other sources that read it (deleted sources are never named)
+        item = best[ident]
         if len(group) > 1:
             others = [m for m in sorted(group, key=_rank, reverse=True)
                       if m is not item and m.collection.source_kind and m.collection.key != item.collection.key]
