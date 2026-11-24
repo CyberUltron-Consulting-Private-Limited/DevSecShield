@@ -217,7 +217,9 @@ def _text(slug: str, view: TeamCbomView) -> str:
 def test_m2_d13_counts_one_population_and_never_plans_symmetric_or_algorithm_less_assets(team):
     view = _view(team)
     pop = view.remediation["population"]
-    assert pop["symmetric"] == 1 and pop["no_algorithm"] == 1  # the AES-128 key, the policy with no algorithm
+    # the policy with no algorithm is counted apart; the AES-128 key is no longer quantum-vulnerable at all (review
+    # 6038529822 M5: a symmetric key is Grover-weakened, never Shor-broken), so the symmetric exclusion counts 0
+    assert pop["symmetric"] == 0 and pop["no_algorithm"] == 1
     rows = roadmap._roadmap_assets(view)
     planned = roadmap.planned_count(view, rows)
     q = RECON.quantum_counts(view)
@@ -231,7 +233,7 @@ def test_m2_d13_counts_one_population_and_never_plans_symmetric_or_algorithm_les
     section3 = text[text.index("NIST post-quantum targets by function"):]
     section3 = section3[:section3.index("Per-asset roadmap") if "Per-asset roadmap" in section3 else 3000]
     assert "Symmetric encryption" not in section3 and "not derivable" not in section3
-    assert "Not listed: 1 symmetric or hash asset(s) and 1 with no algorithm recorded" in text
+    assert "Not listed: 0 symmetric or hash asset(s) and 1 with no algorithm recorded" in text
     assert "Distinct kinds 0" not in text
 
 
@@ -675,3 +677,140 @@ def test_review_m1_d12_keeps_14_typical_tls_rows_per_page():
     view.register = reg
     pages = len(PdfReader(BytesIO(RPDF.build_pdf(view))).pages)
     assert pages <= 14  # front matter and notes (4) + 140 rows at >= 14 per page (base: 13 rows, head 130fea21: 9)
+
+
+# ============================================================================ review 6038529822: M1 M5 (one model change)
+def _parity_team(tmp_path):
+    """One run over every source, no code scan: a certificate at master and msdb, symmetric keys with a collector's
+    quantum-vulnerable verdict, an RSA signing key, Triple DES, ML-KEM, and one probed endpoint."""
+    w = World(_sqlite(tmp_path / "parity.db"))
+    db, aws, net = w.source("database", "lab-mssql"), w.source("aws_account", "aws-prod"), w.source("network_range",
+                                                                                                   "dmz-a")
+
+    def key(arn, name, alg, qv, facts, typ="kms_key", codes=("QUANTUM_VULNERABLE",), impact=None):
+        return {"type": typ, "target": arn, "location": "kms", "name": name, "algorithm": alg, "qv": qv,
+                "impact": impact, "codes": list(codes) if qv else [], "facts": facts}
+
+    run = w.run({
+        db: {"rows": [_mssql_cert("lab-mssql:1433/master"), _mssql_cert("lab-mssql:1433/msdb")]},
+        aws: {"rows": [key("arn:k/1", "aes-128", "AES", True, {"key_size": 128}, "managed_key"),
+                       key("arn:k/2", "aes-256", "AES", True, {"key_size": 256}, "managed_key"),
+                       key("arn:k/3", "hmac", "HMAC-SHA256", True, {}, "managed_key"),
+                       key("arn:k/4", "default", None, True, {"key_spec": "SYMMETRIC_DEFAULT"}),
+                       key("arn:k/5", "signer", "RSA_2048", True, {"key_spec": "RSA_2048", "key_usage": "SIGN_VERIFY"}),
+                       key("arn:k/6", "legacy-3des", "DES-EDE3", None, {}, "managed_key"),
+                       key("arn:k/7", "mlkem", "ML_KEM_768", False, {"key_spec": "ML_KEM_768"})]},
+        net: {"rows": [_endpoint()]},
+    })
+    w.finalise(run)
+    return w, run
+
+
+def test_review_m5_symmetric_keys_are_weakened_or_quantum_safe_never_quantum_broken(tmp_path):
+    w, _run = _parity_team(tmp_path)
+    with Session(w.engine) as s:
+        items = REG.list_register(s, 1, {}, after=None, limit=500, detail=True,
+                                  now=dt.datetime(2026, 11, 20))["items"]  # noqa: DTZ001
+    by = {i["label"].split(" · ")[0]: i for i in items}
+    assert (by["aes-128"]["q_grade"], by["aes-128"]["q_reason"], by["aes-128"]["sow_class"]) == (
+        "Q3", "grover_weakened", "weakened")
+    for name in ("aes-256", "hmac", "default"):  # AES-256, HMAC-SHA-256, KMS SYMMETRIC_DEFAULT (AES-256-GCM)
+        assert (by[name]["q_grade"], by[name]["sow_class"], by[name]["pqc_class"]) == ("Q4", "quantum-safe",
+                                                                                       "quantum-safe"), name
+    assert by["signer"]["sow_class"] == "quantum-broken"
+    assert by["legacy-3des"]["sow_class"] == "deprecated"
+    assert not any(i["sow_class"] == "quantum-broken" and i["family"] in ("AES", "Other") and "aes" in i["label"]
+                   for i in items)
+
+
+def test_review_m1_run_posture_view_and_dashboard_count_one_population(tmp_path, monkeypatch):
+    from backend.routers import cbom_sources as R
+    from backend.utilities.cbom_sources.collections_view import load_sources_result
+    from backend.utilities.dashboard import scan_list
+
+    w, run = _parity_team(tmp_path)
+    now = dt.datetime(2026, 11, 20, 9, tzinfo=UTC)
+    view = load_team_cbom_view(w.engine, 1, now=now)
+    post = R._run_posture(w.engine, 1, run)["posture"]
+    monkeypatch.setattr(scan_list, "get_findings_for_scan_id", lambda **_kw: [])
+    with Session(w.engine) as s:
+        card = scan_list.generate_cbom_dashboard_data([], load_sources_result(s, 1, now), team_id=1, now=now)["card_data"]
+    assert post["asset_rows"] == view.asset_occurrences + 1  # the certificate's second place is a row, not an asset
+    assert post["assets"] == view.asset_occurrences == card["total_crypto_assets"]
+    assert post["pqc_classes"]["quantum-vulnerable"] == view.pqc_vulnerable == card["total_quantum_vulnerable"] == 3
+    assert post["pqc_readiness_pct"] == view.readiness_pct == card["quantum_readiness_score"]
+    # the certificate, the RSA key and the endpoint; never a symmetric key (M5)
+    assert post["pqc_classes"]["grover-weakened"] == 1
+    for doc in ("scope-baseline-register", "board-executive-report"):
+        assert f"{view.pqc_vulnerable} " in _text(doc, view)
+
+
+def test_review_m5_the_model_change_regrades_symmetric_rows_without_counting_closures(tmp_path):
+    """The symmetric rule lives in ``posture.py``, whose bytes ``GRADE_MODEL_VERSION`` hashes: every team's register is
+    re-graded once by ``regrade_due``. Rows the previous model graded Q2 quantum-vulnerable move; nothing is counted as
+    closed, no drift event is written (#490's model-change rules)."""
+    from backend.new_models import CbomDriftEvent
+    from backend.utilities.cbom_sources import drift_report as DR
+
+    w, _run = _parity_team(tmp_path)
+    with Session(w.engine) as s:  # the register as the previous model left it: symmetric keys Q2 quantum-vulnerable
+        s.execute(REG._RT.update().where(REG._RT.c.team_id == 1, REG._RT.c.label.like("aes-%")).values(
+            model_version="qg-1+previous", q_grade="Q2", q_rank=2, q_reason="qv_exceeds_exposure_unknown"))
+        s.commit()
+    at = dt.datetime(2026, 11, 25, 9)  # noqa: DTZ001
+    with Session(w.engine) as s:
+        out = REG.regrade_team(s, 1, at)
+        s.commit()
+        assert out["model"] == 2
+        items = {i["label"].split(" · ")[0]: i for i in REG.list_register(s, 1, {}, after=None, limit=50)["items"]}
+        assert (items["aes-128"]["q_grade"], items["aes-128"]["q_reason"]) == ("Q3", "grover_weakened")
+        assert items["aes-256"]["q_grade"] == "Q4"
+        assert s.exec(select(CbomDriftEvent)).all() == [] or all(
+            e.kind != "q0_closed" for e in s.exec(select(CbomDriftEvent)).all())
+        assert DR.weekly_drift(s, 1, at)[-1]["q0_closed"] == 0
+        week = next(x for x in REG.summary(s, 1, at)["closures_by_week"] if x["week"] == "2026-11-23")
+    assert week["total"] == 0 and week["by_cause"] == {}
+
+
+def test_b1_assets_only_a_deleted_source_read_are_removed_from_the_register_totals(tmp_path):
+    """#497 review: once a run settles the deleted source's observations (not read, "source deleted"), the register's
+    total and grades leave them out and the summary counts them as ``removed_from_scope``; the block prints them apart
+    and still closes."""
+    from backend.new_models import CbomCollectionSource
+
+    w, now = _realistic(tmp_path)
+    with Session(w.engine) as s:
+        aws = s.exec(select(CbomCollectionSource).where(CbomCollectionSource.name == "aws-prod")).one().id
+    w.finalise(w.run({aws: {"rows": []}}))  # any later run settles the deleted source's keys
+    with Session(w.engine) as s:
+        summary = REG.summary(s, 1, now.replace(tzinfo=None))
+    assert summary["removed_from_scope"] == 3
+    assert summary["total"] == sum(summary["q_grades"].values()) == sum(summary["sow_classes"].values())
+    view = load_team_cbom_view(w.engine, 1, now=now)
+    text = " ".join(RECON.lines(RECON.from_view(view)))
+    assert "Removed from scope: 3 register assets only a deleted source read, outside every total." in text
+    assert "Unexplained" not in text, text
+
+
+@pytest.mark.parametrize("asset_type, algorithm, qv, facts, expected", [
+    ("managed_key", "AES", True, {"key_size": 128}, ("grover-weakened", "grover_128_bit")),
+    ("managed_key", "AES", True, {"key_size": 256}, ("quantum-safe", "symmetric_not_shor")),
+    ("managed_key", "HMAC-SHA256", True, {}, ("quantum-safe", "symmetric_not_shor")),
+    ("kms_key", None, True, {"key_spec": "SYMMETRIC_DEFAULT"}, ("quantum-safe", "symmetric_not_shor")),
+    ("managed_key", "AES-128-GCM", False, {}, ("grover-weakened", "grover_128_bit")),
+    ("managed_key", "DES-EDE3", True, {}, ("grover-weakened", "grover_128_bit")),  # graded deprecated by the cap
+    ("managed_key", "ChaCha20", True, {}, ("quantum-safe", "symmetric_not_shor")),
+    # never symmetric: a public-key family, a hash-and-sign name, a certificate, an endpoint
+    ("kms_key", "RSA_2048", True, {"key_spec": "RSA_2048"}, ("quantum-vulnerable", "shor_breaks")),
+    ("managed_key", "SHA256WITHRSA", True, {}, ("quantum-vulnerable", "shor_breaks")),
+    ("tls_endpoint", "ECDHE-RSA-AES128-SHA256", True, {}, ("quantum-vulnerable", "shor_breaks")),
+    # a stored "safe" verdict is never downgraded without a size: LUKS records "aes-xts-plain64" (64 is the IV mode)
+    ("disk_encryption", None, False, {"method": "aes-xts-plain64"}, ("quantum-safe", "pq_or_symmetric")),
+    ("managed_key", "AES", None, {"key_size": 128}, ("not-applicable", "no_public_key")),  # no verdict: unchanged
+])
+def test_review_m5_the_symmetric_class_rule(asset_type, algorithm, qv, facts, expected):
+    from backend.utilities.cbom_sources import posture as P
+
+    got = P.classify_pqc({"asset_type": asset_type, "algorithm": algorithm, "quantum_vulnerable": qv, "facts": facts})
+    assert got == expected
+    assert P.CLASS_BASIS[got[1]][0] == got[0]

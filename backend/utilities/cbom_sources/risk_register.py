@@ -721,7 +721,11 @@ def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 1
     families: dict[str, dict[str, int]] = {}
     presence_counts = {"present": 0, "not_read": 0, "removed": 0}
     live = 0
-    groups = SUMMARY.register_groups(session, team_id)
+    # rows whose estate asset only a deleted source read (estate presence not_read, reason "source deleted") are
+    # removed from scope: outside the total, the grades and the classes, counted apart (Rule P with D1 / D14, which
+    # count current collections only; #497 review)
+    removed = _removed_groups(session, team_id)
+    groups = _minus(SUMMARY.register_groups(session, team_id), removed)
     for grade, reason, fam, presence, n in groups:
         live += int(n) if presence != "removed" else 0
         presence_counts[presence] = presence_counts.get(presence, 0) + int(n)
@@ -776,6 +780,7 @@ def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 1
         # per presence (present in a latest collection, not read, removed: the population reconciliation)
         "sow_classes": SC.summary_counts(session, team_id, groups),
         "presence": presence_counts,
+        "removed_from_scope": sum(int(r[4]) for r in removed),
         # present rows whose grade comes from a deleted source's last collection: removed from scope, outside the
         # reconciliation's totals (review 6038529822 B1)
         "present_removed_sources": _present_removed(session, team_id),
@@ -791,6 +796,32 @@ def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 1
         "pending_regrade": pending(session, team_id, graded_live=live), "estate": E.stale_status(session, team_id),
         "model_version": QG.GRADE_MODEL_VERSION, "server_time": iso_z(now),
     }
+
+
+def _removed_groups(session: Session, team_id: int) -> list[tuple]:
+    """``register_groups``' shape over the rows removed from scope (their estate asset is not read because the only
+    source that read it was deleted, ``estate.SOURCE_DELETED``)."""
+    from backend.utilities.cbom_sources.estate import SOURCE_DELETED
+
+    ea = CbomEstateAsset.__table__  # type: ignore[attr-defined]
+    q = sa.select(_RT.c.q_grade, _RT.c.q_reason, _RT.c.family, _RT.c.presence, sa.func.count()).select_from(
+        _RT.join(ea, sa.and_(ea.c.team_id == _RT.c.team_id, ea.c.asset_key == _RT.c.item_key))).where(
+        _RT.c.team_id == team_id, ea.c.presence == "not_read",
+        ea.c.presence_reason.like(f"%{SOURCE_DELETED}")).group_by(
+        _RT.c.q_grade, _RT.c.q_reason, _RT.c.family, _RT.c.presence)
+    return [(r[0] or None, r[1], r[2] or None, r[3], int(r[4])) for r in session.execute(q).all()]
+
+
+def _minus(groups: list[tuple], removed: list[tuple]) -> list[tuple]:
+    take: dict[tuple, int] = {}
+    for g, r, f, p, n in removed:
+        take[(g, r, f, p)] = take.get((g, r, f, p), 0) + int(n)
+    out = []
+    for g, r, f, p, n in groups:
+        left = int(n) - take.pop((g, r, f, p), 0)
+        if left > 0:
+            out.append((g, r, f, p, left))
+    return out
 
 
 def _present_removed(session: Session, team_id: int) -> int:

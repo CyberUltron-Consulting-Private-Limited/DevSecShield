@@ -96,9 +96,10 @@ SOW_CLASS_NOTE = (
     "SOW class (SOW section 3.2 step 4), the same label in this document and in the register CSV (column sow_class): "
     "deprecated: NIST SP 800-131A disallows the algorithm or key today (RSA or DSA below what SP 800-131A allows, DES "
     "and Triple DES, RC4, MD5, SHA-1 signatures, an IKE policy with DES or Triple DES), whatever else holds; "
-    "quantum-broken: a quantum computer breaks it (Shor); weakened: a quantum computer weakens it (Grover); "
-    "quantum-safe: hybrid or post-quantum; unknown: Q0, it could not be assessed; not applicable: no public-key "
-    "cryptography to grade. A deprecated asset that a quantum computer also breaks (RSA-1024, an IKE policy with "
+    "quantum-broken: a quantum computer breaks it (Shor: public-key algorithms only); weakened: a quantum computer "
+    "weakens it (Grover: a symmetric key of 128 bits or less, such as AES-128); quantum-safe: post-quantum, hybrid, or a "
+    "symmetric key of 192 bits or more, a MAC or a hash (AES-256, HMAC-SHA-256); unknown: Q0, it could not be assessed; "
+    "not applicable: no public-key cryptography to grade. A deprecated asset that a quantum computer also breaks (RSA-1024, an IKE policy with "
     "Triple DES and a classical Diffie-Hellman group) reads \"deprecated; also quantum-broken\" (CSV column "
     "also_quantum_broken). The class comes from the asset's grade, so a class and a grade never disagree.")
 GRADE_COMPARE_NOTE = (

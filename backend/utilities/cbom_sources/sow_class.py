@@ -13,8 +13,9 @@ Classes, first match wins:
    ``deprecated_internet`` (rules 24-25 and the disallowed cap), or the grade is a Q1 trust-anchor reason whose row is
    disallowed (the cap keeps the worse Q1 anchor grade there, so the reason alone does not say it).
 2. ``quantum-broken``: a quantum computer breaks it (Shor): any ``qv_*`` reason (the fallback reasons included).
-3. ``weakened``: a quantum computer weakens it (Grover): ``grover_weakened``.
-4. ``quantum-safe``: hybrid or post-quantum: any ``pq_*`` reason.
+3. ``weakened``: a quantum computer weakens it (Grover): a symmetric key of 128 bits or less, ``grover_weakened``.
+4. ``quantum-safe``: post-quantum, hybrid, or a symmetric key of 192 bits or more, a MAC or a hash (the class function
+   reads a symmetric key a collector marked quantum-vulnerable as such, review 6038529822 M5): any ``pq_*`` reason.
 5. ``unknown``: Q0 Unknown, whatever the reason (the class, the correlation or a Mosca input is unknown).
 6. ``not applicable``: no grade: no public-key cryptography to grade (a library, a setting).
 
@@ -47,8 +48,8 @@ ANCHOR_REASONS = frozenset({"qv_exceeds_anchor", "qv_fallback_exceeds_anchor"})
 MEANING = {
     DEPRECATED: "NIST SP 800-131A disallows the algorithm or key today",
     BROKEN: "a quantum computer breaks it (Shor)",
-    WEAKENED: "a quantum computer weakens it (Grover)",
-    SAFE: "hybrid or post-quantum",
+    WEAKENED: "a quantum computer weakens it (Grover): a symmetric key of 128 bits or less",
+    SAFE: "post-quantum, hybrid, or a symmetric key of 192 bits or more, a MAC or a hash",
     UNKNOWN: "Q0 Unknown: it could not be assessed (the reason says why)",
     NOT_APPLICABLE: "no public-key cryptography to grade",
 }

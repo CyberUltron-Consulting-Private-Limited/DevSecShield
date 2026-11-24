@@ -64,7 +64,10 @@ PQC_CLASS_MODEL = "pc-3"
 # the export and the posture card show.
 CLASS_BASIS: dict[str, tuple[str, str]] = {
     "shor_breaks": ("quantum-vulnerable", "RSA, elliptic-curve or Diffie-Hellman: a large quantum computer breaks it"),
-    "grover_128_bit": ("grover-weakened", "A 128-bit symmetric key: still secure, smaller margin against quantum search"),
+    "grover_128_bit": ("grover-weakened", "A symmetric key of 128 bits or less (AES-128, Triple DES): not broken by a "
+                                          "quantum computer, a smaller margin against quantum search (Grover)"),
+    "symmetric_not_shor": ("quantum-safe", "A symmetric key of 192 bits or more, a MAC or a hash: a quantum computer "
+                                           "does not break it (Shor does not apply; Grover only halves the margin)"),
     "pq_kex_accepted": ("hybrid", "A named post-quantum key-exchange group is accepted next to the classical one"),
     "hybrid_construction": ("hybrid", "A hybrid or composite construction whose post-quantum component is identified; "
                                       "classical public-key cryptography is still part of it"),
@@ -260,6 +263,16 @@ def classify_pqc(row: Any, codes: list[str] | None = None, *, quantum_vulnerable
     if asset_type == "disk_encryption" and qv is False and \
             "128" in str(facts.get("method") or facts.get("cipher") or ""):
         return "grover-weakened", "grover_128_bit"  # any 128-bit volume key (BitLocker Aes128, aes-cbc-128), not only XTS
+    if qv is not None:  # a symmetric cipher, MAC or hash is never quantum-vulnerable, whatever its collector said
+        sym = symmetric_key(asset_type, algorithm, facts)
+        if sym is not None:
+            kind, bits = sym
+            # an unrecorded size reads as 128 bits only to overrule a quantum-vulnerable verdict; a stored "safe"
+            # verdict is never downgraded without the size (a LUKS volume's aes-xts-plain64 records none)
+            if kind == "cipher" and ((bits is not None and bits <= 128) or (bits is None and qv is True)):
+                return "grover-weakened", "grover_128_bit"
+            if qv is True:
+                return "quantum-safe", "symmetric_not_shor"
     if qv is True:
         return "quantum-vulnerable", "shor_breaks"
     if qv is False:
@@ -268,6 +281,89 @@ def classify_pqc(row: Any, codes: list[str] | None = None, *, quantum_vulnerable
     if cls == "unknown" and elsewhere is not None and elsewhere(row) is not None:
         return "not-applicable", "read_elsewhere"
     return cls, basis
+
+
+# Symmetric cryptography (review 6038529822 M5): Shor breaks public-key algorithms only. AES, Triple DES, ChaCha20,
+# HMAC and hashes keep their security against a quantum computer up to Grover's quadratic search: a key of 128 bits
+# or less is "weakened" (NIST's PQC security category 1 is defined relative to AES-128), 192 bits or more, a MAC or
+# a hash is quantum-safe (NIST IR 8547 keeps AES-128/192/256 and SHA-2/SHA-3; SP 800-131A disallows Triple DES,
+# which the grade's disallowed cap still grades "deprecated"). Names first through algid (the one identity table),
+# then the cipher and MAC families by name; the size from the identity, the facts, then the name's digits.
+_SYMMETRIC_PRIMITIVES = {"block-cipher": "cipher", "stream-cipher": "cipher", "ae": "cipher", "mac": "mac",
+                         "hash": "mac", "xof": "mac", "kdf": "mac"}
+_SYMMETRIC_CIPHER = re.compile(r"^(aes|3des|tdea|des|desede|triple|rc[24]|blowfish|chacha|camellia|seed|idea|sm4)",
+                               re.IGNORECASE)
+_SYMMETRIC_MAC = re.compile(r"^(hmac|cmac|gmac|poly1305|sha|md[245]|ripemd|blake|whirlpool|sm3)", re.IGNORECASE)
+_WITH_PUBLIC_KEY = re.compile(r"with", re.IGNORECASE)  # a hash-and-sign name ("SHA256withRSA", "SM3withSM2")
+_TRIPLE_DES = re.compile(r"^(3des|tdea|desede|triple|des-?ede|des3)", re.IGNORECASE)
+_SINGLE_DES = re.compile(r"^des(?!-?ede)(?![a-z0-9])", re.IGNORECASE)
+# a key or digest size in a name ("AES-128-GCM", "AES256", "HMAC-SHA256"), never a mode's counter ("aes-xts-plain64")
+_KEY_BITS = re.compile(r"(?<!\d)(112|128|168|192|224|256|384|512)(?!\d)")
+_NOT_SYMMETRIC_TYPES = _CERT_TYPES | _PRIVATE_KEY_TYPES | _TLS_TYPES | _SSH_TYPES | _KEX_ELSEWHERE_TYPES | {
+    "ike_endpoint", "appliance_config"}
+
+
+def _int_bits(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int) and 0 < value <= 1024:
+        return value
+    if isinstance(value, str) and value.strip().isdigit() and 0 < int(value.strip()) <= 1024:
+        return int(value.strip())
+    return None
+
+
+def symmetric_key(asset_type: str, algorithm: Any, facts: Mapping[str, Any] | None) -> tuple[str, int | None] | None:
+    """``("cipher" | "mac", key bits or None)`` when the asset's cryptography is symmetric (a cipher, a MAC or a
+    hash), else None. KMS ``SYMMETRIC_DEFAULT`` is AES-256-GCM. A certificate, private key, endpoint or IKE / SSH
+    setting is never read as symmetric (its public-key part decides)."""
+    facts = facts if isinstance(facts, Mapping) else {}
+    if asset_type in _NOT_SYMMETRIC_TYPES:
+        return None
+    spec = facts.get("key_spec")
+    if asset_type == "kms_key" and isinstance(spec, str) and spec:
+        if spec.upper() == "SYMMETRIC_DEFAULT":
+            return "cipher", 256
+        if spec.upper().startswith("HMAC"):
+            return "mac", _int_bits((_KEY_BITS.findall(spec) or [None])[-1])
+        return None  # an asymmetric key spec (RSA_2048, ECC_NIST_P256 ...)
+    for raw in (algorithm, facts.get("algorithm"), facts.get("key_alg"), facts.get("cipher"), facts.get("method")):
+        text = raw.strip() if isinstance(raw, str) else ""
+        if not text:
+            continue
+        if _WITH_PUBLIC_KEY.search(text) or algid.family_label(text):
+            return None  # a public-key family (RSA, EC, DSA ...) or a signature scheme ("SHA256withRSA")
+        found = algid.resolve(text)
+        kind = _SYMMETRIC_PRIMITIVES.get(str(getattr(found, "primitive", "") or "")) if found is not None else None
+        if kind is None and found is not None and getattr(found, "primitive", None):
+            return None  # algid names a public-key primitive
+        if kind is None:
+            kind = "cipher" if _SYMMETRIC_CIPHER.match(text) else ("mac" if _SYMMETRIC_MAC.match(text) else None)
+        if kind is None:
+            continue
+        if kind == "cipher" and _TRIPLE_DES.match(text):
+            return kind, 112  # three 56-bit keys: 112 bits of strength
+        if kind == "cipher" and _SINGLE_DES.match(text):
+            return kind, 56
+        if kind == "cipher" and text.lower().startswith("chacha"):
+            return kind, 256  # ChaCha20 has one key size
+        bits = (getattr(found, "key_size", None) if found is not None else None) or _int_bits(facts.get("key_size")) \
+            or _int_bits(facts.get("key_length")) or _int_bits(facts.get("key_bits")) \
+            or _int_bits((_KEY_BITS.findall(text) or [None])[0])
+        return kind, bits
+    return None
+
+
+def stored_verdict(row: Any) -> bool | None:
+    """The stored quantum verdict as every count reads it: a symmetric cipher, MAC or hash (``symmetric_key``) a
+    collector marked quantum-vulnerable is not (review 6038529822 M5); anything else as stored."""
+    qv = _get(row, "quantum_vulnerable")
+    if qv is True:
+        facts = _get(row, "facts")
+        if symmetric_key(str(_get(row, "asset_type") or ""), _get(row, "algorithm"),
+                         facts if isinstance(facts, Mapping) else {}) is not None:
+            return False
+    return qv
 
 
 def sibling_key(row: Any) -> tuple[str, str, str]:
@@ -541,6 +637,26 @@ def framework_verdict(clauses: list[dict[str, Any]]) -> str | None:
     return "fail" if "fail" in verdicts else ("needs_evidence" if verdicts else None)
 
 
+def _repeated_certificates(rows: Iterable[Any]) -> set[int]:
+    """Ids of the certificate rows of one run that repeat a certificate another row already holds (the same
+    ``asset_keys.correlate`` key): counted once in the posture's classes and readiness."""
+    from backend.utilities.cbom_sources import asset_keys as AK
+
+    certs = [r for r in rows if r.asset_type != "coverage"
+             and (r.asset_type in AK.CERT_TYPES or getattr(r, "cdx_type", "") == "certificate")]
+    if len(certs) < 2:
+        return set()
+    seen: set[str] = set()
+    out: set[int] = set()
+    for row, key in sorted(zip(certs, AK.correlate([AK.observation(r) for r in certs])), key=lambda p: p[0].id or 0):
+        if not isinstance(key, str):
+            continue
+        if key in seen:
+            out.add(int(row.id))
+        seen.add(key)
+    return out
+
+
 def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict[str, Any] | None,
                 top: int = 10) -> dict[str, Any]:
     from backend.utilities.cbom_sources.classify import shown
@@ -567,6 +683,11 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
     clause_assets: dict[tuple[str, str], set[int]] = defaultdict(set)
     clause_meta: dict[tuple[str, str], dict[str, Any]] = {}
     clause_recorded: dict[tuple[str, str], set[int]] = defaultdict(set)  # cited on a recorded algorithm (or always)
+    # one certificate read at several places of the run (a SQL Server certificate in master and msdb) is ONE asset in
+    # the class counts and the readiness, as the team view counts it (``asset_keys.correlate``, review 6038529822 M1);
+    # ``asset_rows`` keeps the row count
+    repeated = _repeated_certificates(rows)
+    row_count = 0
     for row in rows:
         aid, a_type, qv, facts, source_id = row.id, row.asset_type, row.quantum_vulnerable, row.facts, row.source_id
         location, name, job_id, target = row.location, row.name, row.job_id, row.target
@@ -577,10 +698,12 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
             grades.add(row, a_codes)
             continue
         cls, basis = graded_class(row, a_codes, elsewhere=elsewhere)
-        classes[cls] += 1
-        bases[basis] += 1
-        if cls == "quantum-vulnerable":
-            vulnerable_groups[(a_type, quantum_code(a_codes))] += 1
+        row_count += 1
+        if aid not in repeated:
+            classes[cls] += 1
+            bases[basis] += 1
+            if cls == "quantum-vulnerable":
+                vulnerable_groups[(a_type, quantum_code(a_codes))] += 1
         agility.add(row, a_codes)
         if impact:
             impacts[impact] += 1
@@ -633,7 +756,8 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
                                       **({"unrecorded": unrecorded} if unrecorded else {})})
     risky.sort(key=lambda r: (-r["score"], r["id"]))
     return {
-        "assets": sum(classes.values()),
+        "assets": sum(classes.values()),  # distinct assets: a certificate at several places once
+        "asset_rows": row_count,  # the run's asset rows (coverage aside), a certificate once per place
         "pqc_classes": {c: classes.get(c, 0) for c in PQC_CLASSES},
         # why each class: basis code -> count, and the sentence for each code (CB-18 OB-8)
         "pqc_class_bases": dict(sorted(bases.items())),

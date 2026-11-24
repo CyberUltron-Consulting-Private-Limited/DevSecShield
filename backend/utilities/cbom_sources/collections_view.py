@@ -204,7 +204,11 @@ def node_row(asset: Any, collection: Collection, view: Mapping[str, Any]) -> dic
     facts = asset.facts if isinstance(asset.facts, dict) else {}
     codes = [c for c in (view.get("finding_codes") or []) if isinstance(c, str) and c]
     impact = view.get("impact") if view.get("impact") in ("Critical", "High", "Medium", "Low") else None
-    qv = asset.quantum_vulnerable
+    from backend.utilities.cbom_sources.posture import stored_verdict
+
+    # the verdict every count reads: a symmetric cipher, MAC or hash is never quantum-vulnerable (review 6038529822
+    # M5, the class function's own rule), so readiness, the dashboard and the documents follow the grade
+    qv = stored_verdict(asset)
     # a finding is weak unless its only codes are quantum verdicts; an impact without any code is a weakness too
     weak = bool(impact) and (not codes or any(c not in _NOT_WEAK for c in codes))
     name = asset.name or asset.algorithm or asset.asset_type

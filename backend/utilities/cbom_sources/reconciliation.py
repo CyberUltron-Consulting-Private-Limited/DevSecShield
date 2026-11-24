@@ -117,6 +117,7 @@ def register_numbers(summary: Mapping[str, Any]) -> dict[str, int]:
     out = {"total": int(summary.get("total") or 0), "present": int(presence.get("present", 0) or 0),
            "not_present": int(presence.get("not_read", 0) or 0) + int(presence.get("removed", 0) or 0),
            "present_removed": int(summary.get("present_removed_sources", 0) or 0),
+           "removed_from_scope": int(summary.get("removed_from_scope", 0) or 0),
            "graded": sum(int(grades.get(g, 0) or 0) for g in ("Q1", "Q2", "Q3", "Q4")),
            "q0": int(grades.get("Q0", 0) or 0), "none": int(grades.get("none", 0) or 0)}
     for c in SC.CLASSES:
@@ -195,8 +196,13 @@ def steps(pop: Population) -> list[dict[str, Any]]:
                      "removed, kept with their last grade)")
         if r["present_removed"]:
             text += f" plus {_n(r['present_removed'], 'register asset')} last read by a removed source"
-        text += (f" = {_n(r['total'], 'distinct asset')} in the Quantum Risk Register (D12)."
-                 + _unexplained("register", r["total"] - expected))
+        # the register's rows that only a deleted source read are outside its total (the summary leaves them out); a
+        # removed source's occurrences still in the view are subtracted above, so the chain needs no other term
+        text += f" = {_n(r['total'], 'distinct asset')} in the Quantum Risk Register (D12)."
+        if r["removed_from_scope"]:
+            text += (f" Removed from scope: {_n(r['removed_from_scope'], 'register asset')} only a deleted source "
+                     "read, outside every total.")
+        text += _unexplained("register", r["total"] - expected)
         add("register", r["total"], text)
         grades = pop.register.get("q_grades") if isinstance(pop.register.get("q_grades"), Mapping) else {}
         split = ", ".join(f"{label} {int(grades.get(key, 0) or 0)}" for key, label in (
