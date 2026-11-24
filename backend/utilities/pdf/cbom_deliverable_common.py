@@ -57,9 +57,7 @@ from backend.utilities.dashboard.cbom_team_rollup import (
     TeamCbomView,
 )
 from backend.utilities.pdf import cbom_deliverable_text as authored
-from backend.utilities.pdf.report_fonts import needs_unicode_font, unicode_paragraph
 from backend.utilities.pdf.report_branding import (
-    masthead_cover_rows,
     BAR_LOW,
     BAR_MEDIUM,
     BAR_UNKNOWN,
@@ -95,7 +93,9 @@ from backend.utilities.pdf.report_branding import (
     get_report_styles,
     make_cover_callback,
     make_footer_callback,
+    masthead_cover_rows,
 )
+from backend.utilities.pdf.report_fonts import needs_unicode_font, unicode_paragraph
 
 TEMPLATE_VERSION = "1.0"
 
@@ -291,19 +291,28 @@ def sow_number(report_key: str) -> int | None:
     return int(value) if isinstance(value, int) and not isinstance(value, bool) else None
 
 
+def document_digest_of(view: TeamCbomView, number: int | str) -> str:
+    """The digest of one document (``TeamCbomView.digest_for``: only the parts it prints), else the team's."""
+    digits = re.sub(r"[^0-9]", "", number) if isinstance(number, str) else str(int(number))
+    per_document = getattr(view, "digest_for", None)
+    return str((per_document(int(digits or 0)) if callable(per_document) else None)
+               or getattr(view, "document_digest", None) or view.fingerprint or "")
+
+
 def document_id(view: TeamCbomView, number: int | str) -> str:
     """``CBOM-D08-T1-20261019-ab12cd34``: SOW deliverable ID (two digits, D01 ... D14), team, as-of day, fingerprint.
 
-    The fingerprint part is the first 8 hex characters of ``view.document_digest`` (padded with
-    zeros when it is shorter or empty): the scans and collections, plus the team settings and register
-    inputs the documents print (regulatory profile, source metadata, grade inputs). The same content
-    always yields the same ID, and different content never shares one (SOW review M1).
+    The fingerprint part is the first 8 hex characters of the document's digest (``document_digest_of``, padded
+    with zeros when it is shorter or empty): the scans and collections, plus the team settings and register
+    inputs the documents print (regulatory profile, source metadata, grade inputs), and only the parts this document
+    prints (D2's live set-up, D10's vendors and D14's previous issue are in their own document's digest only). The
+    same content always yields the same ID, and different content never shares one (SOW review M1, QA2 m2).
     """
-    digest = getattr(view, "document_digest", None) or view.fingerprint
+    digits = re.sub(r"[^0-9]", "", number) if isinstance(number, str) else str(int(number))
+    digest = document_digest_of(view, number)
     fingerprint = re.sub(r"[^0-9a-f]", "", str(digest or "").lower())[:8]
     day = view.as_of
     stamp = f"{day.year:04d}{day.month:02d}{day.day:02d}"
-    digits = re.sub(r"[^0-9]", "", number) if isinstance(number, str) else str(int(number))
     code = f"D{int(digits or 0):02d}"
     return f"CBOM-{code}-T{int(view.team_id)}-{stamp}-{fingerprint.ljust(8, '0')}"
 
@@ -837,8 +846,7 @@ def _control_table(
         (labels["window"], pdf_text(_window_text(view)), value),
         (labels["basis"], pdf_text(authored.BASIS_CONTROL_SUMMARY), value),
         (labels["template"], pdf_text(f"{TEMPLATE_VERSION} \u00b7 {authored.TOOL_NAME}"), value),
-        (labels["fingerprint"], pdf_text(getattr(view, "document_digest", None) or view.fingerprint or "n/a",
-                                         limit=40), mono),
+        (labels["fingerprint"], pdf_text(document_digest_of(view, number) or "n/a", limit=40), mono),
     ]
     presentation = presentation_text(ctx)
     if presentation is not None:
@@ -1095,6 +1103,7 @@ __all__ = [
     "Styles",
     "build_document",
     "dense_table",
+    "document_digest_of",
     "document_id",
     "fmt_date_utc",
     "fmt_utc_ist",

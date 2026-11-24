@@ -375,7 +375,7 @@ The composite action works from any repository too. It runs the scanner from its
 scans `path` in the caller's workspace:
 
 ```yaml
-      - uses: AnshSinghal-CyberUltron/devsecshield/.github/actions/cbom-scan@<sha-or-tag>
+      - uses: CyberUltron-Consulting-Private-Limited/DevSecShield/.github/actions/cbom-scan@<sha-or-tag>
         with:
           path: .
 ```

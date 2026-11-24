@@ -34,6 +34,7 @@ from backend.utilities.cicd.api_keys import (
     revoked_marker,
     with_key_record,
 )
+from backend.utilities.cbom_sources.common import iso_z
 from backend.utilities.cbom_sources.regulated_entity import team_profile
 from backend.utilities.cicd.cbom_page import project_cbom_ci_page
 from backend.utilities.cicd.migrate_dast_logs import migrate_dast_cicd_logs_for_team
@@ -284,11 +285,16 @@ async def run_cicd_scan(
         except Exception as scan_dispatch_error:
             # Refund credits if scan dispatch fails
             console.print(f"CICD scan dispatch failed, refunding {credits_required} credits to team {team_id}", style="bold yellow")
+            refunded = True
             try:
                 from backend.utilities.team.credits import refund_credits_to_team
                 refund_credits_to_team(team_id=team_id, credits=credits_required)
             except Exception as refund_err:
+                refunded = False
                 console.print(f"CRITICAL: Failed to refund credits after CICD scan dispatch failure: {refund_err}", style="bold red")
+            # the attempt is in the integration's delivery log with its reason (staging QA2 m12: a 503 left no trace)
+            log_dispatch_failure(cicd_log_collection, user_and_integration["integration_id"], scan_dispatch_error,
+                                 refunded)
             raise scan_dispatch_error
 
         
@@ -404,6 +410,36 @@ async def run_cicd_scan(
 
 
 
+def dispatch_failure_reason(exc: BaseException) -> str:
+    """What the delivery log says about a scan that could not start: an HTTP error's own detail (a 503 from file
+    storage names what failed and never a key, a bucket or an account: ``s3_utils.StorageUnavailable``), else the
+    error class only (an unexpected exception's text may carry anything, so it is not stored)."""
+    if isinstance(exc, HTTPException) and isinstance(exc.detail, str) and exc.detail:
+        return f"HTTP {exc.status_code}: {exc.detail}"[:500]
+    return f"The scan could not be started ({exc.__class__.__name__})."
+
+
+def log_dispatch_failure(collection, integration_id, exc: BaseException, refunded: bool) -> str | None:
+    """Write one ``failure`` entry for a CI/CD attempt whose scan could not start (no task, no credits consumed).
+    Never raises: the pipeline still gets its error."""
+    try:
+        reason = dispatch_failure_reason(exc)
+        result = collection.insert_one(CicdLogs(
+            created_at=datetime.now(timezone.utc),
+            ci_cd_integration_id=integration_id,
+            task_id=None,
+            status="failure",
+            credits_consumed=None,
+            scan_settings_metadata=None,
+            results=None,
+            error=reason + (" No credits were charged." if refunded else " The credit refund failed; contact support."),
+        ))
+        return str(result.inserted_id) if result is not None and getattr(result, "inserted_id", None) else None
+    except Exception as log_err:  # noqa: BLE001  # the log is best effort; the caller re-raises the dispatch error
+        console.print(f"CICD dispatch failure not logged: {log_err.__class__.__name__}", style="bold red")
+        return None
+
+
 # ==================================== INTERNAL API ROUTES =============================================================
 # revamped ✅
 @router.get("/{team_id}/cicd/integrations",summary="List all cicd integrations", dependencies=[Depends(read_limiter), access.team("cicd.read")])
@@ -436,10 +472,11 @@ async def list_cicd_integrations(
                 integrations_data.append({
                     "id": integration.id,
                     "title": integration.title,
-                    "created_at": integration.created_at,
+                    # UTC with "Z" (QA2 m10, D-S1-4): a naive value was shown as IST by the browser
+                    "created_at": iso_z(integration.created_at),
                     "owner_user_email": integration.owner_user.email,
                     "owner_user_full_name": f"{integration.owner_user.first_name} {integration.owner_user.last_name}",
-                    "last_updated": integration.last_updated,
+                    "last_updated": iso_z(integration.last_updated),
                     "scan_type": integration.scan_type.upper() if integration.scan_type not in ["leakage" , "sbom_sca" , "agent_discovery"] else integration.scan_type,
                     # issue #99: never a part of the stored hash (the UI used to show and copy it)
                     **key_view(integration),
@@ -868,7 +905,8 @@ async def get_cicd_integration(
                         cbom_page = None
                 logs_data.append({
                     "id": str(log["_id"]),
-                    "created_at": log["created_at"],
+                    "created_at": iso_z(log["created_at"]) if isinstance(log.get("created_at"), datetime)
+                    else log.get("created_at"),
                     "status": log["status"],
                     "results": log["results"],
                     "dashboard": dashboard_data,
@@ -907,8 +945,8 @@ async def get_cicd_integration(
             **key_fields,  # issue #99: the key's state and last 4 characters, never the key or its hash
             "integration_active": integration_active,
             "title": integration.title,
-            "created_at": integration.created_at,
-            "last_updated": integration.last_updated,
+            "created_at": iso_z(integration.created_at),  # QA2 m10: UTC with "Z", as api_key_issued_at
+            "last_updated": iso_z(integration.last_updated),
             "scan_type":  integration.scan_type.upper() if integration.scan_type not in ["leakage" , "sbom_sca" , "agent_discovery"] else integration.scan_type,
             "integration_settings": public_settings(integration.integration_settings),
             "scan_settings": cicd_settings_for_form(integration.scan_settings),  # pre-#443 excludes as globs

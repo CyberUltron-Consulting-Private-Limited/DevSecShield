@@ -967,8 +967,8 @@ def _summary_section(view: TeamCbomView, posture: PostureGrade, styles: Styles, 
         max_per_row=4,
     )
     story: list[Flowable] = [*section_heading(H_SUMMARY, styles), first, _gap(), second, _gap(8)]
-    for text in _summary_paragraphs(view, posture):
-        story += [_para(text, styles), _gap(4)]
+    for text in _summary_paragraphs(view, posture):  # the reconciliation block is long: never cut (QA2 M4)
+        story += [_para(text, styles, limit=4000), _gap(4)]
     return [*story, *_trend_block(view, styles)]
 
 

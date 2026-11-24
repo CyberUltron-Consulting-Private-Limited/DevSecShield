@@ -51,6 +51,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import CondPageBreak, Flowable, KeepTogether, Paragraph, Spacer
 
 import backend.utilities.cbom_sources.pqc_targets as PQT
+import backend.utilities.cbom_sources.reconciliation as RECON
 from backend.utilities.dashboard.cbom_team_rollup import (
     ASSET_ALGORITHM,
     IMPACT_LEVELS,
@@ -454,17 +455,38 @@ def _heading(title: str, styles: Styles) -> Paragraph:
 # ---------------------------------------------------------------------------------------------
 # Sections
 # ---------------------------------------------------------------------------------------------
+def _population(view: TeamCbomView) -> dict | None:
+    """The roadmap's population (``waves.roadmap_extras``): None for a view without the team's plan (hand-made)."""
+    pop = (view.remediation or {}).get("population")
+    return pop if isinstance(pop, Mapping) else None
+
+
+def planned_count(view: TeamCbomView, rows: list[AssetAgg]) -> int:
+    """How many quantum-vulnerable public-key assets this roadmap plans: the code-scan algorithm rows and the
+    collected public-key assets (staging QA2 M2: the card, section 3 and the waves count the same population)."""
+    pop = _population(view)
+    return len(rows) + int(pop.get("sources_planned") or 0) if pop is not None else view.pqc_vulnerable
+
+
+def distinct_kinds(view: TeamCbomView, rows: list[AssetAgg]) -> int:
+    """Distinct algorithm + key size (or curve) over the planned population (code rows and collected rows)."""
+    kinds = {(a.title.casefold(), a.key_size or "", a.curve or "") for a in rows}
+    pop = _population(view)
+    return len(kinds) + len((pop or {}).get("kinds") or ())
+
+
 def _summary(
     view: TeamCbomView, rows: list[AssetAgg], styles: Styles, width: float, title: str
 ) -> list[Flowable]:
-    kinds = len({(a.title.casefold(), a.key_size or "", a.curve or "") for a in rows})
+    kinds = distinct_kinds(view, rows)
+    planned = planned_count(view, rows)
     readiness = "n/a" if view.readiness_pct is None else f"{view.readiness_pct:.1f}%"
     cards = [
         _card(
             "Quantum-vulnerable",
-            str(view.pqc_vulnerable),
-            "current occurrences",
-            "high" if view.pqc_vulnerable else "low",
+            str(planned),
+            "public-key assets planned" if _population(view) is not None else "current occurrences",
+            "high" if planned else "low",
         ),
         _card("Distinct kinds", str(kinds), "algorithm with key size or curve"),
         _card("Quantum readiness", readiness, "safe / (safe + broken today + vulnerable)"),
@@ -489,7 +511,10 @@ def _summary(
             kpi_strip(cards, width),
         ]
     )
-    return [block, Spacer(1, 4), _note(readiness_line(view), styles), _note(meta["how_to_read"], styles),
+    recon = [Paragraph(pdf_text(f"{RECON.TITLE}:", limit=60), styles["muted"]),
+             *(Paragraph(pdf_text(line, limit=1200), styles["muted"]) for line in RECON.lines(RECON.from_view(view)))] \
+        if view.register is not None or _population(view) is not None else []
+    return [block, Spacer(1, 4), _note(readiness_line(view), styles), *recon, _note(meta["how_to_read"], styles),
             Spacer(1, 2)]
 
 
@@ -561,24 +586,43 @@ def _timeline(styles: Styles, width: float, title: str) -> list[Flowable]:
             dense_table(_TIMELINE_HEADERS, rows, _fit(_TIMELINE_COLS, width)),
             Spacer(1, 3),
             _note(timeline_footnote(), styles),
+            *([_note(code_signing_line(), styles)] if code_signing_line() else []),
         ]
     )
     return [block, Spacer(1, 4)]
 
 
+def code_signing_line() -> str:
+    """The CNSA 2.0 target for software and firmware signing, from the knowledge base's one target table (staging QA2
+    m1): the 2025 milestone of the timeline names what replaces the signing keys."""
+    target = PQT.target_for("code_signing")
+    if not target:
+        return ""
+    return (f"CNSA 2.0 target for {str(target['usage_label']).casefold()} (the 2025 milestone above): "
+            f"{target['cnsa_target']} ({target['reference']}); the NIST target is {target['target_text']}.")
+
+
 def _families(rows: list[AssetAgg], styles: Styles, width: float, title: str,
-              node_rows: Sequence[dict] = ()) -> list[Flowable]:
+              node_rows: Sequence[dict] = (), population: Mapping | None = None) -> list[Flowable]:
     """NIST PQ targets by function, over the code-scan rows and the collected infrastructure rows."""
     order = list(PQT.table())
     tally: dict[str, tuple[int, set[str]]] = {}
     targets: dict[str, dict | None] = {}
     entries = [(_code_target(a), a.source_key) for a in rows]
-    entries += [(PQT.target_for(r.get("pq_usage")), str(r.get("source_name") or "")) for r in node_rows]
+    by_usage = (population or {}).get("by_usage") if population is not None else None
+    if by_usage is None:  # a view without the plan's population: the listed rows
+        entries += [(PQT.target_for(r.get("pq_usage")), str(r.get("source_name") or "")) for r in node_rows]
     for target, source in entries:
         usage = target["usage"] if target else ""
         targets[usage] = target
         count, sources = tally.get(usage, (0, set()))
         tally[usage] = (count + 1, sources | {source})
+    for usage, slot in (by_usage or {}).items():  # every planned collected asset, not only the rows listed (cap)
+        target = PQT.target_for(usage)
+        key = target["usage"] if target else ""
+        targets[key] = target
+        count, sources = tally.get(key, (0, set()))
+        tally[key] = (count + int(slot.get("assets") or 0), sources | {f"sources:{n}" for n in slot.get("sources") or ()})
     table_rows = []
     for usage in sorted(tally, key=lambda u: (order.index(u) if u in order else len(order), u)):
         target, (count, sources) = targets[usage], tally[usage]
@@ -656,8 +700,9 @@ def _roadmap(
 
 def _no_rows(view: TeamCbomView, styles: Styles, title_prefix: str) -> list[Flowable]:
     """The explicit replacement for the roadmap table (never an empty table)."""
-    collected = len((view.remediation or {}).get("node_rows") or []) + int(
-        (view.remediation or {}).get("node_rows_omitted") or 0)
+    pop = _population(view)
+    collected = int(pop.get("sources_planned") or 0) if pop is not None else (
+        len((view.remediation or {}).get("node_rows") or []) + int((view.remediation or {}).get("node_rows_omitted") or 0))
     if view.is_empty:
         title, message = _NO_SCANS_TITLE, _NO_SCANS_TEXT
     elif collected:
@@ -778,6 +823,14 @@ def _node_section(view: TeamCbomView, styles: Styles, width: float, title: str, 
               "latest complete collection (servers, clusters, databases, cloud accounts, identity providers, "
               "network endpoints), each with the NIST post-quantum target of its function.", styles),
     ]
+    pop = _population(view)
+    skipped = int((pop or {}).get("symmetric") or 0) + int((pop or {}).get("no_algorithm") or 0)
+    if skipped:
+        story.append(_note(
+            f"Not listed: {pop.get('symmetric') or 0} symmetric or hash asset(s) and {pop.get('no_algorithm') or 0} "
+            "with no algorithm recorded that their collector marked quantum-vulnerable. They are not public-key "
+            "migrations (a symmetric cipher moves to AES-256; an asset with no algorithm has no derivable target) "
+            "and are counted apart in the reconciliation; the Quantum Risk Register (D12) grades each one.", styles))
     if table_rows:
         story.append(dense_table(_NODE_HEADERS, table_rows, _fit(_NODE_COLS, width)))
     omitted = len(rows) - len(table_rows) + int(rem.get("node_rows_omitted") or 0)
@@ -873,7 +926,8 @@ def build_body(
     story += _timeline(styles, width, title("Regulatory timeline"))
     node_rows = (view.remediation or {}).get("node_rows") or []
     if rows or node_rows:
-        story += _families(rows, styles, width, title("NIST post-quantum targets by function"), node_rows)
+        story += _families(rows, styles, width, title("NIST post-quantum targets by function"), node_rows,
+                           _population(view))
     if rows:
         story += _roadmap(rows, styles, width, title("Per-asset roadmap"), max_rows, view)
     else:

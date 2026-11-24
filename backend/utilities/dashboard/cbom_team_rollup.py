@@ -788,7 +788,14 @@ class TeamCbomView:
         (``vendors``) and, for D14, the previous issue's Document ID. Any change there gives another digest, so two
         documents with different content never share an ID. A view without any of them (a fold of scans only, as the
         tests build) keeps ``fingerprint`` itself, and so does the default profile: its documents are the same."""
-        content = _document_content(self)
+        return self.digest_for(None)
+
+    def digest_for(self, number: int | None) -> str:
+        """``document_digest`` of SOW deliverable ``number`` (D1 ... D14): only the parts that document prints, so a
+        change that shows in another document never gives this one a new ID (staging QA2 m2: team 2's D12 and D13
+        changed ID with identical content, because D2's live run count and D10's vendor statuses, which move with
+        the clock, were in every document's digest). ``None``: every part (the team-wide fingerprint header)."""
+        content = _document_content(self, number)
         if not content:
             return self.fingerprint
         text = json.dumps(content, sort_keys=True, separators=(",", ":"), default=str)
@@ -811,8 +818,21 @@ class TeamCbomView:
         return "mixed"
 
 
-def _document_content(view: TeamCbomView) -> dict[str, Any]:
-    """What a document prints beyond the scans: only the parts that differ from an empty / default view."""
+# the parts of the digest one document alone prints (SOW deliverable number): D2 the live collection set-up, D10 the
+# vendor attestation register, D14 the trend against its previous issue (staging QA2 m2)
+_ONLY_IN = {"methodology": 2, "vendors": 10, "previous_issue": 14}
+
+
+def _document_content(view: TeamCbomView, number: int | None = None) -> dict[str, Any]:
+    """What a document prints beyond the scans: only the parts that differ from an empty / default view; with
+    ``number``, without the parts only another document prints (``_ONLY_IN``)."""
+    out = _all_document_content(view)
+    if number is None:
+        return out
+    return {k: v for k, v in out.items() if _ONLY_IN.get(k, number) == number}
+
+
+def _all_document_content(view: TeamCbomView) -> dict[str, Any]:
     out: dict[str, Any] = {}
     profile = view.regulatory_profile
     if profile is not None:

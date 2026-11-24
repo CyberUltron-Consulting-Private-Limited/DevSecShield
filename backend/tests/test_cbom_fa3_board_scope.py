@@ -332,12 +332,12 @@ def test_authored_text_refers_to_documents_by_sow_id():
 def test_population_reconciliation_line_in_d1_and_d14():
     view = staging_like_view()
     # PR #485 M6: an occurrence is one per source, except a certificate (counted once); D1 prints the arithmetic
-    expected = ("Population reconciliation: 12 asset occurrences (2 in code scans, 10 in CBOM Sources collections; an "
-                "asset that two sources observe is one occurrence in each, except a certificate, which is counted "
-                "once); 10 distinct assets in the quantum risk register (D12)")
-    assert expected in board_text(view)
-    assert "Code scans: 2 occurrences. Total: 12 asset occurrences in this document." in scope_text(view)
-    assert "holds 10 distinct assets" in scope_text(view)
+    # staging QA2 M4: D1 and D14 print the one shared block (cbom_sources.reconciliation), the same figures
+    expected = "plus 2 code-scan occurrences = 12 asset occurrences (the Scope Baseline D1 and the Board Report D14"
+    assert "Population reconciliation: 1. Run assets" in board_text(view) and expected in board_text(view)
+    assert expected in scope_text(view)
+    assert "= 10 distinct assets in the Quantum Risk Register (D12)" in scope_text(view)
+    assert "= 10 distinct assets in the Quantum Risk Register (D12)" in board_text(view)
 
 
 # ---------------------------------------------------------------------------------------------- A-10 D1 population

@@ -74,6 +74,7 @@ from backend.utilities.pdf import cbom_deliverable_text as authored
 from backend.utilities.pdf import cbom_methodology_text as method
 from backend.utilities.pdf.cbom_deliverable_common import (
     TEMPLATE_VERSION,
+    document_digest_of,
     Styles,
     build_document,
     dense_table,
@@ -906,7 +907,7 @@ def _raci(styles: Styles) -> list[Flowable]:
 def _versioning_text(view: TeamCbomView) -> str:
     return (
         f"Versioning: this edition is Document ID {document_id(view, DOCUMENT_CODE)} with data "
-        f"fingerprint {view.document_digest or 'n/a'} and template version {TEMPLATE_VERSION}. "
+        f"fingerprint {document_digest_of(view, DOCUMENT_CODE) or 'n/a'} and template version {TEMPLATE_VERSION}. "
         "Regenerating it from the same scans and settings gives the same fingerprint; a new successful scan, "
         "an attestation upload or a change to the regulatory profile, source metadata or quantum risk inputs "
         "changes it. The roll-up reads up to "

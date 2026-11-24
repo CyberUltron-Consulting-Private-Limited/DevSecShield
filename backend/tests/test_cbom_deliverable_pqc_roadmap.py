@@ -1440,6 +1440,7 @@ def test_module_imports_only_stdlib_reportlab_and_the_allowed_backend_modules():
         "backend.utilities.pdf",
         "backend.utilities.dashboard.cbom_team_rollup",
         "backend.utilities.cbom_sources.pqc_targets",  # pure: the KB target table resolved through algid
+        "backend.utilities.cbom_sources.reconciliation",  # pure: the population block every document prints (QA2 M4)
     )
     seen: list[str] = []
     for node in ast.walk(_module_tree()):

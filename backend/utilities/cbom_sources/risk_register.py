@@ -52,10 +52,10 @@ CSV_COLUMNS = ("item_key", "q_grade", "q_label", "q_reason", "label", "asset_typ
                "source_name", "application", "presence", "sources", "last_run_id", "last_observed_at",
                "model_version", "owners", "data_classification",
                # SOW D12 (audit A-15): what the grade read and how to fix it, per asset (``add_detail``)
-               *("pqc_class", "algorithm", "key_size", "fips_203_204_205", "cnsa_2_0", "sp800_131a", "fix_class",
+               *("sow_class", "also_quantum_broken", "pqc_class", "algorithm", "key_size", "fips_203_204_205", "cnsa_2_0", "sp800_131a", "fix_class",
                  "nist_pq_target", "nist_pq_reference", "data_lifetime_years", "data_lifetime_basis",
                  "migration_years", "crqc_years", "grade_inputs", "criticality", "owner"))
-DETAIL_FIELDS = CSV_COLUMNS[CSV_COLUMNS.index("pqc_class"):]
+DETAIL_FIELDS = CSV_COLUMNS[CSV_COLUMNS.index("sow_class"):]
 _RT = CbomRiskRegister.__table__
 USE_DIGESTS = True  # #352: narrow a write's keys with the content digests (False: every key, the reference path)
 
@@ -579,6 +579,7 @@ def add_detail(session: Session, team_id: int, items: list[dict[str, Any]], now:
     from backend.utilities.cbom_sources import posture as P
     from backend.utilities.cbom_sources import pqc_targets as PQT
     from backend.utilities.cbom_sources import qgrade as QG
+    from backend.utilities.cbom_sources import sow_class as SC
     from backend.utilities.cbom_sources import standards as STD
     from backend.utilities.cbom_sources.classify import shown, standards_of
 
@@ -607,6 +608,9 @@ def add_detail(session: Session, team_id: int, items: list[dict[str, Any]], now:
     for item in items:
         row = rows.get(pick.get(item["item_key"], -1))
         out: dict[str, Any] = {k: None for k in DETAIL_FIELDS}
+        # without the stored row the grade read: the class its grade and reason say (a trust anchor reads as broken)
+        out["sow_class"] = SC.sow_class(item.get("q_grade"), item.get("q_reason"))
+        out["also_quantum_broken"] = "no"
         crit = item.get("business_criticality") or []
         out["criticality"] = "; ".join(crit) if isinstance(crit, list) else crit
         out["owner"] = "; ".join(item.get("owners") or []) or PQT.UNASSIGNED_OWNER
@@ -633,7 +637,12 @@ def add_detail(session: Session, team_id: int, items: list[dict[str, Any]], now:
             x, y, z, basis, assumed = QG.effective_mosca(src_in.get("x"), m["x"], m["y"], m["z"],
                                                          src_in.get("criticality"), inputs.year)
             reads = str(item.get("q_reason") or "").startswith("qv_")
+            # SOW 3.2 step 4 (staging QA2 M3): the SOW class from the grade the row holds and the grade's own SP
+            # 800-131A input, the same function the summary counts with (``sow_class``), both facts when both hold
+            label = SC.sow_class(item.get("q_grade"), item.get("q_reason"), lambda row=row: QG.disallowed_now(row))
             out.update({
+                "sow_class": label,
+                "also_quantum_broken": "yes" if SC.also_quantum_broken(label, cls, item.get("q_reason")) else "no",
                 "pqc_class": cls, "algorithm": row.algorithm, "key_size": row.key_size,
                 **{k: (STD.export_value(graded[k]) if graded and k in graded else None)
                    for k in ("fips_203_204_205", "cnsa_2_0", "sp800_131a")},
@@ -705,12 +714,17 @@ def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 1
     from backend.utilities.cbom_sources import estate_summary_ddl as SUMMARY
     from backend.utilities.cbom_sources import qgrade as QG
 
+    from backend.utilities.cbom_sources import sow_class as SC
+
     grades: dict[str | None, int] = {}
     q0_reasons: dict[str, int] = {}
     families: dict[str, dict[str, int]] = {}
+    presence_counts = {"present": 0, "not_read": 0, "removed": 0}
     live = 0
-    for grade, reason, fam, presence, n in SUMMARY.register_groups(session, team_id):
+    groups = SUMMARY.register_groups(session, team_id)
+    for grade, reason, fam, presence, n in groups:
         live += int(n) if presence != "removed" else 0
+        presence_counts[presence] = presence_counts.get(presence, 0) + int(n)
         grades[grade] = grades.get(grade, 0) + int(n)
         if grade == "Q0":
             q0_reasons[reason] = q0_reasons.get(reason, 0) + int(n)
@@ -758,6 +772,10 @@ def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 1
     return {
         "total": total, "q_grades": {g or "none": int(grades.get(g, 0)) for g in (*QG.GRADES, None)},
         "q0_reasons": {k: int(v) for k, v in sorted(q0_reasons.items())},
+        # SOW 3.2 step 4 (staging QA2 M3/M4): rows per SOW class (``sow_class.counts``, the CSV's ``sow_class``) and
+        # per presence (present in a latest collection, not read, removed: the population reconciliation)
+        "sow_classes": SC.summary_counts(session, team_id, groups),
+        "presence": presence_counts,
         "q0_gaps_open": {k: int(v) for k, v in sorted(gaps_open.items())},
         "families": dict(sorted(families.items())),
         # Q0 GAP lifecycle per week (not drift events: drift_report.weekly_drift() counts findings opened / closed by

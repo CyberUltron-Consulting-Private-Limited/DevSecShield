@@ -577,10 +577,10 @@ PQC_NO_VULNERABLE_TITLE = "No quantum-vulnerable assets"
 PQC_NO_VULNERABLE_TEXT = (
     "No quantum-vulnerable public-key algorithms were found in the current scans."
 )
-PQC_NO_VULNERABLE_CODE_TITLE = "No quantum-vulnerable algorithms in the code scans"
+PQC_NO_VULNERABLE_CODE_TITLE = "Code scans: no quantum-vulnerable public-key algorithm to plan"
 PQC_NO_VULNERABLE_CODE_TEXT = (
-    "The code scans' algorithm inventory has no quantum-vulnerable public-key algorithm. The "
-    "collected infrastructure has {count}: they are listed in the next section."
+    "Every quantum-vulnerable public-key asset of this roadmap ({count}) was found in the collected "
+    "infrastructure and is listed in the next section; the code scans' algorithm inventory has none."
 )
 # Product text: primitives and target families (aibom/src/aibom/cbom/pqc.py PQC_MIGRATION_TARGETS)
 # Source: CycloneDX 1.6 cryptographic primitive enumeration: https://cyclonedx.org/docs/1.6/json/
