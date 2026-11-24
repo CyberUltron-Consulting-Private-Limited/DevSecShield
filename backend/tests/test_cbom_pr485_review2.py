@@ -242,6 +242,15 @@ def test_m3_minor_ucb_para_25_joins_the_other_six_instruments(code):
     assert set(RBI_CRYPTO.values()) <= every, every - set(RBI_CRYPTO.values())
 
 
+@pytest.mark.parametrize("code", ["KERBEROS_DES_ENABLED", "KERBEROS_RC4_ONLY", "KERBEROS_RC4_ENABLED"])
+def test_m3_minor_kerberos_codes_from_488_cite_every_entity_types_own_paragraph(code):
+    """#488 (merged into dev after review 2) cited the superseded 2023 MD and CB para 140 only."""
+    every = _rbi_keys(crypto_kb.clauses_for("node", code, None, team=None))
+    assert every == set(RBI_CRYPTO.values()), every
+    for entity, key in RBI_CRYPTO.items():
+        assert _rbi_keys(crypto_kb.clauses_for("node", code, None, team=regulated_entity.profile(entity))) == {key}
+
+
 def test_m3_minor_both_kb_copies_are_byte_identical():
     a, b = (p.read_bytes() for p in R.KB)
     assert a == b
