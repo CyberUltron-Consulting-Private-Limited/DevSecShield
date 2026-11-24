@@ -73,7 +73,8 @@ const CONTROLS = {
   cbom: [
     { label: "CycloneDX JSON", open: null, testid: "cbom-download-json", route: "bom?format=json" },
     { label: "CycloneDX XML", open: null, testid: "cbom-download-xml", route: "bom?format=xml" },
-    { label: "VEX", open: null, testid: "cbom-download-vex", route: "vex" },
+    // the code-mode CBOM page must render exactly as its snapshot (codeModeUnchanged.test.ts): no test id added there
+    { label: "VEX", open: null, testid: null, button: "VEX", route: "vex" },
   ],
   ai_bom: [
     { label: "CycloneDX 1.6 (JSON)", open: "Download BOM", testid: "aibom-download-cyclonedx", route: "bom?format=json" },
@@ -111,11 +112,13 @@ try {
         const rec = { width, type, scan: id, control: control.label };
         try {
           if (control.open) await page.getByRole("button", { name: control.open }).first().click();
-          const target = page.locator(`[data-testid="${control.testid}"]`).first();
+          const target = control.testid
+            ? page.locator(`[data-testid="${control.testid}"]`).first()
+            : page.getByRole("button", { name: control.button, exact: true }).first();
           await target.waitFor({ state: "visible", timeout: 120000 });
           await target.scrollIntoViewIfNeeded();
           const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60000 }), target.click()]);
-          const file = path.join(out, `w${width}-${type}-${id}-${control.testid}`);
+          const file = path.join(out, `w${width}-${type}-${id}-${control.testid ?? control.button}`);
           await download.saveAs(file);
           const saved = fs.readFileSync(file);
           const server = await served(`/${TEAM}/${type}/scan/${id}/${control.route}`);
@@ -133,7 +136,7 @@ try {
           rec.ok = false;
           rec.error = String(err?.message ?? err).slice(0, 300);
           failed += 1;
-          await page.screenshot({ path: path.join(out, `fail-w${width}-${type}-${control.testid}.png`) });
+          await page.screenshot({ path: path.join(out, `fail-w${width}-${type}-${control.testid ?? control.button}.png`) });
         }
         await page.keyboard.press("Escape").catch(() => undefined);
         log.push(rec);

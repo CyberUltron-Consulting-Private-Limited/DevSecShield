@@ -785,7 +785,6 @@ export default function CbomResults({
               variant="outline"
               className="cursor-pointer"
               onClick={() => void handleDownloadVex()}
-              data-testid="cbom-download-vex"
             >
               <Download className="h-4 w-4 mr-2" />
               VEX
