@@ -7,7 +7,7 @@ answer, including the Q0 transitions (its uncapped ``q0_*`` counts). A recorded 
 drift is recorded, and stored on the run (``drift_summary``): the report and the pack serve it, so a finished run's
 files keep their bytes and no download re-runs the comparison.
 
-* ``run_drift(session, run, store=False)``: the run against ``drift.previous_comparable_run`` (or ``None`` baseline
+* ``run_drift(session, run)``: the run against ``drift.previous_comparable_run`` (or ``None`` baseline
   with the reason), as the compact ``zeroshield-cbom-run-drift/1`` document the PDF section and ``drift.json`` share.
 * ``drift_bytes(doc)``: ``drift.json`` of the evidence pack (sorted keys, stable for a finished run).
 * ``weekly_drift(session, team_id, now, weeks)``: the team's recorded drift events per ISO week and kind (opened,
@@ -22,12 +22,12 @@ import threading
 from collections import OrderedDict
 from typing import Any
 
-from sqlalchemy import func, update
+from sqlalchemy import and_, func, or_, update
 from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectionRun, CbomDriftEvent
 from backend.utilities.cbom_sources import drift as DRIFT
-from backend.utilities.cbom_sources.common import iso_z
+from backend.utilities.cbom_sources.common import iso_z, log
 
 FORMAT = "zeroshield-cbom-run-drift/1"
 TOP = 25  # items per list in the PDF and in drift.json (the counts are always complete)
@@ -35,7 +35,7 @@ LISTS = ("added", "removed", "changed", "opened", "resolved", "not_read")
 COUNTS = ("added", "removed", "changed", "opened", "resolved", "not_read", "excluded", "entered_scope",
           "collector_changes", "rule_changes", "compared_sources", "not_compared_sources")
 _ITEM_FIELDS = ("key", "label", "type", "source_name", "code", "impact", "q_grade", "location", "reason")
-Q0_EVENT_SCAN = 5_000  # q0_closed events read to find this run's register closures
+Q0_EVENT_SCAN = 5_000  # q0_closed events of this run read (filtered in SQL to the run's own)
 
 
 def _item(entry: dict[str, Any]) -> dict[str, Any]:
@@ -59,24 +59,29 @@ def q0_transitions(diff: dict[str, Any]) -> dict[str, int]:
 
 def _closed_by(detail: dict[str, Any], at: _dt.datetime | None, run: CbomCollectionRun) -> bool:
     """Did ``run`` cause this ``q0_closed`` event? ``closed_by_run_id`` says so (None: a settings save, an evidence
-    answer or a source removal closed it, review #486 M1). An event stored before that key existed has only
-    ``run_id``, which falls back to the run that last saw the gap: it counts only when stamped with the run's own
-    ``drift_at`` (the run's estate write and its register hook share that moment; a later closure never does)."""
+    answer or a source removal closed it, review #486 M1), whenever the event was written: the run's estate write can
+    come after ``drift_at`` (deferred by ``estate._defer`` or replayed by ``repair_due`` after a failed write, review
+    6030475121 minor B), and a backfill replay of a run already written runs no hooks, so nothing later closes a gap in
+    the run's name. An event stored before that key existed has only ``run_id``, which falls back to the run that last
+    saw the gap: it counts only when stamped with the run's own ``drift_at`` (the run's estate write and its register
+    hook share that moment; a later closure never does)."""
     if "closed_by_run_id" in detail:
         return detail.get("closed_by_run_id") == run.id
     return detail.get("run_id") == run.id and run.drift_at is not None and at == run.drift_at
 
 
 def register_closures(session: Session, run: CbomCollectionRun) -> dict[str, int]:
-    """Quantum-risk-register Q0 gaps this run closed, by cause: ``q0_closed`` events the run caused, recorded by the
-    time its drift was (``drift_at``; ``finished_at`` before that). A closure made later by something else, or by an
-    estate replay of the run, never changes a finished run's number (its report.pdf is REPRODUCIBLE)."""
-    end = run.drift_at or run.finished_at
+    """Quantum-risk-register Q0 gaps this run closed, by cause: the ``q0_closed`` events the run caused
+    (``_closed_by``). A closure made later by something else never changes a finished run's number (its report.pdf is
+    REPRODUCIBLE); the run's own closures count even when its estate write ran late."""
+    closed_by = CbomDriftEvent.detail["closed_by_run_id"].as_integer()  # type: ignore[index]
+    mine = closed_by == run.id
+    if run.drift_at is not None:  # legacy events (no closed_by_run_id): the run's own write, stamped with drift_at
+        mine = or_(mine, and_(CbomDriftEvent.at == run.drift_at,
+                              CbomDriftEvent.detail["run_id"].as_integer() == run.id))  # type: ignore[index]
     query = select(CbomDriftEvent.at, CbomDriftEvent.detail).where(
         CbomDriftEvent.team_id == run.team_id, CbomDriftEvent.kind == "q0_closed",
-        CbomDriftEvent.at >= run.created_at)  # type: ignore[operator]
-    if end is not None:
-        query = query.where(CbomDriftEvent.at <= end)  # type: ignore[operator]
+        CbomDriftEvent.at >= run.created_at, mine)  # type: ignore[operator]
     out: dict[str, int] = {}
     for at, detail in session.exec(query.order_by(CbomDriftEvent.id).limit(Q0_EVENT_SCAN)).all():
         detail = detail if isinstance(detail, dict) else {}
@@ -140,7 +145,8 @@ _CACHE_LOCK = threading.Lock()
 
 
 def _stored(run: CbomCollectionRun, base_id: int | None) -> dict[str, Any] | None:
-    """The document stored on the run, if it was taken against this baseline (keyed by run and baseline)."""
+    """The document stored on the run, if it was taken against this baseline (keyed by run and baseline). A claim
+    (``pending``) or a failure marker (``failed``) holds no document."""
     held = getattr(run, "drift_summary", None)
     if (isinstance(held, dict) and held.get("v") == STORED_VERSION and held.get("baseline_id") == base_id
             and isinstance(held.get("doc"), dict) and held["doc"].get("format") == FORMAT):
@@ -159,39 +165,86 @@ def _compute(session: Session, run: CbomCollectionRun, base: CbomCollectionRun |
     return json.loads(drift_bytes(doc))  # plain JSON: the same values whether served now or read back from the run
 
 
-def run_drift(session: Session, run: CbomCollectionRun, *, store: bool = False) -> dict[str, Any]:
+def _estate_stale(session: Session, run: CbomCollectionRun) -> bool:
+    """The team's estate store missed this run's write (or an earlier one): its register closures may not all be
+    written yet. Part of the per-process cache key, so a download computes once while the store is stale and once
+    again after ``estate.repair_due`` has written the run (review 6032466269 major 2: never on every download)."""
+    from backend.new_models import CbomEstateTeam
+
+    return session.exec(select(CbomEstateTeam.id).where(
+        CbomEstateTeam.team_id == run.team_id, CbomEstateTeam.stale.is_(True),  # type: ignore[attr-defined]
+        func.coalesce(CbomEstateTeam.stale_run_id, 0) <= run.id)).first() is not None
+
+
+def stored_record(session: Session, run: CbomCollectionRun) -> dict[str, Any]:
+    """What ``drift.store_pending_summaries`` writes to ``drift_summary`` for a recorded run: its document keyed by
+    the baseline it was taken against (the writer stores it only under its claim)."""
+    base = DRIFT.previous_comparable_run(session, run)
+    base_id = base.id if base is not None else None
+    return {"v": STORED_VERSION, "baseline_id": base_id, "doc": _compute(session, run, base)}
+
+
+def run_drift(session: Session, run: CbomCollectionRun) -> dict[str, Any]:
     """``run`` against its previous comparable run (the same baseline ``/diff`` picks without ``against``).
 
-    A run whose drift is recorded (``drift_at``) gets its document once (review #486 minor 8): ``store=True`` (the
-    scheduler's ``drift.store_pending_summaries``, after the recording) computes it and writes it to ``drift_summary``
-    keyed by the baseline (the caller commits); a download serves that document as long as the baseline is the same,
-    so report.pdf and drift.json neither run the full comparison again nor change afterwards. A recorded run without
-    one (not reached yet, or recorded before the column existed) is computed once per process (LRU of CACHE_SIZE). A
-    run not recorded yet is computed on every call, as before."""
+    A run whose drift is recorded (``drift_at``) gets its document stored once by the scheduler's
+    ``drift.store_pending_summaries`` (review #486 minor 8); a download serves that document as long as the baseline
+    is the same, so report.pdf and drift.json neither run the full comparison again nor change afterwards. A recorded
+    run without one (not reached yet, claimed, failed, or recorded before the column existed) is computed once per
+    process (LRU of CACHE_SIZE, keyed also by whether its team's estate store is stale for it, so the repair's
+    closures are served after it). A run not recorded yet is computed on every call, as before."""
     if run.status not in DRIFT.FINISHED:
         return summarise(run, None, None, message="The run is still collecting: drift is computed when it ends")
     base = DRIFT.previous_comparable_run(session, run)
     base_id = base.id if base is not None else None
-    held = None if store else _stored(run, base_id)
+    held = _stored(run, base_id)
     if held is not None:
         return held
     key = ((str(session.get_bind().url), run.team_id, run.id, run.client_request_id, iso_z(run.created_at), base_id,
-            iso_z(run.drift_at), STORED_VERSION) if run.drift_at is not None else None)
-    if key is not None and not store:
+            iso_z(run.drift_at), STORED_VERSION, _estate_stale(session, run)) if run.drift_at is not None else None)
+    if key is not None:
         with _CACHE_LOCK:
             if key in _CACHE:
                 _CACHE.move_to_end(key)
                 return copy.deepcopy(_CACHE[key])
     doc = _compute(session, run, base)
-    if store and run.drift_at is not None:
-        session.exec(update(CbomCollectionRun).where(CbomCollectionRun.id == run.id)  # type: ignore[call-overload]
-                     .values(drift_summary={"v": STORED_VERSION, "baseline_id": base_id, "doc": doc}))
-    elif key is not None:
+    if key is not None:
         with _CACHE_LOCK:
             _CACHE[key] = copy.deepcopy(doc)
             while len(_CACHE) > CACHE_SIZE:
                 _CACHE.popitem(last=False)
     return doc
+
+
+REFRESH_RUNS = 200  # later runs a baseline change checks (newest first; older ones keep serving by baseline key)
+
+
+def refresh_baselines(session: Session, team_id: int, run_id: int, now: _dt.datetime) -> int:
+    """Run ``run_id`` changed what it can be a baseline for (its drift was just recorded, e.g. it finished late): clear
+    the stored document of every later run of the team, recorded within the summary window, whose stored baseline is
+    no longer the one ``drift.previous_comparable_run`` picks (review 6030475121 nit 3). The summary pass then stores
+    it again; a document whose baseline still holds keeps its bytes. Returns the documents cleared; the caller
+    commits."""
+    since = now.replace(tzinfo=None) - _dt.timedelta(days=DRIFT.SUMMARY_WINDOW_DAYS)
+    later = session.exec(select(CbomCollectionRun).where(
+        CbomCollectionRun.team_id == team_id, CbomCollectionRun.id > run_id,
+        CbomCollectionRun.drift_at.is_not(None), CbomCollectionRun.drift_at >= since,  # type: ignore[union-attr,operator]
+        CbomCollectionRun.drift_summary.is_not(None))  # type: ignore[union-attr]
+        .order_by(CbomCollectionRun.id.desc()).limit(REFRESH_RUNS)).all()  # the newest first (review 6032466269 nit 6)
+    cleared = 0
+    for run in later:
+        held = run.drift_summary if isinstance(run.drift_summary, dict) else {}
+        if not isinstance(held.get("doc"), dict):
+            continue  # a claim or a failure marker: the pass computes it against the baseline of its time
+        base = DRIFT.previous_comparable_run(session, run)
+        if held.get("baseline_id") == (base.id if base is not None else None):
+            continue
+        session.exec(update(CbomCollectionRun).where(CbomCollectionRun.id == run.id)  # type: ignore[call-overload]
+                     .values(drift_summary=None))
+        cleared += 1
+        log("drift summary cleared", team=team_id, run=run.id, reason=f"baseline changed by run #{run_id}",
+            was=held.get("baseline_id"), now=base.id if base is not None else None)
+    return cleared
 
 
 def drift_bytes(doc: dict[str, Any]) -> bytes:
@@ -224,4 +277,4 @@ def weekly_drift(session: Session, team_id: int, now: _dt.datetime, *, weeks: in
 
 
 __all__ = ["CACHE_SIZE", "FORMAT", "LISTS", "STORED_VERSION", "TOP", "WEEKLY_KINDS", "drift_bytes", "q0_transitions",
-           "register_closures", "run_drift", "summarise", "weekly_drift"]
+           "refresh_baselines", "register_closures", "run_drift", "stored_record", "summarise", "weekly_drift"]

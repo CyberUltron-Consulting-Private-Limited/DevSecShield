@@ -153,13 +153,14 @@ COLLECTORS = (
                   "layer, key provider class (software, TPM, smart card, HSM).",
                   "No key is opened or exported."),
     _collector("active_directory", "Active Directory", "L2", "LDAPS (636 or 3269) or StartTLS (389 or 3268); "
-                  "the read-only account binds only after the domain controller's certificate and name verify",
-                  "Each domain controller's TLS posture on its LDAP port (versions, cipher suites, groups, chain); "
-                  "RootDSE functional levels; Kerberos encryption types (msDS-SupportedEncryptionTypes) of domain "
-                  "controllers, krbtgt, service accounts and gMSAs, and the krbtgt key age; AD CS enrollment "
-                  "services and their CA certificates.",
-                  "No secret-bearing attribute is requested or kept, and the client has no write operation. LDAP "
-                  "signing and channel binding live in each DC's registry and are not readable over LDAP."),
+                  "binds only after the DC's certificate and name verify",
+                  "Each DC's TLS posture on its LDAP port (versions, cipher suites, groups, PQ key exchange, chain); "
+                  "RootDSE functional levels; per domain, Kerberos encryption types of DCs, krbtgt, service accounts "
+                  "and gMSAs, the krbtgt key age, AD CS enrollment services and their CA certificates. Needs a scan "
+                  "node release after 1.0.6.",
+                  "No secret-bearing attribute is requested or kept (refused before a request, dropped if returned); "
+                  "no write operation. LDAP signing and channel binding are not readable over LDAP (a coverage row "
+                  "says so)."),
     _collector("host_agent", "Host agent", "L2", "Outbound HTTPS only (agent mode)",
                   "The agent's own host: OS release, crypto packages, crypto policy, FIPS flag, sshd_config, SSH "
                   "host keys, key and certificate files.", "Never given a credential; reads world-readable files "
@@ -392,8 +393,8 @@ EVIDENCE_CHAIN = (
      "certificate's SHA-256 or a key's public-key hash, plus where it was seen); the same item seen again or by "
      "two collectors is one asset with several observations."),
     ("4. Normalised record", "Every item is written to the CycloneDX 1.6 CBOM as an algorithm, certificate, "
-     "related crypto material or protocol, with its location, the collector's evidence and the knowledge-base, "
-     "classifier and engine versions that judged it."),
+     "related crypto material or protocol (crypto libraries as library components), with its location, the "
+     "collector's evidence and the knowledge-base, classifier and engine versions that judged it."),
     ("5. Signed deliverables", "The run's CycloneDX JSON is signed over its exact bytes; the evidence pack zips the "
      "CBOM (JSON and XML), VEX, OSCAL, the signature, the PDF report and a drift file with a SHA-256 manifest. A "
      "recipient verifies a file offline against the published key or online with the verify endpoint (D11)."),
