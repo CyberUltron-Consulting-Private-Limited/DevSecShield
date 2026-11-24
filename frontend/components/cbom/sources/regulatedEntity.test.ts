@@ -48,7 +48,8 @@ for (const c of REGULATED_ENTITY_CHOICES) {
 // the flags: the same three as the backend
 const backendFlags = /FLAGS = \(([^)]*)\)/.exec(backend)?.[1].match(/"([a-z_]+)"/g)?.map((s) => s.slice(1, -1))
 assert.deepEqual(REGULATORY_FLAGS.map((f) => f.value), backendFlags, "the backend has the same flags")
-for (const f of REGULATORY_FLAGS) assert.ok(schema.includes(`${f.value}: bool | None`), `the schema accepts ${f.value}`)
+// strict booleans (PR #485 review 2 m2): "yes" or 1 is refused, never a silently switched-on framework
+for (const f of REGULATORY_FLAGS) assert.ok(schema.includes(`${f.value}: StrictBool | None`), `the schema accepts ${f.value}`)
 
 // deploy skew (m7): an older backend sends neither the entity nor the flags
 assert.equal(hasRegulatoryProfile({}), false, "no field: the control is hidden")
