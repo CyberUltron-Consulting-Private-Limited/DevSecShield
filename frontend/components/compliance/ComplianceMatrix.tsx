@@ -38,6 +38,7 @@ import type {
   FrameworkGroup,
 } from "./types";
 import { labelFramework } from "./frameworkLabels";
+import { appliesAtAll } from "./scope";
 import {
   VERDICT_BADGE,
   VERDICT_COLOR,
@@ -77,6 +78,8 @@ export interface ComplianceMatrixProps {
   onAttest?: AttestHandler;
   /** Prefer Scale (CBOM) vs ShieldCheck (AIBOM). */
   icon?: "scale" | "shield";
+  /** Hide a framework whose every requirement is out of scope (HIPAA / FDA for a bank's AI BOM). */
+  hideOutOfScope?: boolean;
   className?: string;
 }
 
@@ -91,6 +94,7 @@ export function ComplianceMatrix({
   onAttest,
   icon = "shield",
   className,
+  hideOutOfScope = false,
 }: ComplianceMatrixProps) {
   const frameworks = useMemo(
     () =>
@@ -98,8 +102,9 @@ export function ComplianceMatrix({
         .filter(
           ([k, v]) => k !== "disclaimer" && typeof v === "object" && v !== null,
         )
-        .map(([k, v]) => ({ key: k, ...(v as FrameworkCoverage) })),
-    [compliance],
+        .map(([k, v]) => ({ key: k, ...(v as FrameworkCoverage) }))
+        .filter((f) => (hideOutOfScope ? appliesAtAll(f) : true)),
+    [compliance, hideOutOfScope],
   );
 
   const [group, setGroup] = useState<string>(defaultGroup);

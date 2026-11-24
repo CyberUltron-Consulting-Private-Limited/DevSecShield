@@ -5,7 +5,9 @@ from __future__ import annotations
 from aibom.cbom.advisories import VulnerablePin, find_vulnerable, group_by_pin
 from aibom.cbom.files import file_walk
 from aibom.cbom.gate import VULNERABLE_CRYPTO_LIBRARY
+from aibom.cbom.library_versions import _label_of
 from aibom.cbom.registry import cbom_register
+from aibom.cbom.scanners.algorithm_scan import _slug
 from aibom.model.component import FrameworkComponent
 from aibom.scan.registry import ScanContext, Scanner
 
@@ -26,6 +28,15 @@ def _message(row: VulnerablePin) -> str:
         advice = " At least one advisory has no fixed release: replace the library."
     first = row.advisories[0].source if row.advisories else ""
     return f"{pin.name} {pin.declared} ({scope}, {pin.ecosystem}) matches {named}.{advice} {first}".strip()
+
+
+def _library_row(ctx: ScanContext, pin):
+    """The code lane's library row for this pinned package, if it lists one."""
+    label = _label_of(pin)
+    if not label:
+        return None
+    ref = f"crypto-lib-{_slug(label)}"
+    return next((c for c in ctx.components if c.bom_ref == ref), None)
 
 
 @cbom_register
@@ -57,5 +68,12 @@ class CryptoAdvisoryScanner(Scanner):
                 props["crypto:line"] = str(pin.line)
             if row.upgrade_to:
                 props["crypto:fixedVersion"] = row.upgrade_to
+            library = _library_row(ctx, pin)
+            if library is not None:
+                # the code lane's row for the same package (pyca/cryptography for
+                # pypi "cryptography"): the report lists the two as one library
+                # (review of #491 m6); the BOM keeps the vulnerable pin as its own
+                # component, linked to it
+                props["crypto:libraryRef"] = library.bom_ref
             ctx.add_component(FrameworkComponent(bom_ref=ref, name=f"{pin.name}@{pin.declared}", properties=props))
             ctx.add_flag(VULNERABLE_CRYPTO_LIBRARY, ref, severity="error", message=_message(row))

@@ -164,9 +164,10 @@ if [ -n "$found" ]; then echo "LEAK: env files inside the image:"; echo "$found"
 ls /prod_database_migrations/migrations/versions 2>/dev/null | grep -q d9e4b2c5st02 || { echo "MISSING: alembic head revision d9e4b2c5st02"; fail=1; }
 [ -x /docker-entrypoint.sh ] || { echo "MISSING: /docker-entrypoint.sh"; fail=1; }
 [ -f /backend/main.py ] || { echo "MISSING: /backend/main.py"; fail=1; }
+[ -f /opt/aibom/src/aibom/score/posture.py ] || { echo "MISSING: /opt/aibom/src/aibom/score/posture.py (aibom build context)"; fail=1; }
 [ -x /backend/.venv/bin/python ] || { echo "MISSING: /backend/.venv/bin/python"; fail=1; }
 command -v uv >/dev/null 2>&1 || { echo "MISSING: uv"; fail=1; }
-[ "$fail" = 0 ] && echo "backend image OK: no .env, alembic bundle + head d9e4b2c5st02, venv, uv, entrypoint"
+[ "$fail" = 0 ] && echo "backend image OK: no .env, alembic bundle + head d9e4b2c5st02, aibom engine, venv, uv, entrypoint"
 exit "$fail"
 ' 2>&1)"; then
     printf '%s\n' "${out}"
@@ -250,7 +251,8 @@ main() {
   local ctx
   if wanted backend; then
     ctx="$(prepare_context "${REPO_ROOT}/backend" backend)"
-    launch_build backend "${ctx}" "${E2E_ROOT}/docker/backend.e2e.Dockerfile"
+    launch_build backend "${ctx}" "${E2E_ROOT}/docker/backend.e2e.Dockerfile" \
+      --build-context "aibom=${REPO_ROOT}/aibom"
   fi
   if wanted frontend; then
     ctx="$(prepare_context "${REPO_ROOT}/frontend" frontend)"

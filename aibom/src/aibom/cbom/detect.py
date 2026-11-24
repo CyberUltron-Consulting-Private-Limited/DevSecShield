@@ -170,23 +170,28 @@ _PYCA = "pyca/cryptography"
 _STDLIB = "hashlib (stdlib)"
 
 
-def _hash_rule(method: str, key: str) -> CryptoRule:
-    # hashlib.sha256(...) / hashes.SHA256() — receiver is the module, method the algo.
-    return CryptoRule(_PY, _STDLIB, r"hashlib|hashes", method, key)
+def _hash_rules(method: str, key: str) -> tuple[CryptoRule, CryptoRule]:
+    # hashlib.sha256(...) is the standard library's; hashes.SHA256() is pyca
+    # cryptography's (``PBKDF2HMAC(algorithm=hashes.SHA256())``), so the library that
+    # provides the digest is the one the call names (review of #491 m2).
+    return (
+        CryptoRule(_PY, _STDLIB, r"hashlib", method, key),
+        CryptoRule(_PY, _PYCA, r"hashes", method, key),
+    )
 
 
 PYTHON_RULES: tuple[CryptoRule, ...] = (
     # --- hashes (hashlib.<h> and pyca hashes.<H>) ---
-    _hash_rule(r"md5|MD5", "md5"),
-    _hash_rule(r"sha1|SHA1", "sha1"),
-    _hash_rule(r"sha224|SHA224|sha256|SHA256", "sha256"),
-    _hash_rule(r"sha384|SHA384", "sha384"),
-    _hash_rule(r"sha512|SHA512", "sha512"),
-    _hash_rule(r"sha3_256|SHA3_256", "sha3_256"),
-    _hash_rule(r"sha3_384|SHA3_384", "sha3_384"),
-    _hash_rule(r"sha3_512|SHA3_512", "sha3_512"),
-    _hash_rule(r"blake2b", "blake2b"),
-    _hash_rule(r"blake2s", "blake2s"),
+    *_hash_rules(r"md5|MD5", "md5"),
+    *_hash_rules(r"sha1|SHA1", "sha1"),
+    *_hash_rules(r"sha224|SHA224|sha256|SHA256", "sha256"),
+    *_hash_rules(r"sha384|SHA384", "sha384"),
+    *_hash_rules(r"sha512|SHA512", "sha512"),
+    *_hash_rules(r"sha3_256|SHA3_256", "sha3_256"),
+    *_hash_rules(r"sha3_384|SHA3_384", "sha3_384"),
+    *_hash_rules(r"sha3_512|SHA3_512", "sha3_512"),
+    *_hash_rules(r"blake2b", "blake2b"),
+    *_hash_rules(r"blake2s", "blake2s"),
     # --- pyca symmetric cipher engines (algorithms.<X>) + mode/key-length roles ---
     CryptoRule(_PY, _PYCA, "algorithms", "AES", "aes", (ROLE_LITERAL_KEY, ROLE_MODE)),
     CryptoRule(_PY, _PYCA, "algorithms", "TripleDES", "3des", (ROLE_MODE,)),

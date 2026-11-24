@@ -624,17 +624,23 @@ CBOM_SCANNERS = (
         8,
         "Python source parsed into a syntax tree: the algorithm and its parameters are bound "
         "from call arguments, following values across statements and nested calls; literal "
-        "IVs, nonces and salts bound to cipher or key-derivation calls.",
-        "Algorithm with key size, mode and curve; detecting library and context; source path.",
+        "IVs, nonces and salts bound to cipher or key-derivation calls; key-derivation "
+        "parameters of PBKDF2, scrypt, Argon2 and HKDF.",
+        "Algorithm with key size, mode and curve; KDF PRF, iterations, output and salt length, "
+        "scrypt N/r/p and Argon2 costs; a constant salt or an IV written into the call, with its "
+        "length but never its value; detecting library and context; source path.",
     ),
     ScannerSpec(
         "crypto_algorithm",
         10,
         "Cryptographic algorithms and crypto libraries in source files (Python, Java and Go "
         "by call-argument rules; JavaScript/TypeScript, C/C++, Rust, C# and other recognised "
-        "languages by literal patterns) and in dependency manifests.",
-        "Algorithm with key size, mode and curve taken from the same call or line; strength "
-        "class; quantum-vulnerability flag; library name; source path.",
+        "languages by literal patterns) and in dependency manifests; library versions from "
+        "the tree's lockfiles and manifests.",
+        "Algorithm with key size, mode and curve taken from the same call or line; the parts of "
+        "a construction (Fernet: AES-128-CBC and HMAC-SHA256); strength class; "
+        "quantum-vulnerability flag; library name and version, or why the version is not "
+        "known; source path.",
     ),
     ScannerSpec(
         "crypto_advisory",
@@ -653,10 +659,11 @@ CBOM_SCANNERS = (
     ScannerSpec(
         "crypto_artifacts",
         18,
-        "Container images, compiled binaries and firmware in the scanned tree, read only when the "
-        "scan option \"scan binaries\" is on: the base operating system of each image, OS and "
-        "language packages, library versions and imported crypto functions in binaries, and "
-        "private keys shipped inside an artifact.",
+        "Container images named by Dockerfile FROM lines and Compose files (up to 50, always "
+        "listed); and container images, compiled binaries and firmware in the scanned tree, "
+        "read only when the scan option \"scan binaries\" is on: the base operating system of "
+        "each image, OS and language packages, library versions and imported crypto functions "
+        "in binaries, and private keys shipped inside an artifact.",
         "Base OS release and its end-of-life status; library name, version and package URL with "
         "advisory, CVE-range or end-of-life findings; algorithm rows for imported functions and "
         "constant signatures; key material; artifact path.",

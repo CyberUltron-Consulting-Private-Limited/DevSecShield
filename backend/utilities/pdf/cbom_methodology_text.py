@@ -152,10 +152,14 @@ COLLECTORS = (
                   "Certificate stores, SCHANNEL protocol keys, TLS cipher-suite order, BitLocker, RDP security "
                   "layer, key provider class (software, TPM, smart card, HSM).",
                   "No key is opened or exported."),
-    _collector("active_directory", "Active Directory", "L2", "LDAPS (636 or 3269)",
-                  "Recorded in scope; the current scan node has no directory collector, so domain controllers are "
-                  "assessed through the TLS probe of their LDAPS ports (network ranges) and AD CS through the CA "
-                  "connector.", "No directory object, password hash or secret attribute is read."),
+    _collector("active_directory", "Active Directory", "L2", "LDAPS (636 or 3269) or StartTLS (389 or 3268); "
+                  "the read-only account binds only after the domain controller's certificate and name verify",
+                  "Each domain controller's TLS posture on its LDAP port (versions, cipher suites, groups, chain); "
+                  "RootDSE functional levels; Kerberos encryption types (msDS-SupportedEncryptionTypes) of domain "
+                  "controllers, krbtgt, service accounts and gMSAs, and the krbtgt key age; AD CS enrollment "
+                  "services and their CA certificates.",
+                  "No secret-bearing attribute is requested or kept, and the client has no write operation. LDAP "
+                  "signing and channel binding live in each DC's registry and are not readable over LDAP."),
     _collector("host_agent", "Host agent", "L2", "Outbound HTTPS only (agent mode)",
                   "The agent's own host: OS release, crypto packages, crypto policy, FIPS flag, sshd_config, SSH "
                   "host keys, key and certificate files.", "Never given a credential; reads world-readable files "

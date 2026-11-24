@@ -27,6 +27,7 @@ KNOWN_PROVIDERS = frozenset(
         "openrouter",
         "deepseek",
         "xai",
+        "alibaba",
         "pypi",
         "credential",
         "local",
@@ -53,14 +54,18 @@ _CLOUD_NEEDLES: tuple[tuple[str, str], ...] = (
     ("deepseek", "deepseek"),
     ("api.x.ai", "xai"),
     ("xai api", "xai"),
+    # Alibaba Cloud (Qwen's publisher, DashScope); a local Qwen weight file names none of these
+    ("alibaba", "alibaba"),
+    ("dashscope", "alibaba"),
+    ("aliyun", "alibaba"),
     ("openai", "openai"),
     ("gemini", "google"),
     ("googleapis", "google"),
     ("google", "google"),
 )
 
-# Hosted APIs that scans stored before review of #487 (m7) labelled ``local``: re-derived when read.
-_SAAS_ONCE_LOCAL = frozenset({"google", "groq", "together", "openrouter", "deepseek", "xai"})
+# Hosted APIs that scans stored before review of #487 (m7, second review n-a) labelled ``local``: re-derived when read.
+_SAAS_ONCE_LOCAL = frozenset({"google", "groq", "together", "openrouter", "deepseek", "xai", "alibaba"})
 
 _FRAMEWORK_TYPES = frozenset({"ml_framework", "ai_framework", "framework"})
 _MODEL_TYPES = frozenset(
