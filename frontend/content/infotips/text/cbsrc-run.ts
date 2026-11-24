@@ -91,6 +91,12 @@ const TEXT = {
     why: "Findings reflect the estate at this time.",
     example: "13 Nov 2026, 11:05 pm IST.",
   },
+  // src: frontend/components/cbom/results/resultRows.ts runTriggerLabel — run.trigger and run.schedule_name
+  "cbsrc.rr.col.trigger": {
+    what: "Who started the run: a person (Manual) or a schedule, named.",
+    why: "A scheduled run is compared with the previous comparable run for drift (S4).",
+    example: "Scheduled: Daily drift check.",
+  },
   // src: frontend/components/cbom/sources/shared.tsx:118-125, backend/utilities/cbom_sources/jobs.py:121-133 — jobs.py run status: partial also when every job succeeded but one reported a partial or failed outcome
   "cbsrc.rr.col.run_status": {
     what: "Queued, Running, Done (every job succeeded completely), Partial (some jobs failed or expired, or a job finished but reported a partial or failed outcome), Failed or Cancelled.",
@@ -175,7 +181,7 @@ const TEXT = {
   // src: frontend/components/cbom/sources/GradeInputsCard.tsx:3-4, frontend/components/cbom/sources/GradeInputsCard.tsx:29-70 — Mosca X/Y/Z, per-source data lifetime, Q0 gaps; recorded at Start
   "cbsrc.rr.grade_inputs": {
     what: "What the next run's quantum risk grades use, recorded when you start it: the team's Mosca X, Y and Z, each source's own data lifetime (its X), and the evidence Q0 gaps. Later changes apply to new runs only.",
-    why: "Without X, Y and Z, quantum-vulnerable assets grade as Unknown, and the record lets an old run's grade be explained later.",
+    why: "Without X, Y and Z the grades rest on documented default Mosca assumptions, and the record lets an old run's grade be explained later.",
     example: "X 10, Y 3, Z 12; Core banking DB keeps data 25 y; 2 Q0 gaps.",
   },
   // src: backend/utilities/cbom_sources/regulated_entity.py:24-35, frontend/components/cbom/sources/regulatedEntity.ts:9-21 — the seven entity types RBI issued 2026 cybersecurity directions for, plus other; NBFC by default

@@ -292,6 +292,23 @@ def trigger_text(run: dict[str, Any]) -> str:
     return f"scheduled (schedule #{run['schedule_id']}, since deleted)" if run.get("schedule_id") else "scheduled"
 
 
+# staging QA2 Q1-14: one parenthesis said every not-compared source was "collected completely in only one of the two
+# runs", also for a source outside the scheduled run's scope and for one collected for the first time
+_NOT_COMPARED_WORDS = (("outside_scope", "outside this run's scope"), ("first_collection", "collected only once"),
+                       ("outside_baseline_scope", "outside the baseline run's scope"),
+                       ("incomplete", "not collected completely in both runs"))
+
+
+def not_compared_text(counts: dict[str, Any]) -> str:
+    """" (2 outside this run's scope, 1 collected only once)"; "" when nothing is uncompared. A diff recorded before
+    the reasons were counted keeps the old wording."""
+    if not int(counts.get("not_compared_sources", 0) or 0):
+        return ""
+    parts = [f"{int(counts.get(f'not_compared_{code}', 0) or 0)} {words}" for code, words in _NOT_COMPARED_WORDS
+             if int(counts.get(f"not_compared_{code}", 0) or 0)]
+    return f" ({', '.join(parts)})" if parts else " (collected completely in only one of the two runs)"
+
+
 def append_drift_section(story: list[Any], drift: dict[str, Any], styles: dict) -> None:
     """S4: what changed since the previous comparable run, from ``drift_report.run_drift`` (the ``/diff`` numbers)."""
     base = drift.get("baseline")
@@ -310,7 +327,7 @@ def append_drift_section(story: list[Any], drift: dict[str, Any], styles: dict) 
                      f"{base.get('finished_at') or '—'}"),
         ("This run", f"Run #{run.get('id')} · {trigger_text(run)}"),
         ("Sources compared", f"{counts.get('compared_sources', 0)} compared, {counts.get('not_compared_sources', 0)} "
-                             "not compared (collected completely in only one of the two runs)"),
+                             f"not compared{not_compared_text(counts)}"),
         ("Rules", "re-judged with the current rules" if rules.get("reclassified")
          else ("rules changed between the runs" if rules.get("rules_changed") else "same rules")),
         *([("Compared", (f"when the run's drift was recorded, {drift['recorded_at']} (the diff endpoint compares "
@@ -325,6 +342,8 @@ def append_drift_section(story: list[Any], drift: dict[str, Any], styles: dict) 
          ["Assets changed", str(counts.get("changed", 0))], ["Findings opened (new)", str(counts.get("opened", 0))],
          ["Findings resolved (closed)", str(counts.get("resolved", 0))],
          ["Not read this time (kept at last known state)", str(counts.get("not_read", 0))],
+         ["Collector changes (not drift: how a collector reports an asset changed)",
+          str(counts.get("collector_changes", 0))],
          ["Q0 Unknown closed (graded Q1-Q4 now)", str(q0.get("closed", 0))],
          ["Q0 Unknown opened", str(q0.get("opened", 0))],
          ["Risk-register Q0 gaps this run closed", str(q0.get("register_closed_total", 0))],

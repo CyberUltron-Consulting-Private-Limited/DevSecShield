@@ -46,8 +46,15 @@ def job_problem(job: dict[str, Any]) -> tuple[str, str] | None:
     return None
 
 
+WINDOW_WAIT = "Outside the scan window"  # jobs.job_waiting_reason
+
+
 def _offline_waits(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [j for j in jobs if j.get("status") == "pending" and "offline" in str(j.get("waiting_reason") or "")]
+
+
+def _window_waits(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [j for j in jobs if j.get("status") == "pending" and str(j.get("waiting_reason") or "") == WINDOW_WAIT]
 
 
 def status_reason(run_status: str | None, jobs: Iterable[dict[str, Any]]) -> dict[str, Any]:
@@ -68,16 +75,22 @@ def status_reason(run_status: str | None, jobs: Iterable[dict[str, Any]]) -> dic
                          "outcome": job.get("outcome"), "category": category, "reason": line})
     total = len(jobs)
     if run_status in ("queued", "running"):
-        waits = _offline_waits(jobs)
-        if not waits:
+        waits, window = _offline_waits(jobs), _window_waits(jobs)
+        if not waits and not window:
             return {"status_reason": None, "status_reason_jobs": []}
-        first = _clip(str(waits[0].get("waiting_reason")), 240)
-        n = len(waits)
-        text = (f"{n} of {total} jobs wait for an offline scan node; a job expires (and is refunded) when its node "
-                f"stays offline past the deadline. First: {first}")
-        return {"status_reason": text, "status_reason_jobs": [
+        parts = []
+        if waits:
+            first = _clip(str(waits[0].get("waiting_reason")), 240)
+            parts.append(f"{len(waits)} of {total} jobs wait for an offline scan node; a job expires (and is "
+                         f"refunded) when its node stays offline past the deadline. First: {first}")
+        if window:  # staging QA2 Q1-12: a run held by the scan window said nothing
+            parts.append(f"{len(window)} of {total} jobs wait for the scan window: "
+                         f"{'it starts' if len(window) == 1 else 'they start'} when the window opens (Settings, "
+                         "scan window)")
+        return {"status_reason": _clip(". ".join(parts), 900), "status_reason_jobs": [
             {"job_id": j.get("id"), "source_name": j.get("source_name"), "status": "pending", "outcome": None,
-             "category": "waiting", "reason": _clip(str(j.get("waiting_reason")), 240)} for j in waits[:MAX_JOBS]]}
+             "category": "waiting", "reason": _clip(str(j.get("waiting_reason")), 240)}
+            for j in [*waits, *window][:MAX_JOBS]]}
     if run_status not in ("partial", "failed", "cancelled") or not problems:
         return {"status_reason": None, "status_reason_jobs": []}
     parts = []

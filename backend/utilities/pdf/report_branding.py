@@ -239,7 +239,8 @@ REPORT_META: Dict[str, Dict[str, str]] = {
             "every Q0 Unknown gap and its reason, and the gaps closed week by week."
         ),
         "how_to_read": (
-            "Q1 Critical to Q4 Low rank quantum risk under the team's Mosca inputs; Q0 Unknown "
+            "Q1 Critical to Q4 Low rank quantum risk under the team's Mosca inputs (the documented defaults "
+            "where they are not set); Q0 Unknown "
             "means the product could not grade the item, never that it is safe."
         ),
     },

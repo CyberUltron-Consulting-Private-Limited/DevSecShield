@@ -17,6 +17,17 @@ the report says it is the first issue.
 An issue is recorded once per team, report, Document ID and UTC day; on PostgreSQL concurrent downloads are serialised
 by a transaction-scoped advisory lock on the team, so they never write duplicates (SQLite serialises writes itself).
 
+What a FORMAL issue is (staging QA2 Q1-15: every download, a quick look included, became the next report's "previous
+issue"). The choice, documented here and in the route (``formal_issue``):
+
+* an explicit issue: the request says ``issue=1`` (the board pack is being issued): always recorded;
+* otherwise the FIRST download of a Document ID on a UTC day, and only while its content is stable: no CBOM Sources run
+  of the team is queued or running (a run that lands changes the content, so a download taken mid-run is a draft);
+* a preview (``preview=1``) is never recorded, whatever else holds; a re-download of a Document ID already recorded
+  that day is never recorded again (``record``).
+
+Only formal issues are recorded, so only a formal issue can become the "previous issue" of a later one.
+
 The renderer stays pure: the route reads ``previous`` into ``TeamCbomView.previous_issue`` before rendering and calls
 ``record`` after the PDF was built.
 """
@@ -68,6 +79,21 @@ def decode(items: Any) -> dict[str, Any]:
             continue
         out[name] = float(text) if name == "readiness" else (text if name in _VALUE else int(text))
     return out
+
+
+EXPLICIT = "explicit"
+FIRST_DOWNLOAD = "first_download"
+
+
+def formal_issue(*, explicit: bool, preview: bool, active_runs: int) -> str | None:
+    """Why this download is a formal issue (``EXPLICIT`` / ``FIRST_DOWNLOAD``), or None when it is not recorded (a
+    preview, or a plain download while a run can still change the content). ``record`` then keeps it to the first
+    download of its Document ID that day."""
+    if preview:
+        return None
+    if explicit:
+        return EXPLICIT
+    return FIRST_DOWNLOAD if active_runs <= 0 else None
 
 
 _LOCK_NS = 0x5A49  # pg_advisory_xact_lock(namespace, team_id): one issue record at a time per team ("ZI")
@@ -136,4 +162,5 @@ def record(session: Any, team_id: int, number: int, snapshot: dict[str, Any], ac
     return True
 
 
-__all__ = ["ACTION", "FIELDS", "OBJECT_TYPE", "decode", "encode", "previous", "record"]
+__all__ = ["ACTION", "EXPLICIT", "FIELDS", "FIRST_DOWNLOAD", "OBJECT_TYPE", "decode", "encode", "formal_issue",
+           "previous", "record"]

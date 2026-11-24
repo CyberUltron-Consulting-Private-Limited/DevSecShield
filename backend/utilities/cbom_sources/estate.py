@@ -113,6 +113,8 @@ class EstateWrite:
     # source_ref -> (job, attempt) it pointed at before this write, None for a new source (#352: a hook that brought
     # the source up to that job compares the new job's rows with it instead of every observation's own row)
     previous: dict[str, tuple[int, int] | None] = field(default_factory=dict)
+    # staging QA2 Q1-09: stored per-source keys this write moved to the current identity (``identity_migration``)
+    identity_moves: dict[str, int] = field(default_factory=dict)
 
 
 Hook = Callable[[Session, EstateWrite], None]
@@ -495,6 +497,17 @@ def record_run(session: Session, run: CbomCollectionRun, now: _dt.datetime, *,
     marks["read"] = time.perf_counter()
     keyed = _keys_for_run(team_id, seen_rows)
     alias_to_key = keyed.alias_to_key
+    # staging QA2 Q1-09: a certificate key the identity rule changed moves with it (``identity_migration``): an
+    # ``obs:`` observation through the re-keying path below (``rekeyed``, never a removal), the rest in place
+    moves = {ref: found for ref, rows in job_rows.items()
+             if (found := ID.rekeyed_observations((r for r in rows if r.asset_type != "coverage"), ref))}
+    if moves:
+        from backend.utilities.cbom_sources import identity_migration
+
+        for found in moves.values():
+            for old, new in found.items():
+                alias_to_key.setdefault("obs:" + old, "obs:" + new)
+        write.identity_moves = identity_migration.remap(session, team_id, moves)
     seen: dict[tuple[str, str], _Seen] = {}
     for i, (row, ref) in enumerate(seen_rows):
         key, kind, basis = _key_of(keyed.keys[i])

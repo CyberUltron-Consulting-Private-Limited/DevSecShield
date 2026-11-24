@@ -72,6 +72,9 @@ class Collection:
     metadata: dict[str, Any] = field(default_factory=dict, compare=False, repr=False)
     # how the collection was made (``collection_info``: method, window, credential reference by name only); D1 prints it
     info: dict[str, Any] = field(default_factory=dict, compare=False, repr=False)
+    # the source's collect-job history (``collection_history``): successful collections, the first one, and the latest
+    # attempt whatever its status (D1's "Scans", "First scanned" and "Last attempt"; staging QA2 Q1-02)
+    history: dict[str, Any] = field(default_factory=dict, compare=False, repr=False)
 
     @property
     def label(self) -> str:
@@ -106,6 +109,19 @@ class SourcesRow:
     # impact depends on the facts (a domain's functional level, a key's size) keeps it in the posture facts, so a
     # deliverable's findings table never falls back to the KB default for it (#493 review 6032906354 M1)
     code_impacts: dict[str, str] = field(default_factory=dict, compare=False, repr=False)
+
+
+def is_deleted_source(collection: Any) -> bool:
+    """THE rule for a collection whose source was deleted (``Collection.source_kind`` is "" then): its last collection
+    is history, never current population or posture evidence. The team roll-up (D1, D12, D14, posture), the dashboard
+    and the certificate / network estates all ask this one function (staging QA2 Q1-01)."""
+    return not str(getattr(collection, "source_kind", "") or "")
+
+
+def current_only(found: SourcesResult) -> SourcesResult:
+    """``found`` without the collections (and rows) of deleted sources: what every population count reads."""
+    return SourcesResult(collections=[c for c in found.collections if not is_deleted_source(c)],
+                         rows=[r for r in found.rows if not is_deleted_source(r.collection)])
 
 
 # remediation status of a Sources finding (waves) -> the dashboard's finding status buckets
@@ -236,6 +252,61 @@ def latest_jobs(session: Any, team_id: int, *, limit: int = 2_000) -> list[Any]:
     return list(latest.values())
 
 
+# "Nothing collected: <target>: <code> (<detail>)" (scan node ``zscollect``): the code is the attempt's reason
+_NOTHING_CODE = re.compile(r"Nothing collected: .*?: ([a-z][a-z0-9_]{2,40})\b")
+_OPEN_STATUSES = {"pending": "waiting", "claimed": "running"}
+
+
+def attempt_reason(status: Any, error: Any, outcome: Any = None) -> str | None:
+    """A short reason for a collect attempt that did not read everything ("auth_failed", "expired", "partial"), None
+    for a complete success. Never a secret: the collector's own error code, else the first words of its message."""
+    status = str(status or "")
+    if status == "success":
+        return None if outcome in (None, "", "ok") else str(outcome)
+    if status in _OPEN_STATUSES:
+        return _OPEN_STATUSES[status]
+    found = _NOTHING_CODE.search(str(error or ""))
+    if found:
+        return found.group(1)
+    if status in ("expired", "cancelled") and not error:
+        return status
+    text = " ".join(str(error or status or "failed").split())
+    return text if len(text) <= 60 else text[:59].rstrip() + "\u2026"
+
+
+def collection_history(session: Any, team_id: int, sources: Mapping[int, Any]) -> dict[str, dict[str, Any]]:
+    """Per source ref (``identity.job_source_ref``): how many collections succeeded (``scans``), when the first one
+    finished (``first_scanned``) and the latest attempt whatever its status (``last_attempt_*``: run, job, status,
+    reason, time). One column read of the team's collect jobs; D1's Sources rows print it (staging QA2 Q1-02)."""
+    from types import SimpleNamespace
+
+    from sqlmodel import select
+
+    from backend.new_models import CbomCollectionJob as J
+    from backend.utilities.cbom_sources import identity as ID
+
+    out: dict[str, dict[str, Any]] = {}
+    for job_id, run_id, source_id, status, params, error, outcome, created, finished in session.exec(
+            select(J.id, J.run_id, J.source_id, J.status, J.params, J.error, J.outcome, J.created_at, J.finished_at)
+            .where(J.team_id == team_id, J.kind == "collect", J.run_id.is_not(None))).all():  # type: ignore[union-attr]
+        job = SimpleNamespace(params=params if isinstance(params, dict) else {}, source_id=source_id, id=job_id)
+        ref = ID.job_source_ref(job, sources.get(source_id or 0))  # type: ignore[arg-type]
+        h = out.setdefault(ref, {"scans": 0, "first_scanned": None, "_rank": None})
+        at = _aware(finished or created)
+        if status == "success":
+            h["scans"] += 1
+            if h["first_scanned"] is None or at < h["first_scanned"]:
+                h["first_scanned"] = at
+        rank = (_aware(created), int(job_id))
+        if h["_rank"] is None or rank > h["_rank"]:
+            h.update(_rank=rank, last_attempt_run_id=int(run_id), last_attempt_job_id=int(job_id),
+                     last_attempt_status=str(status), last_attempt_at=at,
+                     last_attempt_reason=attempt_reason(status, error, outcome))
+    for h in out.values():
+        h.pop("_rank", None)
+    return out
+
+
 @dataclass
 class SourcesResult:
     """What the team's Sources contribute: their latest collections and those collections' assets."""
@@ -320,6 +391,7 @@ def load_sources_result(session: Any, team_id: int, now: _dt.datetime | None = N
     sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
         CbomCollectionSource.team_id == team_id)).all()}
     out = SourcesResult()
+    history = collection_history(session, team_id, sources)
     for job in latest_jobs(session, team_id):
         source = sources.get(job.source_id or 0)
         assets = [a for a in session.exec(select(CbomCollectedAsset).where(
@@ -331,7 +403,8 @@ def load_sources_result(session: Any, team_id: int, now: _dt.datetime | None = N
             source_name=ID.job_source_name(job, source), source_kind=(source.kind if source is not None else ""),
             observed_at=_aware(job.finished_at or job.created_at), asset_count=len(assets),
             endpoints_probed=sum(1 for a in assets if a.asset_type in NETWORK_TYPES),
-            metadata=_source_metadata(source, job), info=collection_info(session, source, job))
+            metadata=_source_metadata(source, job), info=collection_info(session, source, job),
+            history=history.get(ID.job_source_ref(job, source), {}))
         out.collections.append(collection)
         for asset in assets:
             # its identity in its own source; link_certificates gives certificates their cross-source asset key
@@ -523,5 +596,5 @@ def resolve(code_observations: Iterable[tuple[int, _dt.datetime, str]], rows: It
 
 
 __all__ = ["Collection", "link_certificates", "NETWORK_TYPES", "REMEDIATION_BUCKET", "ORIGIN_CODE", "ORIGIN_SOURCES", "Resolution", "SourcesResult",
-           "SourcesRow", "cert_identity", "code_cert_identities", "code_row_identity", "latest_jobs",
-           "load_sources_result", "node_row", "origin_label", "resolve"]
+           "SourcesRow", "attempt_reason", "cert_identity", "code_cert_identities", "code_row_identity", "collection_history",
+           "current_only", "is_deleted_source", "latest_jobs", "load_sources_result", "node_row", "origin_label", "resolve"]

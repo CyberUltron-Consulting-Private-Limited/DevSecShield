@@ -371,7 +371,9 @@ RISK_SCORING_TEXT = (
     "enters through Mosca's inequality: X (how long the data must stay secret), Y (migration time) and Z (years "
     "until a cryptographically relevant quantum computer); X + Y > Z marks harvest-now-decrypt-later exposure and "
     "raises the grade. Criticality, exposure, owner, data classification and data lifetime come from the source "
-    "metadata the customer supplies (C5); where it is missing the item says so instead of assuming."
+    "metadata the customer supplies (C5). Where the team has not set X, Y or Z, the documented defaults are used "
+    "and every document says so, with the number of assets graded on them; an unset input never grades Q0 "
+    "(mosca_missing) while a default applies."
 )
 # SOW 3.2 step 5 names the fix classes config / code / vendor / hardware.
 SOW_FIX_TERMS = {"configurable": "Configuration", "code-fixed": "Code", "vendor-fixed": "Vendor",
@@ -475,8 +477,14 @@ SCHEDULE_TEXT = (
 # ---------------------------------------------------------------------------------------------
 EVIDENCE_PLAN_COLUMNS = ("SOW", "Deliverable", "Produced from", "Evidence that supports it")
 # Product text: utilities/pdf/cbom_deliverables.py registry, routers/cbom_run_deliverables.py, routers/certin.py.
-EVIDENCE_PLAN = (
-    ("D1", "Scope Baseline and Asset Population Register", "Team CBOM deliverable #1 (PDF)",
+# "Produced from" of a team deliverable is "Team CBOM deliverable #<number> (PDF[, CSV])" with the number and formats
+# the deliverables manifest gives it (``cbom_deliverables.DELIVERABLES``; staging QA2 Q1-03: D12 / D13 / D14 printed
+# the menu positions "#2 / #15 / #16"); ``TEAM_DELIVERABLE`` marks those rows below.
+TEAM_DELIVERABLE = None
+# a format the deliverables menu does not serve but another route does (the register's own CSV export)
+_ELSEWHERE = {"D12": "; CSV from the risk register export"}
+_EVIDENCE_PLAN_ROWS = (
+    ("D1", "Scope Baseline and Asset Population Register", TEAM_DELIVERABLE,
      "Configured sources and every completed scan and collection, with asset counts per source; sign-off block."),
     ("D2", "Discovery Methodology and Evidence Plan", "This document (PDF)",
      "Live configured-source status, collector specifications, run coverage of this edition, Appendix A."),
@@ -487,25 +495,51 @@ EVIDENCE_PLAN = (
     ("D5", "AIBOM", "AIBOM scan: CycloneDX 1.6 ML-BOM, SPDX 3.0, SARIF, VEX, evidence pack, PDF",
      "Signed evidence pack; the AIBOM checks of SOW 3.4 (CERT-In AIBOM, RBI FREE-AI, SEBI CSCRF, NIST AI RMF, "
      "Annex IV)."),
-    ("D6", "Infrastructure and Cloud Encryption Posture", "Team CBOM deliverable #6 (PDF)",
+    ("D6", "Infrastructure and Cloud Encryption Posture", TEAM_DELIVERABLE,
      "Declared settings from infrastructure code and L3 read-only API collections, per resource."),
-    ("D7", "Network, TLS and Crypto Protocol Assessment", "Team CBOM deliverable #7 (PDF)",
+    ("D7", "Network, TLS and Crypto Protocol Assessment", TEAM_DELIVERABLE,
      "Probed endpoints with negotiated protocol and cipher, from L4 handshakes; declared listeners from code."),
-    ("D8", "Certificate Estate Register", "Team CBOM deliverable #8 (PDF) and its CSV",
+    ("D8", "Certificate Estate Register", TEAM_DELIVERABLE,
      "Every unique certificate (SHA-256) with validity, algorithm, chain and where it was seen."),
-    ("D9", "Data-at-Rest Encryption Assessment", "Team CBOM deliverable #9 (PDF)",
+    ("D9", "Data-at-Rest Encryption Assessment", TEAM_DELIVERABLE,
      "Declared encryption of stores, backups and disks (settings only; stored data is not read)."),
-    ("D10", "Third-Party Cryptographic Assurance and Attestation Register", "Team CBOM deliverable #10 (PDF)",
+    ("D10", "Third-Party Cryptographic Assurance and Attestation Register", TEAM_DELIVERABLE,
      "Third-party components and the attestation ledger with evidence level E0 to E3 and dates."),
     ("D11", "Cryptographic Bill of Materials (CBOM)", "Run CBOM: CycloneDX 1.6 JSON (signed) and XML, VEX, "
      "evidence pack", "Signature over the exact bytes, SHA-256 manifest, drift file against the previous run."),
-    ("D12", "Quantum Risk Register", "Team CBOM deliverable #2 (PDF, CSV)",
+    ("D12", "Quantum Risk Register", TEAM_DELIVERABLE,
      "Every asset with its Q-grade and reason, each open Q0 gap, gaps closed by week with their cause."),
-    ("D13", "PQC Migration Roadmap", "Team CBOM deliverable #15 (PDF)",
+    ("D13", "PQC Migration Roadmap", TEAM_DELIVERABLE,
      "Quantum-vulnerable assets with the NIST post-quantum target, wave, date and owner (owner-confirmed)."),
-    ("D14", "Board / IT Strategy Committee Report", "Team CBOM deliverable #16 (PDF)",
+    ("D14", "Board / IT Strategy Committee Report", TEAM_DELIVERABLE,
      "Posture, readiness and regulatory exposure, each figure traceable to D11 and D12."),
 )
+
+
+def evidence_plan() -> tuple[tuple[str, str, str, str], ...]:
+    """Section 13's rows, the team deliverables' "Produced from" read from the deliverables manifest (number and
+    formats), so a renumbered or new format can never print a stale number (staging QA2 Q1-03)."""
+    from backend.utilities.pdf.cbom_deliverables import (
+        DELIVERABLES,  # lazy: the manifest imports this module
+    )
+
+    by_number = {spec.number: spec for spec in DELIVERABLES.values()}
+    rows = []
+    for sow, name, produced, evidence in _EVIDENCE_PLAN_ROWS:
+        if produced is TEAM_DELIVERABLE:
+            spec = by_number.get(int(sow[1:]))
+            produced = ("Not produced by the deliverables menu" if spec is None else
+                        f"Team CBOM deliverable #{spec.number} ({', '.join(f.upper() for f in spec.formats)})"
+                        + _ELSEWHERE.get(sow, ""))
+        rows.append((sow, name, produced, evidence))
+    return tuple(rows)
+
+
+def __getattr__(name: str) -> Any:
+    if name == "EVIDENCE_PLAN":  # kept as a name: computed from the manifest on read
+        return evidence_plan()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 # ---------------------------------------------------------------------------------------------
 # Limits of the method: printed only when the edition's run coverage leaves them true
@@ -564,7 +598,10 @@ NETWORK_KINDS = frozenset({"network_range", "appliance"})
 def coverage(view: Any) -> dict[str, Any]:
     """What this edition's collections actually did: kinds collected, endpoints probed (by any collector, and by the
     network collections alone), collections in scope."""
-    found = tuple(getattr(view, "collections", ()) or ())
+    from backend.utilities.cbom_sources.collections_view import is_deleted_source
+
+    # a deleted source's last collection is not in this edition (staging QA2 Q1-01: "19 collections" beside 18)
+    found = tuple(c for c in (getattr(view, "collections", ()) or ()) if not is_deleted_source(c))
     kinds = {str(_attr(c, "source_kind", "") or "") for c in found}
     probed = sum(int(_attr(c, "endpoints_probed", 0) or 0) for c in found)
     network = sum(int(_attr(c, "endpoints_probed", 0) or 0) for c in found
@@ -622,12 +659,12 @@ def method_scope_sentence(view: Any) -> str:
 
 __all__ = [
     "AGENT", "AGENTLESS", "API", "ASSET_TYPE_ROWS", "AVAILABLE_WITH_OPTION", "COLLECTORS", "COLLECTOR_BY_KIND",
-    "CONFIGURED", "EVIDENCE_BY_METHOD", "EVIDENCE_CHAIN", "EVIDENCE_LEVELS", "EVIDENCE_PLAN", "EVIDENCE_PLAN_COLUMNS",
+    "CONFIGURED", "EVIDENCE_BY_METHOD", "EVIDENCE_CHAIN", "EVIDENCE_LEVELS", "EVIDENCE_PLAN_COLUMNS",
     "FIX_CLASSES", "GRADING_TEXT", "LAYERS", "LIMITS_SECTION", "LIMIT_NO_NETWORK_PROBES", "LIMIT_NO_PROBES", "METHODS", "METHOD_COLUMNS", "NETWORK_KINDS",
     "NOT_CONFIGURED", "NOT_LOADED", "OPTION_LABELS", "OT_SAFETY_TEXT", "OUT_OF_SOW_NOTE", "Q0_POLICY", "Q0_REASONS",
     "Q0_ROW_TEXT", "Q_GRADE_ROWS", "RISK_SCORING_TEXT", "SCAN_WINDOW_TEXT", "SCHEDULE_TEXT", "SOW_FIX_TERMS", "SOW_ID",
     "SOW_SOURCE_TYPES", "SOW_TABLE_COLUMNS", "SOW_TABLE_NOTE", "CollectorSpec", "SowSourceType", "coverage",
-    "data_protection", "method_limits", "method_rows", "method_scope_sentence", "network_probed", "signing_clause",
+    "data_protection", "evidence_plan", "method_limits", "method_rows", "method_scope_sentence", "network_probed", "signing_clause",
 ]
 
 # ---------------------------------------------------------------------------------------------
@@ -642,10 +679,17 @@ MANUAL_KEY_CUSTODY_COLLECTED = (
 )
 
 
-def probed_note(probed: int) -> str:
+def probed_note(probed: int, total: int | None = None) -> str:
+    """Why live TLS endpoints are no manual item; with ``total`` (every endpoint the collections probed, the figure
+    the scope sentence prints) the difference is explained, so "175" and "212" never stand unexplained (QA2 Q1-16)."""
     noun = "endpoint was" if probed == 1 else "endpoints were"
-    return (f"Live TLS endpoints are not a manual item in this edition: {probed} {noun} probed by CBOM Sources "
-            "network-range and appliance collections (Appendix A).")
+    text = (f"Live TLS endpoints are not a manual item in this edition: {probed} {noun} probed by CBOM Sources "
+            "network-range and appliance collections (Appendix A)")
+    other = (total or 0) - probed
+    if other > 0:
+        text += (f"; the other {other} of the {total} endpoints probed are the service ports of the databases, "
+                 "clusters and key managers collected")
+    return text + "."
 
 
 def key_kinds_collected(view: Any) -> bool:

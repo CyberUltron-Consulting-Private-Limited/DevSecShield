@@ -30,6 +30,7 @@ import GradeInputsCard from "./GradeInputsCard";
 import { runResultsHref } from "@/components/cbom/results/resultsHref";
 import { cbomSourcesKeys, invalidateRunViews, TERMINAL_RUN } from "./keys";
 import { skipText } from "@/components/cbom/results/RunJobsTable";
+import { runTriggerLabel } from "@/components/cbom/results/resultRows";
 import { CriticalityCard } from "./RunPosture";
 import SchedulesCard from "./SchedulesCard";
 import { startRefusal } from "./startRefusal";
@@ -453,6 +454,7 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
                   <TableRow>
                     <TableHead>Run <InfoTip id="cbsrc.rr.col.run" /></TableHead>
                     <TableHead>Started <InfoTip id="cbsrc.rr.col.started" /></TableHead>
+                    <TableHead>Trigger <InfoTip id="cbsrc.rr.col.trigger" /></TableHead>
                     <TableHead>Status <InfoTip id="cbsrc.rr.col.run_status" /></TableHead>
                     <TableHead>Jobs <InfoTip id="cbsrc.rr.col.jobs" /></TableHead>
                     <TableHead className="text-right">Assets <InfoTip id="cbsrc.rr.col.assets" /></TableHead>
@@ -467,6 +469,10 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
                     <TableRow key={run.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800" data-testid={`review-run-${run.id}`}>
                       <TableCell className="font-medium text-zinc-900 dark:text-white">#{run.id}</TableCell>
                       <TableCell className="text-zinc-600 dark:text-zinc-400">{formatDateTime(run.created_at)}</TableCell>
+                      <TableCell className="text-zinc-600 dark:text-zinc-400 max-w-[220px] truncate" data-testid={`review-run-trigger-${run.id}`}
+                                 title={runTriggerLabel(run) ?? undefined}>
+                        {runTriggerLabel(run) ?? "—"}
+                      </TableCell>
                       <TableCell>
                         <RunStatusBadge status={run.status} reason={run.status_reason} />
                         <RunStatusReason reason={run.status_reason} clamp testId={`review-run-status-reason-${run.id}`} />

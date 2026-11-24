@@ -50,7 +50,9 @@ export interface CbomDiff {
   not_read?: CbomDiffAsset[]
   rule_changes?: { key: string; label: string; code: string; direction: string; label_change: string }[]
   /** findings that vanished only because a collector started sending a new fact (CB-33): not drift, no event */
-  collector_changes?: { key: string; label: string; code: string; direction: string; label_change: string }[]
+  /** a finding a newly sent fact explains (code = the finding code), or a label the collector now spells differently
+   *  (code "label", ``label_before`` the old label): never drift (staging QA2 Q1-09) */
+  collector_changes?: { key: string; label: string; code: string; direction: string; label_change: string; label_before?: string }[]
   readiness?: { before: number | null; after: number | null; delta: number | null }
   counts?: Record<string, number>
   truncated?: boolean

@@ -15,6 +15,20 @@ export function moscaText(m: Mosca | null | undefined): string {
   return [m.x, m.y, m.z].map((v) => (v == null ? "—" : String(v))).join("/");
 }
 
+// The documented defaults the grade applies to an unset X, Y or Z (backend qgrade.DEFAULT_X / DEFAULT_X_CRITICAL /
+// DEFAULT_Y / DEFAULT_Z_YEAR, DEFAULTS_TEXT; pinned by inputs.test.ts against qgrade.py).
+export const MOSCA_DEFAULTS = { x: 7, xCritical: 10, y: 5, zYear: 2035 } as const;
+
+/** What the grade does with unset Mosca inputs (staging QA2 Q1-06: the card said "grade as Unknown", but the grade
+ * applies documented defaults), or null when X, Y and Z are all set. */
+export function moscaDefaultsText(m: Mosca | null | undefined): string | null {
+  const unset = (["x", "y", "z"] as const).filter((k) => m?.[k] == null).map((k) => k.toUpperCase());
+  if (unset.length === 0) return null;
+  const which = unset.length === 3 ? "Not set" : `${unset.join(", ")} not set`;
+  return `${which}: grades use default Mosca assumptions (X ${MOSCA_DEFAULTS.x} years, ${MOSCA_DEFAULTS.xCritical} ` +
+    `for a high or critical source; Y ${MOSCA_DEFAULTS.y} years; Z the years left until ${MOSCA_DEFAULTS.zYear})`;
+}
+
 /** The banner sentence, or null when the run's inputs equal the team's now (or the run has no snapshot). */
 export function inputsChangedText(p: QPosture): string | null {
   if (!p.inputs_changed || !p.grade_inputs || !p.grade_inputs_now) return null;

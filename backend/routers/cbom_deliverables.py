@@ -117,11 +117,14 @@ def _aware(moment: datetime | None) -> datetime:
 
 
 def _count_collections(engine: Any, team_id: int) -> int:
-    """CBOM Sources sources with a completed collection: CBOM results like completed code scans (jobs only)."""
+    """CBOM Sources sources with a completed collection: CBOM results like completed code scans (jobs only). A deleted
+    source's last collection is not counted (staging QA2 Q1-01: the roll-up's rule)."""
+    from backend.new_models import CbomCollectionSource
     from backend.utilities.cbom_sources.collections_view import latest_jobs
 
     with Session(engine) as session:
-        return len(latest_jobs(session, team_id))
+        live = set(session.exec(select(CbomCollectionSource.id).where(CbomCollectionSource.team_id == team_id)).all())
+        return sum(1 for job in latest_jobs(session, team_id) if job.source_id in live)
 
 
 def _load_heads(engine: Any, team_id: int) -> list[ScanHead]:
@@ -195,12 +198,30 @@ def _previous_issue(engine: Any, team_id: int, number: int, content_id: str) -> 
         return previous(session, team_id, number, content_id)
 
 
-def _record_issue(engine: Any, team_id: int, number: int, snapshot: dict[str, Any], user_id: int | None) -> None:
-    """Record this issue of the board report; a failure is logged and never fails the download."""
-    from backend.utilities.dashboard.cbom_board_issues import record
+def _truthy(value: Any) -> bool:
+    return str(value or "").strip().lower() in ("1", "true", "yes")
+
+
+def _active_runs(session: Session, team_id: int) -> int:
+    from sqlalchemy import func
+
+    from backend.new_models import CbomCollectionRun
+
+    return int(session.exec(select(func.count()).select_from(CbomCollectionRun).where(
+        CbomCollectionRun.team_id == team_id, CbomCollectionRun.status.in_(("queued", "running")))).one() or 0)  # type: ignore[attr-defined]
+
+
+def _record_issue(engine: Any, team_id: int, number: int, snapshot: dict[str, Any], user_id: int | None, *,
+                  explicit: bool = False, preview: bool = False) -> None:
+    """Record this download as a formal issue of the board report when it is one (``cbom_board_issues.formal_issue``:
+    an explicit ``issue=1``, else the first download of the day while no run is active; never a preview). A failure
+    is logged and never fails the download."""
+    from backend.utilities.dashboard.cbom_board_issues import formal_issue, record
 
     try:
         with Session(engine) as session:
+            if formal_issue(explicit=explicit, preview=preview, active_runs=_active_runs(session, team_id)) is None:
+                return
             record(session, team_id, number, snapshot, user_id)
     except Exception as exc:  # noqa: BLE001 - the PDF was built; the trend of the next issue is what is lost
         _log_failure("issue record", team_id, exc)
@@ -328,7 +349,9 @@ _PDF_DESCRIPTION = (
     "X-Cbom-Sources, X-Cbom-Fidelity (full, mixed, reduced or none), X-Cbom-Fingerprint "
     "and X-Cbom-Posture (assessed, mixed, not_assessed or none) are informational. "
     "Cover options (prepared_for, label): query parameters of a GET, or the JSON body of a POST, which keeps a "
-    "client name out of URLs and access logs."
+    "client name out of URLs and access logs. Board report (D14) only: `issue=1` records the download as a formal "
+    "issue (the next issue's trend compares with it); `preview=1` never does; a plain download is a formal issue "
+    "when it is the Document ID's first download of the day and no CBOM Sources run is queued or running."
 )
 _PDF_RESPONSES: dict[int | str, dict[str, Any]] = {
     200: {
@@ -399,7 +422,9 @@ async def download_cbom_deliverable(
         from backend.utilities.pdf.cbom_board_report_pdf import issue_snapshot
 
         snapshot = {**issue_snapshot(view), "content_id": content_id}
-        await run_in_threadpool(_record_issue, engine, team_id, spec.number, snapshot, user_id)
+        await run_in_threadpool(functools.partial(
+            _record_issue, engine, team_id, spec.number, snapshot, user_id,
+            explicit=_truthy(request.query_params.get("issue")), preview=_truthy(request.query_params.get("preview"))))
     filename = deliverable_filename(spec, team_id, view.as_of)
     headers = {
         **report_headers(ctx, filename, findings=False),

@@ -440,8 +440,9 @@ def test_live_kpi_cards(text):
         "Scans included 8 of 9 successful scans",
         "Crypto assets 69 current occurrences",
         "Unique certificates 14 de-duplicated across sources",
-        "Frameworks 13 pooled over 6 sources",
-        "Requirements 109 tracked across frameworks",
+        # staging QA2 Q1-04: the frameworks (and their requirements) that bind the default NBFC profile
+        "Frameworks 7 pooled over 6 sources",
+        "Requirements 74 tracked across the frameworks that apply",
     ):
         assert card in one, card
 
@@ -449,9 +450,9 @@ def test_live_kpi_cards(text):
 def test_assets_by_type_table_reconciles_with_appendix_b(text):
     one = section(text, 1)
     assert (
-        # the two WP3a advisory library rows have no crypto assetType: they print as "Other"
-        "Current asset occurrences by type Asset type Occurrences Algorithm 36 Certificate 17 "
-        "Protocol 2 Related crypto material 12 Other 2 Total 69" in one
+        # staging QA2 Q1-05: the Scope Baseline's (D1) kinds and numbers, no longer CycloneDX types
+        "Current asset occurrences by kind Asset kind (as D1) Occurrences Algorithms 36 Certificates 17 "
+        "Keys and secrets 12 Protocols and endpoints 2 Libraries 2 Encryption settings 0 Total 69" in one
     )
     # 17 certificate occurrences but 14 unique certificates: the note explains the difference
     assert norm(methodology.ASSET_TABLE_NOTE) in one
@@ -825,7 +826,7 @@ def test_empty_team_states_no_live_figures_and_shows_the_banner():
     )
     assert "This edition reflects" not in one
     assert "Sources 0 assessed in this edition" in one
-    assert "Frameworks 13 no results pooled" in one
+    assert "Frameworks 7 no results pooled" in one  # QA2 Q1-04: the frameworks that bind the profile
     assert "No source has been assessed yet." in section(everything, 7)
     assert "Low risk" not in everything
     six = section(everything, 11)
@@ -893,7 +894,7 @@ def test_single_scan_team_uses_singular_wording():
     )
     assert "Evidence is drawn from 1 source: 1 repository." in section(everything, 7)
     assert "Pooled over 1 of 1 source whose latest scan is full-fidelity." in section(everything, 11)
-    assert "Frameworks 13 pooled over 1 source" in one
+    assert "Frameworks 7 pooled over 1 source" in one  # QA2 Q1-04: the frameworks that bind the profile
 
 
 def test_attested_requirements_show_pass_with_evidence_and_coverage_as_given(view):

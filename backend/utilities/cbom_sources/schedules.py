@@ -24,13 +24,14 @@ from __future__ import annotations
 import calendar
 import datetime as _dt
 import zoneinfo
+from collections.abc import Iterable
 from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy import update
 from sqlmodel import Session, select
 
-from backend.new_models import CbomCollectionSchedule, CbomCollectionSource, TeamMembership
+from backend.new_models import CbomCollectionRun, CbomCollectionSchedule, CbomCollectionSource, TeamMembership
 from backend.utilities.cbom_sources.common import audit, iso_z, log
 from backend.utilities.cbom_sources.drift import _event, insert_events
 from backend.utilities.cbom_sources.runs import queue_run
@@ -260,14 +261,40 @@ def fire_due(engine, now: _dt.datetime, *, limit: int = 50) -> list[dict[str, An
     return out
 
 
-def public_schedule(s: CbomCollectionSchedule) -> dict[str, Any]:
+# a run's status -> what "Last" says about the schedule's last slot (staging QA2 Q1-10: "Run #58 queued" stayed on a
+# schedule whose run had long finished, because ``last_status`` is written once, when the slot fires)
+_RUN_WORDS = {"queued": "queued", "running": "running", "done": "done", "partial": "partly done", "failed": "failed",
+              "cancelled": "cancelled"}
+
+
+def last_outcome(s: CbomCollectionSchedule, run_status: str | None) -> tuple[str | None, str | None]:
+    """``(last_status, last_message)``: a fired slot reads its run's status now; a skipped slot, or a run that no
+    longer exists, keeps what was recorded when it fired."""
+    if s.last_status != "queued" or not s.last_run_id or run_status not in _RUN_WORDS:
+        return s.last_status, s.last_message
+    recorded = s.last_message or ""
+    tail = recorded[recorded.index(" (catch-up"):] if " (catch-up" in recorded else ""
+    return run_status, f"Run #{s.last_run_id} {_RUN_WORDS[run_status]}{tail}"
+
+
+def run_statuses(session: Session, team_id: int, run_ids: Iterable[int | None]) -> dict[int, str]:
+    """The current status of the schedules' last runs (one query)."""
+    ids = sorted({int(i) for i in run_ids if i})
+    if not ids:
+        return {}
+    return {int(rid): str(status) for rid, status in session.exec(select(CbomCollectionRun.id, CbomCollectionRun.status)
+            .where(CbomCollectionRun.team_id == team_id, CbomCollectionRun.id.in_(ids))).all()}  # type: ignore[union-attr]
+
+
+def public_schedule(s: CbomCollectionSchedule, run_status: str | None = None) -> dict[str, Any]:
+    last_status, last_message = last_outcome(s, run_status)
     return {"id": s.id, "name": s.name, "enabled": s.enabled, "frequency": s.frequency, "time_of_day": s.time_of_day,
             "weekday": s.weekday, "monthday": s.monthday, "include": s.include or {}, "source_ids": s.source_ids or [],
             "min_criticality": s.min_criticality, "soc_ack": s.soc_ack_at is not None, "soc_ack_at": iso_z(s.soc_ack_at),
             "owner_user_id": s.owner_user_id, "next_run_at": iso_z(s.next_run_at), "last_slot": s.last_slot,
-            "last_fired_at": iso_z(s.last_fired_at), "last_run_id": s.last_run_id, "last_status": s.last_status,
-            "last_message": s.last_message, "row_version": s.row_version}
+            "last_fired_at": iso_z(s.last_fired_at), "last_run_id": s.last_run_id, "last_status": last_status,
+            "last_message": last_message, "row_version": s.row_version}
 
 
-__all__ = ["FREQUENCIES", "MAX_SCHEDULES", "fire_due", "fire_one", "latest_slot", "missed_between", "next_slot",
-           "next_unrun_slot", "public_schedule", "reschedule_team", "wall_to_utc"]
+__all__ = ["FREQUENCIES", "MAX_SCHEDULES", "fire_due", "fire_one", "last_outcome", "latest_slot", "missed_between",
+           "next_slot", "next_unrun_slot", "public_schedule", "reschedule_team", "run_statuses", "wall_to_utc"]
