@@ -69,6 +69,15 @@ SEBI_RA2 = ("SEBI CSCRF", "ID.RA Standard 2")
 
 ALLOW: dict[str, dict[str, set[tuple[str, str]]]] = {
     "node": {
+        # FIX-B3 Active Directory: weak Kerberos ciphers break the RBI / SEBI strong-algorithm clauses; the functional
+        # level and the krbtgt key age are hygiene no clause in the knowledge base names; a DC-default encryption type
+        # is unknown (KB5073381), not an observed weak cipher, so it cites nothing until the default is known
+        "AD_FUNCTIONAL_LEVEL_LEGACY": set(),
+        "KERBEROS_DES_ENABLED": {RBI_140, RBI_118, *RBI_OTHERS, SEBI_H5},
+        "KERBEROS_ENCTYPES_DEFAULT": set(),
+        "KERBEROS_RC4_ENABLED": {RBI_140, RBI_118, *RBI_OTHERS, SEBI_H5},
+        "KERBEROS_RC4_ONLY": {RBI_140, RBI_118, *RBI_OTHERS, SEBI_H5},
+        "KRBTGT_KEY_OLD": set(),
         "CA_ALLOWS_ANY_NAME": set(),
         "CA_ALLOWS_WEAK_KEY": {NIST_112, RBI_140, *RBI_OTHERS, RBI_118},
         "CA_LONG_VALIDITY": set(),

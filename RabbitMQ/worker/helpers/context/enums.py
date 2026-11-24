@@ -329,6 +329,7 @@ class ModelProvider(str, Enum):
     OPENROUTER = "openrouter"
     DEEPSEEK = "deepseek"
     XAI = "xai"
+    ALIBABA = "alibaba"
     PYPI = "pypi"
     CREDENTIAL = "credential"
     LOCAL = "local"

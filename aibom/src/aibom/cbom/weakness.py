@@ -352,6 +352,141 @@ def weak_padding_finding(component: AIComponent) -> tuple[str, str, str] | None:
     )
 
 
+# KDF cost minimums (review of #491 m7; second review M-B, m-c). NIST SP 800-132 section
+# 5.2: at least 1,000 PBKDF2 iterations (the KB's WEAK_KDF_ITERATIONS floor, Medium).
+# OWASP Password Storage Cheat Sheet: PBKDF2-HMAC-SHA1 1,300,000, -SHA256 600,000,
+# -SHA512 210,000 iterations; scrypt one of the (N, p) pairs below with r = 8; Argon2id
+# one of the (memory KiB, time) pairs below (p 1). Below OWASP but above the NIST floor:
+# Low. This one table grades a KDF row and picks a file's weakest call
+# (``ast_crypto_scan._settle_kdf``).
+_NIST_PBKDF2_MIN = 1_000
+_OWASP_PBKDF2_MIN = {
+    "HMAC-SHA1": 1_300_000,
+    "HMAC-SHA256": 600_000,
+    "HMAC-SHA512": 210_000,
+}
+_OWASP_SCRYPT = ((2**17, 1), (2**16, 2), (2**15, 3), (2**14, 5), (2**13, 10))
+_OWASP_SCRYPT_R = 8
+_OWASP_ARGON2 = ((47104, 1), (19456, 2), (12288, 3), (9216, 4), (7168, 5))
+
+# grades of one KDF parameter set (higher = worse)
+KDF_COMPLIANT, KDF_BELOW_OWASP, KDF_BELOW_NIST = 0, 1, 2
+
+
+def _int_prop(props: dict[str, str], key: str) -> int | None:
+    raw = str(props.get(key) or "")
+    return int(raw) if raw.isdigit() else None
+
+
+def _kdf_family(name: str) -> str | None:
+    upper = (name or "").upper()
+    for family in ("PBKDF2", "SCRYPT", "ARGON2"):
+        if upper.startswith(family):
+            return family.lower()
+    return None
+
+
+def _pbkdf2_floor(props: dict[str, str]) -> tuple[str, int]:
+    """The PRF (HMAC-SHA256 when the call names none) and OWASP's minimum for it."""
+    prf = props.get("crypto:kdfPrf") or "HMAC-SHA256"
+    return prf, _OWASP_PBKDF2_MIN.get(prf.upper().replace("SHA-", "SHA"), 600_000)
+
+
+def _best_pair(values: tuple[int, int], pairs) -> float:
+    """How far a (cost, cost) set is from OWASP's nearest equal-strength pair: 1.0 meets
+    one exactly, below 1.0 meets none (min over the two dimensions, max over pairs)."""
+    return max(min(values[0] / a, values[1] / b) for a, b in pairs)
+
+
+def kdf_call_grade(name: str, props: dict[str, str]) -> tuple[int, float] | None:
+    """``(grade, ratio)`` of one KDF parameter set, or None when its cost is unread
+    (library defaults, a value from configuration).
+
+    grade: ``KDF_BELOW_NIST`` (PBKDF2 under 1,000 iterations), ``KDF_BELOW_OWASP`` or
+    ``KDF_COMPLIANT``. ratio: the cost as a fraction of the OWASP minimum for that
+    call's own PRF / pair (lower = weaker), so 300,000 SHA-256 iterations (0.5) rank
+    below 210,000 SHA-512 ones (1.0). Rank by grade first, then ratio."""
+    family = _kdf_family(name)
+    if family == "pbkdf2":
+        iterations = _int_prop(props, "crypto:iterations")
+        if iterations is None:
+            return None
+        _prf, floor = _pbkdf2_floor(props)
+        ratio = iterations / floor
+        if iterations < _NIST_PBKDF2_MIN:
+            return KDF_BELOW_NIST, ratio
+        return (KDF_BELOW_OWASP if iterations < floor else KDF_COMPLIANT), ratio
+    if family == "scrypt":
+        n = _int_prop(props, "crypto:scryptN")
+        if n is None:
+            return None
+        r = _int_prop(props, "crypto:scryptR") or _OWASP_SCRYPT_R
+        p = _int_prop(props, "crypto:scryptP") or 1
+        # every OWASP pair is at r = 8; a smaller r shrinks the memory by r / 8
+        ratio = _best_pair((n, p), _OWASP_SCRYPT) * min(1.0, r / _OWASP_SCRYPT_R)
+        return (KDF_COMPLIANT if ratio >= 1 else KDF_BELOW_OWASP), ratio
+    if family == "argon2":
+        memory = _int_prop(props, "crypto:argon2MemoryCost")
+        time = _int_prop(props, "crypto:argon2TimeCost")
+        if memory is None or time is None:
+            return None
+        ratio = _best_pair((memory, time), _OWASP_ARGON2)
+        return (KDF_COMPLIANT if ratio >= 1 else KDF_BELOW_OWASP), ratio
+    return None
+
+
+def kdf_parameter_findings(component: AIComponent) -> list[tuple[str, str, str]]:
+    """Grade a KDF algorithm asset's captured cost (its worst-graded call's, see
+    ``ast_crypto_scan._settle_kdf``) with :func:`kdf_call_grade`.
+
+    PBKDF2 below 1,000 iterations is Medium (the KB floor); below the OWASP minimum
+    for its PRF, scrypt below every OWASP (N, p) pair and Argon2 below every OWASP
+    (memory, time) pair are Low. A cost the scan could not read is not graded."""
+    if component.kind != "crypto_asset":
+        return []
+    props = component.properties or {}
+    if props.get("crypto:assetType") != "algorithm":
+        return []
+    graded = kdf_call_grade(component.name, props)
+    if graded is None or graded[0] == KDF_COMPLIANT:
+        return []
+    grade = graded[0]
+    family = _kdf_family(component.name)
+    where = props.get("crypto:kdfWeakestLine") or props.get("crypto:line")
+    at = f" (line {where})" if where else ""
+    if family == "pbkdf2":
+        iterations = _int_prop(props, "crypto:iterations") or 0
+        prf, floor = _pbkdf2_floor(props)
+        if grade == KDF_BELOW_NIST:
+            return [(WEAK_KDF_ITERATIONS, _SEV_MED,
+                     f"Weak KDF iteration count {component.name}{at}: {iterations} "
+                     f"iterations (CWE-916), below the 1,000 minimum of NIST SP "
+                     f"800-132 "
+                     f"and the OWASP minimum of {floor:,} for PBKDF2-{prf}.")]
+        return [(WEAK_KDF_ITERATIONS, _SEV_LOW,
+                 f"KDF iteration count {component.name}{at}: {iterations:,} "
+                 f"iterations, below the OWASP Password Storage minimum of "
+                 f"{floor:,} for PBKDF2-{prf} (CWE-916). Raise it, or move to "
+                 f"Argon2id.")]
+    if family == "scrypt":
+        n = _int_prop(props, "crypto:scryptN") or 0
+        r = _int_prop(props, "crypto:scryptR")
+        p = _int_prop(props, "crypto:scryptP")
+        got = f"N = {n:,}" + (f", r = {r}" if r else "") + (f", p = {p}" if p else "")
+        return [(WEAK_KDF_ITERATIONS, _SEV_LOW,
+                 f"scrypt cost {component.name}{at}: {got}, below the OWASP "
+                 f"Password Storage minimum (N = 2^17 with r = 8, p = 1, or an "
+                 f"equal-strength pair: 2^16 / p 2, 2^15 / p 3, 2^14 / p 5, "
+                 f"2^13 / p 10) (CWE-916).")]
+    memory = _int_prop(props, "crypto:argon2MemoryCost") or 0
+    time = _int_prop(props, "crypto:argon2TimeCost") or 0
+    return [(WEAK_KDF_ITERATIONS, _SEV_LOW,
+             f"Argon2 cost {component.name}{at}: memory {memory:,} KiB, "
+             f"time {time}, "
+             f"below the OWASP Password Storage minimum (Argon2id 19 MiB with 2 "
+             f"passes, or an equivalent pair) (CWE-916).")]
+
+
 def material_misuse_findings(component: AIComponent) -> list[tuple[str, str, str]]:
     """Return every crypto-material misuse flag on a related-crypto-material asset (C6).
 
@@ -935,5 +1070,6 @@ __all__ = [
     "cert_expiry_finding",
     "certificate_findings",
     "material_misuse_findings",
+    "kdf_parameter_findings",
     "cipher_suite_findings",
 ]

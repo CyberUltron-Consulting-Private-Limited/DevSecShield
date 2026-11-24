@@ -66,9 +66,11 @@ class DocumentIdentity:
             "components": [
                 {
                     "type": "application",
-                    "supplier": {"name": SUPPLIER, "url": [SUPPLIER_URL]},
+                    # publisher (not supplier): it survives the CycloneDX XML export
+                    "publisher": SUPPLIER,
                     "name": self.tool_name,
                     "version": self.tool_version,
+                    "externalReferences": [{"type": "website", "url": SUPPLIER_URL}],
                 }
             ]
         }

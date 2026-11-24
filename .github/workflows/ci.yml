@@ -249,7 +249,7 @@ jobs:
           # Same contexts and build arguments as scripts/deploy/build_images.sh and scripts/release/scan_node_image.sh.
           # build-contexts: one name=path per line ("\n"); build-push-action never splits them on commas.
           if f img-all || f img-backend; then
-            add '{"name":"backend","context":"backend","dockerfile":"backend/Dockerfile","build-contexts":"migrations=prod_database_migrations\naibom=aibom"}'
+            add '{"name":"backend","context":"backend","dockerfile":"backend/Dockerfile","build-contexts":"migrations=prod_database_migrations\naibom=aibom","require-files":"/prod_database_migrations/alembic.ini /opt/aibom/src/aibom/score/posture.py"}'
           fi
           if f img-all || f img-frontend; then
             add '{"name":"frontend","context":"frontend","dockerfile":"frontend/Dockerfile","build-args":"NEXT_PUBLIC_BACKEND_URL=http://localhost:8000"}'

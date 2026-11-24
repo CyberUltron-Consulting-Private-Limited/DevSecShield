@@ -12,6 +12,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer
 
+from backend.utilities.pdf.cbom_inventory_pdf import append_cbom_inventory
 from backend.utilities.pdf.report_context import ReportContext, details_note, join_parts
 from backend.utilities.pdf.report_branding import (
     report_generated,
@@ -302,9 +303,12 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         )
         details.append(Spacer(1, 0.1 * inch))
         if informational:
+            payload = raw if raw else (scan_results if isinstance(scan_results, dict) else {})
+            bom = payload.get("cbom_json") if isinstance(payload, dict) else None
+            where = ("in the cryptographic inventory at the end of this report"
+                     if isinstance(bom, dict) and bom.get("components") else "in the CycloneDX download")
             details.append(Paragraph(
-                f"{informational} clean inventory item(s) with no finding are listed in the CycloneDX download, "
-                "not here.", styles["muted"]))
+                f"{informational} clean inventory item(s) with no finding are listed {where}.", styles["muted"]))
 
     if not ctx.has("details"):
         pass
@@ -349,6 +353,9 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
             )
 
     join_parts(story, [summary_part, catalog_part, details], PageBreak)
+    if ctx.has("details"):  # SOW D3: the full inventory, every asset with or without a finding
+        append_cbom_inventory(story, raw if raw else (scan_results if isinstance(scan_results, dict) else {}),
+                              styles)
     if ctx.has("compliance"):
         appendix_payload = raw if raw else (scan_results if isinstance(scan_results, dict) else {})
         append_bom_compliance_sections(story, appendix_payload, styles)
