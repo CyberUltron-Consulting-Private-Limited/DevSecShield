@@ -280,54 +280,58 @@ def collection_history(session: Any, team_id: int, sources: Mapping[int, Any]) -
     reason, time). D1's Sources rows print it (staging QA2 Q1-02).
 
     Aggregated in SQL (#497 review M3: reading every job's params was 2.1 s and 529 MB at 60k jobs): one GROUP BY per
-    source (a job of a deleted source is grouped by the source uid its params kept), then the latest job of each
-    source by id, reading only its status, error and outcome."""
+    source (a deleted source's detached jobs by the uid their params kept) for the success count, the first success
+    and the newest creation time, then the jobs created at those times (the newest of each source, created_at then
+    id), of which only status, error and outcome are read."""
     import sqlalchemy as sa
 
     from backend.new_models import CbomCollectionJob as J
 
     base = (J.team_id == team_id, J.kind == "collect", J.run_id.is_not(None))  # type: ignore[union-attr]
     ok = J.status == "success"
-    done_at = sa.func.coalesce(J.finished_at, J.created_at)
-    aggregates = (sa.func.sum(sa.case((ok, 1), else_=0)), sa.func.min(sa.case((ok, done_at), else_=None)),
-                  sa.func.max(J.id))
-    groups: dict[str, tuple[int, Any, int]] = {}  # ref -> (scans, first success, latest job id)
-
-    def add(ref: str, scans: Any, first: Any, latest: Any) -> None:
-        held = groups.get(ref)
-        scans, latest = int(scans or 0), int(latest)
-        if held is not None:  # a live source's jobs and its detached ones (rare): one history
-            first = min([f for f in (first, held[1]) if f is not None], default=None)
-            scans, latest = scans + held[0], max(latest, held[2])
-        groups[ref] = (scans, first, latest)
-
-    for source_id, scans, first, latest in session.execute(
-            sa.select(J.source_id, *aggregates).where(*base, J.source_id.is_not(None))  # type: ignore[union-attr]
-            .group_by(J.source_id)).all():
-        source = sources.get(source_id)
-        add((source.source_uid if source is not None and source.source_uid else f"source-{source_id}"),
-            scans, first, latest)
+    # one key per source: its id, else (a deleted source's detached jobs) the uid its params kept, else its name
     uid = J.params["source_uid"].as_string()  # type: ignore[index]
     name = J.params["source_name"].as_string()  # type: ignore[index]
-    for ref_uid, ref_name, scans, first, latest in session.execute(
-            sa.select(uid, name, *aggregates).where(*base, J.source_id.is_(None))  # type: ignore[union-attr]
-            .group_by(uid, name)).all():
-        add(ref_uid or f"deleted:{ref_name or latest}", scans, first, latest)
-    latest_ids = sorted(g[2] for g in groups.values())
-    rows: dict[int, Any] = {}
-    for start in range(0, len(latest_ids), 500):
-        for row in session.execute(sa.select(J.id, J.run_id, J.status, J.error, J.outcome, J.created_at,
-                                             J.finished_at).where(J.id.in_(latest_ids[start:start + 500]))).all():  # type: ignore[union-attr]
-            rows[int(row[0])] = row
+    group = sa.case((J.source_id.is_not(None), sa.literal("i:") + sa.cast(J.source_id, sa.String)),  # type: ignore[union-attr]
+                    (uid.is_not(None), sa.literal("u:") + uid), else_=sa.literal("n:") + sa.func.coalesce(name, ""))
+    done_at = sa.case((ok, sa.func.coalesce(J.finished_at, J.created_at)), else_=None)
+    totals = session.execute(sa.select(group, sa.func.sum(sa.case((ok, 1), else_=0)), sa.func.min(done_at),
+                                       sa.func.max(J.created_at)).where(*base).group_by(group)).all()
+    newest_at = sorted({t[3] for t in totals if t[3] is not None})
+    latest: dict[str, Any] = {}  # group -> its newest job (created_at, then id), status / error / outcome only
+    for start in range(0, len(newest_at), 500):
+        for row in session.execute(sa.select(group, J.id, J.run_id, J.status, J.error, J.outcome, J.created_at,
+                                             J.finished_at).where(*base, J.created_at.in_(newest_at[start:start + 500]))
+                                   ).all():  # type: ignore[union-attr]
+            held = latest.get(row[0])
+            if held is None or (row[6], row[1]) > (held[6], held[1]):
+                latest[row[0]] = row
+    rows = []
+    for key, scans, first, newest in totals:
+        row = latest.get(key)
+        if row is not None and row[6] == newest:
+            rows.append((key, scans, first, *row[1:]))
     out: dict[str, dict[str, Any]] = {}
-    for ref, (scans, first, latest) in groups.items():
-        row = rows.get(latest)
-        h: dict[str, Any] = {"scans": scans, "first_scanned": _aware(first) if first is not None else None}
-        if row is not None:
-            job_id, run_id, status, error, outcome, created, finished = row
-            h.update(last_attempt_run_id=int(run_id), last_attempt_job_id=int(job_id), last_attempt_status=str(status),
-                     last_attempt_at=_aware(finished or created),
-                     last_attempt_reason=attempt_reason(status, error, outcome))
+    for key, scans, first, job_id, run_id, status, error, outcome, created, finished in rows:
+        kind, _sep, value = str(key).partition(":")
+        if kind == "i":
+            source = sources.get(int(value))
+            ref = source.source_uid if source is not None and source.source_uid else f"source-{value}"
+        else:
+            ref = value if kind == "u" else f"deleted:{value or job_id}"
+        if isinstance(first, str):  # SQLite returns the aggregated time as text
+            first = _dt.datetime.fromisoformat(first)
+        h: dict[str, Any] = {"scans": int(scans or 0), "first_scanned": _aware(first) if first is not None else None,
+                             "last_attempt_run_id": int(run_id), "last_attempt_job_id": int(job_id),
+                             "last_attempt_status": str(status), "last_attempt_at": _aware(finished or created),
+                             "last_attempt_reason": attempt_reason(status, error, outcome)}
+        held = out.get(ref)
+        if held is not None:  # a source's attached and detached jobs (rare): one history, the newer attempt
+            h["scans"] += held["scans"]
+            firsts = [f for f in (h["first_scanned"], held["first_scanned"]) if f is not None]
+            h["first_scanned"] = min(firsts) if firsts else None
+            if (held["last_attempt_at"], held["last_attempt_job_id"]) > (h["last_attempt_at"], h["last_attempt_job_id"]):
+                h.update({k: v for k, v in held.items() if k.startswith("last_attempt")})
         out[ref] = h
     return out
 

@@ -81,7 +81,7 @@ def test_d1_d12_and_d14_print_one_population(deleted_world):
 
 
 # ----------------------------------------------------------------------------- M3: the history is aggregated in SQL
-def test_collection_history_is_three_statements_and_reads_no_params(deleted_world):
+def test_collection_history_is_two_aggregate_statements(deleted_world):
     statements: list[str] = []
     engine = deleted_world.engine
 
@@ -96,9 +96,8 @@ def test_collection_history_is_three_statements_and_reads_no_params(deleted_worl
         finally:
             sa.event.remove(engine, "before_cursor_execute", seen)
     reads = [q for q in statements if q.lstrip().upper().startswith("SELECT")]
-    assert len(reads) == 3, reads  # live sources, detached (deleted) sources, the latest job of each
-    assert all("GROUP BY" in q.upper() for q in reads[:2])
-    assert "params" not in reads[2]  # only the latest job's status, error and outcome
+    assert len(reads) == 2, reads  # per-source totals, then each source's newest job (no params read into Python)
+    assert "GROUP BY" in reads[0].upper() and "GROUP BY" not in reads[1].upper()
     lab = next(v for k, v in history.items() if not k.startswith("deleted:") and v["scans"] == 2)
     assert lab["last_attempt_status"] == "success" and lab["last_attempt_run_id"] == 2
     gone = [v for v in history.values() if v["scans"] == 1]

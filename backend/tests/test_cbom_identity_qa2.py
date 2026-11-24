@@ -159,8 +159,9 @@ def test_the_first_run_after_the_change_moves_every_stored_key_and_removes_nothi
     assert f"obs:{old_key}" not in world.assets() and world.assets()[f"obs:{new_key}"].presence == "present"
     assert [o.observation_key for o in world.observations() if o.presence == "present"] == [new_key]
     write = seen[0]
-    assert write.rekeyed == [(f"obs:{old_key}", f"obs:{new_key}", ref)]  # moved, never read as removed
-    assert write.counts["removed"] == 0 and write.identity_moves["assignments"] == 1
+    # #497 review M1: moved IN PLACE before the store is read, so the write itself re-keys, removes and inserts nothing
+    assert write.rekeyed == [] and write.counts["removed"] == 0 and write.counts["inserted"] == 0
+    assert write.identity_moves["assignments"] == 1 and write.identity_moves["estate"] == 1
     with Session(world.engine) as s:
         assert [(a.asset_key, a.owner) for a in s.exec(select(CbomRemediationAssignment))] == [(new_key, "pki-team")]
         assert not [g for g in s.exec(select(CbomQ0Gap))
