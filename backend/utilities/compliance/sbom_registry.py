@@ -297,6 +297,7 @@ def _from_github(name: str, version: str) -> dict[str, Any] | None:
         return None
     tag = _version_candidates(version)[0] if version else ""
     out: dict[str, Any] = {"author": owner[:200], "depends": []}
+    commit = None
     if tag:
         out["version"] = tag
         ref = urllib.parse.quote(tag, safe=".@~_-")
@@ -311,6 +312,10 @@ def _from_github(name: str, version: str) -> dict[str, Any] | None:
         f"https://api.github.com/repos/{urllib.parse.quote(owner)}/"
         f"{urllib.parse.quote(repo)}/license"
     )
+    if commit is None and lic is None:
+        # api.github.com did not answer: no registry answer (review 6032108510 B-1), so dss:registry says
+        # unreachable and nothing is cached; the owner and first-party MIT are the offline path's to give
+        return None
     spdx = ""
     if isinstance(lic, dict):
         block = lic.get("license") if isinstance(lic.get("license"), dict) else {}

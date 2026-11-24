@@ -238,3 +238,22 @@ def test_an_upload_with_no_readable_package_is_an_empty_scan_not_a_grype_error(t
     assert agent.sbom_json["components"] == [] and agent.vulnerability_rows == []
     props = {p["name"]: p["value"] for p in agent.sbom_json["metadata"]["properties"]}
     assert props["dss:spdx_invalid_entries"] == "1"
+
+
+def test_an_unanswered_github_lookup_is_not_counted_as_resolved(monkeypatch):
+    """B-1: behind a dropping firewall, api.github.com answered nothing, yet the four first-party actions counted as
+    resolved (``on: 4/21``) from the owner name alone. No answer is no resolution: ``unreachable``, nothing cached."""
+    from helpers.tools.sca_sbom_agent import registry_enrich
+
+    registry = registry_enrich.backend_module("registry")
+    monkeypatch.setenv("DSS_SBOM_REGISTRY", "1")
+    monkeypatch.setattr(registry, "_get_json", lambda url: None)
+    registry._fetch.cache_clear()
+    comps = [{"bom-ref": "pkg:github/actions/checkout@v4", "type": "library", "name": "actions/checkout",
+              "version": "v4", "purl": "pkg:github/actions/checkout@v4"}]
+    stats = registry_enrich.resolve_components(comps, budget_s=5)
+    assert stats["looked_up"] == 1 and stats["resolved"] == 0
+    assert registry_enrich.registry_note(stats).startswith("unreachable: 0/1 resolved")
+    assert comps[0]["licenses"] == [{"license": {"id": "MIT"}}]  # the offline first-party licence, as when off
+    assert "author" not in comps[0]
+    registry._fetch.cache_clear()
