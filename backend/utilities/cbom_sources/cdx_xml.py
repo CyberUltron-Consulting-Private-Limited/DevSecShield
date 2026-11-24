@@ -24,9 +24,9 @@ The schemas are vendored, unmodified, from the CycloneDX specification repositor
 sha256 cbc2211755af5ecf9b52dd514c14e4af6f74985b76cf75876ad2608741cb58dc). Validation never touches the network: the
 XSD's ``http://cyclonedx.org/schema/spdx`` import is resolved to the vendored file.
 
-Signature: for a code scan's BOM, ``bom_signature`` (HMAC over the canonical JSON) covers the JSON document only. The
-XML is generated from that same JSON; to check integrity, verify the JSON download (the code-scan XML response says so
-in ``X-ZS-Signature-Scope``). A collection run's CBOM is not signed, so its XML response carries no such header.
+Signature: XML BOMs carry no enveloped signature; every XML download is signed with a detached ES256 signature over
+its exact bytes (``bom_signing.detached``: the ``X-ZS-Signature`` response header and ``<file>.sig`` in evidence packs),
+by the same published key that signs the JSON form's embedded JSF signature.
 """
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ _DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "cyclon
 BOM_XSD = os.path.join(_DATA, "bom-1.6.xsd")
 SPDX_XSD = os.path.join(_DATA, "spdx.xsd")
 XML_MEDIA_TYPE = "application/vnd.cyclonedx+xml; version=1.6"
-SIGNATURE_SCOPE = "json"  # the HMAC signature covers the JSON document; the XML is generated from it
+SIGNATURE_SCOPE = "detached-es256"  # an XML download is signed by a detached ES256 signature (X-ZS-Signature)
 
 # XML 1.0 Char production: everything else is removed
 _INVALID_XML = re.compile("[^\u0009\u000A\u000D -퟿-�\U00010000-\U0010FFFF]")
@@ -144,6 +144,8 @@ VULNERABILITY: Spec = [
 ]
 BOM: Spec = [
     ("bomFormat", "", "skip", None), ("specVersion", "", "skip", None),
+    # the JSON form's JSF signature covers the JSON bytes only; an XML document is signed detached (bom_signing)
+    ("signature", "", "skip", None),
     ("serialNumber", "serialNumber", "attr", None), ("version", "version", "attr", None),
     ("metadata", "metadata", "obj", METADATA), ("components", "components", "wrap:component", COMPONENT),
     ("dependencies", "dependencies", "wrap:dependency", DEPENDENCY), ("properties", "properties", "props", None),
@@ -381,12 +383,15 @@ def _report(writer: _Writer, strict: bool) -> None:
 
 
 def write_xml(out: BinaryIO, head: dict[str, Any], components: Iterable[dict[str, Any]],
-              vulnerabilities: Callable[[], list[dict[str, Any]]], *, strict: bool = False) -> None:
+              vulnerabilities: Callable[[], list[dict[str, Any]]], *, strict: bool = False,
+              dependencies: Callable[[], list[dict[str, Any]]] | None = None) -> None:
     """The same XML as ``to_xml({**head, "components": [...], "vulnerabilities": [...]})``, written to ``out`` one
     top-level element at a time (lxml ``xmlfile``): at most one component's element tree is in memory, whatever the
     document's size. ``head`` holds the keys before ``components`` (bomFormat, specVersion, serialNumber, version,
     metadata); ``vulnerabilities`` is called once every component is written. A repeated ``bom-ref`` is renamed to
-    a name not written before it (``to_xml`` also avoids names written after it: it sees the whole document)."""
+    a name not written before it (``to_xml`` also avoids names written after it: it sees the whole document).
+    ``dependencies`` (called once the components are written; ``cdx_write.Links``) writes ``<dependencies>`` when it
+    returns any."""
     from lxml import etree
 
     writer = _Writer(None)
@@ -414,6 +419,13 @@ def write_xml(out: BinaryIO, head: dict[str, Any], components: Iterable[dict[str
                 for index, component in enumerate(components):
                     xf.write(element("component", component, COMPONENT, f"$.components[{index}]"), pretty_print=True)
             xf.write("\n")
+            deps = dependencies() if dependencies is not None else []
+            if deps:
+                with xf.element(writer.tag("dependencies")):
+                    xf.write("\n")
+                    for index, item in enumerate(deps):
+                        xf.write(element("dependency", item, DEPENDENCY, f"$.dependencies[{index}]"), pretty_print=True)
+                xf.write("\n")
             with xf.element(writer.tag("vulnerabilities")):
                 xf.write("\n")
                 for index, item in enumerate(vulnerabilities()):

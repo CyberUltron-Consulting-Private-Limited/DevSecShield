@@ -4,7 +4,8 @@
 * component count = distinct estate asset keys (a certificate four collectors see is one component, DA-8);
 * a source whose latest collection skipped a never-scan entry still contributes what it read (N4);
 * filters per application, source and asset type; removed assets are not listed;
-* the response says "unsigned" and carries the SHA-256 of the exact bytes; another team is refused.
+* the response is signed (JSF in the JSON, detached ES256 in X-ZS-Signature) and carries the SHA-256 of the exact
+  bytes; another team is refused.
 
     cd backend && PYTHONPATH=.. python -m pytest tests/test_cbom_cb26_estate_export.py -q
 """
@@ -84,8 +85,10 @@ def test_component_count_is_the_number_of_distinct_estate_keys(lab):
     cert_c = next(c for c in listed if props(c)["zs:estate_key"][0].startswith("cert:"))
     assert props(cert_c)["zs:sources"] == ["4"] and len(props(cert_c)["zs:observed_by"]) == 4
     m = meta(d)
+    from backend.utilities.cbom_sources import estate_export as _EXPORT
+
     assert (m["zs:scope"], m["zs:asset_count"], m["zs:truncated"], m["zs:signature"]) == ("estate", "2", "false",
-                                                                                            "unsigned")
+                                                                                            _EXPORT._signature_value())
     # FIX-A3 (SOW audit A-09): no "component count" that disagrees with len(components); the parts are named apart
     assert "zs:component_count" not in m and m["zs:asset_components"] == "2" and "zs:count_basis" in m
     parts = [c for c in d["components"] if props(c).get("zs:part_of") == ["certificate"]]
@@ -144,13 +147,27 @@ def _export(api, team=1, who="alice", **params):
     return api("GET", f"/{team}/cbom/estate-export", who, params=params)
 
 
-def test_the_team_cbom_route_returns_a_valid_signed_or_unsigned_document(api, two_runs):
+def test_the_team_cbom_route_returns_a_valid_signed_or_unsigned_document(api, two_runs, monkeypatch):
+    """D11 / A-01 (failing first on dev 214d3ca1e: ``X-Cbom-Signature: unsigned``): the estate CBOM, the one file
+    with every item across the estate, is signed with the published key, JSON inside (JSF) and both formats detached."""
+    import base64
+
+    from backend.utilities.cbom_sources import bom_signing as SIGN
+
+    for name in SIGN._ENV:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("CERTIN_HMAC_SECRET", "estate-export-test-secret-0123456789abcdef")
+    SIGN._CACHE.clear()
+    kid = SIGN.keyring().active.kid
     assert DRIFT.record_pending_drift(two_runs["engine"], T0) == 2
     r = _export(api)
     assert r.status_code == 200, r.text
     assert r.headers["content-type"].startswith("application/vnd.cyclonedx+json")
-    assert r.headers["x-cbom-signature"] == "unsigned"
+    assert r.headers["x-cbom-signature"] == f"ES256 {kid}" and r.headers["x-zs-signature-key-id"] == kid
     assert r.headers["x-cbom-sha256"] == hashlib.sha256(r.content).hexdigest()  # checkable outside ZeroShield
+    assert SIGN.verify_detached(r.content, base64.b64decode(r.headers["x-zs-signature"]))["valid"] is True
+    assert SIGN.verify_bom(r.content)["valid"] is True and json.loads(r.content)["signature"]["keyId"] == kid
+    assert meta(json.loads(r.content))["zs:signature"].startswith(f"JSF ES256 {kid}")
     assert "attachment" in r.headers["content-disposition"] and ".cdx.json" in r.headers["content-disposition"]
     d = json.loads(r.content)
     assert json_errors(d) == []
@@ -164,6 +181,7 @@ def test_the_team_cbom_route_returns_a_valid_signed_or_unsigned_document(api, tw
     assert x.status_code == 200 and x.headers["content-type"].startswith("application/vnd.cyclonedx+xml")
     assert xml_errors(x.content) == []
     assert x.headers["x-cbom-sha256"] == hashlib.sha256(x.content).hexdigest()
+    assert SIGN.verify_detached(x.content, base64.b64decode(x.headers["x-zs-signature"]))["valid"] is True
     assert x.content.count(b"zs:estate_key") == len(keys)
 
 

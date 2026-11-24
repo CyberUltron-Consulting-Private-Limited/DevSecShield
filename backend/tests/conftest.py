@@ -76,3 +76,14 @@ def _content_digest_follows_its_columns():
     sa.event.listen(sa.engine.Engine, "before_cursor_execute", check)
     yield
     sa.event.remove(sa.engine.Engine, "before_cursor_execute", check)
+
+
+@pytest.fixture
+def bom_signing_fixture_key(monkeypatch):
+    """The tests' explicit BOM signing key (``tests/support/bom_signing_fixture.py``); the key cache is cleared after."""
+    from backend.tests.support.bom_signing_fixture import use_fixture_key
+    from backend.utilities.cbom_sources import bom_signing as SIGN
+
+    ring = use_fixture_key(monkeypatch)
+    yield ring
+    SIGN._CACHE.clear()

@@ -167,7 +167,13 @@ def test_export_is_schema_valid_with_vex(api, world):
         for name in ("spdx.schema.json", "jsf-0.82.schema.json")
     ] + [("spdx.schema.json", Resource.from_contents(json.loads((schemas / "spdx.schema.json").read_text()))),
          ("jsf-0.82.schema.json", Resource.from_contents(json.loads((schemas / "jsf-0.82.schema.json").read_text())))])
-    validator = jsonschema.Draft7Validator(main, registry=registry)
+    # JSF's signer.algorithm is oneOf(enum, format "uri"): "ES256" passes only when "uri" is asserted, as the
+    # official validators (cyclonedx-python-lib with jsonschema[format]) do (tests/support/cyclonedx_schema.py)
+    from backend.tests.support.cyclonedx_schema import is_absolute_uri
+
+    checker = jsonschema.FormatChecker()
+    checker.checks("uri")(is_absolute_uri)
+    validator = jsonschema.Draft7Validator(main, registry=registry, format_checker=checker)
     errors = sorted(validator.iter_errors(bom), key=lambda e: list(e.path))
     assert not errors, [f"{list(e.path)}: {e.message}" for e in errors[:5]]
     vulns = {v["id"]: v for v in bom["vulnerabilities"]}

@@ -1,5 +1,6 @@
 {
   "base_commit": "f7385517523212e50b20ec6f1947831a5ef19872",
+  "digests_from": "PR #484 (D11) emit changes on top of base_commit f7385517; regenerate with support/make_goldens.py",
   "trees": {
     "synthetic-crypto-app": {
       "cyclonedx": "aa8365c9a706d6fc2b02cc11992802238a7043b9eefac66219701963d14edd5d",
@@ -13,12 +14,12 @@
     },
     "synthetic-crypto-certs": {
       "cyclonedx": "821f039952dce6920e8459a98c0ba80ab216a5ae9efccc7408e9bbc5095c86db",
-      "normalize": "87446d909753642b0dbbed41b63ad38744be78d5e69542bcb8923a358812c351",
+      "normalize": "e4bb91ec341040373b78b07a9ec708e4b64c700c38f4d4481872313f11419e9e",
       "scan": "40a9a7f076fb551e4041648fd89f4621b3caa22390f40cb0a602458a8c3501b0"
     },
     "synthetic-crypto-certs-harden": {
       "cyclonedx": "e90fb7a06fa7aa79656bd231e32d97b01a8ba56076fbad55a860b9bcd5b11a1e",
-      "normalize": "a43567375a166ee53dc776f3fb977b32753fae39d1ee2afe185caade43ec0748",
+      "normalize": "7bf6d4bc5fac6b6461a1665e75b8adb7034075a18d0ce03af977d613bef59638",
       "scan": "ac95c4750ca244b2ae4c3dd3bf4eec6941959438719ff0cf0d358ef5d1601980"
     },
     "synthetic-crypto-dataflow": {
@@ -28,7 +29,7 @@
     },
     "synthetic-crypto-inline-cert": {
       "cyclonedx": "8449a7c468fc4ab07cfea964d752b1576f2195bf1d74a031577143a15bec0cea",
-      "normalize": "e6c430da6abbd4ef599939828753d76fe1c30a68905a9beab54c9146db12d036",
+      "normalize": "09289ac788373c4150faaa5723929ffd89e942c0e8237eca4d83b1659cd7eaa9",
       "scan": "5be44f9f0fb1af837e4eed2a1ba6585957b3b4a0e2993dcc11dbeefd9bcb7b1f"
     },
     "synthetic-crypto-jvm-go": {
@@ -73,7 +74,7 @@
     },
     "synthetic-crypto-pqc": {
       "cyclonedx": "55a3dc8ef4d4f3a25144b0d3cc24f7e4b3ce841c8db617d2d9f961100fb64ca6",
-      "normalize": "fb1ea9e2be3817e5fc86dce088785393b1cba77f0711ec733cf26d2f89699776",
+      "normalize": "f399c937f20bae4e9ca6fb90fc995fa7ca39874f85195c48600aea8bfdfe2282",
       "scan": "b822ec18fd563374eb79d0df868928f45caee55fd9f213616b4f5bb90b2c818c"
     },
     "synthetic-crypto-protocols": {
