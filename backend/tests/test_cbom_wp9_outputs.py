@@ -514,7 +514,14 @@ def test_scan_bom_download_json_and_xml(http):
     assert j.status_code == 200 and j.json()["serialNumber"] == FIXTURE["cbom_json"]["serialNumber"]
     x = client.get("/1/cbom/scan/2/bom?format=xml", headers=hdr)
     assert x.status_code == 200 and x.headers["content-type"].startswith("application/vnd.cyclonedx+xml")
-    assert x.headers["x-zs-signature-scope"] == "json" and validate_xml(x.content) == []
+    from backend.utilities.cbom_sources import bom_signing
+
+    # the scope names the detached signature, so an unsigned download (no key) names none (review 6029745818 minor 4)
+    signed = x.headers["x-zs-signature"] != "unsigned"
+    assert signed is bom_signing.available()
+    assert x.headers.get("x-zs-signature-scope") == ("detached-es256" if signed else None)
+    assert validate_xml(x.content) == []
+    assert x.headers["x-cbom-sha256"] == __import__("hashlib").sha256(x.content).hexdigest()
     assert client.get("/1/sbom_sca/scan/3/bom?format=xml", headers=hdr).status_code == 400
     assert client.get("/1/cbom/scan/1/bom", headers=hdr).status_code == 400  # not finished
 
@@ -539,8 +546,22 @@ def test_scan_bom_json_download_is_the_signed_server_document(http):
         s.commit()
     hdr = {"Authorization": "Bearer t"}
     signature = client.post("/1/cbom/scan/5/sign", headers=hdr).json()["bom_signature"]
-    downloaded = json.loads(client.get("/1/cbom/scan/5/bom?format=json", headers=hdr).content)
-    assert downloaded == bom_dict_from_scan_data("cbom", data)
+    raw = client.get("/1/cbom/scan/5/bom?format=json", headers=hdr).content
+    downloaded = json.loads(raw)
+    from backend.utilities.cbom_sources import bom_signing
+
+    # the stored document with the server's identity stamp (zs:scan_id / zs:scan_type / zs:team_id, review 6029745818
+    # N1) and the scan's stable serial when it stores none (N2): certin._scan_bom, what every route serves and signs
+    served = certin_router._scan_bom("cbom", 5, data, 1)
+    stored = bom_dict_from_scan_data("cbom", data)
+    assert served["components"] == stored["components"]
+    assert {p["name"]: p["value"] for p in served["metadata"]["properties"] if p["name"].startswith("zs:")} == {
+        "zs:scan_id": "5", "zs:scan_type": "cbom", "zs:team_id": "1"}
+    if bom_signing.available():  # D11: the download carries an embedded JSF signature over the served document
+        assert bom_signing.verify_bom(raw)["valid"] is True
+        assert {k: v for k, v in downloaded.items() if k != "signature"} == served
+    else:
+        assert downloaded == served
     assert [c["bom-ref"] for c in downloaded["components"]] == [c["bom-ref"] for c in data["cbom_json"]["components"]]
     assert sum(1 for c in downloaded["components"] if c["name"] == "MD5") == 2
     assert next(c for c in downloaded["components"] if c["name"] == "pyca/cryptography")["purl"] == "pkg:pypi/cryptography"

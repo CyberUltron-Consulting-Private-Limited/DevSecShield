@@ -178,7 +178,7 @@ def list_assets(session: Session, *, team_id: int, run_id: int | None = None, jo
     names = _source_names(session, team_id, list(jobs))
     job_names = {j.id: names.get(j.source_id or 0) or (j.params or {}).get("source_name") for j in jobs}
     grading = QG.load_context(session, team_id=team_id, run_id=run_id, job_id=job_id, risk_model=risk_model)
-    pqcs = {r.id: POSTURE.classify_pqc(r, list(views[r.id]["finding_codes"]), elsewhere=grading.elsewhere)
+    pqcs = {r.id: POSTURE.graded_class(r, list(views[r.id]["finding_codes"]), elsewhere=grading.elsewhere)
             for r in rows}  # the class the list shows is the one the grade reads (CB-18 OB-1)
     grades = {r.id: grading.grade_row(r, views[r.id]["finding_codes"], explain=False, cls=pqcs[r.id][0]).fields()
               for r in rows}
@@ -554,14 +554,38 @@ def _key_primitive(algorithm: str) -> str:
     return "unknown"
 
 
+def algid_identity(name: Any) -> dict[str, Any]:
+    """What the one algorithm table (``algid``, single source of algorithm and post-quantum names) says about
+    ``name`` for CycloneDX 1.6 ``cryptoProperties``: ``oid`` (the algorithm's own, else, for a key-size-suffixed
+    name such as RSA-2048, its family's key algorithm OID), ``nistQuantumSecurityLevel`` (0 when a quantum computer
+    breaks it, the FIPS 203/204/205 category of a post-quantum set) and ``parameterSetIdentifier`` (a FIPS set name).
+    Empty when algid does not know the name."""
+    from backend.utilities.cbom_sources import algid
+
+    ident = algid.resolve(name) if isinstance(name, str) and name.strip() else None
+    if ident is None:
+        return {}
+    oid = ident.oid
+    if not oid and ident.family_label and ident.name and re.fullmatch(
+            rf"{re.escape(ident.family_label)}[-_ ]?\d+", ident.name, re.IGNORECASE):
+        family_ident = algid.resolve(ident.family_label)
+        oid = family_ident.oid if family_ident is not None else None
+    level = 0 if ident.quantum == "vulnerable" else ident.nist_category
+    return {k: v for k, v in {"oid": oid if oid and _OID.match(oid) else None, "nistQuantumSecurityLevel": level,
+                              "parameterSetIdentifier": ident.parameter_set}.items() if v is not None}
+
+
 def _algorithm(ref: str, name: str, primitive: str, *, oid: str | None = None, curve: str | None = None,
                parameter: str | None = None) -> dict[str, Any]:
-    props = {k: v for k, v in {"primitive": primitive, "parameterSetIdentifier": parameter, "curve": curve,
+    known = algid_identity(name)
+    props = {k: v for k, v in {"primitive": primitive, "parameterSetIdentifier": parameter or (
+                                   known.get("parameterSetIdentifier")), "curve": curve,
                                # 0: a quantum computer breaks it (CycloneDX allows the level only on algorithms)
-                               "nistQuantumSecurityLevel": 0 if quantum_vulnerable(name) is True else None,
+                               "nistQuantumSecurityLevel": 0 if quantum_vulnerable(name) is True else
+                               known.get("nistQuantumSecurityLevel"),
                                }.items() if v is not None}
     crypto: dict[str, Any] = {"assetType": "algorithm", "algorithmProperties": props}
-    oid = oid or (name if _OID.match(name) else None)
+    oid = oid or (name if _OID.match(name) else None) or known.get("oid")
     if oid and _OID.match(oid):
         crypto["oid"] = oid
     return {"type": "cryptographic-asset", "bom-ref": ref, "name": name[:255], "cryptoProperties": crypto}
@@ -801,7 +825,7 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
     facts = row.facts or {}
     view = view or shown(row)
     ref = f"zs-asset-{row.id}"
-    pqc = POSTURE.classify_pqc(row, list(view["finding_codes"]), elsewhere=elsewhere)
+    pqc = POSTURE.graded_class(row, list(view["finding_codes"]), elsewhere=elsewhere)
     # one "unknown" per document (OB-7): a verdict-less row reads unknown only when its class is unknown
     qv_text = str(row.quantum_vulnerable).lower() if row.quantum_vulnerable is not None else (
         "unknown" if pqc[0] == "unknown" else "not-applicable")
@@ -892,6 +916,16 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
             # CycloneDX allows the quantum level only on algorithms: 0 means a quantum computer breaks it
             "nistQuantumSecurityLevel": 0 if row.quantum_vulnerable is True else None,
         }.items() if v is not None and v != ""}
+        # D11 / A-14: the OID and quantum level from algid (the single source of algorithm identities)
+        known = algid_identity(row.algorithm or name)
+        if "oid" in known:
+            crypto["oid"] = known["oid"]
+        level = known.get("nistQuantumSecurityLevel")
+        if level is not None and not (level == 0 and row.quantum_vulnerable is False):  # the row's own verdict wins
+            crypto["algorithmProperties"].setdefault("nistQuantumSecurityLevel", level)
+        if "parameterSetIdentifier" in known:
+            crypto["algorithmProperties"].setdefault("parameterSetIdentifier", known["parameterSetIdentifier"])
+        crypto["algorithmProperties"] = {k: v for k, v in crypto["algorithmProperties"].items() if v is not None}
     if algorithm:
         props.append({"name": "zs:algorithm", "value": algorithm})
     if row.protocol:  # the asset table's protocol column as stored (protocolProperties.type is CycloneDX's enum)
@@ -1030,7 +1064,9 @@ def _document(session: Session, run: CbomCollectionRun, now: _dt.datetime
             # the build that wrote this file; the run's own judge is zs:engine_version (CB-03)
             "tools": {"components": [{"type": "application", "name": "ZeroShield CBOM Sources", "version": build_version()}]},
             "properties": [
-                {"name": "zs:run_id", "value": str(run.id)}, {"name": "zs:run_status", "value": run.status},
+                {"name": "zs:run_id", "value": str(run.id)},
+                {"name": "zs:team_id", "value": str(run.team_id)},  # with zs:run_id, what binds a signed file (D11)
+                {"name": "zs:run_status", "value": run.status},
                 {"name": "zs:asset_count", "value": str(len(rows))}, {"name": "zs:truncated", "value": str(truncated).lower()},
                 {"name": "zs:kb_version", "value": kb_version}, {"name": "zs:build", "value": build_sha()},
                 {"name": "zs:vex_rules", "value": VEX.VEX_RULES},
@@ -1059,14 +1095,37 @@ def _document(session: Session, run: CbomCollectionRun, now: _dt.datetime
         },
     }
 
+    business = _business_properties(session, run.team_id, list(jobs))
+
     def components() -> Iterator[dict[str, Any]]:
         for row in rows:  # the assets, then the certificate parts they reference
-            yield _component(row, names.get(row.source_id or 0) or job_names.get(row.job_id), views[row.id],
-                             provs.get(row.job_id), shared, parts, elsewhere, assessed[row.id])
+            comp = _component(row, names.get(row.source_id or 0) or job_names.get(row.job_id), views[row.id],
+                              provs.get(row.job_id), shared, parts, elsewhere, assessed[row.id])
+            comp["properties"] = [*comp["properties"], *business.get(row.job_id, ())]
+            yield comp
         yield from parts.components()
 
     return head, components(), lambda: vulnerabilities(
         list(rows), views, **_vex_inputs(session, run, rows, views, jobs, grading, now), drift_truncated=drift_cut)
+
+
+def _business_properties(session: Session, team_id: int, jobs: list[CbomCollectionJob]
+                         ) -> dict[int, list[dict[str, str]]]:
+    """Per job: the C5 business metadata of the source that ran it (``estate_links._metadata``: the source's current
+    owner, application and data classification, or what a deleted source's job snapshotted) as ``zs:owner``,
+    ``zs:application`` and ``zs:data_classification``, the properties the estate export carries (D11: "linked to
+    applications and owners"). One shared list per job; a field the source leaves empty is left out."""
+    from backend.utilities.cbom_sources.estate_links import _metadata
+
+    sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
+        CbomCollectionSource.team_id == team_id)).all()}
+    out: dict[int, list[dict[str, str]]] = {}
+    for job in jobs:
+        meta = _metadata(sources.get(job.source_id or 0), job)
+        out[job.id] = [{"name": f"zs:{field}", "value": str(meta[field]).strip()[:255]}
+                       for field in ("owner", "application", "data_classification")
+                       if meta.get(field) is not None and str(meta[field]).strip()]
+    return out
 
 
 def export_version(run: CbomCollectionRun) -> int:
@@ -1127,26 +1186,19 @@ def _vex_inputs(session: Session, run: CbomCollectionRun, rows: list[CbomCollect
 
 
 def cyclonedx(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> dict[str, Any]:
-    """The run's CycloneDX 1.6 document as one dict (what ``write_cyclonedx`` writes, piece by piece)."""
-    head, components, vulns = _document(session, run, now)
-    return {**head, "components": list(components), "vulnerabilities": vulns()}
+    """The run's CycloneDX 1.6 document as one (unsigned) dict: what ``write_cyclonedx`` writes, piece by piece,
+    with its ``dependencies`` (``cdx_write.Links``)."""
+    from backend.utilities.cbom_sources import cdx_write
+
+    return cdx_write.document(*_document(session, run, now))
 
 
 def write_cyclonedx(session: Session, run: CbomCollectionRun, now: _dt.datetime, fmt: str, out: BinaryIO) -> None:
-    """Write the run's CycloneDX document to ``out`` as JSON or XML (``cdx_xml``), one component at a time: the same
-    document as ``cyclonedx``, but neither the whole dict, nor an XML tree, nor the encoded bytes is ever held in
-    memory at once (review 5879114669 major 2: a 50,000-component XML export peaked near 2.2 GB).
-    run_deliverables.write_document repeats this writer (with a stable timestamp); change both together."""
+    """Write the run's CycloneDX document to ``out`` as JSON (signed: an embedded JSF signature, ``bom_signing``) or
+    XML (``cdx_xml``), one component at a time: neither the whole dict, nor an XML tree, nor the encoded bytes is ever
+    held in memory at once (review 5879114669 major 2: a 50,000-component XML export peaked near 2.2 GB). The one
+    writer is ``cdx_write.write`` (run_deliverables.write_document uses it with a stable timestamp)."""
+    from backend.utilities.cbom_sources import cdx_write
+
     head, components, vulns = _document(session, run, now)
-    if fmt == "xml":
-        from backend.utilities.cbom_sources import cdx_xml
-
-        cdx_xml.write_xml(out, head, components, vulns)
-        return
-    def dumps(value: Any) -> bytes:  # what starlette's JSONResponse writes (the route's JSON before streaming)
-        return json.dumps(value, ensure_ascii=False, allow_nan=False, indent=None, separators=(",", ":")).encode()
-
-    out.write(dumps(head)[:-1] + b',"components":[')
-    for index, component in enumerate(components):
-        out.write((b"," if index else b"") + dumps(component))
-    out.write(b'],"vulnerabilities":' + dumps(vulns()) + b"}")
+    cdx_write.write(out, head, components, vulns, fmt)

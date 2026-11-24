@@ -22,6 +22,7 @@ from backend.routers.cbom_certificates import router as cbom_certificates_router
 from backend.routers.cbom_run_tickets import router as cbom_run_tickets_router
 from backend.routers.cbom_estate import router as cbom_estate_router
 from backend.routers.cbom_estate_export import router as cbom_estate_export_router
+from backend.routers.bom_signing_keys import router as bom_signing_keys_router
 from backend.routers.cbom_node import router as cbom_node_router
 from backend.routers.cbom_node_pools import router as cbom_node_pools_router
 from backend.routers.cbom_node_artifacts import router as cbom_node_artifacts_router
@@ -180,6 +181,7 @@ app.include_router(cbom_certificates_router)  # orphaned and unmanaged certifica
 app.include_router(cbom_run_tickets_router)
 app.include_router(cbom_estate_router)  # CB-20: the team's estate store
 app.include_router(cbom_estate_export_router)  # CB-26: the team estate CBOM
+app.include_router(bom_signing_keys_router)  # D11: the public keys that sign every BOM and evidence pack
 app.include_router(cbom_node_router)
 app.include_router(cbom_node_pools_router)  # agent pool tokens for the Helm DaemonSet (WP8b)
 app.include_router(cbom_node_artifacts_router)  # scan node image, Helm chart and OVA/AMI kits served to the team

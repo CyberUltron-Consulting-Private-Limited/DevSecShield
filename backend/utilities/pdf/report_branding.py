@@ -243,8 +243,9 @@ REPORT_META: Dict[str, Dict[str, str]] = {
             "scans, with the NIST post-quantum target for each."
         ),
         "how_to_read": (
-            "Use the regulatory timeline for context, then assign wave, target date "
-            "and owner in the cells marked (assessor); the order is not a sequence."
+            "Read the regulatory timeline for context. Each row carries its wave, the date to fix any "
+            "classical weakness (counted from the day the asset was first found, and marked overdue once past) and "
+            "its post-quantum date; waves, dates and owners are proposals for the asset owners to confirm."
         ),
     },
     "cbom_board_report": {

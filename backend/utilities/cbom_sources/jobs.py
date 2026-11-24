@@ -20,7 +20,7 @@ from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy import Boolean, Integer, and_, bindparam, case, delete, func, or_, text, update
-from sqlalchemy.orm import aliased
+from sqlalchemy.orm import aliased, object_session
 from sqlalchemy.orm.attributes import set_committed_value
 from sqlmodel import Session, select
 
@@ -30,6 +30,7 @@ from backend.new_models import (
     CbomCollectionRun,
     CbomCollectionSettings,
     CbomCollectionSource,
+    CbomOpsCounter,
     CbomScanNode,
     Team,
 )
@@ -46,7 +47,7 @@ from backend.utilities.cbom_sources.crypto import scrub
 from backend.utilities.cbom_sources.kinds import KINDS, METADATA_FIELDS
 from backend.utilities.cbom_sources import ops_metrics as OPS
 from backend.utilities.cbom_sources import policy_scope as PS
-from backend.utilities.cbom_sources.planning import credits, node_status, team_range_cidrs
+from backend.utilities.cbom_sources.planning import ONLINE_SECONDS, credits, node_status, team_range_cidrs
 from backend.utilities.cbom_sources.settings import get_or_create_settings, team_exclusions, window_allows, window_end
 
 LEASE = _dt.timedelta(minutes=15)  # the default; CBOM_JOB_LEASE_S sets it (``lease()``)
@@ -60,7 +61,90 @@ def lease() -> _dt.timedelta:
 
 MAX_ATTEMPTS = 3
 TEST_JOB_TTL = _dt.timedelta(hours=24)
-COLLECT_JOB_TTL = _dt.timedelta(days=7)
+COLLECT_JOB_TTL = _dt.timedelta(days=7)  # the default; CBOM_JOB_QUEUE_TTL_S sets it (``collect_job_ttl()``)
+
+
+def collect_job_ttl() -> _dt.timedelta:
+    """How long a collection (or cloud slice) may wait unclaimed after it was queued: then it expires, refunded."""
+    return _dt.timedelta(seconds=L.job_queue_ttl_seconds())
+
+
+def node_offline_deadline() -> _dt.timedelta:
+    """How long a job's scan node may stay offline before the job expires (``CBOM_JOB_NODE_OFFLINE_S``, 6 h)."""
+    return _dt.timedelta(seconds=L.node_offline_seconds())
+
+
+# ----------------------------------------------------------------------------- reaper pass bookkeeping (#480 review)
+# The node-offline window counts only time in which the backend could have received a heartbeat (M1).  Every reaper
+# pass notes itself in one ``cbomopscounter`` row: ``updated_at`` is the last pass, ``value`` the start (epoch s) of
+# the current unbroken run of passes.  A gap longer than ``serving_gap()`` (backend, database or worker down) starts
+# a new run, so after a restart every node gets the full deadline to heartbeat again.  The value only grows (never
+# exported by ``ops_metrics``, which reads its own counter names).
+SERVING_MARK = "reaper_serving_since"
+_EPOCH = _dt.datetime(1970, 1, 1)
+_SERVING_SINCE: list[_dt.datetime | None] = [None]  # this process's last reading, for the "expires at" estimate
+# One reaper at a time on PostgreSQL (m4): overlapping passes (each cloud worker, ``safe_reap`` on read paths) locked
+# job, run and team rows in different orders and deadlocked.  Transaction-scoped, so a commit releases it.
+REAPER_LOCK = (0x43424F4D, 0x52454150)  # "CBOM", "REAP"
+_REAPER_SESSION = "cbom_reaper_session"  # session.info: this session reaps; its after-commit closers take the lock too
+
+
+def serving_gap() -> _dt.timedelta:
+    """A reaper pass further apart than this from the previous one means the backend was not serving in between."""
+    return _dt.timedelta(seconds=2 * ONLINE_SECONDS)
+
+
+def reaper_lock(session: Session) -> bool:
+    """Take the reaper's transaction-scoped advisory lock on PostgreSQL (True), or find another pass holding it
+    (False).  Always True on SQLite, whose writers are serialised anyway."""
+    if session.get_bind().dialect.name != "postgresql":
+        return True
+    return bool(session.execute(text("SELECT pg_try_advisory_xact_lock(:a, :b)"),
+                                {"a": REAPER_LOCK[0], "b": REAPER_LOCK[1]}).scalar())
+
+
+def _serving_since_from(row: CbomOpsCounter | None, now: _dt.datetime) -> _dt.datetime | None:
+    """The start of the unbroken run of passes the stored mark records, as a pass at ``now`` would keep it; None when
+    there is no mark or its last pass is more than ``serving_gap()`` before ``now`` (that pass starts a new run).
+    A start later than ``now`` (another replica's clock is ahead) is clamped to ``now``."""
+    if row is None or row.updated_at is None or not row.value or now - row.updated_at > serving_gap():
+        return None
+    return min(_EPOCH + _dt.timedelta(seconds=int(row.value)), now)
+
+
+def note_reaper_pass(session: Session, now: _dt.datetime) -> _dt.datetime:
+    """Record this pass and return since when the backend has been serving without a gap (in the caller's
+    transaction).  ``now`` earlier than the last pass (a test's clock, or a replica whose clock is behind another's)
+    keeps the current run.
+
+    The last-pass time only moves forward (#480 review 6031262064 m-a): with two reaper replicas whose clocks differ
+    by more than ``serving_gap()`` minus the pass interval (about 210 s at the defaults), writing the behind replica's
+    ``now`` made the ahead replica's next pass see a gap and restart the window on every alternation, so the offline
+    rule never fired.  PostgreSQL keeps ``greatest(stored, now)`` in the upsert itself; SQLite serialises its writers,
+    so the row read above is the one replaced."""
+    row = session.get(CbomOpsCounter, SERVING_MARK)
+    since = _serving_since_from(row, now) or now
+    is_pg = session.get_bind().dialect.name == "postgresql"
+    if is_pg:
+        from sqlalchemy.dialects.postgresql import insert as dialect_insert
+    else:
+        from sqlalchemy.dialects.sqlite import insert as dialect_insert
+    epoch_s = int((since - _EPOCH).total_seconds())
+    table = CbomOpsCounter.__table__
+    last_pass = max(now, row.updated_at) if row is not None and row.updated_at is not None else now
+    stmt = dialect_insert(table).values(name=SERVING_MARK, value=epoch_s, updated_at=last_pass)
+    marked = func.greatest(table.c.updated_at, now) if is_pg else last_pass
+    session.exec(stmt.on_conflict_do_update(  # type: ignore[call-overload]
+        index_elements=["name"], set_={"value": epoch_s, "updated_at": marked}))
+    if row is not None:
+        session.expire(row)
+    since = _EPOCH + _dt.timedelta(seconds=epoch_s)
+    _SERVING_SINCE[0] = since
+    return since
+
+
+def _pending_ttl(job: CbomCollectionJob) -> _dt.timedelta:
+    return collect_job_ttl() if job.kind in CLOUD_KINDS else TEST_JOB_TTL
 TERMINAL = ("success", "failure", "cancelled", "expired")
 OPEN = ("pending", "claimed")
 # A job may run at most this long after it was claimed, whatever its lease says.
@@ -174,11 +258,16 @@ def _settle_one(session: Session, run_id: int | None, team_id: int | None) -> tu
 def settle_refunds(session: Session, run_ids: Any = None, *, team_ids: Any = None) -> dict[str, int]:
     """Move the money for every refund-due job: per run, one UPDATE flags its jobs refunded exactly once and one raises
     the run's ``credits_refunded_c`` by their owed sum (``refunded_c``) under the charged guard; then one UPDATE per
-    team.  Lock order: jobs, runs by id, then teams by id.  ``run_ids`` None = every run with a refund due (the partial
-    index), plus jobs that belong to no run; otherwise those runs plus the run-less jobs of ``team_ids``.  The caller
-    commits.  Returns {"runs", "jobs", "centi"}."""
+    team.  Lock order: the run row, its jobs, the run's credit, then teams by id.  ``run_ids`` None = every run with a
+    refund due (the partial index), plus jobs that belong to no run, under the reaper lock (skipped while another pass
+    holds it), each run's row taken first like the closers do (``_take_run_row``; a run whose row a closer holds is
+    left to that closer); otherwise those runs (whose rows the caller holds) plus the run-less jobs of ``team_ids``.
+    The caller commits.  Returns {"runs", "jobs", "centi"}."""
     J_ = CbomCollectionJob.__table__
     due = (J_.c.refund_due == True) & (J_.c.refunded == False)  # noqa: E712
+    if run_ids is None and not reaper_lock(session):
+        return {"runs": 0, "jobs": 0, "centi": 0}  # another reaper pass holds the lock and settles (m4)
+    whole_table = run_ids is None
     if run_ids is None:
         runs = sorted(int(r) for r in session.exec(  # type: ignore[call-overload]
             select(J_.c.run_id).where(due, J_.c.run_id.is_not(None)).distinct()).all())
@@ -190,6 +279,8 @@ def settle_refunds(session: Session, run_ids: Any = None, *, team_ids: Any = Non
     credit: dict[int, int] = {}
     total_jobs = total = 0
     for run_id in runs:
+        if whole_table and not _take_run_row(session, run_id):
+            continue  # a closer holds the run row: it settles this run (the closers' lock order, run before jobs)
         amount, jobs, team = _settle_one(session, run_id, None)
         total_jobs += jobs
         if team is not None and amount > 0:
@@ -398,9 +489,18 @@ def run_closers(session: Session, now: _dt.datetime | None = None) -> list[tuple
         return []
     now = now or _dt.datetime.utcnow()
     closed: list[tuple[int, str]] = []
+    # m4: a reaper pass's own closers run after its commit, outside its transaction: they take the reaper lock again,
+    # so they never interleave with the next pass (which locks job rows before the run row); held: the holder's
+    # reconcile and settle close and settle these runs
+    reaper = bool(session.info.get(_REAPER_SESSION))
     for run_id in sorted(set(runs) | settle):
         if run_id not in settle and _run_open(session, run_id):
             continue  # nothing to close yet and no money to move: the run row is not even read (DA C1)
+        if reaper and not reaper_lock(session):
+            log("run closer skipped: another reaper pass holds the reaper lock (it closes and settles the run)",
+                run=run_id)
+            settle_teams = set()
+            break
         if not _take_run_row(session, run_id):
             log("run closer skipped: the run row stays held (the reaper closes and settles it)", run=run_id)
             continue
@@ -409,7 +509,7 @@ def run_closers(session: Session, now: _dt.datetime | None = None) -> list[tuple
             closed.append((run_id, status))
         settle_refunds(session, [run_id])  # the row is ours: no other settler moves this run's money now
         session.commit()
-    if settle_teams:
+    if settle_teams and (not reaper or reaper_lock(session)):
         settle_refunds(session, [], team_ids=settle_teams)
     session.info.pop(_AFTER, None)
     session.commit()
@@ -528,7 +628,8 @@ def _reap_candidates(session: Session, now: _dt.datetime, team_id: int | None, n
         select(CbomCollectionJob).where(claimed, CbomCollectionJob.cancel_requested_at < now - CANCEL_GRACE),
         select(CbomCollectionJob).where(claimed, CbomCollectionJob.lease_id.like(S.FANOUT_PREFIX + "%")),  # type: ignore[union-attr]
         select(CbomCollectionJob).where(CbomCollectionJob.status == "pending",
-                                        CbomCollectionJob.created_at < now - min(TEST_JOB_TTL, COLLECT_JOB_TTL)),
+                                        CbomCollectionJob.created_at < now - min(TEST_JOB_TTL, collect_job_ttl())),
+        *_offline_candidate_queries(now),
     ]
     seen: dict[int, CbomCollectionJob] = {}
     for query in queries:
@@ -548,6 +649,10 @@ def reap(session: Session, now: _dt.datetime, *, team_id: int | None = None, nod
     ``stats`` (optional) is filled with per-rule counts for the reaper's summary line."""
     from backend.utilities.cbom_sources import slices as S
 
+    if not reaper_lock(session):  # another pass is reaping (m4): it does this work
+        return 0
+    session.info[_REAPER_SESSION] = True
+    serving_since = note_reaper_pass(session, now)
     moved = 0
     parents: set[int] = set()
     for job in _reap_candidates(session, now, team_id, node_id, limit):
@@ -556,7 +661,7 @@ def reap(session: Session, now: _dt.datetime, *, team_id: int | None = None, nod
             continue
         if job.parent_job_id is not None:
             parents.add(job.parent_job_id)
-        rule = _reap_one(session, job, now)
+        rule = _reap_one(session, job, now, serving_since)
         if rule:
             moved += 1
             touch_run(session, job.run_id)
@@ -564,6 +669,8 @@ def reap(session: Session, now: _dt.datetime, *, team_id: int | None = None, nod
                 stats[rule] = stats.get(rule, 0) + 1
             if commit_every and moved % commit_every == 0:
                 session.commit()
+                if not reaper_lock(session):  # the commit released the lock and another pass took it
+                    return moved
     for parent_id in sorted(parents):  # a slice the reaper ended may have been its parent's last open one
         S.maybe_finalize(session, parent_id, now)
     moved += reconcile_runs(session, now, team_id=team_id)
@@ -588,8 +695,10 @@ def _requeue_node():
     return case((CbomCollectionJob.node_segment.is_not(None), None), else_=CbomCollectionJob.node_id)  # type: ignore[union-attr]
 
 
-def _reap_one(session: Session, job: CbomCollectionJob, now: _dt.datetime) -> str | None:
-    """Apply the lease and age rules to one job (the caller touches its run).  The rule that moved it, or None."""
+def _reap_one(session: Session, job: CbomCollectionJob, now: _dt.datetime,
+              serving_since: _dt.datetime | None = None) -> str | None:
+    """Apply the lease and age rules to one job (the caller touches its run).  The rule that moved it, or None.
+    ``serving_since``: since when the backend has served without a gap (``note_reaper_pass``)."""
     started = job.claimed_at
     too_long = job.status == "claimed" and started is not None and started < now - MAX_RUNTIME.get(job.kind, MAX_RUNTIME["collect"])
     stale_cancel = job.status == "claimed" and job.cancel_requested_at is not None and job.cancel_requested_at < now - CANCEL_GRACE
@@ -644,19 +753,141 @@ def _reap_one(session: Session, job: CbomCollectionJob, now: _dt.datetime) -> st
             log_after_commit(session, "job lease expired", team=job.team_id, job=job.id, node=held_by,
                              status=target, claimed_age_s=age, attempt=job.attempts, refund_due_c=refunded)
         return "lease_expired"
+    if job.status in OPEN:
+        offline = node_offline_reason(session, job, now, serving_since=serving_since)
+        if offline is not None:
+            return "node_offline" if _expire_open(session, job, now, offline[0], rule="node_offline",
+                                                  offline_since=offline[1], guard_seen=True) else None
     if job.status == "pending":
-        ttl = COLLECT_JOB_TTL if job.kind in CLOUD_KINDS else TEST_JOB_TTL
+        ttl = _pending_ttl(job)
         if job.created_at is not None and job.created_at < now - ttl:
             return "expired" if _expire_pending(session, job, now) else None
     return None
 
 
+def _utc_label(at: _dt.datetime) -> str:
+    return at.strftime("%Y-%m-%d %H:%M UTC")
+
+
+def _span_label(span: _dt.timedelta) -> str:
+    seconds = int(span.total_seconds())
+    if seconds % 86_400 == 0:
+        return f"{seconds // 86_400} d"
+    if seconds >= 3_600 and seconds % 3_600 == 0:
+        return f"{seconds // 3_600} h"
+    if seconds >= 3_600:
+        return f"{seconds / 3_600:.1f} h"
+    return f"{max(1, seconds // 60)} min"
+
+
+def _segment_member_clauses() -> list[Any]:
+    """SQL for "a node that may take a segment job": the same filter as ``_segment_members`` (m2), so the reaper's
+    candidate query and the rule count the same nodes."""
+    return [func.coalesce(CbomScanNode.mode, "agentless") != "agent",
+            CbomScanNode.node_token_hash.is_not(None),  # type: ignore[union-attr]
+            CbomScanNode.signing_public_key.is_not(None), CbomScanNode.signing_public_key != ""]  # type: ignore[union-attr]
+
+
+def _segment_members(session: Session, team_id: int, segment: str) -> list[CbomScanNode]:
+    """The nodes that may take a segment job (``planning.segment_status``): enrolled, signed, agentless."""
+    rows = session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id,
+                                                   CbomScanNode.segment == segment)).all()
+    return [n for n in rows if (n.mode or "agentless") != "agent" and n.node_token_hash is not None
+            and n.signing_public_key]
+
+
+def node_offline_reason(session: Session, job: CbomCollectionJob, now: _dt.datetime,
+                        node: CbomScanNode | None = None, *,
+                        serving_since: _dt.datetime | None = None) -> tuple[str, _dt.datetime | None] | None:
+    """(reason, offline since) when an open job's scan node, or every node of its segment, has been offline for
+    longer than ``node_offline_deadline()``, counted from the latest of the last heartbeat, the job's queueing (or
+    claim) and the time the backend started serving without a gap (``serving_since``; unknown = ``now``, so the
+    rule waits); else None.  Cloud jobs (no node, no segment) never match.  The reason names the node and the time
+    it was last seen, so the run says why the job ended (``node X offline since ...``)."""
+    if job.status not in OPEN:
+        return None
+    if job.node_id is not None and (job.status == "claimed" or not job.node_segment):
+        node = node if node is not None and node.id == job.node_id else session.get(CbomScanNode, job.node_id)
+        if node is None or node_status(node, now) == "online":
+            return None
+        seen, label = node.last_heartbeat_at, f"Scan node {node.name}"
+    elif job.node_id is None and job.node_segment and job.status == "pending":
+        members = _segment_members(session, job.team_id, job.node_segment)
+        if any(node_status(n, now) == "online" for n in members):
+            return None
+        beats = [n.last_heartbeat_at for n in members if n.last_heartbeat_at is not None]
+        seen = max(beats) if beats else None
+        label = (f"Every scan node of segment {job.node_segment}" if members
+                 else f"No signed scan node of segment {job.node_segment}")
+    else:
+        return None
+    deadline = node_offline_deadline()
+    serving = serving_since or _SERVING_SINCE[0] or now
+    start = max([t for t in (seen, job.created_at, job.claimed_at, serving) if t is not None], default=None)
+    if start is None or now - start < deadline:
+        return None
+    if seen is not None:
+        reason = f"{label} offline since {_utc_label(seen)}; the job expired after {_span_label(deadline)} without it"
+    elif job.node_id is None and label.startswith("No signed"):
+        reason = f"{label} was available for {_span_label(deadline)}; the job expired"
+    else:
+        reason = (f"{label} has not connected since the job was queued ({_utc_label(job.created_at or start)}); "
+                  f"the job expired after {_span_label(deadline)}")
+    return reason[:1024], seen
+
+
+def _offline_candidate_queries(now: _dt.datetime) -> list[Any]:
+    """Open jobs that may be past the node-offline deadline: pinned to a node with no heartbeat since the cutoff, and
+    pending segment jobs none of whose segment's nodes beat since the cutoff (``node_offline_reason`` decides)."""
+    cutoff = now - node_offline_deadline()
+    pinned = (select(CbomCollectionJob)
+              .join(CbomScanNode, CbomScanNode.id == CbomCollectionJob.node_id)
+              .where(CbomCollectionJob.status.in_(OPEN), CbomCollectionJob.created_at < cutoff,  # type: ignore[attr-defined]
+                     or_(CbomScanNode.last_heartbeat_at.is_(None), CbomScanNode.last_heartbeat_at < cutoff)))  # type: ignore[union-attr]
+    beating = (select(CbomScanNode.id).where(CbomScanNode.team_id == CbomCollectionJob.team_id,
+                                             CbomScanNode.segment == CbomCollectionJob.node_segment,
+                                             *_segment_member_clauses(),
+                                             CbomScanNode.last_heartbeat_at >= cutoff).exists())  # type: ignore[operator]
+    segment = select(CbomCollectionJob).where(
+        CbomCollectionJob.status == "pending", CbomCollectionJob.node_id.is_(None),  # type: ignore[union-attr]
+        CbomCollectionJob.node_segment.is_not(None), CbomCollectionJob.created_at < cutoff, ~beating)  # type: ignore[union-attr]
+    return [pinned, segment]
+
+
 def _expire_pending(session: Session, job: CbomCollectionJob, now: _dt.datetime) -> bool:
     """A pending job no node picked up within its TTL: expired, refunded (collect)."""
+    ttl = _pending_ttl(job)
+    return _expire_open(session, job, now,
+                        f"No scan node picked this job up within {_span_label(ttl)} of queueing", rule="queue_ttl")
+
+
+def _node_came_back(job: CbomCollectionJob, seen: _dt.datetime | None) -> Any:
+    """SQL: the job's node (or, for a pending segment job, a node that may take it) heartbeated after ``seen``, the
+    last heartbeat the offline rule read (m1: a heartbeat committed between that read and the UPDATE saves the job)."""
+    beat = (CbomScanNode.last_heartbeat_at.is_not(None) if seen is None  # type: ignore[union-attr]
+            else CbomScanNode.last_heartbeat_at > seen)  # type: ignore[operator]
+    if job.node_id is not None and (job.status == "claimed" or not job.node_segment):
+        return select(CbomScanNode.id).where(CbomScanNode.id == job.node_id, beat).exists()
+    return select(CbomScanNode.id).where(CbomScanNode.team_id == job.team_id,
+                                         CbomScanNode.segment == job.node_segment,
+                                         *_segment_member_clauses(), beat).exists()
+
+
+def _expire_open(session: Session, job: CbomCollectionJob, now: _dt.datetime, error: str, *, rule: str,
+                 offline_since: _dt.datetime | None = None, guard_seen: bool = False) -> bool:
+    """An open job that can no longer run (queue TTL, node offline past the deadline): expired with ``error``,
+    refunded (collect) under the existing refund rules, its run touched so the closer finishes it.  Guarded on the
+    status (and the lease of a claimed job) it was read with, so a claim or result racing it wins or loses cleanly;
+    with ``guard_seen`` (the node-offline rule) also on no heartbeat after ``offline_since``."""
+    was = job.status
+    guard = [CbomCollectionJob.id == job.id, CbomCollectionJob.status == was]
+    if was == "claimed":
+        guard.append(CbomCollectionJob.lease_id == job.lease_id)
+    if guard_seen:
+        guard.append(~_node_came_back(job, offline_since))
     changed = session.exec(
-        update(CbomCollectionJob)
-        .where(CbomCollectionJob.id == job.id, CbomCollectionJob.status == "pending")
-        .values(status="expired", finished_at=now, error="No scan node picked this job up in time")
+        update(CbomCollectionJob).where(*guard)
+        .values(status="expired", finished_at=now, error=error[:1024], lease_id=None, lease_expires_at=None)
     ).rowcount
     if not changed:
         return False
@@ -667,8 +898,10 @@ def _expire_pending(session: Session, job: CbomCollectionJob, now: _dt.datetime)
     _test_result_from_job(session, job, now)
     touch_run(session, job.run_id)
     audit(session, team_id=job.team_id, actor_type="system", actor_id=None, action="job.expired",
-          object_type="job", object_id=job.id)
-    log_after_commit(session, "job expired", team=job.team_id, job=job.id, node=job.node_id, refund_due_c=refunded)
+          object_type="job", object_id=job.id, changed_fields=[rule])
+    log_after_commit(session, "job expired", team=job.team_id, run=job.run_id, job=job.id, node=job.node_id,
+                     segment=job.node_segment, was=was, reason=rule,
+                     offline_since=offline_since.isoformat() + "Z" if offline_since else None, refund_due_c=refunded)
     return True
 
 
@@ -681,6 +914,8 @@ def safe_reap(session: Session, now: _dt.datetime, **kwargs: Any) -> None:
     except Exception as exc:  # pragma: no cover - defensive
         session.rollback()
         log("reap FAILED", error=type(exc).__name__, **{k: v for k, v in kwargs.items() if v is not None})
+    finally:
+        session.info.pop(_REAPER_SESSION, None)  # the read path's own writes after this are not a reaper's
 
 
 # ----------------------------------------------------------------------------- versions
@@ -1176,8 +1411,7 @@ def claim_next(session: Session, node: CbomScanNode, settings: CbomCollectionSet
             ns=_NODE_CLAIM_LOCK_NS, node=int(node.id or 0)))
     full = session.exec(select(_node_busy(node.id))).one() >= cap
     for job in _pending_for_node(session, node, settings, now):
-        ttl = COLLECT_JOB_TTL if job.kind in CLOUD_KINDS else TEST_JOB_TTL
-        if job.created_at is not None and job.created_at < now - ttl:
+        if job.created_at is not None and job.created_at < now - _pending_ttl(job):
             _expire_pending(session, job, now)
             continue
         if full and job.kind in _CAPPED_KINDS:
@@ -2168,13 +2402,35 @@ def job_waiting_reason(
     if status in ("pending_registration", "registration_expired"):
         return f"Scan node {node.name} has not registered yet"
     if status == "offline":
-        return f"Scan node {node.name} is offline"
+        return offline_wait_reason(job, node, now)
     is_network = job.kind == "discovery" or (source is not None and source.kind == "network_range")
     if is_network and settings.stop_all_network:
         return "Network scanning is stopped"
     if job.kind != "test_connection" and not window_allows(_job_window(source, settings), settings.window_timezone, now):
         return "Outside the scan window"
     return "Waiting for the scan node to pick it up"
+
+
+def stored_serving_since(session: Session | None, now: _dt.datetime) -> _dt.datetime | None:
+    """Since when the backend has served without a gap, as the reaper's next pass will see it: read from the stored
+    mark, so a process that has not reaped yet still knows about a recent restart (#480 review 6031262064 n-b).  A
+    mark whose last pass is older than ``serving_gap()`` means the next pass restarts the window: ``now``.  No mark
+    (or no session): this process's last reading, or None."""
+    row = session.get(CbomOpsCounter, SERVING_MARK) if session is not None else None
+    if row is None:
+        return _SERVING_SINCE[0]
+    return _serving_since_from(row, now) or now
+
+
+def offline_wait_reason(job: CbomCollectionJob, node: CbomScanNode, now: _dt.datetime) -> str:
+    """A job waiting for an offline node: since when, and when it expires unless the node comes back.  The window
+    counts from the latest of the heartbeat, the queueing (or claim) and the stored serving mark, as the reaper's."""
+    seen = node.last_heartbeat_at
+    serving = stored_serving_since(object_session(job), now)
+    start = max([t for t in (seen, job.created_at, job.claimed_at, serving) if t is not None], default=now)
+    expires = start + node_offline_deadline()
+    since = f" since {_utc_label(seen)}" if seen else " (never connected)"
+    return f"Scan node {node.name} is offline{since}; the job expires at {_utc_label(expires)} unless it comes back"
 
 
 def run_credit_summary(run: CbomCollectionRun) -> dict[str, float]:

@@ -25,7 +25,7 @@ if str(REPO) not in sys.path:
 
 from backend.utilities.cbom_sources import qgrade as QG  # noqa: E402
 
-PINNED_TEXT_SHA256 = "e7778cae6c2b3d7468ff7874f532cde57db7d5d98804849623c70c35f17bc901"
+PINNED_TEXT_SHA256 = "22b3d0a7deb7034b36adb65f158e963318cd04328c85d49cb1b7f8465a9bab83"  # D12: defaults, deprecated + cap, rule 6, Z to 2035
 CB = REPO / "backend" / "utilities" / "cbom_sources"
 
 
@@ -109,6 +109,7 @@ ATOMS = {
     "class hybrid or quantum-safe, code": lambda i: _cls(i) in _PQ and i.provenance == "code",
     "class hybrid or quantum-safe, attested at E2 or E3":
         lambda i: _cls(i) in _PQ and i.provenance == "attested" and i.level in ("E2", "E3"),
+    "class deprecated": lambda i: _cls(i) == "deprecated",
 }
 
 
@@ -158,8 +159,20 @@ def reference(i: QG.GradeInput) -> tuple[str | None, str, int]:
             reasons = rule["reasons"]
             reason = reasons[0] if len(reasons) == 1 else i.scope_reason
             assert reason in reasons, (rule, i)
-            return rule["grade"], reason, rule["n"]
+            return _cap(i, rule, rule["grade"], reason)
     raise AssertionError(f"no rule of FORMULA_TEXT matches {i}")
+
+
+def _cap(i: QG.GradeInput, rule: dict, grade: str | None, reason: str) -> tuple[str | None, str, int]:
+    """FORMULA_TEXT "Disallowed cap, after the rules": a disallowed asset graded by rules 7-23 takes the worse of that
+    grade and rules 24-25; a Q0 "mosca_missing" is replaced; on a tie the "deprecated" reason."""
+    if not i.disallowed or not 7 <= rule["n"] <= 23:
+        return grade, reason, rule["n"]
+    cap = ("Q1", "deprecated_internet") if i.exposure == "internet" else ("Q2", "deprecated")
+    rank = {"Q1": 1, "Q2": 2, "Q3": 3, "Q4": 4}
+    if grade not in rank or rank[cap[0]] <= rank[grade]:
+        return cap[0], cap[1], rule["n"]
+    return grade, reason, rule["n"]
 
 
 def _gen(rng: random.Random) -> QG.GradeInput:
@@ -180,7 +193,7 @@ def _gen(rng: random.Random) -> QG.GradeInput:
         item=item, scope_reason=rng.choice(QG.SCOPE_REASONS) if item == "scope" else None, cls=cls,
         fallback=rng.random() < 0.3, exposure=rng.choice(["internet", "internal", "unknown"]),
         anchor=rng.random() < 0.25, x=mosca(), y=mosca(), z=mosca(), provenance=provenance, level=level,
-        correlation_missing=rng.random() < 0.05)
+        correlation_missing=rng.random() < 0.05, disallowed=rng.random() < 0.15)
 
 
 def test_decision_table_matches_the_signed_text_on_2000_inputs():
@@ -375,13 +388,17 @@ def test_the_fast_path_equals_the_explained_grade_on_random_rows():
         row = NS(id=1, job_id=1, asset_type=rng.choice(("tls_endpoint", "ssh_endpoint", "certificate", "cloud_ca",
                                                         "kms_key", "disk_encryption", "database_config")),
                  quantum_vulnerable=qv, facts=facts, target=rng.choice(targets), location=rng.choice(locations),
-                 asset_key="k", cdx_type="other")
+                 asset_key="k", cdx_type="other", key_size=None,
+                 algorithm=rng.choice((None, "RSA", "DES-EDE3", "AES-256")))
         codes = ["DISK_XTS_128"] if row.asset_type == "disk_encryption" and rng.random() < .5 else []
         score = P.asset_exposure(facts, row.target, row.location, override=job.exposure, node_segment=job.segment)
         fast = ctx.grade_row(row, codes, explain=False, score_exposure=score)
         full = ctx.grade_row(row, codes, explain=True)
         assert (fast.q_grade, fast.q_reason, fast.q_item_key) == (full.q_grade, full.q_reason, full.q_item_key), row
         assert fast.explain["missing"] == full.explain["missing"]
+        assert fast.explain["assumed"] == full.explain["assumed"] and fast.q_assumed == full.q_assumed
         seen.add(full.q_reason)
-    assert {"qv_exceeds_internet", "qv_fallback_exceeds", "mosca_missing", "pq_observed", "grover_weakened",
-            "not_applicable", "qv_exceeds_anchor"} <= seen
+    # SOW D12: a context never leaves a quantum-vulnerable asset at Q0 "mosca_missing" (the defaults fill X, Y, Z)
+    assert "mosca_missing" not in seen
+    assert {"qv_exceeds_internet", "qv_fallback_exceeds", "qv_within", "pq_observed", "grover_weakened",
+            "not_applicable", "qv_exceeds_anchor", "deprecated"} <= seen

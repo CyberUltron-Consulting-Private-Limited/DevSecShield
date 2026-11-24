@@ -123,7 +123,8 @@ def test_readiness_basis(classes, pct, status):
 
 
 def test_one_class_function_in_the_product():
-    """Every surface calls posture.classify_pqc; there is no second class function to drift from it (OB-1)."""
+    """Every surface calls posture.classify_pqc, directly or through posture.graded_class (classify_pqc plus the
+    grade's SP 800-131A "deprecated" class, pc-3); there is no second class function to drift from it (OB-1)."""
     assert not hasattr(P, "pqc_class")
     callers = []
     for path in list((BACKEND / "utilities").rglob("*.py")) + list((BACKEND / "routers").rglob("*.py")):
@@ -133,7 +134,7 @@ def test_one_class_function_in_the_product():
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):
                 name = node.func.attr if isinstance(node.func, ast.Attribute) else getattr(node.func, "id", "")
-                if name == "classify_pqc":
+                if name in ("classify_pqc", "graded_class"):
                     callers.append(path.name)
                 assert name != "pqc_class", path
     assert {"posture.py", "drift.py", "inventory.py", "qgrade.py", "heatmap.py"} <= set(callers)
@@ -199,7 +200,7 @@ def test_every_surface_shows_the_same_class(api, world):
     for cell in heat["cells"]:
         heat_counts.update({k: v for k, v in cell["pqc_classes"].items() if v})
     assert heat_counts == counts
-    assert post["readiness_basis"] == {"judged": 2, "ready": 1, "unknown": 3, "not_applicable": 2,
+    assert post["readiness_basis"] == {"judged": 2, "ready": 1, "unknown": 3, "not_applicable": 2, "deprecated": 0,
                                        "status": "not_enough_identified"}
     assert post["pqc_readiness_pct"] is None
     assert post["pqc_class_bases"]["key_unidentified"] == 1 and post["pqc_class_bases"]["no_tls_handshake"] == 1

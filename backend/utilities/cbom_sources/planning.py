@@ -97,6 +97,17 @@ def segment_status(nodes: dict[int, CbomScanNode], segment: str, now: _dt.dateti
     return "online" if any(node_status(n, now) == "online" for n in members) else "offline"
 
 
+def _queued_note(job: CbomCollectionJob, nodes: dict[int, CbomScanNode], now: _dt.datetime) -> str:
+    """Why the earlier run's job has not run yet when its node is offline, and when it expires (then the source is
+    free again), so "Already queued" never reads as a permanent block."""
+    node = nodes.get(job.node_id) if job.node_id else None
+    if node is None or job.status != "pending" or node_status(node, now) == "online":
+        return ""
+    from backend.utilities.cbom_sources.jobs import offline_wait_reason
+
+    return f" ({offline_wait_reason(job, node, now)})"
+
+
 def team_range_cidrs(session, team_id: int) -> list[str]:
     """Every network range the team configured (enabled or not): together they are the networks the customer entered,
     whose outer network/broadcast addresses the sweep leaves out (targets.boundary_skips, N3).  One query."""
@@ -281,8 +292,8 @@ def plan_run(
         select(CbomCollectionSource).where(CbomCollectionSource.team_id == team_id).order_by(CbomCollectionSource.id)
     ).all()
     nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
-    active = {
-        row.source_id: row.run_id
+    active_jobs = {
+        row.source_id: row
         for row in session.exec(
             select(CbomCollectionJob).where(
                 CbomCollectionJob.team_id == team_id,
@@ -291,6 +302,7 @@ def plan_run(
             )
         ).all()
     }
+    active = {source_id: row.run_id for source_id, row in active_jobs.items()}
     wanted = set(source_ids) if source_ids else None
     range_ctx = RangeContext.of_sources(list(sources), settings)  # every source of the team: built once
     plan = Plan()
@@ -360,7 +372,7 @@ def plan_run(
         elif group == "network" and source.kind != "appliance" and settings.stop_all_network:  # a config read, not a sweep
             item.reason = NETWORK_STOPPED
         elif source.id in active:
-            item.reason = f"Already queued in run #{active[source.id]}"
+            item.reason = f"Already queued in run #{active[source.id]}" + _queued_note(active_jobs[source.id], nodes, now)
         else:
             item.status = "queued"
             item.waiting = status == "offline"

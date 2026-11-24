@@ -1,7 +1,7 @@
 "use client";
 
 // The team's estate CBOM download (CB-26): JSON or XML CycloneDX 1.6, one component per asset across sources, with
-// the file's SHA-256 shown after the download (the file is unsigned). Hooks: estate-cbom-json, estate-cbom-xml,
+// the file's SHA-256 shown after the download (signed by the deployment's key; " · unsigned" only without one). Hooks: estate-cbom-json, estate-cbom-xml,
 // estate-cbom-sha256.
 import { useState } from "react";
 

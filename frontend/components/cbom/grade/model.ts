@@ -58,9 +58,15 @@ export interface QExplain {
   anchor: boolean;
   anchor_basis: string | null;
   x: number | null;
-  x_basis: "source" | "team" | null;
+  x_basis: "source" | "team" | "default" | null;
   y: number | null;
   z: number | null;
+  /** SOW D12: where Y and Z came from ("default" when the team has not set them). */
+  y_basis?: "team" | "default" | null;
+  z_basis?: "team" | "default" | null;
+  /** SOW D12: the Mosca inputs a documented default filled ("default assumptions"); empty when none. */
+  assumed?: string[];
+  criticality?: string | null;
   missing: string[];
   inequality: string | null;
   provenance: string;
@@ -341,11 +347,17 @@ export function explainRows(e: QExplain): { label: string; value: string; basis:
     if (e.fallback) add("Classical fallback", "Yes", e.fallback_basis);
     add("Exposure", e.exposure, e.exposure_basis);
     add("Trust anchor", e.anchor ? "Yes" : "No", e.anchor_basis);
+    const xDefault = e.criticality === "high" || e.criticality === "critical"
+      ? `default for a ${e.criticality} source` : "default";
     rows.push({ label: "X: years data must stay secret", value: e.x == null ? "Not set" : String(e.x),
-                basis: e.x_basis === "source" ? "set on the source" : e.x_basis === "team" ? "team setting" : null });
-    rows.push({ label: "Y: years to migrate", value: e.y == null ? "Not set" : String(e.y), basis: "team setting" });
-    rows.push({ label: "Z: years until a quantum computer", value: e.z == null ? "Not set" : String(e.z), basis: "team setting" });
+                basis: e.x_basis === "source" ? "set on the source" : e.x_basis === "team" ? "team setting"
+                  : e.x_basis === "default" ? xDefault : null });
+    rows.push({ label: "Y: years to migrate", value: e.y == null ? "Not set" : String(e.y),
+                basis: e.y_basis === "default" ? "default" : "team setting" });
+    rows.push({ label: "Z: years until a quantum computer", value: e.z == null ? "Not set" : String(e.z),
+                basis: e.z_basis === "default" ? "default" : "team setting" });
     add("Mosca", e.inequality);
+    if (e.assumed?.length) add("Grade inputs", "Default assumptions", e.assumed.map((m) => m.toUpperCase()).join(", "));
     if (e.missing?.length) add("Missing", e.missing.map((m) => m.toUpperCase()).join(", "));
     add("Provenance", e.provenance);
   }
