@@ -655,7 +655,7 @@ export function ModelCardPanel({
 
 // ── composer ────────────────────────────────────────────────────────────────
 export function AiBomVisualizations({
-  compliance,
+  compliance: computedCompliance,
   graph,
   graphCompact,
   graphExpanded,
@@ -678,6 +678,8 @@ export function AiBomVisualizations({
   /** The frameworks that bind the team (server ``ai_bom_applicability``): words the subtitle, filters the charts. */
   applicability?: AiBomApplicability | null;
 }) {
+  // Only the frameworks that bind the team reach the matrix (every computed one when no profile is declared).
+  const compliance = bindingCompliance(computedCompliance, applicability) ?? undefined;
   const has =
     compliance ||
     graph ||
@@ -702,8 +704,7 @@ export function AiBomVisualizations({
         )}
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <ComplianceCoverage compliance={bindingCompliance(compliance, applicability) ?? undefined}
-          onAttest={onAttest} hideOutOfScope />
+        <ComplianceCoverage compliance={compliance} onAttest={onAttest} hideOutOfScope />
         <DependencyGraph
           graph={graph}
           graphCompact={graphCompact}
