@@ -590,8 +590,11 @@ def _compute(session: Session, run: CbomCollectionRun, team_id: int, risk_model:
     refs: dict[int, tuple[str, str]] = {}
     memo = _Memo()
     acc = _Acc()
+    from backend.utilities.cbom_sources import resource_identity as RI
+
+    fold = RI.run_fold(session, team_id, int(run.id or 0))  # one row per resource, as the posture and the list
     query = (select(CbomCollectedAsset)
-             .where(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run.id)
+             .where(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run.id, RI.kept_clause(fold))
              .order_by(CbomCollectedAsset.id)  # type: ignore[arg-type]
              .execution_options(yield_per=YIELD_PER))
     for row in session.exec(query):

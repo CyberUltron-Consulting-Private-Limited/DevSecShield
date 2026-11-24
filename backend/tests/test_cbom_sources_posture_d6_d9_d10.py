@@ -328,7 +328,8 @@ def test_d9_counts_and_registers_come_from_the_collected_stores(view):
 # ------------------------------------------------------------------------------------------------ D10
 def test_d10_lists_sources_libraries_with_versions_deduplicated_by_purl(view):
     body = story(d10, view)
-    rows = {r["Library"]: r for r in rows_under(body, "Library") if "Version" in r}
+    rows = {r["Component"]: r for r in rows_under(body, "Component") if "Version" in r
+            and not r["Package URL or ecosystem"].startswith("crypto product")}  # Q3-11: products are rows too
     assert set(rows) == {"libcrypto1.1", "libssl3t64", "libcrypto.so.3"}
     apk = rows["libcrypto1.1"]  # two registries, one package URL (qualifiers differ): one component, two sources
     assert (apk["Version"], apk["#Sources"]) == ("1.1.1w-r1", "2")
@@ -401,8 +402,8 @@ def test_d10_prints_the_name_without_the_version_and_merges_the_unversioned_row_
     # PyJWT of repo:b is not known to be 2.3.0 (only repo:a pins it): two rows, both without "@" in the name
     assert sorted((x.name, x.version) for x in by_name["pyjwt"]) == [("PyJWT", ""), ("pyjwt", "2.3.0")]
     assert not any("@" in x.name for x in merged.libs)
-    table = [r for r in rows_under(story(d10, merged), "Library") if "Version" in r]
-    assert [r["Version"] for r in table if r["Library"] == "golang.org/x/crypto"] == ["v0.24.0"]
+    table = [r for r in rows_under(story(d10, merged), "Component") if "Version" in r]
+    assert [r["Version"] for r in table if r["Component"] == "golang.org/x/crypto"] == ["v0.24.0"]
 
 
 # ------------------------------------------------------------------------------------------------ scale (review)

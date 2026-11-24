@@ -245,7 +245,9 @@ def test_a_key_another_collector_read_is_not_unknown(api, world):
     assert (d["pqc_class"], d["pqc_class_basis"], d["pqc_class_read_elsewhere"]) == ("not-applicable",
                                                                                        "read_elsewhere", read)
     assert d["q_reason"] == "not_applicable"
-    assert RG.items(api, w["run"])[unread]["pqc_class_basis"] == "read_elsewhere"
+    # staging QA Q3-01: one key two collectors read is one row of the run list, the readable read, naming the other
+    listed = RG.items(api, w["run"])
+    assert unread not in listed and listed[read]["also_seen"] == ["S-ssh"]
     doc = _export(world[0], w["run"])
     meta = {p["name"]: p["value"] for p in doc["metadata"]["properties"]}
     assert meta["zs:pqc_class_count:unknown"] == "0"

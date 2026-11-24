@@ -146,10 +146,17 @@ def test_formula_like_cells_are_neutralised():
     assert _csv_cell("=HYPERLINK(1)") == "'=HYPERLINK(1)" and _csv_cell("ok") == "ok"
 
 
-def test_a_certificate_not_seen_for_n_collections_is_stale(api, estate):
+def test_the_list_is_the_d8_list_when_a_source_reads_nothing_later(api, estate):
+    """Staging QA Q3-04: the list is ``cert_estate.unique_certificates`` (D8's), not the estate store: a certificate
+    only a source's older collection held is in neither (the drift report states it), so nothing listed is stale."""
+    from sqlmodel import Session
+
+    from backend.utilities.cbom_sources.cert_estate import unique_certificates
+    from backend.utilities.dashboard.cbom_team_rollup import load_core_view
+
     engine, hdr = estate["engine"], estate["hdr"]
     for n in range(2, 5):  # three more runs: the probe sees its endpoints; the file collector reads nothing
-        _run(api, f"hyg-run-{n:04d}")  # (its targets unreachable: an incomplete collection never removes)
+        _run(api, f"hyg-run-{n:04d}")
         for _ in range(2):
             claim = _claim(api, hdr)
             name = claim["source"]["name"]
@@ -160,12 +167,11 @@ def test_a_certificate_not_seen_for_n_collections_is_stale(api, estate):
         _drift(engine)
         HYG.clear_cache()
     body = _list(api, all="true")
-    items = _by_subject(body)
-    spare = items["CN=spare.lab"]
-    assert spare["not_seen_runs"] == 3 and "stale" in spare["flags"]
-    assert spare["observations"][0]["presence"] == "not_read"
-    assert "stale" not in items["CN=a.lab"]["flags"]  # the probe still sees it
-    assert "stale" not in _by_subject(_list(api, all="true", stale_runs=4))["CN=spare.lab"]["flags"]
+    with Session(engine) as session:
+        d8 = unique_certificates(load_core_view(session, 1))
+    assert body["counts"]["certificates"] == len(d8) == 2
+    assert set(_by_subject(body)) == {"CN=a.lab", "CN=old.lab"} == {c.subject for c in d8.certificates}
+    assert body["counts"]["by_flag"]["stale"] == 0
 
 
 def test_managing_systems():

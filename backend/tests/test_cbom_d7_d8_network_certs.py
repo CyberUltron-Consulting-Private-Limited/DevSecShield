@@ -395,7 +395,8 @@ def _grade(versions, suites, **kw):
 
 @pytest.mark.parametrize("versions,suites,leaf,expected", [
     (["TLSv1.3"], {"TLSv1.3": ["TLS_AES_256_GCM_SHA384"]}, None, "A"),
-    (["SSLv3", "TLSv1.2"], {"TLSv1.2": ["TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"]}, None, "C"),
+    # SSL Labs 2009h: SSL 3 supported caps at B (staging QA Q3-06; it was C)
+    (["SSLv3", "TLSv1.2"], {"TLSv1.2": ["TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"]}, None, "B"),
     (["TLSv1.2"], {"TLSv1.2": ["TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384", "TLS_RSA_WITH_NULL_SHA256"]}, None, "F"),
     (["TLSv1.2"], {"TLSv1.2": ["TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA", "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"]},
      None, "C"),
@@ -403,10 +404,10 @@ def _grade(versions, suites, **kw):
      {"key_alg": "RSA", "key_size": 1024, "self_signed": False, "not_after": "2030-01-01T00:00:00Z"}, "B"),
     (["TLSv1.2"], {"TLSv1.2": ["TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"]},
      {"key_alg": "RSA", "key_size": 2048, "self_signed": True, "not_after": "2030-01-01T00:00:00Z"},
-     "T (if trusted: A)"),
+     "T (if trusted: A-)"),  # 2009r: no TLS 1.3 is an A- at best
     (["TLSv1.2"], {"TLSv1.2": ["TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"]},
      {"key_alg": "RSA", "key_size": 2048, "self_signed": False, "not_after": "2026-01-01T00:00:00Z"},
-     "T (if trusted: A)"),
+     "T (if trusted: A-)"),
 ])
 def test_grade_caps(versions, suites, leaf, expected):
     assert _grade(versions, suites, leaf=leaf).text == expected
@@ -505,7 +506,7 @@ def test_weak_suite_count_agrees_with_the_grade(view):
     """RC4 caps 10.0.0.12:25 at C, so the register's weak-suite list names it too (one rule for both)."""
     scoped, model = D7._scoped(view)
     smtp = next(e for e in model.tls if e.key == "10.0.0.12:25")
-    assert "RC4 accepted" in smtp.grade.caps
+    assert "RC4 accepted with TLS 1.1 or later" in smtp.grade.caps  # SSL Labs 2009j: C
     net = next(f.fact["net"] for f in scoped.posture.facts if f.fact.get("address") == "10.0.0.12:25")
     assert [(w["suite"], w["reasons"]) for w in net["weak_suites"]] == [("TLS_RSA_WITH_RC4_128_SHA", ["RC4"])]
 

@@ -15,7 +15,7 @@ once by ``load_team_cbom_view``) and returns plain records the PDF prints:
 Rows of a source that has been deleted are left out everywhere and counted (``deleted_rows``), so a deleted source is
 never "current". Pure: no database, no clock, no network.
 
-Grade rubric (``RUBRIC``), modelled on the Qualys SSL Labs SSL Server Rating Guide (2009, updates to 2020):
+Grade rubric (``RUBRIC``), modelled on the Qualys SSL Labs SSL Server Rating Guide (2009, updates to 2009r, May 2025):
 score = 0.3 x protocol + 0.3 x key exchange + 0.4 x cipher strength, letters A >= 80, B >= 65, C >= 50, D >= 35,
 E >= 20, F below; then caps. It is computed only from what the probe observed; an endpoint whose suite enumeration
 was not complete gets its grade marked provisional (``*``).
@@ -51,6 +51,10 @@ def _post_quantum(name: Any, namespace: str | None = None) -> bool:
 # ----------------------------------------------------------------------------- rubric
 PROTOCOL_SCORE = {"SSLv2": 0, "SSLv3": 80, "TLSv1.0": 90, "TLSv1.1": 95, "TLSv1.2": 100, "TLSv1.3": 100}
 GRADE_BANDS = ((80, "A"), (65, "B"), (50, "C"), (35, "D"), (20, "E"), (0, "F"))
+HSTS_A_PLUS_SECONDS = 15_552_000  # SSL Labs 2009e: HSTS max-age of at least 6 months (180 days) for A+
+# The Qualys SSL Labs SSL Server Rating Guide as published (github.com/ssllabs/research/wiki/SSL-Server-Rating-Guide,
+# read 24 Nov 2026: changes 2009c to 2009r, 16 May 2025).  Every place this product grades differently is a
+# "Divergence" row below (staging QA Q3-06).
 RUBRIC = (
     ("Protocol (30 %)", "Average of the best and the worst version offered: TLS 1.3 / 1.2 = 100, TLS 1.1 = 95, "
                         "TLS 1.0 = 90, SSL 3 = 80, SSL 2 = 0."),
@@ -63,32 +67,78 @@ RUBRIC = (
     ("Cipher strength (40 %)", "Average of the strongest and the weakest accepted suite: 0 bits (NULL) = 0, < 128 = 20, "
                                "< 256 = 80, >= 256 = 100 (3DES counts 112 bits, RC4 128)."),
     ("Letter", "A >= 80, B >= 65, C >= 50, D >= 35, E >= 20, else F; then the caps below (the lowest cap wins)."),
-    ("Cap F", "SSL 2 offered; a NULL, EXPORT or anonymous suite accepted; certificate RSA key < 1024 bits."),
-    ("Cap C", "SSL 3 offered; RC4 accepted; DES or 3DES (64-bit block, SWEET32) accepted."),
-    ("Cap B", "TLS 1.0 or 1.1 offered; no forward secrecy for every client (static RSA key exchange accepted, or no "
-              "ECDHE / DHE suite); CBC-only on TLS 1.2 without TLS 1.3; certificate RSA key < 2048 or EC key < 224 "
-              "bits."),
-    ("Trust T", "The leaf certificate is expired or self-signed: the grade is T and the letter it would have without "
-                "the trust issue is shown beside it."),
+    ("Cap F", "SSL 2 offered; SSL 3 the best protocol offered; a NULL, EXPORT or anonymous suite accepted; only RC4 "
+              "suites; certificate RSA key < 1024 bits; key exchange < 1024 bits; an MD5 or MD2 signature in the "
+              "served chain."),
+    ("Cap C", "No TLS 1.2 or TLS 1.3; RC4 accepted with TLS 1.1 or later; 3DES or another 64-bit block cipher "
+              "accepted with TLS 1.1 or later."),
+    ("Cap B", "SSL 3 offered; TLS 1.0 or 1.1 offered; RC4 accepted (TLS 1.0 or SSL 3 only); no forward secrecy at all "
+              "(no ECDHE, DHE or TLS 1.3 suite); no AEAD suite; certificate RSA key < 2048 or EC key < 224 bits; a "
+              "finite-field DH group < 2048 bits; an incomplete chain (the server does not send an intermediate); key "
+              "exchange not recorded."),
+    ("A-", "An A with a warning: TLS 1.3 not offered (2009r); static RSA key exchange accepted next to forward-secret "
+           "suites (2009e warning); the HTTP service's HSTS header absent or invalid (2009r, when the probe read it)."),
+    ("A+", "An A with no warning, TLS 1.3 offered and an HSTS max-age of at least 180 days (2009e), and no SHA-1 "
+           "signature in the chain (2009f)."),
+    ("M", "Certificate name mismatch: the probe connected with a server name (SNI) that the leaf certificate's "
+          "subject alternative names (or, without them, its common name) do not cover. The letter it would have "
+          "is shown beside it."),
+    ("T", "Certificate not trusted: the leaf is expired or self-signed, the chain ends at a CA the scan node's trust "
+          "store does not hold, or a certificate in the chain is signed with SHA-1 (2009n). The letter it would have "
+          "is shown beside it."),
     ("Provisional", "A grade followed by * was computed on an incomplete suite enumeration (handshake budget used up "
                     "or a version not read); the endpoint may accept more suites than listed."),
+    ("Divergence", "Not tested, so never a cap: Heartbleed, ROBOT, POODLE (TLS), DROWN, Ticketbleed, CVE-2014-0224, "
+                   "CVE-2016-2107, the 2019 padding oracles, insecure renegotiation, CRIME, a Debian weak key, RSA "
+                   "exponent 1 and HPKP (the scan node sends handshakes only, SOW 7.2)."),
+    ("Divergence", "HSTS is read only when the probe records it (``hsts_max_age``); a TLS endpoint without that reading "
+                   "is neither A+ nor capped to A- for HSTS, and a non-HTTP service (SMTP, LDAPS, a database) is never "
+                   "judged on HSTS."),
+    ("Divergence", "Trust is judged against the scan node's own system trust store (a private CA is 'not trusted'), and "
+                   "an incomplete chain is any served certificate whose issuer is neither served nor trusted while a "
+                   "served certificate sits above it, or a lone leaf that names an AIA issuer; SSL Labs fetches the "
+                   "missing intermediate and judges trust with browser stores."),
+    ("Divergence", "M is judged only when the probe sent a server name: an endpoint probed by IP address has no host "
+                   "name to compare (SSL Labs always tests a host name)."),
+    ("Divergence", "Forward secrecy and AEAD are judged on the suites the server accepts, not on what the SSL Labs "
+                   "reference browsers negotiate: 'no forward secrecy' means no forward-secret suite is accepted at "
+                   "all."),
 )
 
 
 @dataclass(frozen=True)
 class Grade:
-    letter: str  # A..F, "T" (trust), "-" (no TLS)
+    letter: str  # A+, A, A-, B..F, "M" (name mismatch), "T" (trust), "-" (no TLS)
     score: int | None
     provisional: bool = False
     caps: tuple[str, ...] = ()
-    untrusted_letter: str = ""  # the letter ignoring trust when ``letter`` is "T"
+    untrusted_letter: str = ""  # the letter ignoring trust (T) or the name mismatch (M)
+    warnings: tuple[str, ...] = ()  # why an A is an A- (or not an A+)
 
     @property
     def text(self) -> str:
         if self.letter == "-":
             return "no TLS"
         base = self.letter + ("*" if self.provisional else "")
-        return f"{base} (if trusted: {self.untrusted_letter})" if self.letter == "T" else base
+        if self.letter == "T":
+            return f"{base} (if trusted: {self.untrusted_letter})"
+        if self.letter == "M":
+            return f"{base} (if the name matched: {self.untrusted_letter})"
+        return base
+
+    @property
+    def reasons(self) -> tuple[str, ...]:
+        """Every reason the grade is below A+: the caps, the trust / name issues and the warnings."""
+        return tuple(dict.fromkeys((*self.caps, *self.warnings)))
+
+    def record(self) -> dict[str, Any]:
+        """The grade as the run API and the endpoint dialog show it (the same object D7 prints)."""
+        return {"grade": self.text, "letter": self.letter, "score": self.score, "provisional": self.provisional,
+                "if_trusted": self.untrusted_letter or None, "caps": list(self.caps), "warnings": list(self.warnings),
+                "model": GRADE_MODEL}
+
+
+GRADE_MODEL = "ssllabs-2009r"  # the guide version the rubric follows (RUBRIC)
 
 
 def _suite_bits(name: str) -> int:
@@ -195,9 +245,74 @@ def weak_by_name(names: Iterable[str]) -> dict[str, list[str]]:
     return out
 
 
-def grade_tls(facts: Mapping[str, Any], as_of: Any = None) -> Grade:
+def _chain_facts(chain: Sequence[Any] | None) -> list[Mapping[str, Any]]:
+    out = []
+    for item in chain or ():
+        facts = getattr(item, "facts", item)
+        if isinstance(facts, Mapping):
+            out.append(facts)
+    return out
+
+
+def chain_issues(chain: Sequence[Any] | None) -> dict[str, bool]:
+    """What the served chain says about trust (the certificate rows at ``host:port#chain[i]``, CB-17 link facts):
+    ``incomplete`` (classify's CHAIN_INCOMPLETE rule: an issuer neither served nor trusted with a served certificate
+    above it, or a lone leaf naming an AIA issuer), ``untrusted`` (the top of the chain is issued by a CA the node's
+    trust store does not hold and it is not a gap), ``sha1`` (a served certificate other than a self-signed root is
+    signed with SHA-1), ``md5`` (MD5 / MD2 signature)."""
+    facts = _chain_facts(chain)
+    incomplete = untrusted = sha1 = md5 = False
+    for f in facts:
+        sig = str(f.get("sig_alg") or "").upper().replace("-", "")
+        if "MD5" in sig or "MD2" in sig:
+            md5 = True
+        elif "SHA1" in sig and not f.get("self_signed"):
+            sha1 = True
+        if f.get("chain_issuer") != "missing":
+            continue
+        gap = f.get("chain_top") is False
+        lone_leaf = f.get("chain_top") is True and not f.get("is_ca") and f.get("aia_ca_issuers") is True
+        if gap or lone_leaf:
+            incomplete = True
+        elif f.get("chain_top") is True:
+            untrusted = True
+    return {"incomplete": incomplete, "untrusted": untrusted and not incomplete, "sha1": sha1, "md5": md5}
+
+
+def _names_cover(name: str, leaf: Mapping[str, Any]) -> bool | None:
+    """Whether the leaf's names cover ``name`` (RFC 6125: one left-most ``*`` label); None when the leaf names none."""
+    sans = [str(v).strip().casefold() for v in (leaf.get("san") or leaf.get("sans") or []) if str(v).strip()]
+    sans = [v.split(":", 1)[1] if v.startswith(("dns:", "ip:")) else v for v in sans]
+    if not sans:
+        cn = re.search(r"(?:^|,)\s*CN\s*=\s*([^,]+)", str(leaf.get("subject") or ""), re.IGNORECASE)
+        sans = [cn.group(1).strip().casefold()] if cn else []
+    if not sans:
+        return None
+    host = name.strip().casefold().rstrip(".")
+    for pattern in sans:
+        if pattern == host:
+            return True
+        if pattern.startswith("*.") and host.count(".") >= 2 and host.split(".", 1)[1] == pattern[2:]:
+            return True
+    return False
+
+
+def _hsts_seconds(facts: Mapping[str, Any]) -> int | None:
+    raw = facts.get("hsts_max_age")
+    if raw is None and isinstance(facts.get("hsts"), Mapping):
+        raw = facts["hsts"].get("max_age")
+    if raw is None and facts.get("hsts") is False:
+        return 0
+    return raw if isinstance(raw, int) and not isinstance(raw, bool) else None
+
+
+_HTTP_SERVICES = frozenset({"tls", "https", "http"})
+
+
+def grade_tls(facts: Mapping[str, Any], as_of: Any = None, chain: Sequence[Any] | None = None) -> Grade:
     """The SSL Labs-style grade of one probed TLS endpoint (see ``RUBRIC``); ``as_of`` (a date) decides whether the
-    leaf certificate has expired (no clock is read here)."""
+    leaf certificate has expired (no clock is read here); ``chain``: the served chain's certificate facts (or
+    ``ChainCert`` records), for the incomplete-chain cap and the T and M grades."""
     if facts.get("tls") is False or facts.get("tls_offered") is False or facts.get("plaintext_only"):
         return Grade("-", None)
     versions = facts.get("versions") if isinstance(facts.get("versions"), Mapping) else {}
@@ -214,13 +329,15 @@ def grade_tls(facts: Mapping[str, Any], as_of: Any = None) -> Grade:
     leaf = facts.get("leaf") if isinstance(facts.get("leaf"), Mapping) else {}
     leaf_bits = _int(leaf.get("key_size"))
     weak = facts.get("weak_ciphers_accepted") if isinstance(facts.get("weak_ciphers_accepted"), Mapping) else {}
+    upper = [n.upper() for n in names]
+    has_fs = any("ECDHE" in n or "DHE" in n or n.startswith(("TLS_AES_", "TLS_CHACHA20_")) for n in upper)
     static_rsa = bool(weak.get("static_rsa")) or any(re.match(r"TLS_RSA_WITH", n) for n in names)
-    kx = _kx_bits(facts, static_rsa and not any("ECDHE" in n or "DHE" in n for n in names), leaf_bits)
+    kx = _kx_bits(facts, static_rsa and not has_fs, leaf_bits)
     bits = [_suite_bits(n) for n in names]
     strong, weakest = max(bits), min(bits)
     cipher = sum((0 if b == 0 else 20 if b < 128 else 80 if b < 256 else 100) for b in (strong, weakest)) / 2
     score = round(0.3 * protocol + 0.3 * kx_score(kx) + 0.4 * cipher)
-    letter, caps = _band(score), []
+    letter, caps, warnings = _band(score), [], []
 
     def cap(to: str, why: str) -> None:
         nonlocal letter
@@ -228,35 +345,72 @@ def grade_tls(facts: Mapping[str, Any], as_of: Any = None) -> Grade:
             letter = to
         caps.append(why)
 
-    upper = [n.upper() for n in names]
     by_reason = weak_by_name(names)
+    modern = [v for v in ("TLSv1.1", "TLSv1.2", "TLSv1.3") if v in offered]
+    modern_names = [n.upper() for v in modern for n in suites.get(v, [])] if suites else (upper if modern else [])
+    issues = chain_issues(chain)
+    key_alg = str(leaf.get("key_alg") or "").upper()
+    # F
     if "SSLv2" in offered:
         cap("F", "SSL 2 offered")
+    if offered[-1] == "SSLv3":
+        cap("F", "SSL 3 is the best protocol offered")
     if any(r in by_reason for r in ("NULL cipher", "EXPORT", "anonymous key exchange")):
         cap("F", "NULL, EXPORT or anonymous suite accepted")
-    if leaf_bits and str(leaf.get("key_alg") or "").upper().startswith("RSA") and leaf_bits < 1024:
+    if "RC4" in by_reason and all("RC4" in n for n in upper):
+        cap("F", "only RC4 suites accepted")
+    if leaf_bits and key_alg.startswith("RSA") and leaf_bits < 1024:
         cap("F", f"certificate RSA key {leaf_bits} bits")
-    if "SSLv3" in offered:
-        cap("C", "SSL 3 offered")
-    if "RC4" in by_reason:
-        cap("C", "RC4 accepted")
-    if "64-bit block (DES / 3DES)" in by_reason:
-        cap("C", "DES / 3DES (64-bit block) accepted")
+    if issues["md5"] or "MD5" in str(leaf.get("sig_alg") or "").upper():
+        cap("F", "MD5 or MD2 signature in the served chain")
     if kx is None:
         cap("B", "key exchange not recorded (scored as < 2048 bits)")
     elif kx < 1024:
         cap("F", f"key exchange {kx} bits")
+    # C
+    if "TLSv1.2" not in offered and "TLSv1.3" not in offered:
+        cap("C", "no TLS 1.2 or TLS 1.3")
+    if "RC4" in by_reason:
+        if any("RC4" in n for n in modern_names):
+            cap("C", "RC4 accepted with TLS 1.1 or later")
+        else:
+            cap("B", "RC4 accepted")
+    if "64-bit block (DES / 3DES)" in by_reason:
+        if any(_suite_bits(n) in (56, 112) for n in modern_names):
+            cap("C", "3DES or another 64-bit block cipher accepted with TLS 1.1 or later")
+        else:
+            cap("B", "3DES or another 64-bit block cipher accepted (TLS 1.0 or SSL 3 only)")
+    # B
+    if "SSLv3" in offered and offered[-1] != "SSLv3":
+        cap("B", "SSL 3 offered")
     if "TLSv1.0" in offered or "TLSv1.1" in offered:
         cap("B", "TLS 1.0 / 1.1 offered")
-    has_fs = any("ECDHE" in n or "DHE" in n or n.startswith(("TLS_AES_", "TLS_CHACHA20_")) for n in upper)
-    if static_rsa or not has_fs:
-        cap("B", "no forward secrecy for every client (static RSA key exchange accepted)")
-    tls12 = [n.upper() for n in suites.get("TLSv1.2", [])]
-    if tls12 and not any("GCM" in n or "CHACHA20" in n or "CCM" in n for n in tls12) and "TLSv1.3" not in offered:
+    if not has_fs:
+        cap("B", "no forward secrecy (no ECDHE, DHE or TLS 1.3 suite accepted)")
+    elif static_rsa:
+        warnings.append("static RSA key exchange accepted next to forward-secret suites")
+    if not any("GCM" in n or "CHACHA20" in n or "CCM" in n or n.startswith("TLS_AES_") for n in upper):
         cap("B", "no AEAD suite (CBC only)")
-    key_alg = str(leaf.get("key_alg") or "").upper()
     if leaf_bits and ((key_alg.startswith("RSA") and leaf_bits < 2048) or (key_alg.startswith("EC") and leaf_bits < 224)):
         cap("B", f"certificate {key_alg or 'key'} {leaf_bits} bits")
+    temp = str(facts.get("server_temp_key") or "").casefold()
+    if kx is not None and 1024 <= kx < 2048 and (temp.startswith(("dh,", "dhe,")) or norm_group(
+            facts.get("negotiated_group")).startswith("ffdhe")):
+        cap("B", f"finite-field DH group {kx} bits")
+    if issues["incomplete"]:
+        cap("B", "incomplete chain: the server does not send an intermediate certificate")
+    # A- / A+ (2009e, 2009r)
+    service = str(facts.get("service") or facts.get("protocol_label") or "tls").casefold()
+    hsts = _hsts_seconds(facts) if service in _HTTP_SERVICES else None
+    if "TLSv1.3" not in offered:
+        warnings.append("TLS 1.3 not offered")
+    if hsts is not None and hsts <= 0:
+        warnings.append("HSTS not set")
+    if letter == "A" and warnings:
+        letter = "A-"
+    elif letter == "A" and hsts is not None and hsts >= HSTS_A_PLUS_SECONDS and not issues["sha1"] \
+            and "SHA1" not in str(leaf.get("sig_alg") or "").upper().replace("-", ""):
+        letter = "A+"
     enumeration = facts.get("enumeration") if isinstance(facts.get("enumeration"), Mapping) else {}
     complete_map = facts.get("cipher_suites_complete") if isinstance(facts.get("cipher_suites_complete"), Mapping) \
         else {}
@@ -266,9 +420,20 @@ def grade_tls(facts: Mapping[str, Any], as_of: Any = None) -> Grade:
         trust.append("self-signed leaf certificate")
     if _expired(leaf.get("not_after"), as_of):
         trust.append("expired leaf certificate")
+    if issues["untrusted"]:
+        trust.append("chain ends at a CA the scan node does not trust")
+    if issues["sha1"] or ("SHA1" in str(leaf.get("sig_alg") or "").upper().replace("-", "")
+                          and leaf.get("self_signed") is not True):
+        trust.append("SHA-1 signature in the served chain")
     if trust:
-        return Grade("T", score, provisional, tuple(caps + trust), untrusted_letter=letter)
-    return Grade(letter, score, provisional, tuple(caps))
+        return Grade("T", score, provisional, tuple(caps + trust), untrusted_letter=letter, warnings=tuple(warnings))
+    server_name = str(facts.get("sni") or facts.get("server_name") or "").strip()
+    if server_name and not re.fullmatch(r"[0-9.:\[\]a-fA-F]+", server_name) and leaf:
+        covered = _names_cover(server_name, leaf)
+        if covered is False:
+            return Grade("M", score, provisional, tuple(caps + [f"certificate does not name {server_name}"]),
+                         untrusted_letter=letter, warnings=tuple(warnings))
+    return Grade(letter, score, provisional, tuple(caps), warnings=tuple(warnings))
 
 
 def _expired(not_after: Any, as_of: Any) -> bool:
@@ -402,6 +567,8 @@ class ChainCert:
     not_after: str
     thumbprint: str
     key: str
+    # the link facts the grade reads (CB-17: chain_issuer, chain_top, is_ca, self_signed, sig_alg, aia_ca_issuers)
+    facts: Mapping[str, Any] = field(default_factory=dict, compare=False, repr=False)
 
 
 @dataclass(frozen=True)
@@ -421,6 +588,9 @@ class TlsEndpoint:
         return self.observed.key
 
 
+_CHAIN_FACTS = ("chain_issuer", "chain_top", "is_ca", "self_signed", "sig_alg", "aia_ca_issuers")
+
+
 def chain_index(certs: Sequence[Any]) -> dict[str, tuple[ChainCert, ...]]:
     """``host:port`` -> the certificates its handshake presented, by chain position (``#chain[i]`` locations). Built
     once per document in one pass over the certificate rows, so the lookup per endpoint is a dict read (a
@@ -438,7 +608,8 @@ def chain_index(certs: Sequence[Any]) -> dict[str, tuple[ChainCert, ...]]:
         facts = item.facts if isinstance(item.facts, Mapping) else {}
         key = f"{facts.get('key_alg') or ''} {facts.get('key_size') or facts.get('curve') or ''}".strip()
         slots[index] = ChainCert(index, str(facts.get("subject") or ""), str(facts.get("issuer") or ""),
-                                 str(facts.get("not_after") or ""), thumbprint(facts), key)
+                                 str(facts.get("not_after") or ""), thumbprint(facts), key,
+                                 {k: facts.get(k) for k in _CHAIN_FACTS if k in facts})
     return {endpoint: tuple(slots[i] for i in sorted(slots)) for endpoint, slots in found.items()}
 
 
@@ -458,11 +629,12 @@ def tls_endpoints(view: Any) -> tuple[list[TlsEndpoint], int]:
         complete = facts.get("cipher_suites_complete") if isinstance(facts.get("cipher_suites_complete"), Mapping) \
             else {}
         enumeration = facts.get("enumeration") if isinstance(facts.get("enumeration"), Mapping) else {}
+        chain = chains.get(observed.key.split("/", 1)[0], ())
         out.append(TlsEndpoint(
             observed=observed, service=service, starttls=service.startswith(STARTTLS_PREFIX),
-            grade=grade_tls(facts, getattr(view, "as_of", None)), suites=accepted_suites(facts),
+            grade=grade_tls(facts, getattr(view, "as_of", None), chain), suites=accepted_suites(facts),
             suites_complete={str(k): bool(v) for k, v in complete.items()}, groups=tuple(dict.fromkeys(groups)),
-            chain=chains.get(observed.key.split("/", 1)[0], ()),
+            chain=chain,
             not_read=tuple(str(x) for x in (enumeration.get("not_complete") or [])[:12])))
     return out, deleted
 
@@ -674,7 +846,8 @@ def opcua_summary(observed: Observed) -> dict[str, str]:
     }
 
 
-__all__ = ["chain_index", "kx_score", "weak_by_name", "APPLIANCE_KINDS", "GRADE_BANDS", "PROTOCOL_SCORE", "RUBRIC", "ChainCert", "Grade", "Observed",
+__all__ = ["chain_index", "chain_issues", "kx_score", "weak_by_name", "APPLIANCE_KINDS", "GRADE_BANDS", "GRADE_MODEL",
+           "PROTOCOL_SCORE", "RUBRIC", "ChainCert", "Grade", "Observed",
            "TlsEndpoint", "accepted_suites", "appliance_configs", "appliance_settings", "dedupe", "endpoint_key",
            "grade_tls", "ike_endpoints", "ike_summary", "norm_group", "opcua_summary", "ot_endpoints",
            "ssh_algorithms", "ssh_endpoints", "ssh_host_keys", "ssh_pq_kex", "tls_endpoints", "tls_net"]

@@ -113,7 +113,7 @@ def _store_register(view: object, styles: Styles, width: float) -> list[Flowable
                 common.linkage_cell(fact, "owner_hint"),
                 common.linkage_cell(fact, "classification"),
                 common.linkage_cell(fact, "data_lifetime"),
-                str(fact.get("source") or ""),
+                common.source_text(fact),
                 common.location_of(fact),
             ]
         )

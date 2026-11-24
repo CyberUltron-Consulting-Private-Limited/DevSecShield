@@ -123,10 +123,13 @@ def status(session: Session, team_id: int, run: CbomCollectionRun) -> dict[str, 
     return {"available": True, "reason": None, "missing": 0}
 
 
-def facet(session: Session, team_id: int, run_id: int) -> dict[str, int]:
+def facet(session: Session, team_id: int, run_id: int, exclude: list[int] | None = None) -> dict[str, int]:
     """Rows per list grade over the whole run (coverage rows included, as the list shows them), from the stored
-    column: one GROUP BY on the (run_id, q_grade) index, then EC-3's rows moved from Q0 to "none"."""
+    column: one GROUP BY on the (run_id, q_grade) index, then EC-3's rows moved from Q0 to "none".  ``exclude``: rows
+    the list leaves out because another job of the run read the same resource (``resource_identity.run_fold``)."""
     base = (CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run_id)
+    if exclude:
+        base = (*base, CbomCollectedAsset.id.notin_(list(exclude)))  # type: ignore[union-attr]
     counts = {g: 0 for g in GRADE_FILTERS}
     for grade, n in session.exec(select(CbomCollectedAsset.q_grade, func.count()).where(*base)
                                  .group_by(CbomCollectedAsset.q_grade)).all():

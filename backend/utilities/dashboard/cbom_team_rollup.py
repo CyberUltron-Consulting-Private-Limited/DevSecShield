@@ -3180,14 +3180,17 @@ def _probed_tls_fact(item: Any, collection: CollectionAgg, asset: AssetAgg) -> d
 
 def _pool_sources_compliance(code_frameworks: Sequence[FrameworkPool], code_requirements: Sequence[RequirementAgg],
                              rows: Sequence[Any], aggs: Mapping[str, Any]
-                             ) -> tuple[tuple[FrameworkPool, ...], tuple[RequirementAgg, ...]]:
+                             ) -> tuple[tuple[FrameworkPool, ...], tuple[RequirementAgg, ...], int]:
     """Each Sources collection judged against CNSA 2.0 and FIPS 140-3 (``cbom_sources.frameworks``, the predicates
     the code lane's checks call), as one more source of the pooled verdicts: its counts are added to the framework's,
     its requirement verdicts sit beside the code scans' (keyed by the collection's source key) and roll up by the
-    same precedence.  The rows counted are those the merge kept (latest observation wins)."""
+    same precedence.  The rows counted are those the merge kept (latest observation wins).  A deleted source's last
+    collection is not current evidence and is not pooled (staging QA Q3-03 / Q3-11).  Returns the frameworks, the
+    requirements and the number of collections pooled (D10's "Pooled over N sources" counts them)."""
     from backend.utilities.cbom_sources.frameworks import collection_compliance
 
-    parts: dict[str, list[Any]] = {key: [] for key in aggs}
+    parts: dict[str, list[Any]] = {key: [] for key, agg in aggs.items() if getattr(agg, "source_kind", "")}
+    pooled_keys: set[str] = set()
     for item in rows:
         key = item.collection.key
         if key in parts:
@@ -3201,6 +3204,7 @@ def _pool_sources_compliance(code_frameworks: Sequence[FrameworkPool], code_requ
             pool.failed += int(block["fail"])
             pool.out_of_scope += int(block["out_of_scope"])
             pool.sources_pooled += 1
+            pooled_keys.add(key)
             pool.coverage = _coverage(pool.passed, pool.passed_with_evidence, pool.failed)
             for req in block["requirements"]:
                 agg = merged.setdefault((framework, req["id"]), RequirementAgg(framework, req["id"]))
@@ -3210,7 +3214,7 @@ def _pool_sources_compliance(code_frameworks: Sequence[FrameworkPool], code_requ
                 agg.verdict = _rollup_verdict(agg.verdicts.values())
     unknown_rank = len(_FRAMEWORK_ORDER)
     ordered = sorted(pools.values(), key=lambda p: (_FRAMEWORK_RANK.get(p.framework, unknown_rank), p.framework))
-    return tuple(ordered), tuple(sorted(merged.values(), key=lambda r: (r.framework, r.req_id)))
+    return tuple(ordered), tuple(sorted(merged.values(), key=lambda r: (r.framework, r.req_id))), len(pooled_keys)
 
 
 def _cross_source_key(identity: str) -> str | None:
@@ -3419,9 +3423,18 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
             finding_codes=asset.finding_codes, source_label=agg.label,
             source_kind=agg.source_kind, code_impacts=getattr(item, "code_impacts", None))
         if fact is not None:
+            if item.also_seen_keys:  # the other sources that read this resource (resolve kept this observation)
+                fact["also_seen"] = list(item.also_seen)
+                fact["also_seen_keys"] = list(item.also_seen_keys)
             facts_of.setdefault(agg.key, []).append(fact)
+        if not posture_evidence:
+            continue  # a deleted source is never current evidence of a third-party component either (D10, Q3-03)
         component = mapper.library_component(item.node_type, item.facts, name=item.row.get("title"),
                                              location=item.row.get("location"), finding_codes=asset.finding_codes)
+        if component is None:  # an HSM, KMIP server, key manager, appliance or cloud KMS: a crypto product (Q3-11)
+            component = mapper.crypto_product(item.node_type, item.facts, name=item.row.get("title"),
+                                              location=item.row.get("location"), source_kind=agg.source_kind,
+                                              finding_codes=asset.finding_codes)
         if component is not None:
             components.append((agg, component))
     assets.sort(key=lambda a: (a.source_key, a.asset_type, a.ident))
@@ -3453,11 +3466,19 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
                                     first_seen=aggs[key].observed_at, last_seen=aggs[key].observed_at, scan_count=1,
                                     last_scan_id=aggs[key].run_id, fact=fact)
                      for key, items in facts_of.items() for fact in items]
+        # a source whose every resource another source read later is still an assessed source: its reads are printed
+        # in "also seen" (Q3-01), so it keeps its row (with the lanes of the facts that name it)
+        lanes_of: dict[str, set[str]] = {key: {str(f.get("lane") or "sources_network") for f in items}
+                                         for key, items in facts_of.items()}
+        for items in facts_of.values():
+            for fact in items:
+                for other in fact.get("also_seen_keys") or ():
+                    if other in aggs and aggs[other].source_kind:
+                        lanes_of.setdefault(other, set()).add(str(fact.get("lane") or "sources_network"))
         new_rows = [PostureSourceAgg(key=key, label=aggs[key].label, state="assessed", reason=None,
                                      current_scan_id=aggs[key].run_id, last_scanned=aggs[key].observed_at,
-                                     zero_facts=False, truncated=False, dropped=0,
-                                     lanes=tuple(sorted({str(f.get("lane") or "sources_network") for f in items})),
-                                     failed_lanes=()) for key, items in facts_of.items()]
+                                     zero_facts=False, truncated=False, dropped=0, lanes=tuple(sorted(lanes)),
+                                     failed_lanes=()) for key, lanes in lanes_of.items()]
         rows_all = sorted([*posture.sources, *new_rows], key=lambda row: (row.label.casefold(), row.key))
         ok = [row.state in ("assessed", "partial") for row in rows_all]
         state = "assessed" if all(ok) else ("mixed" if any(ok) else "not_assessed")
@@ -3469,8 +3490,8 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
         posture = replace(posture, state=state, sources=tuple(rows_all), facts=tuple(facts_all),
                           counts=_posture_counts(facts_all, assessed_scans))
     # 5. compliance: each collection's CNSA 2.0 / FIPS 140-3 verdicts (CB-16), pooled with the code scans'
-    frameworks, requirements = _pool_sources_compliance(view.frameworks, view.requirements, resolution.sources_rows,
-                                                        aggs)
+    frameworks, requirements, pooled = _pool_sources_compliance(view.frameworks, view.requirements,
+                                                                resolution.sources_rows, aggs)
     # 6. basis and fingerprint: a collection is a completed CBOM result
     count = len(aggs)
     stamps = ",".join(f"{a.job_id}:{a.observed_at.isoformat()}" for a in sorted(aggs.values(), key=lambda a: a.job_id))
@@ -3483,6 +3504,7 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
         window_end=max([*seen, *([view.window_end] if view.window_end else [])]),
         fingerprint=digest, sources=tuple(source_rows), assets=tuple(assets), certs=tuple(certs), posture=posture,
         libs=_merge_sources_libs(view.libs, components), frameworks=frameworks, requirements=requirements,
+        compliance_sources_pooled=view.compliance_sources_pooled + pooled,
         collections=tuple(sorted(aggs.values(), key=lambda a: (a.label.casefold(), a.key))), **_headline(live))
     merged.remediation = view.remediation
     merged.register = view.register
@@ -3503,110 +3525,131 @@ def load_team_cbom_view(engine: Any, team_id: int, *, now: datetime | None = Non
     ``sqlmodel`` / ``backend.new_models`` INSIDE this function.  ``now=None`` means the current
     UTC time - the only clock read this module may make.
     """
-    from sqlmodel import Session, col, select  # lazy: keeps the import closure stdlib-only
-
-    from backend.new_models import Scan, Team
+    from sqlmodel import Session
 
     moment = datetime.now(_UTC) if now is None else now
     # a caller-owned Session is used as is (and left open); an engine gets a short-lived one
     owner = contextlib.nullcontext(engine) if isinstance(engine, Session) else Session(engine)
     with owner as session:
-        team_name = session.exec(select(Team.name).where(Team.id == team_id)).first()
-        rows = session.exec(
-            select(
-                Scan.id, Scan.team_id, Scan.scan_type, Scan.title, Scan.scan_status,
-                Scan.created_at, Scan.last_updated, Scan.scan_metadata,
-            )  # pass 1: heads only, never the scan_data blob
-            .where(Scan.team_id == team_id, Scan.scan_type == "cbom")
-            .order_by(col(Scan.created_at).desc(), col(Scan.id).desc())
-        ).all()  # fmt: skip
-        heads = []
-        for scan_id, owner_team, kind, title, status, created, updated, meta in rows:
-            made = _utc(created) or _EPOCH  # Postgres / SQLite return naive UTC
-            heads.append(
-                ScanHead(
-                    id=scan_id, team_id=owner_team, scan_type=kind, title=title, status=status,
-                    created_at=made, last_updated=_utc(updated) or made, scan_metadata=meta,
-                )  # fmt: skip
-            )
+        view, _found = _load_core(session, team_id, moment)
+        return _load_extras(session, team_id, moment, view)
 
-        def load_blobs(ids: Sequence[int]) -> dict[int, Any]:
-            # pass 2: only ids the fold asked for, still scoped to the tenant and scan type
-            found = session.exec(
-                select(Scan.id, Scan.scan_data).where(
-                    col(Scan.id).in_(list(ids)),
-                    Scan.team_id == team_id,
-                    Scan.scan_type == "cbom",
-                )
-            ).all()
-            return {scan_id: data for scan_id, data in found}
 
-        view = fold_scans(
-            heads,
-            load_blobs,
-            team_id=team_id,
-            team_name=team_name or f"Team {team_id}",
-            now=moment,
+def load_core_view(session: Any, team_id: int, *, now: datetime | None = None) -> TeamCbomView:
+    """The team view every certificate surface reads (staging QA Q3-04: the certificate UI and D8 are one list): the
+    code scans folded, each source's latest collection merged, and the rows ``cert_estate`` reads (``view.estate``),
+    without the register, roadmap, methodology and vendor reads of ``load_team_cbom_view``."""
+    view, _found = _load_core(session, team_id, datetime.now(_UTC) if now is None else now)
+    return view
+
+
+def _load_core(session: Any, team_id: int, moment: datetime) -> tuple[TeamCbomView, Any]:
+    from sqlmodel import col, select
+
+    from backend.new_models import Scan, Team
+
+    team_name = session.exec(select(Team.name).where(Team.id == team_id)).first()
+    rows = session.exec(
+        select(
+            Scan.id, Scan.team_id, Scan.scan_type, Scan.title, Scan.scan_status,
+            Scan.created_at, Scan.last_updated, Scan.scan_metadata,
+        )  # pass 1: heads only, never the scan_data blob
+        .where(Scan.team_id == team_id, Scan.scan_type == "cbom")
+        .order_by(col(Scan.created_at).desc(), col(Scan.id).desc())
+    ).all()  # fmt: skip
+    heads = []
+    for scan_id, owner_team, kind, title, status, created, updated, meta in rows:
+        made = _utc(created) or _EPOCH  # Postgres / SQLite return naive UTC
+        heads.append(
+            ScanHead(
+                id=scan_id, team_id=owner_team, scan_type=kind, title=title, status=status,
+                created_at=made, last_updated=_utc(updated) or made, scan_metadata=meta,
+            )  # fmt: skip
         )
-        # CBOM Sources: each source's latest completed collection is a CBOM result too (collections_view, M1x)
-        from backend.utilities.cbom_sources.collections_view import load_sources_result
 
-        found = load_sources_result(session, team_id, moment)
-        view = merge_collections(view, found.rows, found.collections)
-        try:  # the regulatory profile the mapping cites (CBOM settings; an NBFC with no flags when not set)
-            from backend.utilities.cbom_sources.regulated_entity import team_profile
+    def load_blobs(ids: Sequence[int]) -> dict[int, Any]:
+        # pass 2: only ids the fold asked for, still scoped to the tenant and scan type
+        found = session.exec(
+            select(Scan.id, Scan.scan_data).where(
+                col(Scan.id).in_(list(ids)),
+                Scan.team_id == team_id,
+                Scan.scan_type == "cbom",
+            )
+        ).all()
+        return {scan_id: data for scan_id, data in found}
 
-            view.regulatory_profile = team_profile(session, team_id)
-            view.regulated_entity = view.regulatory_profile["entity"]
-        except Exception as exc:  # noqa: BLE001  # pragma: no cover - defensive: the default (NBFC) stays
-            view.warnings = (*view.warnings, f"regulated-entity setting not read: {type(exc).__name__}")
-        try:  # the register's grade inputs (Mosca, per-source lifetime / exposure) and model: in the Document ID (M1)
-            from backend.utilities.cbom_sources.qgrade import GRADE_MODEL_VERSION
-            from backend.utilities.cbom_sources.risk_register import team_inputs
+    view = fold_scans(
+        heads,
+        load_blobs,
+        team_id=team_id,
+        team_name=team_name or f"Team {team_id}",
+        now=moment,
+    )
+    # CBOM Sources: each source's latest completed collection is a CBOM result too (collections_view, M1x)
+    from backend.utilities.cbom_sources.collections_view import load_sources_result
 
-            view.grade_inputs = {"digest": team_inputs(session, team_id).digest, "model_version": GRADE_MODEL_VERSION}
-        except Exception as exc:  # pragma: no cover - defensive
-            view.grade_inputs = None
-            view.warnings = (*view.warnings, f"grade inputs not read: {type(exc).__name__}")
-        try:  # every latest-collection row with its facts, for D7 (network) and D8 (certificates)
-            from backend.utilities.cbom_sources.cert_estate import load_inputs as estate_inputs
+    found = load_sources_result(session, team_id, moment)
+    view = merge_collections(view, found.rows, found.collections)
+    try:  # every latest-collection row with its facts, for D7 (network) and D8 (certificates)
+        from backend.utilities.cbom_sources.cert_estate import load_inputs as estate_inputs
 
-            view.estate = estate_inputs(session, team_id, found)
-        except Exception as exc:  # pragma: no cover - defensive
-            view.estate = None
-            view.warnings = (*view.warnings, f"estate rows not loaded: {type(exc).__name__}")
-        try:  # remediation waves and scan-node assets for the roadmap; a failure leaves the manual columns blank
-            from backend.utilities.cbom_sources.waves import roadmap_extras
+        view.estate = estate_inputs(session, team_id, found)
+    except Exception as exc:  # pragma: no cover - defensive
+        view.estate = None
+        view.warnings = (*view.warnings, f"estate rows not loaded: {type(exc).__name__}")
+    return view, found
 
-            view.remediation = roadmap_extras(session, team_id, view)
-        except Exception as exc:  # pragma: no cover - defensive
-            view.remediation = None
-            view.warnings = (*view.warnings, f"remediation plan not loaded: {type(exc).__name__}")
-        try:  # the quantum risk register (CB-23) for its PDF; a failure prints the register as not loaded
-            from backend.utilities.cbom_sources.risk_register import report as register_report
 
-            view.register = register_report(session, team_id, moment.replace(tzinfo=None))
-        except Exception as exc:  # pragma: no cover - defensive
-            view.register = None
-            view.warnings = (*view.warnings, f"quantum risk register not loaded: {type(exc).__name__}")
-        try:  # D2's live collection set-up; a failure prints "Not loaded" in its tables
-            from backend.utilities.cbom_sources.methodology_facts import load as methodology_facts
+def _load_extras(session: Any, team_id: int, moment: datetime, view: TeamCbomView) -> TeamCbomView:
+    from sqlmodel import select
 
-            view.methodology = methodology_facts(session, team_id, view)
-        except Exception as exc:  # pragma: no cover - defensive
-            view.methodology = None
-            view.warnings = (*view.warnings, f"methodology facts not loaded: {type(exc).__name__}")
-        try:  # the vendor attestation register (SOW D10) from the Evidence tab's vendor questionnaires
-            from backend.new_models import CbomEvidenceVendor
-            from backend.utilities.cbom_sources.evidence import vendor_register
+    try:  # the regulatory profile the mapping cites (CBOM settings; an NBFC with no flags when not set)
+        from backend.utilities.cbom_sources.regulated_entity import team_profile
 
-            found_vendors = session.exec(select(CbomEvidenceVendor).where(
-                CbomEvidenceVendor.team_id == team_id).order_by(CbomEvidenceVendor.id)).all()
-            view.vendors = vendor_register(list(found_vendors), moment.replace(tzinfo=None))
-        except Exception as exc:  # pragma: no cover - defensive
-            view.vendors = ()
-            view.warnings = (*view.warnings, f"vendor attestations not loaded: {type(exc).__name__}")
-        return view
+        view.regulatory_profile = team_profile(session, team_id)
+        view.regulated_entity = view.regulatory_profile["entity"]
+    except Exception as exc:  # noqa: BLE001  # pragma: no cover - defensive: the default (NBFC) stays
+        view.warnings = (*view.warnings, f"regulated-entity setting not read: {type(exc).__name__}")
+    try:  # the register's grade inputs (Mosca, per-source lifetime / exposure) and model: in the Document ID (M1)
+        from backend.utilities.cbom_sources.qgrade import GRADE_MODEL_VERSION
+        from backend.utilities.cbom_sources.risk_register import team_inputs
+
+        view.grade_inputs = {"digest": team_inputs(session, team_id).digest, "model_version": GRADE_MODEL_VERSION}
+    except Exception as exc:  # pragma: no cover - defensive
+        view.grade_inputs = None
+        view.warnings = (*view.warnings, f"grade inputs not read: {type(exc).__name__}")
+    try:  # remediation waves and scan-node assets for the roadmap; a failure leaves the manual columns blank
+        from backend.utilities.cbom_sources.waves import roadmap_extras
+
+        view.remediation = roadmap_extras(session, team_id, view)
+    except Exception as exc:  # pragma: no cover - defensive
+        view.remediation = None
+        view.warnings = (*view.warnings, f"remediation plan not loaded: {type(exc).__name__}")
+    try:  # the quantum risk register (CB-23) for its PDF; a failure prints the register as not loaded
+        from backend.utilities.cbom_sources.risk_register import report as register_report
+
+        view.register = register_report(session, team_id, moment.replace(tzinfo=None))
+    except Exception as exc:  # pragma: no cover - defensive
+        view.register = None
+        view.warnings = (*view.warnings, f"quantum risk register not loaded: {type(exc).__name__}")
+    try:  # D2's live collection set-up; a failure prints "Not loaded" in its tables
+        from backend.utilities.cbom_sources.methodology_facts import load as methodology_facts
+
+        view.methodology = methodology_facts(session, team_id, view)
+    except Exception as exc:  # pragma: no cover - defensive
+        view.methodology = None
+        view.warnings = (*view.warnings, f"methodology facts not loaded: {type(exc).__name__}")
+    try:  # the vendor attestation register (SOW D10) from the Evidence tab's vendor questionnaires
+        from backend.new_models import CbomEvidenceVendor
+        from backend.utilities.cbom_sources.evidence import vendor_register
+
+        found_vendors = session.exec(select(CbomEvidenceVendor).where(
+            CbomEvidenceVendor.team_id == team_id).order_by(CbomEvidenceVendor.id)).all()
+        view.vendors = vendor_register(list(found_vendors), moment.replace(tzinfo=None))
+    except Exception as exc:  # pragma: no cover - defensive
+        view.vendors = ()
+        view.warnings = (*view.warnings, f"vendor attestations not loaded: {type(exc).__name__}")
+    return view
 
 
 __all__ = [
@@ -3671,6 +3714,7 @@ __all__ = [
     "classify_expiry",
     "extract_scan_facts",
     "fold_scans",
+    "load_core_view",
     "load_team_cbom_view",
     "merge_collections",
     "sanitize_repo_url",

@@ -106,6 +106,10 @@ class SourcesRow:
     # impact depends on the facts (a domain's functional level, a key's size) keeps it in the posture facts, so a
     # deliverable's findings table never falls back to the KB default for it (#493 review 6032906354 M1)
     code_impacts: dict[str, str] = field(default_factory=dict, compare=False, repr=False)
+    # the other (still existing) sources that read the same resource, when this row is the observation kept
+    # (``resolve``: one asset counted once; staging QA Q3-01)
+    also_seen: tuple[str, ...] = field(default=(), compare=False, repr=False)
+    also_seen_keys: tuple[str, ...] = field(default=(), compare=False, repr=False)  # their collection keys
 
 
 # remediation status of a Sources finding (waves) -> the dashboard's finding status buckets
@@ -355,6 +359,7 @@ def load_sources_result(session: Any, team_id: int, now: _dt.datetime | None = N
     for item in out.rows:
         item.row["remediation_status"] = status.get(item.asset_key, "open")
     link_certificates(out.rows)
+    link_resources(out.rows)
     out.collections.sort(key=lambda c: (c.source_name.casefold(), c.source_ref))
     return out
 
@@ -406,6 +411,44 @@ def link_certificates(rows: list[SourcesRow]) -> int:
             item.identity = key
             changed += 1
     return changed
+
+
+def link_resources(rows: list[SourcesRow]) -> int:
+    """Give every row that names a resource two sources can both read (``resource_identity``: a cloud resource id,
+    ``host:port``, or target + location) that cross-source identity, so "latest observation wins" counts it once
+    (staging QA Q3-01: two IAM roles reading one AWS account printed every key, bucket and listener twice).  A key two
+    rows of one collection share is ambiguous: those rows keep their own identity.  Idempotent; returns the rows whose
+    identity changed."""
+    from backend.utilities.cbom_sources.resource_identity import PREFIX, resource_identity
+
+    keys: dict[int, str] = {}
+    seen: dict[tuple[str, str], int] = {}
+    for index, item in enumerate(rows):
+        if item.identity.startswith(PREFIX):
+            continue
+        if not item.identity.startswith("node|"):
+            continue  # a certificate's cross-source key (link_certificates) or a hand-made identity
+        key = resource_identity(item.node_type, item.target, item.row.get("location"), item.facts)
+        if key is None:
+            continue
+        own = (item.collection.key, key)
+        seen[own] = seen.get(own, 0) + 1
+        keys[index] = key
+    changed = 0
+    for index, key in keys.items():
+        item = rows[index]
+        if seen[(item.collection.key, key)] > 1:
+            continue
+        item.identity = key
+        changed += 1
+    return changed
+
+
+def _rank(item: SourcesRow) -> tuple:
+    """The observation kept for an identity (``resource_identity.rank``): a source that still exists before a deleted
+    one, then an observation with a quantum verdict, then the newer collection, then the higher job id."""
+    return (bool(item.collection.source_kind), item.row.get("quantum_safe") is not None, item.collection.observed_at,
+            item.collection.job_id)
 
 
 # ----------------------------------------------------------------------------- latest observation wins
@@ -501,12 +544,22 @@ def resolve(code_observations: Iterable[tuple[int, _dt.datetime, str]], rows: It
         at = _aware(created)
         if canon not in newest_code or at > newest_code[canon]:
             newest_code[canon] = at
+    link_resources(rows)  # idempotent: rows built without load_sources_result get their resource identities too
     best: dict[str, SourcesRow] = {}
+    members: dict[str, list[SourcesRow]] = {}
     for item in rows:
+        members.setdefault(item.identity, []).append(item)
         held = best.get(item.identity)
-        if held is None or (item.collection.observed_at, item.collection.job_id) > (
-                held.collection.observed_at, held.collection.job_id):
+        if held is None or _rank(item) > _rank(held):
             best[item.identity] = item
+    for ident, item in best.items():  # the other sources that read it (deleted sources are never named)
+        group = members[ident]
+        if len(group) > 1:
+            others = [m for m in sorted(group, key=_rank, reverse=True)
+                      if m is not item and m.collection.source_kind and m.collection.key != item.collection.key]
+            item.also_seen = tuple(dict.fromkeys(m.collection.label for m in others
+                                                 if m.collection.label != item.collection.label))
+            item.also_seen_keys = tuple(dict.fromkeys(m.collection.key for m in others))
     kept: list[SourcesRow] = []
     winners_at: dict[str, _dt.datetime] = {}
     for ident, item in best.items():
@@ -522,6 +575,6 @@ def resolve(code_observations: Iterable[tuple[int, _dt.datetime, str]], rows: It
                       aliases={ident: canon for _s, _c, ident, canon in code_list if canon != ident})
 
 
-__all__ = ["Collection", "link_certificates", "NETWORK_TYPES", "REMEDIATION_BUCKET", "ORIGIN_CODE", "ORIGIN_SOURCES", "Resolution", "SourcesResult",
+__all__ = ["Collection", "link_certificates", "link_resources", "NETWORK_TYPES", "REMEDIATION_BUCKET", "ORIGIN_CODE", "ORIGIN_SOURCES", "Resolution", "SourcesResult",
            "SourcesRow", "cert_identity", "code_cert_identities", "code_row_identity", "latest_jobs",
            "load_sources_result", "node_row", "origin_label", "resolve"]

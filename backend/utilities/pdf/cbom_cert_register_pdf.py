@@ -72,7 +72,14 @@ from backend.utilities.dashboard.cbom_team_rollup import (
     TeamCbomView,
     classify_expiry,
 )
-from backend.utilities.cbom_sources.cert_estate import EstateCert, EstateResult, count_phrase, unique_certificates
+from backend.utilities.cbom_sources.cert_estate import (
+    WEAK_CERT_CODES,
+    EstateCert,
+    EstateResult,
+    count_phrase,
+    unique_certificates,
+    weak_crypto,
+)
 from backend.utilities.pdf import cbom_deliverable_text as authored
 from backend.utilities.pdf.cbom_deliverable_common import (
     Styles,
@@ -755,10 +762,19 @@ def _appendix_table(certs: Sequence[CertAgg], width: float) -> Table:
 # ---------------------------------------------------------------------------------------------
 # Sections
 # ---------------------------------------------------------------------------------------------
+def _weak(row: RegisterRow) -> bool:
+    if row.estate is not None:
+        return weak_crypto(row.estate)
+    codes = set(row.cert.finding_codes)
+    return bool(codes & WEAK_CERT_CODES) or any(c.startswith("WEAK_") for c in codes)
+
+
 def _kpi_cards(rows: Sequence[RegisterRow]) -> list[tuple[str, ...]]:
     bands = Counter(row.band.band for row in rows)
     chips = authored.EXPIRY_BAND_CHIP_TEXT
-    weak = sum(1 for r in rows if any(c.startswith("WEAK_") for c in r.cert.finding_codes))
+    # the classifier's weak-key / weak-signature verdict (cert_estate.weak_crypto: SP 800-131A disallowed, or a weak
+    # code such as RSA_LT_2048, SIG_SHA1, CERT_SELF_SHA1), never a code prefix (staging QA Q3-02: always 0)
+    weak = sum(1 for r in rows if _weak(r))
     leaf = sum(1 for r in rows if r.chain_kind == "self_signed_leaf")
     orphan = sum(1 for r in rows if r.chain_kind == "issuer_not_in_estate")
     # hints stay on one line (about 20 characters) so the cards of the strip are equally tall

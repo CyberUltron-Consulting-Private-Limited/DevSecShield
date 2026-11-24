@@ -94,7 +94,8 @@ class _Model:
 D7_ROW_CAP = 1000
 SUITE_ENDPOINT_CAP = 300
 _FULL_LIST = "the full list is in each Sources run's asset list and CycloneDX export (protocolProperties.cipherSuites)"
-_GRADE_ORDER = {letter: rank for rank, letter in enumerate("FTEDCBA-")}
+# lowest first: F, the trust (T) and name (M) grades, then E..A+; "-" (no TLS) last
+_GRADE_ORDER = {letter: rank for rank, letter in enumerate(("F", "T", "M", "E", "D", "C", "B", "A-", "A", "A+", "-"))}
 
 
 def section_heading(text: str, styles: Styles, *, min_space: float = 90) -> list[Flowable]:
@@ -214,6 +215,8 @@ def _scoped(view: TeamCbomView) -> tuple[TeamCbomView, _Model]:
     # cloud account whose only settings are keys, storage or a private CA (D6 / D8 evidence) is in posture.sources too
     collection_keys = {c.key for c in view.collections}
     network_keys = {f.source_key for f in posture.facts if f.source_key in collection_keys and _read_here(f)}
+    network_keys |= {str(k) for f in posture.facts if _read_here(f)  # a source whose read is printed as "also"
+                     for k in common.as_rows(common.fact_map(f).get("also_seen_keys")) if str(k) in collection_keys}
     sources = [s for s in posture.sources
                if s.key not in deleted_keys and (s.key not in collection_keys or s.key in network_keys)]
     listed = {s.key for s in sources}
@@ -244,7 +247,7 @@ def _kpi(view: object, model: _Model, width: float) -> Flowable:
     assessed, total, _missing, _partial = common.coverage_numbers(view)
     tool_text = ", ".join(f"{tool}" for tool in tools) if tools else "none"
     graded = [e.grade.letter for e in model.tls if e.grade.letter != "-"]
-    poor = sum(1 for letter in graded if letter in ("C", "D", "E", "F", "T"))
+    poor = sum(1 for letter in graded if letter in ("C", "D", "E", "F", "T", "M"))
     cards = [
         ("Endpoints", common.kpi_text(view, len(endpoints)), "Unique host:port, static, imported, probed"),
         ("Legacy protocol", common.kpi_text(view, legacy), "SSLv3, TLS 1.0 or TLS 1.1 offered"),
@@ -585,7 +588,7 @@ def _grades(model: _Model, styles: Styles, width: float) -> list[Flowable]:
         facts = e.observed.facts
         rows.append([
             e.key, e.service, e.grade.text, "" if e.grade.score is None else e.grade.score,
-            "; ".join(e.grade.caps), facts.get("negotiated_version") or "",
+            "; ".join(e.grade.reasons), facts.get("negotiated_version") or "",
             facts.get("negotiated_cipher") or "", ", ".join(e.groups),
             "complete" if not e.grade.provisional else "incomplete: " + "; ".join(e.not_read[:3]),
             _seen(e.observed),

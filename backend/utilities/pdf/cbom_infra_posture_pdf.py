@@ -273,7 +273,7 @@ def _rotation_cell(fact: Mapping[str, Any]) -> str:
 
 
 def _source_cell(fact: Mapping[str, Any]) -> str:
-    return str(fact.get("source") or fact.get("source_label") or "")
+    return common.source_text(fact)
 
 
 def _kms_rows(view: object) -> list[list[Any]]:

@@ -22,6 +22,7 @@ from backend.utilities.cbom_sources import crypto_kb
 from backend.utilities.cbom_sources import policy_scope as PS
 from backend.utilities.cbom_sources import qgrade as QG
 from backend.utilities.cbom_sources import qgrade_store as QSTORE
+from backend.utilities.cbom_sources import resource_identity as RI
 from backend.utilities.cbom_sources.classify import DATED_TYPES, classify, shown
 from backend.utilities.cbom_sources.common import iso_z
 # CB-06: per-component provenance, PQC class and algorithm families for the export
@@ -135,8 +136,11 @@ def list_assets(session: Session, *, team_id: int, run_id: int | None = None, jo
                 now: _dt.datetime | None = None, risk_model: dict[str, Any] | None = None) -> dict[str, Any]:
     now = now or _now()
     base = select(CbomCollectedAsset).where(CbomCollectedAsset.team_id == team_id)
+    # a run whose jobs read the same resource lists it once (staging QA Q3-01): the newest job's row, with the other
+    # sources in ``also_seen``; a job's own list is never folded
+    fold = RI.run_fold(session, team_id, int(run_id)) if run_id is not None and job_id is None else RI.RunFold()
     if run_id is not None:
-        base = base.where(CbomCollectedAsset.run_id == run_id)
+        base = base.where(CbomCollectedAsset.run_id == run_id, RI.kept_clause(fold))
     if job_id is not None:
         base = base.where(CbomCollectedAsset.job_id == job_id)
     changed = changed_today(session, base, now)
@@ -153,7 +157,7 @@ def list_assets(session: Session, *, team_id: int, run_id: int | None = None, jo
     scope = select(CbomCollectedAsset.asset_type, CbomCollectedAsset.impact, CbomCollectedAsset.quantum_vulnerable,
                    func.count()).where(CbomCollectedAsset.team_id == team_id)
     if run_id is not None:
-        scope = scope.where(CbomCollectedAsset.run_id == run_id)
+        scope = scope.where(CbomCollectedAsset.run_id == run_id, RI.kept_clause(fold))
     if job_id is not None:
         scope = scope.where(CbomCollectedAsset.job_id == job_id)
     by_type: dict[str, int] = {}
@@ -187,14 +191,17 @@ def list_assets(session: Session, *, team_id: int, run_id: int | None = None, jo
     run = session.get(CbomCollectionRun, run_id) if run_id is not None else None
     stored = QSTORE.status(session, team_id, run) if run is not None and run.team_id == team_id else \
         {"available": False, "reason": "grades are filtered per run", "missing": None}
+    items = [public_asset(r, names, job_names, views[r.id], grades[r.id], pqcs[r.id]) for r in rows]
+    for item in items:  # the other sources of the run that read the same resource (Q3-01)
+        item["also_seen"] = list(fold.also_seen.get(int(item["id"]), ()))
     return {
         "total": total, "all_total": all_total, "page": page, "page_size": page_size,
-        "items": AGILITY.annotate_assets(session, team_id, jobs,  # CB-24: fix class per asset
-                                         [public_asset(r, names, job_names, views[r.id], grades[r.id], pqcs[r.id])
-                                          for r in rows]),
+        "folded": len(fold.dropped),  # rows another job of the run also read, listed once
+        "items": AGILITY.annotate_assets(session, team_id, jobs, items),  # CB-24: fix class per asset
         "grade_model_version": QG.GRADE_MODEL_VERSION, "grade_inputs": grading.inputs(),
         "facets": {"type": by_type, "impact": by_impact, "quantum_vulnerable": quantum_count,
-                   "q_grade": QSTORE.facet(session, team_id, int(run_id)) if stored["available"] else None},
+                   "q_grade": QSTORE.facet(session, team_id, int(run_id), exclude=fold.dropped_ids)
+                   if stored["available"] else None},
         "grade_filter": {"available": stored["available"], "reason": stored["reason"]},
         "targets": [_job_targets(job, names, reads) for job in jobs],
     }

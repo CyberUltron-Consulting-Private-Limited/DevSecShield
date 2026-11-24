@@ -33,6 +33,8 @@ __all__ = [
     "KERBEROS_KINDS",
     "MAPPED_TYPES",
     "LIBRARY_TYPES",
+    "PRODUCT_TYPES",
+    "crypto_product",
     "library_component",
     "posture_fact",
     "purl_identity",
@@ -677,3 +679,74 @@ def library_component(node_type: str, facts: Any, *, name: Any = None, location:
     status = [label for code, label in _STATUS if code in codes]
     return {"name": title, "version": version, "purl": _text(data.get("purl"), 300), "ecosystem": ecosystem,
             "status": "; ".join(status), "codes": tuple(codes), "where": where}
+
+
+# ----------------------------------------------------------------------------------------------- D10 crypto products
+# The cryptographic products the estate relies on, read by a Sources collection (staging QA Q3-11): an HSM token's
+# PKCS#11 library, a KMIP key server, a key manager (Vault transit), a network appliance, and a cloud key service.
+# One component per product (and version when the product reports one): every key a cloud KMS holds names the same
+# service, so the D10 row is the service with every source that relies on it, not one row per key.
+PRODUCT_TYPES = frozenset({"key_store", "appliance_config", "kms_key", "managed_key", "key_vault"})
+_CLOUD_KMS = {"aws": "AWS Key Management Service (KMS)", "gcp": "Google Cloud Key Management Service",
+              "azure": "Azure Key Vault", "oci": "OCI Vault (Key Management)"}
+_STORE_PRODUCT = {"pkcs11": "HSM (PKCS#11)", "kmip": "KMIP key server", "vault_transit": "HashiCorp Vault",
+                  "vault": "HashiCorp Vault", "aws_kms_custom": "AWS KMS custom key store"}
+
+
+def crypto_product(node_type: str, facts: Any, *, name: Any = None, location: Any = None, source_kind: str = "",
+                   finding_codes: Iterable[Any] = ()) -> dict[str, Any] | None:
+    """A cryptographic product as a D10 component (``library_component``'s shape), or ``None``.  PURE.
+
+    * ``key_store``: the HSM's PKCS#11 library or token model and its version, the KMIP server's product, the key
+      manager (Vault transit);
+    * ``appliance_config``: the appliance's vendor platform (Cisco IOS / ASA, FortiOS, PAN-OS, F5 BIG-IP);
+    * ``kms_key`` / ``key_vault`` of a cloud account: the provider's key service (the key itself is a D6 row);
+      a ``managed_key`` of a key manager is covered by its ``key_store`` row and gives nothing here."""
+    if node_type not in PRODUCT_TYPES:
+        return None
+    data = _facts(facts)
+    where = _text(location, 200)
+    codes = tuple(str(c) for c in finding_codes or () if isinstance(c, str))
+    if node_type == "key_store":
+        store = str(data.get("store") or "")
+        product = _text(data.get("token_model") or data.get("library_manufacturer") or data.get("vendor")
+                        or data.get("custom_key_store_type") or _STORE_PRODUCT.get(store) or name, 120)
+        version = _text(data.get("library_version") or data.get("firmware_version") or data.get("version"), 60)
+        kind = _STORE_PRODUCT.get(store, "key store")
+        protocol = _text(data.get("cryptoki_version") and f"Cryptoki {data['cryptoki_version']}"
+                         or data.get("protocol_version") and f"KMIP {data['protocol_version']}", 40)
+        ecosystem = f"crypto product: {kind}" + (f" ({protocol})" if protocol else "")
+    elif node_type == "appliance_config":
+        product = _text(data.get("vendor_label") or data.get("vendor"), 120)
+        version = _text(data.get("os_version") or data.get("software_version") or data.get("firmware"), 60)
+        ecosystem = "crypto product: network appliance"
+        where = _text(data.get("appliance") or where, 200)
+    else:
+        provider = provider_of(node_type, data, where, source_kind)
+        if node_type == "managed_key" or provider not in _CLOUD_KMS:
+            return None
+        product, version, ecosystem = _CLOUD_KMS[provider], "", "crypto product: cloud key service"
+        where = _account_of(provider, where) or where
+    if not product:
+        return None
+    return {"name": product, "version": version, "purl": "", "ecosystem": ecosystem, "status": "",
+            "codes": codes if node_type != "kms_key" else (), "where": where}
+
+
+_ARN = re.compile(r"^arn:[^:]+:[^:]+:([^:]*):(\d{12}):")
+
+
+def _account_of(provider: str, location: str) -> str:
+    """``aws 111122223333 ap-south-1`` for an ARN, ``projects/<p>/locations/<l>`` for GCP, the vault host for Azure: the
+    place a cloud key service is used, so one D10 row lists where (not every key)."""
+    if provider == "aws":
+        match = _ARN.match(location)
+        return f"AWS account {match.group(2)}" + (f" {match.group(1)}" if match.group(1) else "") if match else ""
+    if provider == "gcp" and location.startswith("projects/"):
+        parts = location.split("/")
+        return "/".join(parts[:4]) if len(parts) >= 4 else location
+    if provider == "azure" and ".vault.azure.net" in location:
+        return location.split("/keys/", 1)[0].split("/secrets/", 1)[0]
+    if provider == "oci":
+        return location.split("/kms/", 1)[0]
+    return ""

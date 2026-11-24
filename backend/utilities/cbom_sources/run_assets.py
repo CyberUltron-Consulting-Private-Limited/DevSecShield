@@ -29,6 +29,7 @@ from sqlalchemy import String, and_, cast, false, func, or_, true
 from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionRun, CbomCollectionSource
+from backend.utilities.cbom_sources import resource_identity as RI
 from backend.utilities.cbom_sources import clause_evidence as CE
 from backend.utilities.cbom_sources import identity as ID
 from backend.utilities.cbom_sources import inventory as INV
@@ -321,10 +322,13 @@ def _status_clause(session: Session, team_id: int, run: CbomCollectionRun, statu
 
 
 def findings_total(session: Session, team_id: int, run_id: int, changed: dict[int, dict[str, Any]]) -> int:
-    """The run's findings judged today (the ``view=findings`` total with no other filter)."""
+    """The run's findings judged today (the ``view=findings`` total with no other filter); a resource two jobs of the
+    run read is one finding (``resource_identity.run_fold``, as the list)."""
+    fold = RI.run_fold(session, team_id, run_id)
     query = select(func.count()).select_from(CbomCollectedAsset).where(
-        CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run_id,
+        CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run_id, RI.kept_clause(fold),
         CbomCollectedAsset.asset_type != COVERAGE, CbomCollectedAsset.impact.in_(IMPACTS))  # type: ignore[union-attr]
+    changed = {aid: view for aid, view in changed.items() if fold.keeps(aid)}
     if changed:
         query = query.where(CbomCollectedAsset.id.notin_(list(changed)))  # type: ignore[union-attr]
     stored = int(session.exec(query).one())
@@ -393,6 +397,45 @@ def enrich_items(session: Session, team_id: int, run: CbomCollectionRun, items: 
             item[key] = code_row.get(key)
     for item in items:
         add_code_page_fields(item)
+    add_tls_grades(session, team_id, rows, items)
+
+
+_GRADED_TYPES = frozenset({"tls_endpoint"})
+
+
+def add_tls_grades(session: Session, team_id: int, rows: dict[int, CbomCollectedAsset],
+                   items: list[dict[str, Any]], today: _dt.date | None = None) -> None:
+    """``tls_grade`` on every probed TLS endpoint of the page (staging QA Q3-05: D7 graded 10.232.0.101:443 "B*" and
+    the endpoint dialog showed no grade): ``network_estate.grade_tls`` over the row's facts and the chain its job read
+    (the ``host:port#chain[i]`` certificate rows), exactly as D7 grades it; null for any other asset."""
+    from backend.utilities.cbom_sources import network_estate as NE
+
+    graded = {aid: r for aid, r in rows.items() if r.asset_type in _GRADED_TYPES}
+    for item in items:
+        item["tls_grade"] = None
+    if not graded:
+        return
+    chains: dict[tuple[int, str], list[tuple[int, dict[str, Any]]]] = {}
+    jobs = sorted({int(r.job_id) for r in graded.values() if r.job_id is not None})
+    if jobs:
+        cert_rows = session.exec(select(CbomCollectedAsset.job_id, CbomCollectedAsset.location,
+                                        CbomCollectedAsset.facts).where(
+            CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.job_id.in_(jobs),  # type: ignore[union-attr]
+            CbomCollectedAsset.asset_type == "certificate",
+            CbomCollectedAsset.location.like("%#chain[%"))).all()  # type: ignore[union-attr]
+        for job_id, location, facts in cert_rows:
+            base, _sep, rest = str(location or "").partition("#chain[")
+            index = int(rest.split("]", 1)[0]) if rest.split("]", 1)[0].isdigit() else 0
+            chains.setdefault((int(job_id), base), []).append((index, facts if isinstance(facts, dict) else {}))
+    day = today or _dt.datetime.utcnow().date()
+    for item in items:
+        row = graded.get(int(item["id"]))
+        if row is None:
+            continue
+        base = str(row.location or "").split("#", 1)[0]
+        chain = [facts for _i, facts in sorted(chains.get((int(row.job_id or 0), base), []), key=lambda p: p[0])]
+        facts = row.facts if isinstance(row.facts, dict) else {}
+        item["tls_grade"] = NE.grade_tls(facts, day, chain).record()
 
 
 def run_item(session: Session, team_id: int, run: CbomCollectionRun, row: CbomCollectedAsset, *,

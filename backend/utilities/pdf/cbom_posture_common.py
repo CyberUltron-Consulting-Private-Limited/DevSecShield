@@ -169,6 +169,16 @@ def location_of(fact: Mapping[str, Any]) -> str:
     return str(fact.get("location") or fact.get("path") or "")
 
 
+def source_text(fact: Mapping[str, Any]) -> str:
+    """The Source cell: the source whose observation is printed, and the other sources that read the same resource
+    (``also_seen``: the roll-up counts a resource two sources read once, staging QA Q3-01)."""
+    own = str(fact.get("source") or fact.get("source_label") or "")
+    also = [str(a) for a in as_rows(fact.get("also_seen")) if a and str(a) != own]
+    if not also:
+        return own
+    return f"{own} (also: {', '.join(also)})" if own else ", ".join(also)
+
+
 def layer_verdict(fact: Mapping[str, Any], layer: str) -> str:
     direct = fact.get(layer)
     if isinstance(direct, Mapping):

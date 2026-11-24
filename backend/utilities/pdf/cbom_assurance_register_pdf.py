@@ -159,7 +159,7 @@ _KPI_COUNTS_ALL = "The summary counts all {total} controls, including the rows o
 # Column layouts: header labels (the "(assessor)" suffix is added by dense_table to manual
 # columns) and relative widths, scaled to the frame width.
 _LIB_COLUMNS = (
-    "Library",
+    "Component",
     "Version",
     "Package URL or ecosystem",
     "#Sources",
@@ -175,7 +175,7 @@ _LIB_COLUMNS = (
 )
 _LIB_WEIGHTS = (70, 44, 62, 24, 166, 72, 44, 44, 38, 40, 40, 36, 40)  # Sources fits the longest label; a date one line
 _LIB_MANUAL = tuple(range(8, len(_LIB_COLUMNS)))  # vendor-assurance columns
-_PREVIOUS_COLUMNS = ("Library", "#Sources", "Sources", "First seen", "Last seen")
+_PREVIOUS_COLUMNS = ("Component", "#Sources", "Sources", "First seen", "Last seen")
 _PREVIOUS_WEIGHTS = (150, 50, 320, 100, 100)
 _LEDGER_COLUMNS = (
     "Framework",

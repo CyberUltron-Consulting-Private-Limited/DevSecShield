@@ -82,7 +82,7 @@ POOLED_SCAN_IDS = (2, 3, 4, 5, 6, 7)  # current AND full fidelity (legacy #8 has
 # SOW D10 (audit B-08): version, package URL and known-vulnerability / end-of-life status are data columns now;
 # only the vendor-assurance columns are MANUAL.
 LIB_HEADERS = (
-    "Library",
+    "Component",
     "Version",
     "Package URL or ecosystem",
     "#Sources",
@@ -97,7 +97,7 @@ LIB_HEADERS = (
     "Attestation status (assessor)",
 )
 MANUAL_LIB_COLUMNS = LIB_HEADERS[8:]
-PREVIOUS_HEADERS = ("Library", "#Sources", "Sources", "First seen", "Last seen")
+PREVIOUS_HEADERS = ("Component", "#Sources", "Sources", "First seen", "Last seen")
 LATEST_HEADER = "Latest attestation (file \u00b7 note \u00b7 date)"
 LEDGER_HEADERS = (
     "Framework",
@@ -643,8 +643,8 @@ def test_components_table_lists_26_unique_libraries_four_with_several_sources(
     rows = records(find_table(base_story, LIB_HEADERS))
     assert len(rows) == 25  # Appendix B as regenerated in WP13, one row per component (see the oracle test)
     oracle = oracle_libraries(raw_scans)
-    assert [r["Library"].casefold() for r in rows] == sorted(oracle)  # one row each, A to Z
-    multi = [r["Library"] for r in rows if int(r["#Sources"]) > 1]
+    assert [r["Component"].casefold() for r in rows] == sorted(oracle)  # one row each, A to Z
+    multi = [r["Component"] for r in rows if int(r["#Sources"]) > 1]
     assert sorted(m.casefold() for m in multi) == [
         "hashlib (stdlib)",
         "pyca/cryptography",
@@ -657,15 +657,15 @@ def test_components_table_lists_26_unique_libraries_four_with_several_sources(
 def test_each_library_row_matches_the_plain_loop_oracle(base_story, raw_scans):
     oracle = oracle_libraries(raw_scans)
     for row in records(find_table(base_story, LIB_HEADERS)):
-        entry = oracle[row["Library"].casefold()]
-        assert int(row["#Sources"]) == len(entry["labels"]), row["Library"]
-        assert set(row["Sources"].split("\n")) == entry["labels"], row["Library"]
-        assert row["First seen"] == entry["first"].isoformat(), row["Library"]
-        assert row["Last seen"] == entry["last"].isoformat(), row["Library"]
+        entry = oracle[row["Component"].casefold()]
+        assert int(row["#Sources"]) == len(entry["labels"]), row["Component"]
+        assert set(row["Sources"].split("\n")) == entry["labels"], row["Component"]
+        assert row["First seen"] == entry["first"].isoformat(), row["Component"]
+        assert row["Last seen"] == entry["last"].isoformat(), row["Component"]
 
 
 def test_multi_source_rows_list_every_source_label(base_story):
-    rows = {r["Library"]: r for r in records(find_table(base_story, LIB_HEADERS))}
+    rows = {r["Component"]: r for r in records(find_table(base_story, LIB_HEADERS))}
     assert rows["pyca/cryptography"]["#Sources"] == "3"
     assert rows["pyca/cryptography"]["Sources"].split("\n") == [
         "github.com/e2e-demo/crypto-misuse-lab (main)",
@@ -689,7 +689,7 @@ def test_version_column_prints_only_recorded_versions_and_every_manual_cell_is_b
     for row in body_rows(table):
         for column in range(8, len(LIB_HEADERS)):
             assert cell_text(row[column]) == "", (LIB_HEADERS[column], cell_text(row[0]))
-    rows = {r["Library"]: r for r in records(table)}
+    rows = {r["Component"]: r for r in records(table)}
     versions = {name: row["Version"] for name, row in rows.items() if row["Version"] != "not captured"}
     # the name column is the name; the version is its own column (FIX-B1 review)
     assert versions == {"cryptography": "42.0.5", "golang.org/x/crypto": "v0.24.0"}
@@ -722,7 +722,7 @@ def test_library_seen_only_in_a_superseded_scan_goes_to_a_previously_seen_append
     assert len(body_rows(find_table(story, LIB_HEADERS))) == 25  # headline unchanged
     old = records(find_table(story, PREVIOUS_HEADERS))
     assert len(old) == 1
-    assert old[0]["Library"] == "ObsoleteCryptoKit"
+    assert old[0]["Component"] == "ObsoleteCryptoKit"
     assert old[0]["#Sources"] == "1"
     assert old[0]["Sources"] == "github.com/e2e-demo/payments-service (main)"
     assert (old[0]["First seen"], old[0]["Last seen"]) == ("2026-09-28", "2026-09-28")
@@ -1220,7 +1220,7 @@ def test_hostile_strings_render_literally_and_embed_nothing(raw_scans, base_pdf)
     row = ledger_record(build_story(view), CERT_IN, "8.4.1.1")
     assert row["Title"] == HOSTILE  # white-box: literal text, nothing parsed away
     assert row[LATEST_HEADER].split("\n") == [hostile_file, HOSTILE, "2026-10-16"]
-    names = [r["Library"] for r in records(find_table(build_story(view), LIB_HEADERS))]
+    names = [r["Component"] for r in records(find_table(build_story(view), LIB_HEADERS))]
     assert HOSTILE + " tail" in names  # NUL stripped, the rest literal
 
 
@@ -1233,9 +1233,9 @@ def test_one_megabyte_names_are_clamped_and_fast(raw_scans):
     assert time.perf_counter() - started < 20
     assert len(raw) < 3_000_000
     rows = records(find_table(build_story(view), LIB_HEADERS))
-    huge = only(r for r in rows if r["Library"].startswith("LLLL"))
-    assert len(huge["Library"]) <= 300
-    assert huge["Library"].endswith("\u2026")
+    huge = only(r for r in rows if r["Component"].startswith("LLLL"))
+    assert len(huge["Component"]) <= 300
+    assert huge["Component"].endswith("\u2026")
 
 
 def test_non_latin_names_degrade_to_question_marks_without_failing(raw_scans):
