@@ -563,3 +563,92 @@ def test_m3_the_scans_table_row_says_what_the_run_detail_says(api, world):  # no
         row = next(r for r in RUN_LIST.list_run_rows(s, 1)["runs_list_data"] if r["id"] == run["id"])
     assert "(1 of 1 targets read (1 with gaps))" in detail["status_reason"]
     assert row["status_reason"] == detail["status_reason"]
+
+
+# ----------------------------------------------------------------------------- review 6031262064 (#480)
+_EPOCH = J._EPOCH
+
+
+def _serving_since(engine) -> dt.datetime:
+    with Session(engine) as s:
+        return _EPOCH + dt.timedelta(seconds=int(s.get(CbomOpsCounter, J.SERVING_MARK).value))
+
+
+def test_m_a_a_replica_whose_clock_is_behind_never_moves_the_last_pass_back():
+    """m-a: replica A runs 300 s ahead of replica B.  B's pass used to write its own (earlier) time as the last pass,
+    so A's next pass saw a gap of 30 s + 300 s > ``serving_gap()`` and restarted the window."""
+    from sqlmodel import SQLModel, create_engine
+
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+    t0 = _now().replace(microsecond=0)  # replica A's clock
+    b_pass = t0 - dt.timedelta(seconds=300) + dt.timedelta(seconds=30)  # B, 30 s later in real time
+    with Session(engine) as s:
+        assert _REAL_NOTE(s, t0) == t0  # A
+        assert _REAL_NOTE(s, b_pass) == b_pass  # B: a start later than its clock is clamped to it (unchanged)
+        s.commit()
+        assert s.get(CbomOpsCounter, J.SERVING_MARK).updated_at == t0  # the last pass kept A's later time
+        assert _REAL_NOTE(s, t0 + dt.timedelta(seconds=60)) == b_pass  # A again: a 60 s gap, the same run
+        s.commit()
+
+
+@pytest.mark.parametrize("skew_s", [215, 300])
+def test_m_a_clock_skew_between_two_reaper_replicas_does_not_restart_the_window(api, world, monkeypatch, skew_s):  # noqa: F811
+    """m-a (the review's B4): replicas A and B alternate passes every 30 s, A's clock ``skew_s`` ahead.  At about
+    210 s and more of skew every pass restarted the window (419 of 419 at 300 s) and the dead node's job never
+    expired by the offline rule.  Now the window starts once and the job expires about 6 h after the last
+    heartbeat, give or take the skew."""
+    monkeypatch.setattr(J, "note_reaper_pass", _REAL_NOTE)
+    engine, _ = world
+    node_id, _t, _src, run, job_id = _queue_run(api, engine, f"fixb3-skew-{skew_s:07d}")
+    t0 = _now().replace(microsecond=0)
+    with Session(engine) as s:
+        job = s.get(CbomCollectionJob, job_id)
+        job.created_at = t0 - dt.timedelta(hours=1)
+        s.add(job)
+        node = s.get(CbomScanNode, node_id)
+        node.last_heartbeat_at = t0
+        s.add(node)
+        s.commit()
+    _mark(engine, since=t0 - dt.timedelta(days=3), last_pass=t0 - dt.timedelta(seconds=30))
+    skew = dt.timedelta(seconds=skew_s)
+    real, expired_at, resets, last_since = t0, None, 0, None
+    with Session(engine) as s:
+        for k in range(int(dt.timedelta(hours=7).total_seconds() // 30)):
+            real += dt.timedelta(seconds=30)
+            J.reap(s, real + skew if k % 2 == 0 else real)  # A, B, A, B ...
+            s.commit()
+            since = _serving_since(engine)
+            resets += last_since is not None and since > last_since
+            last_since = since
+            s.expire_all()
+            if s.get(CbomCollectionJob, job_id).status != "pending":
+                expired_at = real
+                break
+    assert resets == 0
+    assert expired_at is not None, "the offline rule never fired"
+    assert abs((expired_at - t0) - HOURS_6) <= skew + dt.timedelta(seconds=60)
+    assert _job(engine, job_id).status == "expired" and _run_row(engine, run["id"]).status == "failed"
+
+
+def test_n_b_expires_at_reads_the_stored_serving_mark_in_a_process_that_has_not_reaped(api, world):  # noqa: F811
+    """n-b: the estimate used only this process's last reading, which is empty before its first reap, so after a
+    restart it promised an expiry 6 h after the heartbeat while the reaper waits 6 h after the restart."""
+    engine, _ = world
+    node_id, _t, _src, _run, job_id = _queue_run(api, engine, "fixb3-estimate-0001")
+    now = _now().replace(microsecond=0)
+    seen = _age(engine, job_id, node_id, queued_ago=dt.timedelta(hours=3), seen_ago=dt.timedelta(hours=3))
+    restart = now - dt.timedelta(hours=1)
+    _mark(engine, since=restart, last_pass=now - dt.timedelta(seconds=30))
+    assert J._SERVING_SINCE[0] is None  # this process has not reaped
+    with Session(engine) as s:
+        job, node = s.get(CbomCollectionJob, job_id), s.get(CbomScanNode, node_id)
+        wait = J.offline_wait_reason(job, node, now)
+    assert f"the job expires at {(restart + HOURS_6).strftime('%Y-%m-%d %H:%M UTC')} " in wait, wait
+    assert f"since {seen.strftime('%Y-%m-%d %H:%M UTC')}" in wait
+
+    # the last pass is older than the serving gap: the next pass restarts the window, so it counts from now
+    _mark(engine, since=restart, last_pass=now - J.serving_gap() - dt.timedelta(seconds=1))
+    with Session(engine) as s:
+        wait = J.offline_wait_reason(s.get(CbomCollectionJob, job_id), s.get(CbomScanNode, node_id), now)
+    assert f"the job expires at {(now + HOURS_6).strftime('%Y-%m-%d %H:%M UTC')} " in wait, wait

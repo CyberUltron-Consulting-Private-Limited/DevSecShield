@@ -276,3 +276,30 @@ def test_m4_a_closer_holding_the_run_row_and_the_reapers_settle_never_deadlock(a
         assert errors == []
         assert job.refunded is True and run_row.credits_refunded_c == run_row.credits_charged_c
         assert round(team.credit_balance, 2) == round(before + run_row.credits_charged_c / 100, 2)
+
+
+def test_m_a_the_last_pass_never_moves_back_on_postgres(world):
+    """#480 review 6031262064 m-a on PostgreSQL: a replica whose clock is behind keeps the later last pass, and the
+    upsert itself keeps ``greatest(stored, now)`` even when this session read an older row than another committed."""
+    engine, _ = world
+    t0 = _now().replace(microsecond=0)  # replica A's clock
+    behind = t0 - dt.timedelta(seconds=270)  # replica B, 300 s behind, 30 s later in real time
+    with Session(engine) as s:
+        assert J.note_reaper_pass(s, t0) == t0
+        s.commit()
+        assert J.note_reaper_pass(s, behind) == behind
+        s.commit()
+        assert s.get(CbomOpsCounter, J.SERVING_MARK).updated_at == t0
+        assert J.note_reaper_pass(s, t0 + dt.timedelta(seconds=60)) == behind  # a 60 s gap: the same run
+        s.commit()
+    with Session(engine) as stale, Session(engine) as other:
+        held = stale.get(CbomOpsCounter, J.SERVING_MARK)  # this session holds the row as of t0 + 60 s
+        mark = other.get(CbomOpsCounter, J.SERVING_MARK)
+        mark.updated_at = t0 + dt.timedelta(seconds=200)
+        other.add(mark)
+        other.commit()
+        assert held.updated_at == t0 + dt.timedelta(seconds=60)  # still the older reading
+        J.note_reaper_pass(stale, t0 + dt.timedelta(seconds=90))
+        stale.commit()
+    with Session(engine) as s:
+        assert s.get(CbomOpsCounter, J.SERVING_MARK).updated_at == t0 + dt.timedelta(seconds=200)

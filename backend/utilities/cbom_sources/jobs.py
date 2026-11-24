@@ -20,7 +20,7 @@ from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy import Boolean, Integer, and_, bindparam, case, delete, func, or_, text, update
-from sqlalchemy.orm import aliased
+from sqlalchemy.orm import aliased, object_session
 from sqlalchemy.orm.attributes import set_committed_value
 from sqlmodel import Session, select
 
@@ -103,24 +103,39 @@ def reaper_lock(session: Session) -> bool:
                                 {"a": REAPER_LOCK[0], "b": REAPER_LOCK[1]}).scalar())
 
 
+def _serving_since_from(row: CbomOpsCounter | None, now: _dt.datetime) -> _dt.datetime | None:
+    """The start of the unbroken run of passes the stored mark records, as a pass at ``now`` would keep it; None when
+    there is no mark or its last pass is more than ``serving_gap()`` before ``now`` (that pass starts a new run).
+    A start later than ``now`` (another replica's clock is ahead) is clamped to ``now``."""
+    if row is None or row.updated_at is None or not row.value or now - row.updated_at > serving_gap():
+        return None
+    return min(_EPOCH + _dt.timedelta(seconds=int(row.value)), now)
+
+
 def note_reaper_pass(session: Session, now: _dt.datetime) -> _dt.datetime:
     """Record this pass and return since when the backend has been serving without a gap (in the caller's
-    transaction).  ``now`` earlier than the last pass (a test's clock) keeps the current run."""
+    transaction).  ``now`` earlier than the last pass (a test's clock, or a replica whose clock is behind another's)
+    keeps the current run.
+
+    The last-pass time only moves forward (#480 review 6031262064 m-a): with two reaper replicas whose clocks differ
+    by more than ``serving_gap()`` minus the pass interval (about 210 s at the defaults), writing the behind replica's
+    ``now`` made the ahead replica's next pass see a gap and restart the window on every alternation, so the offline
+    rule never fired.  PostgreSQL keeps ``greatest(stored, now)`` in the upsert itself; SQLite serialises its writers,
+    so the row read above is the one replaced."""
     row = session.get(CbomOpsCounter, SERVING_MARK)
-    since: _dt.datetime | None = None
-    if row is not None and row.updated_at is not None and row.value and now - row.updated_at <= serving_gap():
-        since = _EPOCH + _dt.timedelta(seconds=int(row.value))
-    if since is None or since > now:
-        since = now
-    if session.get_bind().dialect.name == "postgresql":
+    since = _serving_since_from(row, now) or now
+    is_pg = session.get_bind().dialect.name == "postgresql"
+    if is_pg:
         from sqlalchemy.dialects.postgresql import insert as dialect_insert
     else:
         from sqlalchemy.dialects.sqlite import insert as dialect_insert
     epoch_s = int((since - _EPOCH).total_seconds())
     table = CbomOpsCounter.__table__
-    stmt = dialect_insert(table).values(name=SERVING_MARK, value=epoch_s, updated_at=now)
+    last_pass = max(now, row.updated_at) if row is not None and row.updated_at is not None else now
+    stmt = dialect_insert(table).values(name=SERVING_MARK, value=epoch_s, updated_at=last_pass)
+    marked = func.greatest(table.c.updated_at, now) if is_pg else last_pass
     session.exec(stmt.on_conflict_do_update(  # type: ignore[call-overload]
-        index_elements=["name"], set_={"value": epoch_s, "updated_at": now}))
+        index_elements=["name"], set_={"value": epoch_s, "updated_at": marked}))
     if row is not None:
         session.expire(row)
     since = _EPOCH + _dt.timedelta(seconds=epoch_s)
@@ -2396,10 +2411,23 @@ def job_waiting_reason(
     return "Waiting for the scan node to pick it up"
 
 
+def stored_serving_since(session: Session | None, now: _dt.datetime) -> _dt.datetime | None:
+    """Since when the backend has served without a gap, as the reaper's next pass will see it: read from the stored
+    mark, so a process that has not reaped yet still knows about a recent restart (#480 review 6031262064 n-b).  A
+    mark whose last pass is older than ``serving_gap()`` means the next pass restarts the window: ``now``.  No mark
+    (or no session): this process's last reading, or None."""
+    row = session.get(CbomOpsCounter, SERVING_MARK) if session is not None else None
+    if row is None:
+        return _SERVING_SINCE[0]
+    return _serving_since_from(row, now) or now
+
+
 def offline_wait_reason(job: CbomCollectionJob, node: CbomScanNode, now: _dt.datetime) -> str:
-    """A job waiting for an offline node: since when, and when it expires unless the node comes back."""
+    """A job waiting for an offline node: since when, and when it expires unless the node comes back.  The window
+    counts from the latest of the heartbeat, the queueing (or claim) and the stored serving mark, as the reaper's."""
     seen = node.last_heartbeat_at
-    start = max([t for t in (seen, job.created_at, job.claimed_at, _SERVING_SINCE[0]) if t is not None], default=now)
+    serving = stored_serving_since(object_session(job), now)
+    start = max([t for t in (seen, job.created_at, job.claimed_at, serving) if t is not None], default=now)
     expires = start + node_offline_deadline()
     since = f" since {_utc_label(seen)}" if seen else " (never connected)"
     return f"Scan node {node.name} is offline{since}; the job expires at {_utc_label(expires)} unless it comes back"

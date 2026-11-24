@@ -32,7 +32,10 @@ up to about lease / 2 - 60 s, never has its job re-queued.  The maximum stays 86
 (**) Never shorter than the effective job lease, so a claimed job is first re-queued by the lease rule (a node that
 comes back keeps its retry); "offline" counts from the later of the node's last heartbeat and the job's queueing (or
 claim), so a job queued for a node that was already down still gets the full window.  The default queue TTL is one
-week because a node job may wait for its scan window, and a weekly grid can open up to a week later.
+week because a node job may wait for its scan window, and a weekly grid can open up to a week later.  The window also
+counts only time the backend was serving: a single gap of more than 2 x ONLINE_SECONDS (240 s) between two reaper
+passes (an outage, a restart, or one very long pass) restarts the 6 h window, so every node gets the full window to
+heartbeat again after it.  The last-pass time never moves backwards, so clock skew between reaper replicas does not.
 
 Dispatch: each worker grants at most ``CBOM_DISPATCH_PER_WORKER_S`` job claims a second (a token bucket with a burst of
 one second of rate), so the deployment-wide claim rate is that times the number of workers (100/s on staging's 4).
