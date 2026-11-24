@@ -213,11 +213,22 @@ class RiskModel(_Body):
     data_shelf_life_years: int | None = Field(default=None, ge=0, le=100, strict=True)
     migration_years: int | None = Field(default=None, ge=0, le=100, strict=True)
     threat_years: int | None = Field(default=None, ge=0, le=100, strict=True)
-    # D13: days from the assessment to fix a wave's CLASSICAL weaknesses (SP 800-131A disallowed today); null: the
-    # crypto KB's default (90 / 180 / 365). The post-quantum dates stay the NIST IR 8547 / CNSA 2.0 milestones.
+    # D13: days from the day an asset was first found to fix a wave's CLASSICAL weaknesses (any weakness a classical
+    # attacker can use today); null: the crypto KB's default (90 / 180 / 365). The post-quantum dates stay the NIST
+    # IR 8547 / CNSA 2.0 milestones. Ordered: wave1 <= wave2 <= wave3 (here among the fields sent; the settings route
+    # checks the merged values against the stored ones and the KB defaults).
     wave1_fix_days: int | None = Field(default=None, ge=1, le=3650, strict=True)
     wave2_fix_days: int | None = Field(default=None, ge=1, le=3650, strict=True)
     wave3_fix_days: int | None = Field(default=None, ge=1, le=3650, strict=True)
+
+    @model_validator(mode="after")
+    def _waves_in_order(self) -> "RiskModel":
+        from backend.utilities.cbom_sources.pqc_targets import window_order_error
+
+        error = window_order_error({1: self.wave1_fix_days, 2: self.wave2_fix_days, 3: self.wave3_fix_days})
+        if error:
+            raise ValueError(error)
+        return self
 
 
 class SettingsUpdate(_Body):

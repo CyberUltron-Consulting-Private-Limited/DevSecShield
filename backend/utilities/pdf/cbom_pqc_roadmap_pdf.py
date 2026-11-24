@@ -189,16 +189,18 @@ _UNKNOWN_FUNCTION = "not recorded"
 _PLAN_NOTE = (
     "Wave, target date and owner / status come from the team's remediation plan. Without an assigned wave the "
     "suggested one is printed \"(suggested)\": 1 = critical or high and internet-facing or harvest-now-decrypt-later, "
-    "2 = other critical or high, 3 = any other weakness, 4 = quantum-vulnerable only. \"fix\" dates a classical "
-    "weakness SP 800-131A disallows today, from this assessment's date; \"PQ by\" is the post-quantum migration "
-    "(NIST IR 8547, CNSA 2.0), never a classical deadline. \"(source owner)\" is the owner on the source. All are "
+    "2 = other critical or high, 3 = any other weakness, 4 = quantum-vulnerable only. \"fix\" dates a weakness a "
+    "classical attacker can use today from the day the asset was first found (\"found\"), never from today; "
+    "\"overdue\": past due at this assessment. \"PQ by\" is the post-quantum migration (NIST IR 8547, CNSA "
+    "2.0). \"(source owner)\" is the owner on the source. All are "
     "proposals until ZeroShield confirms them with the asset owners."
 )
 _WAVE_INTRO = (
-    "Each wave with its two proposed dates. A classical weakness (SP 800-131A disallows it today) is fixed within "
-    "the wave's window from this assessment ({as_of}); the post-quantum migration follows the public milestones "
-    "(NIST IR 8547, CNSA 2.0). An assigned date in the plan replaces either proposal. ZeroShield confirms waves, "
-    "dates and owners with the asset owners before issue."
+    "Each wave with its two proposed dates. A classical weakness (one a classical attacker can use today) is fixed "
+    "within the wave's window of the day the asset was first found, so its date is fixed and is overdue once this "
+    "assessment ({as_of}) is past it; the post-quantum migration follows the public milestones (NIST IR 8547, "
+    "CNSA 2.0). An assigned date in the plan replaces either proposal. ZeroShield confirms waves, dates and owners "
+    "with the asset owners before issue."
 )
 _NODE_HEADERS = ("#", "Asset", "Type", "Algorithm / key", "NIST PQ target", "Impact", "Where found", "Wave",
                  "Target date", "Owner / status")
@@ -327,16 +329,29 @@ def _effective_wave(plan: dict | None) -> int | None:
 
 
 def date_cell(wave: int | None, codes: Sequence[str], quantum_vulnerable: object, as_of: _dt.date,
-              windows: Mapping[int, int] | None) -> str:
+              windows: Mapping[int, int] | None, *, found_on: object = None, disallowed: object = None) -> str:
     """The proposed date(s) of one row (``pqc_targets.proposed_dates``): "fix" for a classical weakness, counted from
-    the assessment; "PQ by" for the post-quantum migration (IR 8547 / CNSA 2.0)."""
-    dates = PQT.proposed_dates(wave, codes, quantum_vulnerable, as_of, windows)
+    the day the asset was first found ("found"), "overdue" once ``as_of`` is past it; "PQ by" for the post-quantum
+    migration (IR 8547 / CNSA 2.0)."""
+    dates = PQT.proposed_dates(wave, codes, quantum_vulnerable, as_of, windows, found_on=found_on,
+                               disallowed=bool(disallowed))
     lines = []
     if dates["fix_by"]:
         lines.append(f"{dates['fix_by']} fix (proposed)")
+        if dates["found_basis"] == "first_seen":
+            lines.append(f"found {dates['found_on']}")
     if dates["pq_by"]:
         lines.append(f"PQ by {dates['pq_by']} (proposed)")
+    if dates["overdue"]:
+        lines.append("overdue")
     return "\n".join(lines)
+
+
+def _plan_dates(plan: dict, as_of: _dt.date, windows: Mapping[int, int] | None) -> dict:
+    """``pqc_targets.proposed_dates`` of a row's plan (its effective wave, codes, first-found day)."""
+    return PQT.proposed_dates(_effective_wave(plan), plan.get("finding_codes") or (), plan.get("quantum_vulnerable"),
+                              as_of, windows, found_on=plan.get("first_seen_on"),
+                              disallowed=bool(plan.get("disallowed")))
 
 
 def _plan_cells(plan: dict | None, suggested: int | None, owner_hint: str | None = None, *,
@@ -351,9 +366,12 @@ def _plan_cells(plan: dict | None, suggested: int | None, owner_hint: str | None
     wave = assigned.get("wave")
     wave_text = str(wave) if wave else (f"{suggested} (suggested)" if suggested else "")
     date = str(assigned.get("target_date") or "")
-    if not date and (wave or suggested) and as_of is not None:
+    if date and as_of is not None and as_of.isoformat() > date[:10] and assigned.get("status") not in (
+            "done", "accepted_risk"):
+        date += "\noverdue"
+    elif not date and (wave or suggested) and as_of is not None:
         date = date_cell(wave or suggested, plan.get("finding_codes") or (), plan.get("quantum_vulnerable"), as_of,
-                         windows)
+                         windows, found_on=plan.get("first_seen_on"), disallowed=plan.get("disallowed"))
     status = str(assigned.get("status") or "").replace("_", " ")
     owner = assigned.get("owner") or ""
     if not owner:
@@ -391,7 +409,10 @@ def _asset_plan(view: TeamCbomView, asset: AssetAgg) -> dict | None:
     plan = (view.remediation.get("code_plans") or {}).get(plan_key(asset)) or {"assigned": {}, "suggested": None}
     # the row's own codes and verdict date it (fix vs post-quantum), also on a plan loaded before they were recorded
     plan = {**plan, "finding_codes": plan.get("finding_codes") or list(asset.finding_codes or ()),
-            "quantum_vulnerable": asset.quantum_vulnerable}
+            "quantum_vulnerable": asset.quantum_vulnerable,
+            # a plan loaded without the first-found day counts from the roll-up's own first_seen of the row
+            "first_seen_on": plan.get("first_seen_on") or (asset.first_seen.date().isoformat()
+                                                           if asset.first_seen else None)}
     return plan
 
 
@@ -746,7 +767,9 @@ def _node_section(view: TeamCbomView, styles: Styles, width: float, title: str, 
             PQT.cell_text(PQT.target_for(item.get("pq_usage"))),
             status_chip(impact.upper(), tone_for_impact(impact)), where,
             *_plan_cells({**plan, "finding_codes": item.get("finding_codes") or (),
-                          "quantum_vulnerable": item.get("quantum_vulnerable")}, plan["suggested"],
+                          "quantum_vulnerable": item.get("quantum_vulnerable"),
+                          "first_seen_on": item.get("first_seen_on"), "disallowed": item.get("disallowed")},
+                         plan["suggested"],
                          item.get("owner_hint"), as_of=view.as_of, windows=_windows(view)),
         ])
     story: list[Flowable] = [
@@ -771,21 +794,31 @@ def _owner_of(plan: dict, hint: str | None) -> str:
 
 
 def _waves(view: TeamCbomView, rows: list[AssetAgg], styles: Styles, width: float, title: str) -> list[Flowable]:
-    """Count, proposed date, basis and owners per wave over the code-scan rows and the collected rows."""
-    planned: list[tuple[int | None, str]] = []
+    """Count, proposed dates, basis and owners per wave over the code-scan rows and the collected rows. The classical
+    fix date of a wave is per asset (its window from the day the asset was first found): the table prints the
+    window, the earliest and latest proposed fix date and how many are overdue, never a date counted from today."""
+    windows = _windows(view)
+    planned: list[tuple[int | None, str, dict]] = []
     for asset in rows:
         plan = _asset_plan(view, asset) or {}
-        planned.append((_effective_wave(plan), _owner_of(plan, None)))
+        planned.append((_effective_wave(plan), _owner_of(plan, None), plan))
     rem = view.remediation or {}
     for item in rem.get("node_rows") or []:
-        plan = {"assigned": item.get("assignment") or {}, "suggested": item.get("suggested_wave")}
-        planned.append((_effective_wave(plan), _owner_of(plan, item.get("owner_hint"))))
+        plan = {"assigned": item.get("assignment") or {}, "suggested": item.get("suggested_wave"),
+                "finding_codes": item.get("finding_codes") or (), "quantum_vulnerable": item.get("quantum_vulnerable"),
+                "first_seen_on": item.get("first_seen_on"), "disallowed": item.get("disallowed")}
+        planned.append((_effective_wave(plan), _owner_of(plan, item.get("owner_hint")), plan))
     by_wave: dict[int, Counter] = {}
-    for wave, owner in planned:
-        if wave is not None:
-            by_wave.setdefault(wave, Counter())[owner] += 1
+    fixes: dict[int, list[dict]] = {}
+    for wave, owner, plan in planned:
+        if wave is None:
+            continue
+        by_wave.setdefault(wave, Counter())[owner] += 1
+        if not (plan.get("assigned") or {}).get("target_date"):
+            dates = _plan_dates(plan, view.as_of, windows)
+            if dates["fix_by"]:
+                fixes.setdefault(wave, []).append(dates)
     table_rows = []
-    windows = _windows(view)
     for wave in sorted(by_wave):
         owners = by_wave[wave]
         milestone = PQT.wave_milestone(wave) or {}
@@ -794,17 +827,30 @@ def _waves(view: TeamCbomView, rows: list[AssetAgg], styles: Styles, width: floa
         if owners.get(PQT.UNASSIGNED_OWNER):
             named.append(f"{owners[PQT.UNASSIGNED_OWNER]} {PQT.UNASSIGNED_OWNER}")
         days = windows.get(wave)
-        fix = (f"within {days} days\n{(view.as_of + _dt.timedelta(days=days)).isoformat()}" if days
-               else "n/a (no classical weakness)")
-        basis = "\n".join(x for x in ((f"Classical: {milestone['fix_basis'].format(days=days)}"
-                                        if days and milestone.get("fix_basis") else ""),
+        due = fixes.get(wave) or []
+        if days and due:
+            first, last = min(d["fix_by"] for d in due), max(d["fix_by"] for d in due)
+            late = sum(1 for d in due if d["overdue"])
+            fix = "\n".join(x for x in (f"within {days} days of first found",
+                                         first if first == last else f"{first} to {last}",
+                                         f"{late} overdue" if late else "") if x)
+        elif days:
+            fix = f"within {days} days of first found\n(no classical weakness proposed)"
+        else:
+            fix = "n/a (no classical weakness)"
+        kinds = Counter(d["fix_basis"] for d in due)
+        why = "; ".join(f"{_plural(kinds[k], 'asset')}: {PQT.FIX_BASIS_TEXT[k]}" for k in ("disallowed", "classical")
+                        if kinds.get(k))
+        classical = " ".join(x for x in ((milestone.get("fix_basis") or "").format(days=days) if days else "",
+                                         f"{why[:1].upper()}{why[1:]}." if why else "") if x)
+        basis = "\n".join(x for x in ((f"Classical: {classical}" if classical else ""),
                                        f"Post-quantum: {milestone.get('pq_basis') or ''}") if x)
         table_rows.append([str(wave), PQT.WAVE_LABEL.get(wave, ""), str(sum(owners.values())), fix,
                            milestone.get("pq_date") or _DASH, basis, "\n".join(named)])
     intro = _WAVE_INTRO.format(as_of=view.as_of.isoformat())
     parts: list[Flowable] = [*section_heading(title, styles), _note(intro, styles)]
     if table_rows:
-        parts.append(dense_table(_WAVE_HEADERS, table_rows, _fit(_WAVE_COLS, width), cell_limit=700))
+        parts.append(dense_table(_WAVE_HEADERS, table_rows, _fit(_WAVE_COLS, width), cell_limit=900))
     return [*parts, Spacer(1, 4)]
 
 

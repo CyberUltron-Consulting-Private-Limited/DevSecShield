@@ -244,8 +244,8 @@ REPORT_META: Dict[str, Dict[str, str]] = {
         ),
         "how_to_read": (
             "Read the regulatory timeline for context. Each row carries its wave, the date to fix any "
-            "classical weakness (counted from this assessment) and its post-quantum date; waves, dates and "
-            "owners are proposals for the asset owners to confirm."
+            "classical weakness (counted from the day the asset was first found, and marked overdue once past) and "
+            "its post-quantum date; waves, dates and owners are proposals for the asset owners to confirm."
         ),
     },
     "cbom_board_report": {

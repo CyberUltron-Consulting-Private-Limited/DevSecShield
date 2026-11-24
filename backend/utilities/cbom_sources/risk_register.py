@@ -469,7 +469,9 @@ def regrade_team(session: Session, team_id: int, now: _dt.datetime, *, limit: in
         out["graded"] += res.graded
         Q0.sync_assets(session, team_id, res.transitions, now, cause=cause)
     if any((by_model, by_inputs, missing)):
-        Q0.sync_mosca(session, team_id, now)
+        # a batch that re-graded rows of another grade model closes the Mosca item as a model change (recorded, not
+        # forwarded, not a gap the team closed); otherwise the cause follows the team's inputs (q0register.mosca_cause)
+        Q0.sync_mosca(session, team_id, now, cause="model_change" if by_model else None)
         log("risk register re-graded", team=team_id, **out)
     return out
 
@@ -723,10 +725,19 @@ def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 1
         monday = start + _dt.timedelta(weeks=i)
         weekly[monday.date().isoformat()] = {}
     end = start + _dt.timedelta(weeks=weeks)
+    # a closure the grade model made (``model_change``: a re-grade under a new model, a re-keyed item) is not a gap the
+    # team closed: it is never forwarded (q0register.NOT_FORWARDED), so it is not counted here either (drift_report.
+    # weekly_drift never sees it); the week is marked ``model_changes`` instead
+    from backend.utilities.cbom_sources.q0register import NOT_FORWARDED
+
+    model_weeks: dict[str, int] = {}
     for closed_at, cause in session.exec(select(CbomQ0Gap.closed_at, CbomQ0Gap.close_cause).where(
             CbomQ0Gap.team_id == team_id, CbomQ0Gap.closed_at >= start,  # type: ignore[operator]
             CbomQ0Gap.closed_at < end)).all():  # type: ignore[operator]
         monday = (closed_at - _dt.timedelta(days=closed_at.weekday())).date().isoformat()
+        if cause in NOT_FORWARDED:
+            model_weeks[monday] = model_weeks.get(monday, 0) + 1
+            continue
         bucket = weekly[monday]
         bucket[cause or "unknown"] = bucket.get(cause or "unknown", 0) + 1
     # SOW D12 Table 7 "gaps closed by week": with each week's openings and the gaps still open at its end, from the
@@ -752,7 +763,8 @@ def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 1
         # Q0 GAP lifecycle per week (not drift events: drift_report.weekly_drift() counts findings opened / closed by
         # run comparison, a different series): total = Q0 gaps closed, q0_gaps_opened, q0_gaps_open_at_week_end
         "closures_by_week": [{"week": w, "total": sum(c.values()), "by_cause": dict(sorted(c.items())),
-                              "q0_gaps_opened": opened[w], "q0_gaps_open_at_week_end": open_end[w]}
+                              "q0_gaps_opened": opened[w], "q0_gaps_open_at_week_end": open_end[w],
+                              "model_changes": model_weeks.get(w, 0)}
                              for w, c in sorted(weekly.items())],
         "default_assumptions": default_assumptions(session, team_id),
         "pending_regrade": pending(session, team_id, graded_live=live), "estate": E.stale_status(session, team_id),

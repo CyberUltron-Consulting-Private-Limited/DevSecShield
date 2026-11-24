@@ -16080,7 +16080,7 @@
    }
   }
  },
- "kb_version": "2026.11.24.3",
+ "kb_version": "2026.11.24.4",
  "legacy_controls": {
   "access": {
    "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control",
@@ -18441,7 +18441,7 @@
      "cnsa_2"
     ],
     "date": "2027-12-31",
-    "fix_basis": "Urgent: fix the classical weakness within 90 days of the assessment. SP 800-131A disallows it today.",
+    "fix_basis": "Fix the classical weakness within 90 days of the day the asset was first found.",
     "fix_within_days": 90,
     "pq_basis": "CNSA 2.0 'support and prefer': web and cloud 2025, networking 2026, operating systems 2027. Exposed and harvest-now-decrypt-later key exchange cannot wait for the deprecation date.",
     "pq_date": "2027-12-31",
@@ -18453,7 +18453,7 @@
      "cnsa_2"
     ],
     "date": "2030-12-31",
-    "fix_basis": "Fix the classical weakness within 180 days of the assessment (the quarter after wave 1). SP 800-131A disallows it today.",
+    "fix_basis": "Fix the classical weakness within 180 days of the day the asset was first found (the quarter after wave 1).",
     "fix_within_days": 180,
     "pq_basis": "NIST IR 8547: high value assets and high impact systems adopt post-quantum key establishment by 31 December 2030 (Sec. 4, p.13). CNSA 2.0 exclusively: networking 2030, software and firmware signing 2030.",
     "pq_date": "2030-12-31",
@@ -18464,7 +18464,7 @@
      "nist_ir_8547"
     ],
     "date": "2031-12-31",
-    "fix_basis": "Fix the classical weakness within 365 days of the assessment. SP 800-131A disallows or deprecates it today.",
+    "fix_basis": "Fix the classical weakness within 365 days of the day the asset was first found.",
     "fix_within_days": 365,
     "pq_basis": "NIST IR 8547: high value assets and high impact systems adopt post-quantum digital signatures by 31 December 2031 (Sec. 4, p.13). NIST will deprecate quantum-vulnerable public-key cryptography after 2030 and disallow its use under NIST standards and guidelines after 2035.",
     "pq_date": "2031-12-31",

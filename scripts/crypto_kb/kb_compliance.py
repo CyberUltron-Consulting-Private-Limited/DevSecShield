@@ -204,24 +204,27 @@ MIGRATION_TARGETS = [
 ]
 
 
-# The classical part of waves 1-3 (a weakness SP 800-131A disallows today: TLS 1.0, RSA-1024, Triple DES ...) is dated
-# from the assessment, never from a post-quantum milestone: within these many days of it. A team setting
-# (risk_model wave1_fix_days / wave2_fix_days / wave3_fix_days) replaces each default.
+# The classical part of waves 1-3 (a weakness a classical attacker can use today: an algorithm or key size SP 800-131A
+# disallows such as RSA-1024 or Triple DES, and others such as TLS 1.0 or an expired certificate) is dated from the day
+# the asset was first found, never from a post-quantum milestone and never from the day a document is generated:
+# within these many days of it. A team setting (risk_model wave1_fix_days / wave2_fix_days / wave3_fix_days) replaces
+# each default. The basis never says that SP 800-131A disallows every such weakness: the documents name which assets
+# are disallowed algorithms or key sizes (pqc_targets.FIX_BASIS_TEXT). The wave label carries "urgent", so the basis
+# does not repeat it.
 WAVE_FIX_DAYS = {1: 90, 2: 180, 3: 365}
 _FIX_BASIS = {
-    1: "Urgent: fix the classical weakness within {days} days of the assessment. SP 800-131A disallows it today.",
-    2: "Fix the classical weakness within {days} days of the assessment (the quarter after wave 1). SP 800-131A "
-       "disallows it today.",
-    3: "Fix the classical weakness within {days} days of the assessment. SP 800-131A disallows or deprecates it "
-       "today.",
+    1: "Fix the classical weakness within {days} days of the day the asset was first found.",
+    2: "Fix the classical weakness within {days} days of the day the asset was first found (the quarter after "
+       "wave 1).",
+    3: "Fix the classical weakness within {days} days of the day the asset was first found.",
 }
 
 
 def wave_milestones(r: dict) -> list[dict]:
     """Each remediation wave (backend waves.WAVE_RULES): ``fix_within_days`` and ``fix_basis``, the window for the
-    CLASSICAL weaknesses of waves 1-3, counted from the assessment; ``pq_date`` and ``pq_basis``, the post-quantum
-    milestone (NIST IR 8547, CNSA 2.0) for the quantum-vulnerable part, read from the research file so the basis quotes
-    its years. ``cites`` names the KB entries (``pqc_context`` keys) whose status and URL every document prints; the
+    CLASSICAL weaknesses of waves 1-3, counted from the day the asset was first found; ``pq_date`` and ``pq_basis``,
+    the post-quantum milestone (NIST IR 8547, CNSA 2.0) for the quantum-vulnerable part, read from the research file
+    so the basis quotes its years. ``cites`` names the KB entries (``pqc_context`` keys) whose status and URL every document prints; the
     URL is never copied here, so the one IR 8547 entry decides it."""
     ir, c = r["nist"]["ir8547"], r["cnsa2"]
     by_cat = {row["category"]: row for row in c["timeline"]}

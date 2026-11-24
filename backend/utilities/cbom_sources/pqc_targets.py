@@ -11,9 +11,11 @@ module resolves it against algid's rows, the single source of post-quantum names
 algorithm); ``target_for`` gives the row; ``asset_target`` is both in one call. The KB table and the selectors are
 memoised per KB version; ``usage_of`` is a cheap pure function. No database.
 
-Dates (D13, the wave API): a wave's CLASSICAL weaknesses (anything SP 800-131A disallows today: TLS 1.0, RSA-1024,
-Triple DES ...) are dated from the assessment (``fix_within_days``, a team setting), never from a post-quantum milestone;
-the IR 8547 / CNSA 2.0 dates (``pq_date``) are for the post-quantum migration only (``proposed_dates``).
+Dates (D13, the wave API): a wave's CLASSICAL weaknesses (any weakness a classical attacker can use today: an
+algorithm or key size SP 800-131A disallows such as RSA-1024 or Triple DES, and others such as TLS 1.0 or an expired
+certificate) are due within the wave's window (``fix_within_days``, a team setting) of when the asset was FIRST FOUND
+(``proposed_dates`` ``found_on``), never of the day a document is rendered, so the date is fixed and becomes overdue;
+the IR 8547 / CNSA 2.0 dates (``pq_date``) are for the post-quantum migration only.
 
 NIST IR 8547: every status, date and URL a deliverable prints comes from the ONE knowledge-base entry
 ``pqc_context.nist_ir_8547`` (``ir8547``), so a document cannot cite it as final in one place and as a draft in another.
@@ -238,18 +240,29 @@ def cell_text(target: dict[str, Any] | None) -> str:
 # --------------------------------------------------------------------------------------------- NIST IR 8547
 # Only for a knowledge base without the entry's own fields; never printed over a value the KB records.
 _IR_DEFAULT = {"citation": "NIST IR 8547", "deprecated_after": 2030, "disallowed_after": 2035}
+_TRAILING_NOTE = re.compile(r"\s*\([^()]*\)\s*$")
 
 
 def ir8547() -> dict[str, Any]:
-    """NIST IR 8547 as the knowledge base records it (``pqc_context.nist_ir_8547``): citation, status ("final" |
-    "draft"), url, published, deprecated_after, disallowed_after. The status is the entry's own; a KB that does not
-    record one is read from its URL (``/ipd`` is the initial public draft), so the status and the URL never disagree."""
+    """NIST IR 8547 as the knowledge base records it (``pqc_context.nist_ir_8547``): name, citation, status ("final" |
+    "draft"), url, published, deprecated_after, disallowed_after.
+
+    The status is the entry's own ``status``; a KB that does not record one is read from its URL (``/ipd`` is the
+    initial public draft), so the status and the URL never disagree. The printed ``citation`` is BUILT from the name
+    (the KB citation without any parenthetical, e.g. "NIST IR 8547 (final, 2026)" -> "NIST IR 8547"), the status and
+    the publication year: "NIST IR 8547 (final, 2026)" for a final entry with a ``published`` date, the bare name
+    otherwise (a draft's sentences say "is a draft" themselves). A status embedded in the KB's citation text never
+    decides what is printed, so the citation and the status cannot contradict each other."""
     found = (crypto_kb.pqc_context() or {}).get("nist_ir_8547") or {}
     out = {**_IR_DEFAULT, **{k: v for k, v in found.items() if v not in (None, "")}}
     out["url"] = str(out.get("landing") or out.get("source") or "")
     if not out.get("status"):
         out["status"] = "draft" if re.search(r"(/ipd\b|\.ipd\.)", out["url"]) else "final"
-    out["status"] = str(out["status"]).lower()
+    out["status"] = "draft" if str(out["status"]).strip().lower() != "final" else "final"
+    name = _TRAILING_NOTE.sub("", str(out.get("citation") or "")).strip() or _IR_DEFAULT["citation"]
+    year = str(out.get("published") or "")[:4]
+    out["name"] = name
+    out["citation"] = f"{name} (final, {year})" if out["status"] == "final" and year.isdigit() else name
     return out
 
 
@@ -292,7 +305,8 @@ FIX_DAYS_KEYS = {1: "wave1_fix_days", 2: "wave2_fix_days", 3: "wave3_fix_days"}
 
 
 def fix_windows(risk_model: Mapping[str, Any] | None = None) -> dict[int, int]:
-    """Days from the assessment to fix each wave's classical weaknesses: the team's setting, else the KB default."""
+    """Days from when an asset was first found to fix each wave's classical weaknesses: the team's setting, else the
+    KB default."""
     model = risk_model if isinstance(risk_model, Mapping) else {}
     out: dict[int, int] = {}
     for wave, key in FIX_DAYS_KEYS.items():
@@ -306,6 +320,17 @@ def fix_windows(risk_model: Mapping[str, Any] | None = None) -> dict[int, int]:
     return out
 
 
+def window_order_error(windows: Mapping[int, Any]) -> str | None:
+    """Why ``windows`` (wave -> days, any of 1-3) are out of order, else None: wave 1 is the urgent one, so its window
+    may not be longer than wave 2's, nor wave 2's than wave 3's (``wave1 <= wave2 <= wave3``; equal is allowed)."""
+    known = [(w, windows[w]) for w in (1, 2, 3) if isinstance(windows.get(w), int) and not isinstance(windows[w], bool)]
+    for (wa, da), (wb, db) in zip(known, known[1:]):
+        if da > db:
+            return (f"risk_model: wave {wa} ({da} days) must not take longer than wave {wb} ({db} days); "
+                    "wave1_fix_days <= wave2_fix_days <= wave3_fix_days")
+    return None
+
+
 def _quantum_code(code: str) -> bool:
     """A finding that is only the quantum verdict (KB category ``pqc``: QUANTUM_VULNERABLE, NO_PQ_KEX ...)."""
     if code == "QUANTUM_VULNERABLE":
@@ -316,25 +341,63 @@ def _quantum_code(code: str) -> bool:
 
 def classical_weakness(codes: Iterable[Any]) -> bool:
     """The asset has a weakness a classical attacker can use today (a finding that is not a coverage note and not
-    the quantum verdict): its fix is dated from the assessment, not from a post-quantum milestone."""
+    the quantum verdict): its fix is dated from when the asset was first found, not from a post-quantum milestone."""
     return any(isinstance(c, str) and c and not c.startswith("COVERAGE_") and not _quantum_code(c) for c in codes)
 
 
+# Why a classical weakness is dated (``proposed_dates`` ``fix_basis``): only an algorithm or key size NIST disallows
+# today (``qgrade.disallowed_now``: SP 800-131A, DSA by FIPS 186-5) is cited as disallowed; any other weakness (an
+# expired or self-signed certificate, a legacy protocol setting ...) is described as what it is.
+FIX_BASIS_TEXT = {
+    "disallowed": "an algorithm or key size NIST disallows today, under SP 800-131A or, for DSA, FIPS 186-5",
+    "classical": "a weakness a classical attacker can use today, such as an expired or self-signed certificate or a "
+                 "legacy protocol setting, with no SP 800-131A disallowance claimed",
+}
+
+
+def _iso_day(value: Any) -> _dt.date | None:
+    if isinstance(value, _dt.datetime):
+        return value.date()
+    if isinstance(value, _dt.date):
+        return value
+    if isinstance(value, str) and len(value) >= 10:
+        try:
+            return _dt.date.fromisoformat(value[:10])
+        except ValueError:
+            return None
+    return None
+
+
 def proposed_dates(wave: Any, codes: Iterable[Any], quantum_vulnerable: Any, as_of: _dt.date,
-                   windows: Mapping[int, int] | None = None) -> dict[str, Any]:
-    """The proposed dates of one asset in ``wave``: ``fix_by`` (its classical weakness, ``as_of`` + the wave's window;
-    waves 1-3 only), ``pq_by`` (its post-quantum migration, the wave's IR 8547 / CNSA 2.0 milestone; quantum-vulnerable
-    assets, and any asset with no classical weakness), and ``date`` / ``kind``, the one the asset is due by first."""
+                   windows: Mapping[int, int] | None = None, *, found_on: Any = None,
+                   disallowed: bool | None = None) -> dict[str, Any]:
+    """The proposed dates of one asset in ``wave``.
+
+    ``fix_by``: its classical weakness (waves 1-3 only), the wave's window counted from ``found_on``, the day the asset
+    was first found (node assets: the estate's ``first_seen_at``; code rows: the earliest included scan with the same
+    stable key); ``as_of`` only when that is unknown. So the date never moves with the day a document is rendered.
+    ``pq_by``: its post-quantum migration, the wave's IR 8547 / CNSA 2.0 milestone (quantum-vulnerable assets, and any
+    asset with no classical weakness). ``date`` / ``kind``: the one the asset is due by first. ``overdue``: ``as_of`` is
+    past ``date``. ``found_on``: the anchor used (YYYY-MM-DD) and ``found_basis`` "first_seen" | "as_of".
+    ``fix_basis``: "disallowed" (``disallowed`` is True) | "classical" | None (``FIX_BASIS_TEXT``)."""
     milestone = wave_milestone(wave)
     if milestone is None:
-        return {"date": None, "kind": None, "fix_by": None, "pq_by": None}
+        return {"date": None, "kind": None, "fix_by": None, "pq_by": None, "found_on": None, "found_basis": None,
+                "overdue": False, "fix_basis": None}
     windows = fix_windows() if windows is None else windows
     classical = classical_weakness(codes or ())
     days = windows.get(int(milestone["wave"])) if classical else None
-    fix_by = (as_of + _dt.timedelta(days=int(days))).isoformat() if days else None
+    anchor = _iso_day(found_on)
+    basis = "first_seen" if anchor is not None else "as_of"
+    anchor = anchor or as_of
+    fix_by = (anchor + _dt.timedelta(days=int(days))).isoformat() if days else None
     pq_by = milestone.get("pq_date") if (quantum_vulnerable is True or not fix_by) else None
     kind = "fix" if fix_by else ("pq" if pq_by else None)
-    return {"date": fix_by or pq_by, "kind": kind, "fix_by": fix_by, "pq_by": pq_by}
+    date = fix_by or pq_by
+    return {"date": date, "kind": kind, "fix_by": fix_by, "pq_by": pq_by,
+            "found_on": anchor.isoformat() if fix_by else None, "found_basis": basis if fix_by else None,
+            "overdue": bool(date) and as_of.isoformat() > str(date),
+            "fix_basis": ("disallowed" if disallowed else "classical") if fix_by else None}
 
 
 _LOG = logging.getLogger(__name__)
@@ -343,6 +406,6 @@ UNASSIGNED_OWNER = "unassigned — confirm with owner"
 WAVE_LABEL = {1: "Wave 1: urgent (exposed or HNDL)", 2: "Wave 2: high", 3: "Wave 3: other weaknesses",
               4: "Wave 4: post-quantum migration"}
 
-__all__ = ["FIX_DAYS_KEYS", "UNASSIGNED_OWNER", "WAVE_LABEL", "asset_target", "cell_text", "classical_weakness",
+__all__ = ["FIX_BASIS_TEXT", "FIX_DAYS_KEYS", "UNASSIGNED_OWNER", "WAVE_LABEL", "asset_target", "cell_text", "classical_weakness",
            "excluded", "fix_windows", "ir8547", "milestones", "proposed_dates", "render", "table", "target_for",
-           "usage_of", "wave_milestone"]
+           "usage_of", "wave_milestone", "window_order_error"]

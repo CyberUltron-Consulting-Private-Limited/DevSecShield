@@ -72,10 +72,14 @@ def test_a_classical_weakness_is_never_dated_later_than_the_engagement_window(wa
 
 
 def test_the_post_quantum_dates_are_only_for_the_quantum_part():
+    keys = ("date", "kind", "fix_by", "pq_by")
     tls10 = T.proposed_dates(1, ["PROTO_TLS10", "QUANTUM_VULNERABLE"], True, AS_OF)
-    assert tls10 == {"date": "2027-02-22", "kind": "fix", "fix_by": "2027-02-22", "pq_by": "2027-12-31"}
+    assert {k: tls10[k] for k in keys} == {"date": "2027-02-22", "kind": "fix", "fix_by": "2027-02-22",
+                                           "pq_by": "2027-12-31"}
     hndl_only = T.proposed_dates(1, ["QUANTUM_VULNERABLE"], True, AS_OF)
-    assert hndl_only == {"date": "2027-12-31", "kind": "pq", "fix_by": None, "pq_by": "2027-12-31"}
+    assert {k: hndl_only[k] for k in keys} == {"date": "2027-12-31", "kind": "pq", "fix_by": None,
+                                               "pq_by": "2027-12-31"}
+    assert hndl_only["found_on"] is None and hndl_only["overdue"] is False
     no_pq_kex = T.proposed_dates(3, ["NO_PQ_KEX"], True, AS_OF)  # a quantum-only finding: the PQ milestone
     assert no_pq_kex["kind"] == "pq" and no_pq_kex["fix_by"] is None
     assert T.proposed_dates(4, ["QUANTUM_VULNERABLE"], True, AS_OF)["date"] == "2033-12-31"
@@ -105,7 +109,9 @@ def test_wave_api_items_carry_a_fix_date_and_a_pq_date():
     assert out["b"]["proposed_date"] < "2030-12-31" and out["b"]["pq_by"] == "2030-12-31"
 
 
-def test_the_d13_rows_date_rsa_1024_and_tls_1_0_from_the_assessment():
+def test_the_d13_rows_date_rsa_1024_and_tls_1_0_from_when_they_were_first_found():
+    """Review 6031265209 A: the code row counts from its first scan (``AssetAgg.first_seen``); the node row without a
+    recorded first observation from the as-of day."""
     rsa = algo("RSA-1024", key_size="1024", impact="High", ident="r1")
     plans = {}
     from backend.utilities.dashboard.cbom_team_rollup import plan_key
@@ -118,7 +124,8 @@ def test_the_d13_rows_date_rsa_1024_and_tls_1_0_from_the_assessment():
     text = pdf_full_text(roadmap.build_pdf(view))
     flat = squash(text)
     as_of = view.as_of
-    assert squash(f"{(as_of + dt.timedelta(days=180)).isoformat()} fix") in flat  # RSA-1024, wave 2
+    found = rsa.first_seen.date() if rsa.first_seen else as_of
+    assert squash(f"{(found + dt.timedelta(days=180)).isoformat()} fix") in flat  # RSA-1024, wave 2
     assert squash(f"{(as_of + dt.timedelta(days=90)).isoformat()} fix") in flat  # TLS 1.0, wave 1
     assert squash("PQ by 2030-12-31") in flat and squash("PQ by 2027-12-31") in flat
     # the RSA-1024 row's date cell leads with its classical fix date; 2030-12-31 is only its "PQ by" date
@@ -128,7 +135,7 @@ def test_the_d13_rows_date_rsa_1024_and_tls_1_0_from_the_assessment():
     col = next(i for i, h in enumerate(table[0]) if str(h).startswith("Target date"))
     cell = next(r[col] for r in table[1:] if r[1] == "RSA-1024")
     lines = re.split(r"\n|<br/>", cell)
-    assert lines[0] == f"{(as_of + dt.timedelta(days=180)).isoformat()} fix (proposed)", cell
+    assert lines[0] == f"{(found + dt.timedelta(days=180)).isoformat()} fix (proposed)", cell
     assert "PQ by 2030-12-31" in cell
 
 

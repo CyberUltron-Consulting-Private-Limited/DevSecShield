@@ -228,10 +228,11 @@ def test_the_wave_summary_lists_each_wave_with_its_date_basis_and_owners():
     waves = {r[0]: r for r in table[1:]}
     assert set(waves) >= {"1", "4"}
     assert waves["1"][2] == "1" and "2027-12-31" in waves["1"][4] and "Network team" in waves["1"][6]
-    assert waves["1"][3].startswith("within 90 days")  # the classical window, from the assessment
+    assert waves["1"][3].startswith("within 90 days of first found")  # the window, from each asset's first finding
     assert waves["4"][2] == "2" and "2033-12-31" in waves["4"][4]  # one code row + one node row
     assert waves["4"][3].startswith("n/a")
-    assert "CNSA 2.0" in waves["1"][5] and "SP 800-131A" in waves["1"][5]
+    # no asset of wave 1 has a disallowed algorithm here: the basis does not claim SP 800-131A (review 6031265209 F)
+    assert "CNSA 2.0" in waves["1"][5] and "first found" in waves["1"][5] and "800-131A" not in waves["1"][5]
     text = pdf_full_text(roadmap.build_pdf(_plan_view(node_rows=rows)))
     assert "confirm" in text and "before issue" in squash(text) or "beforeissue" in squash(text)
 
