@@ -30,8 +30,8 @@ from typing import Any
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.platypus import Flowable, Paragraph, Spacer
 
-from backend.utilities.cbom_sources import reconciliation as RECON
-from backend.utilities.cbom_sources import sow_class as SC
+import backend.utilities.cbom_sources.reconciliation as RECON
+import backend.utilities.cbom_sources.sow_class as SC
 from backend.utilities.dashboard.cbom_team_rollup import TeamCbomView
 from backend.utilities.pdf.cbom_deliverable_common import (
     Styles,

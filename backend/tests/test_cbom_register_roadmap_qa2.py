@@ -27,33 +27,33 @@ from sqlmodel import Session, select
 _BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_BACKEND / "tests"))
 
-from test_cbom_cb20_estate import NOW, World, _sqlite, cert
-from test_cbom_deliverable_pqc_roadmap import pdf_full_text
-from test_cicd_cbom_gate import (  # noqa: F401  (the hosted-gate route fixture)
+from test_cbom_cb20_estate import NOW, World, _sqlite, cert  # noqa: E402
+from test_cbom_deliverable_pqc_roadmap import pdf_full_text  # noqa: E402
+from test_cicd_cbom_gate import (  # noqa: E402, F401  (the hosted-gate route fixture)
     _post,
     ci,
 )
 
-from backend.new_models import (
+from backend.new_models import (  # noqa: E402
     CbomCollectedAsset,
     CbomCollectionJob,
     CbomCollectionRun,
     CbomEstateObservation,
     Scan,
 )
-from backend.utilities.cbom_sources import qgrade as QG
-from backend.utilities.cbom_sources import reconciliation as RECON
-from backend.utilities.cbom_sources import risk_register as REG
-from backend.utilities.cbom_sources import sow_class as SC
-from backend.utilities.cbom_sources import waves as W
-from backend.utilities.dashboard.cbom_team_rollup import (
+from backend.utilities.cbom_sources import qgrade as QG  # noqa: E402
+from backend.utilities.cbom_sources import reconciliation as RECON  # noqa: E402
+from backend.utilities.cbom_sources import risk_register as REG  # noqa: E402
+from backend.utilities.cbom_sources import sow_class as SC  # noqa: E402
+from backend.utilities.cbom_sources import waves as W  # noqa: E402
+from backend.utilities.dashboard.cbom_team_rollup import (  # noqa: E402
     TeamCbomView,
     load_team_cbom_view,
 )
-from backend.utilities.pdf import cbom_deliverable_common as common
-from backend.utilities.pdf import cbom_pqc_roadmap_pdf as roadmap
-from backend.utilities.pdf import cbom_risk_register_pdf as RPDF
-from backend.utilities.pdf.cbom_deliverables import DELIVERABLES
+from backend.utilities.pdf import cbom_deliverable_common as common  # noqa: E402
+from backend.utilities.pdf import cbom_pqc_roadmap_pdf as roadmap  # noqa: E402
+from backend.utilities.pdf import cbom_risk_register_pdf as RPDF  # noqa: E402
+from backend.utilities.pdf.cbom_deliverables import DELIVERABLES  # noqa: E402
 
 UTC = dt.timezone.utc
 SERIAL = "7A:B1:9C:00:12:7B:3E:55:90:AB:CD:EF:01:99"

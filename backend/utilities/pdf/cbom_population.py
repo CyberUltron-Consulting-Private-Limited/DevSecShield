@@ -211,7 +211,7 @@ def reconciliation_steps(view: TeamCbomView) -> list[str]:
     """The reconciliation as arithmetic, one step per line: run assets -> occurrences -> distinct register assets ->
     SOW classes (SOW audit A-09, staging QA2 M4). The ONE block every document and the dashboard print
     (``cbom_sources.reconciliation``), plus the estate CBOM's component count."""
-    from backend.utilities.cbom_sources import reconciliation as RECON
+    import backend.utilities.cbom_sources.reconciliation as RECON
 
     out = RECON.lines(RECON.from_view(view))
     out.append(f"{len(out) + 1}. The estate CBOM (D11) lists one component per distinct asset plus the certificate "
