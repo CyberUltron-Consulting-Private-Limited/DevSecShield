@@ -19,6 +19,8 @@ SUPPORTED = {
 }
 SUPPORTED |= {("collect", "appliance"), ("test_connection", "appliance")}
 SUPPORTED |= {("collect", "container_images"), ("test_connection", "container_images")}
+# FIX-B3: Active Directory over LDAPS / StartTLS (collectors/active_directory.py), read-only
+SUPPORTED |= {("collect", "active_directory"), ("test_connection", "active_directory")}
 # F1.3: agentless fleets through the customer's AWX/AAP or salt-api (collectors/fleet.py)
 SUPPORTED |= {("collect", "awx_hosts"), ("test_connection", "awx_hosts"), ("collect", "salt_hosts"),
               ("test_connection", "salt_hosts")}
@@ -31,6 +33,7 @@ CAPABILITIES = ["linux_ssh", "windows_winrm", "kubernetes", "postgres", "mysql",
 CAPABILITIES += ["ike", "ike_pq_probe", "opcua", "modbus", "appliance_config", "mesh_istio_linkerd"]
 CAPABILITIES += ["registry_v2"]
 CAPABILITIES += ["transport_awx", "transport_salt", "zs_collect"]
+CAPABILITIES += ["ad_ldaps"]  # FIX-B3: Active Directory over LDAPS / StartTLS
 CAPABILITIES += ["ssh_ca"]  # F1.4: credential_type ssh_ca (node key + short-lived certificate from the SSH CA)
 AGENT_CAPABILITIES = ["host_agent"]
 
@@ -108,6 +111,11 @@ def run_job(ctx: JobContext, job: dict, scope: dict, source: dict | None) -> tup
 
             summary = (windows_winrm.test if kind == "test_connection" else windows_winrm.collect)(ctx, config, secrets,
                                                                                                     scope)
+        elif source_kind == "active_directory":
+            from zs_scan_node.collectors import active_directory
+
+            summary = (active_directory.test if kind == "test_connection" else active_directory.collect)(
+                ctx, config, secrets, scope)
         elif source_kind == "kubernetes":
             from zs_scan_node.collectors import kubernetes
 

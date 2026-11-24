@@ -255,7 +255,8 @@ def _job_targets(job: CbomCollectionJob, names: dict[int, str],
 # ----------------------------------------------------------------------------- CycloneDX 1.6
 _REL_TYPE = {"private_key": "private-key", "public_key": "public-key", "ssh_host_key": "public-key",
              "signing_key": "public-key", "kms_key": "key", "cloud_secret": "secret-key", "host_secret": "secret-key", "keystore": "key",
-             "k8s_certificate": "key", "managed_key": "key"}
+             "k8s_certificate": "key", "managed_key": "key",
+             "kerberos_account": "secret-key"}  # the account's Kerberos long-term keys (#488 review M4)
 
 
 # CycloneDX 1.6 enums (cryptoProperties): values outside them make the document invalid
@@ -585,8 +586,9 @@ class CertificateParts:
         self._refs: set[str] = set()
         self._components: list[dict[str, Any]] = []
 
-    def ref(self, kind: str, key: tuple, build) -> str:
-        """The bom-ref of the ``kind`` part with content ``key``; ``build(ref)`` makes its component the first time."""
+    def ref(self, kind: str, key: tuple, build, part_of: str = "certificate") -> str:
+        """The bom-ref of the ``kind`` part with content ``key``; ``build(ref)`` makes its component the first time.
+        ``part_of``: what the part belongs to (``zs:part_of``; ``kerberos_key`` for a Kerberos account's key types)."""
         full = (kind, *key)
         ref = self._by_key.get(full)
         if ref is None:
@@ -597,7 +599,8 @@ class CertificateParts:
             self._refs.add(ref)
             self._by_key[full] = ref
             component = build(ref)
-            component["properties"] = [self.PART_OF]
+            component["properties"] = [self.PART_OF if part_of == "certificate" else
+                                        {"name": "zs:part_of", "value": part_of}]
             self._components.append(component)
         return ref
 
@@ -636,6 +639,37 @@ def _certificate_parts(row: CbomCollectedAsset, facts: dict[str, Any], size: int
 
         refs["subjectPublicKeyRef"] = parts.ref("public-key", (label, size, alg_ref), public_key)
     return refs
+
+
+def _kerberos_parts(facts: dict[str, Any], parts: CertificateParts) -> tuple[str | None, list[dict[str, str]]]:
+    """A Kerberos account's key (#488 review M4): (``algorithmRef`` of its strongest key type, properties).  Every key
+    type it allows is an algorithm part (shared by bom-ref, ``zs:part_of`` = ``kerberos_key``), listed in
+    ``zs:kerberos_enc_type_refs``; ``zs:kerberos_enc_types`` is the full list as read, ``zs:msds_supported_encryption_
+    types`` the attribute's value (``unset``: the domain controller's default applies) and ``zs:enc_types_source``
+    where the list came from."""
+    from backend.utilities.cbom_sources.classify_ext import ad as AD
+
+    names = AD.account_enctypes(facts)
+    refs: dict[str, str] = {}
+    for name, (primitive, mode, bits, etype) in AD.KERBEROS_ENCTYPES.items():
+        if name not in names:
+            continue
+
+        def build(ref: str, name=name, primitive=primitive, mode=mode, bits=bits) -> dict[str, Any]:
+            component = _algorithm(ref, name, primitive, parameter=str(bits))
+            if mode:
+                component["cryptoProperties"]["algorithmProperties"]["mode"] = mode
+            return component
+
+        refs[name] = parts.ref("kerberos-enctype", (name, etype), build, part_of="kerberos_key")
+    value = facts.get("enc_types_value")
+    props = [("zs:kerberos_enc_types", ",".join(names) or None),
+             ("zs:msds_supported_encryption_types", str(value) if isinstance(value, int) and not isinstance(value, bool)
+              and value else "unset"),
+             ("zs:enc_types_source", _text(facts.get("enc_types_source"))),
+             ("zs:kerberos_enc_type_refs", ",".join(refs.values()) or None)]
+    best = AD.strongest_enctype(names)
+    return (refs.get(best) if best else None), [{"name": k, "value": v} for k, v in props if v]
 
 
 FIX_CLASS_BASIS_CAP = 512
@@ -816,6 +850,7 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
             out["purl"] = purl
         return out
     crypto: dict[str, Any] = {"assetType": row.cdx_type if row.cdx_type in ("certificate", "protocol", "related-crypto-material") else "algorithm"}
+    algorithm = row.algorithm
     if crypto["assetType"] == "certificate":
         refs = _certificate_parts(row, facts, size, curve, signature, parts if parts is not None else CertificateParts())
         crypto["certificateProperties"] = {
@@ -838,6 +873,16 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
             "type": _REL_TYPE.get(row.asset_type, "other"), "size": row.key_size,
             "format": facts.get("format"), "state": _KEY_STATE.get(str(facts.get("key_state") or "")),
         }.items() if v}
+        if row.asset_type == "kerberos_account":
+            alg_ref, kerberos = _kerberos_parts(facts, parts if parts is not None else CertificateParts())
+            if alg_ref:
+                crypto["relatedCryptoMaterialProperties"]["algorithmRef"] = alg_ref
+            props += kerberos
+            # the strongest key type read, also for rows stored before #488 review M4 (their algorithm was the weakest
+            # bit, or RC4 assumed for an unset attribute)
+            from backend.utilities.cbom_sources.classify_ext import ad as AD
+
+            algorithm = AD.strongest_enctype(AD.account_enctypes(facts))
     else:
         mode = str(facts.get("mode") or "").lower()
         crypto["algorithmProperties"] = {k: v for k, v in {
@@ -847,8 +892,8 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
             # CycloneDX allows the quantum level only on algorithms: 0 means a quantum computer breaks it
             "nistQuantumSecurityLevel": 0 if row.quantum_vulnerable is True else None,
         }.items() if v is not None and v != ""}
-    if row.algorithm:
-        props.append({"name": "zs:algorithm", "value": row.algorithm})
+    if algorithm:
+        props.append({"name": "zs:algorithm", "value": algorithm})
     if row.protocol:  # the asset table's protocol column as stored (protocolProperties.type is CycloneDX's enum)
         props.append({"name": "zs:protocol", "value": row.protocol})
     props += _detail_properties(row, facts, crypto, size, curve, signature, pqc, assessed) + provenance

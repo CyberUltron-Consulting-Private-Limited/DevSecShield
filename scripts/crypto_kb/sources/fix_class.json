@@ -1080,6 +1080,54 @@
    "sources": [
     "kb:findings.node.WEAK_CIPHER.remediation"
    ]
+  },
+  "KERBEROS_DES_ENABLED": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "account attribute (msDS-SupportedEncryptionTypes, userAccountControl) and the Kerberos encryption type policy in Group Policy",
+   "sources": [
+    "kb:findings.node.KERBEROS_DES_ENABLED.remediation"
+   ]
+  },
+  "KERBEROS_RC4_ONLY": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "account attribute (msDS-SupportedEncryptionTypes) and a password reset; the service's own Kerberos client must support AES",
+   "sources": [
+    "kb:findings.node.KERBEROS_RC4_ONLY.remediation"
+   ]
+  },
+  "KERBEROS_RC4_ENABLED": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "account attribute (msDS-SupportedEncryptionTypes) and the Kerberos encryption type policy in Group Policy",
+   "sources": [
+    "kb:findings.node.KERBEROS_RC4_ENABLED.remediation"
+   ]
+  },
+  "KERBEROS_ENCTYPES_DEFAULT": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "account attribute (msDS-SupportedEncryptionTypes) made explicit; the DCs' update level and DefaultDomainSupportedEncTypes are registry settings",
+   "sources": [
+    "kb:findings.node.KERBEROS_ENCTYPES_DEFAULT.remediation"
+   ]
+  },
+  "AD_FUNCTIONAL_LEVEL_LEGACY": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "directory setting (domain / forest mode) once domain controllers older than Windows Server 2016 are retired",
+   "sources": [
+    "kb:findings.node.AD_FUNCTIONAL_LEVEL_LEGACY.remediation"
+   ]
+  },
+  "KRBTGT_KEY_OLD": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "password reset of the krbtgt account (twice), an operational procedure",
+   "sources": [
+    "kb:findings.node.KRBTGT_KEY_OLD.remediation"
+   ]
   }
  },
  "code": {
