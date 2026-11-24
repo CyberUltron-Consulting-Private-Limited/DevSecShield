@@ -154,23 +154,22 @@ def test_an_unchanged_rerun_grades_nothing_and_a_changed_asset_is_graded_alone(l
 
 
 # ----------------------------------------------------------------------------- re-grade after inputs / model change
-def test_inputs_change_regrades_in_the_background_and_closes_mosca_with_a_forwarded_event(lab):
+def test_inputs_change_regrades_in_the_background_from_default_assumptions(lab):
+    """SOW D12: with Mosca unset the key is graded on the defaults (no "inputs:mosca" Q0 gap); setting the team's
+    inputs re-grades it in the background with them."""
     s1 = lab.source("linux_servers", "linux")
     lab.finalise(lab.run({s1: {"rows": [RSA_KEY]}}))
     (row,) = register(lab).values()
-    assert (row.q_grade, row.q_reason) == ("Q0", "mosca_missing")
-    assert [(g.item_key, g.closed_at) for g in gaps(lab, "inputs:")] == [("inputs:mosca", None)]
-    mosca(lab, MOSCA)  # the team's inputs change; no run
+    assert row.q_grade in ("Q1", "Q2") and row.q_reason.startswith("qv_exceeds")  # 7 + 5 > 10
+    assert gaps(lab, "inputs:") == []
+    mosca(lab, {**MOSCA, "threat_years": 30})  # the team's inputs change; no run
     with Session(lab.engine) as s:
         assert REG.pending(s, 1) == 1
     out = REG.regrade_due(lab.engine, T0)
     assert out["graded"] == 1
     (row,) = register(lab).values()
-    assert row.q_grade in ("Q1", "Q2") and row.q_reason.startswith("qv_exceeds")
-    [g] = gaps(lab, "inputs:")
-    assert g.close_cause == "inputs"
-    [e] = closed_events(lab)
-    assert e.detail["cause"] == "inputs" and e.code == "mosca_missing"
+    assert (row.q_grade, row.q_reason) == ("Q3", "qv_within")
+    assert gaps(lab, "inputs:") == [] and closed_events(lab) == []
     with Session(lab.engine) as s:
         assert REG.pending(s, 1) == 0
     assert REG.regrade_due(lab.engine, T0)["graded"] == 0  # nothing left
@@ -272,7 +271,7 @@ def test_register_api_list_summary_item_and_csv(api, two_runs):
     item = _get(api, f"/1/cbom/register/items/{some['item_key']}").json()
     assert item["item"] == some and item["observations"]
     assert api("GET", "/1/cbom/register/items/nope").status_code == 404
-    body = _get(api, "/1/cbom/register.csv").content.decode()
+    body = _get(api, "/1/cbom/register.csv").content.decode("utf-8-sig")  # SOW D12: Excel-safe byte order mark
     table = list(csv.reader(io.StringIO(body)))
     assert tuple(table[0]) == REG.CSV_COLUMNS and len(table) - 1 == summary["total"]
     assert api("GET", "/1/cbom/register", params={"after": "garbage"}).status_code == 400

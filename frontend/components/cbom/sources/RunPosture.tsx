@@ -50,6 +50,7 @@ export const CLASS_LABEL: Record<CbomPqcClass, [string, Tone, string]> = {
   "grover-weakened": ["Grover-weakened", "amber", "128-bit symmetric keys: still secure, smaller margin against quantum search"],
   unknown: ["Unknown", "zinc", "Public-key cryptography the scan could not identify, or a key exchange it could not read: not judged, never counted as ready"],
   "not-applicable": ["Not applicable", "zinc", "Settings and inventory with no public-key algorithm"],
+  deprecated: ["Disallowed (SP 800-131A)", "red", "No public-key algorithm, but NIST SP 800-131A disallows it (DES, Triple DES, RC4, MD5 ...): outside readiness and graded separately (Q1 Critical when internet-facing, else Q2 High)"],
 };
 
 /** The readiness headline (CB-18): withheld when more assets are unknown than judged, and always "of N judged". */

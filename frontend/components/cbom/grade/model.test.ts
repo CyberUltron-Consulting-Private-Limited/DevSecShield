@@ -183,6 +183,15 @@ const missing = explainRows({ ...explain, x: null, x_basis: null, z: null, missi
 assert.equal(missing.find((r) => r.label.startsWith("X:"))?.value, "Not set");
 assert.equal(missing.find((r) => r.label === "Missing")?.value, "X, Z");
 assert.equal(missing.find((r) => r.label === "Mosca"), undefined);
+// SOW D12: a grade on the documented defaults says so, input by input
+const assumed = explainRows({ ...explain, x: 7, x_basis: "default", y: 5, y_basis: "default", z: 10, z_basis: "default",
+                              assumed: ["x", "y", "z"], inequality: "7 + 5 > 10" });
+assert.equal(assumed.find((r) => r.label.startsWith("X:"))?.basis, "default");
+assert.equal(assumed.find((r) => r.label.startsWith("Z:"))?.basis, "default");
+assert.deepEqual(assumed.find((r) => r.label === "Grade inputs"), { label: "Grade inputs", value: "Default assumptions", basis: "X, Y, Z" });
+assert.equal(explainRows({ ...explain, x_basis: "default", criticality: "critical" })
+  .find((r) => r.label.startsWith("X:"))?.basis, "default for a critical source");
+assert.equal(row("Grade inputs"), undefined);
 // a hybrid endpoint graded on its classical fallback says so
 const fb = explainRows({ ...explain, class: "hybrid", graded_class: "quantum-vulnerable", fallback: true, fallback_basis: "accepts TLS 1.2" });
 assert.equal(fb.find((r) => r.label === "Graded as")?.value, "quantum-vulnerable");
