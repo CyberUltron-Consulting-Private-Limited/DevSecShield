@@ -1256,7 +1256,7 @@ def _signoff_section(styles: Styles, width: float):
 def _grade_input_text(view: TeamCbomView) -> str:
     if not posture_active(view):
         return authored.GRADE_INPUT
-    return authored.GRADE_INPUT + " plus configuration posture findings by impact."
+    return authored.GRADE_INPUT_WITH_POSTURE
 
 
 def _grade_appendix(view: TeamCbomView, posture: PostureGrade, styles: Styles):

@@ -784,9 +784,10 @@ class TeamCbomView:
         ``fingerprint`` covers the scans and collections only. The documents also print what the team's settings
         and the register decide: the regulatory profile (which RBI instrument and frameworks bind the team), each
         Sources source's metadata (owner, data lifetime, exposure ...), the register's grade inputs and grade model
-        version, and the register's grade counts. Any change there gives another digest, so two documents with
-        different content never share an ID. A view without any of them (a fold of scans only, as the tests build)
-        keeps ``fingerprint`` itself, and so does the default profile: its documents are the same."""
+        version, the register's grade counts, D2's live collection set-up (``methodology``), D10's vendor register
+        (``vendors``) and, for D14, the previous issue's Document ID. Any change there gives another digest, so two
+        documents with different content never share an ID. A view without any of them (a fold of scans only, as the
+        tests build) keeps ``fingerprint`` itself, and so does the default profile: its documents are the same."""
         content = _document_content(self)
         if not content:
             return self.fingerprint
@@ -829,6 +830,15 @@ def _document_content(view: TeamCbomView) -> dict[str, Any]:
     summary = (view.register or {}).get("summary") if isinstance(view.register, dict) else None
     if isinstance(summary, dict):
         out["register"] = {k: summary.get(k) for k in ("total", "q_grades", "q0_reasons", "model_version")}
+    # D2 prints the live collection set-up (ports, window, nodes, schedules) and D10 the vendor attestation register:
+    # a change there is new content, so a new ID (PR #485 review 2, B1' / M1)
+    if isinstance(view.methodology, dict) and view.methodology:
+        out["methodology"] = view.methodology
+    if view.vendors:
+        out["vendors"] = [dict(v) for v in view.vendors]
+    # D14 prints a trend against the previous issue: an ID names one trend (review 2 m5)
+    if isinstance(view.previous_issue, dict) and view.previous_issue.get("document_id"):
+        out["previous_issue"] = str(view.previous_issue["document_id"])
     return out
 
 

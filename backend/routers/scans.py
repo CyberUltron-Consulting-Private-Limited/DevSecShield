@@ -1410,7 +1410,7 @@ async def generate_finding_remediation(
 
             # code fix + exploit demo are CPU work: keep them off the event loop
             remediation_result = await run_in_threadpool(kb_remediation, finding.get("finding_data") or {}, "code",
-                                                          team_regulation)
+                                                          team=team_regulation)
             scan_findings_collection.update_one({"_id": finding_oid}, {"$set": {"remediation": remediation_result}})
             return remediation_result
 

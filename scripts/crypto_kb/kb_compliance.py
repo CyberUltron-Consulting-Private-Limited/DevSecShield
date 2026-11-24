@@ -28,7 +28,9 @@ CLAUSE_FRAMEWORKS = {
     "NIST": {"jurisdiction": "*", "basis": "reference"},
     "NSA CNSA 2.0": {"jurisdiction": "*", "basis": "reference"},
     "CERT-In": {"jurisdiction": "IN", "basis": "binding"},
-    "RBI": {"jurisdiction": "IN", "basis": "binding"},
+    # the seven RBI-regulated entity types that have a 2026 direction; an "other" entity is bound by none (review m4)
+    "RBI": {"jurisdiction": "IN", "basis": "binding",
+            "entities": ["nbfc", "bank", "sfb", "payments_bank", "ucb", "aifi", "credit_info_company"]},
     "SEBI CSCRF": {"jurisdiction": "IN", "basis": "binding", "requires": "sebi_regulated"},
 }
 # the code-scan engine's pooled frameworks (aibom.cbom.compliance.CBOM_FRAMEWORKS keys)
@@ -46,7 +48,7 @@ POOLED_FRAMEWORKS = {
     "cnsa_2_0": {"jurisdiction": "*", "basis": "reference"},
     "rbi_free_ai_protection": {"jurisdiction": "IN", "basis": "binding",
                                "entities": ["nbfc", "bank", "sfb", "payments_bank", "ucb", "aifi",
-                                            "credit_info_company", "other"]},
+                                            "credit_info_company"]},
     "cert_in_cbom": {"jurisdiction": "IN", "basis": "binding"},
     "sebi_cscrf_cbom": {"jurisdiction": "IN", "basis": "binding", "requires": "sebi_regulated"},
 }
@@ -117,6 +119,25 @@ def refs(r: dict) -> dict:
     rbi_cic = ref("RBI", "Credit Information Companies Cybersecurity Directions 2026, para 135",
                   cic["para_135_cryptographic_controls"], cic["source"], "Credit information companies (from 31 July 2026).",
                   applies_to=("credit_info_company",))
+    # data at rest and in transit: each 2026 direction's counterpart of the Commercial Banks para 106 (review m3), so
+    # a plaintext or unencrypted finding cites the team's own instrument whatever its entity type
+    rbi_sfb_105 = ref("RBI", "Small Finance Banks Cybersecurity Directions 2026, para 105", sfb["para_105"],
+                      sfb["source"], applies_to=("sfb",))
+    rbi_pb_105 = ref("RBI", "Payments Banks Cybersecurity Directions 2026, para 105", pb["para_105"], pb["source"],
+                     applies_to=("payments_bank",))
+    rbi_aifi_105 = ref("RBI", "AIFI Cybersecurity Directions 2026, para 105", aifi["para_105"], aifi["source"],
+                       applies_to=("aifi",))
+    rbi_cic_105 = ref("RBI", "Credit Information Companies Cybersecurity Directions 2026, para 105", cic["para_105"],
+                      cic["source"], applies_to=("credit_info_company",))
+    rbi_ucb_23 = ref("RBI", "Urban Co-operative Banks Cybersecurity Directions 2026, para 23", ucb["para_23"],
+                     ucb["source"], "Urban co-operative banks of every level (Chapter III).", applies_to=("ucb",))
+    rbi_ucb_120 = ref("RBI", "Urban Co-operative Banks Cybersecurity Directions 2026, para 120", ucb["para_120"],
+                      ucb["source"], "Urban co-operative banks of Level II and above (Chapter IV); a Level I UCB is "
+                      "bound by para 23 for data in transit and by no at-rest paragraph.", applies_to=("ucb",))
+    rbi_nbfc_95 = ref("RBI", "NBFC Cybersecurity, Technology: Risk, Resilience and Assurance Framework Directions 2026, "
+                      "para 95(4)", nb["para_95_4"], nb["source"],
+                      "Middle Layer and above (Chapter V). No NBFC paragraph names encryption at rest; para 95(4) asks for "
+                      "secure storage of data.", applies_to=("nbfc",))
     certin_tls = ref("CERT-In", "BOM Guidelines v2.0, 8.4.2.2", bom["key_recommendations"]["8.4.2.2"], bom["source"])
     certin_vex = ref("CERT-In", "BOM Guidelines v2.0, 8.4.1.6", bom["key_recommendations"]["8.4.1.6"], bom["source"])
     certin_shor = ref("CERT-In", "BOM Guidelines v2.0, 8.5.1", bom["key_recommendations"]["8.5.1"], bom["source"])
@@ -158,6 +179,9 @@ def refs(r: dict) -> dict:
         "rbi-cb-2026-para-140": rbi_26, "rbi-cb-2026-para-106": rbi_26_106, "rbi-nbfc-2026-para-118": rbi_nbfc,
         "rbi-sfb-2026-para-139": rbi_sfb, "rbi-pb-2026-para-139": rbi_pb, "rbi-ucb-2026-para-25": rbi_ucb,
         "rbi-aifi-2026-para-135": rbi_aifi, "rbi-cic-2026-para-135": rbi_cic,
+        "rbi-sfb-2026-para-105": rbi_sfb_105, "rbi-pb-2026-para-105": rbi_pb_105, "rbi-aifi-2026-para-105": rbi_aifi_105,
+        "rbi-cic-2026-para-105": rbi_cic_105, "rbi-ucb-2026-para-23": rbi_ucb_23, "rbi-ucb-2026-para-120": rbi_ucb_120,
+        "rbi-nbfc-2026-para-95": rbi_nbfc_95,
         "sebi-pr-ds-standard-1": sebi_prds,
         "sebi-pr-ds-s1-s3-1a": sebi_prds13, "sebi-pr-ds-s4-item-5": sebi_cert, "sebi-annexure-h-5": sebi_h,
         "sebi-annexure-i": sebi_i, "sebi-box-item-7": sebi_pqc, "sebi-id-ra-standard-2": sebi_ra,
@@ -167,14 +191,15 @@ def refs(r: dict) -> dict:
     # clauses come from its own "clauses" / "clause_rules", never from a whole area. Keys, not copies: each clause's
     # text is stored once (the catalog).
     rbi_crypto = [rbi_26, rbi_nbfc, rbi_sfb, rbi_pb, rbi_ucb, rbi_aifi, rbi_cic]  # one per entity type
+    rbi_data = [rbi_sfb_105, rbi_pb_105, rbi_aifi_105, rbi_cic_105]  # the para 106 counterparts with one paragraph
     areas = {
         "tls_min": [certin_tls, sebi_i, *rbi_crypto, certin_617],
         "algorithms": [nist_sha1, nist_tdea, nist_pkcs1, certin_tls, *rbi_crypto, sebi_h],
         "keysize": [nist_112, *rbi_crypto],
         "certificates": [sebi_cert, certin_617],
         "key_mgmt": [sebi_h],
-        "at_rest": [sebi_prds, sebi_prds13, rbi_26_106, certin_71],
-        "in_transit": [sebi_prds, sebi_i, rbi_26_106, rbi_nbfc, certin_627, certin_457],
+        "at_rest": [sebi_prds, sebi_prds13, rbi_26_106, *rbi_data, rbi_ucb_120, rbi_nbfc_95, certin_71],
+        "in_transit": [sebi_prds, sebi_i, rbi_26_106, *rbi_data, rbi_ucb_23, rbi_nbfc, certin_627, certin_457],
         "auth": [*rbi_crypto],
         "components": [certin_vex, sebi_sbom],
         "pqc": [nist_pqc, cnsa, sebi_pqc, sebi_ra, certin_shor],
@@ -193,7 +218,11 @@ def pqc_context(r: dict) -> dict:
                           "quotes": gri["quotes"]},
         # the ONE citation every document prints for IR 8547 (status, date, dates of the transition): from the research
         "nist_ir_8547": {"quote": ir["quote"], "source": ir["pdf"], "federal": ir["federal_accelerators"]["quote"],
-                         "citation": f"NIST {ir['citation_id']}", "title": ir["title"], "status": "final",
+                         # the citation is the document's name only; its status and publication date are their own
+                         # fields, so every printed citation is built from them and a draft never reads "final"
+                         # (PR #490's pqc_targets.ir8547 and cbom_kb_text.ir8547 build it the same way)
+                         "citation": "NIST " + ir["citation_id"].split(" (", 1)[0], "title": ir["title"],
+                         "status": "draft" if "/ipd" in ir["source"] else "final",
                          "published": ir["published"], "landing": ir["source"],
                          "deprecated_after": ir["deprecated_after"], "disallowed_after": ir["disallowed_after"]},
         "cnsa_2": {"goal": c["overall_goal_quote"], "timeline": c["timeline"], "source": c["source"]},

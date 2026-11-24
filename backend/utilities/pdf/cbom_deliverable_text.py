@@ -517,7 +517,7 @@ def pqc_timeline_rows() -> tuple[TimelineRow, ...]:
     base (status, publication month, transition years, URL), so every document cites the same final IR 8547."""
     ir = kb_text.ir8547()
     status = "Final" if str(ir.get("status")).lower() == "final" else "Draft"
-    cite, url = str(ir["citation"]), str(ir["url"])
+    cite, url = str(ir["label"]), str(ir["url"])
     rows = [
         # Source: NIST PQC project, FIPS 203 (ML-KEM), 204 (ML-DSA), 205 (SLH-DSA), Aug 2024: https://www.nist.gov/pqcrypto
         TimelineRow(
@@ -566,8 +566,8 @@ def pqc_timeline_footnote() -> str:
     if str(ir.get("status")).lower() == "final":
         day = str(ir.get("published") or "")
         when = f" on {int(day[8:10])} {ir['published_month']}" if len(day) == 10 and day[8:10].isdigit() else ""
-        return f"{ir['citation']} was published in final form{when}. FIPS 203, 204 and 205 are final."
-    return f"{ir['citation']} is a draft and its dates may change. FIPS 203, 204 and 205 are final."
+        return f"{ir['label']} was published in final form{when}. FIPS 203, 204 and 205 are final."
+    return f"{ir['label']} is a draft and its dates may change. FIPS 203, 204 and 205 are final."
 
 
 PQC_TIMELINE_ROWS = pqc_timeline_rows()
@@ -616,6 +616,12 @@ GRADE_FORMULA = (
 GRADE_INPUT = (
     "Grade input: current crypto assets that carry at least one finding, counted once per "
     "source and bucketed by impact. Inventory-only assets without findings are excluded."
+)
+# the same sentence when configuration posture findings count too (D14 Appendix A; review 2 n1)
+GRADE_INPUT_WITH_POSTURE = (
+    "Grade input: current crypto assets that carry at least one finding, counted once per "
+    "source and bucketed by impact, plus configuration posture findings by impact. "
+    "Inventory-only assets without findings are excluded."
 )
 GRADE_DISCLAIMER = (
     "The grade is a platform posture grade computed from the issue assets in this report. "
@@ -1196,6 +1202,7 @@ __all__ = [
     "GRADE_DISCLAIMER",
     "GRADE_FORMULA",
     "GRADE_INPUT",
+    "GRADE_INPUT_WITH_POSTURE",
     "GRADE_NOT_ASSESSED",
     "GRADE_SCORE_CAP",
     "GRADE_SCORE_MULTIPLIER",

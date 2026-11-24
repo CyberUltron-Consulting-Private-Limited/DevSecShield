@@ -174,13 +174,16 @@ def test_kb_carries_ir8547_as_final_with_one_citation_and_both_copies_are_identi
         "final", "2026-10-27", 2030, 2035)
     assert ir["landing"] == "https://csrc.nist.gov/pubs/ir/8547/final"
     clause = kb["clauses"]["nist-ir-8547"]
-    assert f"{clause['framework']} {clause['id']}" == ir["citation"] == "NIST IR 8547 (final, 2026)"
+    # the entry keeps the name and the status apart (PR #490 builds its citation from the status); the printed
+    # citation is built from both and equals the clause id
+    assert ir["citation"] == "NIST IR 8547"
+    assert f"{clause['framework']} {clause['id']}" == crypto_kb.ir8547_label(ir) == "NIST IR 8547 (final, 2026)"
     assert crypto_kb._version_key(kb["kb_version"]) > crypto_kb._version_key("2026.11.15.6")
 
 
 def test_every_ir8547_mention_in_the_board_report_is_the_kb_citation_and_none_says_draft():
     text = board_text(staging_like_view())
-    citation = crypto_kb.load()["pqc_context"]["nist_ir_8547"]["citation"]
+    citation = crypto_kb.ir8547_label()  # "NIST IR 8547 (final, 2026)": name, status and year of the KB entry
     assert "8547" in text
     assert "draft" not in text.lower(), "the final IR 8547 is cited as a draft somewhere"
     for match in re.finditer(r"IR 8547[^.;]{0,20}", text):

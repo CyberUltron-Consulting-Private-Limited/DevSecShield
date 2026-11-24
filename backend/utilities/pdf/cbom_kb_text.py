@@ -24,11 +24,17 @@ def ir8547() -> dict[str, Any]:
     found = (crypto_kb.load().get("pqc_context") or {}).get("nist_ir_8547") or {}
     out = {**_IR_DEFAULT, **{k: v for k, v in found.items() if v not in (None, "")}}
     out["url"] = out.get("landing") or out.get("source") or ""
+    out["label"] = ir8547_label(out)  # "NIST IR 8547 (final, 2026)": built from the status, never stored with it
     published = str(out.get("published") or "")
     out["published_month"] = (f"{_MONTHS[int(published[5:7]) - 1]} {published[:4]}"
                               if len(published) >= 7 and published[5:7].isdigit() and 1 <= int(published[5:7]) <= 12
                               else "")
     return out
+
+
+def ir8547_label(entry: Mapping[str, Any]) -> str:
+    """The printed citation of an IR 8547 entry (``crypto_kb.ir8547_label``): name, then status and year."""
+    return crypto_kb.ir8547_label(entry)
 
 
 def finding(code: object) -> dict[str, str] | None:
@@ -73,4 +79,4 @@ def framework_binds(key: str, view: object) -> bool:
 
 
 __all__ = ["DEFAULT_ENTITY", "ENTITY_LABELS", "ENTITY_TYPES", "clause_applies", "entity_label", "finding",
-           "framework_binds", "ir8547", "view_profile"]
+           "framework_binds", "ir8547", "ir8547_label", "view_profile"]

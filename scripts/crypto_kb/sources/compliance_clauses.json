@@ -167,10 +167,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
     "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "the password crosses the network unencrypted: data in transit not protected",
+   "basis": "the password crosses the network unencrypted: data in transit not protected; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "DB_EOL_VERSION": {
@@ -257,10 +262,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
     "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "the database accepts plaintext connections only: data in transit not protected",
+   "basis": "the database accepts plaintext connections only: data in transit not protected; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "DB_OLD_PASSWORD": {
@@ -281,9 +291,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-pr-ds-s1-s3-1a",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-120",
+    "rbi-nbfc-2026-para-95",
     "certin-gov-7.1"
    ],
-   "basis": "passwords stored unhashed: sensitive data at rest without protection",
+   "basis": "passwords stored unhashed: sensitive data at rest without protection; RBI: each entity type's own data-at-rest paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 120 for Level II and above, NBFC 95(4) secure storage)",
    "rules": []
   },
   "DB_TDE_OFF": {
@@ -296,10 +312,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
     "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "the TLS mode allows plaintext connections: data in transit not protected",
+   "basis": "the TLS mode allows plaintext connections: data in transit not protected; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "DB_TLS_OPTIONAL": {
@@ -307,10 +328,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
     "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "TLS is not required, so plaintext connections are accepted",
+   "basis": "TLS is not required, so plaintext connections are accepted; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "DB_TRUST": {
@@ -355,9 +381,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-pr-ds-s1-s3-1a",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-120",
+    "rbi-nbfc-2026-para-95",
     "certin-gov-7.1"
    ],
-   "basis": "with BitLocker suspended the volume key sits unprotected on the disk, so the data is effectively not encrypted at rest",
+   "basis": "with BitLocker suspended the volume key sits unprotected on the disk, so the data is effectively not encrypted at rest; RBI: each entity type's own data-at-rest paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 120 for Level II and above, NBFC 95(4) secure storage)",
    "rules": []
   },
   "DISK_UNENCRYPTED": {
@@ -365,9 +397,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-pr-ds-s1-s3-1a",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-120",
+    "rbi-nbfc-2026-para-95",
     "certin-gov-7.1"
    ],
-   "basis": "no encryption at rest",
+   "basis": "no encryption at rest; RBI: each entity type's own data-at-rest paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 120 for Level II and above, NBFC 95(4) secure storage)",
    "rules": []
   },
   "DISK_XTS_128": {
@@ -436,9 +474,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-pr-ds-s1-s3-1a",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-120",
+    "rbi-nbfc-2026-para-95",
     "certin-gov-7.1"
    ],
-   "basis": "catalog metadata (including connection properties) not encrypted at rest",
+   "basis": "catalog metadata (including connection properties) not encrypted at rest; RBI: each entity type's own data-at-rest paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 120 for Level II and above, NBFC 95(4) secure storage)",
    "rules": []
   },
   "GLUE_JDBC_NO_TLS": {
@@ -446,10 +490,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
     "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "Glue may connect to the database without TLS: data in transit not protected",
+   "basis": "Glue may connect to the database without TLS: data in transit not protected; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "GLUE_PLAINTEXT_PASSWORD": {
@@ -457,9 +506,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-pr-ds-s1-s3-1a",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-120",
+    "rbi-nbfc-2026-para-95",
     "certin-gov-7.1"
    ],
-   "basis": "a database password stored unencrypted: sensitive data at rest without protection (a password, not an encryption key, so not SEBI Annexure-H item 5)",
+   "basis": "a database password stored unencrypted: sensitive data at rest without protection (a password, not an encryption key, so not SEBI Annexure-H item 5); RBI: each entity type's own data-at-rest paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 120 for Level II and above, NBFC 95(4) secure storage)",
    "rules": []
   },
   "IKEV1_ENABLED": {
@@ -800,10 +855,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
     "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "clients without a mesh TLS identity are admitted, so their traffic is not mTLS-protected in transit",
+   "basis": "clients without a mesh TLS identity are admitted, so their traffic is not mTLS-protected in transit; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "LUKS1": {
@@ -816,10 +876,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
     "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "sidecars send plaintext: data in transit not protected",
+   "basis": "sidecars send plaintext: data in transit not protected; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "MESH_MTLS_OFF": {
@@ -827,10 +892,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
     "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "mTLS off: data in transit not protected",
+   "basis": "mTLS off: data in transit not protected; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "MESH_MTLS_PERMISSIVE": {
@@ -838,10 +908,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
     "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "plaintext still accepted",
+   "basis": "plaintext still accepted; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "MIN_SSLv2": {
@@ -909,10 +984,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
     "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "Modbus/TCP has no encryption: data in transit not protected",
+   "basis": "Modbus/TCP has no encryption: data in transit not protected; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "NO_FALLBACK_SCSV": {
@@ -938,10 +1018,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
     "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "plaintext only: data in transit not protected",
+   "basis": "plaintext only: data in transit not protected; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "NO_TLS12": {
@@ -993,10 +1078,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
     "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "messages neither signed nor encrypted: data in transit not protected",
+   "basis": "messages neither signed nor encrypted: data in transit not protected; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "OPCUA_USERNAME_PLAINTEXT": {
@@ -1004,10 +1094,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
     "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "the password is sent unencrypted",
+   "basis": "the password is sent unencrypted; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "OPENSSL_ENC_WEAK_KDF": {
@@ -1028,10 +1123,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
     "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "the application is also served over plaintext HTTP",
+   "basis": "the application is also served over plaintext HTTP; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "POLICY_LEGACY": {
@@ -1130,11 +1230,16 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
     "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7",
     "certin-gov-4.5.7"
    ],
-   "basis": "the legacy RDP security layer (RC4, no server certificate) instead of TLS for a remote connection to a server (CERT-In 4.5.7, 6.2.7; SEBI; RBI para 106)",
+   "basis": "the legacy RDP security layer (RC4, no server certificate) instead of TLS for a remote connection to a server (CERT-In 4.5.7, 6.2.7; SEBI; RBI para 106); RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "RSA_LT_1024": {
@@ -1187,9 +1292,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-pr-ds-s1-s3-1a",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-120",
+    "rbi-nbfc-2026-para-95",
     "certin-gov-7.1"
    ],
-   "basis": "a secret stored and returned unencrypted: sensitive data at rest without protection",
+   "basis": "a secret stored and returned unencrypted: sensitive data at rest without protection; RBI: each entity type's own data-at-rest paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 120 for Level II and above, NBFC 95(4) secure storage)",
    "rules": []
   },
   "SIG_MD5": {
@@ -1414,10 +1525,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
     "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "requests without TLS are not denied",
+   "basis": "requests without TLS are not denied; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "STORAGE_UNENCRYPTED": {
@@ -1425,9 +1541,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-pr-ds-s1-s3-1a",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-120",
+    "rbi-nbfc-2026-para-95",
     "certin-gov-7.1"
    ],
-   "basis": "no encryption at rest",
+   "basis": "no encryption at rest; RBI: each entity type's own data-at-rest paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 120 for Level II and above, NBFC 95(4) secure storage)",
    "rules": []
   },
   "TLS_ANON_CIPHER": {
@@ -1635,10 +1757,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
     "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "a listener without TLS: data in transit not protected",
+   "basis": "a listener without TLS: data in transit not protected; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "PROVIDER_MANAGED_KEY": {
@@ -1661,6 +1788,7 @@
    "clauses": [
     "rbi-sfb-2026-para-139",
     "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
     "rbi-aifi-2026-para-135",
     "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
@@ -1680,6 +1808,7 @@
    "clauses": [
     "rbi-sfb-2026-para-139",
     "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
     "rbi-aifi-2026-para-135",
     "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
@@ -1692,6 +1821,7 @@
    "clauses": [
     "rbi-sfb-2026-para-139",
     "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
     "rbi-aifi-2026-para-135",
     "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
@@ -1713,9 +1843,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-pr-ds-s1-s3-1a",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-120",
+    "rbi-nbfc-2026-para-95",
     "certin-gov-7.1"
    ],
-   "basis": "no encryption at rest",
+   "basis": "no encryption at rest; RBI: each entity type's own data-at-rest paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 120 for Level II and above, NBFC 95(4) secure storage)",
    "rules": []
   },
   "UNENCRYPTED_IN_TRANSIT": {
@@ -1723,10 +1859,15 @@
     "sebi-pr-ds-standard-1",
     "sebi-annexure-i",
     "rbi-cb-2026-para-106",
+    "rbi-sfb-2026-para-105",
+    "rbi-pb-2026-para-105",
+    "rbi-aifi-2026-para-105",
+    "rbi-cic-2026-para-105",
+    "rbi-ucb-2026-para-23",
     "rbi-nbfc-2026-para-118",
     "certin-gov-6.2.7"
    ],
-   "basis": "no TLS: data in transit not protected",
+   "basis": "no TLS: data in transit not protected; RBI: each entity type's own data-in-transit paragraph (CB 106, SFB/PB/AIFI/CIC 105, UCB 23, NBFC 118)",
    "rules": []
   },
   "VULNERABLE_CRYPTO_LIBRARY": {
@@ -1869,6 +2010,7 @@
    "clauses": [
     "rbi-sfb-2026-para-139",
     "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
     "rbi-aifi-2026-para-135",
     "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",
@@ -1940,6 +2082,7 @@
    "clauses": [
     "rbi-sfb-2026-para-139",
     "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
     "rbi-aifi-2026-para-135",
     "rbi-cic-2026-para-135",
     "rbi-cb-2026-para-140",

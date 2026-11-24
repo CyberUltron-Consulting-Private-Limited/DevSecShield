@@ -15,6 +15,15 @@
    },
    "RBI": {
     "basis": "binding",
+    "entities": [
+     "nbfc",
+     "bank",
+     "sfb",
+     "payments_bank",
+     "ucb",
+     "aifi",
+     "credit_info_company"
+    ],
     "jurisdiction": "IN"
    },
    "SEBI CSCRF": {
@@ -83,8 +92,7 @@
      "payments_bank",
      "ucb",
      "aifi",
-     "credit_info_company",
-     "other"
+     "credit_info_company"
     ],
     "jurisdiction": "IN"
    },
@@ -230,9 +238,40 @@
    "source": "https://nvlpubs.nist.gov/nistpubs/ir/2026/NIST.IR.8547.pdf",
    "text": "NIST will deprecate quantum-vulnerable public-key cryptography after 2030 and disallow its use under NIST standards and guidelines after 2035."
   },
+  "rbi-aifi-2026-para-105": {
+   "applicability": {
+    "basis": "binding",
+    "entities": [
+     "nbfc",
+     "bank",
+     "sfb",
+     "payments_bank",
+     "ucb",
+     "aifi",
+     "credit_info_company"
+    ],
+    "jurisdiction": "IN"
+   },
+   "applies_to": [
+    "aifi"
+   ],
+   "framework": "RBI",
+   "id": "AIFI Cybersecurity Directions 2026, para 105",
+   "source": "https://www.rbi.org.in/Scripts/BS_ViewMasDirections.aspx?id=13597",
+   "text": "protecting data / information at rest (e.g., using encryption, if supported by the device) and in-transit (e.g., using technologies such as Virtual Private Network (VPN) or other secure protocols)"
+  },
   "rbi-aifi-2026-para-135": {
    "applicability": {
     "basis": "binding",
+    "entities": [
+     "nbfc",
+     "bank",
+     "sfb",
+     "payments_bank",
+     "ucb",
+     "aifi",
+     "credit_info_company"
+    ],
     "jurisdiction": "IN"
    },
    "applies_to": [
@@ -247,6 +286,15 @@
   "rbi-cb-2026-para-106": {
    "applicability": {
     "basis": "binding",
+    "entities": [
+     "nbfc",
+     "bank",
+     "sfb",
+     "payments_bank",
+     "ucb",
+     "aifi",
+     "credit_info_company"
+    ],
     "jurisdiction": "IN"
    },
    "applies_to": [
@@ -260,6 +308,15 @@
   "rbi-cb-2026-para-140": {
    "applicability": {
     "basis": "binding",
+    "entities": [
+     "nbfc",
+     "bank",
+     "sfb",
+     "payments_bank",
+     "ucb",
+     "aifi",
+     "credit_info_company"
+    ],
     "jurisdiction": "IN"
    },
    "applies_to": [
@@ -271,9 +328,40 @@
    "source": "https://www.rbi.org.in/scripts/NotificationUser.aspx?Id=13643",
    "text": "The key length, algorithms, cipher suites and applicable protocols used in transmission channels, processing of data and authentication purpose shall be strong. The bank shall adopt internationally accepted and published standards that are not deprecated / demonstrated to be insecure / vulnerable, and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions."
   },
+  "rbi-cic-2026-para-105": {
+   "applicability": {
+    "basis": "binding",
+    "entities": [
+     "nbfc",
+     "bank",
+     "sfb",
+     "payments_bank",
+     "ucb",
+     "aifi",
+     "credit_info_company"
+    ],
+    "jurisdiction": "IN"
+   },
+   "applies_to": [
+    "credit_info_company"
+   ],
+   "framework": "RBI",
+   "id": "Credit Information Companies Cybersecurity Directions 2026, para 105",
+   "source": "https://www.rbi.org.in/Scripts/BS_ViewMasDirections.aspx?id=13583",
+   "text": "protecting data / information at rest (e.g., using encryption, if supported by the device) and in-transit (e.g., using technologies such as Virtual Private Network (VPN) or other secure protocols)"
+  },
   "rbi-cic-2026-para-135": {
    "applicability": {
     "basis": "binding",
+    "entities": [
+     "nbfc",
+     "bank",
+     "sfb",
+     "payments_bank",
+     "ucb",
+     "aifi",
+     "credit_info_company"
+    ],
     "jurisdiction": "IN"
    },
    "applies_to": [
@@ -288,6 +376,15 @@
   "rbi-md-2023-para-16": {
    "applicability": {
     "basis": "binding",
+    "entities": [
+     "nbfc",
+     "bank",
+     "sfb",
+     "payments_bank",
+     "ucb",
+     "aifi",
+     "credit_info_company"
+    ],
     "jurisdiction": "IN"
    },
    "framework": "RBI",
@@ -300,6 +397,15 @@
   "rbi-nbfc-2026-para-118": {
    "applicability": {
     "basis": "binding",
+    "entities": [
+     "nbfc",
+     "bank",
+     "sfb",
+     "payments_bank",
+     "ucb",
+     "aifi",
+     "credit_info_company"
+    ],
     "jurisdiction": "IN"
    },
    "applies_to": [
@@ -311,9 +417,63 @@
    "source": "https://www.rbi.org.in/Scripts/BS_ViewMasDirections.aspx?id=13592",
    "text": "The key length, algorithms, cipher suites, and applicable protocols used in transmission channels, processing of data, and authentication purposes shall be strong. The NBFC shall adopt internationally accepted and published standards that are not deprecated / demonstrated to be insecure / vulnerable, and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions."
   },
+  "rbi-nbfc-2026-para-95": {
+   "applicability": {
+    "basis": "binding",
+    "entities": [
+     "nbfc",
+     "bank",
+     "sfb",
+     "payments_bank",
+     "ucb",
+     "aifi",
+     "credit_info_company"
+    ],
+    "jurisdiction": "IN"
+   },
+   "applies_to": [
+    "nbfc"
+   ],
+   "framework": "RBI",
+   "id": "NBFC Cybersecurity, Technology: Risk, Resilience and Assurance Framework Directions 2026, para 95(4)",
+   "note": "Middle Layer and above (Chapter V). No NBFC paragraph names encryption at rest; para 95(4) asks for secure storage of data.",
+   "source": "https://www.rbi.org.in/Scripts/BS_ViewMasDirections.aspx?id=13592",
+   "text": "necessary systems, procedures, and controls to ensure secure storage / transmission / processing of data / information"
+  },
+  "rbi-pb-2026-para-105": {
+   "applicability": {
+    "basis": "binding",
+    "entities": [
+     "nbfc",
+     "bank",
+     "sfb",
+     "payments_bank",
+     "ucb",
+     "aifi",
+     "credit_info_company"
+    ],
+    "jurisdiction": "IN"
+   },
+   "applies_to": [
+    "payments_bank"
+   ],
+   "framework": "RBI",
+   "id": "Payments Banks Cybersecurity Directions 2026, para 105",
+   "source": "https://www.rbi.org.in/Scripts/BS_ViewMasDirections.aspx?id=13625",
+   "text": "protecting data / information at rest (e.g., using encryption, if supported by the device) and in-transit (e.g., using technologies such as Virtual Private Network (VPN) or other secure protocols)"
+  },
   "rbi-pb-2026-para-139": {
    "applicability": {
     "basis": "binding",
+    "entities": [
+     "nbfc",
+     "bank",
+     "sfb",
+     "payments_bank",
+     "ucb",
+     "aifi",
+     "credit_info_company"
+    ],
     "jurisdiction": "IN"
    },
    "applies_to": [
@@ -325,9 +485,40 @@
    "source": "https://www.rbi.org.in/Scripts/BS_ViewMasDirections.aspx?id=13625",
    "text": "The key length, algorithms, cipher suites and applicable protocols used in transmission channels, processing of data and authentication purpose shall be strong. The bank shall adopt internationally accepted and published standards that are not deprecated / demonstrated to be insecure / vulnerable, and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions."
   },
+  "rbi-sfb-2026-para-105": {
+   "applicability": {
+    "basis": "binding",
+    "entities": [
+     "nbfc",
+     "bank",
+     "sfb",
+     "payments_bank",
+     "ucb",
+     "aifi",
+     "credit_info_company"
+    ],
+    "jurisdiction": "IN"
+   },
+   "applies_to": [
+    "sfb"
+   ],
+   "framework": "RBI",
+   "id": "Small Finance Banks Cybersecurity Directions 2026, para 105",
+   "source": "https://www.rbi.org.in/Scripts/BS_ViewMasDirections.aspx?id=13634",
+   "text": "protecting data / information at rest (e.g., using encryption, if supported by the device) and in-transit (e.g., using technologies such as Virtual Private Network (VPN) or other secure protocols)"
+  },
   "rbi-sfb-2026-para-139": {
    "applicability": {
     "basis": "binding",
+    "entities": [
+     "nbfc",
+     "bank",
+     "sfb",
+     "payments_bank",
+     "ucb",
+     "aifi",
+     "credit_info_company"
+    ],
     "jurisdiction": "IN"
    },
    "applies_to": [
@@ -339,9 +530,64 @@
    "source": "https://www.rbi.org.in/Scripts/BS_ViewMasDirections.aspx?id=13634",
    "text": "The key length, algorithms, cipher suites and applicable protocols used in transmission channels, processing of data and authentication purpose shall be strong. The bank shall adopt internationally accepted and published standards that are not deprecated / demonstrated to be insecure / vulnerable, and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions."
   },
+  "rbi-ucb-2026-para-120": {
+   "applicability": {
+    "basis": "binding",
+    "entities": [
+     "nbfc",
+     "bank",
+     "sfb",
+     "payments_bank",
+     "ucb",
+     "aifi",
+     "credit_info_company"
+    ],
+    "jurisdiction": "IN"
+   },
+   "applies_to": [
+    "ucb"
+   ],
+   "framework": "RBI",
+   "id": "Urban Co-operative Banks Cybersecurity Directions 2026, para 120",
+   "note": "Urban co-operative banks of Level II and above (Chapter IV); a Level I UCB is bound by para 23 for data in transit and by no at-rest paragraph.",
+   "source": "https://www.rbi.org.in/Scripts/BS_ViewMasDirections.aspx?id=13616",
+   "text": "protecting data / information at rest (e.g., using encryption, if supported by the device) and in-transit (e.g., using technologies such as Virtual Private Network (VPN) or other secure protocols)"
+  },
+  "rbi-ucb-2026-para-23": {
+   "applicability": {
+    "basis": "binding",
+    "entities": [
+     "nbfc",
+     "bank",
+     "sfb",
+     "payments_bank",
+     "ucb",
+     "aifi",
+     "credit_info_company"
+    ],
+    "jurisdiction": "IN"
+   },
+   "applies_to": [
+    "ucb"
+   ],
+   "framework": "RBI",
+   "id": "Urban Co-operative Banks Cybersecurity Directions 2026, para 23",
+   "note": "Urban co-operative banks of every level (Chapter III).",
+   "source": "https://www.rbi.org.in/Scripts/BS_ViewMasDirections.aspx?id=13616",
+   "text": "standard encryption and integrity checks are put in place where sensitive data is transmitted over the network"
+  },
   "rbi-ucb-2026-para-25": {
    "applicability": {
     "basis": "binding",
+    "entities": [
+     "nbfc",
+     "bank",
+     "sfb",
+     "payments_bank",
+     "ucb",
+     "aifi",
+     "credit_info_company"
+    ],
     "jurisdiction": "IN"
    },
    "applies_to": [
@@ -461,6 +707,12 @@
    "sebi-pr-ds-standard-1",
    "sebi-pr-ds-s1-s3-1a",
    "rbi-cb-2026-para-106",
+   "rbi-sfb-2026-para-105",
+   "rbi-pb-2026-para-105",
+   "rbi-aifi-2026-para-105",
+   "rbi-cic-2026-para-105",
+   "rbi-ucb-2026-para-120",
+   "rbi-nbfc-2026-para-95",
    "certin-gov-7.1"
   ],
   "auth": [
@@ -484,6 +736,11 @@
    "sebi-pr-ds-standard-1",
    "sebi-annexure-i",
    "rbi-cb-2026-para-106",
+   "rbi-sfb-2026-para-105",
+   "rbi-pb-2026-para-105",
+   "rbi-aifi-2026-para-105",
+   "rbi-cic-2026-para-105",
+   "rbi-ucb-2026-para-23",
    "rbi-nbfc-2026-para-118",
    "certin-gov-6.2.7",
    "certin-gov-4.5.7"
@@ -2477,6 +2734,11 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-sfb-2026-para-105",
+     "rbi-pb-2026-para-105",
+     "rbi-aifi-2026-para-105",
+     "rbi-cic-2026-para-105",
+     "rbi-ucb-2026-para-23",
      "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
@@ -2727,6 +2989,7 @@
     "clauses": [
      "rbi-sfb-2026-para-139",
      "rbi-pb-2026-para-139",
+     "rbi-ucb-2026-para-25",
      "rbi-aifi-2026-para-135",
      "rbi-cic-2026-para-135",
      "rbi-cb-2026-para-140",
@@ -2876,6 +3139,7 @@
     "clauses": [
      "rbi-sfb-2026-para-139",
      "rbi-pb-2026-para-139",
+     "rbi-ucb-2026-para-25",
      "rbi-aifi-2026-para-135",
      "rbi-cic-2026-para-135",
      "rbi-cb-2026-para-140",
@@ -2943,6 +3207,7 @@
     "clauses": [
      "rbi-sfb-2026-para-139",
      "rbi-pb-2026-para-139",
+     "rbi-ucb-2026-para-25",
      "rbi-aifi-2026-para-135",
      "rbi-cic-2026-para-135",
      "rbi-cb-2026-para-140",
@@ -3107,6 +3372,12 @@
      "sebi-pr-ds-standard-1",
      "sebi-pr-ds-s1-s3-1a",
      "rbi-cb-2026-para-106",
+     "rbi-sfb-2026-para-105",
+     "rbi-pb-2026-para-105",
+     "rbi-aifi-2026-para-105",
+     "rbi-cic-2026-para-105",
+     "rbi-ucb-2026-para-120",
+     "rbi-nbfc-2026-para-95",
      "certin-gov-7.1"
     ],
     "compliance": [
@@ -3189,6 +3460,11 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-sfb-2026-para-105",
+     "rbi-pb-2026-para-105",
+     "rbi-aifi-2026-para-105",
+     "rbi-cic-2026-para-105",
+     "rbi-ucb-2026-para-23",
      "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
@@ -3932,6 +4208,7 @@
     "clauses": [
      "rbi-sfb-2026-para-139",
      "rbi-pb-2026-para-139",
+     "rbi-ucb-2026-para-25",
      "rbi-aifi-2026-para-135",
      "rbi-cic-2026-para-135",
      "rbi-cb-2026-para-140",
@@ -4300,6 +4577,7 @@
     "clauses": [
      "rbi-sfb-2026-para-139",
      "rbi-pb-2026-para-139",
+     "rbi-ucb-2026-para-25",
      "rbi-aifi-2026-para-135",
      "rbi-cic-2026-para-135",
      "rbi-cb-2026-para-140",
@@ -6122,6 +6400,11 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-sfb-2026-para-105",
+     "rbi-pb-2026-para-105",
+     "rbi-aifi-2026-para-105",
+     "rbi-cic-2026-para-105",
+     "rbi-ucb-2026-para-23",
      "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
@@ -6871,6 +7154,11 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-sfb-2026-para-105",
+     "rbi-pb-2026-para-105",
+     "rbi-aifi-2026-para-105",
+     "rbi-cic-2026-para-105",
+     "rbi-ucb-2026-para-23",
      "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
@@ -7028,6 +7316,12 @@
      "sebi-pr-ds-standard-1",
      "sebi-pr-ds-s1-s3-1a",
      "rbi-cb-2026-para-106",
+     "rbi-sfb-2026-para-105",
+     "rbi-pb-2026-para-105",
+     "rbi-aifi-2026-para-105",
+     "rbi-cic-2026-para-105",
+     "rbi-ucb-2026-para-120",
+     "rbi-nbfc-2026-para-95",
      "certin-gov-7.1"
     ],
     "compliance": [
@@ -7202,6 +7496,11 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-sfb-2026-para-105",
+     "rbi-pb-2026-para-105",
+     "rbi-aifi-2026-para-105",
+     "rbi-cic-2026-para-105",
+     "rbi-ucb-2026-para-23",
      "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
@@ -7293,6 +7592,11 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-sfb-2026-para-105",
+     "rbi-pb-2026-para-105",
+     "rbi-aifi-2026-para-105",
+     "rbi-cic-2026-para-105",
+     "rbi-ucb-2026-para-23",
      "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
@@ -7696,6 +8000,12 @@
      "sebi-pr-ds-standard-1",
      "sebi-pr-ds-s1-s3-1a",
      "rbi-cb-2026-para-106",
+     "rbi-sfb-2026-para-105",
+     "rbi-pb-2026-para-105",
+     "rbi-aifi-2026-para-105",
+     "rbi-cic-2026-para-105",
+     "rbi-ucb-2026-para-120",
+     "rbi-nbfc-2026-para-95",
      "certin-gov-7.1"
     ],
     "compliance": [
@@ -7769,6 +8079,12 @@
      "sebi-pr-ds-standard-1",
      "sebi-pr-ds-s1-s3-1a",
      "rbi-cb-2026-para-106",
+     "rbi-sfb-2026-para-105",
+     "rbi-pb-2026-para-105",
+     "rbi-aifi-2026-para-105",
+     "rbi-cic-2026-para-105",
+     "rbi-ucb-2026-para-120",
+     "rbi-nbfc-2026-para-95",
      "certin-gov-7.1"
     ],
     "compliance": [
@@ -8354,6 +8670,12 @@
      "sebi-pr-ds-standard-1",
      "sebi-pr-ds-s1-s3-1a",
      "rbi-cb-2026-para-106",
+     "rbi-sfb-2026-para-105",
+     "rbi-pb-2026-para-105",
+     "rbi-aifi-2026-para-105",
+     "rbi-cic-2026-para-105",
+     "rbi-ucb-2026-para-120",
+     "rbi-nbfc-2026-para-95",
      "certin-gov-7.1"
     ],
     "compliance": [
@@ -8444,6 +8766,11 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-sfb-2026-para-105",
+     "rbi-pb-2026-para-105",
+     "rbi-aifi-2026-para-105",
+     "rbi-cic-2026-para-105",
+     "rbi-ucb-2026-para-23",
      "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
@@ -8533,6 +8860,12 @@
      "sebi-pr-ds-standard-1",
      "sebi-pr-ds-s1-s3-1a",
      "rbi-cb-2026-para-106",
+     "rbi-sfb-2026-para-105",
+     "rbi-pb-2026-para-105",
+     "rbi-aifi-2026-para-105",
+     "rbi-cic-2026-para-105",
+     "rbi-ucb-2026-para-120",
+     "rbi-nbfc-2026-para-95",
      "certin-gov-7.1"
     ],
     "compliance": [
@@ -10965,6 +11298,11 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-sfb-2026-para-105",
+     "rbi-pb-2026-para-105",
+     "rbi-aifi-2026-para-105",
+     "rbi-cic-2026-para-105",
+     "rbi-ucb-2026-para-23",
      "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
@@ -11117,6 +11455,11 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-sfb-2026-para-105",
+     "rbi-pb-2026-para-105",
+     "rbi-aifi-2026-para-105",
+     "rbi-cic-2026-para-105",
+     "rbi-ucb-2026-para-23",
      "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
@@ -11200,6 +11543,11 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-sfb-2026-para-105",
+     "rbi-pb-2026-para-105",
+     "rbi-aifi-2026-para-105",
+     "rbi-cic-2026-para-105",
+     "rbi-ucb-2026-para-23",
      "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
@@ -11285,6 +11633,11 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-sfb-2026-para-105",
+     "rbi-pb-2026-para-105",
+     "rbi-aifi-2026-para-105",
+     "rbi-cic-2026-para-105",
+     "rbi-ucb-2026-para-23",
      "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
@@ -11875,6 +12228,11 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-sfb-2026-para-105",
+     "rbi-pb-2026-para-105",
+     "rbi-aifi-2026-para-105",
+     "rbi-cic-2026-para-105",
+     "rbi-ucb-2026-para-23",
      "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
@@ -12144,6 +12502,11 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-sfb-2026-para-105",
+     "rbi-pb-2026-para-105",
+     "rbi-aifi-2026-para-105",
+     "rbi-cic-2026-para-105",
+     "rbi-ucb-2026-para-23",
      "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
@@ -12545,6 +12908,11 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-sfb-2026-para-105",
+     "rbi-pb-2026-para-105",
+     "rbi-aifi-2026-para-105",
+     "rbi-cic-2026-para-105",
+     "rbi-ucb-2026-para-23",
      "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
@@ -12645,6 +13013,11 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-sfb-2026-para-105",
+     "rbi-pb-2026-para-105",
+     "rbi-aifi-2026-para-105",
+     "rbi-cic-2026-para-105",
+     "rbi-ucb-2026-para-23",
      "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
@@ -12819,6 +13192,11 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-sfb-2026-para-105",
+     "rbi-pb-2026-para-105",
+     "rbi-aifi-2026-para-105",
+     "rbi-cic-2026-para-105",
+     "rbi-ucb-2026-para-23",
      "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
@@ -13657,6 +14035,11 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-sfb-2026-para-105",
+     "rbi-pb-2026-para-105",
+     "rbi-aifi-2026-para-105",
+     "rbi-cic-2026-para-105",
+     "rbi-ucb-2026-para-23",
      "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7",
      "certin-gov-4.5.7"
@@ -14167,6 +14550,12 @@
      "sebi-pr-ds-standard-1",
      "sebi-pr-ds-s1-s3-1a",
      "rbi-cb-2026-para-106",
+     "rbi-sfb-2026-para-105",
+     "rbi-pb-2026-para-105",
+     "rbi-aifi-2026-para-105",
+     "rbi-cic-2026-para-105",
+     "rbi-ucb-2026-para-120",
+     "rbi-nbfc-2026-para-95",
      "certin-gov-7.1"
     ],
     "compliance": [
@@ -15487,6 +15876,11 @@
      "sebi-pr-ds-standard-1",
      "sebi-annexure-i",
      "rbi-cb-2026-para-106",
+     "rbi-sfb-2026-para-105",
+     "rbi-pb-2026-para-105",
+     "rbi-aifi-2026-para-105",
+     "rbi-cic-2026-para-105",
+     "rbi-ucb-2026-para-23",
      "rbi-nbfc-2026-para-118",
      "certin-gov-6.2.7"
     ],
@@ -15561,6 +15955,12 @@
      "sebi-pr-ds-standard-1",
      "sebi-pr-ds-s1-s3-1a",
      "rbi-cb-2026-para-106",
+     "rbi-sfb-2026-para-105",
+     "rbi-pb-2026-para-105",
+     "rbi-aifi-2026-para-105",
+     "rbi-cic-2026-para-105",
+     "rbi-ucb-2026-para-120",
+     "rbi-nbfc-2026-para-95",
      "certin-gov-7.1"
     ],
     "compliance": [
@@ -16202,7 +16602,7 @@
    }
   }
  },
- "kb_version": "2026.11.24.1",
+ "kb_version": "2026.11.24.3",
  "legacy_controls": {
   "access": {
    "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control",
@@ -18235,7 +18635,7 @@
    "source": "https://globalriskinstitute.org/mp-files/pdf-quantum-threat-timeline-report-2025.pdf"
   },
   "nist_ir_8547": {
-   "citation": "NIST IR 8547 (final, 2026)",
+   "citation": "NIST IR 8547",
    "deprecated_after": 2030,
    "disallowed_after": 2035,
    "federal": "These systems must adopt post-quantum cryptography for key establishment by December 31, 2030, and for digital signatures by December 31, 2031.",

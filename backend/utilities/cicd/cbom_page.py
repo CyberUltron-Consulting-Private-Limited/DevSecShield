@@ -23,15 +23,15 @@ def _display_row(row: dict) -> dict:
 _KB_REMEDIATION_ROWS = 200  # each row now also builds a code fix and an exploit demo
 
 
-def _kb_remediation(row: dict, index: int) -> dict | None:
+def _kb_remediation(row: dict, index: int, team: dict | None) -> dict | None:
     if index >= _KB_REMEDIATION_ROWS or not row.get("finding_codes"):
         return None
     from backend.utilities.cbom_sources.kb_remediation import remediation
 
-    return remediation(row, "code")
+    return remediation(row, "code", team=team)
 
 
-def _finding(row: dict, index: int) -> dict:
+def _finding(row: dict, index: int, team: dict | None) -> dict:
     from backend.utilities.cbom_sources.cbom_rows import display_row
 
     shown = display_row(_display_row(row))
@@ -55,7 +55,7 @@ def _finding(row: dict, index: int) -> dict:
         "snippet": shown.get("snippet") or "",
         # CI runs are not stored findings, so the remediation endpoint cannot look them up; the offline
         # knowledge-base remediation is built here for flagged rows instead (no AI, no network).
-        "remediation": _kb_remediation(shown, index),
+        "remediation": _kb_remediation(shown, index, team),
         "finding_codes": shown.get("finding_codes") or [],
         "cwe": shown.get("cwe") or [],
         "cves": shown.get("cves") or [],
@@ -75,12 +75,15 @@ def _finding(row: dict, index: int) -> dict:
     }
 
 
-def project_cbom_ci_page(run: dict) -> dict | None:
+def project_cbom_ci_page(run: dict, *, team: dict | None) -> dict | None:
     """Return data, dashboard, findings, and scan_metadata for CbomResults.
 
     CI logs are not Scan rows, so findings are not in the findings collection.
     The dashboard is built from the stored run-object and every finding is
-    not started.
+    not started. ``team``: the team's regulatory profile
+    (``regulated_entity.team_profile``), a required keyword: each finding's
+    knowledge-base remediation cites only the clauses that bind the team (the
+    page cited all seven RBI instruments without it, PR #485 review 2 M2).
     """
     if not isinstance(run, dict):
         return None
@@ -119,7 +122,7 @@ def project_cbom_ci_page(run: dict) -> dict | None:
     }
     from backend.utilities.cbom_sources.cbom_rows import page_row
 
-    findings = [_finding(row, index) for index, row in flagged]
+    findings = [_finding(row, index, team) for index, row in flagged]
     return {
         "data": [page_row(row) for row in rows if isinstance(row, dict)],  # what the readiness gauge counts
         "dashboard": dashboard,

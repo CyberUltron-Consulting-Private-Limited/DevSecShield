@@ -160,7 +160,7 @@ def _scan_finding_grounding(engine, team_id: int, scan_id: int, finding_id: str,
     with Session(engine) as session:  # the clauses that bind the team (SOW audit A-11), as on its other pages
         team = team_profile(session, team_id)
     # the window the in-house fixer reads (mode "fix"); the scanner stores it with secret values redacted
-    return (G.for_code_finding(scan_id, finding_id, data, explain(data, "code", team), minimise=minimise),
+    return (G.for_code_finding(scan_id, finding_id, data, explain(data, "code", team=team), minimise=minimise),
             FIX.window_of(data))
 
 

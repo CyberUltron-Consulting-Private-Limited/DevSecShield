@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import re
+from collections.abc import Mapping
 from functools import lru_cache
 from typing import Any
 
@@ -566,3 +567,19 @@ def library_status(package: str, package_version: str, *, today: _dt.date | None
 
 def pqc_context() -> dict[str, Any]:
     return load().get("pqc_context") or {}
+
+
+
+def ir8547_label(entry: Mapping[str, Any] | None = None) -> str:
+    """How every document cites NIST IR 8547: ``NIST IR 8547 (final, 2026)``.
+
+    Built from the KB entry's own ``citation``, ``status`` and ``published``
+    fields (``pqc_context.nist_ir_8547``), so a draft entry reads "draft"
+    everywhere and the citation never carries a status of its own (PR #490
+    builds its citation the same way)."""
+    found = entry if entry is not None else pqc_context().get("nist_ir_8547") or {}
+    citation = str(found.get("citation") or "NIST IR 8547").split(" (", 1)[0]
+    status = str(found.get("status") or "").strip().lower()
+    year = str(found.get("published") or "")[:4]
+    parts = [part for part in (status, year if year.isdigit() else "") if part]
+    return f"{citation} ({', '.join(parts)})" if parts else citation

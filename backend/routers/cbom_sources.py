@@ -1886,7 +1886,7 @@ def _run_asset_remediation(engine, team_id: int, run_id: int, asset_id: int) -> 
                    "algorithm_name": row.algorithm or row.name, "location": row.location,
                    "asset_type": row.asset_type, "target": row.target}
         team = REG_ENTITY.team_profile(session, team_id)  # the clauses that bind the team (SOW audit A-11)
-    return remediation(finding, "node", team)
+    return remediation(finding, "node", team=team)
 
 
 @router.get(BASE + "/runs/{run_id}/assets/{asset_id}/remediation", dependencies=[*READ, access.team("cbom.read")],

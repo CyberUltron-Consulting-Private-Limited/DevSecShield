@@ -64,9 +64,12 @@ def _legacy_codes(finding: dict[str, Any]) -> list[str]:
     return codes
 
 
-def explain(finding: dict[str, Any], namespace: str = "code", team: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+def explain(finding: dict[str, Any], namespace: str = "code", *, team: dict[str, Any] | None
+            ) -> list[dict[str, Any]]:
     """Rendered knowledge entries for every finding code on the row (worst first, quantum note last). ``team``: the
-    team's regulatory profile (``regulated_entity``): only the clauses that bind it are cited (SOW audit A-11)."""
+    team's regulatory profile (``regulated_entity.team_profile``): only the clauses that bind it are cited (SOW audit
+    A-11). Required: left out it meant every clause, and the CI/CD CBOM page cited all seven RBI instruments to every
+    team (PR #485 review 2 M2). None, said on purpose, keeps every clause (a row that belongs to no team)."""
     raw = finding.get("finding_codes")
     if raw is None and namespace == "code":
         raw = _legacy_codes(finding)
@@ -96,7 +99,8 @@ def code_evidence(finding: dict[str, Any]) -> list[str]:
     return list(dict.fromkeys(names))
 
 
-def remediation(finding: dict[str, Any], namespace: str = "code", team: dict[str, Any] | None = None) -> dict[str, Any]:
+def remediation(finding: dict[str, Any], namespace: str = "code", *, team: dict[str, Any] | None) -> dict[str, Any]:
+    """The knowledge-base remediation panel of a finding; ``team``: as ``explain`` (a required keyword)."""
     out = _remediation(finding, namespace, team)
     try:
         fix = out.get("code_fix") or {}
@@ -109,8 +113,8 @@ def remediation(finding: dict[str, Any], namespace: str = "code", team: dict[str
     return out
 
 
-def _remediation(finding: dict[str, Any], namespace: str = "code", team: dict[str, Any] | None = None) -> dict[str, Any]:
-    entries = explain(finding, namespace, team)
+def _remediation(finding: dict[str, Any], namespace: str, team: dict[str, Any] | None) -> dict[str, Any]:
+    entries = explain(finding, namespace, team=team)
     now = _dt.datetime.now(_dt.timezone.utc).isoformat()
     base = {"generated_at": now, "source": "knowledge_base", "kb_version": crypto_kb.version(), "engine": ENGINE}
     if not entries:

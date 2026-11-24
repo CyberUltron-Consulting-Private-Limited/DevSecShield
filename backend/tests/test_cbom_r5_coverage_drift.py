@@ -410,7 +410,7 @@ def test_a_truncated_uploaded_cbom_is_never_compared(world, monkeypatch):
     assert _events(engine, 81) == set() and closed == []
     with Session(engine) as s:  # nor is it ever a baseline
         assert D.previous_code_scan(s, s.get(Scan, 82)).id == 80
-        doc = OSCAL.scan_document(s.get(Scan, 81))
+        doc = OSCAL.scan_document(s.get(Scan, 81), team=None)
     assert "truncated" in doc["assessment-results"]["results"][0]["reviewed-controls"]["remarks"]
 
 

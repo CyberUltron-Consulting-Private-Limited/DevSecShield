@@ -187,11 +187,12 @@ async def _authorize_user(team_id: int, authorization: str | None) -> tuple[Any,
 BOARD_SLUG = "board-executive-report"  # SOW D14: its issues are recorded for the trend (cbom_board_issues)
 
 
-def _previous_issue(engine: Any, team_id: int, number: int, document: str) -> dict[str, Any] | None:
+def _previous_issue(engine: Any, team_id: int, number: int, content_id: str) -> dict[str, Any] | None:
+    """The issue this content is compared with (``cbom_board_issues.previous``: fixed once the content is issued)."""
     from backend.utilities.dashboard.cbom_board_issues import previous
 
     with Session(engine) as session:
-        return previous(session, team_id, number, document)
+        return previous(session, team_id, number, content_id)
 
 
 def _record_issue(engine: Any, team_id: int, number: int, snapshot: dict[str, Any], user_id: int | None) -> None:
@@ -374,9 +375,10 @@ async def download_cbom_deliverable(
             raise HTTPException(status_code=404, detail=UNKNOWN_DELIVERABLE_DETAIL)
         options = await request_options(request, "deliverable")
         view = await run_in_threadpool(load_team_cbom_view, engine, team_id, now=_utcnow())
+        content_id = document_id(view, spec.number)  # the content alone: no previous issue in the digest yet
         if spec.slug == BOARD_SLUG:  # the trend against the previous issue (review M7c)
-            view.previous_issue = await run_in_threadpool(_previous_issue, engine, team_id, spec.number,
-                                                          document_id(view, spec.number))
+            # the previous issue's Document ID is part of D14's digest (review 2 m5): one ID, one trend
+            view.previous_issue = await run_in_threadpool(_previous_issue, engine, team_id, spec.number, content_id)
         ctx = ReportContext(options=options, branding=await run_in_threadpool(_branding, engine, team_id))
         if options.is_default and not ctx.branding.applied:
             pdf = await run_in_threadpool(spec.build, view)  # today's document, byte for byte
@@ -396,7 +398,8 @@ async def download_cbom_deliverable(
     if spec.slug == BOARD_SLUG and not view.is_empty:
         from backend.utilities.pdf.cbom_board_report_pdf import issue_snapshot
 
-        await run_in_threadpool(_record_issue, engine, team_id, spec.number, issue_snapshot(view), user_id)
+        snapshot = {**issue_snapshot(view), "content_id": content_id}
+        await run_in_threadpool(_record_issue, engine, team_id, spec.number, snapshot, user_id)
     filename = deliverable_filename(spec, team_id, view.as_of)
     headers = {
         **report_headers(ctx, filename, findings=False),

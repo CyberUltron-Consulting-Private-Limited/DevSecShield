@@ -30,11 +30,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from backend.utilities.cbom_sources import clause_evidence as CE  # noqa: E402
 from backend.utilities.cbom_sources import crypto_kb  # noqa: E402
+from backend.utilities.cbom_sources import regulated_entity  # noqa: E402
 from backend.utilities.cbom_sources.classify import classify  # noqa: E402
 from backend.utilities.cbom_sources.classify_ext import node_net  # noqa: E402
 from backend.utilities.cbom_sources.kb_remediation import explain  # noqa: E402
 from test_cbom_compliance_precise_clauses import (CERTIN_8422, NIST_112, NIST_SHA1_SIG, NIST_TDEA,  # noqa: E402
-                                                  RBI_118, RBI_140, RBI_OTHERS, RBI_UCB, SEBI_H5)
+                                                  RBI_118, RBI_140, RBI_OTHERS, SEBI_H5)
 from test_cbom_posture import _store  # noqa: E402
 from test_cbom_sources_api import api, world  # noqa: E402,F401  (shared fixtures)
 
@@ -117,7 +118,8 @@ def test_e1_names_never_decide_through_posture_detail_oscal_and_deliverables(api
     from backend.new_models import CbomCollectionRun
 
     with Session(engine) as session:
-        doc = json.dumps(oscal.run_document(session, session.get(CbomCollectionRun, run["id"])))
+        doc = json.dumps(oscal.run_document(session, session.get(CbomCollectionRun, run["id"]),
+                                            team=regulated_entity.team_profile(session, 1)))
     # the OSCAL findings link TDEA once: from the 3des-cbc server (SSH_CBC_CIPHER / SSH_WEAK_CIPHER), never from a name
     assert "NIST: SP 800-131A Rev. 2, Sec. 2 Table 1 (TDEA)" in doc
     links = oscal._references("node", "WEAK_CIPHER", [["ECDHE-RSA-AES128-SHA"], ["AES128-SHA"]])
@@ -242,7 +244,7 @@ def test_e3_posture_marks_a_clause_cited_without_a_recorded_algorithm():
 
 
 def _code_cited(code: str, **finding) -> set[tuple[str, str]]:
-    out = explain({"finding_codes": [code], **finding})
+    out = explain({"finding_codes": [code], **finding}, team=None)
     return {p for d in out for p in _pairs(d["compliance"])}
 
 
@@ -264,10 +266,11 @@ def test_e3_code_scanner_key_size_wording_gets_the_112_bit_clause():
 # ---------------------------------------------------------------------------------------- E4, E5
 def test_e4_nonce_and_iv_reuse_cite_rbi_like_ecb():
     ecb = _pairs(crypto_kb.clauses_for("code", "WEAK_CIPHER_MODE", "AES-128-ECB"))
-    # every RBI direction's "strong algorithms and protocols" clause, like ECB; UCB para 25 binds deprecated or
-    # insecure algorithms only, so it cites ECB and not the misuse of a sound one (PR #485 m2)
-    usage = {RBI_140, RBI_118, *(r for r in RBI_OTHERS if r != RBI_UCB)}
-    assert ecb == usage | {RBI_UCB}
+    # every RBI direction's cryptographic-controls clause, like ECB: a configuration demonstrated to be insecure. UCB
+    # para 25 carries them too (its configurations must also comply), as the other six instruments do (PR #485
+    # review 2 m3; review 1 had left UCB out)
+    usage = {RBI_140, RBI_118, *RBI_OTHERS}
+    assert ecb == usage
     for code in ("REUSED_NONCE", "STATIC_IV"):
         assert _pairs(crypto_kb.clauses_for("code", code, "AES-GCM")) == usage, code
 

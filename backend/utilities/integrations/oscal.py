@@ -195,16 +195,17 @@ def assessment_results(*, team_id: int, anchor: str, title: str, namespace: str,
                        end: _dt.datetime | None, views: Iterable[tuple[str | None, Any]], kb_version: str | None,
                        description: str, not_read: Iterable[str] = (),
                        partly_read: Iterable[tuple[str, str]] = (), engine_version: str | None = None,
-                       team: dict[str, Any] | None = None) -> dict[str, Any]:
+                       team: dict[str, Any] | None) -> dict[str, Any]:
     """Build the document from drift ``View``s (``drift.node_views`` / ``drift.code_views``) of finding assets.
     ``not_read``: sources whose collection failed; ``partly_read``: (source, what was not read). Neither is claimed
     as reviewed: they are listed in the result's props and in the reviewed-controls remarks. ``engine_version``: the
     build that judged a collection run (its ``engine_version``); the document also names the build that wrote it.
-    ``team``: the team's regulatory profile (``regulated_entity``); the default profile when not given, so the feed
-    never cites a clause the team's pages leave out (SOW audit A-11)."""
+    ``team``: the team's regulatory profile (``regulated_entity.team_profile``), required so no caller can forget it
+    and cite another entity's instrument (PR #485 review 2 M1); None only for a document that belongs to no team (every
+    clause, as the code engine). The feed never cites a clause the team's pages leave out (SOW audit A-11)."""
     from backend.utilities.cbom_sources.crypto_kb import entry
 
-    profile = dict(team) if team is not None else dict(REG_ENTITY.DEFAULT_PROFILE)
+    profile = dict(team) if team is not None else None
     findings_views = [(src, v) for src, v in views if v.finding and v.codes]
     truncated = len(findings_views) > MAX_OBSERVATIONS
     findings_views = findings_views[:MAX_OBSERVATIONS]
@@ -304,7 +305,9 @@ def assessment_results(*, team_id: int, anchor: str, title: str, namespace: str,
 
 
 # ----------------------------------------------------------------------------- run / scan
-def run_document(session: Session, run: CbomCollectionRun, team: dict[str, Any] | None = None) -> dict[str, Any]:
+def run_document(session: Session, run: CbomCollectionRun, *, team: dict[str, Any] | None) -> dict[str, Any]:
+    """The OSCAL assessment results of a finished collection run; ``team``: the run team's profile
+    (``regulated_entity.team_profile``), a required keyword (review 2 M1)."""
     from backend.utilities.cbom_sources import drift as DRIFT
     from backend.utilities.cbom_sources import identity as ID
 
@@ -343,10 +346,13 @@ def run_document(session: Session, run: CbomCollectionRun, team: dict[str, Any] 
         namespace="node", start=run.created_at, end=run.finished_at, views=views, kb_version=run.kb_version,
         description=f"Cryptographic inventory collected from {len(jobs)} source(s); run status {run.status}.",
         not_read=not_read, partly_read=partly_read, engine_version=run.engine_version,
-        team=team if team is not None else REG_ENTITY.team_profile(session, run.team_id))
+        team=team)
 
 
-def scan_document(scan: Scan, team: dict[str, Any] | None = None) -> dict[str, Any]:
+def scan_document(scan: Scan, *, team: dict[str, Any] | None) -> dict[str, Any]:
+    """The OSCAL assessment results of a CBOM code scan; ``team``: the scan team's profile
+    (``regulated_entity.team_profile``), a required keyword: the download cited the NBFC directions to every team when
+    it was left out (review 2 M1)."""
     from backend.utilities.cbom_sources import drift as DRIFT
 
     key, label = DRIFT.code_source(scan)
@@ -365,11 +371,13 @@ def document_for(engine, team_id: int, *, run_id: int | None = None, scan_id: in
     with Session(engine) as session:
         if run_id is not None:
             run = session.get(CbomCollectionRun, run_id)
-            return run_document(session, run) if run is not None and run.team_id == team_id else None
+            if run is None or run.team_id != team_id:
+                return None
+            return run_document(session, run, team=REG_ENTITY.team_profile(session, team_id))
         scan = session.get(Scan, scan_id) if scan_id is not None else None
         if scan is None or scan.team_id != team_id or scan.scan_type != "cbom" or scan.scan_status != "success":
             return None
-        return scan_document(scan, REG_ENTITY.team_profile(session, team_id))
+        return scan_document(scan, team=REG_ENTITY.team_profile(session, team_id))
 
 
 # ----------------------------------------------------------------------------- push connector
@@ -406,7 +414,7 @@ def test(ctx: Context, event: dict[str, Any]) -> Outcome:
     """Push a small valid document (no findings) so the GRC side can check the signature and the format."""
     doc = assessment_results(team_id=ctx.team_id, anchor=f"test-{event['id']}", title="ZeroShield OSCAL push test",
                              namespace="node", start=utcnow(), end=utcnow(), views=[], kb_version=None,
-                             description="Connection test: no assets.")
+                             description="Connection test: no assets.", team=None)  # no finding: no clause
     body = json.dumps(doc, separators=(",", ":"), ensure_ascii=True).encode("ascii")
     return post_signed(ctx.config.url, ctx.secrets.get("signing_secret") or "", event["id"], "integration.test", body,
                        ctx.config.ca_pem)
