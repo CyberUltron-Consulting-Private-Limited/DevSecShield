@@ -57,6 +57,7 @@ ALLOW: dict[str, dict[str, set[tuple[str, str]]]] = {
         # level and the krbtgt key age are hygiene no clause in the knowledge base names; a DC-default encryption type
         # is unknown (KB5073381), not an observed weak cipher, so it cites nothing until the default is known
         "AD_FUNCTIONAL_LEVEL_LEGACY": set(),
+        "AD_FUNCTIONAL_LEVEL_PRE2008": set(),
         "KERBEROS_DES_ENABLED": {RBI_140, RBI_16, SEBI_H5},
         "KERBEROS_ENCTYPES_DEFAULT": set(),
         "KERBEROS_RC4_ENABLED": {RBI_140, RBI_16, SEBI_H5},

@@ -1272,6 +1272,11 @@
    "basis": "a directory feature level: no clause in the knowledge base names it, so it is not cited under a framework",
    "rules": []
   },
+  "AD_FUNCTIONAL_LEVEL_PRE2008": {
+   "clauses": [],
+   "basis": "a directory feature level: no clause in the knowledge base names it, so it is not cited under a framework",
+   "rules": []
+  },
   "KRBTGT_KEY_OLD": {
    "clauses": [],
    "basis": "key or certificate lifecycle hygiene (rotation, deletion protection, inventory): no clause in the knowledge base requires it, so it is not cited under a framework",

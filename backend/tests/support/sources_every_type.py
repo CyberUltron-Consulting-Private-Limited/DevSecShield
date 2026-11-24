@@ -17,7 +17,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from backend.utilities.cbom_sources import classify as C
-from backend.utilities.cbom_sources.collections_view import Collection, SourcesRow, node_row
+from backend.utilities.cbom_sources.collections_view import Collection, SourcesRow, code_impacts, node_row
 
 OBSERVED = dt.datetime(2026, 11, 23, 9, 30, tzinfo=dt.timezone.utc)
 ACCOUNT = "111122223333"
@@ -358,9 +358,10 @@ def build() -> tuple[list[SourcesRow], list[Collection]]:
                 id=asset_id, asset_type=item["type"], cdx_type=judged["cdx_type"], name=item.get("name"),
                 algorithm=item.get("algorithm"), location=item["location"], key_size=item.get("key_size"),
                 protocol=item.get("protocol"), quantum_vulnerable=judged["quantum_vulnerable"], facts=item["facts"])
-            view = {"impact": judged["impact"], "finding_codes": judged["finding_codes"], "finding": judged["finding"]}
+            view = {"impact": judged["impact"], "finding_codes": judged["finding_codes"], "finding": judged["finding"],
+                    "impacts": judged["impacts"]}
             rows.append(SourcesRow(row=node_row(stored, collection, view), collection=collection,
                                    identity=f"node|{ref}|key|{index}", node_type=item["type"],
                                    target=item["location"], facts=dict(item["facts"]),
-                                   asset_key=f"{ref}-{index}"))
+                                   asset_key=f"{ref}-{index}", code_impacts=code_impacts(view)))
     return rows, collections

@@ -95,6 +95,10 @@ class SourcesRow:
     # the parts its standards statuses are judged on (classify.standards_parts): the team roll-up judges each
     # collection's CNSA 2.0 / FIPS 140-3 requirements on them (cbom_sources.frameworks, CB-16)
     standards_parts: tuple[tuple[str, Any, Any], ...] = field(default=(), compare=False, repr=False)
+    # code -> the impact the classifier gave that code on this asset (``classify.shown``'s ``impacts``): a code whose
+    # impact depends on the facts (a domain's functional level, a key's size) keeps it in the posture facts, so a
+    # deliverable's findings table never falls back to the KB default for it (#493 review 6032906354 M1)
+    code_impacts: dict[str, str] = field(default_factory=dict, compare=False, repr=False)
 
 
 # remediation status of a Sources finding (waves) -> the dashboard's finding status buckets
@@ -151,6 +155,17 @@ def _algorithm_type(node_type: str, cdx_type: str) -> str:
     if cdx_type == "algorithm":
         return "algorithm"
     return "configuration"
+
+
+def code_impacts(view: Mapping[str, Any]) -> dict[str, str]:
+    """The classifier's impact per code of a judged view (``classify.shown`` / ``classify.classify``), for the codes
+    the view shows; empty when the rules could not re-read the asset (``impacts`` None)."""
+    impacts = view.get("impacts")
+    if not isinstance(impacts, Mapping):
+        return {}
+    shown_codes = {c for c in view.get("finding_codes") or [] if isinstance(c, str)}
+    return {str(c): str(i) for c, i in impacts.items()
+            if c in shown_codes and i in ("Critical", "High", "Medium", "Low")}
 
 
 def node_row(asset: Any, collection: Collection, view: Mapping[str, Any]) -> dict[str, Any]:
@@ -261,7 +276,7 @@ def load_sources_result(session: Any, team_id: int, now: _dt.datetime | None = N
                                        target=asset.target, facts=dict(asset.facts or {}),
                                        asset_key=ID.stable_key("node", collection.source_ref, own),
                                        clause_evidence=CE.evidence_by_code(asset, rule_codes) if rule_codes else {},
-                                       standards_parts=_parts(asset)))
+                                       standards_parts=_parts(asset), code_impacts=code_impacts(view)))
     # the remediation status a finding has on the Sources pages (waves): open / in_progress / done / accepted_risk
     keys = list(dict.fromkeys(item.asset_key for item in out.rows))
     status: dict[str, str] = {}

@@ -563,6 +563,9 @@ def _kerberos(node_type: str, base: dict[str, Any], facts: dict[str, Any]) -> di
             if isinstance(accounts, Mapping) else {},
             "dc_operating_systems": [_text(v, 80) for v in systems[:20] if isinstance(v, str)]
             if isinstance(systems, list) else [],
+            # account searches the collector cut (MAX_COMPUTERS, a stop): its tally is then a lower bound
+            "truncated": [_text(v, 60) for v in facts["truncated"][:10] if isinstance(v, str)]
+            if isinstance(facts.get("truncated"), list) else [],
         })
         return base
     from backend.utilities.cbom_sources.classify_ext.ad import strongest_enctype  # the one enctype order
@@ -593,11 +596,14 @@ MAPPED_TYPES = frozenset(_LANES)
 
 def posture_fact(node_type: str, facts: Any, *, fact_id: str, name: Any = None, location: Any = None,
                  algorithm: Any = None, key_size: Any = None, impact: Any = None, finding_codes: Iterable[Any] = (),
-                 source_label: str = "", source_kind: str = "") -> dict[str, Any] | None:
+                 source_label: str = "", source_kind: str = "",
+                 code_impacts: Mapping[str, Any] | None = None) -> dict[str, Any] | None:
     """One stored Sources asset as a posture fact, or ``None`` when no posture register reads its type.  PURE.
 
     ``fact_id`` must be unique within the team view (``sources:<job>:<identity>``); ``source_label`` is printed in the
-    Source column ("Sources run #52 · AWS production"); the resource id goes in ``location``."""
+    Source column ("Sources run #52 · AWS production"); the resource id goes in ``location``.  ``code_impacts``: the
+    classifier's impact per code on this asset; kept for the fact's own codes (``code_impacts``), so a findings table
+    states the impact the asset was judged at, not the KB default (#493 review 6032906354 M1)."""
     if node_type not in MAPPED_TYPES:
         return None
     data = _facts(facts)
@@ -607,6 +613,9 @@ def posture_fact(node_type: str, facts: Any, *, fact_id: str, name: Any = None, 
     base = _base(node_type, fact_id=fact_id, kind=node_type, provider=provider, native=node_type, name=title,
                  location=where, source_label=source_label, impact=impact, codes=list(finding_codes or ()),
                  facts=data, lane=_LANES[node_type])
+    if isinstance(code_impacts, Mapping):
+        base["code_impacts"] = {code: str(code_impacts[code]) for code in base["finding_codes"]
+                                if code_impacts.get(code) in ("Critical", "High", "Medium", "Low")}
     if node_type in ("kms_key", "managed_key"):
         base["kind"] = "kms_key"
         return _key(node_type, base, data, algorithm, key_size)
