@@ -2229,15 +2229,26 @@ _EVIDENCE_FONT = "DssEvidenceNotoSans"
 
 
 def _evidence_font() -> Tuple[str, Any]:
-    """The vendored Noto Sans (report_fonts' Latin face file) registered as a plain TrueType font: evidence is drawn
-    unshaped, so it needs no HarfBuzz; ReportLab embeds only the glyphs used. Returns (font name, its cmap)."""
+    """The font that draws non-cp1252 evidence: report_fonts' Latin face (vendored Noto Sans) when HarfBuzz is
+    installed, as in production and CI; otherwise the same file as a plain TrueType font under its own name.
+
+    Registering the plain font next to report_fonts' face (same file) broke report_fonts' registration in the same
+    process (CI backend job: test_report_fonts), so the plain font is only the fallback where report_fonts cannot
+    register at all. Returns (font name, its cmap)."""
+    import importlib.util
+
     from reportlab.pdfbase import pdfmetrics
+
+    from backend.utilities.pdf import report_fonts
+
+    if importlib.util.find_spec("uharfbuzz") is not None:
+        report_fonts.ensure_registered()
+        name = report_fonts.FACES[(report_fonts.LATIN, False)]
+        return name, pdfmetrics.getFont(name).face.charToGlyph
     from reportlab.pdfbase.ttfonts import TTFont
 
-    from backend.utilities.pdf.report_fonts import FONT_DIR
-
     if _EVIDENCE_FONT not in pdfmetrics.getRegisteredFontNames():
-        pdfmetrics.registerFont(TTFont(_EVIDENCE_FONT, str(FONT_DIR / "NotoSans-Regular.ttf")))
+        pdfmetrics.registerFont(TTFont(_EVIDENCE_FONT, str(report_fonts.FONT_DIR / "NotoSans-Regular.ttf")))
     return _EVIDENCE_FONT, pdfmetrics.getFont(_EVIDENCE_FONT).face.charToGlyph
 
 

@@ -187,14 +187,15 @@ def test_non_ascii_evidence_is_drawn_or_escaped_never_a_black_box():
     from reportlab.platypus import Preformatted
     from reportlab.platypus import XPreformatted
 
-    from backend.utilities.pdf.report_branding import _code_markup, evidence_flowable, get_report_styles
+    from backend.utilities.pdf.report_branding import _code_markup, _evidence_font, evidence_flowable, get_report_styles
 
     style = get_report_styles()["code"]
     assert isinstance(evidence_flowable("x = 1  # plain", style), Preformatted)
     flow = evidence_flowable('"""Paroladan şifreleme anahtarı türet 🔑"""', style)
     assert isinstance(flow, XPreformatted)
     markup = _code_markup('şı 🔑 <redacted:21>', style)
-    assert '<font face="DssEvidenceNotoSans">ş</font>' in markup and '<font face="DssEvidenceNotoSans">ı</font>' in markup
+    face, _glyphs = _evidence_font()  # report_fonts' Noto Sans with HarfBuzz (CI), the plain fallback without
+    assert f'<font face="{face}">ş</font>' in markup and f'<font face="{face}">ı</font>' in markup
     assert "\\U0001f511" in markup  # no glyph in the report fonts: a visible escape
     assert "&lt;redacted:21&gt;" in markup
 
