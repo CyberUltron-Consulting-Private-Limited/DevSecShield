@@ -654,7 +654,7 @@ def test_the_products_own_import_counts_each_certificate_once(exported, tmp_path
 def test_every_component_has_a_pqc_class(exported):
     for comp in _assets(exported["doc"]):
         assert _one(comp, "zs:pqc_class") in ("quantum-vulnerable", "hybrid", "quantum-safe", "grover-weakened",
-                                              "not-applicable", "unknown")
+                                              "not-applicable", "unknown", "deprecated")  # pc-3
 
 
 def _strip(component: dict) -> dict:

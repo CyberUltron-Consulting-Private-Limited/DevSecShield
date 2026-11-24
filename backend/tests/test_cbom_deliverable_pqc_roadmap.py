@@ -39,6 +39,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from backend.utilities.cbom_sources import pqc_targets as PQT  # noqa: E402
 from backend.utilities.dashboard.cbom_team_rollup import (  # noqa: E402
     AssetAgg,
     ScanHead,
@@ -74,6 +75,9 @@ FAMILY_SIGNATURE = "ML-DSA (FIPS 204) / SLH-DSA (FIPS 205)"
 FAMILY_KEM = "ML-KEM (FIPS 203)"
 SIZED_768 = "ML-KEM-768 (FIPS 203) / ML-DSA-65 (FIPS 204)"
 UNAVAILABLE = "not available \u2014 legacy scan"
+# SOW D13 (audit A-02 / A-16): the target follows the asset's function (pqc_targets, names from algid), legacy rows too
+KE, SIG = PQT.table()["key_establishment"], PQT.table()["signature"]
+KE_CELL, SIG_CELL = PQT.cell_text(KE), PQT.cell_text(SIG)
 ORDER_NOTE = "Order = current scanner impact, not a migration sequence."
 PAYMENTS = "github.com/e2e-demo/payments-service (main)"
 PQC_PILOT = "github.com/e2e-demo/pqc-pilot (release)"
@@ -85,8 +89,8 @@ ROADMAP_HEADERS = [
     "Key/curve",
     "Classical strength (bits)",
     "NIST QSL",
-    "Target family",
-    "Sized target",
+    "Function",
+    "NIST PQ target",
     "Impact",
     "Where found",
     "Seen",
@@ -95,12 +99,15 @@ ROADMAP_HEADERS = [
     "Owner / status (assessor)",
 ]
 TIMELINE_HEADERS = ["When", "Milestone", "Status", "Source", "Source URL"]
-FAMILY_HEADERS = ["Target family", "Primitive", "Occurrences", "Sources"]
+FAMILY_HEADERS = ["Function", "NIST PQ target", "CNSA 2.0", "Reference", "Assets", "Sources"]
 LEVEL_HEADERS = ["NIST quantum security level", "Occurrences", "Of which hybrid"]
 URL_PQC = "https://www.nist.gov/pqcrypto"
-URL_IR8547 = "https://csrc.nist.gov/pubs/ir/8547/final"  # FIX-A3: the final IR 8547 (27 Oct 2026), from the KB
+# PR #490 review M4: every IR 8547 status, date and URL comes from the ONE KB entry (pqc_context.nist_ir_8547), final
+_IR = PQT.ir8547()
+URL_IR8547 = _IR["url"]
 URL_CNSA = "https://media.defense.gov/2025/May/30/2003728741/-1/-1/0/CSA_CNSA_2.0_ALGORITHMS.PDF"
-IR8547 = "NIST IR 8547 (final, 2026)"
+IR8547 = _IR["citation"]
+IR_STATUS = "FINAL" if _IR["status"] == "final" else "DRAFT"
 TIMELINE_ROWS = [
     (
         "Aug 2024",
@@ -110,26 +117,28 @@ TIMELINE_ROWS = [
         "NIST post-quantum cryptography project",
         URL_PQC,
     ),
+    *(
+        [(
+            roadmap._month(str(_IR["published"])),
+            f"{IR8547} published: the transition timeline for quantum-vulnerable public-key algorithms (RSA, ECDSA, "
+            "EdDSA, finite-field and elliptic-curve Diffie-Hellman and MQV).",
+            IR_STATUS,
+            IR8547,
+            URL_IR8547,
+        )] if len(str(_IR.get("published") or "")) >= 7 else []
+    ),
     (
-        "Oct 2026",
-        "NIST IR 8547 (final, 2026) published: the transition timeline for quantum-vulnerable public-key "
-        "algorithms (RSA, ECDSA, EdDSA, finite-field and elliptic-curve Diffie-Hellman and MQV).",
-        "FINAL",
+        f"After {_IR['deprecated_after']}",
+        f"Under {IR8547}, quantum-vulnerable public-key algorithms are deprecated from 112 bits of security strength "
+        "upward (for example RSA-2048, ECDSA P-256 and Ed25519).",
+        IR_STATUS,
         IR8547,
         URL_IR8547,
     ),
     (
-        "After 2030",
-        "Under NIST IR 8547 (final, 2026), quantum-vulnerable public-key algorithms are deprecated from 112 "
-        "bits of security strength upward (for example RSA-2048, ECDSA P-256 and Ed25519).",
-        "FINAL",
-        IR8547,
-        URL_IR8547,
-    ),
-    (
-        "After 2035",
-        "Under NIST IR 8547 (final, 2026), all quantum-vulnerable public-key algorithms are disallowed.",
-        "FINAL",
+        f"After {_IR['disallowed_after']}",
+        f"Under {IR8547}, all quantum-vulnerable public-key algorithms are disallowed.",
+        IR_STATUS,
         IR8547,
         URL_IR8547,
     ),
@@ -142,9 +151,7 @@ TIMELINE_ROWS = [
         URL_CNSA,
     ),
 ]
-TIMELINE_FOOTNOTE = (
-    "NIST IR 8547 (final, 2026) was published in final form on 27 Oct 2026. FIPS 203, 204 and 205 are final."
-)
+TIMELINE_FOOTNOTE = roadmap.timeline_footnote()
 # (algorithm, key, strength, source, path, impact, sized): the 5 rows of team 1, in print order
 # (impact rank, key size, name, then source label).
 FIXTURE_ROWS = [
@@ -171,6 +178,7 @@ FIXTURE_KPIS = {
     "Distinct kinds": "2",
     # round 5 (G3): 3DES-CBC, AES-ECB, MD5, RC4 (x2 repos) are "Broken today", not quantum-safe: 23 / (23 + 8 + 5)
     "Quantum readiness": "63.9%",  # was 86.1% (31 / 36) while broken algorithms counted as safe
+    "Broken today": "8",  # PR #490 review: the readiness formula's third operand is printed
     "Quantum-safe": "23",
     "Hybrid": "2",
     "Not gradeable": "0",
@@ -702,9 +710,11 @@ def test_build_pdf_is_a_landscape_pdf_with_its_own_identity(team_view, team_pdf,
     assert info_field(team_pdf, "Author") == "DevSecShield CBOM engine"
     assert "CBOM PQC Migration Roadmap" in team_text  # its OWN footer label ...
     assert "SAST Report" not in team_text  # ... never the fallback one
-    match = re.search(r"CBOM-D13-T1-20261019-([0-9a-f]{8})", team_text)  # SOW D13
+    # SOW Table 7 D13 (PR #485: the registry prints SOW IDs as two digits); the ID reads the document digest, which
+    # equals the scan fingerprint only while the view carries no profile, metadata or register
+    match = re.search(r"CBOM-D13-T1-20261019-([0-9a-f]{8})", team_text)
     assert match, "Document ID missing"
-    assert match.group(1) == team_view.fingerprint[:8]
+    assert match.group(1) == team_view.document_digest[:8]
 
 
 def test_shell_basis_box_reports_the_appendix_b_scan_counts(team_text):
@@ -734,7 +744,7 @@ def test_sections_are_numbered_in_the_planned_order(team_body):
     assert section_titles(team_body) == [
         "1 Summary",
         "2 Regulatory timeline",
-        "3 Target families",
+        "3 NIST post-quantum targets by function",
         "4 Per-asset roadmap",
         "5 Already quantum-safe and hybrid",
         "6 Notes",
@@ -783,28 +793,28 @@ def test_roadmap_has_exactly_five_rows_in_print_order(team_body):
         assert key in row[col["Key/curve"]]
         assert row[col["Classical strength (bits)"]] == strength
         assert row[col["NIST QSL"]] == "0"
-        assert row[col["Target family"]] == FAMILY_PKE
-        assert row[col["Sized target"]] == sized
+        assert row[col["Function"]] == KE["usage_label"].split(" (")[0]
+        assert squash(row[col["NIST PQ target"]]) == squash(KE_CELL)
         assert row[col["Impact"]] == impact
         assert source in row[col["Where found"]]
         assert path in row[col["Where found"]]
 
 
-def test_three_rows_carry_a_sized_target_and_two_legacy_rows_say_not_available(team_body):
+def test_every_row_carries_the_target_of_its_function_legacy_rows_included(team_body):
+    """SOW D13: the target follows the function (pke = key establishment), so a legacy (Tier B) row no longer reads
+    "not available": the legacy scan lacks the engine's sized target, not the asset's function."""
     (table,) = roadmap_tables(team_body)
-    sized = [row[ROADMAP_HEADERS.index("Sized target")] for row in data_rows(table)]
-    assert sized.count(SIZED_768) == 3
-    assert sized.count(UNAVAILABLE) == 2
+    targets = [squash(row[ROADMAP_HEADERS.index("NIST PQ target")]) for row in data_rows(table)]
+    assert targets == [squash(KE_CELL)] * 5
     where = [row[ROADMAP_HEADERS.index("Where found")] for row in data_rows(table)]
-    legacy_rows = [w for w, s in zip(where, sized, strict=True) if s == UNAVAILABLE]
-    assert len(legacy_rows) == 2
-    assert all(LEGACY in w for w in legacy_rows)  # exactly the legacy-billing (Tier B) source
+    assert sum(LEGACY in w for w in where) == 2
 
 
-def test_sized_and_unavailable_wording_reaches_the_pdf(team_text):
+def test_the_old_dual_constant_and_unavailable_wording_are_gone(team_text):
     flat = squash(team_text)
-    assert flat.count(squash(SIZED_768)) == 3  # one per full-fidelity row, nowhere else
-    assert flat.count(squash(UNAVAILABLE)) == 2  # one per legacy row, nowhere else
+    assert squash(SIZED_768) not in flat  # one dual "KEM / DSA" constant for every row (audit A-16)
+    assert squash(UNAVAILABLE) not in flat
+    assert flat.count(squash(KE["target"])) >= 5
 
 
 def test_seen_column_shows_first_last_and_scan_count(team_body):
@@ -933,40 +943,35 @@ def test_algorithms_without_a_quantum_status_are_counted_apart_and_never_listed(
 # ---------------------------------------------------------------------------------------------
 # Target families (exact strings)
 # ---------------------------------------------------------------------------------------------
-def test_target_family_strings_are_exact_per_primitive(mixed_body):
-    families = {
-        (r[0], r[1]): r[2:] for t in find_tables(mixed_body, FAMILY_HEADERS) for r in data_rows(t)
-    }
+def test_target_strings_follow_the_function_of_each_primitive(mixed_body):
+    families = {r[0]: r[1:] for t in find_tables(mixed_body, FAMILY_HEADERS) for r in data_rows(t)}
+    unknown = PQT.cell_text(None)
     assert families == {
-        (FAMILY_PKE, "pke"): ["5", "1"],
-        (FAMILY_SIGNATURE, "signature"): ["2", "1"],
-        (FAMILY_KEM, "key-agree"): ["1", "1"],
-        (FAMILY_KEM, "kem"): ["1", "1"],
-        (UNAVAILABLE, "other"): ["1", "1"],  # a legacy row without a family is never invented
+        KE["usage_label"]: [KE["target_text"], KE["cnsa_target"], KE["reference"], "7", "1"],  # pke, key-agree, kem
+        SIG["usage_label"]: [SIG["target_text"], SIG["cnsa_target"], SIG["reference"], "2", "1"],
+        "not recorded": [unknown, DASH, DASH, "1", "1"],  # no primitive: a target is never invented
     }
-    order = [r[1] for t in find_tables(mixed_body, FAMILY_HEADERS) for r in data_rows(t)]
-    assert order == ["pke", "signature", "key-agree", "kem", "other"]
     per_row = [
-        r[ROADMAP_HEADERS.index("Target family")]
+        squash(r[ROADMAP_HEADERS.index("NIST PQ target")])
         for t in roadmap_tables(mixed_body)
         for r in data_rows(t)
     ]
-    assert per_row == ([FAMILY_PKE] * 5 + [FAMILY_SIGNATURE] * 2 + [FAMILY_KEM] * 2 + [UNAVAILABLE])
+    ke, sig = squash(KE_CELL), squash(SIG_CELL)
+    assert per_row == [ke] * 5 + [sig] * 2 + [ke] * 2 + [squash(unknown)]
 
 
-def test_family_summary_of_team_1_is_one_family_over_three_sources(team_body):
+def test_function_summary_of_team_1_is_one_function_over_three_sources(team_body):
     (table,) = find_tables(team_body, FAMILY_HEADERS)
-    assert data_rows(table) == [[FAMILY_PKE, "pke", "5", "3"]]
+    assert data_rows(table) == [[KE["usage_label"], KE["target_text"], KE["cnsa_target"], KE["reference"], "5", "3"]]
 
 
-def test_a_legacy_row_without_a_sized_target_says_so_and_a_current_format_gap_says_not_recorded():
+def test_a_legacy_row_still_prints_dashes_for_what_the_engine_did_not_record():
     legacy = algo("RSA-2048", tier="B", sized=None, bits=None, level=None, ident="b")
     gap = algo("RSA-3072", key_size="3072", tier="A", sized=None, ident="g")
     view = make_view([legacy, gap])
     rows = {r[1]: r for r in data_rows(roadmap_tables(body_of(view))[0])}
-    sized = ROADMAP_HEADERS.index("Sized target")
-    assert rows["RSA-2048"][sized] == UNAVAILABLE
-    assert rows["RSA-3072"][sized] == "not recorded"
+    target = ROADMAP_HEADERS.index("NIST PQ target")
+    assert squash(rows["RSA-2048"][target]) == squash(rows["RSA-3072"][target]) == squash(KE_CELL)
     assert rows["RSA-2048"][ROADMAP_HEADERS.index("NIST QSL")] == DASH
     assert rows["RSA-2048"][ROADMAP_HEADERS.index("Classical strength (bits)")] == DASH
 
@@ -1006,17 +1011,21 @@ def test_every_timeline_url_stays_on_one_line_and_is_not_a_link_annotation(
 
 def test_timeline_covers_every_authored_row(team_body):
     (table,) = find_tables(team_body, TIMELINE_HEADERS)
-    assert len(data_rows(table)) == len(text.PQC_TIMELINE_ROWS) == 5
+    # the authored non-IR-8547 rows plus the IR 8547 rows the KB entry gives (PR #490 review M4)
+    assert len(data_rows(table)) == len(roadmap.timeline_rows()) == len(TIMELINE_ROWS)
+    assert sum(1 for r in text.PQC_TIMELINE_ROWS if "8547" not in r.source) == 2
 
 
-def test_ir_8547_is_always_the_final_kb_citation_and_the_engine_sentence_is_never_printed(team_text):
-    # FIX-A3 (SOW audit A-05): NIST IR 8547 is final (27 Oct 2026); every mention is the KB's citation
+def test_ir_8547_is_always_the_kb_status_and_the_engine_sentence_is_never_printed(team_text):
+    # PR #490 review M4: NIST IR 8547 is final; no mention is a draft or the /ipd URL
     flat = norm(team_text)
     mentions = list(re.finditer(r"NIST IR 8547", flat))
-    assert len(mentions) >= 5  # timeline rows + the footnote
+    assert len(mentions) >= 4  # timeline rows + the footnote
+    assert _IR["status"] == "final"
     for mention in mentions:
-        window = flat[mention.start() : mention.start() + 60]
-        assert window.startswith("NIST IR 8547 (final, 2026)") and "draft" not in window, window
+        window = flat[max(0, mention.start() - 60) : mention.start() + 80]
+        assert "draft" not in window.lower() and "/ipd" not in window, window
+    assert "initial public draft" not in flat
     # the engine constant over-simplifies (RSA/ECC/DH after 2030) and rows embed it (D-06)
     assert "RSA/ECC/DH" not in team_text
     assert "SP 1800-38" not in team_text
@@ -1035,7 +1044,7 @@ def test_order_note_is_printed_inside_the_roadmap_section(team_text):
 
 def test_notes_explain_readiness_and_the_dash_and_the_manual_fields(team_text):
     flat = norm(team_text)
-    assert "Readiness = quantum-safe / (quantum-safe + quantum-vulnerable)" in flat
+    assert "Readiness = quantum-safe / (quantum-safe + broken today + quantum-vulnerable)" in flat
     assert "A dash (\u2014) means the value is not recorded" in flat
     assert "it does not sequence the migration" in flat
     assert "not de-duplicated across sources" in flat
@@ -1082,7 +1091,7 @@ def test_no_quantum_safe_occurrence_prints_a_sentence_not_an_empty_table():
     body = body_of(view)
     assert find_tables(body, LEVEL_HEADERS) == []
     out = pdf_full_text(roadmap.build_pdf(view))
-    assert has(out, "No quantum-safe algorithm occurrences are recorded")
+    assert has(out, "No quantum-safe asset is recorded")
 
 
 # =============================================================================================
@@ -1178,12 +1187,12 @@ def test_legacy_only_team_shows_the_reduced_fidelity_banner_and_no_sized_targets
     assert (view.fidelity_full, view.fidelity_reduced) == (0, 1)
     body = body_of(view)
     (table,) = roadmap_tables(body)
-    sized = {r[ROADMAP_HEADERS.index("Sized target")] for r in data_rows(table)}
-    assert sized == {UNAVAILABLE}
+    targets = {squash(r[ROADMAP_HEADERS.index("NIST PQ target")]) for r in data_rows(table)}
+    assert targets == {squash(KE_CELL)}  # the function is known even where the legacy scan has no sized target
     assert len(data_rows(table)) == 2
     out = pdf_full_text(roadmap.build_pdf(view))
     assert "REDUCED-FIDELITY DATA" in out
-    assert squash(out).count(squash(UNAVAILABLE)) == 2
+    assert squash(UNAVAILABLE) not in squash(out)
 
 
 # =============================================================================================
@@ -1206,7 +1215,7 @@ def test_previously_seen_appendix_lists_the_resolved_asset_only(history_view):
     assert section_titles(body) == [
         "1 Summary",
         "2 Regulatory timeline",
-        "3 Target families",
+        "3 NIST post-quantum targets by function",
         "4 Per-asset roadmap",
         "5 Already quantum-safe and hybrid",
         "6 Previously seen, not in latest scan",
@@ -1233,7 +1242,7 @@ def test_previously_seen_assets_are_excluded_from_every_count(history_view):
     assert cards["Distinct kinds"][0] == "1"
     assert cards["Quantum readiness"][0] == "50.0%"  # 1 safe / (1 safe + 1 vulnerable)
     (families,) = find_tables(body_of(history_view), FAMILY_HEADERS)
-    assert data_rows(families) == [[FAMILY_PKE, "pke", "1", "1"]]
+    assert data_rows(families) == [[KE["usage_label"], KE["target_text"], KE["cnsa_target"], KE["reference"], "1", "1"]]
 
 
 def test_previously_seen_title_and_explanation_reach_the_pdf(history_view):
@@ -1262,14 +1271,14 @@ def test_small_tables_stay_whole_on_one_page(team_view, history_view):
     """A 5-row table must not strand its last row (and a repeated header) on the next page."""
     for view in (team_view, history_view):
         pages = pdf_pages_text(roadmap.build_pdf(view))
-        levels = [p for p in pages if "NIST quantum security level" in p]
+        levels = [p for p in pages if "Of which hybrid" in p]  # the level table's own header
         assert len(levels) == 1
         assert "Total quantum-safe" in levels[0]
         timeline = [p for p in pages if "Source URL" in p]
         assert len(timeline) == 1
         assert URL_CNSA in timeline[0]
         assert has(timeline[0], TIMELINE_FOOTNOTE)
-        families = [p for p in pages if "Target family" in p and "Primitive" in p]
+        families = [p for p in pages if "NIST PQ target" in p and "CNSA 2.0" in p and "Reference" in p]
         assert len(families) == 1
         notes = [p for p in pages if "Readiness = quantum-safe" in p]
         assert len(notes) == 1
@@ -1430,6 +1439,7 @@ def test_module_imports_only_stdlib_reportlab_and_the_allowed_backend_modules():
     allowed_backend = (
         "backend.utilities.pdf",
         "backend.utilities.dashboard.cbom_team_rollup",
+        "backend.utilities.cbom_sources.pqc_targets",  # pure: the KB target table resolved through algid
     )
     seen: list[str] = []
     for node in ast.walk(_module_tree()):

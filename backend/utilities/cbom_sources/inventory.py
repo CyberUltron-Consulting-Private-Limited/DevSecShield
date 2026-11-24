@@ -178,7 +178,7 @@ def list_assets(session: Session, *, team_id: int, run_id: int | None = None, jo
     names = _source_names(session, team_id, list(jobs))
     job_names = {j.id: names.get(j.source_id or 0) or (j.params or {}).get("source_name") for j in jobs}
     grading = QG.load_context(session, team_id=team_id, run_id=run_id, job_id=job_id, risk_model=risk_model)
-    pqcs = {r.id: POSTURE.classify_pqc(r, list(views[r.id]["finding_codes"]), elsewhere=grading.elsewhere)
+    pqcs = {r.id: POSTURE.graded_class(r, list(views[r.id]["finding_codes"]), elsewhere=grading.elsewhere)
             for r in rows}  # the class the list shows is the one the grade reads (CB-18 OB-1)
     grades = {r.id: grading.grade_row(r, views[r.id]["finding_codes"], explain=False, cls=pqcs[r.id][0]).fields()
               for r in rows}
@@ -801,7 +801,7 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
     facts = row.facts or {}
     view = view or shown(row)
     ref = f"zs-asset-{row.id}"
-    pqc = POSTURE.classify_pqc(row, list(view["finding_codes"]), elsewhere=elsewhere)
+    pqc = POSTURE.graded_class(row, list(view["finding_codes"]), elsewhere=elsewhere)
     # one "unknown" per document (OB-7): a verdict-less row reads unknown only when its class is unknown
     qv_text = str(row.quantum_vulnerable).lower() if row.quantum_vulnerable is not None else (
         "unknown" if pqc[0] == "unknown" else "not-applicable")

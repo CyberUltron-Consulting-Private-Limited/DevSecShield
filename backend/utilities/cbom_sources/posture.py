@@ -49,13 +49,16 @@ CRITICALITY = {"low": 0.5, "medium": 1.0, "high": 1.5, "critical": 2.0}
 # neutral (1.0), so a missing exposure fact never LOWERS a risk; only a positive internet signal raises it.
 EXPOSURE_FACTOR = {"internet": 1.5, "internal": 1.0, "unknown": 1.0}
 EXPOSURES = tuple(EXPOSURE_FACTOR)
-PQC_CLASSES = ("quantum-vulnerable", "hybrid", "quantum-safe", "grover-weakened", "unknown", "not-applicable")
+PQC_CLASSES = ("quantum-vulnerable", "hybrid", "quantum-safe", "grover-weakened", "unknown", "not-applicable",
+               "deprecated")
 # the classes with a quantum verdict: the readiness denominator (``unknown`` and ``not-applicable`` are outside it)
 JUDGED_CLASSES = ("quantum-vulnerable", "hybrid", "quantum-safe", "grover-weakened")
 # Bumped whenever a class rule changes: the export serial and ``zs:pqc_class_model`` carry it, so a re-export whose
 # classes changed is a new BOM (CB-18 ST-A). pc-1: dev before CB-18; pc-2: the ``unknown`` class, hybrid only with an
 # identified post-quantum component, the read-elsewhere rule.
-PQC_CLASS_MODEL = "pc-2"
+# pc-3: ``deprecated`` (SOW D12): a not-applicable asset whose algorithm NIST SP 800-131A disallows (DES, Triple DES,
+# RC4, MD5 ...) is shown in the class the quantum risk grade reads (``graded_class``), on every surface.
+PQC_CLASS_MODEL = "pc-3"
 
 # Why an asset has its class (``pqc_class_basis``): one code per rule of ``classify_pqc``, with the sentence the drawer,
 # the export and the posture card show.
@@ -86,6 +89,9 @@ CLASS_BASIS: dict[str, tuple[str, str]] = {
     "kex_judged_elsewhere": ("not-applicable", "The key exchange is judged on another row (the database's TLS endpoint, "
                                                "the gateway's first IKE port) or is outside this source (ingress)"),
     "read_elsewhere": ("not-applicable", "Another collector of the same run read this object and judged it"),
+    "sp800_131a_disallowed": ("deprecated", "No public-key algorithm, and NIST SP 800-131A disallows the algorithm "
+                                            "(DES, Triple DES, RC4, MD5 ...): outside readiness, graded separately "
+                                            "(Q1 internet-facing, else Q2)"),
 }
 _CERT_TYPES = frozenset({"certificate", "k8s_tls_secret", "iam_certificate", "cloud_ca", "k8s_certificate",
                          "ca_authority", "public_key"})
@@ -320,8 +326,10 @@ def readiness(classes: Mapping[str, int]) -> tuple[float | None, dict[str, Any]]
     judged = sum(int(classes.get(c, 0) or 0) for c in JUDGED_CLASSES)
     vulnerable = int(classes.get("quantum-vulnerable", 0) or 0)
     unknown = int(classes.get("unknown", 0) or 0)
+    deprecated = int(classes.get("deprecated", 0) or 0)  # no public key, SP 800-131A disallowed: outside readiness
     basis = {"judged": judged, "ready": judged - vulnerable, "unknown": unknown,
-             "not_applicable": int(classes.get("not-applicable", 0) or 0), "status": "ok"}
+             "not_applicable": int(classes.get("not-applicable", 0) or 0) + deprecated, "deprecated": deprecated,
+             "status": "ok"}
     if unknown > judged:
         basis["status"] = "not_enough_identified"
         return None, basis
@@ -395,18 +403,33 @@ def run_class_summary(session: Session, *, team_id: int, run_id: int) -> dict[st
     class reads (``DISK_XTS_128``) is never date-based."""
     cols = (CbomCollectedAsset.id, CbomCollectedAsset.job_id, CbomCollectedAsset.asset_type,
             CbomCollectedAsset.target, CbomCollectedAsset.location, CbomCollectedAsset.algorithm,
-            CbomCollectedAsset.quantum_vulnerable, CbomCollectedAsset.facts, CbomCollectedAsset.finding_codes)
+            CbomCollectedAsset.quantum_vulnerable, CbomCollectedAsset.facts, CbomCollectedAsset.finding_codes,
+            CbomCollectedAsset.key_size)
     query = select(*cols).where(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run_id,
                                 CbomCollectedAsset.asset_type != "coverage").order_by(CbomCollectedAsset.id)
     names = ("id", "job_id", "asset_type", "target", "location", "algorithm", "quantum_vulnerable", "facts",
-             "finding_codes")
+             "finding_codes", "key_size")
     rows = [dict(zip(names, r)) for r in session.exec(query).all()]
     elsewhere = JudgedElsewhere(rows)
-    classes: Counter[str] = Counter(classify_pqc(r, list(r["finding_codes"] or []), elsewhere=elsewhere)[0]
+    classes: Counter[str] = Counter(graded_class(r, list(r["finding_codes"] or []), elsewhere=elsewhere)[0]
                                     for r in rows)
     pct, basis = readiness(classes)
     return {"assets": len(rows), "pqc_classes": {c: classes.get(c, 0) for c in PQC_CLASSES},
             "pqc_readiness_pct": pct, "readiness_basis": basis, "pqc_class_model": PQC_CLASS_MODEL}
+
+
+def graded_class(row: Any, codes: list[str], *, elsewhere: Any = None) -> tuple[str, str]:
+    """(class, basis) as every surface shows it and as the quantum risk grade reads it: ``classify_pqc``, except that
+    a not-applicable asset whose algorithm SP 800-131A disallows is ``deprecated`` (``qgrade.graded_pqc_class``)."""
+    from types import SimpleNamespace
+
+    from backend.utilities.cbom_sources import qgrade as QG
+
+    cls, basis = classify_pqc(row, codes, elsewhere=elsewhere)
+    if cls != "not-applicable":
+        return cls, basis
+    probe = SimpleNamespace(**row) if isinstance(row, dict) else row
+    return ("deprecated", "sp800_131a_disallowed") if QG.disallowed_now(probe) else (cls, basis)
 
 
 def hndl(asset_type: str, quantum_vulnerable: bool | None) -> bool:
@@ -553,7 +576,7 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
         if a_type == "coverage":
             grades.add(row, a_codes)
             continue
-        cls, basis = classify_pqc(row, a_codes, elsewhere=elsewhere)
+        cls, basis = graded_class(row, a_codes, elsewhere=elsewhere)
         classes[cls] += 1
         bases[basis] += 1
         if cls == "quantum-vulnerable":
@@ -710,10 +733,10 @@ def asset_detail(row: CbomCollectedAsset, source: CbomCollectionSource | None, *
     sibling = None
     if session is not None and row.run_id is not None:
         lookup = JudgedElsewhere(session=session, team_id=row.team_id, run_id=row.run_id)
-        pqc_class_value, pqc_basis = classify_pqc(row, codes, elsewhere=lookup)
+        pqc_class_value, pqc_basis = graded_class(row, codes, elsewhere=lookup)
         sibling = lookup(row) if pqc_basis == "read_elsewhere" else None
     else:
-        pqc_class_value, pqc_basis = classify_pqc(row, codes)
+        pqc_class_value, pqc_basis = graded_class(row, codes)
     exposure, exposure_basis = asset_exposure(facts, row.target, row.location, override=meta["exposure"],
                                               node_segment=meta["segment"])
     return {

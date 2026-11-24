@@ -4472,15 +4472,25 @@ export interface CbomRiskModel {
     data_shelf_life_years: number | null
     migration_years: number | null
     threat_years: number | null
+    /** D13: days from the assessment to fix each wave's classical weaknesses (null or absent: 90 / 180 / 365) */
+    wave1_fix_days?: number | null
+    wave2_fix_days?: number | null
+    wave3_fix_days?: number | null
 }
 
+/** "deprecated" (class model pc-3, SOW D12): no public-key algorithm and NIST SP 800-131A disallows the algorithm (DES,
+ * Triple DES, RC4, MD5 ...): outside readiness like "not-applicable", graded separately (Q1 Critical internet-facing, else Q2 High). */
 export type CbomPqcClass = "quantum-vulnerable" | "hybrid" | "quantum-safe" | "grover-weakened" | "unknown" | "not-applicable"
+    | "deprecated"
 /** What a PQC readiness percentage rests on (CB-18): it is withheld when more assets are unknown than judged. */
 export interface CbomReadinessBasis {
     judged: number
     ready: number
     unknown: number
+    /** not-applicable plus deprecated: both are outside readiness */
     not_applicable: number
+    /** of which SP 800-131A-disallowed with no public key (class model pc-3); older servers send none */
+    deprecated?: number
     status: "ok" | "not_enough_identified" | "nothing_judged"
 }
 
@@ -4499,7 +4509,7 @@ export interface CbomReadinessAction {
 }
 
 export interface CbomReadinessExcluded {
-    class: "unknown" | "not-applicable"
+    class: "unknown" | "not-applicable" | "deprecated"
     basis: string
     assets: number
     text: string

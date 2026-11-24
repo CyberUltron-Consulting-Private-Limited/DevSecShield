@@ -31,6 +31,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+import sqlalchemy as sa
 from sqlmodel import Session, select
 
 from backend.new_models import (
@@ -60,15 +61,29 @@ detail the product lists as absent: a cloud region or project with nothing enabl
 database), an address that answered on no probed port.
 Inputs per item:
   class      = the PQC class of the asset (quantum-vulnerable | hybrid | quantum-safe | grover-weakened |
-               unknown | not-applicable), from the product's single class function.
+               unknown | not-applicable), from the product's single class function; an asset of class
+               not-applicable whose algorithm NIST SP 800-131A disallows (DES, Triple DES, RC4, MD5, Blowfish ...;
+               the standards module's sp800_131a status "disallowed") is class deprecated.
+  disallowed = NIST SP 800-131A disallows the asset's algorithm or key today (the same sp800_131a status; RSA or DSA
+               below 2048 bits, Triple DES, SHA-1 signatures ...), whatever its class.
+  correlation = the estate keyed the asset "not_correlated" (CB-21: its cross-source correlation is required and
+               absent); every surface reads the same estate key, so the run, the register and the CSV agree.
   fallback   = the asset is an endpoint of class hybrid or quantum-safe that also completes a classical-only key
                exchange (TLS 1.2 or older, static RSA key transport, a classical TLS 1.3 group it reports, a classical
                SSH key exchange). The grade uses the weakest configuration the endpoint accepts: rules 8 and 14-18.
   exposure   = internet | internal | unknown, from the product's single exposure function, except that a
                collector's internet-facing fact beats an "internal" or "unknown" set on the source.
   anchor     = the asset is a CA certificate (basicConstraints CA true) or a CA (cloud CA, AD CS / Vault CA).
-  X          = the asset's source "data must stay secret for (years)" if set, else the team's X.
-  Y, Z       = the team's migration years and years until a cryptographically relevant quantum computer.
+  X          = the asset's source "data must stay secret for (years)" if set, else the team's X, else the
+               default: 7 years, 10 when the source's business criticality is high or critical. The default X is a
+               ZeroShield planning assumption, not a published figure: no standard sets how long data must stay
+               secret; set it per source (C5) or for the team.
+  Y, Z       = the team's migration years and years until a cryptographically relevant quantum computer, else the
+               defaults: Y 5 years; Z the years from the grade's year to 2035 (9 in 2026): NIST IR 8547 disallows
+               quantum-vulnerable public-key algorithms after 2035, and the Global Risk Institute's Quantum Threat
+               Timeline 2025 has 19 of 26 experts above 5% within 10 years. Y and Z are configurable assumptions too.
+  assumed    = the inputs a default filled. A grade that read one is marked "default assumptions" until the team
+               (or the source) sets the value; the grade and reason are those of the rules below.
   provenance = observed (read by a collector), attested (evidence area or vendor), code (code scan).
   level      = E0..E3 of an attested item.
 Rules, first match wins:
@@ -79,7 +94,7 @@ Rules, first match wins:
   3. attested item at E1..E3 whose answer carries no class     -> no grade "attested_no_class"
   4. class unknown                                             -> Q0 "unknown_verdict"
   5. class not-applicable                                      -> no grade "not_applicable"
-  6. correlation required and absent                           -> Q0 "not_correlated"  (not produced by qg-1 runs)
+  6. correlation required and absent                           -> Q0 "not_correlated"
   7. class quantum-vulnerable and X, Y or Z not set            -> Q0 "mosca_missing"
   8. fallback and X, Y or Z not set                            -> Q0 "mosca_missing"
   9. class quantum-vulnerable and X + Y > Z and exposure internet -> Q1 "qv_exceeds_internet"
@@ -97,12 +112,18 @@ Rules, first match wins:
  21. class hybrid or quantum-safe, observed                    -> Q4 "pq_observed"
  22. class hybrid or quantum-safe, code                        -> Q4 "pq_code"
  23. class hybrid or quantum-safe, attested at E2 or E3        -> Q4 "pq_attested"
-Integers only; X, Y, Z in 0..100. A source X of 0 is a value (not "unset").
+ 24. class deprecated and exposure internet                    -> Q1 "deprecated_internet"
+ 25. class deprecated                                          -> Q2 "deprecated"
+Disallowed cap, after the rules: an asset that is disallowed and whose grade came from rules 7-23 takes the worse of
+that grade and rules 24-25 (Q1 "deprecated_internet" when exposure is internet, else Q2 "deprecated"); a Q0
+"mosca_missing" is replaced; on a tie the "deprecated" reason is kept. Rules 1-6 are never capped.
+Integers only; X, Y, Z in 0..100. A source X of 0 is a value (not "unset"). Rules 7 and 8 apply only where an input
+is still unset after the defaults (a caller grading without them).
 Network sources: unread scope of one source with the same status is one item, with a count and its addresses
 (targets the node folds into one summary row count under their own statuses).
 A missing X, Y or Z is one item ("inputs:mosca") with the count of the assets it leaves ungraded.
 """
-FORMULA_SHA256 = "e7778cae6c2b3d7468ff7874f532cde57db7d5d98804849623c70c35f17bc901"
+FORMULA_SHA256 = "22b3d0a7deb7034b36adb65f158e963318cd04328c85d49cb1b7f8465a9bab83"
 GRADE_MODEL = "qg-1"
 
 
@@ -118,7 +139,33 @@ GRADE_MODEL_VERSION = model_version(Path(__file__).read_bytes(), Path(P.__file__
 
 GRADES = ("Q0", "Q1", "Q2", "Q3", "Q4")
 LABELS = {"Q0": "Unknown", "Q1": "Critical", "Q2": "High", "Q3": "Medium", "Q4": "Low"}
-CLASSES = ("quantum-vulnerable", "hybrid", "quantum-safe", "grover-weakened", "unknown", "not-applicable")
+CLASSES = ("quantum-vulnerable", "hybrid", "quantum-safe", "grover-weakened", "unknown", "not-applicable", "deprecated")
+# SOW D12: the documented defaults when neither the source nor the team set a Mosca input (FORMULA_TEXT "Inputs")
+DEFAULT_X = 7
+DEFAULT_X_CRITICAL = 10  # business criticality high or critical
+DEFAULT_Y = 5
+# Z is anchored to a fixed year, never to "now plus N": NIST IR 8547 disallows quantum-vulnerable public-key algorithms
+# after 2035, so the default Z is the years left until then (9 in 2026) and does not drift every year
+DEFAULT_Z_YEAR = 2035
+DEFAULTS_TEXT = (f"X {DEFAULT_X} years ({DEFAULT_X_CRITICAL} for a high or critical source; a ZeroShield planning "
+                 f"assumption), Y {DEFAULT_Y} years, Z the years left until {DEFAULT_Z_YEAR}")
+# What X, Y and Z mean and where each default comes from, in one sentence (the D12 PDF, the CSV header note)
+MOSCA_DEFINITION = (
+    "X is how many years the data must stay secret, Y how many years the migration takes, Z how many years until a "
+    "cryptographically relevant quantum computer; an asset is at risk when X + Y > Z (Mosca). Defaults where neither "
+    f"the source nor the team set one: X {DEFAULT_X} years ({DEFAULT_X_CRITICAL} for a high or critical source), a "
+    f"ZeroShield planning assumption that no standard sets; Y {DEFAULT_Y} years, also an assumption; Z the years left "
+    f"until {DEFAULT_Z_YEAR}, when NIST IR 8547 disallows quantum-vulnerable public-key algorithms (the Global Risk "
+    "Institute's Quantum Threat Timeline 2025 has 19 of 26 experts above 5% within 10 years). All three are team "
+    "settings.")
+
+
+def default_z(year: int | None = None) -> int:
+    """The default Z for a grade made in ``year`` (default: this UTC year): the years left until ``DEFAULT_Z_YEAR``."""
+    year = _dt.datetime.utcnow().year if year is None else int(year)
+    return max(0, min(100, DEFAULT_Z_YEAR - year))
+
+
 SCOPE_REASONS = ("coverage_gap", "source_not_read", "source_truncated", "excluded_by_choice")
 _PQ = ("hybrid", "quantum-safe")
 _E123 = ("E1", "E2", "E3")
@@ -140,7 +187,9 @@ REASONS: dict[str, dict[str, Any]] = {
     "attested_no_class": {"grade": None, "kind": "no_grade", "text": "Evidence answered without a PQC class"},
     "unknown_verdict": {"grade": "Q0", "kind": "asset", "text": "The product could not tell the asset's PQC class"},
     "not_applicable": {"grade": None, "kind": "no_grade", "text": "No public-key cryptography to grade"},
-    "not_correlated": {"grade": "Q0", "kind": "asset", "text": "Correlation required and absent (reserved)"},
+    "not_correlated": {"grade": "Q0", "kind": "asset",
+                       "text": "The estate could not correlate the asset across sources (correlation required and "
+                               "absent)"},
     "mosca_missing": {"grade": "Q0", "kind": "inputs",
                       "text": "Quantum-vulnerable, and the team's Mosca X, Y or Z is not set"},
     "qv_exceeds_internet": {"grade": "Q1", "kind": "asset",
@@ -167,6 +216,11 @@ REASONS: dict[str, dict[str, Any]] = {
     "pq_observed": {"grade": "Q4", "kind": "asset", "text": "Hybrid or quantum-safe, observed by a collector"},
     "pq_code": {"grade": "Q4", "kind": "asset", "text": "Hybrid or quantum-safe, found in code"},
     "pq_attested": {"grade": "Q4", "kind": "asset", "text": "Hybrid or quantum-safe, attested at E2 or E3"},
+    "deprecated_internet": {"grade": "Q1", "kind": "asset",
+                            "text": "Disallowed by NIST SP 800-131A (DES, Triple DES, RC4, MD5 ...), reachable from the "
+                                    "internet"},
+    "deprecated": {"grade": "Q2", "kind": "asset",
+                   "text": "Disallowed by NIST SP 800-131A (DES, Triple DES, RC4, MD5 ...)"},
     "not_an_item": {"grade": None, "kind": "not_an_item",
                     "text": "A coverage row that is not an unread scope (the target has no such thing, or an "
                             "address answered on no probed port)"},
@@ -188,6 +242,7 @@ class GradeInput:
     provenance: str = "observed"  # observed | attested | code
     level: str | None = None  # E0..E3 for attested items
     correlation_missing: bool = False
+    disallowed: bool = False  # SP 800-131A disallows the asset's algorithm or key today (the disallowed cap)
 
 
 @dataclass(frozen=True)
@@ -210,8 +265,30 @@ def graded_class(cls: str | None, fallback: bool) -> str | None:
     return "quantum-vulnerable" if cls in _PQ and fallback else cls
 
 
+_RANK = {"Q1": 1, "Q2": 2, "Q3": 3, "Q4": 4}
+
+
+def _deprecated(exposure: str) -> Grade:
+    """Rules 24-25."""
+    return Grade("Q1", "deprecated_internet") if exposure == "internet" else Grade("Q2", "deprecated")
+
+
 def grade(inp: GradeInput) -> Grade:
-    """qg-1, rules 1-23 of ``FORMULA_TEXT`` in order (first match wins)."""
+    """qg-1, rules 1-25 of ``FORMULA_TEXT`` in order (first match wins), then the disallowed cap: an SP 800-131A-
+    disallowed asset graded by rules 7-23 takes the worse of that grade and rules 24-25."""
+    out = _grade_rules(inp)
+    cls = inp.cls
+    if not inp.disallowed or cls in (None, "unknown", "not-applicable", "deprecated") or out.q_reason in (
+            "not_correlated", "evidence_e0", "attested_no_class") or inp.item == "scope":
+        return out
+    dep = _deprecated(inp.exposure)
+    if out.q_grade not in _RANK or _RANK[dep.q_grade] <= _RANK[out.q_grade]:  # type: ignore[index]
+        return dep
+    return out
+
+
+def _grade_rules(inp: GradeInput) -> Grade:
+    """Rules 1-25."""
     if inp.item == "scope":
         if inp.scope_reason not in SCOPE_REASONS:
             raise ValueError(f"scope item without a known reason: {inp.scope_reason!r}")
@@ -230,6 +307,8 @@ def grade(inp: GradeInput) -> Grade:
         return Grade(None, "not_applicable")
     if inp.correlation_missing:
         return Grade("Q0", "not_correlated")
+    if cls == "deprecated":  # rules 24-25 (no other rule matches the class)
+        return _deprecated(inp.exposure)
     fallback = cls in _PQ and inp.fallback
     if cls == "quantum-vulnerable" or fallback:
         x, y, z = (_mosca_int(v) for v in (inp.x, inp.y, inp.z))
@@ -385,10 +464,93 @@ def grade_exposure(facts: dict[str, Any] | None, target: str | None, location: s
 
 @functools.lru_cache(maxsize=4096)
 def _grade_observed(cls: str, fallback: bool, exposure: str, anchor: bool, x: int | None, y: int | None,
-                    z: int | None) -> Grade:
+                    z: int | None, disallowed: bool = False) -> Grade:
     """``grade`` for an observed asset, memoised on its (few, small) inputs: the posture loop grades every row."""
     return grade(GradeInput(item="asset", cls=cls, fallback=fallback, exposure=exposure, anchor=anchor, x=x, y=y, z=z,
-                            provenance="observed"))
+                            provenance="observed", disallowed=disallowed))
+
+
+@functools.lru_cache(maxsize=8192)
+def _standards_of_parts(parts: tuple) -> dict[str, Any] | None:
+    """``standards.grade`` of an asset's parts, memoised: an estate repeats the same few (algorithm, size) parts, and
+    every grade reads SP 800-131A (the disallowed cap). Read-only result."""
+    from backend.utilities.cbom_sources import standards as STD
+
+    if not parts:
+        return None
+    try:
+        return STD.grade(list(parts))
+    except Exception:  # a standards verdict never costs an asset its grade
+        return None
+
+
+def _graded_parts(parts: list[tuple[str, Any, Any]]) -> dict[str, Any] | None:
+    key = tuple(parts)
+    try:
+        hash(key)
+    except TypeError:  # an unhashable fact value: judged without the memo
+        return _standards_of_parts.__wrapped__(key)
+    return _standards_of_parts(key)
+
+
+def sp800_131a(asset_type: str, algorithm: Any, key_size: Any, facts: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The asset's NIST SP 800-131A status (``standards``): the asset's own parts where the standards module reads
+    them (``classify.standards_parts``, as ``classify.standards_of``), else its algorithm judged as a key (a managed
+    key, a database's encryption algorithm)."""
+    from backend.utilities.cbom_sources.classify import fact_obj, standards_parts
+
+    try:
+        parts = standards_parts(asset_type, algorithm, key_size, fact_obj(facts))
+    except Exception:  # as standards_of: never costs an asset its grade
+        parts = []
+    graded = _graded_parts(parts)
+    if not graded and isinstance(algorithm, str) and algorithm.strip():
+        graded = _graded_parts([("key", algorithm, key_size)])
+    return (graded or {}).get("sp800_131a")
+
+
+def disallowed_now(row: Any) -> bool:
+    """NIST SP 800-131A disallows the row's algorithm or key today (``sp800_131a`` status "disallowed"): FORMULA_TEXT
+    "disallowed", rules 24-25 and the disallowed cap."""
+    facts = getattr(row, "facts", None)
+    status = sp800_131a(str(getattr(row, "asset_type", "") or ""), getattr(row, "algorithm", None),
+                        getattr(row, "key_size", None), facts if isinstance(facts, dict) else {})
+    return (status or {}).get("status") == "disallowed"
+
+
+def graded_pqc_class(cls: str, row: Any, disallowed: bool | None = None) -> str:
+    """The class the grade reads: ``posture.classify_pqc``'s, except that a not-applicable asset whose algorithm
+    SP 800-131A disallows is ``deprecated`` (FORMULA_TEXT "class"; rules 24-25). ``disallowed``: the caller's
+    ``disallowed_now(row)`` when it has it."""
+    if cls != "not-applicable":
+        return cls
+    return "deprecated" if (disallowed_now(row) if disallowed is None else disallowed) else cls
+
+
+def default_x(criticality: Any) -> int:
+    return DEFAULT_X_CRITICAL if criticality in ("high", "critical") else DEFAULT_X
+
+
+def effective_mosca(source_x: int | None, team_x: int | None, y: int | None, z: int | None,
+                    criticality: Any = None, year: int | None = None) -> tuple[int, int, int, str, tuple[str, ...]]:
+    """(X, Y, Z, X basis, assumed): the source's X, else the team's, else the default; Y and Z the team's, else the
+    defaults (Z: ``default_z(year)``, the years left until 2035). ``assumed`` names the inputs a default filled
+    (empty: graded on the team's own inputs)."""
+    assumed: list[str] = []
+    if source_x is not None:
+        x, basis = source_x, "source"
+    elif team_x is not None:
+        x, basis = team_x, "team"
+    else:
+        x, basis = default_x(criticality), "default"
+        assumed.append("x")
+    if y is None:
+        y = DEFAULT_Y
+        assumed.append("y")
+    if z is None:
+        z = default_z(year)
+        assumed.append("z")
+    return x, y, z, basis, tuple(assumed)
 
 
 # ----------------------------------------------------------------------------- one context loader for every surface
@@ -401,6 +563,7 @@ class _JobInfo:
     source_id: int | None
     source_name: str | None
     network: bool
+    criticality: str | None = None  # the source's business criticality (C5): the default X reads it
 
 
 @dataclass
@@ -414,27 +577,33 @@ class RowGrade:
     def q_label(self) -> str | None:
         return LABELS.get(self.q_grade or "")
 
+    @property
+    def q_assumed(self) -> bool:
+        """The grade read a default Mosca input ("default assumptions")."""
+        return bool(self.explain.get("assumed"))
+
     def fields(self) -> dict[str, Any]:
         return {"q_grade": self.q_grade, "q_label": self.q_label, "q_reason": self.q_reason,
-                "q_item_key": self.q_item_key}
+                "q_item_key": self.q_item_key, "q_assumed": self.q_assumed}
 
 
 @functools.lru_cache(maxsize=4096)
 def _row_observed(cls: str, fallback: bool, exposure: str, anchor: bool, x: int | None, y: int | None,
-                  z: int | None) -> RowGrade | None:
+                  z: int | None, assumed: tuple[str, ...] = (), disallowed: bool = False) -> RowGrade | None:
     """The shared explain=False result of an observed asset; None for a Q0 that is keyed by the asset itself."""
-    out = _grade_observed(cls, fallback, exposure, anchor, x, y, z)
+    out = _grade_observed(cls, fallback, exposure, anchor, x, y, z, disallowed)
     if out.q_reason == "mosca_missing":
         missing = [k for k, v in (("x", x), ("y", y), ("z", z)) if v is None]
         return RowGrade(out.q_grade, out.q_reason, "inputs:mosca", {"missing": missing})
     if out.q_grade == "Q0":
         return None
-    return RowGrade(out.q_grade, out.q_reason, None, {"missing": []})
+    reads_mosca = cls == "quantum-vulnerable" or (cls in _PQ and fallback)
+    return RowGrade(out.q_grade, out.q_reason, None, {"missing": [], "assumed": list(assumed) if reads_mosca else []})
 
 
 # classes whose grade reads nothing but the class (rules 5 and 19): shared results for explain=False (never mutated)
-_NO_INPUTS = {"not-applicable": RowGrade(None, "not_applicable", None, {"missing": []}),
-              "grover-weakened": RowGrade("Q3", "grover_weakened", None, {"missing": []})}
+_NO_INPUTS = {"not-applicable": RowGrade(None, "not_applicable", None, {"missing": [], "assumed": []}),
+              "grover-weakened": RowGrade("Q3", "grover_weakened", None, {"missing": [], "assumed": []})}
 
 
 @dataclass
@@ -453,6 +622,23 @@ class GradeContext:
     # CB-19 PR-2: "snapshot" (the run's inputs at Start: the record) or "current" (the team's inputs now)
     inputs_source: str = "current"
     snapshot: dict[str, Any] | None = None
+    # the UTC year the default Z is counted from (the run's snapshot year, else this year): ``default_z``
+    year: int = field(default_factory=lambda: _dt.datetime.utcnow().year)
+    # qg-1 rule 6: the (source ref, row key) pairs whose estate key is "not_correlated" (``not_correlated_rows``),
+    # read once per context; None: not loaded (a caller without a session grades without rule 6)
+    session: Session | None = None
+    team_id: int | None = None
+
+    @functools.cached_property
+    def not_correlated(self) -> frozenset[tuple[str, str]]:
+        if self.session is None or self.team_id is None:
+            return frozenset()
+        return not_correlated_rows(self.session, self.team_id)
+
+    def correlation_missing(self, row: Any, job: _JobInfo) -> bool:
+        """qg-1 rule 6 for one stored row: its observation's estate key is ``not_correlated``."""
+        rows = self.not_correlated
+        return bool(rows) and (job.source_uid, str(getattr(row, "asset_key", "") or "")) in rows
 
     @property
     def mosca(self) -> dict[str, int | None]:
@@ -462,8 +648,8 @@ class GradeContext:
     def digest(self) -> str:
         """sha256 of the canonical inputs (team Mosca; each source's snapshotted X / exposure override / segment, by
         source ref, never by job id, so two runs with the same inputs share a digest), first 16 hex."""
-        jobs = sorted([j.source_uid, j.x, j.exposure, j.segment] for j in self.jobs.values())
-        doc = {"mosca": self.mosca, "sources": jobs}
+        jobs = sorted([j.source_uid, j.x, j.exposure, j.segment, j.criticality] for j in self.jobs.values())
+        doc = {"mosca": self.mosca, "sources": jobs, "z_default": default_z(self.year)}
         return hashlib.sha256(json.dumps(doc, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:16]
 
     def inputs(self) -> dict[str, Any]:
@@ -501,12 +687,18 @@ class GradeContext:
         codes = codes or []  # the class and fallback tests read DISK_XTS_128 / STATIC_RSA_KEX; COVERAGE_* never match
         if cls is None:  # the posture loop passes the class it already computed with the same function
             cls = P.classify_pqc(row, codes, elsewhere=self.elsewhere)[0]
-        if not explain:  # the posture loop and list pages: only the inputs this class's rules read
-            fast = _NO_INPUTS.get(cls)
+        # rules 24-25 and the cap (an unknown class stays Q0, rule 4); a caller's "deprecated" (graded_class) read it
+        disallowed = cls == "deprecated" or (cls != "unknown" and disallowed_now(row))
+        cls = graded_pqc_class(cls, row, disallowed)  # SP 800-131A disallowed + not-applicable -> deprecated
+        # rule 6 (after rules 4-5): the estate's key for this observation is "not_correlated"
+        uncorrelated = cls not in ("unknown", "not-applicable") and self.correlation_missing(row, job)
+        x, y, z, x_basis, assumed = effective_mosca(job.x, self.team_x, self.y, self.z, job.criticality, self.year)
+        if not explain and not uncorrelated:  # the posture loop and list pages: only the inputs this class's rules read
+            fast = _NO_INPUTS.get(cls) if not disallowed else None
             if fast is not None:
                 return fast
             fallback = classical_fallback(asset_type, facts, codes)[0] if cls in _PQ else False
-            if cls == "quantum-vulnerable" or fallback:
+            if cls in ("quantum-vulnerable", "deprecated") or fallback or disallowed:
                 if score_exposure is not None and not (job.exposure in ("internal", "unknown")
                                                        and facts.get("internet_facing") is True):
                     exposure = score_exposure[0]
@@ -516,12 +708,11 @@ class GradeContext:
                 anchor = asset_type in ANCHOR_TYPES or facts.get("is_ca") is True
             else:
                 exposure, anchor = "unknown", False
-            shared = _row_observed(cls, fallback, exposure, anchor, job.x if job.x is not None else self.team_x,
-                                   self.y, self.z)
+            shared = _row_observed(cls, fallback, exposure, anchor, x, y, z, assumed, disallowed)
             if shared is not None:
                 return shared
         fallback, fallback_basis = classical_fallback(row.asset_type, facts, codes) if cls in _PQ else (False, None)
-        if explain or graded_class(cls, fallback) == "quantum-vulnerable":
+        if explain or disallowed or graded_class(cls, fallback) in ("quantum-vulnerable", "deprecated"):
             if score_exposure is not None and not (job.exposure in ("internal", "unknown")
                                                    and facts.get("internet_facing") is True):
                 exposure, exposure_basis = score_exposure
@@ -531,21 +722,26 @@ class GradeContext:
             anchor, anchor_basis = trust_anchor(row.asset_type, facts)
         else:
             exposure, exposure_basis, anchor, anchor_basis = "unknown", None, False, None
-        x, x_basis = (job.x, "source") if job.x is not None else (self.team_x, "team" if self.team_x is not None else None)
-        out = _grade_observed(cls, fallback, exposure, anchor, x, self.y, self.z)
-        missing = [k for k, v in (("x", x), ("y", self.y), ("z", self.z)) if v is None]
+        out = Grade("Q0", "not_correlated") if uncorrelated else _grade_observed(
+            cls, fallback, exposure, anchor, x, y, z, disallowed)
+        missing = [k for k, v in (("x", x), ("y", y), ("z", z)) if v is None]
+        reads_mosca = not uncorrelated and graded_class(cls, fallback) == "quantum-vulnerable"
+        assumed_used = list(assumed) if reads_mosca else []
         item_key = "inputs:mosca" if out.q_reason == "mosca_missing" else (
             f"asset:{ID.stable_key('node', job.source_uid, ID.node_identity(row))}" if out.q_grade == "Q0" else None)
         if not explain:  # list pages and the posture loop read only the grade and what is missing
             return RowGrade(out.q_grade, out.q_reason, item_key,
-                            {"missing": missing if out.q_reason == "mosca_missing" else []})
+                            {"missing": missing if out.q_reason == "mosca_missing" else [], "assumed": assumed_used})
         inequality = None
         if not missing:
-            inequality = f"{x} + {self.y} {'>' if x + self.y > self.z else '<='} {self.z}"  # type: ignore[operator]
+            inequality = f"{x} + {y} {'>' if x + y > z else '<='} {z}"
         detail = {
             "class": cls, "class_basis": None, "graded_class": graded_class(cls, fallback), "fallback": fallback,
             "fallback_basis": fallback_basis, "exposure": exposure, "exposure_basis": exposure_basis,
-            "anchor": anchor, "anchor_basis": anchor_basis, "x": x, "x_basis": x_basis, "y": self.y, "z": self.z,
+            "anchor": anchor, "anchor_basis": anchor_basis, "x": x, "x_basis": x_basis, "y": y, "z": z,
+            "y_basis": "default" if "y" in assumed else "team", "z_basis": "default" if "z" in assumed else "team",
+            "assumed": assumed_used, "criticality": job.criticality, "sp800_131a_disallowed": disallowed,
+            "correlation": "not_correlated" if uncorrelated else None,
             "missing": missing if out.q_reason == "mosca_missing" else [], "inequality": inequality,
             "provenance": "observed", "item_kind": "asset", "coverage": None, "check": None, "status": None,
         }
@@ -563,9 +759,11 @@ class GradeContext:
         kind = coverage_kind(facts)
         status = str(facts.get("status") or "")
         empty = {k: None for k in ("class", "class_basis", "graded_class", "fallback_basis", "exposure",
-                                   "exposure_basis", "anchor_basis", "x", "x_basis", "y", "z", "inequality")}
-        explain = {**empty, "fallback": False, "anchor": False, "missing": [], "provenance": "observed",
-                   "item_kind": "scope", "coverage": kind, "check": facts.get("check"), "status": status}
+                                   "exposure_basis", "anchor_basis", "x", "x_basis", "y", "z", "y_basis", "z_basis",
+                                   "criticality", "inequality")}
+        explain = {**empty, "fallback": False, "anchor": False, "missing": [], "assumed": [], "provenance": "observed",
+                   "item_kind": "scope", "coverage": kind, "check": facts.get("check"), "status": status,
+                   "sp800_131a_disallowed": False, "correlation": None}
         if kind in ("not_present", "no_answer"):
             return RowGrade(None, "not_an_item", None, self._stamp(explain))
         reason = "excluded_by_choice" if kind == "by_choice" else "coverage_gap"
@@ -576,6 +774,21 @@ class GradeContext:
             key = f"coverage:{job.source_uid}:{target}:{facts.get('check') or ''}"
         out = grade(GradeInput(item="scope", scope_reason=reason))
         return RowGrade(out.q_grade, out.q_reason, key, self._stamp(explain))
+
+
+def not_correlated_rows(session: Session, team_id: int) -> frozenset[tuple[str, str]]:
+    """(source ref, row key) of every observation whose estate key is ``not_correlated`` (CB-21 / CB-20): the one
+    lookup qg-1 rule 6 reads, so the run posture, the run asset rows and the risk register grade the same rows Q0."""
+    from backend.new_models import CbomEstateAsset, CbomEstateObservation
+
+    ea = CbomEstateAsset.__table__  # type: ignore[attr-defined]
+    eo = CbomEstateObservation.__table__  # type: ignore[attr-defined]
+    rows = session.execute(sa.select(eo.c.source_ref, eo.c.row_key).select_from(
+        eo.join(ea, sa.and_(ea.c.team_id == eo.c.team_id, ea.c.asset_key == eo.c.asset_key))).where(
+        # a removed observation is history: once CB-21 correlates the asset its observation moves to the new key and
+        # the old not-correlated one stays behind as "removed" (with the same row key)
+        eo.c.team_id == team_id, ea.c.key_kind == "not_correlated", eo.c.presence != "removed")).all()
+    return frozenset((str(r.source_ref), str(r.row_key)) for r in rows)
 
 
 def _source_ref(source: CbomCollectionSource | None, source_id: int | None) -> str:
@@ -626,13 +839,22 @@ def load_context(session: Session, *, team_id: int, run_id: int | None = None, j
             segment=meta.get("segment") if isinstance(meta.get("segment"), str) else None,
             source_uid=ID.job_source_ref(job, source), source_id=job.source_id,
             source_name=(source.name if source else None) or params.get("source_name"),
-            network=bool(spec is not None and spec.group == "network"))
+            network=bool(spec is not None and spec.group == "network"),
+            criticality=meta.get("criticality") if meta.get("criticality") in ("low", "medium", "high", "critical")
+            else None)
     m = {k: _mosca_int(snapshot["mosca"].get(k)) for k in "xyz"} if snapshot is not None else mosca_of(risk_model)
     return GradeContext(team_x=m["x"], y=m["y"], z=m["z"],
                         jobs=jobs, run=run, job_rows=job_rows, sources=sources,
                         elsewhere=P.JudgedElsewhere(session=session, team_id=team_id, run_id=run_id)
                         if run_id is not None else None,
-                        inputs_source="snapshot" if snapshot is not None else "current", snapshot=snapshot)
+                        inputs_source="snapshot" if snapshot is not None else "current", snapshot=snapshot,
+                        year=_grade_year(snapshot), session=session, team_id=team_id)
+
+
+def _grade_year(snapshot: dict[str, Any] | None) -> int:
+    """The year the default Z counts from: the run's inputs snapshot (its record), else this UTC year."""
+    captured = str((snapshot or {}).get("captured_at") or "")
+    return int(captured[:4]) if captured[:4].isdigit() else _dt.datetime.utcnow().year
 
 
 # ----------------------------------------------------------------------------- the run's inputs at Start (PR-2)
@@ -979,4 +1201,5 @@ class RunGrades:
 __all__ = ["FORMULA_TEXT", "FORMULA_SHA256", "GRADE_MODEL", "GRADE_MODEL_VERSION", "GradeInput", "Grade", "grade",
            "GradeContext", "RowGrade", "RunGrades", "load_context", "scope_items", "snapshot_inputs",
            "evidence_snapshot", "run_grades", "mosca_of", "risk_model_of", "model_payload", "coverage_kind",
-           "classical_fallback", "trust_anchor", "grade_exposure", "REASONS", "LABELS"]
+           "classical_fallback", "trust_anchor", "grade_exposure", "REASONS", "LABELS", "DEFAULTS_TEXT",
+           "effective_mosca", "graded_pqc_class", "sp800_131a"]

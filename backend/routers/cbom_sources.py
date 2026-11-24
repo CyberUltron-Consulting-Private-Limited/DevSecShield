@@ -48,6 +48,7 @@ from backend.utilities.cbom_sources import http as _cbom_http
 from backend.utilities.rbac.policy import Access
 from backend.utilities.cbom_sources import agents as AG
 from backend.utilities.cbom_sources import limits as LIM
+from backend.utilities.cbom_sources import pqc_targets as PQT
 from backend.utilities.cbom_sources import held as HELD
 from backend.utilities.cbom_sources import regulated_entity as REG_ENTITY
 from backend.utilities.cbom_sources import host_key_resets as HKR  # #150
@@ -1275,6 +1276,10 @@ def _update_settings(engine, team_id: int, user_id: int, body: SettingsUpdate) -
             kept = {k: v for k, v in (row.risk_model or {}).items() if k in profile_keys}
             changes["risk_model"] = ({**(row.risk_model or {}), **body.risk_model.model_dump(exclude_unset=True)}
                                      if body.risk_model is not None else kept)
+            # the wave windows in force after the merge (a stored value or the KB default fills a field not sent)
+            order = PQT.window_order_error(PQT.fix_windows(changes["risk_model"]))
+            if order:
+                raise HTTPException(status_code=422, detail=order)
         if entity is not None:
             changes["risk_model"] = {**(changes.get("risk_model", row.risk_model) or {}),
                                      REG_ENTITY.SETTINGS_KEY: REG_ENTITY.normalise(entity)}

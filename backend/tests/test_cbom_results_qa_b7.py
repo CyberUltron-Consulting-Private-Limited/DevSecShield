@@ -89,17 +89,18 @@ def test_q0_reasons_count_affected_assets_and_scope_apart(api, world):
     p = G.posture(api, w["run"])
     listed = G.items(api, w["run"])
     q0_assets = Counter(it["q_reason"] for it in listed.values() if it["type"] != "coverage" and it["q_grade"] == "Q0")
-    assert q0_assets and set(q0_assets) == {"mosca_missing"}
-    # the contract stays: q0_reasons counts items (one missing Mosca setting is one item; FP-5)
-    assert p["q0_reasons"]["mosca_missing"] == 1 and p["q0_reasons"]["excluded_by_choice"] == 5
-    # new: assets per reason, summing to the Q0 bar and to q0_counts.assets
-    assert p["q0_reason_assets"] == dict(q0_assets)
-    assert sum(p["q0_reason_assets"].values()) == p["q_grades"]["Q0"] == p["q0_counts"]["assets"]
-    # new: the unread scope per reason (items), apart from the assets; it sums to q0_counts.scope_items
+    # SOW D12: Mosca unset no longer parks quantum-vulnerable assets at Q0: they are graded on the documented
+    # defaults ("default assumptions"), so no asset is Q0 here and there is no "inputs:mosca" item
+    assert not q0_assets and "mosca_missing" not in p["q0_reasons"] and p["q0_reasons"]["excluded_by_choice"] == 5
+    assert any(it["q_grade"] in ("Q1", "Q2", "Q3") for it in listed.values() if it["type"] != "coverage")
+    # assets per reason, summing to the Q0 bar and to q0_counts.assets
+    assert p["q0_reason_assets"] == dict(q0_assets) == {}
+    assert sum(p["q0_reason_assets"].values()) == p["q_grades"]["Q0"] == p["q0_counts"]["assets"] == 0
+    # the unread scope per reason (items), apart from the assets; it sums to q0_counts.scope_items
     assert p["q0_scope_reasons"] == {"coverage_gap": 1, "excluded_by_choice": 5}
     assert sum(p["q0_scope_reasons"].values()) == p["q0_counts"]["scope_items"]
-    # every item is either the Mosca setting, an asset item or a scope item
-    assert p["q0_items_total"] == 1 + sum(p["q0_scope_reasons"].values())
+    # every item is a scope item
+    assert p["q0_items_total"] == sum(p["q0_scope_reasons"].values())
 
 
 def test_q0_reason_assets_with_mosca_set_and_nothing_unknown(api, world):

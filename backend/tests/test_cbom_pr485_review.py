@@ -359,7 +359,8 @@ def test_m6_d1_reconciles_run_assets_occurrences_and_register(seeded):
     assert counts["register"]["total"] == 10
     steps = " ".join(population.reconciliation_steps(view))
     assert "list 11 assets" in steps and "Minus 1 observation" in steps and "= 10 occurrences" in steps
-    assert "holds 10 distinct assets" in steps and "Q0 Unknown 8" in steps
+    # PR #490 (merged): assets without Mosca inputs are graded on the KB default assumptions, so none is Q0
+    assert "holds 10 distinct assets" in steps and "Q1 Critical 3, Q2 High 5" in steps and "Q0 Unknown 0" in steps
     text = scope_text(view)
     assert "is counted twice" not in text and "one per source that observed the asset" not in text
     per_source = sum(len(v) for k, v in population.current_assets_by_source(view).items() if k.startswith("sources:"))
@@ -401,7 +402,11 @@ def test_m7c_trend_says_first_issue_then_compares_with_the_previous_issue(api, s
     _regrade(engine)
     second = _pdf_text(api("GET", D14).content, tmp_path, "second")
     assert "Trend against the previous issue" in second and "Previous issue: CBOM-D14-T1-" in second
-    assert re.search(r"Q0 Unknown \(register\) 8 0 -8 \(better\)", second), second[second.index("Trend"):][:900]
+    # PR #490 (merged) grades missing Mosca inputs on the KB default assumptions: Q1 3 and Q0 0 before and after
+    trend = second[second.index("Trend"):][:900]
+    assert "Q1 Critical (register) 3 3 no change" in trend and "Q0 Unknown (register) 0 0 no change" in trend, trend
+    # D14 section 8 follows the merged register: no "graded Q0 for missing inputs" action when nothing is Q0
+    assert "graded Q0 for missing" not in first and "graded Q0 for missing" not in second
 
 
 def test_m7d_section_5_names_findings_not_codes():
