@@ -48,7 +48,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { updateScan, toggleFindingState, createTicket, postCertInAttestation, postCertInSign, getCertInVex, getCertInEvidencePack, type CbomScanDashboardData, type CbomFinding, type CbomScanMetadata, type CbomGraph, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
+import { updateScan, toggleFindingState, createTicket, postCertInAttestation, postCertInSign, getCertInEvidencePack, type CbomScanDashboardData, type CbomFinding, type CbomScanMetadata, type CbomGraph, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
+import { downloadServedVex, signatureNote } from "@/utils/api/bomDownload";
 import { showErrorToast } from "@/utils/error-handler";
 import { downloadCbomScanBom, INFORMATIONAL_LABEL, type CbomCoverageReport, type CbomImportReport } from "@/utils/api/cbom_outputs";
 import { downloadOscal } from "@/utils/api/integrations";
@@ -463,13 +464,9 @@ export default function CbomResults({
 
   const handleDownloadVex = async () => {
     try {
-      const cached = (scanMetadata as CbomScanMetadata | null)?.vex_json;
-      const vex = cached ?? (await getCertInVex(tid, "cbom", sid));
-      saveBlob(
-        new Blob([JSON.stringify(vex, null, 2)], { type: "application/json" }),
-        `cbom-vex-${scan_id}.json`,
-      );
-      toast.success("VEX downloaded");
+      // the API's signed VEX, saved as served (the page's cached copy is the same document without its signature)
+      const saved = await downloadServedVex(tid, "cbom", sid);
+      toast.success(`VEX downloaded (${signatureNote(saved)})`);
       queryClient.invalidateQueries({ queryKey: ["cbom-conversation-data"] });
     } catch (err) {
       showErrorToast(err, "Failed to download VEX");
@@ -788,6 +785,7 @@ export default function CbomResults({
               variant="outline"
               className="cursor-pointer"
               onClick={() => void handleDownloadVex()}
+              data-testid="cbom-download-vex"
             >
               <Download className="h-4 w-4 mr-2" />
               VEX

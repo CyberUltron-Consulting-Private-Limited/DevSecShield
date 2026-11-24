@@ -58,9 +58,9 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { updateScan, toggleFindingState, createTicket, postCertInAttestation, postCertInSign, getCertInVex, getCertInEvidencePack, type AiBomScanDashboardData, type AiBomFinding, type AiBomScanMetadata, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
+import { updateScan, toggleFindingState, createTicket, postCertInAttestation, postCertInSign, getCertInEvidencePack, type AiBomScanDashboardData, type AiBomFinding, type AiBomScanMetadata, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
+import { downloadServedBom, downloadServedVex, signatureNote } from "@/utils/api/bomDownload";
 import { showErrorToast } from "@/utils/error-handler";
-import { overlayBomCompliance } from "@/utils/overlayBomCompliance";
 import {
   buildRefAliasMap,
   findingMatchesRelatedRefs,
@@ -420,27 +420,19 @@ export default function AiBomResults({
     fileName: `ai-bom-report-${scan_id}.pdf`,
   });
 
-  const handleDownloadAiBomJson = () => {
-    const metaRecord = scanMetadata as Record<string, unknown> | null;
-    const aiBomJson = metaRecord?.ai_bom_json ?? (data as Record<string, unknown> | null)?.ai_bom_json;
-    if (!aiBomJson) { toast.error("No AI BOM JSON available"); return; }
+  // The server's signed CycloneDX document, byte for byte (GET /bom), never a copy rebuilt from ai_bom_json
+  const handleDownloadAiBomJson = async () => {
+    if (Number.isNaN(tid) || Number.isNaN(sid) || !tid || !sid) return;
     try {
-      const bom = overlayBomCompliance(aiBomJson, metaRecord?.ai_bom_compliance);
-      const blob = new Blob([JSON.stringify(bom, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `ai-bom-${scan_id}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success("AI BOM JSON downloaded");
+      const saved = await downloadServedBom(tid, "ai_bom", sid, "json");
+      toast.success(`AI BOM CycloneDX downloaded (${signatureNote(saved)})`);
     } catch (err) {
-      showErrorToast(err, "Failed to download AI BOM JSON");
+      showErrorToast(err, "Failed to download the AI BOM CycloneDX");
     }
   };
 
-  // Raw BOM artifacts (SPDX 3.0 / SARIF 2.1.0) — same client-side blob download
-  // as the CycloneDX JSON above.
+  // Raw BOM artifacts (SPDX 3.0 / SARIF 2.1.0): the worker's stored files; the API serves no signed copy of these
+  // formats, so they are saved from the scan data (the CycloneDX above is the signed document).
   const handleDownloadArtifact = (
     key: "ai_bom_spdx" | "ai_bom_sarif",
     ext: string,
@@ -487,13 +479,9 @@ export default function AiBomResults({
 
   const handleDownloadVex = async () => {
     try {
-      // always the API: it rebuilds a VEX stored by older rules (a blanket not_affected per component)
-      const vex = await getCertInVex(tid, "ai_bom", sid);
-      downloadBlob(
-        new Blob([JSON.stringify(vex, null, 2)], { type: "application/json" }),
-        `ai-bom-vex-${scan_id}.json`,
-      );
-      toast.success("VEX downloaded");
+      // always the API, saved as served: it rebuilds a VEX stored by older rules and signs it like the BOM
+      const saved = await downloadServedVex(tid, "ai_bom", sid);
+      toast.success(`VEX downloaded (${signatureNote(saved)})`);
       queryClient.invalidateQueries({ queryKey: ["ai_bom-conversation-data"] });
     } catch (err) {
       showErrorToast(err, "Failed to download VEX");
@@ -690,7 +678,7 @@ export default function AiBomResults({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-[210px]">
               <DropdownMenuLabel>Bill of Materials</DropdownMenuLabel>
-              <DropdownMenuItem className="cursor-pointer" onClick={handleDownloadAiBomJson}>
+              <DropdownMenuItem className="cursor-pointer" onClick={() => void handleDownloadAiBomJson()} data-testid="aibom-download-cyclonedx">
                 CycloneDX 1.6 (JSON)
               </DropdownMenuItem>
               <DropdownMenuItem
@@ -707,7 +695,7 @@ export default function AiBomResults({
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuLabel>CERT-In (advisory)</DropdownMenuLabel>
-              <DropdownMenuItem className="cursor-pointer" onClick={() => void handleDownloadVex()}>
+              <DropdownMenuItem className="cursor-pointer" onClick={() => void handleDownloadVex()} data-testid="aibom-download-vex">
                 VEX
               </DropdownMenuItem>
               <DropdownMenuItem className="cursor-pointer" onClick={() => void handleDownloadSignature()}>
