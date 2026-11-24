@@ -94,8 +94,8 @@ const TEXT = {
   // src: frontend/components/cbom/sources/shared.tsx:118-125, backend/utilities/cbom_sources/jobs.py:121-133 — jobs.py run status: partial also when every job succeeded but one reported a partial or failed outcome
   "cbsrc.rr.col.run_status": {
     what: "Queued, Running, Done (every job succeeded completely), Partial (some jobs failed or expired, or a job finished but reported a partial or failed outcome), Failed or Cancelled.",
-    why: "A Partial run's results miss the sources whose jobs failed.",
-    example: "Partial: 8 of 9 jobs done, 1 expired.",
+    why: "A Partial run's results miss the sources whose jobs failed. The line under the badge says which jobs fell short and why; a job whose scan node stays offline past the deadline (6 h by default) expires, is refunded, and the run finishes.",
+    example: "Partial: 18 of 19 jobs read everything; 1 collected only part of its targets.",
   },
   // src: frontend/components/cbom/sources/ReviewRunTab.tsx:156-160 — job counts by status
   "cbsrc.rr.col.jobs": {
@@ -177,6 +177,30 @@ const TEXT = {
     what: "What the next run's quantum risk grades use, recorded when you start it: the team's Mosca X, Y and Z, each source's own data lifetime (its X), and the evidence Q0 gaps. Later changes apply to new runs only.",
     why: "Without X, Y and Z, quantum-vulnerable assets grade as Unknown, and the record lets an old run's grade be explained later.",
     example: "X 10, Y 3, Z 12; Core banking DB keeps data 25 y; 2 Q0 gaps.",
+  },
+  // src: backend/utilities/cbom_sources/regulated_entity.py:24-35, frontend/components/cbom/sources/regulatedEntity.ts:9-21 — the seven entity types RBI issued 2026 cybersecurity directions for, plus other; NBFC by default
+  "cbsrc.rr.regulated_entity": {
+    what: "The kind of RBI-regulated entity the team is: NBFC (the default), commercial bank, small finance bank, payments bank, urban co-operative bank, All India Financial Institution, credit information company, or other. The run page, the asset detail, OSCAL and the deliverables cite the RBI directions for that kind only.",
+    why: "RBI issued separate 2026 directions per entity type; citing the Commercial Banks Directions for an NBFC would misstate its obligations.",
+    example: "NBFC: the RBI NBFC Directions 2026, para 118 (cryptographic controls; Middle Layer and above).",
+  },
+  // src: backend/utilities/cbom_sources/regulated_entity.py:37-43, scripts/crypto_kb/kb_compliance.py (POOLED_FRAMEWORKS pci_dss_4)
+  "cbsrc.rr.flag.processes_card_data": {
+    what: "Whether the team stores, processes or transmits payment-card data. PCI DSS 4.0 rows are shown only when it does.",
+    why: "PCI DSS binds card-data environments only; showing it to a team without card data overstates its obligations.",
+    example: "A lender with a card issuing business: on.",
+  },
+  // src: backend/utilities/cbom_sources/regulated_entity.py:37-43, scripts/crypto_kb/kb_compliance.py (CLAUSE_FRAMEWORKS SEBI CSCRF)
+  "cbsrc.rr.flag.sebi_regulated": {
+    what: "Whether the team is a SEBI-regulated entity (broker, depository participant, mutual fund ...). SEBI CSCRF clauses are cited only when it is.",
+    why: "SEBI CSCRF binds SEBI's regulated entities; an NBFC that is not one is not bound by it.",
+    example: "An NBFC with a broking arm registered with SEBI: on.",
+  },
+  // src: backend/utilities/cbom_sources/regulated_entity.py:37-43, scripts/crypto_kb/kb_compliance.py (clause_applicability)
+  "cbsrc.rr.flag.government_entity": {
+    what: "Whether the team is a government entity (ministry, department, government institution or public sector enterprise). The CERT-In Guidelines for Government Entities (2023) are cited only when it is.",
+    why: "Those guidelines apply to government entities only; citing them to a private lender misstates its obligations.",
+    example: "A public sector enterprise: on.",
   },
 } as const satisfies TipAreaText;
 

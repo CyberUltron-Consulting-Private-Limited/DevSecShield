@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from aibom.scan.parsers.ai_libraries import classify
 from aibom.scan.parsers.requirements import parse_pyproject, parse_requirements
 from aibom.scan.registry import ScanContext, Scanner, register
 from aibom.scan.safe_files import is_regular_file, walk_files
@@ -49,10 +50,18 @@ class RequirementsScanner(Scanner):
             # sub-package's name (monorepo member, e.g. an MCP server) IS inventory.
             frameworks.extend(parse_pyproject(pp, include_self=pp.resolve() != root_pp))
         seen: set[str] = set()
+        excluded = {"dev": 0, "other": 0}
         for framework in frameworks:
             if framework.bom_ref in seen:  # de-dup across manifests
                 continue
             seen.add(framework.bom_ref)
+            # Only AI/ML libraries are AI components. Test/lint tools and ordinary
+            # runtime dependencies (web, database, cache) are SBOM inventory; they
+            # are counted on the BOM, never classed as ML frameworks.
+            role = classify(framework.name)
+            if role != "ai":
+                excluded[role] += 1
+                continue
             ctx.add_component(framework)
             if not framework.licenses:
                 ctx.add_flag(
@@ -65,6 +74,12 @@ class RequirementsScanner(Scanner):
                         "(SBOM minimum element / governance signal)."
                     ),
                 )
+        if excluded["dev"]:
+            key = "aibom:dependencies_excluded_dev_tools"
+            ctx.properties[key] = str(excluded["dev"])
+        if excluded["other"]:
+            key = "aibom:dependencies_excluded_non_ai"
+            ctx.properties[key] = str(excluded["other"])
 
 
 __all__ = ["RequirementsScanner"]

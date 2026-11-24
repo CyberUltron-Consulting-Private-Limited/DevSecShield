@@ -180,5 +180,7 @@ assert.equal(RUN_TICKETING_TAB_AVAILABLE, existsSync(join(__dirname, "RunTicketi
 assert.equal(verifyResultText({ valid: true, signature_match: true, digest_match: true }), "Verified: this file is the run's signed CycloneDX JSON, unchanged.");
 assert.match(verifyResultText({ valid: false, signature_match: true, digest_match: false }), /differs from the run's CycloneDX JSON/);
 assert.match(verifyResultText({ valid: false, signature_match: false, digest_match: true }), /signature does not match/);
+assert.match(verifyResultText({ valid: false, signature_match: false, digest_match: false, signed_by_deployment: true }),
+  /signed by ZeroShield, but it is another run's file/);
 
 console.log("run page wiring tests passed");

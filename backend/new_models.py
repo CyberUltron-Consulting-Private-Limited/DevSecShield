@@ -531,7 +531,14 @@ class CbomCollectionRun(SQLModel, table=True):
     last_updated: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
     finished_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     schedule_id: int | None = Field(default=None, index=True)  # set when a schedule started the run
+    # what started the run (S4): "scheduled" (a schedule: schedule_id) or "manual" (a member's Start); rsched1trig001
+    trigger: str = Field(default="manual", max_length=16, sa_column_kwargs={"server_default": "manual"})
     drift_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)  # drift events recorded (once)
+    # S4: the run's drift document (drift_report.run_drift: counts, readiness, top items against its baseline), stored
+    # once after its drift is recorded (drift.store_pending_summaries), so report.pdf and drift.json neither recompute
+    # the comparison per download nor change afterwards; keyed by its baseline id (recomputed if the baseline
+    # differs). SQL NULL until stored (none_as_null: "IS NULL" finds it). rsched1trig001
+    drift_summary: dict | None = Field(default=None, sa_column=Column(JSON(none_as_null=True), nullable=True))
 
 
 class CbomCollectionJob(SQLModel, table=True):
@@ -748,7 +755,13 @@ class CbomEvidenceVendor(SQLModel, table=True):
 
 
 class CbomCollectionAuditEvent(SQLModel, table=True):
-    """Who changed what in CBOM Sources and when; field names only, never values."""
+    """Who changed what in CBOM Sources and when; field names only, never values.
+
+    One documented exception: action ``deliverable_issued`` (object ``deliverable``, id = the SOW deliverable number)
+    records an issue of the Board report (D14) for its trend, with ``name=value`` items of the figures the PDF itself
+    prints (Document ID, as-of day, grade, score, counts), never a setting's value or a secret
+    (``dashboard.cbom_board_issues``). It moves to a dedicated ``cbom_deliverable_issue`` table (team, number,
+    document_id unique) with the next migration (PR #485 review 2 m1)."""
     __tablename__ = "cbomcollectionauditevent"
     id: int | None = Field(default=None, primary_key=True)
     team_id: int = Field(foreign_key="team.id", index=True)
@@ -1264,3 +1277,6 @@ from backend.access_models import *  # noqa: E402,F401,F403  (registers them on 
 
 # ========================================= PDF reports: the team's report logo lives in backend/branding_models.py
 from backend.branding_models import *  # noqa: E402,F401,F403  (registers it on SQLModel.metadata with the rest)
+
+# ========================================= SOW S1 / S2: CBOM gate policy and test tickets live in backend/cbom_gate_models.py
+from backend.cbom_gate_models import *  # noqa: E402,F401,F403  (registers them on SQLModel.metadata with the rest)

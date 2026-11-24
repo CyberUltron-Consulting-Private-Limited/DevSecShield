@@ -2349,7 +2349,16 @@ export interface RunListRow {
   linked_scan_id: number | null
   /** the severity counts are those judged when the run collected the assets */
   counts_basis: "as_collected"
+  /** FIX-B3: why the run is partial / failed / cancelled, or what an open run waits for (offline scan nodes); the
+   *  same text as GET /runs and GET /runs/{id} (#480 review m3); null when done */
+  status_reason?: string | null
+  /** S4: what started the run (absent on an older backend); schedule_name is null once the schedule is deleted */
+  trigger?: CbomRunTrigger
+  schedule_id?: number | null
+  schedule_name?: string | null
 }
+
+export type CbomRunTrigger = "scheduled" | "manual"
 
 export interface CBOMConversationResponse {
   title: string
@@ -2513,20 +2522,22 @@ const reinitializeCBOMScanWithPayload = async (
 
 /**
  * Team-wide CBOM regulatory deliverables, rendered in-house as PDFs by the backend
- * (GET /{team_id}/cbom/deliverables/{slug}). Order and slugs mirror the backend registry;
- * backend/tests/test_cbom_deliverables_contract.py (T-CON-1) pins the slug list.
+ * (GET /{team_id}/cbom/deliverables/{slug}). Order and slugs mirror the backend registry; `number` is the SOW
+ * Table 7 ID (D1 ... D14) the PDF's Document ID prints; backend/tests/test_cbom_deliverables_contract.py (T-CON-1)
+ * pins slug, number and title.
  */
 export const CBOM_DELIVERABLES = [
-  { slug: "scope-baseline-register", number: 1, title: "Scope Baseline & Asset Population Register" },
-  { slug: "quantum-risk-register", number: 2, title: "Quantum Risk Register" },
-  { slug: "methodology-evidence-plan", number: 3, title: "Cryptographic Discovery Methodology & Evidence Plan" },
-  { slug: "infrastructure-cloud-encryption-posture", number: 5, title: "Infrastructure & Cloud Encryption Posture" },
-  { slug: "network-tls-protocol-assessment", number: 6, title: "Network, TLS & Crypto Protocol Assessment" },
-  { slug: "certificate-estate-register", number: 7, title: "Certificate Estate Register" },
+  { slug: "scope-baseline-register", number: 1, title: "Scope Baseline and Asset Population Register" },
+  { slug: "methodology-evidence-plan", number: 2, title: "Discovery Methodology and Evidence Plan" },
+  { slug: "infrastructure-cloud-encryption-posture", number: 6, title: "Infrastructure and Cloud Encryption Posture" },
+  { slug: "network-tls-protocol-assessment", number: 7, title: "Network, TLS and Crypto Protocol Assessment" },
+  // SOW D8 is also a CSV: the menu offers it when the manifest lists "csv" in the item's formats
+  { slug: "certificate-estate-register", number: 8, title: "Certificate Estate Register" },
   { slug: "data-at-rest-encryption-assessment", number: 9, title: "Data-at-Rest Encryption Assessment" },
-  { slug: "third-party-assurance-register", number: 10, title: "Third-Party Cryptographic Assurance & Attestation Register" },
-  { slug: "pqc-migration-roadmap", number: 15, title: "PQC Migration Roadmap" },
-  { slug: "board-executive-report", number: 16, title: "Board / IT Strategy Committee Regulatory & Executive Report" },
+  { slug: "third-party-assurance-register", number: 10, title: "Third-Party Cryptographic Assurance and Attestation Register" },
+  { slug: "quantum-risk-register", number: 12, title: "Quantum Risk Register" },
+  { slug: "pqc-migration-roadmap", number: 13, title: "PQC Migration Roadmap" },
+  { slug: "board-executive-report", number: 14, title: "Board / IT Strategy Committee Report" },
 ] as const;
 
 export type CbomDeliverableSlug = (typeof CBOM_DELIVERABLES)[number]["slug"];
@@ -2538,6 +2549,8 @@ export interface CbomDeliverableManifestItem {
   title: string
   description: string
   format: "pdf"
+  /** Every format the deliverable is offered in ("csv" for the Certificate Estate Register). */
+  formats: Array<"pdf" | "csv">
   /** UI hint only: the PDF route always answers 200 (with a banner when data is missing). */
   available: boolean
   /** Why the item is unavailable; used as the tooltip of the disabled menu item. */
@@ -2570,6 +2583,12 @@ const downloadCbomDeliverable = (
   options: ReportOptions,
 ): Promise<ReportDownload> => downloadDeliverable(team_id, slug, options);
 
+/** Team-scoped: GET /{team_id}/cbom/deliverables/{slug}.csv (the same rows as the PDF, UTF-8 with BOM). */
+const downloadCbomDeliverableCsv = async (team_id: number, slug: CbomDeliverableSlug): Promise<Blob> => {
+  const response = await api.get(`/${team_id}/cbom/deliverables/${slug}.csv`, { responseType: "blob" });
+  return response.data as Blob;
+};
+
 export {
   getCBOMScans,
   getCBOMScanData,
@@ -2583,6 +2602,7 @@ export {
   getCertInEvidencePack,
   getCbomDeliverables,
   downloadCbomDeliverable,
+  downloadCbomDeliverableCsv,
 }
 
 // -------------------------------------------------------------- AI BOM API Routes --------------------------------------------------------------
@@ -3890,13 +3910,45 @@ const revokeCicdApiKey = async (team_id: number, integration_id: number): Promis
 }
 
 /** CBOM policy gate of the hosted CI path (backend utilities/cicd/cbom_gate.py) */
+/** One rule a finding broke under the CBOM gate policy (SOW S1); "waived" carries the exception that allowed it. */
+export interface CicdCbomGateRule {
+    rule: "finding_code" | "banned_algorithm" | "min_key_size" | "deprecated_algorithm" | "quantum_vulnerable"
+    outcome: "fail" | "warn" | "waived"
+    detail: string
+    /** the blocked finding code (rule finding_code: one entry per code) */
+    code?: string
+    exception_id?: string
+    reason?: string
+    expires?: string
+}
+
+export interface CicdCbomGateEntry {
+    codes: string[]
+    title: string
+    location: string
+    line: number | null
+    impact: string | null
+    /** absent on verdicts stored before the per-team policy */
+    rules?: CicdCbomGateRule[]
+}
+
 export interface CicdCbomGate {
+    /** the policy's name ("cbom-code-high" on verdicts stored before the per-team policy) */
     policy: string
+    policy_source?: "default" | "team" | "integration" | "unreadable"
+    policy_version?: number | null
+    policy_digest?: string
     verdict: "pass" | "fail" | "no_result"
     fail_codes: string[]
     failing_count: number
-    failing: { codes: string[]; title: string; location: string; line: number | null; impact: string | null }[]
+    failing: CicdCbomGateEntry[]
     truncated: boolean
+    rules_failed?: Partial<Record<CicdCbomGateRule["rule"], number>>
+    warning_count?: number
+    warnings?: CicdCbomGateEntry[]
+    waived_count?: number
+    waived?: CicdCbomGateEntry[]
+    expired_exceptions?: { id: string; expires: string; reason: string }[]
     reason: string
 }
 
@@ -4400,6 +4452,14 @@ export interface CbomSourcesSettings {
     emergency_contact: string | null
     /** Mosca inputs in years: X = how long data must stay secret, Y = migration time, Z = years until a quantum computer. */
     risk_model: CbomRiskModel
+    /** The RBI instrument the regulatory mapping cites (backend regulated_entity.py); "nbfc" when not set. Absent on a
+     * backend older than the setting (the control is hidden then). */
+    regulated_entity?: "nbfc" | "bank" | "sfb" | "payments_bank" | "ucb" | "aifi" | "credit_info_company" | "other"
+    /** Regulatory profile facts (backend regulated_entity.FLAGS): PCI DSS, SEBI CSCRF and the CERT-In government
+     * guidelines bind the team only when set. Absent on an older backend. */
+    processes_card_data?: boolean
+    sebi_regulated?: boolean
+    government_entity?: boolean
     stop_all_network: boolean
     /** Refuse scan nodes that do not sign their requests (legacy nodes must be reset and enrolled again). */
     require_signed_nodes: boolean
@@ -4415,15 +4475,25 @@ export interface CbomRiskModel {
     data_shelf_life_years: number | null
     migration_years: number | null
     threat_years: number | null
+    /** D13: days from the assessment to fix each wave's classical weaknesses (null or absent: 90 / 180 / 365) */
+    wave1_fix_days?: number | null
+    wave2_fix_days?: number | null
+    wave3_fix_days?: number | null
 }
 
+/** "deprecated" (class model pc-3, SOW D12): no public-key algorithm and NIST SP 800-131A disallows the algorithm (DES,
+ * Triple DES, RC4, MD5 ...): outside readiness like "not-applicable", graded separately (Q1 Critical internet-facing, else Q2 High). */
 export type CbomPqcClass = "quantum-vulnerable" | "hybrid" | "quantum-safe" | "grover-weakened" | "unknown" | "not-applicable"
+    | "deprecated"
 /** What a PQC readiness percentage rests on (CB-18): it is withheld when more assets are unknown than judged. */
 export interface CbomReadinessBasis {
     judged: number
     ready: number
     unknown: number
+    /** not-applicable plus deprecated: both are outside readiness */
     not_applicable: number
+    /** of which SP 800-131A-disallowed with no public key (class model pc-3); older servers send none */
+    deprecated?: number
     status: "ok" | "not_enough_identified" | "nothing_judged"
 }
 
@@ -4442,7 +4512,7 @@ export interface CbomReadinessAction {
 }
 
 export interface CbomReadinessExcluded {
-    class: "unknown" | "not-applicable"
+    class: "unknown" | "not-applicable" | "deprecated"
     basis: string
     assets: number
     text: string
@@ -4577,6 +4647,15 @@ export interface CbomSourcesOverview {
     }
 }
 
+export interface CbomRunStatusReasonJob {
+    job_id: number | null
+    source_name: string | null
+    status: string | null
+    outcome: string | null
+    category: "partial" | "failed" | "expired" | "cancelled" | "waiting"
+    reason: string
+}
+
 export interface CbomRun {
     id: number
     team_id: number
@@ -4590,12 +4669,20 @@ export interface CbomRun {
     soc_ack_at: string | null
     cancelled_by: number | null
     cancelled_at: string | null
+    // S4: what started the run (absent on an older backend)
+    trigger?: CbomRunTrigger
+    schedule_id?: number | null
+    schedule_name?: string | null
     finished_at?: string | null
     created_at: string | null
     last_updated: string | null
     jobs?: CbomJob[]
     job_counts?: Partial<Record<CbomJobStatus, number>>
     asset_count?: number
+    /** FIX-B3: why the run is partial / failed / cancelled, or what an open run waits for (offline scan nodes); null when done */
+    status_reason?: string | null
+    /** FIX-B3 (run detail only): the jobs behind status_reason */
+    status_reason_jobs?: CbomRunStatusReasonJob[]
     // CB-19 PR-2: the grade model and inputs recorded at Start; inputs_changed when the team's Mosca differs now
     grades?: {
         model_version: string | null
@@ -5333,11 +5420,18 @@ export interface CbomRunVex {
     vulnerabilities: CbomRunVexEntry[]
 }
 
-/** HMAC-SHA256 over the exact bytes of GET /runs/{id}/cbom (format=json), with the code lane's bom_signature key and
- * fields. The key stays on the server: verify with verifyCbomRunSignature, or compare sha256(file) with ``digest``. */
+/** The run CBOM JSON's signature (D11): ES256 (base64 DER, openssl-verifiable) over the exact bytes of
+ * GET /runs/{id}/cbom (format=json) with the deployment's published key (GET /{team}/bom-signing-keys); the file
+ * also carries an embedded JSF signature. ``legacy_hmac``: the older server-held HMAC. A server without a signing
+ * key answers the HMAC fields alone (alg "HMAC-SHA256"). */
 export interface CbomRunSignature {
-    alg: "HMAC-SHA256"
+    alg: "ES256" | "HMAC-SHA256"
     key_id: string
+    public_key_pem?: string
+    fingerprint?: string
+    keys_route?: string
+    embedded?: { format: string; algorithm: string; keyId: string; covers: string } | null
+    legacy_hmac?: { alg: "HMAC-SHA256"; key_id: string; signature_b64: string }
     digest: string
     signature_b64: string
     signed_at: string
@@ -5391,22 +5485,30 @@ const downloadCbomRunDeliverable = async (team_id: number, run_id: number, kind:
 
 /** The answer of POST /runs/{id}/signature/verify for a downloaded run CycloneDX JSON. */
 export interface CbomRunSignatureVerification {
+    /** the signature is this deployment's AND the file is this run's */
     valid: boolean
     signature_match: boolean
+    /** the signature alone checks out (true for another run's file, which is not valid) */
+    signed_by_deployment?: boolean
+    /** the file is this run's: its current CBOM, or a file whose zs:run_id / pack subject names this run */
+    bound?: boolean
+    reason?: string
     /** the file equals the run's current CBOM JSON (null only when nothing was compared) */
     digest_match: boolean | null
     digest: string
     current_digest: string
     bytes: number
     key_id: string
-    alg: "HMAC-SHA256"
+    alg: "ES256" | "HMAC-SHA256"
     compared_with: string
+    /** the uploaded file's own JSF signature, when it carries one */
+    embedded_signature?: { valid?: boolean; kid?: string; reason?: string }
     run_id: number
     run_status: string
 }
 
 /** Sends a downloaded run CycloneDX JSON, as downloaded, for verification against the signature it came with
- * (``signatureB64``), else against the run's current CBOM. The HMAC key stays on the server. */
+ * (``signatureB64``: ES256 or the older HMAC), else its embedded JSF signature, else the run's current CBOM. */
 const verifyCbomRunSignature = async (team_id: number, run_id: number, file: Blob,
                                       signatureB64?: string): Promise<CbomRunSignatureVerification> => {
     const response = await api.post(`${cbomRunDeliverablePath(team_id, run_id, "signature")}/verify`, file, {
@@ -5597,7 +5699,7 @@ export class ReportDownloadError extends Error {
     readonly field: string | null
     /** 429: when a new build may start (ms since the epoch; 30 s when the server gave no Retry-After) */
     readonly retryAt: number | null
-    /** 429 from a full export-slot pool: its X-Export-Busy header ("pdf" | "cbom"); null for a rate-limit 429 */
+    /** 429 from a full export-slot pool: its X-Export-Busy header ("pdf" | "cbom" | "verify"); null for a rate-limit 429 */
     readonly busy: string | null
 
     constructor(message: string, init: { status: number | null; detail: string | null; retryAfter: number | null; field: string | null; busy?: string | null; cause?: unknown }) {

@@ -1,95 +1,96 @@
 {
   "base_commit": "f7385517523212e50b20ec6f1947831a5ef19872",
+  "digests_from": "PR #484 (D11) emit changes on top of base_commit f7385517; regenerate with support/make_goldens.py",
   "trees": {
     "synthetic-crypto-app": {
-      "cyclonedx": "e1d9ab83aa373f43322e2f3296720b5a5c8492e45863fd4701729545000014a7",
-      "normalize": "322584ae80e08bb5f4fc771ba615e19b3ff8d096480a90e201b4dcce491505e2",
-      "scan": "4a857a73bcd1ba5898b7bb38bfdf499e28afe0c0a55fce1830f158fc6f8391ad"
+      "cyclonedx": "aa8365c9a706d6fc2b02cc11992802238a7043b9eefac66219701963d14edd5d",
+      "normalize": "0bc0f6f1656e593e4d065f369496284d57d4707198fc229b3a2cbe2312b94b84",
+      "scan": "7518cc59901d057343a3e6ae6c9821e812a9a9aa5715f3a99d7365a6803687fb"
     },
     "synthetic-crypto-ast": {
-      "cyclonedx": "8b9f2db50137bb91bebb240f207c7dcb5e587fed4e12b391b2b4a7f87cc88823",
-      "normalize": "3158670a990c985e692c66519a5b606d8f73c765456327ac042ee895941c1b08",
-      "scan": "7934c8102bea92ea355cd7cb63eceb97f4f36079bf79672a09af82c202f2c63a"
+      "cyclonedx": "b053b0a39ba996eed8c455af374d33a31976bc66cefa4f87fb2fea92d66e5e8d",
+      "normalize": "4c0cde36944cedaf3a2a4d5eb818d37c4cc82911d333b2e79a3a7e23774bfa28",
+      "scan": "301efe180c53b250b3a3efff28064a473f17ede0f9b933d0070bdd5754721fac"
     },
     "synthetic-crypto-certs": {
-      "cyclonedx": "3b0abc5ac7fb475766429ae2ee95613695cd2c6129e2bd47c681bedfd93f3dd2",
-      "normalize": "9a19179aef060f142a2ecf5e0220f08cfd1b650509ee6c9e0e3651864da05dc1",
-      "scan": "130c68c3d5da22378bff38b76c3702def56d48ee72a5683bd164e6a73a45cfc9"
+      "cyclonedx": "821f039952dce6920e8459a98c0ba80ab216a5ae9efccc7408e9bbc5095c86db",
+      "normalize": "e4bb91ec341040373b78b07a9ec708e4b64c700c38f4d4481872313f11419e9e",
+      "scan": "40a9a7f076fb551e4041648fd89f4621b3caa22390f40cb0a602458a8c3501b0"
     },
     "synthetic-crypto-certs-harden": {
-      "cyclonedx": "ca5af5d7fee496f3bc1e7d0b6f362538f1cf53b89d25e4664304dbba617389cf",
-      "normalize": "11ad2d88e622972e692029d1802dee094c5304eea72062df722ca19a926d78b5",
-      "scan": "0a676c31a3595846e8483767001793a304a365a239633ac170812c1cc7f6238c"
+      "cyclonedx": "e90fb7a06fa7aa79656bd231e32d97b01a8ba56076fbad55a860b9bcd5b11a1e",
+      "normalize": "7bf6d4bc5fac6b6461a1665e75b8adb7034075a18d0ce03af977d613bef59638",
+      "scan": "ac95c4750ca244b2ae4c3dd3bf4eec6941959438719ff0cf0d358ef5d1601980"
     },
     "synthetic-crypto-dataflow": {
-      "cyclonedx": "42e326dc3c8e76e98f159ca8656159d5f7963f969b262195323392636a9a6c0a",
-      "normalize": "037f0e367a6c350abbbb60d1bec78b2cb2a853ad4f54d774f8e0e9f9d1eb4bef",
-      "scan": "278fbc0aa1013d9931f26602df05ce7f059fffaeb0d388adffae5810a1d0cb32"
+      "cyclonedx": "1c4fb8007853f06da23c0cae6436348dccf4f0636889acadcc7cb37d4aa5376c",
+      "normalize": "0466f2eeeee801348972911d642f18bbf342d68254e7e2ff31bcc0966d6ab40b",
+      "scan": "8110d446f70ef705171f7c415ac112179354c243b515312633e7ff3b93813093"
     },
     "synthetic-crypto-inline-cert": {
-      "cyclonedx": "bc2f8766ba082f81a6f749255525b859c66652c87743ef350766a095b12fbcb7",
-      "normalize": "3e39e9b4aa1d373915af17cdf76382c285f8b7695a72fca1b8e486d2edce37ff",
-      "scan": "afb130a235722719de277b69e6b4196394f82d9f9133470ed3f5433d7d834829"
+      "cyclonedx": "8449a7c468fc4ab07cfea964d752b1576f2195bf1d74a031577143a15bec0cea",
+      "normalize": "09289ac788373c4150faaa5723929ffd89e942c0e8237eca4d83b1659cd7eaa9",
+      "scan": "5be44f9f0fb1af837e4eed2a1ba6585957b3b4a0e2993dcc11dbeefd9bcb7b1f"
     },
     "synthetic-crypto-jvm-go": {
-      "cyclonedx": "6ff29b397728081147a224900330438132147957ae579d59b36c31ea5e423de6",
-      "normalize": "4d712f525875df68eb09e6f666e4f9e8381b4ba710766a313ba30603b295d5ac",
-      "scan": "7fb032242f3abab4b7df9b897aed601a6c816e64eab2dec08e19b9fb6d39ed50"
+      "cyclonedx": "ca453460b3b6a82812e0304803da157768c7716f542f77d317205240f1d5e600",
+      "normalize": "4233dc31f87fa6689e08645f49258e7156724887ea03079c8444dec2c1a6d815",
+      "scan": "48fd97783838b1db1869b04a0489ea4c59ba222067288e74950785239f74b00b"
     },
     "synthetic-crypto-manifests": {
-      "cyclonedx": "e1b2ebbab88a28b5541a439e7f81091db2984b1d9ccefaece14055159873c60b",
-      "normalize": "5ac0e83ce64914e917d93668d424ef1a58d20a41f57cdb485354ebea10592b59",
-      "scan": "17af278cdc9f838671981327ed6ab549f48e137c845c884a7de98f4d744fa791"
+      "cyclonedx": "bd074489a3bb89464306c820ce60d25b67e8824df3762d4603a5b4daac48d570",
+      "normalize": "92bf3318f43d6bc2b8195fb409c8bb0abdbde4b6d71048629291589fe7a2b00f",
+      "scan": "ca1005273485994bdcf991a6a537d3b23ab2a1e21294d0bca6897a57e5651bc7"
     },
     "synthetic-crypto-misuse": {
-      "cyclonedx": "6de70b9ee44558ad5393cda0a3584d6f6d8ac5d80273e5e5d649885beec0c1ea",
-      "normalize": "9f82d57bfee77ba8fc23a62286d1963117f0d342834f9e4b4573856c9c093629",
-      "scan": "10622e0edfa6193de0802db20717678655afc0190a1759be5237aef2d623fad2"
+      "cyclonedx": "b8586db2be76cb81a1e0eee9d5ab857828b65e16c4189beb33fd6e1027bdfca1",
+      "normalize": "fbe9f98519c721fb31ab6da80b6d57c35563489f2966d3aa06fbd9d9487e4a93",
+      "scan": "6724cba5284a17ca60e60287ff91c1ba7eb6fdcea94886de3101f37f2bc5e2b4"
     },
     "synthetic-crypto-multilang": {
-      "cyclonedx": "fdb21fb6fc174ee86c4a01426cbdfc2acd7506a0ebbd944a85a8d0b6132bdbab",
-      "normalize": "ba6d4f6eafcdb109754cb62749a5cc4112378a61db1bc257cbdc6469d1d619ca",
-      "scan": "da7f13967c9a0a4004630fdda5beddea90d656bc565031efb8bb83fd9142fa52"
+      "cyclonedx": "19accd87373e3da9c64ea580008776f2a13ea8bdc1998b3841b81be5ef80e19b",
+      "normalize": "34cff5adc7e9f346cedf685c2f8938281fea29a04bfb1d301cfad3d5ab7b708c",
+      "scan": "d3ea18fa87cd602e4e3af663a0faa8849fe0be21a90fd1fb08a001933afde900"
     },
     "synthetic-crypto-native": {
-      "cyclonedx": "0d275fb4ce68af3b94974ca0180b63d0f86025c8f5dbc4be74a13d749df1e327",
-      "normalize": "c86dffd284ec6eb730fa20193b18ef9bd4ae601cbf75ac44bfce2e37e85eaefa",
-      "scan": "003b47e18dac599b9562b34bed113ae237c27dcfc34d657bad49ad56305c2695"
+      "cyclonedx": "37d539557be9acac94cd5e13769240c170a733ce825f992962c088bf8d943848",
+      "normalize": "5c5e9c5f844fb524617f51231838faa13cee7826e99140b8e2cdc20044f406b3",
+      "scan": "82707a9c09c3c7c252483210f7f109bc0311cd34384908bbcc254d4d6ba69e5c"
     },
     "synthetic-crypto-native-apis": {
-      "cyclonedx": "2c392e3a006a7d4d1aac4d7f76779057467c0f15f616570296833749841d5ada",
-      "normalize": "7d2e911a52527f76cdf95f52c8672455ffb0de1aea0ab6ff92507da553f09e3d",
-      "scan": "d461be33e1f011c4f2f10f9858950cb35bf6203ec4b96326d0c07d3168fe49ab"
+      "cyclonedx": "4efbe9f6280b946b6f0e4cf85532b045961f3bb51fb3a1be4f3211ecae6c05b9",
+      "normalize": "018b9bb24eb1c1248d11ff662ccb8427aae421f111afab55430335efd23113f4",
+      "scan": "1edaa4ea07ec58b03a6af4ed92a386fd498cbaa6ddbc5dd90b984fe9353c9b5d"
     },
     "synthetic-crypto-padding": {
-      "cyclonedx": "c67997eb21b9957d454bc7feae34635fc7d2224ddb487582233dc9dfde99f356",
-      "normalize": "21c971a660446bf6dde5798108932bd75afdf3d452b29750002ba8d4df12366e",
-      "scan": "99855ec6e91569f6b721172d361d33094041931e52e8f5e26c365c24af636f74"
+      "cyclonedx": "1bc7e75348148dd9fbf220be073c33d322c2c4df7079d00db0e588eae0de3018",
+      "normalize": "8077389548229488ca254435b932da207b171c4c0b19534c813e405650407d82",
+      "scan": "3c9cac99ebc4acf5bedc081ddff2a63126e1c7d734041d1cf1e7690b9f68c6ed"
     },
     "synthetic-crypto-policy": {
-      "cyclonedx": "844e14f0733fe8a9656864059be2d6ad9d6d1e6dc6721ab431f5db79610ec415",
-      "normalize": "e902779b0b12345f423e36b1916247cd6b061dc0d2f4d6dd8682d43663ae8b67",
-      "scan": "ef472a33c20e787c699732ca4324455ff49554e1aad05274156994d719b56757"
+      "cyclonedx": "f10b4eded5b5d5fe61464fc40948945354a33bba44d128530bf5374983725eb9",
+      "normalize": "071cab7e00c7b80529dc808b022f62a2c1896ee52b594caf5afa18038d765fe0",
+      "scan": "582df80a314eb61a84aca4a9b5cb9626a06bb2ad950a27aeaf9eb2530fbe8e45"
     },
     "synthetic-crypto-pqc": {
-      "cyclonedx": "a1694f3a2b33e9a84bf6ad9527ebacd1df21399d0d762f6abdff2319d2070c5a",
-      "normalize": "0982fca71f3bbacd7084779f94623511c708f32e17068bc9d2d4888853a2de54",
-      "scan": "bf16f6bcee91c2043e4a3eb9e48b6f2bafe426e84da99153d05dafee92b0a36e"
+      "cyclonedx": "55a3dc8ef4d4f3a25144b0d3cc24f7e4b3ce841c8db617d2d9f961100fb64ca6",
+      "normalize": "f399c937f20bae4e9ca6fb90fc995fa7ca39874f85195c48600aea8bfdfe2282",
+      "scan": "b822ec18fd563374eb79d0df868928f45caee55fd9f213616b4f5bb90b2c818c"
     },
     "synthetic-crypto-protocols": {
-      "cyclonedx": "34c487ebf720a77093519962ff1479eb57c88ae9103e7d008b5581f5acef63e7",
-      "normalize": "2033604563b506ec4d217b4c854792a14b82512e2852d29d92b53880b8cb0581",
-      "scan": "406133dec0272f24e00c87a389dd68856145b6c0fa18997550896db9bfa457ba"
+      "cyclonedx": "264fc912d745c77ecc32790eece0471c75cae81c8b3ed2140cfbb1ebbf56c606",
+      "normalize": "e1104c7d96bfc9d36ec0074e00b0515979da40df38fc8aa31a9387da2fe01031",
+      "scan": "e8d842a30f5868443dc0bbfe9f74373fe176aea3aad48fcfe35eb66b25f2f5e4"
     },
     "synthetic-crypto-suites": {
-      "cyclonedx": "33460dde7dce967ab033c51e1d45b811b71df10abdf81394de793653b5acb944",
-      "normalize": "bdb2c577d70e3b49209109f8974e8ef6ea71bbe224d2d476ce9a64f0464277f6",
-      "scan": "f299510342e9d74c0e534bbf63635dbeeff51a8e3557b71fd2baed85457ddcfb"
+      "cyclonedx": "615250a3b2819d5dee9a3a557dbce0ca0581f66a07fc3af1c1864f680f28d68a",
+      "normalize": "85c2d088df4c7b4773fc04d080df29cffcadf5e0b049ab3199375610c280cda0",
+      "scan": "0519411700d4160e4332e80c71fb6824615476148421011798093af0c03328d0"
     },
     "synthetic-crypto-web-native": {
-      "cyclonedx": "bc9eb663e1cb9966559d2bb4c472e82a08cea058585913c1c056989a3e98c501",
-      "normalize": "1e65288bed7b0ec3ed63a4b5d70cfa5e3221591adb9dd11ca1a9c8ba03a9c5d3",
-      "scan": "108b459d48280c292456747ffb07560a7e38f94262d3f51f1cbb682bc0082a6a"
+      "cyclonedx": "2cb4e3268c13ac3adc1b4da9980b44ef3c3cdb75261ba6ee262d291676a38a8c",
+      "normalize": "d19e481c49a8bc45ecd7c01d41bac7c088515ddf855c581b55027632907993d6",
+      "scan": "d9fafff56022c63f2ffbf70e8eb2855ea368556d35bbf00ff6527ec5777286f7"
     }
   }
 }

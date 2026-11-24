@@ -18,6 +18,7 @@ computes no scores and raises no flags; it only reads + reshapes.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from aibom.cbom.posture.assemble import build_posture_block
@@ -32,6 +33,7 @@ from aibom.cbom.weakness import (
     WEAK_CRYPTO_CODES,
 )
 from aibom.emit import get_reporter
+from aibom.emit.cyclonedx import crypto_provides
 from aibom.graph_view import (
     COMPACT_MAX_NODES,
     EXPANDED_MAX_NODES,
@@ -53,6 +55,15 @@ CONFIG_WEAKNESS_CODES = frozenset({
 _WEAKNESS_CODES = WEAK_CRYPTO_CODES | {EXPIRED_CERTIFICATE, "CUSTOM_CRYPTO"} | CONFIG_WEAKNESS_CODES
 
 _SEVERITY_IMPACT = {"error": "High", "warning": "Medium", "note": "Low", "none": "Low"}
+
+
+def _weakens(flag: Any) -> bool:
+    """A finding that makes the asset weak (classically broken). A KDF cost above
+    the NIST floor but below the OWASP minimum (WEAK_KDF_ITERATIONS at note, Low)
+    asks for a higher cost; it does not make PBKDF2 / scrypt / Argon2 broken today."""
+    if flag.code == "WEAK_KDF_ITERATIONS" and flag.severity == "note":
+        return False
+    return flag.code in _WEAKNESS_CODES
 _IMPACT_RANK = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
 
 
@@ -148,7 +159,7 @@ def _finding(comp: AIComponent, result: ScanResult) -> dict[str, Any]:
         "pqc_migration_roadmap": props.get("crypto:pqcMigrationRoadmap"),
         "parameter_set": props.get("crypto:parameterSet"),
         "hybrid": props.get("crypto:hybrid") == "true",
-        "weak": any(c in _WEAKNESS_CODES for c in codes),
+        "weak": any(_weakens(f) for f in result.flags_for(comp.bom_ref)),
         "finding_codes": codes,
         "description": _finding_description(comp, result),
         "location": props.get("crypto:source") or props.get("discovery:source") or "",
@@ -488,9 +499,7 @@ def _crypto_graph(
             "impact": _impact_for(c, result),
             "quantum_vulnerable": (c.properties or {}).get("crypto:quantumVulnerable")
             == "true",
-            "weak": any(
-                f.code in _WEAKNESS_CODES for f in result.flags_for(c.bom_ref)
-            ),
+            "weak": any(_weakens(f) for f in result.flags_for(c.bom_ref)),
             "location": (c.properties or {}).get("discovery:source")
             or (c.properties or {}).get("crypto:source"),
         }
@@ -517,16 +526,10 @@ def _crypto_graph(
                 _add(src, rel, target)
     for e in result.edges:  # native scanner edges (misuse used_by, certificate signed_by, ...)
         _add(e.src, e.rel, e.dst)
-    # library -> algorithm: the crypto libraries each asset's file imports (occurrence pass) "provide" it.
-    lib_by_label = {str(n["label"]).lower(): n["id"] for n in nodes if n["kind"] == "framework"}
-    for c in result.components:
-        libs = (c.properties or {}).get("crypto:libraries")
-        if c.kind != "crypto_asset" or not libs:
-            continue
-        for label in libs.split(","):
-            lib_id = lib_by_label.get(label.strip().lower())
-            if lib_id:
-                _add(lib_id, "provides", c.bom_ref)
+    # library -> algorithm "provides": the emitter's one rule (the library the algorithm's API call names, not every
+    # library its file imports), so a merge of these edges into CycloneDX ``dependencies`` adds nothing it lacks
+    for lib_id, algorithm in crypto_provides(result):
+        _add(lib_id, "provides", algorithm)
 
     nodes.sort(key=lambda n: str(n["id"]))
     edges.sort(key=lambda e: (str(e["source"]), str(e["rel"]), str(e["target"])))
@@ -536,6 +539,77 @@ def _crypto_graph(
 def _bom(result: ScanResult) -> dict[str, Any]:
     """Render the hand-built CycloneDX 1.6 CBOM to a dict (downloadable)."""
     return json.loads(get_reporter("cyclonedx").render(result))
+
+
+def _algid_identities(bom: dict[str, Any]) -> None:
+    """D11 / A-14: algid's identity on algorithms the emitter's OID table missed.
+
+    algid is the single source of algorithm identities: an algorithm without
+    ``oid`` gets the algorithm's own OID, else, for a key-size-suffixed name
+    (RSA-2048), its family's key algorithm OID; a quantum-vulnerable algorithm
+    without a level gets ``nistQuantumSecurityLevel`` 0. Nothing is overwritten.
+    """
+    from aibom.cbom import algid
+
+    for comp in bom.get("components", []):
+        cp = comp.get("cryptoProperties")
+        if not isinstance(cp, dict) or cp.get("assetType") != "algorithm":
+            continue
+        ident = algid.resolve(comp.get("name"))
+        if ident is None:
+            continue
+        oid = ident.oid
+        sized = rf"{re.escape(ident.family_label or '')}[-_ ]?\d+"
+        if not oid and ident.family_label and ident.name and re.fullmatch(
+                sized, ident.name, re.IGNORECASE):
+            family = algid.resolve(ident.family_label)
+            oid = family.oid if family is not None else None
+        if oid and not cp.get("oid"):
+            cp["oid"] = oid
+        props = cp.setdefault("algorithmProperties", {})
+        if "nistQuantumSecurityLevel" not in props:
+            level = 0 if ident.quantum == "vulnerable" else ident.nist_category
+            if level is not None:
+                props["nistQuantumSecurityLevel"] = level
+
+
+_USES_RELS = frozenset(
+    {"subjectPublicKey", "signatureAlgorithm", "algorithm", "cipherSuite", "cryptoRef"}
+)
+
+
+def _crypto_dependencies(bom: dict[str, Any], graph: dict[str, Any]) -> None:
+    """D11 / A-14 / C G-D3-3: CycloneDX 1.6 ``dependencies`` of the crypto graph.
+
+    From ``_crypto_graph``: a certificate, key or protocol ``dependsOn`` (uses)
+    what its ``*Ref`` fields name, and a crypto library ``provides`` (implements)
+    the algorithms its files import. Merged into the emitter's own dependencies;
+    only refs of components in the BOM.
+    """
+    refs = {c.get("bom-ref") for c in bom.get("components", []) if isinstance(c, dict)}
+    uses: dict[str, set[str]] = {}
+    provides: dict[str, set[str]] = {}
+    for dep in bom.get("dependencies") or []:
+        uses.setdefault(dep["ref"], set()).update(dep.get("dependsOn") or [])
+        provides.setdefault(dep["ref"], set()).update(dep.get("provides") or [])
+    for edge in graph.get("edges", []):
+        src, dst, rel = edge["source"], edge["target"], edge["rel"]
+        if src not in refs or dst not in refs:
+            continue
+        if rel == "provides":
+            provides.setdefault(src, set()).add(dst)
+        elif rel in _USES_RELS:
+            uses.setdefault(src, set()).add(dst)
+    out = []
+    for ref in sorted(set(uses) | set(provides)):
+        entry: dict[str, Any] = {"ref": ref}
+        if uses.get(ref):
+            entry["dependsOn"] = sorted(uses[ref])
+        if provides.get(ref):
+            entry["provides"] = sorted(provides[ref])
+        out.append(entry)
+    if out:
+        bom["dependencies"] = out
 
 
 def _is_export_row(comp: AIComponent) -> bool:
@@ -561,6 +635,16 @@ def _annotate_findings(bom: dict[str, Any], result: ScanResult) -> None:
         props.append({"name": "zs:impact", "value": _impact_for(comp, result) or "Info"})
 
 
+def gate_rows(result: ScanResult) -> list[dict[str, Any]]:
+    """The finding rows the policy gate judges: the rows ``normalize_crypto`` puts
+    in ``results`` (crypto assets, flagged facts and flagged libraries), without the
+    graphs and charts. The offline ``aibom cbom`` gate uses them so its verdict
+    matches the hosted gate's for the same tree and policy."""
+    assets = _crypto_assets(result)
+    extra = (*_flagged_facts(result), *_flagged_libraries(result))
+    return [_finding(c, result) for c in (*assets, *extra)]
+
+
 def normalize_crypto(result: ScanResult, *, duration_of_scan: float) -> dict[str, Any]:
     """Normalize a scored CBOM ScanResult into the DevSecShield run-object.
 
@@ -577,7 +661,9 @@ def normalize_crypto(result: ScanResult, *, duration_of_scan: float) -> dict[str
     )
     bom = _bom(result)  # render once; cbom_json + cbom_graph share it
     _annotate_findings(bom, result)
+    _algid_identities(bom)
     full_graph = _crypto_graph(result, bom)
+    _crypto_dependencies(bom, full_graph)
     # Additive compact/expanded projections — full ``cbom_graph`` stays intact
     # for contracts; FE prefers compact for Card, expanded for Dialog.
     payload = {
@@ -614,4 +700,4 @@ def normalize_crypto(result: ScanResult, *, duration_of_scan: float) -> dict[str
     return payload
 
 
-__all__ = ["normalize_crypto"]
+__all__ = ["gate_rows", "normalize_crypto"]

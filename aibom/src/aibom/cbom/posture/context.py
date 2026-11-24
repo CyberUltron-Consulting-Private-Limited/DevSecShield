@@ -316,3 +316,5 @@ def posture_sink(ctx: ScanContext) -> PostureSink:
 @dataclass
 class CbomScanResult(ScanResult):
     posture: PostureSidecar = field(default_factory=PostureSidecar.empty)
+    # class attribute (not a field): the emitters stamp the CBOM tool name
+    document_kind = "cbom"

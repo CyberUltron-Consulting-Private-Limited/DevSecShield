@@ -75,8 +75,16 @@ def test_a_high_finding_fails_the_gate():
     assert gate["verdict"] == "fail"
     assert cbom_gate.gate_failed(gate) is True
     assert gate["failing_count"] == 1
+    # S1: each failing finding also lists the rules it broke (the default policy: the CLI's code set, SP 800-131A key
+    # sizes; quantum-vulnerable warns). This row carries no key size, so only its finding code fails it.
     assert gate["failing"] == [{"codes": ["WEAK_ALGORITHM"], "title": "RSA-1024", "location": "app/keys.py",
-                                "line": 5, "impact": "High"}]
+                                "line": 5, "impact": "High",
+                                "rules": [{"rule": "finding_code", "outcome": "fail", "code": "WEAK_ALGORITHM",
+                                           "detail": "Finding code WEAK_ALGORITHM is blocked by the policy"},
+                                          {"rule": "min_key_size", "outcome": "fail",
+                                           "detail": "RSA key size 1024 bits is below the policy minimum of 2048 bits"},
+                                          {"rule": "quantum_vulnerable", "outcome": "warn",
+                                           "detail": gate["failing"][0]["rules"][2]["detail"]}]}]
     assert gate["fail_codes"] == sorted(cbom_gate.FAIL_CODES)
     assert "WEAK_ALGORITHM" in gate["reason"]
 
@@ -310,7 +318,7 @@ def test_integration_logs_carry_the_stored_verdict_and_never_invent_one(ci, monk
     monkeypatch.setattr(router, "get_user_from_header_or_raise_exception",
                         lambda *_a, **_k: _async(types.SimpleNamespace(id=1)))
     monkeypatch.setattr(router, "check_if_user_is_in_team", lambda *_a, **_k: None)
-    monkeypatch.setattr(router, "project_cbom_ci_page", lambda _run: None)
+    monkeypatch.setattr(router, "project_cbom_ci_page", lambda _run, **_kw: None)
     monkeypatch.setattr(router, "get_cicd_vuln_chart_data", lambda **_k: {})
     from backend.tests.support.rbac import stand_in_principal
     stand_in_principal(monkeypatch, user_id=1, role="viewer")  # F4 route policy: cicd.read, the lowest role
@@ -377,3 +385,66 @@ def test_hosted_verdict_matches_sp800_131a_and_the_cli(tmp_path, source, sp800_1
     assert cli.returncode == (1 if sp800_131a_fails else 0), cli.stderr
     if sp800_131a_fails:
         assert gate["failing"] and gate["failing"][0]["location"].endswith("keys.py")
+
+
+# ------------------------------------------------------------------------------------- S1: the team / integration policy
+def _store_policy(team_id: int, integration_id: int | None, **over):
+    from backend.cbom_gate_models import CbomGatePolicy
+    from backend.routers import cicd as router
+    from backend.utilities.cicd import gate_policy as GP
+
+    policy = GP.validate_policy({**GP.DEFAULT_POLICY, **over})
+    now = __import__("datetime").datetime(2026, 11, 23)
+    scope = "team" if integration_id is None else f"integration:{integration_id}"
+    with Session(router.get_db()) as session:
+        session.add(CbomGatePolicy(team_id=team_id, scope=scope, integration_id=integration_id, policy=policy,
+                                   row_version=3, created_at=now, updated_at=now))
+        session.commit()
+
+
+def _cbom_ids():
+    from backend.routers import cicd as router
+    with Session(router.get_db()) as session:
+        integ = session.exec(__import__("sqlmodel").select(CicdIntegration).where(CicdIntegration.scan_type == "cbom")).one()
+        return integ.team_id, integ.id
+
+
+def test_route_uses_the_team_policy_and_says_which_rule_failed(ci):
+    http, state, logs, auth_as = ci
+    auth_as("cbom")
+    team_id, _integ = _cbom_ids()
+    _store_policy(team_id, None, name="Payments strict", quantum_vulnerable="fail")
+    state["run"] = {"results": [{**_row("RSA-3072", ["QUANTUM_VULNERABLE"]), "quantum_vulnerable": True}],
+                    "cbom_json": {}}
+    response = _post(http, "cbom")
+    body = response.json()
+    assert response.status_code == 200, response.text
+    assert body["gate_failed"] is True
+    assert body["gate"]["policy"] == "Payments strict" and body["gate"]["policy_source"] == "team"
+    assert body["gate"]["policy_version"] == 3
+    assert [r["rule"] for r in body["gate"]["failing"][0]["rules"]] == ["quantum_vulnerable"]
+    assert body["gate_summary"].startswith("FAIL policy=Payments strict failing=1")
+    assert "rules_failed=quantum_vulnerable:1" in body["gate_summary"]
+    assert logs.docs[body["cicd_log_id"]]["gate"]["policy_source"] == "team"
+
+
+def test_route_prefers_the_integration_override(ci):
+    http, state, logs, auth_as = ci
+    auth_as("cbom")
+    team_id, integ = _cbom_ids()
+    _store_policy(team_id, None, name="Team", quantum_vulnerable="fail")
+    _store_policy(team_id, integ, name="Legacy app", quantum_vulnerable="warn")
+    state["run"] = {"results": [{**_row("RSA-3072", ["QUANTUM_VULNERABLE"]), "quantum_vulnerable": True}],
+                    "cbom_json": {}}
+    body = _post(http, "cbom").json()
+    assert body["gate_failed"] is False and body["gate"]["policy_source"] == "integration"
+    assert body["gate"]["warning_count"] == 1
+    assert body["gate_summary"].startswith("PASS policy=Legacy app")
+
+
+def test_route_with_no_policy_uses_the_default(ci):
+    http, state, logs, auth_as = ci
+    auth_as("cbom")
+    state["run"] = {"results": [_row("AES-GCM", [])], "cbom_json": {}}
+    body = _post(http, "cbom").json()
+    assert body["gate"]["policy_source"] == "default" and body["gate_failed"] is False

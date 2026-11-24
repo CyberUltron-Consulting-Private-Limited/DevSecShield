@@ -166,6 +166,19 @@ _WEAK = "weak"
 _MOD = "moderate"
 _STRONG = "strong"
 
+# Constructions built from named primitives (CycloneDX 1.6: the construction
+# ``dependsOn`` each part). A part is (algorithm key, key size, mode, padding,
+# variant); the algorithm scanner inventories the parts next to the construction
+# so a reader sees the real cipher, mode and MAC (Fernet is AES-128-CBC +
+# HMAC-SHA256, never "AES-256").
+_Part = tuple[str, int | None, str | None, str | None, str | None]
+COMPOSITE_PARTS: dict[str, tuple[_Part, ...]] = {
+    "fernet": (
+        ("aes-128", 128, "CBC", "PKCS7", None),
+        ("hmac", None, None, None, "SHA256"),
+    ),
+}
+
 WEAK_ALGORITHMS: dict[str, dict] = {
     "md5": {"primitive": "hash", "strength": _WEAK, "quantum_vulnerable": False},
     "md4": {"primitive": "hash", "strength": _WEAK, "quantum_vulnerable": False},
@@ -212,8 +225,16 @@ STANDARD_ALGORITHMS: dict[str, dict] = {
     "chacha20-poly1305": {"primitive": "ae", "strength": _STRONG,
                           "quantum_vulnerable": False},
     # Fernet (cryptography.io spec): AES-128-CBC + HMAC-SHA256 under one 256-bit key (128-bit signing + 128-bit
-    # encryption half).
-    "fernet": {"primitive": "ae", "strength": _STRONG, "quantum_vulnerable": False, "key_size": 256},
+    # encryption half). Its security is the 128-bit AES key (NIST category 1),
+    # not the 256-bit key material: key_size is the cipher key (the grading
+    # reads it), key_material_bits the whole Fernet key.
+    "fernet": {
+        "primitive": "ae",
+        "strength": _STRONG,
+        "quantum_vulnerable": False,
+        "key_size": 128,
+        "key_material_bits": 256,
+    },
     "rsa": {"primitive": "pke", "strength": _STRONG, "quantum_vulnerable": True},
     "rsa-2048": {"primitive": "pke", "strength": _STRONG,
                  "quantum_vulnerable": True, "key_size": 2048},
@@ -697,6 +718,7 @@ def extract_curve(line: str) -> str | None:
 
 __all__ = [
     "LANGUAGE_EXTENSIONS",
+    "COMPOSITE_PARTS",
     "WEAK_ALGORITHMS",
     "STANDARD_ALGORITHMS",
     "ALGORITHM_NORMALIZE",

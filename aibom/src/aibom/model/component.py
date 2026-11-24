@@ -284,6 +284,21 @@ class ModelComponent(_BaseComponent):
     )
 
 
+#: ``model:reference_type`` values of a model NAMED but not used by the scanned
+#: application: listed in a catalog / doc / example file, or only in test code.
+MENTION_REFERENCE_TYPES = frozenset({"catalog", "test"})
+
+
+def is_model_mention(comp: object) -> bool:
+    """A model reference kept in the BOM for completeness that the application does
+    not use (``model:reference_type`` catalog / test). Findings, the score, the
+    compliance checks and the reports count models in use only."""
+    return getattr(comp, "kind", None) == "model" and (
+        (getattr(comp, "properties", None) or {}).get("model:reference_type")
+        in MENTION_REFERENCE_TYPES
+    )
+
+
 class DatasetComponent(_BaseComponent):
     """A dataset. Serializes to CycloneDX component type 'data'.
 

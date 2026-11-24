@@ -24,7 +24,7 @@ from backend.utilities.cicd.auth import (
     require_dast_cicd_key,
     require_zip_cicd_key,
 )
-from backend.utilities.cicd import cbom_gate
+from backend.utilities.cicd import cbom_gate, gate_policy, gate_policy_store
 from backend.utilities.cicd.api_keys import (
     can_manage_key,
     is_team_admin,
@@ -34,6 +34,7 @@ from backend.utilities.cicd.api_keys import (
     revoked_marker,
     with_key_record,
 )
+from backend.utilities.cbom_sources.regulated_entity import team_profile
 from backend.utilities.cicd.cbom_page import project_cbom_ci_page
 from backend.utilities.cicd.migrate_dast_logs import migrate_dast_cicd_logs_for_team
 from backend.utilities.cicd.poll import poll_for_results
@@ -365,14 +366,25 @@ async def run_cicd_scan(
         }
 
         # STEP [ 7 ] : ================= CBOM policy gate (the customer template fails the job on gate_failed) =========
-        # Same codes as the code-scan CLI gate (aibom.cbom.gate.FAIL_CODES). No result in the poll window fails closed.
+        # The integration's CBOM gate policy, else the team's, else the default (SOW S1: banned algorithms, minimum
+        # key sizes, quantum-vulnerable and deprecated rules, exceptions). No result in the poll window fails closed.
         # The verdict is stored on the log, so the CI/CD page shows what the pipeline was told.
         if type == "cbom":  # `type` is the path parameter (the scan type) here, not the builtin
-            gate = cbom_gate.evaluate(results)
+            try:
+                with Session(engine) as policy_session:
+                    policy, policy_source, policy_version = gate_policy_store.effective_policy(
+                        policy_session, team_id, user_and_integration["integration_id"])
+            except Exception as exc:  # the policy could not be read: judge with the strict preset (fail closed)
+                console.print(f"CBOM CI gate policy not read ({exc.__class__.__name__}); strict preset used",
+                              style="bold red")
+                policy, policy_source, policy_version = gate_policy.PRESETS["cnsa-2.0"], "unreadable", None
+            gate = cbom_gate.evaluate(results, policy, source=policy_source, version=policy_version)
             response["gate_failed"] = cbom_gate.gate_failed(gate)
             response["gate"] = gate
+            response["gate_summary"] = cbom_gate.summary_line(gate)  # grep-safe line for templates without jq
             console.print(
-                f"CBOM CI gate verdict={gate['verdict']} failing={gate['failing_count']} log={CICD_LOG_ID}",
+                f"CBOM CI gate verdict={gate['verdict']} failing={gate['failing_count']} "
+                f"policy_source={policy_source} digest={gate['policy_digest']} log={CICD_LOG_ID}",
                 style="bold yellow",
             )
             if CICD_LOG_ID:
@@ -772,6 +784,9 @@ async def get_cicd_integration(
             has_dast_profile = session.exec(
                 select(DastScanProfile.id).where(DastScanProfile.team_id == team_id)
             ).first() is not None
+            # the team's regulatory profile: the CBOM page's remediation cites only the clauses that bind the team
+            # (PR #485 review 2 M2; one settings read, only for a CBOM integration)
+            cbom_team = team_profile(session, team_id) if (scan_type or "").lower() == "cbom" else None
 
         # STEP [ 4 ] : ==================================== Get the ci cd integration logs from the mongo db ====================================
         cicd_logs_collection = mongo_db["cicd_logs"]
@@ -847,7 +862,7 @@ async def get_cicd_integration(
                 cbom_page = None
                 if (scan_type or "").lower() == "cbom" and isinstance(log.get("results"), dict):
                     try:
-                        cbom_page = project_cbom_ci_page(log["results"])
+                        cbom_page = project_cbom_ci_page(log["results"], team=cbom_team)
                     except Exception as exc:
                         console.print(f"CBOM CI page projection failed: {exc}", style="bold red")
                         cbom_page = None

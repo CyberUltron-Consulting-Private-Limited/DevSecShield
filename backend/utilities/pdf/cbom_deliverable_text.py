@@ -20,14 +20,16 @@ Conventions for renderers.
   fine).  A test fails if a sentence here would turn into ``?`` in the PDF.
 * Tool identity is "DevSecShield CBOM engine"; the internal engine package name must never
   appear in a document.
-* IR 8547 is an *initial public draft*: every printable mention says so (decision D-06).
+* NIST IR 8547 is cited exactly as the knowledge base records it (``crypto_kb.json`` pqc_context.nist_ir_8547:
+  final, 27 Oct 2026): status, date and transition years are read from there, never typed here (SOW audit A-05).
+* Documents are named by their SOW Table 7 IDs (D1 ... D14), never by an internal number (SOW audit A-04).
 * Templates use ``str.format`` named fields; the renderer supplies the numbers.
 
-Which document uses what: ``#1`` scope register: ``SCOPE_*``, ``MANUAL_DISCOVERY_ITEMS``;
-``#3`` methodology: ``METHOD_*``, ``CBOM_SCANNERS``, ``MANUAL_DISCOVERY_ITEMS``, ``RACI_*``;
-``#7`` certificate register: ``CERT_*``, ``EXPIRY_BAND_*``; ``#10`` assurance register:
-``ASSURANCE_*``, ``VERDICT_LABELS``; ``#15`` PQC roadmap: ``PQC_*``, ``CNSA_*``;
-``#16`` board report: ``GRADE_*``, ``GOVERNANCE_ACTIONS``, ``FRAMEWORK_LABELS``,
+Which document uses what (SOW Table 7 IDs): ``D1`` scope register: ``SCOPE_*``, ``MANUAL_DISCOVERY_ITEMS``;
+``D2`` methodology: ``METHOD_*``, ``CBOM_SCANNERS``, ``MANUAL_DISCOVERY_ITEMS``, ``RACI_*``;
+``D8`` certificate register: ``CERT_*``, ``EXPIRY_BAND_*``; ``D10`` assurance register:
+``ASSURANCE_*``, ``VERDICT_LABELS``; ``D13`` PQC roadmap: ``PQC_*``, ``CNSA_*``;
+``D14`` board report: ``GRADE_*``, ``GOVERNANCE_ACTIONS``, ``FRAMEWORK_LABELS``,
 ``RBI_MAPPING_NOTE``, ``finding_label`` / ``finding_action``.
 """
 
@@ -35,11 +37,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from backend.utilities.pdf import cbom_kb_text as kb_text
+
 # ---------------------------------------------------------------------------------------------
 # Public source URLs (each one is repeated in a "# Source:" comment where it is relied on)
 # ---------------------------------------------------------------------------------------------
-# Source: NIST IR 8547 initial public draft (Nov 2024), transition tables: https://csrc.nist.gov/pubs/ir/8547/ipd
-URL_NIST_IR_8547 = "https://csrc.nist.gov/pubs/ir/8547/ipd"
+# Source: NIST IR 8547 (final, 27 Oct 2026), transition tables 2 and 4: https://csrc.nist.gov/pubs/ir/8547/final
+# (the URL, status and dates come from the knowledge base: crypto_kb.json pqc_context.nist_ir_8547)
+URL_NIST_IR_8547 = kb_text.ir8547()["url"]
 # Source: NIST PQC project, FIPS 203/204/205 released Aug 2024: https://www.nist.gov/pqcrypto
 URL_NIST_PQC = "https://www.nist.gov/pqcrypto"
 # Source: NSA CNSA 2.0 advisory (PP-22-1338): https://media.defense.gov/2025/May/30/2003728741/-1/-1/0/CSA_CNSA_2.0_ALGORITHMS.PDF
@@ -134,7 +139,7 @@ RBI_BOM_DISCLAIMER = (
 # live network, a key-management system or stored data.
 SCOPE_OF_METHOD = (
     "Method: static analysis of repositories and uploaded artefacts, including declared "
-    "infrastructure and server configuration (documents #5, #6 and #9) and offline import "
+    "infrastructure and server configuration (D6, D7 and D9) and offline import "
     "of TLS result files. It does not include live-network discovery, inspection of HSM "
     "or KMS custody, or inspection of stored data."
 )
@@ -190,7 +195,7 @@ def scope_of_method(view: object) -> str:
     negatives.append("inspection of stored data")
     return (
         "Method: static analysis of repositories and uploaded artefacts, including declared infrastructure and "
-        "server configuration (documents #5, #6 and #9), offline import of TLS result files, and collection from the "
+        "server configuration (D6, D7 and D9), offline import of TLS result files, and collection from the "
         f"team's own systems. {sources_sentence(view)} It does not include {_join_negatives(negatives)}."
     )
 
@@ -199,7 +204,7 @@ def disclaimer_paragraphs(view: object) -> tuple[str, ...]:
     return (CERTIN_DISCLAIMER, RBI_BOM_DISCLAIMER, scope_of_method(view))
 
 # ---------------------------------------------------------------------------------------------
-# Compliance framework labels (#16 regulatory exposure, #10 ledger)
+# Compliance framework labels (D14 regulatory exposure, D10 ledger)
 # ---------------------------------------------------------------------------------------------
 # Product text: mirrors frontend/components/compliance/frameworkLabels.ts (pinned by T-CON-3);
 # keys are aibom CBOM_FRAMEWORKS in engine order.
@@ -225,6 +230,38 @@ RBI_MAPPING_NOTE = (
     "RBI rows show the RBI FREE-AI protection mapping only (Rec 19 and the RBI Cyber Security "
     "Framework, 2016). They are not an assessment against any other RBI directive."
 )
+# Product text: the RBI cybersecurity instrument each regulated-entity type is bound by (regulated_entity.py; the
+# knowledge base's RBI clauses, quoted from rbi.org.in, 31 July 2026 Directions). None: no RBI 2026 direction.
+ENTITY_INSTRUMENTS = {
+    "nbfc": ("the RBI NBFC Cybersecurity, Technology: Risk, Resilience and Assurance Framework Directions 2026",
+             "para 118, which binds NBFCs of the Middle Layer and above"),
+    "bank": ("the RBI Commercial Banks Cybersecurity, Technology: Risk, Resilience and Assurance Framework "
+             "Directions 2026", "para 140"),
+    "sfb": ("the RBI Small Finance Banks Cybersecurity, Technology: Risk, Resilience and Assurance Framework "
+            "Directions 2026", "para 139"),
+    "payments_bank": ("the RBI Payments Banks Cybersecurity, Technology: Risk, Resilience and Assurance Framework "
+                      "Directions 2026", "para 139"),
+    "ucb": ("the RBI Urban Co-operative Banks Cybersecurity, Technology: Risk, Resilience and Assurance Framework "
+            "Directions 2026", "para 25"),
+    "aifi": ("the RBI All India Financial Institutions Cybersecurity, Technology: Risk, Resilience and Assurance "
+             "Framework Directions 2026", "para 135"),
+    "credit_info_company": ("the RBI Credit Information Companies Cybersecurity, Technology: Risk, Resilience and "
+                            "Assurance Framework Directions 2026", "para 135"),
+    "other": None,
+}
+
+
+def entity_instrument(entity: object) -> tuple[str, str] | None:
+    """(instrument, its cryptographic-controls paragraph) binding the entity type; None for "other"."""
+    return ENTITY_INSTRUMENTS.get(kb_text.entity_types.normalise(entity))
+
+
+def rbi_mapping_note(entity: object) -> str:
+    """What the code-scan engine's RBI row (FREE-AI) is, worded for the team's entity type (SOW review M3)."""
+    found = entity_instrument(entity)
+    against = (f"{found[0]} ({found[1]})" if found else "an RBI cybersecurity direction (none binds this entity type)")
+    return ("The RBI row is the code-scan engine's RBI FREE-AI protection mapping (Recommendation 19). It is not an "
+            f"assessment against {against}.")
 # Product text: aibom compliance verdicts (aibom/src/aibom/compliance/base.py Verdict).
 VERDICT_LABELS = {
     "fail": "Fail",
@@ -245,7 +282,7 @@ def framework_label(key: object) -> str:
 
 
 # ---------------------------------------------------------------------------------------------
-# Finding codes: label + recommended action (#7, #15, #16)
+# Finding codes: label + recommended action (D8, D13, D14)
 # ---------------------------------------------------------------------------------------------
 GENERIC_FINDING_ACTION = (
     "Review this finding and remediate it in line with your cryptographic policy."
@@ -403,7 +440,7 @@ FINDING_ACTIONS = {
         "algorithm (for example AES-GCM from the platform's crypto library)."
     ),
 }
-# Product text: codes that describe a certificate (#7 labels them; #16 groups them).
+# Product text: codes that describe a certificate (D8 labels them; D14 groups them).
 CERT_FINDING_CODES = (
     "WEAK_CERTIFICATE_SIGNATURE",
     "WEAK_CERTIFICATE_KEY",
@@ -426,25 +463,31 @@ def _posture_text():
 
 
 def finding_label(code: object) -> str:
-    """Human label for a finding code; unknown codes are humanised, never dropped."""
+    """Human label for a finding code: the authored label, else the knowledge base's title of the code (every CBOM
+    Sources code has one), else the code humanised, never dropped."""
     key = _code(code)
     if not key:
         return ""
-    return FINDING_LABELS.get(key) or _posture_text().FINDING_LABELS.get(key) or key.replace("_", " ").capitalize()
+    kb = kb_text.finding(key) or {}
+    return (FINDING_LABELS.get(key) or _posture_text().FINDING_LABELS.get(key) or kb.get("title")
+            or key.replace("_", " ").capitalize())
 
 
 def finding_action(code: object) -> str:
-    """Recommended action for a finding code; unknown codes get the generic action."""
+    """Recommended action for a finding code: the authored action, else the knowledge base's fix for the code, else
+    the generic action (a code no source knows)."""
     key = _code(code)
-    return FINDING_ACTIONS.get(key) or _posture_text().FINDING_ACTIONS.get(key) or GENERIC_FINDING_ACTION
+    kb = kb_text.finding(key) or {}
+    return (FINDING_ACTIONS.get(key) or _posture_text().FINDING_ACTIONS.get(key) or kb.get("fix")
+            or GENERIC_FINDING_ACTION)
 
 
 # ---------------------------------------------------------------------------------------------
-# Post-quantum timeline and target families (#15, #16)
+# Post-quantum timeline and target families (D13, D14)
 # ---------------------------------------------------------------------------------------------
 @dataclass(frozen=True)
 class TimelineRow:
-    """One printed row of the regulatory timeline (#15 section 2)."""
+    """One printed row of the regulatory timeline (D13 section 2)."""
 
     when: str
     milestone: str
@@ -469,64 +512,66 @@ PINNED_ENGINE_NIST_TIMELINE = (
 # printed with a verification note.
 CNSA_VERIFY_NOTE = "Verify against the NSA advisory before submission."
 
-PQC_TIMELINE_ROWS = (
-    # Source: NIST PQC project, FIPS 203 (ML-KEM), 204 (ML-DSA), 205 (SLH-DSA), Aug 2024: https://www.nist.gov/pqcrypto
-    TimelineRow(
-        when="Aug 2024",
-        milestone=(
-            "NIST publishes the first post-quantum standards: FIPS 203 (ML-KEM), "
-            "FIPS 204 (ML-DSA) and FIPS 205 (SLH-DSA)."
+def pqc_timeline_rows() -> tuple[TimelineRow, ...]:
+    """The regulatory timeline (D13 section 2, D14 section 7). The NIST IR 8547 rows are built from the knowledge
+    base (status, publication month, transition years, URL), so every document cites the same final IR 8547."""
+    ir = kb_text.ir8547()
+    status = "Final" if str(ir.get("status")).lower() == "final" else "Draft"
+    cite, url = str(ir["label"]), str(ir["url"])
+    rows = [
+        # Source: NIST PQC project, FIPS 203 (ML-KEM), 204 (ML-DSA), 205 (SLH-DSA), Aug 2024: https://www.nist.gov/pqcrypto
+        TimelineRow(
+            when="Aug 2024",
+            milestone=(
+                "NIST publishes the first post-quantum standards: FIPS 203 (ML-KEM), "
+                "FIPS 204 (ML-DSA) and FIPS 205 (SLH-DSA)."
+            ),
+            status="Final",
+            source="NIST post-quantum cryptography project",
+            url=URL_NIST_PQC,
         ),
-        status="Final",
-        source="NIST post-quantum cryptography project",
-        url=URL_NIST_PQC,
-    ),
-    # Source: NIST IR 8547 initial public draft published Nov 2024: https://csrc.nist.gov/pubs/ir/8547/ipd
-    TimelineRow(
-        when="Nov 2024",
-        milestone=(
-            "NIST IR 8547 initial public draft published: proposed transition timeline for "
-            "quantum-vulnerable public-key algorithms."
+    ]
+    if ir.get("published_month"):
+        # Source: NIST IR 8547 final published 27 Oct 2026: https://csrc.nist.gov/pubs/ir/8547/final
+        rows.append(TimelineRow(
+            when=str(ir["published_month"]),
+            milestone=(f"{cite} published: the transition timeline for quantum-vulnerable public-key algorithms "
+                       "(RSA, ECDSA, EdDSA, finite-field and elliptic-curve Diffie-Hellman and MQV)."),
+            status=status, source=cite, url=url))
+    # Source: NIST IR 8547 final, Tables 2 and 4: deprecated after 2030, disallowed after 2035: https://csrc.nist.gov/pubs/ir/8547/final
+    rows += [
+        TimelineRow(
+            when=f"After {ir['deprecated_after']}",
+            milestone=(f"Under {cite}, quantum-vulnerable public-key algorithms are deprecated from 112 bits of "
+                       "security strength upward (for example RSA-2048, ECDSA P-256 and Ed25519)."),
+            status=status, source=cite, url=url),
+        TimelineRow(
+            when=f"After {ir['disallowed_after']}",
+            milestone=f"Under {cite}, all quantum-vulnerable public-key algorithms are disallowed.",
+            status=status, source=cite, url=url),
+        # Source: NSA CNSA 2.0 advisory, national security systems transition: https://media.defense.gov/2025/May/30/2003728741/-1/-1/0/CSA_CNSA_2.0_ALGORITHMS.PDF
+        TimelineRow(
+            when="2025 to 2035",
+            milestone=f"{CNSA_2_0_SENTENCE}. {CNSA_VERIFY_NOTE}",
+            status="Advisory",
+            source="NSA CNSA 2.0 advisory",
+            url=URL_CNSA_2_0,
         ),
-        status="Draft",
-        source="NIST IR 8547 (initial public draft)",
-        url=URL_NIST_IR_8547,
-    ),
-    # Source: NIST IR 8547 ipd, 112-bit-strength algorithms deprecated after 2030: https://csrc.nist.gov/pubs/ir/8547/ipd
-    TimelineRow(
-        when="After 2030",
-        milestone=(
-            "Quantum-vulnerable public-key algorithms with 112 bits of security strength "
-            "(for example RSA-2048) are deprecated (NIST IR 8547 initial public draft)."
-        ),
-        status="Draft",
-        source="NIST IR 8547 (initial public draft)",
-        url=URL_NIST_IR_8547,
-    ),
-    # Source: NIST IR 8547 ipd, all quantum-vulnerable algorithms disallowed after 2035: https://csrc.nist.gov/pubs/ir/8547/ipd
-    TimelineRow(
-        when="After 2035",
-        milestone=(
-            "All quantum-vulnerable public-key algorithms are disallowed "
-            "(NIST IR 8547 initial public draft)."
-        ),
-        status="Draft",
-        source="NIST IR 8547 (initial public draft)",
-        url=URL_NIST_IR_8547,
-    ),
-    # Source: NSA CNSA 2.0 advisory, national security systems transition: https://media.defense.gov/2025/May/30/2003728741/-1/-1/0/CSA_CNSA_2.0_ALGORITHMS.PDF
-    TimelineRow(
-        when="2025 to 2035",
-        milestone=f"{CNSA_2_0_SENTENCE}. {CNSA_VERIFY_NOTE}",
-        status="Advisory",
-        source="NSA CNSA 2.0 advisory",
-        url=URL_CNSA_2_0,
-    ),
-)
-PQC_TIMELINE_FOOTNOTE = (
-    "NIST IR 8547 remains an initial public draft and its dates may change in the final "
-    "publication. FIPS 203, 204 and 205 are final."
-)
+    ]
+    return tuple(rows)
+
+
+def pqc_timeline_footnote() -> str:
+    ir = kb_text.ir8547()
+    if str(ir.get("status")).lower() == "final":
+        day = str(ir.get("published") or "")
+        when = f" on {int(day[8:10])} {ir['published_month']}" if len(day) == 10 and day[8:10].isdigit() else ""
+        return f"{ir['label']} was published in final form{when}. FIPS 203, 204 and 205 are final."
+    return f"{ir['label']} is a draft and its dates may change. FIPS 203, 204 and 205 are final."
+
+
+PQC_TIMELINE_ROWS = pqc_timeline_rows()
+PQC_TIMELINE_FOOTNOTE = pqc_timeline_footnote()
 PQC_ROADMAP_ORDER_NOTE = "Order = current scanner impact, not a migration sequence."
 PQC_NO_VULNERABLE_TITLE = "No quantum-vulnerable assets"
 PQC_NO_VULNERABLE_TEXT = (
@@ -548,7 +593,7 @@ PQC_PRIMITIVE_LABELS = {
 }
 
 # ---------------------------------------------------------------------------------------------
-# Board report: posture grade (#16) - pinned to report_branding.compute_risk_score
+# Board report: posture grade (D14) - pinned to report_branding.compute_risk_score
 # ---------------------------------------------------------------------------------------------
 GRADE_NOT_ASSESSED = "NOT ASSESSED"
 # Product text: formula of backend/utilities/pdf/report_branding.py compute_risk_score; the
@@ -572,13 +617,19 @@ GRADE_INPUT = (
     "Grade input: current crypto assets that carry at least one finding, counted once per "
     "source and bucketed by impact. Inventory-only assets without findings are excluded."
 )
+# the same sentence when configuration posture findings count too (D14 Appendix A; review 2 n1)
+GRADE_INPUT_WITH_POSTURE = (
+    "Grade input: current crypto assets that carry at least one finding, counted once per "
+    "source and bucketed by impact, plus configuration posture findings by impact. "
+    "Inventory-only assets without findings are excluded."
+)
 GRADE_DISCLAIMER = (
     "The grade is a platform posture grade computed from the issue assets in this report. "
     "It is not a regulatory rating and does not replace an audit opinion."
 )
 
-# Product text: static checklist templated with live counts (#16 section 8).  Fields:
-# unique_certs, attestations_outstanding, quantum_vulnerable, legacy_scans.
+# Product text: static checklist templated with live counts (D14 section 8).  Fields:
+# unique_certs, attestations_outstanding, quantum_vulnerable, legacy_scans, mosca_missing.
 GOVERNANCE_ACTIONS = (
     (
         "owners",
@@ -599,10 +650,18 @@ GOVERNANCE_ACTIONS = (
         "legacy",
         "Re-scan the {legacy_scans} sources whose latest scan is in legacy format.",
     ),
+    (
+        "mosca",
+        ("Set the data-lifetime and migration inputs (Mosca X, Y, Z) so that the {mosca_missing} "
+         "quantum-vulnerable assets graded Q0 for missing inputs can be graded."),
+    ),
 )
+# Product text: a governance action whose live count is zero has nothing to decide (SOW audit A-12: "Re-scan the 0
+# sources"); these keys are printed only when their count is positive.
+GOVERNANCE_HIDE_WHEN_ZERO = ("owners", "legacy", "mosca", "attestations")
 
 # ---------------------------------------------------------------------------------------------
-# Discovery methodology (#3) and the manual-discovery checklist (#1 section E, #3 section 3)
+# Discovery methodology (D2) and the manual-discovery checklist (D1 section E, D2 section 3)
 # ---------------------------------------------------------------------------------------------
 @dataclass(frozen=True)
 class ScannerSpec:
@@ -624,17 +683,23 @@ CBOM_SCANNERS = (
         8,
         "Python source parsed into a syntax tree: the algorithm and its parameters are bound "
         "from call arguments, following values across statements and nested calls; literal "
-        "IVs, nonces and salts bound to cipher or key-derivation calls.",
-        "Algorithm with key size, mode and curve; detecting library and context; source path.",
+        "IVs, nonces and salts bound to cipher or key-derivation calls; key-derivation "
+        "parameters of PBKDF2, scrypt, Argon2 and HKDF.",
+        "Algorithm with key size, mode and curve; KDF PRF, iterations, output and salt length, "
+        "scrypt N/r/p and Argon2 costs; a constant salt or an IV written into the call, with its "
+        "length but never its value; detecting library and context; source path.",
     ),
     ScannerSpec(
         "crypto_algorithm",
         10,
         "Cryptographic algorithms and crypto libraries in source files (Python, Java and Go "
         "by call-argument rules; JavaScript/TypeScript, C/C++, Rust, C# and other recognised "
-        "languages by literal patterns) and in dependency manifests.",
-        "Algorithm with key size, mode and curve taken from the same call or line; strength "
-        "class; quantum-vulnerability flag; library name; source path.",
+        "languages by literal patterns) and in dependency manifests; library versions from "
+        "the tree's lockfiles and manifests.",
+        "Algorithm with key size, mode and curve taken from the same call or line; the parts of "
+        "a construction (Fernet: AES-128-CBC and HMAC-SHA256); strength class; "
+        "quantum-vulnerability flag; library name and version, or why the version is not "
+        "known; source path.",
     ),
     ScannerSpec(
         "crypto_advisory",
@@ -653,10 +718,11 @@ CBOM_SCANNERS = (
     ScannerSpec(
         "crypto_artifacts",
         18,
-        "Container images, compiled binaries and firmware in the scanned tree, read only when the "
-        "scan option \"scan binaries\" is on: the base operating system of each image, OS and "
-        "language packages, library versions and imported crypto functions in binaries, and "
-        "private keys shipped inside an artifact.",
+        "Container images named by Dockerfile FROM lines and Compose files (up to 50, always "
+        "listed); and container images, compiled binaries and firmware in the scanned tree, "
+        "read only when the scan option \"scan binaries\" is on: the base operating system of "
+        "each image, OS and language packages, library versions and imported crypto functions "
+        "in binaries, and private keys shipped inside an artifact.",
         "Base OS release and its end-of-life status; library name, version and package URL with "
         "advisory, CVE-range or end-of-life findings; algorithm rows for imported functions and "
         "constant signatures; key material; artifact path.",
@@ -862,7 +928,7 @@ METHOD_LIMITS = (
     "No live-network discovery: TLS endpoints, load balancers and appliances are not probed.",
     "Declared KMS and HSM settings in configuration are assessed. Live HSM firmware, "
     "custodianship, and escrow are not inspected.",
-    "Data-at-rest encryption is assessed from declared configuration only (document #9); "
+    "Data-at-rest encryption is assessed from declared configuration only (D9); "
     "the live state of databases, object stores and disks is not inspected.",
     "Third-party and SaaS services are visible only through the libraries and configuration "
     "that scanned code references.",
@@ -891,7 +957,7 @@ MANUAL_DISCOVERY_ITEMS = (
     (
         "Data-at-rest encryption",
         "Whether stored data is actually encrypted. Declared settings are assessed in "
-        "document #9 and are not proof of operation.",
+        "D9 and are not proof of operation.",
     ),
     (
         "SaaS and third-party services",
@@ -915,7 +981,111 @@ MANUAL_DISCOVERY_COLUMNS = (
 )
 
 # ---------------------------------------------------------------------------------------------
-# Scope baseline register (#1) and third-party assurance register (#10)
+# The limits and the outside-visibility checklist follow what was collected (SOW audit A-06): a
+# document whose CBOM Sources collections probed endpoints or read key managers never says that
+# live endpoints or key custody were out of reach.  Code-scan-only teams keep the static text.
+# ---------------------------------------------------------------------------------------------
+# Product text: CbomCollectionSource kinds (cbom_sources.kinds KINDS) by what they read.
+_SYSTEM_KINDS = frozenset({
+    "linux_servers", "windows_servers", "active_directory", "host_agent", "awx_hosts", "salt_hosts", "ssm_hosts",
+    "kubernetes", "container_images", "database", "appliance",
+})
+_DATA_AT_REST_KINDS = _CLOUD_KINDS | frozenset({"linux_servers", "windows_servers", "host_agent", "awx_hosts",
+                                                "salt_hosts", "ssm_hosts", "kubernetes", "database"})
+COLLECTED_VISIBILITY_HEADING = "Outside collected visibility"
+STATIC_VISIBILITY_HEADING = "Outside static visibility"
+COLLECTED_DISCOVERY_COLUMNS = ("Item", "Why the collection did not cover it", "Status", "Owner", "Evidence ref")
+
+
+def _kinds(view: object) -> set[str]:
+    return {str(getattr(c, "source_kind", "") or "") for c in collections_in_scope(view)}
+
+
+# Product text: what each CBOM Sources kind (cbom_sources.kinds KINDS) reads, for the limits of the method (m6)
+_KIND_NOUNS = (
+    (frozenset({"linux_servers", "windows_servers", "host_agent", "awx_hosts", "salt_hosts", "ssm_hosts"}), "servers"),
+    (frozenset({"active_directory"}), "directory services"),
+    (frozenset({"kubernetes"}), "Kubernetes clusters"),
+    (frozenset({"container_images"}), "container images"),
+    (frozenset({"database"}), "databases"),
+    (frozenset({"aws_account", "azure_subscription", "gcp_project", "oci_tenancy"}), "cloud accounts"),
+    (frozenset({"key_manager"}), "key managers"),
+    (frozenset({"ca_connector"}), "certificate authorities"),
+    (frozenset({"idp"}), "identity providers"),
+    (frozenset({"ct_logs"}), "Certificate Transparency logs"),
+    (frozenset({"network_range"}), "network endpoints"),
+    (frozenset({"appliance"}), "network appliances"),
+)
+
+
+def collected_kinds_text(view: object) -> str:
+    """"servers, cloud accounts and network endpoints": what the collections in scope read, never a kind that was
+    not collected ("systems" when no kind is known, e.g. a deleted source)."""
+    kinds = _kinds(view)
+    nouns = [noun for members, noun in _KIND_NOUNS if kinds & members]
+    if not nouns:
+        return "systems"
+    return nouns[0] if len(nouns) == 1 else ", ".join(nouns[:-1]) + " and " + nouns[-1]
+
+
+def method_limits(view: object) -> tuple[str, ...]:
+    """``METHOD_LIMITS`` for a code-scan-only view; with CBOM Sources collections, limits that state what the
+    collections did and did not read (never "no live-network discovery" when an endpoint was probed)."""
+    found = collections_in_scope(view)
+    if not found:
+        return METHOD_LIMITS
+    kinds, probed = _kinds(view), endpoints_probed(view)
+    noun = "collection" if len(found) == 1 else "collections"
+    out = [
+        (f"Running systems were read by {len(found)} CBOM Sources {noun} ({collected_kinds_text(view)}, each "
+         "through its own interface). Collection reads metadata and configuration only; stored data is never read."),
+        (f"Live-network discovery covered the configured ranges and ports: {probed} "
+         f"endpoint{'' if probed == 1 else 's'} {'was' if probed == 1 else 'were'} probed with live TLS or SSH "
+         "handshakes. Endpoints outside those ranges and ports were not probed.")
+        if probed else "No endpoint was probed: the collections in scope include no network source.",
+        ("Key metadata (type, size, rotation and state) was read from the key managers, HSMs and cloud key "
+         "services in scope; key material, HSM firmware, custodianship and escrow are not inspected.")
+        if kinds & _KEY_CUSTODY_KINDS else METHOD_LIMITS[2],
+        ("Data-at-rest encryption settings were read from the collected systems and from declared configuration "
+         "(D9); the contents of stored data are not read.")
+        if kinds & _DATA_AT_REST_KINDS else METHOD_LIMITS[3],
+        *METHOD_LIMITS[4:],
+    ]
+    return tuple(out)
+
+
+def manual_discovery_items(view: object) -> tuple[tuple[str, str], ...]:
+    """The outside-visibility checklist: ``MANUAL_DISCOVERY_ITEMS`` for a code-scan-only view; with CBOM Sources
+    collections, each item says what the collections left uncovered."""
+    found = collections_in_scope(view)
+    if not found:
+        return MANUAL_DISCOVERY_ITEMS
+    kinds, probed = _kinds(view), endpoints_probed(view)
+    out = []
+    for item, why in MANUAL_DISCOVERY_ITEMS:
+        if item == "HSM and KMS key custody" and kinds & _KEY_CUSTODY_KINDS:
+            why = ("Key metadata was collected; custody, ceremonies and escrow need evidence from the key owners.")
+        elif item == "Live TLS endpoints" and probed:
+            item, why = ("TLS endpoints outside the scanned ranges",
+                         "Only the configured ranges and ports were probed; add other endpoints to a network source.")
+        elif item == "Data-at-rest encryption" and kinds & _DATA_AT_REST_KINDS:
+            why = ("Collected and declared settings are assessed in D9; whether stored data is actually encrypted "
+                   "needs operator evidence.")
+        elif item == "OT, IoT and embedded devices" and kinds & {"appliance", "network_range"}:
+            why = "Only devices reachable in the scanned ranges were probed; firmware cryptography is not read."
+        out.append((item, why))
+    return tuple(out)
+
+
+def visibility_heading(view: object) -> str:
+    return COLLECTED_VISIBILITY_HEADING if collections_in_scope(view) else STATIC_VISIBILITY_HEADING
+
+
+def discovery_columns(view: object) -> tuple[str, ...]:
+    return COLLECTED_DISCOVERY_COLUMNS if collections_in_scope(view) else MANUAL_DISCOVERY_COLUMNS
+
+# ---------------------------------------------------------------------------------------------
+# Scope baseline register (D1) and third-party assurance register (D10)
 # ---------------------------------------------------------------------------------------------
 SCOPE_BOUNDARY_ITEMS = (
     "In-scope applications",
@@ -929,7 +1099,9 @@ SCOPE_BOUNDARY_STATEMENT = "Assessment boundary statement and approver"
 # Product text: the engine records a library's name and where it was found, nothing else
 # (backend/utilities/dashboard/cbom_team_rollup.py LibAgg).
 ASSURANCE_LIBRARY_NOTE = (
-    "The engine records each library's name and where it was found. Versions, vendors and "
+    "Code-scan libraries and the packages and mapped libraries CBOM Sources collections found, one "
+    "row per component (same package URL, or same name and version). Version, package URL and "
+    "known-vulnerability or end-of-life status are printed where they were recorded; vendors and "
     "licences are not captured, so those columns are left for the assessor."
 )
 ASSURANCE_VENDOR_COLUMNS = (
@@ -943,7 +1115,7 @@ ASSURANCE_VENDOR_COLUMNS = (
 ATTESTED_TEMPLATE = "Attested {attested}/{attestable}"
 
 # ---------------------------------------------------------------------------------------------
-# Certificate estate register (#7)
+# Certificate estate register (D8)
 # ---------------------------------------------------------------------------------------------
 # Product text: validity bands (cbom_team_rollup EXPIRY_BANDS).  Labels avoid characters
 # outside WinAnsi, so "<=" stands in for the less-than-or-equal sign.
@@ -971,13 +1143,15 @@ CERT_SCAN_FLAG_DIFFERS = "scan-time flag differs"
 # Source: RFC 5280, X.509 certificate fields and validity: https://www.rfc-editor.org/rfc/rfc5280
 # Product text: fields recorded by aibom/src/aibom/cbom/x509.py (Certificate).
 CERT_DISCOVERY_LIMITS = (
-    "The engine records subject and issuer common names, validity dates, signature "
-    "algorithm, public-key algorithm, key size or curve, and the self-signed and CA flags. "
-    "It does not record serial numbers, fingerprints, subject alternative names, key usage "
-    "or extended key usage, organisation fields, or OCSP and CRL locations.",
-    "A certificate is identified across scans by a hash of its recorded attributes. Two "
-    "different certificates that agree on every recorded attribute would be shown as one; "
-    "this is not expected in practice because validity dates have one-second precision.",
+    "CBOM Sources collections record the full subject and issuer DN, serial number, SHA-256 "
+    "thumbprint, subject alternative names, validity, key and signature algorithms and the CA and "
+    "self-signed flags. Code scans record subject and issuer common names, validity, algorithms and "
+    "flags only (no serial or thumbprint). Key usage, extended key usage and OCSP / CRL locations are "
+    "not recorded.",
+    "A certificate is one row per SHA-256 thumbprint. Rows without a thumbprint are joined on the "
+    "cross-source key (serial and notAfter, else SHA-1 thumbprint, else DN and notAfter), a cloud CA "
+    "on its resource ARN, and a code-scan certificate on a hash of its recorded attributes. The same "
+    "list feeds this PDF, its CSV and the certificate count of the network assessment (D7).",
     "Expiry is computed from the notAfter date as of the generation date of this document "
     "and can differ from the flag raised when the scan ran.",
     "Whether a certificate is managed, orphaned or in production use needs an authoritative "
@@ -1035,6 +1209,7 @@ __all__ = [
     "GRADE_DISCLAIMER",
     "GRADE_FORMULA",
     "GRADE_INPUT",
+    "GRADE_INPUT_WITH_POSTURE",
     "GRADE_NOT_ASSESSED",
     "GRADE_SCORE_CAP",
     "GRADE_SCORE_MULTIPLIER",
@@ -1067,7 +1242,11 @@ __all__ = [
     "RACI_ACTIVITIES",
     "RACI_COLUMNS",
     "RBI_BOM_DISCLAIMER",
+    "ENTITY_INSTRUMENTS",
     "RBI_MAPPING_NOTE",
+    "collected_kinds_text",
+    "entity_instrument",
+    "rbi_mapping_note",
     "SCOPE_BOUNDARY_COLUMNS",
     "SCOPE_BOUNDARY_ITEMS",
     "SCOPE_BOUNDARY_STATEMENT",

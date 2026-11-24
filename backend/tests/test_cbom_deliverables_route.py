@@ -74,19 +74,20 @@ FIXTURE = Path(__file__).resolve().parent / "fixtures" / "cbom_team_rollup_scans
 
 MANIFEST_PATH = "/{team_id}/cbom/deliverables"
 PDF_PATH = "/{team_id}/cbom/deliverables/{slug}"
-SLUGS = [
+CSV_PATH = "/{team_id}/cbom/deliverables/{slug}.csv"
+SLUGS = [  # SOW Table 7 order and IDs (FIX-A3, SOW audit A-04)
     "scope-baseline-register",
-    "quantum-risk-register",
     "methodology-evidence-plan",
     "infrastructure-cloud-encryption-posture",
     "network-tls-protocol-assessment",
     "certificate-estate-register",
     "data-at-rest-encryption-assessment",
     "third-party-assurance-register",
+    "quantum-risk-register",
     "pqc-migration-roadmap",
     "board-executive-report",
 ]
-NUMBERS = dict(zip(SLUGS, [1, 2, 3, 5, 6, 7, 9, 10, 15, 16], strict=True))
+NUMBERS = dict(zip(SLUGS, [1, 2, 6, 7, 8, 9, 10, 12, 13, 14], strict=True))
 GENERIC_500 = {"detail": "Error generating deliverable, please try again later"}
 
 # Strings that exist ONLY in scans a team-1 document must never read (plan Appendix B).
@@ -210,6 +211,21 @@ def expected_fingerprint(scans: list[dict[str, Any]], included_ids: list[int]) -
         if s["id"] in included_ids
     )
     return hashlib.sha256(f"cbom-team-rollup|{stamped}".encode()).hexdigest()[:12]
+
+
+def expected_document_digest(fingerprint: str, engine: Any, team_id: int) -> str:
+    """The Document ID's digest (review M1), the documented formula: the data fingerprint above when the view prints
+    nothing beyond its scans, else sha256(fingerprint + "|content|" + the content as canonical JSON)[:12], the content
+    being the team's regulatory profile, the source metadata, the register's grade inputs and grade counts."""
+    from backend.utilities.dashboard.cbom_team_rollup import _document_content, load_team_cbom_view
+
+    view = load_team_cbom_view(engine, team_id, now=NOW)
+    assert view.fingerprint == fingerprint  # the scans part still follows plan 4.8
+    content = _document_content(view)
+    if not content:
+        return fingerprint
+    text = json.dumps(content, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(f"{fingerprint}|content|{text}".encode()).hexdigest()[:12]
 
 
 @dataclass
@@ -370,7 +386,8 @@ def pdf_url(team_id: int, slug: str) -> str:
 @pytest.mark.parametrize("slug", SLUGS)
 def test_each_slug_returns_its_own_pdf_with_the_contract_headers(api, world, slug):
     scans = [s for s in world.fixture["scans"] if s["team_id"] == TEAM_ONE]
-    fingerprint = expected_fingerprint(scans, [1, 2, 3, 4, 5, 6, 7, 8])
+    fingerprint = expected_document_digest(expected_fingerprint(scans, [1, 2, 3, 4, 5, 6, 7, 8]), world.engine,
+                                           TEAM_ONE)
 
     response = api.get(pdf_url(TEAM_ONE, slug))
 
@@ -395,6 +412,7 @@ def test_each_slug_returns_its_own_pdf_with_the_contract_headers(api, world, slu
     text = squash(full_text(body))  # cells wrap differently in portrait and landscape
     for needle in (
         # the right document: its own number, the data fingerprint and its own footer label
+        # (every deliverable prints its SOW identifier as two digits, D2 included: CBOM-D02-...)
         f"CBOM-D{NUMBERS[slug]:02d}-T1-20261019-{fingerprint[:8]}",
         fingerprint,
         REPORT_META[DELIVERABLES[slug].report_key]["footer_label"],
@@ -407,6 +425,43 @@ def test_each_slug_returns_its_own_pdf_with_the_contract_headers(api, world, slu
     ):
         assert squash(needle) in text, needle
     assert (info_field(body, "Title") or "").startswith(DELIVERABLES[slug].title)
+
+
+# ---------------------------------------------------------------------------------------------
+# SOW D8 CSV (FIX-B2): same rows as the PDF, UTF-8 BOM, RFC 4180
+# ---------------------------------------------------------------------------------------------
+def test_the_certificate_register_csv_has_the_pdfs_rows_in_order(api):
+    import csv as _csv
+    import io as _io
+
+    response = api.get(pdf_url(TEAM_ONE, "certificate-estate-register") + ".csv")
+    assert response.status_code == 200, response.text[:300]
+    assert response.headers["content-type"] == "text/csv; charset=utf-8"
+    assert response.headers["content-disposition"] == (
+        'attachment; filename="cbom-certificate-estate-register-team1-20261019.csv"')
+    assert response.headers["cache-control"] == "no-store"
+    body = response.content
+    assert body.startswith(b"\xef\xbb\xbf") and b"\r\n" in body
+    rows = list(_csv.reader(_io.StringIO(body[3:].decode("utf-8"), newline="")))
+    assert rows[0][:3] == ["row", "sha256_thumbprint", "certificate_key"]
+    data = rows[1:]
+    pdf_text = squash(full_text(api.get(pdf_url(TEAM_ONE, "certificate-estate-register")).content))
+    assert squash(f"Showing all {len(data)} unique certificates") in pdf_text
+    assert [int(r[0]) for r in data] == list(range(1, len(data) + 1))
+    assert len({r[2] for r in data}) == len(data)  # one row per unique certificate
+
+
+@pytest.mark.parametrize("slug", ["network-tls-protocol-assessment", "not-a-document", "CERTIFICATE-ESTATE-REGISTER"])
+def test_a_csv_of_a_pdf_only_or_unknown_deliverable_is_404(api, slug):
+    response = api.get(pdf_url(TEAM_ONE, slug) + ".csv")
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Unknown deliverable"}
+
+
+def test_the_csv_needs_a_token_and_membership(api):
+    url = pdf_url(TEAM_ONE, "certificate-estate-register") + ".csv"
+    assert api.get(url, who=None).status_code == 401
+    assert api.get(url, who="bob").status_code == 403
 
 
 def test_the_same_request_twice_gives_byte_identical_pdfs(api):
@@ -487,8 +542,8 @@ def test_the_legacy_scan_url_is_sanitised_and_its_fingerprint_follows_the_docume
     response = api.get(pdf_url(TEAM_LEGACY, "scope-baseline-register"))
     legacy = next(s for s in world.fixture["scans"] if s["id"] == 8)
     clone = {**legacy, "id": LEGACY_SCAN_ID}  # the seeded legacy-only team holds a copy of scan 8
-    assert response.headers["x-cbom-fingerprint"] == expected_fingerprint(
-        [clone], [LEGACY_SCAN_ID]
+    assert response.headers["x-cbom-fingerprint"] == expected_document_digest(
+        expected_fingerprint([clone], [LEGACY_SCAN_ID]), world.engine, TEAM_LEGACY
     )
     text = squash(full_text(response.content))
     assert "github.com/e2e-demo/legacy-billing" in text, "the source must still be listed"
@@ -523,9 +578,10 @@ def test_manifest_shape_order_and_basis_for_the_appendix_b_team(api):
     for row in rows:
         spec = DELIVERABLES[row["slug"]]
         assert set(row) == {
-            "slug", "number", "title", "description", "format", "available", "reason",
+            "slug", "number", "title", "description", "format", "formats", "available", "reason",
         }  # fmt: skip
         assert row["format"] == "pdf"
+        assert row["formats"] == (["pdf", "csv"] if row["slug"] == "certificate-estate-register" else ["pdf"])
         assert row["title"] == spec.title and row["description"] == spec.description
         assert row["available"] is True and row["reason"] is None
 
@@ -815,7 +871,8 @@ def test_the_router_alone_generates_a_warning_free_openapi_schema():
     with warnings.catch_warnings():
         warnings.simplefilter("error", UserWarning)  # PydanticJsonSchemaWarning is a UserWarning
         spec = mini.openapi()
-    assert set(spec["paths"]) == {MANIFEST_PATH, PDF_PATH}
+    assert set(spec["paths"]) == {MANIFEST_PATH, PDF_PATH, CSV_PATH}
+    assert set(spec["paths"][CSV_PATH]) == {"get"}
     assert set(spec["paths"][MANIFEST_PATH]) == {"get"}
     assert set(spec["paths"][PDF_PATH]) == {"get", "post"}
     body = spec["paths"][PDF_PATH]["post"]["requestBody"]["content"]["application/json"]["schema"]

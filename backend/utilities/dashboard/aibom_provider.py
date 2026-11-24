@@ -21,6 +21,13 @@ KNOWN_PROVIDERS = frozenset(
         "huggingface",
         "azure",
         "ollama",
+        "google",
+        "groq",
+        "together",
+        "openrouter",
+        "deepseek",
+        "xai",
+        "alibaba",
         "pypi",
         "credential",
         "local",
@@ -39,8 +46,26 @@ _CLOUD_NEEDLES: tuple[tuple[str, str], ...] = (
     ("mistral", "mistral"),
     ("hugging", "huggingface"),
     ("ollama", "ollama"),
+    ("openrouter", "openrouter"),
+    ("groq", "groq"),
+    ("together.xyz", "together"),
+    ("together.ai", "together"),
+    ("together ai", "together"),
+    ("deepseek", "deepseek"),
+    ("api.x.ai", "xai"),
+    ("xai api", "xai"),
+    # Alibaba Cloud (Qwen's publisher, DashScope); a local Qwen weight file names none of these
+    ("alibaba", "alibaba"),
+    ("dashscope", "alibaba"),
+    ("aliyun", "alibaba"),
     ("openai", "openai"),
+    ("gemini", "google"),
+    ("googleapis", "google"),
+    ("google", "google"),
 )
+
+# Hosted APIs that scans stored before review of #487 (m7, second review n-a) labelled ``local``: re-derived when read.
+_SAAS_ONCE_LOCAL = frozenset({"google", "groq", "together", "openrouter", "deepseek", "xai", "alibaba"})
 
 _FRAMEWORK_TYPES = frozenset({"ml_framework", "ai_framework", "framework"})
 _MODEL_TYPES = frozenset(
@@ -97,7 +122,7 @@ def resolve_aibom_provider(asset: dict[str, Any]) -> str:
         or ""
     )
     stored_l = str(stored).strip().lower()
-    if stored_l in KNOWN_PROVIDERS:
+    if stored_l in KNOWN_PROVIDERS and stored_l != "local":
         return stored_l
 
     name = (
@@ -115,10 +140,14 @@ def resolve_aibom_provider(asset: dict[str, Any]) -> str:
     location = asset.get("location") or ""
     publisher = asset.get("publisher") or asset.get("framework") or ""
     snippet = asset.get("snippet") or ""
-    return infer_aibom_provider(
+    inferred = infer_aibom_provider(
         name=str(name),
         kind_or_type=str(kind_or_type),
         location=str(location),
         publisher=str(publisher),
         extra=str(snippet),
     )
+    if stored_l == "local" and inferred not in _SAAS_ONCE_LOCAL:
+        # a stored ``local`` stands, except for the SaaS APIs the adapter labelled ``local`` before it knew them
+        return "local"
+    return inferred

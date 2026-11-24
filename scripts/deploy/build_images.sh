@@ -187,7 +187,8 @@ build_component() { # <component>
       [[ -n "${NODE_BASE_IMAGE:-}" ]] && fe_args+=(--build-arg "NODE_BASE_IMAGE=${NODE_BASE_IMAGE}")
       build frontend frontend/Dockerfile frontend "${fe_args[@]}"
       ;;
-    scan-worker) build scan-worker RabbitMQ/worker/Dockerfile . "${base_args[@]}" "${go_args[@]}" ;;
+    scan-worker) build scan-worker RabbitMQ/worker/Dockerfile . "${base_args[@]}" "${go_args[@]}" \
+        --build-arg "DSS_BUILD_SHA=${BUILD_SHA}" --build-arg "DSS_BUILD_VERSION=${BUILD_VERSION}" ;;
     dast-worker) build dast-worker RabbitMQ/dast_worker/Dockerfile RabbitMQ/dast_worker "${base_args[@]}" ;;
   esac
 }
@@ -198,6 +199,10 @@ check_component() { # <component>
       assert_no_secrets backend /backend /prod_database_migrations /opt/aibom
       docker run --rm --network none --entrypoint test "$(image_name backend)" -f /prod_database_migrations/alembic.ini ||
         die "backend image has no Alembic bundle"
+      # the AI BOM PDF grade loads the engine's posture module by path (backend/utilities/pdf/aibom_posture.py);
+      # without the `aibom` build context the stage is empty and every AI BOM PDF would fail at render
+      docker run --rm --network none --entrypoint test "$(image_name backend)" -f /opt/aibom/src/aibom/score/posture.py ||
+        die "backend image has no aibom engine (/opt/aibom/src/aibom/score/posture.py): build with --build-context aibom=aibom"
       ;;
     frontend) assert_no_secrets frontend /frontend ;;
     scan-worker) assert_no_secrets scan-worker /build ;;

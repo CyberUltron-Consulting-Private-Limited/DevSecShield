@@ -90,8 +90,15 @@ const C = {
   critical: "#dc2626", // red-600
 };
 // 0-100 normalized -> band (the LOCKED scale: low<=33, medium<=66, else high)
+// The engine's band words (aibom/src/aibom/score/posture.py): critical / high /
+// elevated / moderate / low, the same words as the PDF grade. "medium" is the
+// CBOM / older scans' middle band.
 const bandColor = (band?: string) =>
-  band === "high" ? C.high : band === "medium" ? C.medium : C.low;
+  band === "critical" || band === "high"
+    ? C.high
+    : band === "elevated" || band === "moderate" || band === "medium"
+      ? C.medium
+      : C.low;
 
 // ── types (the FE-exposed run-object shapes) ────────────────────────────────
 interface GNode {
@@ -136,11 +143,14 @@ export function ComplianceCoverage({
   groups = FRAMEWORK_GROUPS_AIBOM_WITH_INDIA,
   defaultGroup = "all",
   onAttest,
+  hideOutOfScope = false,
 }: {
   compliance?: Compliance;
   groups?: FrameworkGroup[];
   defaultGroup?: string;
   onAttest?: AttestHandler;
+  /** Hide frameworks that do not apply at all (every requirement out of scope). */
+  hideOutOfScope?: boolean;
 }) {
   return (
     <ComplianceMatrix
@@ -149,6 +159,7 @@ export function ComplianceCoverage({
       icon="shield"
       enableAttestation
       onAttest={onAttest}
+      hideOutOfScope={hideOutOfScope}
       groups={groups}
       defaultGroup={defaultGroup}
       className="col-span-full"
@@ -678,7 +689,7 @@ export function AiBomVisualizations({
         </p>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <ComplianceCoverage compliance={compliance} onAttest={onAttest} />
+        <ComplianceCoverage compliance={compliance} onAttest={onAttest} hideOutOfScope />
         <DependencyGraph
           graph={graph}
           graphCompact={graphCompact}

@@ -1,6 +1,7 @@
 // The team's estate CBOM (CB-26): GET /{team}/cbom/estate-export?format=json|xml&application&source&type. One
-// CycloneDX 1.6 file for the whole estate, one component per asset across sources. Unsigned: the response carries the
-// SHA-256 of the exact bytes (X-Cbom-Sha256), which the page shows so it can be checked outside ZeroShield.
+// CycloneDX 1.6 file for the whole estate, one component per asset across sources. Signed (D11: JSF in the JSON, a
+// detached ES256 X-ZS-Signature for both formats; X-Cbom-Signature says "unsigned" only on a deployment without a key);
+// the response carries the SHA-256 of the exact bytes (X-Cbom-Sha256), which the page shows.
 import api from "@/utils/interceptors";
 
 export type EstateFormat = "json" | "xml";

@@ -53,13 +53,15 @@ assert.deepEqual(jiraToSave("a@b.co", "", "", true), { ok: false, message: JIRA_
 // --- the pages keep their guards
 const root = path.join(__dirname, "..")
 const settings = fs.readFileSync(path.join(root, "app", "[team_id]", "settings", "page.tsx"), "utf8")
-assert.ok(!settings.includes("api_token ??") && settings.includes("const jira = jiraFormFrom(team.team_integration_settings);"),
-  "token never pre-filled from the API")
-assert.ok(settings.includes("jiraToSave(jiraEmail, jiraUrl, jiraApiToken, jiraTokenSet)"))
-assert.ok(settings.includes("readOnly={!is_team_admin}") && settings.includes("JIRA_ADMIN_ONLY"), "members see read-only Jira")
+// SOW S2: Jira moved to Settings > Integrations (next to ServiceNow); Team settings links there and edits no Jira field
+assert.ok(!settings.includes("api_token") && settings.includes("settings/integrations#int-jira"), "Team settings point at the Jira card")
+const jiraCard = fs.readFileSync(path.join(root, "components", "integrations", "JiraCard.tsx"), "utf8")
+assert.ok(jiraCard.includes("jiraToSave(email, url, token, jira.api_token_set)"), "the card keeps the all-or-nothing rule")
+assert.ok(jiraCard.includes('type="password"') && !jiraCard.includes("api_token ??"), "token never pre-filled from the API")
+assert.ok(jiraCard.includes("disabled={disabled}") && jiraCard.includes("JIRA_ADMIN_ONLY"), "members see read-only Jira")
 assert.ok(settings.includes("removeDialogOpen") && settings.includes("Remove members?"), "removal asks first")
 assert.ok(settings.includes("listTeamInvitations") && settings.includes("resendTeamInvitation") && settings.includes("revokeTeamInvitation"))
-const saveName = settings.slice(settings.indexOf("const handleSaveNameDescription"), settings.indexOf("const handleSaveJira"))
+const saveName = settings.slice(settings.indexOf("const handleSaveNameDescription"), settings.indexOf("const toggleMemberSelection"))
 assert.ok(!saveName.includes("integration_settings"), "renaming the team never re-sends integration settings")
 const page = fs.readFileSync(path.join(root, "app", "invite", "[token]", "page.tsx"), "utf8")
 assert.ok(!page.includes("@/utils/interceptors\"") || page.includes("apiBaseURL"), "plain fetch, no 401 redirect")

@@ -225,7 +225,7 @@ class _Job:
         if self.lab_mode:  # every run of a lab-mode source says so, failed runs included
             result = {**result, "lab_mode": self.lab_mode}
         result = {**result, "targets": targets[:1000], "asset_count": None, "node_version": "cloud-worker-1.0",
-                  "summary": result.get("summary") or f"{sum(1 for t in targets if t.get('status') == 'ok')} of {len(targets)} targets read"}
+                  "summary": result.get("summary") or targets_summary(targets)}
         stored, outcome = None, None
         with Session(self.engine) as session:
             try:
@@ -458,6 +458,15 @@ class _Job:
             raise
 
 
+def targets_summary(targets: list[dict[str, Any]]) -> str:
+    """``N of M targets read``, a target read with gaps counted as read and named (FIX-B3: run #52's Google Cloud job
+    stored 10 assets from its one project and said "0 of 1 targets read", because only ``ok`` was counted)."""
+    ok = sum(1 for t in targets if t.get("status") == "ok")
+    partial = sum(1 for t in targets if t.get("status") == "partial")
+    text = f"{ok + partial} of {len(targets)} targets read"
+    return text + (f" ({partial} with gaps)" if partial else "")
+
+
 class _Refused(Exception):
     """A reason that is safe to show the customer."""
 
@@ -543,7 +552,7 @@ def reap_all(engine) -> int:
             _PASSES[0] += 1
             if moved or settled["jobs"] or _PASSES[0] % SUMMARY_EVERY == 0:
                 log("reap pass", at=int(time.time()), moved=moved, lease_expired=stats.get("lease_expired", 0),
-                    expired=stats.get("expired", 0), max_runtime=stats.get("max_runtime", 0),
+                    expired=stats.get("expired", 0), node_offline=stats.get("node_offline", 0), max_runtime=stats.get("max_runtime", 0),
                     cancel_unconfirmed=stats.get("cancel_unconfirmed", 0), refunds_settled=settled["jobs"],
                     refunded_c=settled["centi"], nonces_swept=swept, **_queue_facts(session, now))
         except Exception as exc:

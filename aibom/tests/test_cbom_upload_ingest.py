@@ -220,6 +220,7 @@ def test_analysis_is_deterministic(tmp_path):
     b = analyze_cbom_file_to_devsecshield(path)
     for run in (a, b):
         run.pop("duration_of_scan", None)
+        run["cbom_json"]["metadata"].pop("timestamp")  # the analysis time
     assert json.dumps(a, sort_keys=True, default=str) == json.dumps(b, sort_keys=True, default=str)
 
 

@@ -121,7 +121,8 @@ def test_run_posture_endpoint(api, world):
     assert (top["criticality"], top["score"], top["exposure"]) == ("medium", 10.0, "internal")
     assert top["exposure_basis"] == "private IP address 10.20.0.1"
     frameworks = {f["framework"] for f in out["compliance"]}
-    assert {"NIST", "RBI", "SEBI CSCRF", "CERT-In"} <= frameworks
+    assert {"NIST", "RBI", "CERT-In"} <= frameworks
+    assert "SEBI CSCRF" not in frameworks  # the default team is not SEBI-regulated (PR #485 M4)
     patched = api("PATCH", "/1/cbom/sources/settings", json={"risk_model": {"data_shelf_life_years": 10,
                                                                               "migration_years": 5, "threat_years": 12}})
     assert patched.status_code == 200 and patched.json()["settings"]["risk_model"]["threat_years"] == 12
@@ -166,7 +167,13 @@ def test_export_is_schema_valid_with_vex(api, world):
         for name in ("spdx.schema.json", "jsf-0.82.schema.json")
     ] + [("spdx.schema.json", Resource.from_contents(json.loads((schemas / "spdx.schema.json").read_text()))),
          ("jsf-0.82.schema.json", Resource.from_contents(json.loads((schemas / "jsf-0.82.schema.json").read_text())))])
-    validator = jsonschema.Draft7Validator(main, registry=registry)
+    # JSF's signer.algorithm is oneOf(enum, format "uri"): "ES256" passes only when "uri" is asserted, as the
+    # official validators (cyclonedx-python-lib with jsonschema[format]) do (tests/support/cyclonedx_schema.py)
+    from backend.tests.support.cyclonedx_schema import is_absolute_uri
+
+    checker = jsonschema.FormatChecker()
+    checker.checks("uri")(is_absolute_uri)
+    validator = jsonschema.Draft7Validator(main, registry=registry, format_checker=checker)
     errors = sorted(validator.iter_errors(bom), key=lambda e: list(e.path))
     assert not errors, [f"{list(e.path)}: {e.message}" for e in errors[:5]]
     vulns = {v["id"]: v for v in bom["vulnerabilities"]}

@@ -41,7 +41,7 @@ from backend.new_models import (
     CbomRiskRegister,
     CbomScanNode,
 )
-from backend.utilities.cbom_sources.common import iso_z, log
+from backend.utilities.cbom_sources.common import iso_z, log, utcnow
 
 RANK = {"Q1": 1, "Q2": 2, "Q3": 3, "Q4": 4, "Q0": 5, None: 6}
 ASSET_Q0_REASONS = ("unknown_verdict", "not_correlated")
@@ -50,7 +50,12 @@ REGRADE_BATCH = 2000
 LIMIT_MAX = 500
 CSV_COLUMNS = ("item_key", "q_grade", "q_label", "q_reason", "label", "asset_type", "family", "exposure",
                "source_name", "application", "presence", "sources", "last_run_id", "last_observed_at",
-               "model_version", "owners", "data_classification")
+               "model_version", "owners", "data_classification",
+               # SOW D12 (audit A-15): what the grade read and how to fix it, per asset (``add_detail``)
+               *("pqc_class", "algorithm", "key_size", "fips_203_204_205", "cnsa_2_0", "sp800_131a", "fix_class",
+                 "nist_pq_target", "nist_pq_reference", "data_lifetime_years", "data_lifetime_basis",
+                 "migration_years", "crqc_years", "grade_inputs", "criticality", "owner"))
+DETAIL_FIELDS = CSV_COLUMNS[CSV_COLUMNS.index("pqc_class"):]
 _RT = CbomRiskRegister.__table__
 USE_DIGESTS = True  # #352: narrow a write's keys with the content digests (False: every key, the reference path)
 
@@ -62,6 +67,7 @@ class TeamInputs:
     risk_model: dict[str, Any]
     by_source: dict[int, dict[str, Any]]  # source id -> {x, exposure, segment, application, name, uid}
     digest: str
+    year: int = 0  # the UTC year the default Z counts from (qgrade.default_z); 0: this year
 
 
 def team_inputs(session: Session, team_id: int) -> TeamInputs:
@@ -79,14 +85,20 @@ def team_inputs(session: Session, team_id: int) -> TeamInputs:
             "x": QG._mosca_int(meta.get("data_lifetime_years")),
             "exposure": meta.get("exposure") if meta.get("exposure") in P.EXPOSURES else None,
             "segment": meta.get("segment") if isinstance(meta.get("segment"), str) else None,
+            # the default Mosca X reads the source's business criticality (C5) when no X is set (qgrade.default_x)
+            "criticality": meta.get("criticality") if meta.get("criticality") in ("low", "medium", "high", "critical")
+            else None,
             "application": (str(cfg.get("application"))[:128] if cfg.get("application") else None),
             "name": s.name, "uid": s.source_uid}
     mosca = QG.mosca_of(risk_model)
-    doc = {"mosca": mosca, "sources": sorted([v["uid"] or str(k), v["x"], v["exposure"], v["segment"]]
-                                             for k, v in by_source.items())}
+    year = utcnow().year
+    # the default Z is in the digest: on 1 January the years left until 2035 drop by one and the register re-grades
+    doc = {"mosca": mosca, "sources": sorted([v["uid"] or str(k), v["x"], v["exposure"], v["segment"],
+                                              v["criticality"]] for k, v in by_source.items()),
+           "z_default": QG.default_z(year)}
     digest = hashlib.sha256(json.dumps(doc, sort_keys=True, separators=(",", ":"), default=str)
                             .encode()).hexdigest()[:16]
-    return TeamInputs(mosca=mosca, risk_model=risk_model, by_source=by_source, digest=digest)
+    return TeamInputs(mosca=mosca, risk_model=risk_model, by_source=by_source, digest=digest, year=year)
 
 
 # ----------------------------------------------------------------------------- grading one key
@@ -132,7 +144,8 @@ class Grader:
             for jid, info in list(ctx.jobs.items()):
                 now = self.inputs.by_source.get(info.source_id or 0)
                 if now is not None:  # a source that still exists: its settings now (a deleted one keeps its snapshot)
-                    ctx.jobs[jid] = replace(info, x=now["x"], exposure=now["exposure"], segment=now["segment"])
+                    ctx.jobs[jid] = replace(info, x=now["x"], exposure=now["exposure"], segment=now["segment"],
+                                            criticality=now["criticality"])
             self._ctx[key] = ctx
         return self._ctx[key]
 
@@ -456,7 +469,9 @@ def regrade_team(session: Session, team_id: int, now: _dt.datetime, *, limit: in
         out["graded"] += res.graded
         Q0.sync_assets(session, team_id, res.transitions, now, cause=cause)
     if any((by_model, by_inputs, missing)):
-        Q0.sync_mosca(session, team_id, now)
+        # a batch that re-graded rows of another grade model closes the Mosca item as a model change (recorded, not
+        # forwarded, not a gap the team closed); otherwise the cause follows the team's inputs (q0register.mosca_cause)
+        Q0.sync_mosca(session, team_id, now, cause="model_change" if by_model else None)
         log("risk register re-graded", team=team_id, **out)
     return out
 
@@ -532,6 +547,105 @@ def _add_business(session: Session, team_id: int, items: list[dict[str, Any]]) -
         b = biz.get(item["item_key"]) or {}
         item["owners"] = b.get("owners", [])
         item["data_classification"] = b.get("data_classification")
+        item["business_criticality"] = b.get("criticality", [])
+
+
+# grades whose rule decides before Mosca is read (qg-1 rules 1-6, the deprecated rules): why no input was used
+_NOT_READ = {"not_correlated": "not used (Q0 before Mosca: not correlated across sources)",
+             "unknown_verdict": "not used (Q0 before Mosca: PQC class unknown)",
+             "deprecated": "not used (SP 800-131A disallowed: graded on exposure)",
+             "deprecated_internet": "not used (SP 800-131A disallowed: graded on exposure)"}
+
+
+def _inputs_text(assumed: tuple[str, ...] | list[str], reads_mosca: bool, reason: str | None = None) -> str:
+    if not reads_mosca:
+        return _NOT_READ.get(str(reason or ""), "not used (the class needs no Mosca inputs)")
+    if assumed:
+        return "default assumptions: " + ", ".join(k.upper() for k in assumed)
+    return "team / source inputs"
+
+
+def add_detail(session: Session, team_id: int, items: list[dict[str, Any]], now: _dt.datetime,
+               inputs: TeamInputs | None = None) -> None:
+    """SOW D12: per register row, what the grade read and what fixing it means, from the stored row the grade was
+    taken from (the observation of the row's ``source_ref``): PQC class (with SP 800-131A ``deprecated``),
+    algorithm and key size, the FIPS 203/204/205, CNSA 2.0 and SP 800-131A verdicts, the fix class, the NIST PQ
+    target of its function, the Mosca inputs used (X with its basis, Y, Z, and whether a default filled one),
+    business criticality and owner. Every surface (the list with ``detail``, the CSV, the PDF) calls this one
+    function, so their values cannot differ. Needs ``_add_business`` first (owners, criticality)."""
+    from backend.new_models import CbomCollectionJob
+    from backend.utilities.cbom_sources import agility as AG
+    from backend.utilities.cbom_sources import estate as E
+    from backend.utilities.cbom_sources import posture as P
+    from backend.utilities.cbom_sources import pqc_targets as PQT
+    from backend.utilities.cbom_sources import qgrade as QG
+    from backend.utilities.cbom_sources import standards as STD
+    from backend.utilities.cbom_sources.classify import shown, standards_of
+
+    if not items:
+        return
+    inputs = inputs or team_inputs(session, team_id)
+    latest = E.latest_rows(session, team_id, [i["item_key"] for i in items])
+    pick: dict[str, int] = {}
+    for item in items:
+        entry = latest.get(item["item_key"]) or {}
+        obs = (entry.get("observations") or {}).get(item.get("source_ref") or "") or entry.get("latest") or {}
+        if obs.get("asset_id"):
+            pick[item["item_key"]] = int(obs["asset_id"])
+    rows: dict[int, CbomCollectedAsset] = {}
+    for part in _chunks(sorted(set(pick.values()))):
+        rows.update({r.id: r for r in session.exec(select(CbomCollectedAsset).where(
+            CbomCollectedAsset.id.in_(list(part)))).all()})  # type: ignore[union-attr]
+    job_ids = sorted({r.job_id for r in rows.values()})
+    jobs = {j.id: j for part in _chunks(job_ids) for j in session.exec(select(CbomCollectionJob).where(
+        CbomCollectionJob.team_id == team_id, CbomCollectionJob.id.in_(list(part)))).all()}  # type: ignore[union-attr]
+    sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
+        CbomCollectionSource.team_id == team_id)).all()}
+    contexts: dict[tuple, dict[str, Any]] = {}
+    m = inputs.mosca
+    grader = Grader(session, team_id, inputs, now)  # the grade's own context per run: its read-elsewhere rule (m1)
+    for item in items:
+        row = rows.get(pick.get(item["item_key"], -1))
+        out: dict[str, Any] = {k: None for k in DETAIL_FIELDS}
+        crit = item.get("business_criticality") or []
+        out["criticality"] = "; ".join(crit) if isinstance(crit, list) else crit
+        out["owner"] = "; ".join(item.get("owners") or []) or PQT.UNASSIGNED_OWNER
+        if row is not None:
+            facts = row.facts if isinstance(row.facts, dict) else {}
+            codes = [c for c in shown(row, now)["finding_codes"] if not c.startswith("COVERAGE_")]
+            # the class the grade read: the same JudgedElsewhere as ``Grader.grade`` (a row another job of the run read
+            # with a verdict is not "unknown"), so the CSV never prints a class the grade did not use
+            cls = QG.graded_pqc_class(P.classify_pqc(row, codes, elsewhere=grader._context(row).elsewhere)[0], row)
+            graded = standards_of(row.asset_type, row.algorithm, row.key_size, facts)
+            if not graded and row.algorithm:
+                try:
+                    graded = STD.grade([("key", row.algorithm, row.key_size)])
+                except (ValueError, TypeError, KeyError, AttributeError):  # never costs the row its other columns
+                    graded = None
+            job = jobs.get(row.job_id)
+            src = sources.get(row.source_id or 0)
+            key = (row.job_id, row.source_id)
+            if key not in contexts:
+                contexts[key] = AG.node_context(job, src)
+            fix = AG.evaluate("node", row.asset_type, codes, facts, contexts[key], row.location)
+            target = PQT.asset_target(row.asset_type, row.algorithm, facts)
+            src_in = inputs.by_source.get(row.source_id or 0) or {}
+            x, y, z, basis, assumed = QG.effective_mosca(src_in.get("x"), m["x"], m["y"], m["z"],
+                                                         src_in.get("criticality"), inputs.year)
+            reads = str(item.get("q_reason") or "").startswith("qv_")
+            out.update({
+                "pqc_class": cls, "algorithm": row.algorithm, "key_size": row.key_size,
+                **{k: (STD.export_value(graded[k]) if graded and k in graded else None)
+                   for k in ("fips_203_204_205", "cnsa_2_0", "sp800_131a")},
+                "fix_class": fix.get("fix_class"),
+                "nist_pq_target": target["target_text"] if target else None,
+                "nist_pq_reference": target["reference"] if target else None,
+                "data_lifetime_years": x, "data_lifetime_basis": basis, "migration_years": y, "crqc_years": z,
+                "grade_inputs": _inputs_text(assumed, reads, item.get("q_reason")),
+            })
+            if not out["criticality"] and src_in.get("criticality"):
+                out["criticality"] = src_in["criticality"]
+        item.update(out)
 
 
 def public_row(r: Any) -> dict[str, Any]:
@@ -565,7 +679,7 @@ def _total(session: Session, team_id: int, filters: dict[str, Any]) -> int:
 
 
 def list_register(session: Session, team_id: int, filters: dict[str, Any], *, after: tuple[int, str] | None,
-                  limit: int) -> dict[str, Any]:
+                  limit: int, detail: bool = False, now: _dt.datetime | None = None) -> dict[str, Any]:
     """One keyset page in (q_rank, item_key) order. ``total`` is counted on the first page only (``None`` on the
     next ones; the UI reads the first page's): at 1.5M rows a count per page cost more than the page (CB-32)."""
     q = sa.select(_RT).where(*_where(team_id, filters))
@@ -577,6 +691,8 @@ def list_register(session: Session, team_id: int, filters: dict[str, Any], *, af
     total = None if after is not None else _total(session, team_id, filters)
     items = [public_row(r) for r in rows]
     _add_business(session, team_id, items)
+    if detail:  # SOW D12: the CSV's per-asset columns (``add_detail``), on request (they read the stored rows)
+        add_detail(session, team_id, items, now or utcnow())
     return {"items": items, "total": total,
             "next_after": encode_after(rows[-1].q_rank, rows[-1].item_key) if more and rows else None}
 
@@ -584,10 +700,10 @@ def list_register(session: Session, team_id: int, filters: dict[str, Any], *, af
 def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 12) -> dict[str, Any]:
     from backend.new_models import CbomQ0Gap
     from backend.utilities.cbom_sources import estate as E
-    from backend.utilities.cbom_sources import qgrade as QG
 
     # the tallies and the live rows "pending" needs come from cbomregistersummary, kept by triggers (CB-32)
     from backend.utilities.cbom_sources import estate_summary_ddl as SUMMARY
+    from backend.utilities.cbom_sources import qgrade as QG
 
     grades: dict[str | None, int] = {}
     q0_reasons: dict[str, int] = {}
@@ -609,23 +725,75 @@ def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 1
         monday = start + _dt.timedelta(weeks=i)
         weekly[monday.date().isoformat()] = {}
     end = start + _dt.timedelta(weeks=weeks)
+    # a closure the grade model made (``model_change``: a re-grade under a new model, a re-keyed item) is not a gap the
+    # team closed: it is never forwarded (q0register.NOT_FORWARDED), so it is not counted here either (drift_report.
+    # weekly_drift never sees it); the week is marked ``model_changes`` instead
+    from backend.utilities.cbom_sources.q0register import NOT_FORWARDED
+
+    model_weeks: dict[str, int] = {}
     for closed_at, cause in session.exec(select(CbomQ0Gap.closed_at, CbomQ0Gap.close_cause).where(
             CbomQ0Gap.team_id == team_id, CbomQ0Gap.closed_at >= start,  # type: ignore[operator]
             CbomQ0Gap.closed_at < end)).all():  # type: ignore[operator]
         monday = (closed_at - _dt.timedelta(days=closed_at.weekday())).date().isoformat()
+        if cause in NOT_FORWARDED:
+            model_weeks[monday] = model_weeks.get(monday, 0) + 1
+            continue
         bucket = weekly[monday]
         bucket[cause or "unknown"] = bucket.get(cause or "unknown", 0) + 1
+    # SOW D12 Table 7 "gaps closed by week": with each week's openings and the gaps still open at its end, from the
+    # gap lifecycle the runs wrote (opened_at / closed_at), so the series reads as a burn-down
+    opened = {w: 0 for w in weekly}
+    open_end = {w: 0 for w in weekly}
+    mondays = sorted(weekly)
+    for opened_at, closed_at in session.exec(select(CbomQ0Gap.opened_at, CbomQ0Gap.closed_at).where(
+            CbomQ0Gap.team_id == team_id, CbomQ0Gap.opened_at < end,  # type: ignore[operator]
+            sa.or_(CbomQ0Gap.closed_at.is_(None), CbomQ0Gap.closed_at >= start))).all():  # type: ignore[union-attr]
+        if opened_at >= start:
+            opened[(opened_at - _dt.timedelta(days=opened_at.weekday())).date().isoformat()] += 1
+        for monday in mondays:
+            week_end = _dt.datetime.fromisoformat(monday) + _dt.timedelta(weeks=1)
+            if opened_at < week_end and (closed_at is None or closed_at >= week_end):
+                open_end[monday] += 1
     total = sum(int(v) for v in grades.values())
     return {
         "total": total, "q_grades": {g or "none": int(grades.get(g, 0)) for g in (*QG.GRADES, None)},
         "q0_reasons": {k: int(v) for k, v in sorted(q0_reasons.items())},
         "q0_gaps_open": {k: int(v) for k, v in sorted(gaps_open.items())},
         "families": dict(sorted(families.items())),
-        "closures_by_week": [{"week": w, "total": sum(c.values()), "by_cause": dict(sorted(c.items()))}
+        # Q0 GAP lifecycle per week (not drift events: drift_report.weekly_drift() counts findings opened / closed by
+        # run comparison, a different series): total = Q0 gaps closed, q0_gaps_opened, q0_gaps_open_at_week_end
+        "closures_by_week": [{"week": w, "total": sum(c.values()), "by_cause": dict(sorted(c.items())),
+                              "q0_gaps_opened": opened[w], "q0_gaps_open_at_week_end": open_end[w],
+                              "model_changes": model_weeks.get(w, 0)}
                              for w, c in sorted(weekly.items())],
+        "default_assumptions": default_assumptions(session, team_id),
         "pending_regrade": pending(session, team_id, graded_live=live), "estate": E.stale_status(session, team_id),
         "model_version": QG.GRADE_MODEL_VERSION, "server_time": iso_z(now),
     }
+
+
+def default_assumptions(session: Session, team_id: int, inputs: TeamInputs | None = None) -> dict[str, Any]:
+    """SOW D12: how many register rows were graded on a default Mosca input (X, Y or Z the team / source has not
+    set; ``qgrade.effective_mosca``), which inputs, and the defaults' text. A row reads Mosca only when its reason is
+    a ``qv_*`` one (quantum-vulnerable, or a classical fallback)."""
+    from backend.utilities.cbom_sources import qgrade as QG
+
+    inputs = inputs or team_inputs(session, team_id)
+    m = inputs.mosca
+    by_ref = {(v.get("uid") or ""): v for v in inputs.by_source.values()}
+    counts: dict[str, int] = {}
+    count = 0
+    for ref, n in session.execute(sa.select(_RT.c.source_ref, sa.func.count()).where(
+            _RT.c.team_id == team_id, _RT.c.q_reason.like("qv\\_%", escape="\\"), _RT.c.presence != "removed")
+            .group_by(_RT.c.source_ref)).all():
+        src = by_ref.get(ref or "") or {}
+        assumed = QG.effective_mosca(src.get("x"), m["x"], m["y"], m["z"], src.get("criticality"), inputs.year)[4]
+        if assumed:
+            count += int(n)
+            for k in assumed:
+                counts[k] = counts.get(k, 0) + int(n)
+    return {"count": count, "inputs": {k: counts[k] for k in "xyz" if k in counts},
+            "team_mosca": m, "defaults": QG.DEFAULTS_TEXT}
 
 
 HEATMAP_ROWS = 15
@@ -686,20 +854,28 @@ def heatmap(session: Session, team_id: int, *, rows: int = HEATMAP_ROWS, columns
 
 REPORT_TOP = 100
 REPORT_Q0 = 200
+REPORT_ALL = 2000  # the PDF's per-asset appendix; the CSV always holds every row
 
 
 def report(session: Session, team_id: int, now: _dt.datetime) -> dict[str, Any]:
-    """What the register PDF prints (deliverable #2): the summary, the heat-map, the top Q1 Critical items and the
+    """What the register PDF prints (SOW deliverable D12): the summary, the heat-map, the top Q1 Critical items and the
     open Q0 gaps by reason, read in one place so the PDF and the API cannot disagree."""
     from backend.new_models import CbomQ0Gap
+    from backend.utilities.cbom_sources import qgrade as QG
     from backend.utilities.cbom_sources.q0register import public_gap
 
-    top = list_register(session, team_id, {"grade": "Q1"}, after=None, limit=REPORT_TOP)
+    top = list_register(session, team_id, {"grade": "Q1"}, after=None, limit=REPORT_TOP, detail=True, now=now)
     gaps = session.exec(select(CbomQ0Gap).where(CbomQ0Gap.team_id == team_id, CbomQ0Gap.closed_at.is_(None))  # type: ignore[union-attr]
                         .order_by(CbomQ0Gap.reason, CbomQ0Gap.opened_at, CbomQ0Gap.id).limit(REPORT_Q0)).all()
+    every = list_register(session, team_id, {}, after=None, limit=REPORT_ALL, detail=True, now=now)
     return {"summary": summary(session, team_id, now), "heatmap": heatmap(session, team_id),
             "top_q1": top["items"], "top_q1_total": top["total"],
-            "q0_gaps": [public_gap(g, now) for g in gaps]}
+            "q0_gaps": [public_gap(g, now) for g in gaps],
+            # SOW D12 "every asset with its grade": worst first, the same rows and columns as the CSV
+            "assets": every["items"], "assets_total": every["total"],
+            # what X, Y and Z mean, the defaults' sources, and each reason in words (the PDF prints these, never codes)
+            "mosca_definition": QG.MOSCA_DEFINITION,
+            "reason_text": {code: meta["text"] for code, meta in QG.REASONS.items()}}
 
 
 def get_item(session: Session, team_id: int, key: str) -> dict[str, Any] | None:
@@ -727,27 +903,34 @@ def _csv_cell(value: Any) -> Any:
     return value
 
 
-def csv_rows(engine, team_id: int, filters: dict[str, Any], *, batch: int = 1000) -> Iterator[bytes]:
-    """The register as CSV, streamed in keyset batches (constant memory), one short session per batch."""
+CSV_BOM = "\ufeff"  # UTF-8 byte order mark: Excel on Windows reads the file as UTF-8 (labels carry "\u00b7")
+
+
+def csv_rows(engine, team_id: int, filters: dict[str, Any], *, batch: int = 1000,
+             now: _dt.datetime | None = None) -> Iterator[bytes]:
+    """The register as CSV (RFC 4180: CRLF, minimal quoting; UTF-8 with a byte order mark; no cell a spreadsheet
+    runs as a formula), streamed in keyset batches (constant memory), one short session per batch. Each row carries
+    the per-asset detail columns (``add_detail``), the same values as ``GET …/register?detail=true``."""
     buf = io.StringIO()
-    writer = csv.writer(buf)
+    writer = csv.writer(buf, lineterminator="\r\n")
     writer.writerow(CSV_COLUMNS)
-    yield buf.getvalue().encode()
+    yield (CSV_BOM + buf.getvalue()).encode("utf-8")
     after: tuple[int, str] | None = None
+    now = now or utcnow()
     while True:
         with Session(engine) as session:
-            page = list_register(session, team_id, filters, after=after, limit=batch)
+            page = list_register(session, team_id, filters, after=after, limit=batch, detail=True, now=now)
         buf.seek(0)
         buf.truncate()
         for item in page["items"]:
             writer.writerow([_csv_cell("; ".join(v) if isinstance(v := item.get(c), list) else v)
                              for c in CSV_COLUMNS])
-        yield buf.getvalue().encode()
+        yield buf.getvalue().encode("utf-8")
         if not page["next_after"]:
             return
         after = decode_after(page["next_after"])
 
 
-__all__ = ["TeamInputs", "team_inputs", "refresh", "apply_write", "regrade_team", "regrade_due", "pending",
+__all__ = ["DETAIL_FIELDS", "add_detail", "TeamInputs", "team_inputs", "refresh", "apply_write", "regrade_team", "regrade_due", "pending",
            "list_register", "summary", "heatmap", "report", "not_correlated", "get_item", "csv_rows", "encode_after", "decode_after", "RANK",
            "ASSET_Q0_REASONS", "CSV_COLUMNS", "FILTERS", "LIMIT_MAX"]

@@ -26,7 +26,9 @@ import uuid
 from typing import Any, NamedTuple
 
 from aibom.emit._disclaimer import ADVISORY_DISCLAIMER as _ADVISORY_DISCLAIMER
+from aibom.emit._disclaimer import disclaimer_of
 from aibom.emit.crypto_oid import algorithm_oid
+from aibom.emit.identity import PINNED_TIMESTAMP, TOOL_NAMES, identity_for
 from aibom.emit.registry import BaseReporter, register_reporter
 from aibom.emit.validate import validate_cyclonedx
 from aibom.model.component import (
@@ -37,17 +39,19 @@ from aibom.model.component import (
 )
 from aibom.model.result import ScanResult
 
-# Tool identity stamped into metadata.tools[].
-TOOL_NAME = "clinithread-aibom"
+# Tool identity stamped into metadata.tools (aibom.emit.identity: the AI BOM name;
+# a CBOM result stamps "DevSecShield CBOM"; the version is the product release).
+TOOL_NAME = TOOL_NAMES["aibom"]
+# the package version; emitted BOMs carry identity.product_version()
 TOOL_VERSION = "0.1.0"
 
 # Deterministic namespace for serial-number derivation. Stable across runs so
 # identical inventories yield identical serialNumbers (golden-file friendly).
 _SERIAL_NS = uuid.UUID("6f3c8b1e-2a4d-4f6a-9c0b-7e1d2f3a4b5c")
 
-# Pinned, deterministic timestamp when none is supplied. Keeps emit() pure and
-# golden-file stable; callers can override via aibom.properties or by post-edit.
-_DEFAULT_TIMESTAMP = "2026-06-21T00:00:00Z"
+# Pinned, deterministic timestamp when the host supplies no scan time
+# (ScanResult.generated_at). Keeps the committed goldens byte-stable.
+_DEFAULT_TIMESTAMP = PINNED_TIMESTAMP
 
 # Re-exported from the shared module so all reporters use one disclaimer string;
 # kept importable here for backward compat (cli.py imports it from cyclonedx).
@@ -895,26 +899,187 @@ def _emit_component(
 
 
 # --------------------------------------------------------------------------- #
+# AI services (CycloneDX 1.6 ``services[]``)
+# --------------------------------------------------------------------------- #
+
+#: Component kinds rendered as CycloneDX services rather than components.
+SERVICE_KINDS = frozenset({"service", "cloud_service", "endpoint"})
+
+# What crosses an AI inference service boundary: the prompt / input context goes
+# out, the model output comes back. The data classification is not knowable from
+# code, so it is stated as not assessed rather than guessed.
+_AI_DATA_FLOW = {
+    "flow": "bi-directional",
+    "classification": "not-assessed",
+    "description": "Prompts and input context are sent to the service; model "
+    "output is returned.",
+}
+
+
+def _emit_service(comp: Any) -> dict[str, Any]:
+    """Serialize a service / cloud_service / endpoint as a CycloneDX service.
+
+    ``service:endpoint`` -> ``endpoints``; ``service:authenticated`` ->
+    ``authenticated``; ``service:trust_zone`` -> ``trustZone`` and
+    ``x-trust-boundary`` (an external service is across a trust boundary). Facts
+    the scan did not establish are left out, never defaulted.
+    """
+    props = dict(comp.properties or {})
+    out: dict[str, Any] = {"bom-ref": comp.bom_ref}
+    publisher = (comp.publisher or "").strip()
+    if publisher and publisher.lower() != "local":
+        out["provider"] = {"name": publisher}
+    out["name"] = comp.name
+    _add(out, "version", comp.version)
+    endpoint = props.get("service:endpoint")
+    if endpoint:
+        out["endpoints"] = [endpoint]
+    auth = props.get("service:authenticated")
+    if auth in ("true", "false"):
+        out["authenticated"] = auth == "true"
+    zone = props.get("service:trust_zone")
+    if zone in ("external", "local"):
+        out["x-trust-boundary"] = zone == "external"
+        out["trustZone"] = zone
+    if endpoint or comp.kind == "cloud_service":
+        out["data"] = [dict(_AI_DATA_FLOW)]
+    _add(out, "licenses", comp.licenses)
+    if comp.external_references:
+        out["externalReferences"] = [
+            _external_reference(r) for r in comp.external_references
+        ]
+    props.setdefault("aibom:service_kind", comp.kind)
+    out["properties"] = _properties_list(props)
+    return out
+
+
+# --------------------------------------------------------------------------- #
 # Public API
 # --------------------------------------------------------------------------- #
 
 
-def _dependencies(result: ScanResult) -> list[dict[str, Any]]:
-    """Collapse typed edges into CycloneDX ``dependencies[]`` (ref -> dependsOn).
+def _crypto_refs(node: Any) -> list[str]:
+    """Every bom-ref a CycloneDX ``cryptoProperties`` subtree links to (``*Ref``
+    fields, protocol ``cryptoRefArray``, cipher-suite ``algorithms``)."""
+    out: list[str] = []
+    if isinstance(node, dict):
+        for key, val in node.items():
+            if isinstance(val, str) and key.endswith("Ref"):
+                out.append(val)
+            elif key in ("cryptoRefArray", "algorithms") and isinstance(val, list):
+                out.extend(v for v in val if isinstance(v, str))
+            else:
+                out.extend(_crypto_refs(val))
+    elif isinstance(node, list):
+        for item in node:
+            out.extend(_crypto_refs(item))
+    return out
 
-    CycloneDX has a single ``dependsOn`` relation, so every out-edge of a
-    component (``trained_on``, ``depends_on``, ...) becomes a dependsOn target.
+
+def crypto_provides(result: ScanResult) -> list[tuple[str, str]]:
+    """``(library bom-ref, algorithm bom-ref)``: which crypto library "provides"
+    (implements) which algorithm. The one rule for CycloneDX ``dependencies`` and the
+    crypto graph (``normalize._crypto_graph``), so the two never disagree (second
+    review of #491, M-C).
+
+    An algorithm is provided by the library its ``crypto:detectedBy`` names (the API
+    call that fixed it: hashlib's ``scrypt`` is never pyca's, argon2-cffi's Argon2
+    never pyca's); only an algorithm whose detector names no library in the BOM (a
+    literal-only sighting) falls back to every crypto library its file imports
+    (``crypto:libraries``). A library never provides a salt, an IV, a key or a
+    certificate."""
+    libraries = {
+        (c.name or "").lower(): c.bom_ref
+        for c in result.components
+        if c.kind == "framework"
+        and (c.properties or {}).get("crypto:role") == "library"
+    }
+    out: list[tuple[str, str]] = []
+    for c in result.components:
+        props = c.properties or {}
+        if c.kind != "crypto_asset" or props.get("crypto:assetType") != "algorithm":
+            continue
+        named = libraries.get((props.get("crypto:detectedBy") or "").strip().lower())
+        labels = [named] if named else [
+            libraries.get(label.strip().lower())
+            for label in (props.get("crypto:libraries") or "").split(",")
+        ]
+        for lib in labels:
+            if lib and lib != c.bom_ref and (lib, c.bom_ref) not in out:
+                out.append((lib, c.bom_ref))
+    return out
+
+
+def _dependencies(
+    result: ScanResult, components: list[dict[str, Any]] | None = None
+) -> list[dict[str, Any]]:
+    """CycloneDX 1.6 ``dependencies[]``: ``dependsOn`` ("uses") and ``provides``
+    ("implements").
+
+    Every typed scanner edge becomes a ``dependsOn`` target (CycloneDX has one
+    dependency relation). For a CBOM the crypto graph is also read off the
+    inventory itself, so the document carries the lineage a reviewer needs:
+    an asset uses what its ``cryptoProperties`` link to (certificate -> signature
+    algorithm, protocol -> cipher suites), a construction uses the primitives it
+    was derived from / built on (Fernet -> AES-128-CBC + HMAC-SHA256, PBKDF2 ->
+    its salt), and a crypto library ``provides`` the algorithms in the files that
+    import it.
     """
-    grouped: dict[str, list[str]] = {}
+    present = {c.bom_ref for c in result.components}
+    present |= {
+        str(c.get("bom-ref")) for c in components or [] if c.get("bom-ref")
+    }
+    uses: dict[str, list[str]] = {}
+    provides: dict[str, list[str]] = {}
+
+    def add(table: dict[str, list[str]], src: str, dst: str) -> None:
+        if src == dst or src not in present or dst not in present:
+            return
+        bucket = table.setdefault(src, [])
+        if dst not in bucket:
+            bucket.append(dst)
+
     for edge in result.edges:
-        grouped.setdefault(edge.src, [])
-        if edge.dst not in grouped[edge.src]:
-            grouped[edge.src].append(edge.dst)
+        uses.setdefault(edge.src, [])
+        if edge.dst not in uses[edge.src]:
+            uses[edge.src].append(edge.dst)
+    for comp in components or []:
+        ref = comp.get("bom-ref")
+        if isinstance(ref, str) and isinstance(comp.get("cryptoProperties"), dict):
+            for target in _crypto_refs(comp["cryptoProperties"]):
+                add(uses, ref, target)
+    crypto = [c for c in result.components if c.kind == "crypto_asset"]
+    by_name_file = {
+        ((c.name or "").lower(), (c.properties or {}).get("discovery:source")):
+        c.bom_ref
+        for c in crypto
+    }
+    for c in crypto:
+        props = c.properties or {}
+        parent = props.get("crypto:derivedFrom")
+        if parent:
+            add(uses, parent, c.bom_ref)
+        prf = props.get("crypto:kdfPrf") or props.get("crypto:innerDigest") or ""
+        digest = re.sub(r"^HMAC-SHA-?(\d+)$", r"SHA-\1", prf.upper())
+        # PBKDF2-HMAC-SHA256 uses the SHA-256 asset of its file
+        if digest != prf.upper():
+            hit = by_name_file.get((digest.lower(), props.get("discovery:source")))
+            if hit:
+                add(uses, c.bom_ref, hit)
+        source = props.get("discovery:source")
+        for used_by in (props.get("crypto:usedBy") or "").split(","):
+            hit = by_name_file.get((used_by.strip().lower(), source))
+            if hit:
+                add(uses, hit, c.bom_ref)
+    for lib, algorithm in crypto_provides(result):
+        add(provides, lib, algorithm)
     deps = []
-    for ref in sorted(grouped):
+    for ref in sorted(set(uses) | set(provides)):
         entry: dict[str, Any] = {"ref": ref}
-        if grouped[ref]:
-            entry["dependsOn"] = sorted(grouped[ref])
+        if uses.get(ref):
+            entry["dependsOn"] = sorted(uses[ref])
+        if provides.get(ref):
+            entry["provides"] = sorted(provides[ref])
         deps.append(entry)
     return deps
 
@@ -926,9 +1091,10 @@ def emit_cyclonedx(result: ScanResult) -> dict[str, Any]:
     ``emit_and_validate`` (or call ``validate_cyclonedx`` yourself) to enforce
     the build-failure rule.
     """
+    identity = identity_for(result)
     metadata: dict[str, Any] = {
-        "timestamp": _DEFAULT_TIMESTAMP,
-        "tools": [{"name": TOOL_NAME, "version": TOOL_VERSION}],
+        "timestamp": identity.timestamp,
+        "tools": identity.cyclonedx_tools(),
         "component": {
             "type": result.subject.type,
             "name": result.subject.name,
@@ -937,7 +1103,7 @@ def emit_cyclonedx(result: ScanResult) -> dict[str, Any]:
     _add(metadata["component"], "version", result.subject.version)
 
     bom_props = dict(result.properties)
-    bom_props.setdefault("regulatory:disclaimer", ADVISORY_DISCLAIMER)
+    bom_props.setdefault("regulatory:disclaimer", disclaimer_of(result))
     metadata["properties"] = _properties_list(bom_props)
 
     # C9 crypto dependency graph: index the algorithm assets once so certificate/
@@ -946,7 +1112,14 @@ def emit_cyclonedx(result: ScanResult) -> dict[str, Any]:
     # asset (kept in ``synth``, appended after the scanned components).
     index = _algorithm_index(result.components)
     synth: dict[str, dict[str, Any]] = {}
-    components = [_emit_component(c, index, synth) for c in result.components]
+    # AI services and endpoints are CycloneDX ``services`` (endpoints, auth, trust
+    # boundary, data flow), not application components.
+    services = [_emit_service(c) for c in result.components if c.kind in SERVICE_KINDS]
+    components = [
+        _emit_component(c, index, synth)
+        for c in result.components
+        if c.kind not in SERVICE_KINDS
+    ]
     components.extend(synth[ref] for ref in sorted(synth))
 
     bom: dict[str, Any] = {
@@ -957,8 +1130,10 @@ def emit_cyclonedx(result: ScanResult) -> dict[str, Any]:
         "metadata": metadata,
         "components": components,
     }
+    if services:
+        bom["services"] = services
 
-    deps = _dependencies(result)
+    deps = _dependencies(result, components)
     if deps:
         bom["dependencies"] = deps
 

@@ -7,7 +7,7 @@ from typing import Any
 from reportlab.lib import colors
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import KeepTogether, Paragraph, Spacer, Table, TableStyle
 
 from backend.utilities.dashboard.rbi_posture import build_rbi_csf_rollup
 
@@ -24,6 +24,11 @@ def _compliance_blob(payload: dict[str, Any]) -> dict[str, Any] | None:
         if isinstance(val, dict) and val:
             return val
     return None
+
+
+def _out_of_scope(fw: dict[str, Any]) -> bool:
+    applicable = sum(int(fw.get(k) or 0) for k in ("pass", "pass_with_evidence", "fail", "not_bom_evidenceable"))
+    return applicable == 0 and int(fw.get("out_of_scope") or 0) > 0
 
 
 def append_rbi_compliance_pdf_section(
@@ -61,10 +66,12 @@ def append_rbi_compliance_pdf_section(
         )
     )
 
+    # A framework none of whose requirements applies (every one out of scope: the healthcare FDA / HIPAA / GMLP
+    # checks on a bank's AI BOM) is not listed: a row of 0 / 0 / n/a reads as if it were assessed.
     frameworks = [
         (k, v)
         for k, v in compliance.items()
-        if k != "disclaimer" and isinstance(v, dict)
+        if k != "disclaimer" and isinstance(v, dict) and not _out_of_scope(v)
     ]
     if frameworks:
         rows = [["Framework", "Pass", "Fail", "Coverage"]]
@@ -96,7 +103,7 @@ def append_rbi_compliance_pdf_section(
     pillars = (rollup or {}).get("rbi_csf_rollup") if isinstance(rollup, dict) else None
     if isinstance(pillars, dict) and pillars:
         story.append(Spacer(1, 0.15 * inch))
-        story.append(Paragraph("RBI CSF Pillar Rollup", heading_style))
+        pillar_heading = Paragraph("RBI CSF Pillar Rollup", heading_style)
         prow = [["Pillar", "Pass", "Fail", "Coverage"]]
         for pname, pdata in pillars.items():
             if not isinstance(pdata, dict):
@@ -123,4 +130,4 @@ def append_rbi_compliance_pdf_section(
                 ]
             )
         )
-        story.append(ptable)
+        story.append(KeepTogether([pillar_heading, ptable]))  # the heading never sits alone at a page foot

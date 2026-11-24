@@ -429,11 +429,17 @@ def _cve_ids(row: Mapping[str, Any]) -> list[str]:
 def code_scan_vulnerabilities(findings: list[Any], *, components: Iterable[str] = (),
                               resolved: Iterable[Mapping[str, Any]] = (), ref_of: Mapping[str, str] | None = None,
                               link_of: Callable[[Mapping[str, Any]], str | None] | None = None,
-                              truncated: bool = False) -> list[dict[str, Any]]:
+                              truncated: bool = False, dropped: list[str] | None = None) -> list[dict[str, Any]]:
     """A CBOM code scan's VEX entries: one per finding code (``code_basis(code, "code")``: never exploitable), one per
     CVE (``in_triage``; the detail says whether it came from a library advisory or from the algorithm), one
     ``resolved`` per code its drift resolved, and the CERT-In F5 ``not-affected:<ref>`` stub for each component with
-    no finding and no CVE (``components``: the BOM's refs, used when the scan stored no result rows)."""
+    no finding and no CVE (``components``: the BOM's refs, used when the scan stored no result rows).
+
+    D11: when the BOM's refs are known (``components``), the VEX states only components the BOM holds: a result row
+    whose ref the BOM does not hold (no ``bom_ref``, or a row the BOM left out) is not an affected asset, and an
+    entry left with none is not written. ``dropped`` (a list, when given) receives one ref per row left out."""
+    components = [str(r) for r in components if r]
+    in_bom = set(components)
     by_code: dict[str, list[str]] = {}
     by_cve: dict[str, dict[str, Any]] = {}
     clean: list[str] = []
@@ -441,6 +447,10 @@ def code_scan_vulnerabilities(findings: list[Any], *, components: Iterable[str] 
         if not isinstance(row, dict):
             continue
         ref = str(row.get("bom_ref") or row.get("bom-ref") or f"component-{i}")
+        if in_bom and ref not in in_bom:
+            if dropped is not None:
+                dropped.append(ref)
+            continue
         codes = [c for c in row.get("finding_codes") or [] if isinstance(c, str) and c]
         for code in codes:
             by_code.setdefault(code, []).append(ref)
@@ -453,7 +463,7 @@ def code_scan_vulnerabilities(findings: list[Any], *, components: Iterable[str] 
         if not codes and not cves:
             clean.append(ref)
     if not findings:
-        clean = [str(r) for r in components if r]
+        clean = components
     out: list[dict[str, Any]] = []
     taken: set[str] = set()
     for code, refs in sorted(by_code.items()):
@@ -494,8 +504,10 @@ def code_scan_vex(findings: list[Any], *, scan_id: int | None = None, now: _dt.d
     ``serialNumber`` = uuid5(scan id : rules : content digest), so a rebuilt document with other content is another
     BOM; ``metadata.timestamp`` = when it was built; ``supersedes``: the stored document it replaces (its serial, or
     its rules when it had none, in ``zs:supersedes``)."""
+    components = list(components)
+    dropped: list[str] = []
     vulns = code_scan_vulnerabilities(findings, components=components, resolved=resolved, ref_of=ref_of,
-                                      link_of=link_of, truncated=truncated)
+                                      link_of=link_of, truncated=truncated, dropped=dropped)
     states = Counter(v["analysis"]["state"] for v in vulns)
     digest = hashlib.sha256(json.dumps(vulns, sort_keys=True).encode()).hexdigest()
     old = None
@@ -516,6 +528,7 @@ def code_scan_vex(findings: list[Any], *, scan_id: int | None = None, now: _dt.d
                 *([prop("zs:supersedes", old)] if old else []),
                 *([prop("zs:drift_events_truncated", "true")] if truncated else []),
                 *[prop(f"zs:entries_{state}", n) for state, n in sorted(states.items())],
+                *([prop("zs:affects_not_in_bom", len(dropped))] if dropped else []),
                 prop("certin:disclaimer", "Advisory VEX alignment to CERT-In TG v2.0; code-scan findings, CVE matches "
                                           "and quantum-only risks are in triage, drift-fixed findings resolved. Does "
                                           "not constitute CERT-In certification."),
@@ -525,9 +538,14 @@ def code_scan_vex(findings: list[Any], *, scan_id: int | None = None, now: _dt.d
     }
 
 
+# The rules of utilities/compliance/cert_in/vex.py (SBOM / AI BOM VEX): "certin-3" lists real vulnerability ids only
+# (no per-component not_affected stubs). Pinned to that module by backend/tests/test_vex_real_statements.py.
+CERTIN_VEX_RULES = "certin-3"
+
+
 def is_current(scan_type: str, vex: Any) -> bool:
-    """A stored CBOM code-scan VEX written by older rules is rebuilt (other scan types keep theirs)."""
-    if scan_type != "cbom":
-        return True
+    """A stored VEX written by older rules is rebuilt: a CBOM code-scan VEX by these rules, an SBOM / AI BOM VEX by
+    cert_in/vex.py's (the earlier ones asserted not_affected for every component with a made-up id)."""
+    want = VEX_RULES if scan_type == "cbom" else CERTIN_VEX_RULES
     props = ((vex.get("metadata") or {}).get("properties") or []) if isinstance(vex, dict) else []
-    return any(isinstance(p, dict) and p.get("name") == "zs:vex_rules" and p.get("value") == VEX_RULES for p in props)
+    return any(isinstance(p, dict) and p.get("name") == "zs:vex_rules" and p.get("value") == want for p in props)

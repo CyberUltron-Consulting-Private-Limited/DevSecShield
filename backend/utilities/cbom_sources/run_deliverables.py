@@ -15,11 +15,14 @@ finished run are byte-identical; bytes change only when content does (new assets
 library judged differently on a later day: ``zs:judged_on``, a remediation-plan change for the VEX, a new build:
 ``zs:build``).
 
-The signature (``GET .../runs/{id}/signature``) is HMAC-SHA256 with the code lane's key and ``bom_signature`` fields
-over the exact bytes of ``GET .../runs/{id}/cbom`` (JSON). The key stays on the server, so a customer verifies a
-downloaded file with ``POST .../runs/{id}/signature/verify`` (the file as the body, optionally the ``signature_b64``
-it came with), or offline by comparing ``sha256(file)`` with ``digest``. The code lane signs canonical JSON of a stored
-BOM; a run's export is streamed (never held whole), so here the raw bytes are signed.
+The signature (``GET .../runs/{id}/signature``, D11): the run CBOM JSON carries an embedded JSF ES256 signature
+(``bom_signing.write_json``, written while the file is streamed), and the signature document adds an ES256 detached
+signature (DER, base64) over the exact bytes of ``GET .../runs/{id}/cbom`` (JSON), with the published public key (PEM,
+JWK, fingerprint; ``GET /{team}/bom-signing-keys``). A customer verifies offline (openssl, or ``zs_bom_verify.py`` from
+the evidence pack) or with ``POST .../runs/{id}/signature/verify``, which still accepts the code lane's HMAC
+(``legacy_hmac``) of files signed before the ES256 key. The XML download is signed detached (``X-ZS-Signature``) and
+the evidence pack signs its manifest (``bom_signing.pack_files``). ECDSA nonces are deterministic (RFC 6979), so a
+finished run still downloads as the same bytes.
 
 VEX (``run_vex``)
 -----------------
@@ -57,6 +60,8 @@ from backend.new_models import (
     CbomCollectionSource,
     CbomScanNode,
 )
+from backend.utilities.cbom_sources import bom_signing as SIGN
+from backend.utilities.cbom_sources import bom_verify as BV
 from backend.utilities.cbom_sources import crypto_kb
 from backend.utilities.cbom_sources import inventory as INV
 from backend.utilities.cbom_sources import vex_semantics as VEX
@@ -71,10 +76,16 @@ _VEX_NS = uuid.uuid5(uuid.NAMESPACE_URL, "https://zeroshield.ai/cbom/sources/run
 _IMPACT_RANK = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
 
 SIGNATURE_SCOPE = (
-    "HMAC-SHA256 over the exact bytes of GET /{team}/cbom/sources/runs/{run}/cbom (format=json) as downloaded. The key "
-    "stays with ZeroShield: verify a downloaded file with POST /{team}/cbom/sources/runs/{run}/signature/verify (the "
-    "file as the request body, optionally X-ZS-Signature-B64), or check sha256(file) = digest. The XML form is not "
-    "covered.")
+    "ES256 (ECDSA P-256, SHA-256) over the exact bytes of GET /{team}/cbom/sources/runs/{run}/cbom (format=json) as "
+    "downloaded; the file also carries an embedded JSF signature. The public key is published at GET "
+    "/{team}/bom-signing-keys and in the evidence pack: verify offline with openssl dgst -sha256 -verify <key.pem> "
+    "-signature <signature as DER> <file>, or zs_bom_verify.py from the pack; or online with POST "
+    "/{team}/cbom/sources/runs/{run}/signature/verify. The XML form (format=xml) is signed the same way: its detached "
+    "signature is the X-ZS-Signature header of its download and bom.cdx.xml.sig in the evidence pack.")
+LEGACY_SCOPE = (
+    "HMAC-SHA256 over the exact bytes of GET /{team}/cbom/sources/runs/{run}/cbom (format=json) as downloaded. No "
+    "asymmetric signing key is configured on this server: verify with POST "
+    "/{team}/cbom/sources/runs/{run}/signature/verify, or check sha256(file) = digest.")
 
 
 # ----------------------------------------------------------------------------- run identity and time
@@ -133,23 +144,14 @@ def document(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> Doc
     return head, components, vulns
 
 
-def _dumps(value: Any) -> bytes:  # what inventory.write_cyclonedx writes (starlette's JSONResponse encoding)
-    return json.dumps(value, ensure_ascii=False, allow_nan=False, indent=None, separators=(",", ":")).encode()
+def write_document(doc: Document, fmt: str, out: Any) -> dict[str, Any] | None:
+    """``inventory.write_cyclonedx``'s writer (``cdx_write.write``) over ``doc``: JSON piece by piece with its embedded
+    JSF signature, or XML (``test_run_cbom_bytes_are_inventorys_writer_with_a_stable_timestamp`` keeps the two equal).
+    Returns the JSF signature written into the JSON (None for XML or without a key)."""
+    from backend.utilities.cbom_sources import cdx_write
 
-
-def write_document(doc: Document, fmt: str, out: Any) -> None:
-    """``inventory.write_cyclonedx``'s writer over ``doc``: JSON piece by piece, or XML through ``cdx_xml.write_xml``
-    (``test_run_cbom_bytes_are_inventorys_writer_with_a_stable_timestamp`` keeps the two equal)."""
     head, components, vulns = doc
-    if fmt == "xml":
-        from backend.utilities.cbom_sources import cdx_xml
-
-        cdx_xml.write_xml(out, head, components, vulns)
-        return
-    out.write(_dumps(head)[:-1] + b',"components":[')
-    for index, component in enumerate(components):
-        out.write((b"," if index else b"") + _dumps(component))
-    out.write(b'],"vulnerabilities":' + _dumps(vulns()) + b"}")
+    return cdx_write.write(out, head, components, vulns, fmt)
 
 
 def write_run_cbom(session: Session, run: CbomCollectionRun, now: _dt.datetime, fmt: str, out: BinaryIO) -> None:
@@ -173,6 +175,8 @@ class Summary:
     head: dict[str, Any]
     findings: list[dict[str, Any]] = field(default_factory=list)
     vulnerabilities: list[dict[str, Any]] = field(default_factory=list)
+    refs: set[str] = field(default_factory=set)  # every bom-ref of the document (the VEX names only these)
+    jsf: dict[str, Any] | None = None  # the JSF signature written into the JSON (None: XML, or no signing key)
 
 
 def _collecting(doc: Document, summary: Summary) -> Document:
@@ -181,6 +185,8 @@ def _collecting(doc: Document, summary: Summary) -> Document:
 
     def comps() -> Iterator[dict[str, Any]]:
         for comp in components:
+            if isinstance(comp.get("bom-ref"), str):
+                summary.refs.add(comp["bom-ref"])
             p: dict[str, list[str]] = {}
             for prop in comp.get("properties") or []:
                 p.setdefault(str(prop.get("name")), []).append(str(prop.get("value") or ""))
@@ -211,12 +217,15 @@ def summary(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> Summ
 
 
 class Digests:
-    """A write-through file: sha256 (and HMAC-SHA256 when given a key) of every byte written to ``out``."""
+    """A write-through file: sha256 (and HMAC-SHA256 when given a key) of every byte written to ``out``; with
+    ``count_nodes`` (an upload to a verify route), also the ``{`` / ``[`` and ``,`` it holds, so a body far denser
+    than any BOM is refused while it arrives (``dense``; ``bom_verify.density_problem``, review 6029745818 minor 2)."""
 
-    def __init__(self, out: Any, secret: bytes | None = None):
+    def __init__(self, out: Any, secret: bytes | None = None, *, count_nodes: bool = False):
         self.out, self.size = out, 0
         self.sha = hashlib.sha256()
         self.mac = hmac.new(secret, digestmod=hashlib.sha256) if secret else None
+        self.count_nodes, self.containers, self.commas = count_nodes, 0, 0
 
     def write(self, data: bytes) -> int:
         if self.out is not None:
@@ -224,8 +233,15 @@ class Digests:
         self.sha.update(data)
         if self.mac is not None:
             self.mac.update(data)
+        if self.count_nodes:
+            self.containers += data.count(b"{") + data.count(b"[")
+            self.commas += data.count(b",")
         self.size += len(data)
         return len(data)
+
+    def dense(self) -> str | None:
+        """Why the bytes so far are not parsed (None = they may be); counted only with ``count_nodes``."""
+        return BV.density_problem(self.containers, self.commas, self.size) if self.count_nodes else None
 
 
 def spool() -> BinaryIO:
@@ -241,7 +257,7 @@ def written(session: Session, run: CbomCollectionRun, now: _dt.datetime, fmt: st
         doc = document(session, run, now)
         result = Summary(head=doc[0])
         tee = Digests(out, secret)
-        write_document(_collecting(doc, result) if fmt == "json" else doc, fmt, tee)
+        result.jsf = write_document(_collecting(doc, result) if fmt == "json" else doc, fmt, tee)
         if out is not None:
             out.seek(0)
     except BaseException:
@@ -252,23 +268,55 @@ def written(session: Session, run: CbomCollectionRun, now: _dt.datetime, fmt: st
 
 
 # ----------------------------------------------------------------------------- signature
-def run_signature(run: CbomCollectionRun, head: dict[str, Any], tee: Digests, at: _dt.datetime) -> dict[str, Any]:
-    """The code lane's ``bom_signature`` fields (alg, key_id, digest, signature_b64, signed_at) over the run CBOM JSON
-    bytes ``tee`` saw, plus what they cover. ``signed_at`` is the run's ``stamp``."""
-    if tee.mac is None:
-        raise RuntimeError("signing needs a key")
-    signature: dict[str, Any] = {
-        "alg": "HMAC-SHA256", "key_id": KEY_ID, "digest": tee.sha.hexdigest(),
-        "signature_b64": base64.b64encode(tee.mac.digest()).decode("ascii"), "signed_at": iso_z(at),
-        "covers": f"cbom-sources-run-{run.id}.cdx.json",
-        "scope": SIGNATURE_SCOPE.replace("{run}", str(run.id)).replace("{team}", str(run.team_id)),
+def run_signature(run: CbomCollectionRun, head: dict[str, Any], tee: Digests, at: _dt.datetime,
+                  jsf: dict[str, Any] | None = None) -> dict[str, Any]:
+    """The run CBOM JSON's signature document (``GET .../signature``): an ES256 detached signature (DER, base64) over
+    the exact bytes ``tee`` saw, by the deployment's published key (``bom_signing``), the embedded JSF signature
+    those bytes carry (``jsf``), the public key (PEM, JWK, fingerprint) and, while existing downloads may still rely
+    on it, the code lane's HMAC (``legacy_hmac``; verified only by ``POST .../signature/verify``). Without a
+    configured key: the HMAC fields alone, as before. ``signed_at`` is the run's ``stamp``. ``tee`` has no HMAC when
+    the legacy key is a placeholder (``bom_signing.legacy_hmac_problem``, review 6029745818 N3): then no HMAC is
+    issued, and without an ES256 key either the document is ``unsigned`` (``alg`` None, ``reason``; the route answers
+    503, the pack leaves it out)."""
+    common: dict[str, Any] = {
+        "signed_at": iso_z(at), "covers": f"cbom-sources-run-{run.id}.cdx.json",
         "canonicalization": "none (the raw file bytes)",
         "serialNumber": head.get("serialNumber"),
         "document_timestamp": (head.get("metadata") or {}).get("timestamp"),
-        "bytes": tee.size,
-        "run_id": run.id,
-        "run_status": run.status,
+        "bytes": tee.size, "run_id": run.id, "run_status": run.status,
     }
+    hmac_fields = ({"alg": "HMAC-SHA256", "key_id": KEY_ID,
+                    "signature_b64": base64.b64encode(tee.mac.digest()).decode("ascii")} if tee.mac is not None else None)
+    try:
+        key = SIGN.keyring().active
+    except SIGN.SigningUnavailable:
+        key = None
+    if key is None:
+        if hmac_fields is None:
+            try:
+                SIGN.keyring()
+                why = "no signing key"
+            except SIGN.SigningUnavailable as exc:
+                why = str(exc)
+            legacy = SIGN.legacy_hmac_problem() or "no legacy HMAC key is configured"
+            return {"alg": None, "unsigned": True, "digest": tee.sha.hexdigest(), **common,
+                    "reason": f"No signature can be issued: {why}; and {legacy}."}
+        signature: dict[str, Any] = {**hmac_fields, "digest": tee.sha.hexdigest(), **common,
+                                     "scope": LEGACY_SCOPE.replace("{run}", str(run.id)).replace("{team}", str(run.team_id))}
+    else:
+        signature = {
+            "alg": SIGN.ALG, "key_id": key.kid, "digest": tee.sha.hexdigest(),
+            "signature_b64": base64.b64encode(SIGN.detached_digest(tee.sha.digest(), key)).decode("ascii"),
+            "signature_format": "DER ECDSA (openssl dgst -sha256 -verify)",
+            **common,
+            "scope": SIGNATURE_SCOPE.replace("{run}", str(run.id)).replace("{team}", str(run.team_id)),
+            "embedded": ({"format": "JSF 0.82 (CycloneDX 1.6 signature)", "algorithm": jsf.get("algorithm"),
+                          "keyId": jsf.get("keyId"), "covers": "the JSON document without signature.value, in its "
+                                                               "RFC 8785 (JCS) canonical form"} if jsf else None),
+            "public_key_pem": key.pem(), "public_key_jwk": key.published(), "fingerprint": key.fingerprint(),
+            "keys_route": SIGN.KEYS_ROUTE.replace("{team_id}", str(run.team_id)),
+            **({"legacy_hmac": hmac_fields} if hmac_fields else {}),
+        }
     note = as_of_note(run, at)
     if note:
         signature["as_of"] = note
@@ -279,26 +327,91 @@ def signature_bytes(signature: dict[str, Any]) -> bytes:
     return json.dumps(signature, indent=2, ensure_ascii=False).encode("utf-8")
 
 
-def verify_upload(file_sha: str, file_mac: bytes, *, sent_b64: str | None, current: dict[str, Any] | None
-                  ) -> dict[str, Any]:
-    """The answer of ``POST .../signature/verify`` for an uploaded file whose sha256 and HMAC are given: against the
-    ``signature_b64`` the customer sent, else against the run's current CBOM JSON (``current``: its signature)."""
-    mac_b64 = base64.b64encode(file_mac).decode("ascii")
+def _decode(sent_b64: str) -> bytes:
+    try:
+        return base64.b64decode(sent_b64.strip(), validate=True)
+    except (ValueError, TypeError):
+        return b""
+
+
+def sent_signature(file_sha: str, file_mac: bytes | None, sent_b64: str) -> tuple[str, str] | None:
+    """(alg, key id) when ``sent_b64`` (``X-ZS-Signature-B64``) is a signature of these bytes: ES256 DER by a
+    published key, or the older HMAC (only when there is a usable legacy key: ``file_mac`` is None while it is a
+    placeholder, so no HMAC is accepted, review 6029745818 N3); None otherwise."""
+    sent = _decode(sent_b64)
+    if not sent:
+        return None
+    try:
+        keys = SIGN.keyring().verifier_keys()
+    except SIGN.SigningUnavailable:
+        keys = None
+    checked = BV.verify_detached_digest(bytes.fromhex(file_sha), sent, keys) if keys else None
+    if checked and checked["valid"]:
+        return SIGN.ALG, checked["kid"]
+    if file_mac is not None and hmac.compare_digest(sent, file_mac):
+        return "HMAC-SHA256", KEY_ID
+    return None
+
+
+def verify_upload(file_sha: str, file_mac: bytes | None, *, sent_b64: str | None, current: dict[str, Any] | None,
+                  embedded: dict[str, Any] | None = None, run_id: int | None = None, team_id: int | None = None,
+                  subject: dict[str, Any] | None = None, legacy_problem: str | None = None) -> dict[str, Any]:
+    """The answer of ``POST .../signature/verify`` for an uploaded file (its sha256 and HMAC given):
+
+    * ``sent_b64`` (``X-ZS-Signature-B64``): an ES256 DER signature (``signature_b64`` of today's signature document)
+      checked against the published keys, or an HMAC (files signed before the ES256 key) checked with the server key;
+    * else the file's own embedded JSF signature (``embedded``: ``bom_signing.verify_document`` of the upload) when it
+      is valid and the file says it is this run's (``zs:run_id``): a download of this run, unchanged since it was signed;
+    * else the run's current CBOM JSON (``current``: its signature document).
+
+    D4: ``valid`` needs the signature AND the file to be this run's: the run's current CBOM (``digest_match``), or a
+    file the server stamped as this run's of this team (``subject``: ``bom_signing.file_subject`` of the upload, or
+    ``embedded["subject"]``: ``zs:run_id`` and ``zs:team_id`` of a CBOM / VEX, the pack manifest's ``subject``;
+    ``bom_signing.binding``). ``signed_by_deployment``: the signature alone checks out (true for another run's file,
+    which is ``valid: false``). ``digest_match``: the file equals the run's current CBOM JSON (None when nothing was
+    compared). ``legacy_problem`` (``bom_signing.legacy_hmac_problem``): the legacy HMAC key is a placeholder, so no
+    HMAC is accepted (``file_mac`` is None) and a refusal says so (review 6029745818 N3)."""
+    digest_match = None if current is None else hmac.compare_digest(file_sha, str(current["digest"]))
+    alg, key_id = (current or {}).get("alg") or "HMAC-SHA256", (current or {}).get("key_id") or KEY_ID
+    bound = bool(digest_match)
     if sent_b64 is not None:
-        try:
-            sent = base64.b64decode(sent_b64.strip(), validate=True)
-        except (ValueError, TypeError):
-            sent = b""
-        signature_match = bool(sent) and hmac.compare_digest(sent, file_mac)
-        digest_match = None if current is None else hmac.compare_digest(file_sha, str(current["digest"]))
         compared = "the signature sent with the file"
+        matched = sent_signature(file_sha, file_mac, sent_b64)
+        signature_match = matched is not None
+        if matched is not None:
+            alg, key_id = matched
+        if signature_match and not bound:
+            bound = SIGN.binding(subject or {}, team_id=team_id, run_id=run_id)  # type: ignore[arg-type]
+    elif embedded is not None and embedded.get("valid"):
+        alg, key_id = SIGN.ALG, embedded.get("kid") or key_id
+        signature_match, compared = True, "the file's embedded JSF signature"
+        bound = bound or SIGN.binding(embedded.get("subject") or {}, team_id=team_id, run_id=run_id)  # type: ignore
     else:
         assert current is not None
-        signature_match = hmac.compare_digest(mac_b64, str(current["signature_b64"]))
-        digest_match = hmac.compare_digest(file_sha, str(current["digest"]))
+        if current.get("unsigned"):
+            signature_match = False  # nothing was signed: there is no key to compare with
+        elif current.get("alg") == SIGN.ALG:
+            signature_match = bool(digest_match)  # the current signature is over the current bytes
+        else:
+            signature_match = file_mac is not None and hmac.compare_digest(
+                base64.b64encode(file_mac).decode("ascii"), str(current["signature_b64"]))
         compared = "the run's current CBOM JSON"
-    return {"valid": bool(signature_match), "signature_match": bool(signature_match), "digest_match": digest_match,
-            "digest": file_sha, "key_id": KEY_ID, "alg": "HMAC-SHA256", "compared_with": compared}
+    valid = bool(signature_match) and bound
+    out = {"valid": valid, "signature_match": valid, "signed_by_deployment": bool(signature_match), "bound": bound,
+           "digest_match": digest_match, "digest": file_sha, "key_id": key_id, "alg": alg, "compared_with": compared}
+    if signature_match and not bound:
+        out["reason"] = "signed by this deployment but not this run's file (another run or team)"
+        if subject or embedded:
+            out["file_subject"] = {k: v for k, v in (subject or (embedded or {}).get("subject") or {}).items()
+                                   if k in ("serial", "run_id", "scan_id", "scan_type", "team_id", "kind", "ambiguous")}
+    elif not signature_match:
+        if (current or {}).get("unsigned") and sent_b64 is None:
+            out["reason"] = str(current["reason"])  # type: ignore[index]
+        elif legacy_problem and sent_b64 is not None:
+            out["reason"] = f"no published key verifies this signature, and {legacy_problem}"
+    if embedded is not None:
+        out["embedded_signature"] = {k: embedded.get(k) for k in ("valid", "kid", "reason") if k in embedded}
+    return out
 
 
 # ----------------------------------------------------------------------------- VEX (CB-22 owns the semantics)
@@ -330,19 +443,29 @@ def run_vex(run: CbomCollectionRun, data: Summary, context: dict[str, dict[str, 
     of ``at`` and the newest plan change among the run's assets (its content changes with the plan)."""
     head = data.head
     serial = str(head.get("serialNumber") or "")
+    version = head.get("version") or 1
     out: list[dict[str, Any]] = []
     pairs: dict[str, int] = {}
+    dropped = 0
     for vuln in data.vulnerabilities:
         base = vuln.get("analysis") or {}
         groups: dict[str, tuple[dict[str, Any], list[str]]] = {}
-        for affected in vuln.get("affects") or []:
+        listed = vuln.get("affects") or []
+        for affected in listed:
             ref = str(affected.get("ref") or "")
+            # D11: only components of the BOM (a bare ref the CBOM does not hold is dropped), or a BOM-Link the export
+            # already made into another BOM (a drift-resolved asset gone since its baseline run), kept as it is
+            if not ref.startswith("urn:cdx:") and data.refs and ref not in data.refs:
+                dropped += 1
+                continue
             ctx = context.get(ref) or {}
             analysis = VEX.apply_plan_status(base, ctx.get("status"), plan_changed_at=ctx.get("changed"),
                                              collected_at=ctx.get("collected"))
             groups.setdefault(json.dumps(analysis, sort_keys=True), (analysis, []))[1].append(ref)
-        if not groups:  # an entry without listed assets keeps its own analysis
-            groups[""] = (dict(base), [])
+        if not groups:
+            if listed:  # every asset it named is outside the BOM: the VEX does not state it
+                continue
+            groups[""] = (dict(base), [])  # an entry without listed assets keeps its own analysis
         for index, (analysis, refs) in enumerate(groups.values()):
             entry = {k: v for k, v in vuln.items() if k not in ("analysis", "affects", "bom-ref")}
             if index or analysis != base:
@@ -351,7 +474,8 @@ def run_vex(run: CbomCollectionRun, data: Summary, context: dict[str, dict[str, 
             elif vuln.get("bom-ref"):
                 entry["bom-ref"] = vuln["bom-ref"]
             entry["analysis"] = analysis
-            entry["affects"] = [{"ref": VEX.bom_link(serial, 1, r)} for r in refs]
+            entry["affects"] = [{"ref": r if r.startswith("urn:cdx:") else VEX.bom_link(serial, version, r)}
+                                for r in refs]
             pairs[analysis["state"]] = pairs.get(analysis["state"], 0) + len(refs)
             out.append(entry)
     meta = props(head)
@@ -361,6 +485,7 @@ def run_vex(run: CbomCollectionRun, data: Summary, context: dict[str, dict[str, 
     vex_props = [
         {"name": "zs:vex_rules", "value": f"{VEX.VEX_RULES}+{PLAN_OVERLAY}"},
         {"name": "zs:run_id", "value": str(run.id)},
+        {"name": "zs:team_id", "value": str(run.team_id)},  # binds the VEX to this team's run (review 6029745818 N1)
         {"name": "zs:run_status", "value": run.status},
         {"name": "zs:bom_serial", "value": serial},
         {"name": "zs:kb_version", "value": meta.get("zs:kb_version") or crypto_kb.version()},
@@ -370,6 +495,7 @@ def run_vex(run: CbomCollectionRun, data: Summary, context: dict[str, dict[str, 
           if meta.get("zs:truncated") == "true" else []),
         *([{"name": "zs:as_of", "value": note}] if note else []),
         *[{"name": f"zs:pairs_{state}", "value": str(n)} for state, n in sorted(pairs.items())],
+        *([{"name": "zs:affects_not_in_bom", "value": str(dropped)}] if dropped else []),
     ]
     digest = hashlib.sha256(json.dumps(out, sort_keys=True).encode()).hexdigest()
     return {
@@ -387,7 +513,12 @@ def run_vex(run: CbomCollectionRun, data: Summary, context: dict[str, dict[str, 
 
 
 def vex_bytes(vex: dict[str, Any]) -> bytes:
-    return json.dumps(vex, indent=2, ensure_ascii=False).encode("utf-8")
+    """The run VEX as served (route, pack): with an embedded JSF signature when the deployment has a key (D7; the
+    route adds the detached ``X-ZS-Signature`` header and the pack ``vex.json.sig``). Deterministic (RFC 6979)."""
+    try:
+        return SIGN.bom_bytes(vex, indent=2)
+    except SIGN.SigningUnavailable:
+        return json.dumps(vex, indent=2, ensure_ascii=False).encode("utf-8")
 
 
 def vex_states(vex: dict[str, Any]) -> dict[str, int]:
@@ -422,7 +553,9 @@ PackFile = tuple[str, "bytes | tuple[BinaryIO, Digests]", str, str]  # name, bod
 # Files whose route answers with the same bytes on every request (finished run, same day, same build). OSCAL's route
 # stamps last-modified with the request time; the pack's copy carries the run's stamp instead.
 REPRODUCIBLE = {"bom.cdx.json": True, "bom.cdx.xml": True, "oscal-assessment-results.json": False, "vex.json": True,
-                "bom_signature.json": True, "report.pdf": True}
+                "bom_signature.json": True, "report.pdf": True,
+                # S4: the /diff route's answer is the full comparison (lists to 500, events); drift.json is its summary
+                "drift.json": False}
 
 
 def evidence_pack(*, run: CbomCollectionRun, sources: list[dict[str, Any]], at: _dt.datetime,
@@ -470,6 +603,17 @@ def evidence_pack(*, run: CbomCollectionRun, sources: list[dict[str, Any]], at: 
     if manifest["inputs"]["truncated"]:
         manifest["export_cap_note"] = (f"The CBOM holds the first {INV.EXPORT_CAP:,} assets of this run; the files "
                                        "in this pack cover those assets only.")
+    # D11: signed, so a client verifies the pack offline: keys/, verify/, the .sig of both BOM files, and the manifest
+    # (every file's sha256, these too) with its own detached signature, SHA256SUMS likewise (bom_signing.pack_files)
+    hashed = [(name, (sha256(body), len(body)) if isinstance(body, bytes) else (body[1].sha.hexdigest(), body[1].size))
+              for name, body, _media, _endpoint in files]
+    try:
+        added = SIGN.pack_files(hashed, subject={"kind": "cbom-sources-run", "run_id": run.id, "team_id": run.team_id},
+                                detached_for=("bom.cdx.json", "bom.cdx.xml", "vex.json"),
+                                manifest_extra={**manifest, "format": "zeroshield-cbom-run-evidence-pack/2"})
+    except SIGN.SigningUnavailable as exc:  # unsigned: the pack says so and why (review 6029745818 minor 4)
+        added = [("manifest.json", json.dumps(manifest, indent=2, ensure_ascii=False).encode("utf-8")),
+                 ("UNSIGNED.txt", SIGN.unsigned_note(str(exc)).encode("utf-8"))]
     out = spool()
     when = (max(at.year, 1980), at.month, at.day, at.hour, at.minute, at.second)
     try:
@@ -482,9 +626,10 @@ def evidence_pack(*, run: CbomCollectionRun, sources: list[dict[str, Any]], at: 
                     continue
                 with zf.open(info, "w", force_zip64=True) as dest:
                     shutil.copyfileobj(body[0], dest, 1024 * 1024)
-            info = zipfile.ZipInfo("manifest.json", date_time=when)
-            info.compress_type = zipfile.ZIP_DEFLATED
-            zf.writestr(info, json.dumps(manifest, indent=2, ensure_ascii=False).encode("utf-8"))
+            for name, body in added:
+                info = zipfile.ZipInfo(name, date_time=when)
+                info.compress_type = zipfile.ZIP_DEFLATED
+                zf.writestr(info, body)
         out.seek(0)
     except BaseException:
         out.close()

@@ -160,43 +160,85 @@ def test_vex_of_a_finished_run_has_no_as_of_note(api, world):
 
 
 # ----------------------------------------------------------------------------- signature
-def test_signature_verifies_the_downloaded_bytes_and_a_one_byte_change_fails(api, world):
+@pytest.fixture(autouse=True)
+def _signing_key(monkeypatch):
+    """One known deployment key for every test here (bom_signing derives it from CERTIN_HMAC_SECRET)."""
+    from backend.utilities.cbom_sources import bom_signing as SIGN
+
+    for name in SIGN._ENV:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("CERTIN_HMAC_SECRET", "run-deliverables-test-secret-0123456789abcdef")
+    SIGN._CACHE.clear()
+    yield SIGN
+    SIGN._CACHE.clear()
+
+
+def test_signature_verifies_the_downloaded_bytes_and_a_one_byte_change_fails(api, world, _signing_key, tmp_path):
+    """D11 / A-01 (failing first on dev 214d3ca1e: alg HMAC-SHA256, "The key stays with ZeroShield", no public key):
+    the run CBOM JSON is signed with the deployment's published ES256 key, inside (JSF) and detached; a client checks
+    both offline; the HMAC of files downloaded before still verifies through the route."""
+    SIGN = _signing_key
     engine, _ = world
     _src, run = _store(api, engine, ASSETS)
     rid = run["id"]
-    raw = api("GET", f"/1/cbom/sources/runs/{rid}/cbom").content
-    assert api("GET", f"/1/cbom/sources/runs/{rid}/cbom").content == raw  # same run, same bytes
+    got = api("GET", f"/1/cbom/sources/runs/{rid}/cbom")
+    raw = got.content
+    assert api("GET", f"/1/cbom/sources/runs/{rid}/cbom").content == raw  # same run, same bytes (RFC 6979 nonces)
     r = api("GET", f"/1/cbom/sources/runs/{rid}/signature")
     assert r.status_code == 200, r.text
     assert r.headers["content-disposition"].endswith(f'cbom-sources-run-{rid}-signature.json"')
     sig = r.json()
-    secret = (os.environ.get("CERTIN_HMAC_SECRET") or os.environ["JWT_SECRET_KEY"]).encode()
-    assert sig["alg"] == "HMAC-SHA256" and sig["key_id"] == "certin-hmac-1"  # the code lane's bom_signature key and fields
+    key = SIGN.keyring().active
+    assert (sig["alg"], sig["key_id"]) == ("ES256", key.kid)
     assert sig["digest"] == hashlib.sha256(raw).hexdigest() and sig["bytes"] == len(raw)
-    mac = base64.b64decode(sig["signature_b64"])
-    assert hmac.compare_digest(hmac.new(secret, raw, hashlib.sha256).digest(), mac)  # raw file bytes
-    assert sig['canonicalization'] == 'none (the raw file bytes)' and json.loads(raw)['bomFormat'] == 'CycloneDX'
+    assert sig["canonicalization"] == "none (the raw file bytes)" and json.loads(raw)["bomFormat"] == "CycloneDX"
+    assert sig["public_key_pem"] == key.pem() and sig["public_key_jwk"]["kid"] == key.kid
+    assert sig["keys_route"] == "/1/bom-signing-keys" and "ZeroShield" not in sig["scope"].split("verify")[0]
+    assert got.headers["x-zs-signature-key-id"] == key.kid
+    # 1. the embedded JSF signature, as any JSF verifier reads it, and the schema accepts it
+    doc = json.loads(raw)
+    assert doc["signature"]["algorithm"] == "ES256" and doc["signature"]["keyId"] == key.kid
+    assert _schema_errors(doc) == []
+    assert SIGN.verify_bom(raw)["valid"] is True
+    # 2. the detached signature with openssl, the public key only
+    der = base64.b64decode(sig["signature_b64"])
+    assert SIGN.verify_detached(raw, der)["valid"] is True
+    assert base64.b64decode(got.headers["x-zs-signature"]) == der
+    if shutil.which("openssl"):
+        (tmp_path / "bom.json").write_bytes(raw)
+        (tmp_path / "bom.json.sig").write_bytes(der)
+        (tmp_path / "key.pem").write_text(sig["public_key_pem"])
+        done = subprocess.run(["openssl", "dgst", "-sha256", "-verify", "key.pem", "-signature", "bom.json.sig",
+                               "bom.json"], cwd=tmp_path, capture_output=True, text=True)
+        assert done.returncode == 0 and "Verified OK" in done.stdout
     tampered = bytearray(raw)
     at = raw.index(b'"zs:run_id"')  # flip one byte inside a value
     tampered[at + 1] = ord("Z")
-    assert not hmac.compare_digest(hmac.new(secret, bytes(tampered), hashlib.sha256).digest(), mac)
     last = bytearray(raw)
-    last[-1] ^= 1
-    assert not hmac.compare_digest(hmac.new(secret, bytes(last), hashlib.sha256).digest(), mac)
-    assert sig["serialNumber"] == json.loads(raw)["serialNumber"] and "as_of" in sig
-    assert "XML form is not covered" in sig["scope"] and f"/runs/{rid}/signature/verify" in sig["scope"]
-    # the customer's check: the key stays on the server, so the verify route answers for the downloaded file
-    verify = f"/1/cbom/sources/runs/{rid}/signature/verify"
-    ok = api("POST", verify, content=raw, headers={"X-ZS-Signature-B64": sig["signature_b64"]})
-    assert ok.status_code == 200, ok.text
-    assert ok.json()["valid"] is True
-    assert (ok.json()["signature_match"], ok.json()["digest_match"]) == (True, True)
-    assert ok.json()["digest"] == sig["digest"] and ok.json()["bytes"] == len(raw)
-    current = api("POST", verify, content=raw).json()  # no signature sent: against the run's current CBOM
-    assert (current["valid"], current["digest_match"], current["compared_with"]) == (True, True, "the run's current CBOM JSON")
+    last[-2] ^= 1
     for bad in (bytes(tampered), bytes(last)):
-        out = api("POST", verify, content=bad, headers={"X-ZS-Signature-B64": sig["signature_b64"]}).json()
-        assert (out["valid"], out["signature_match"], out["digest_match"]) == (False, False, False)
+        assert SIGN.verify_detached(bad, der)["valid"] is False
+    assert SIGN.verify_bom(bytes(tampered))["valid"] is False
+    # 3. the legacy HMAC (files signed before this key) stays verifiable through the route
+    secret = (os.environ.get("CERTIN_HMAC_SECRET") or os.environ["JWT_SECRET_KEY"]).encode()
+    legacy = sig["legacy_hmac"]
+    assert (legacy["alg"], legacy["key_id"]) == ("HMAC-SHA256", "certin-hmac-1")
+    assert hmac.compare_digest(hmac.new(secret, raw, hashlib.sha256).digest(), base64.b64decode(legacy["signature_b64"]))
+    assert sig["serialNumber"] == doc["serialNumber"] and "as_of" in sig
+    assert f"/runs/{rid}/signature/verify" in sig["scope"] and "XML form (format=xml) is signed" in sig["scope"]
+    verify = f"/1/cbom/sources/runs/{rid}/signature/verify"
+    for sent, alg in ((sig["signature_b64"], "ES256"), (legacy["signature_b64"], "HMAC-SHA256")):
+        ok = api("POST", verify, content=raw, headers={"X-ZS-Signature-B64": sent})
+        assert ok.status_code == 200, ok.text
+        assert (ok.json()["valid"], ok.json()["signature_match"], ok.json()["digest_match"]) == (True, True, True)
+        assert ok.json()["alg"] == alg and ok.json()["digest"] == sig["digest"] and ok.json()["bytes"] == len(raw)
+        for bad in (bytes(tampered), bytes(last)):
+            out = api("POST", verify, content=bad, headers={"X-ZS-Signature-B64": sent}).json()
+            assert (out["valid"], out["signature_match"], out["digest_match"]) == (False, False, False)
+    current = api("POST", verify, content=raw).json()  # no signature sent: its own JSF signature, this run's
+    assert (current["valid"], current["digest_match"], current["compared_with"]) == (
+        True, True, "the file's embedded JSF signature")
+    for bad in (bytes(tampered), bytes(last)):
         assert api("POST", verify, content=bad).json()["valid"] is False
     wrong = api("POST", verify, content=raw, headers={"X-ZS-Signature-B64": "bm90IGl0"}).json()
     assert (wrong["valid"], wrong["digest_match"]) == (False, True)  # the file is the run's, the signature is not
@@ -204,55 +246,35 @@ def test_signature_verifies_the_downloaded_bytes_and_a_one_byte_change_fails(api
     assert api("POST", f"/2/cbom/sources/runs/{rid}/signature/verify", "carol", content=raw).status_code == 404
 
 
-def test_run_cbom_bytes_are_inventorys_writer_with_a_stable_timestamp(api, world):
-    """The run CBOM is #103's streamed document (inventory.write_cyclonedx) byte for byte except metadata.timestamp,
-    which is the run's last data change instead of the request time: two exports at different times are equal."""
+def test_run_cbom_xml_download_carries_a_detached_signature(api, world, _signing_key):
+    SIGN = _signing_key
     engine, _ = world
     _src, run = _store(api, engine, ASSETS)
-    with Session(engine) as s:
-        row = s.get(CbomCollectionRun, run["id"])
-        later = FROZEN + dt.timedelta(hours=3)
-        ours, theirs, again = io.BytesIO(), io.BytesIO(), io.BytesIO()
-        RD.write_run_cbom(s, row, FROZEN, "json", ours)
-        RD.write_run_cbom(s, row, later, "json", again)
-        INV.write_cyclonedx(s, row, FROZEN, "json", theirs)
-        stamp = RD.iso_z(RD.stamp(s, row, FROZEN))  # active run: its newest asset's time
-    assert ours.getvalue() == again.getvalue()
-    assert ours.getvalue() == theirs.getvalue().replace(b'"timestamp":"2026-11-14T09:30:00Z"',
-                                                        f'"timestamp":"{stamp}"'.encode(), 1)
-    assert json.loads(ours.getvalue())["metadata"]["timestamp"] == stamp
+    got = api("GET", f"/1/cbom/sources/runs/{run['id']}/cbom?format=xml")
+    assert got.status_code == 200
+    assert got.headers["x-zs-signature-alg"] == "ES256"
+    assert got.headers["x-cbom-sha256"] == hashlib.sha256(got.content).hexdigest()
+    assert SIGN.verify_detached(got.content, base64.b64decode(got.headers["x-zs-signature"]))["valid"] is True
+    from backend.tests.support.cyclonedx_schema import xml_errors
+
+    assert xml_errors(got.content) == []
 
 
-# ----------------------------------------------------------------------------- PDF
-def test_pdf_report_prints_run_posture_numbers(api, world, tmp_path):
-    engine, _ = world
-    _src, run = _store(api, engine, ASSETS)
-    rid = run["id"]
-    posture = api("GET", f"/1/cbom/sources/runs/{rid}/posture").json()["posture"]
-    r = api("GET", f"/1/cbom/sources/runs/{rid}/report.pdf")
+def test_signing_keys_route_publishes_jwks_and_pem(api, world, _signing_key):
+    SIGN = _signing_key
+    r = api("GET", "/1/bom-signing-keys")
     assert r.status_code == 200, r.text
-    assert r.headers["content-type"] == "application/pdf" and r.content.startswith(b"%PDF")
-    text = _pdf_text(r.content, tmp_path)
-    readiness = f"{posture['pqc_readiness_pct']:.1f}%"
-    assert readiness == "50.0%" and readiness in text  # Rule P: the posture API's number
-    for heading in ("Sources run #", "Post-quantum and risk posture", "Algorithm family by source",
-                    "Certificate expiry", "Top risks", "Compliance clauses", "Findings", "Provenance"):
-        assert heading in text, heading
-    assert "Harvest-now-decrypt-later assets" in text and "CN=pay.bank.local" in text and "linux-dc" in text
-    assert "still running" in text  # active run: "as of"
-    assert "Findings cap" not in text
+    doc = r.json()
+    key = SIGN.keyring().active
+    assert doc["active_kid"] == key.kid and doc["keys"][0]["kid"] == key.kid and doc["pem"][key.kid] == key.pem()
+    pem = api("GET", "/1/bom-signing-keys?format=pem")
+    assert pem.status_code == 200 and pem.text == key.pem()
+    assert api("GET", "/1/bom-signing-keys", "carol").status_code == 403  # not a member
+    assert api("GET", "/1/bom-signing-keys", None).status_code in (401, 403)
+    assert "PRIVATE KEY" not in r.text and os.environ["CERTIN_HMAC_SECRET"] not in r.text  # public material only
 
 
-def test_pdf_states_the_findings_cap(api, world, tmp_path, monkeypatch):
-    engine, _ = world
-    _src, run = _store(api, engine, ASSETS)
-    monkeypatch.setattr(RD, "PDF_FINDINGS_CAP", 2)
-    text = _pdf_text(api("GET", f"/1/cbom/sources/runs/{run['id']}/report.pdf").content, tmp_path)
-    assert "Findings cap: this report lists the first 2 of 5 findings" in " ".join(text.split())
-
-
-# ----------------------------------------------------------------------------- evidence pack
-def test_evidence_pack_manifest_hashes_equal_the_endpoint_bodies(api, world, monkeypatch):
+def test_evidence_pack_manifest_hashes_equal_the_endpoint_bodies(api, world, monkeypatch, _signing_key, tmp_path):
     engine, _ = world
     _src, run = _store(api, engine, ASSETS)
     rid = run["id"]
@@ -263,14 +285,25 @@ def test_evidence_pack_manifest_hashes_equal_the_endpoint_bodies(api, world, mon
     zf = zipfile.ZipFile(io.BytesIO(r.content))
     manifest = json.loads(zf.read("manifest.json"))
     names = [f["name"] for f in manifest["files"]]
+    kid = _signing_key.keyring().active.kid
     assert names == ["bom.cdx.json", "bom.cdx.xml", "oscal-assessment-results.json", "vex.json",
-                     "bom_signature.json", "report.pdf"]
-    assert sorted(zf.namelist()) == sorted(names + ["manifest.json"]) and manifest["omitted"] == []
+                     "bom_signature.json", "report.pdf", "drift.json", "keys/jwks.json", f"keys/{kid}.pem",
+                     "verify/zs_bom_verify.py", "verify/README.txt", "bom.cdx.json.sig", "bom.cdx.xml.sig",
+                     "vex.json.sig"]
+    assert sorted(zf.namelist()) == sorted(names + ["manifest.json", "manifest.json.sig", "SHA256SUMS",
+                                                    "SHA256SUMS.sig"]) and manifest["omitted"] == []
+    assert manifest["format"] == "zeroshield-cbom-run-evidence-pack/2" and manifest["signing"]["kid"] == kid
     for entry in manifest["files"]:
         body = zf.read(entry["name"])
         assert hashlib.sha256(body).hexdigest() == entry["sha256"] and len(body) == entry["bytes"]
+        if "endpoint" not in entry:  # keys, verifier and signatures: the pack's own
+            continue
         served = api("GET", entry["endpoint"])
         assert served.status_code == 200, (entry["endpoint"], served.text[:200])
+        if entry["name"] == "drift.json":  # S4: the summary of the /diff answer (its route lists to 500, events)
+            assert entry["endpoint_same_bytes"] is False
+            assert json.loads(body)["format"] == "zeroshield-cbom-run-drift/1"
+            continue
         if entry["name"] == "oscal-assessment-results.json":  # the route stamps last-modified with the request time
             assert entry["endpoint_same_bytes"] is False
             mine, theirs = json.loads(body), json.loads(served.content)
@@ -287,8 +320,22 @@ def test_evidence_pack_manifest_hashes_equal_the_endpoint_bodies(api, world, mon
     sig = json.loads(zf.read("bom_signature.json"))
     secret = (os.environ.get("CERTIN_HMAC_SECRET") or os.environ["JWT_SECRET_KEY"]).encode()
     mac = hmac.new(secret, zf.read("bom.cdx.json"), hashlib.sha256).digest()
-    assert hmac.compare_digest(base64.b64decode(sig["signature_b64"]), mac)  # the pack's signature verifies its JSON
+    assert hmac.compare_digest(base64.b64decode(sig["legacy_hmac"]["signature_b64"]), mac)
+    assert base64.b64decode(sig["signature_b64"]) == zf.read("bom.cdx.json.sig")  # the ES256 detached signature
     assert manifest["signature"]["digest"] == hashlib.sha256(zf.read("bom.cdx.json")).hexdigest()
+    # the client's offline check with the verifier the pack carries (isolated interpreter) and the key the deployment
+    # publishes, saved outside the pack; with the pack's own key it says UNTRUSTED KEY (exit 3: review 6026853603 D3)
+    path = tmp_path / "pack.zip"
+    path.write_bytes(r.content)
+    (tmp_path / "keys.json").write_bytes(api("GET", "/1/bom-signing-keys").content)
+    (tmp_path / "v.py").write_bytes(zf.read("verify/zs_bom_verify.py"))
+    done = subprocess.run([sys.executable, "-I", str(tmp_path / "v.py"), "--keys", str(tmp_path / "keys.json"), "pack",
+                           str(path)], capture_output=True, text=True)
+    assert done.returncode == 0, (done.stdout, done.stderr)
+    assert json.loads(done.stdout)["valid"] is True
+    own = subprocess.run([sys.executable, "-I", str(tmp_path / "v.py"), "pack", str(path)], capture_output=True,
+                         text=True)
+    assert own.returncode == 3 and "UNTRUSTED KEY" in own.stderr
     # every time in it is the run's: the zip entries, the manifest, the signature, the PDF
     with Session(engine) as s:
         finished = RD.iso_z(RD.stamp(s, s.get(CbomCollectionRun, rid), FROZEN))

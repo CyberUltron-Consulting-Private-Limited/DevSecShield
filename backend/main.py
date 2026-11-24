@@ -22,6 +22,7 @@ from backend.routers.cbom_certificates import router as cbom_certificates_router
 from backend.routers.cbom_run_tickets import router as cbom_run_tickets_router
 from backend.routers.cbom_estate import router as cbom_estate_router
 from backend.routers.cbom_estate_export import router as cbom_estate_export_router
+from backend.routers.bom_signing_keys import router as bom_signing_keys_router
 from backend.routers.cbom_node import router as cbom_node_router
 from backend.routers.cbom_node_pools import router as cbom_node_pools_router
 from backend.routers.cbom_node_artifacts import router as cbom_node_artifacts_router
@@ -30,6 +31,8 @@ from backend.utilities.cbom_sources.node_auth import NodeDeploymentHeader
 from backend.utilities.build_info import BuildIdentityMiddleware, UtcIsoFormatter, build_sha, build_version, expose_build
 from backend.routers.cbom_vendor_public import router as cbom_vendor_public_router
 from backend.routers.integrations import router as integrations_router
+from backend.routers.integrations_ticketing import router as integrations_ticketing_router
+from backend.routers.cbom_gate_policy import router as cbom_gate_policy_router
 from backend.routers.guardrails import router as guardrails_router
 from backend.routers.cicd import router as cicd_router
 from backend.routers.dast_profiles import router as dast_profiles_router
@@ -178,13 +181,17 @@ app.include_router(cbom_certificates_router)  # orphaned and unmanaged certifica
 app.include_router(cbom_run_tickets_router)
 app.include_router(cbom_estate_router)  # CB-20: the team's estate store
 app.include_router(cbom_estate_export_router)  # CB-26: the team estate CBOM
+app.include_router(bom_signing_keys_router)  # D11: the public keys that sign every BOM and evidence pack
 app.include_router(cbom_node_router)
 app.include_router(cbom_node_pools_router)  # agent pool tokens for the Helm DaemonSet (WP8b)
 app.include_router(cbom_node_artifacts_router)  # scan node image, Helm chart and OVA/AMI kits served to the team
 app.include_router(cbom_vendor_public_router)
 app.include_router(cbom_fleet_router)  # F1 fleet onboarding: inventory, policies, transports, SSH CA (each behind a flag)
 # Integrations: ServiceNow, SIEM (syslog, Splunk HEC), signed webhooks, OSCAL export / push, CMDB import.
+# Jira's own routes and the test tickets first: /{team_id}/integrations/jira must not reach the generic /{kind} routes.
+app.include_router(integrations_ticketing_router)
 app.include_router(integrations_router)
+app.include_router(cbom_gate_policy_router)  # SOW S1: the CBOM CI/CD gate policy of the team and its integrations
 # DEPRECATED: Guardrails routers remain for legacy/API callers; product UI no longer exposes Guardrails.
 app.include_router(guardrails_router)
 app.include_router(guardrails_public_router)

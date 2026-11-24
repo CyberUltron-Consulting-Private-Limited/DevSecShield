@@ -285,10 +285,33 @@ def public_job(job: CbomCollectionJob, node: CbomScanNode | None, settings: Cbom
     }
 
 
+def run_trigger(run: CbomCollectionRun) -> str:
+    """"scheduled" or "manual" (S4): the stored ``trigger``, else what ``schedule_id`` says (a row read before the
+    rsched1trig001 backfill, or built in memory)."""
+    stored = getattr(run, "trigger", None)
+    if stored in ("scheduled", "manual"):
+        return "scheduled" if stored == "scheduled" or run.schedule_id is not None else "manual"
+    return "scheduled" if run.schedule_id is not None else "manual"
+
+
+def schedule_names(session: Any, team_id: int, ids: Any) -> dict[int, str]:
+    """``{schedule id: name}`` of this team's schedules among ``ids`` (a deleted schedule is simply absent)."""
+    from sqlmodel import select
+
+    from backend.new_models import CbomCollectionSchedule
+
+    wanted = sorted({int(i) for i in ids if i is not None})
+    if not wanted:
+        return {}
+    return {int(i): str(n) for i, n in session.exec(select(CbomCollectionSchedule.id, CbomCollectionSchedule.name).where(
+        CbomCollectionSchedule.team_id == team_id, CbomCollectionSchedule.id.in_(wanted))).all()}  # type: ignore[union-attr]
+
+
 def public_run(run: CbomCollectionRun, jobs: list[dict[str, Any]] | None = None,
-               risk_model: dict[str, Any] | None = None) -> dict[str, Any]:
+               risk_model: dict[str, Any] | None = None, schedule_name: str | None = None) -> dict[str, Any]:
     """``risk_model``: the team's Mosca now, so ``grades.inputs_changed`` can compare it with the run's snapshot
-    (CB-19 PR-2); without it ``inputs_changed`` is null on a run that has a snapshot."""
+    (CB-19 PR-2); without it ``inputs_changed`` is null on a run that has a snapshot. ``schedule_name``: the name of
+    the schedule that started the run, when the caller looked it up (null otherwise, and for a deleted schedule)."""
     from backend.utilities.cbom_sources.qgrade import run_grades
 
     out = {
@@ -304,6 +327,10 @@ def public_run(run: CbomCollectionRun, jobs: list[dict[str, Any]] | None = None,
         "soc_ack_at": iso_z(run.soc_ack_at),
         "cancelled_by": run.cancelled_by,
         "cancelled_at": iso_z(run.cancelled_at),
+        # S4: what started the run; a scheduled run names its schedule (the id stays after the schedule is deleted)
+        "trigger": run_trigger(run),
+        "schedule_id": run.schedule_id,
+        "schedule_name": schedule_name,
         "finished_at": iso_z(run.finished_at),
         "created_at": iso_z(run.created_at),
         "last_updated": iso_z(run.last_updated),
@@ -318,6 +345,11 @@ def public_run(run: CbomCollectionRun, jobs: list[dict[str, Any]] | None = None,
         for job in jobs:
             counts[job["status"]] = counts.get(job["status"], 0) + 1
         out["job_counts"] = counts
+        # FIX-B3: why the run is partial / failed / cancelled, or what an open run waits for (offline scan nodes)
+        from backend.utilities.cbom_sources.run_status import status_reason
+
+        out.update(status_reason(run.status, [{**job, "summary": (job.get("result") or {}).get("summary")}
+                                              for job in jobs]))
     return out
 
 
@@ -343,6 +375,19 @@ def _ct_providers() -> list[str]:
     from backend.utilities.cbom_sources.ct_providers import provider_names
 
     return provider_names()
+
+
+def _regulated_entity(risk_model: Any) -> str:
+    from backend.utilities.cbom_sources.regulated_entity import of_risk_model
+
+    return of_risk_model(risk_model if isinstance(risk_model, dict) else None)
+
+
+def _regulatory_flags(risk_model: Any) -> dict[str, bool]:
+    from backend.utilities.cbom_sources.regulated_entity import FLAGS, flags_of
+
+    on = set(flags_of(risk_model if isinstance(risk_model, dict) else None))
+    return {flag: flag in on for flag in FLAGS}
 
 
 def public_settings(row: CbomCollectionSettings, now: _dt.datetime) -> dict[str, Any]:
@@ -374,6 +419,10 @@ def public_settings(row: CbomCollectionSettings, now: _dt.datetime) -> dict[str,
         "stop_all_network": row.stop_all_network,
         "require_signed_nodes": bool(row.require_signed_nodes),
         "risk_model": {k: (row.risk_model or {}).get(k) for k in ("data_shelf_life_years", "migration_years", "threat_years")},
+        # the team's regulatory profile (regulated_entity.py): the RBI instrument the regulatory mapping cites (NBFC
+        # when not set) and the facts PCI DSS, SEBI CSCRF and the CERT-In government guidelines depend on (false)
+        "regulated_entity": _regulated_entity(row.risk_model),
+        **_regulatory_flags(row.risk_model),
         "stop_all_changed_by": row.stop_all_changed_by,
         "stop_all_changed_at": iso_z(row.stop_all_changed_at),
         "next_window_start": iso_z(nxt),

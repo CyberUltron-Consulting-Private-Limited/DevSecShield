@@ -43,14 +43,18 @@ from backend.new_models import (
 )
 from backend.routers import cbom_node_artifacts as NODE_ARTIFACTS  # install links (one-paste node install)
 from backend.utilities.cbom_sources import agility as AGILITY
+from backend.utilities.cbom_sources.bom_signing import signature_headers
 from backend.utilities.cbom_sources import agility_rollup as AGILITY_ROLLUP
 from backend.utilities.cbom_sources import http as _cbom_http
 from backend.utilities.rbac.policy import Access
 from backend.utilities.cbom_sources import agents as AG
 from backend.utilities.cbom_sources import limits as LIM
+from backend.utilities.cbom_sources import pqc_targets as PQT
 from backend.utilities.cbom_sources import held as HELD
+from backend.utilities.cbom_sources import regulated_entity as REG_ENTITY
 from backend.utilities.cbom_sources import host_key_resets as HKR  # #150
 from backend.utilities.cbom_sources import jobs as J
+from backend.utilities.cbom_sources import run_status as RUN_STATUS
 from backend.utilities.cbom_sources import source_cap as SOURCE_CAP
 from backend.utilities.cbom_sources import targets as T
 from backend.utilities.cbom_sources import vault_support as VAULT_SUPPORT  # #364
@@ -122,6 +126,7 @@ from backend.utilities.cbom_sources.serialize import (
     public_settings,
     public_source,
     public_vendor,
+    schedule_names,
 )
 from backend.utilities.cbom_sources.settings import ensure_evidence_areas, get_or_create_settings
 from backend.utilities.cbom_sources import oci_keys
@@ -1263,11 +1268,25 @@ def _update_settings(engine, team_id: int, user_id: int, body: SettingsUpdate) -
                     seen.add(canonical)
                     items.append({"cidr": canonical, "reason": item.reason})
             changes["network_exclusions"] = items
+        entity = changes.pop("regulated_entity", None)  # stored in the risk_model JSON (regulated_entity.py)
+        flags = {f: changes.pop(f) for f in REG_ENTITY.FLAGS if f in changes}
+        flags = {f: bool(v) for f, v in flags.items() if v is not None}  # null leaves the flag as it is
         if "risk_model" in changes:
             # merge: a field the request leaves out keeps its value; an explicit null clears it; risk_model: null
-            # clears all three
+            # clears all three (the regulatory profile stored beside them is not a Mosca input: it stays)
+            profile_keys = (REG_ENTITY.SETTINGS_KEY, *REG_ENTITY.FLAGS)
+            kept = {k: v for k, v in (row.risk_model or {}).items() if k in profile_keys}
             changes["risk_model"] = ({**(row.risk_model or {}), **body.risk_model.model_dump(exclude_unset=True)}
-                                     if body.risk_model is not None else {})
+                                     if body.risk_model is not None else kept)
+            # the wave windows in force after the merge (a stored value or the KB default fills a field not sent)
+            order = PQT.window_order_error(PQT.fix_windows(changes["risk_model"]))
+            if order:
+                raise HTTPException(status_code=422, detail=order)
+        if entity is not None:
+            changes["risk_model"] = {**(changes.get("risk_model", row.risk_model) or {}),
+                                     REG_ENTITY.SETTINGS_KEY: REG_ENTITY.normalise(entity)}
+        if flags:
+            changes["risk_model"] = {**(changes.get("risk_model", row.risk_model) or {}), **flags}
         if "require_signed_nodes" in changes and changes["require_signed_nodes"] is None:
             changes.pop("require_signed_nodes")  # null means "leave as is" (the column is NOT NULL)
         if "cert_domains" in changes:
@@ -1624,8 +1643,9 @@ def _run_detail(session: Session, run: CbomCollectionRun, settings, now) -> dict
                         .order_by(CbomCollectionJob.id)).all()
     nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == run.team_id)).all()}
     sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(CbomCollectionSource.team_id == run.team_id)).all()}
+    names = schedule_names(session, run.team_id, [run.schedule_id])
     return public_run(run, [public_job(j, nodes.get(j.node_id), settings, now, sources.get(j.source_id)) for j in jobs],
-                      settings.risk_model or {})
+                      settings.risk_model or {}, schedule_name=names.get(run.schedule_id or 0))
 
 
 def _create_run(engine, team_id: int, user_id: int, body: RunCreate) -> tuple[dict, int]:
@@ -1649,6 +1669,11 @@ async def create_run(team_id: TeamId, body: RunCreate, Authorization: AuthHeader
     return _ok(payload, code)
 
 
+def _schedule_name(session: Session, run: CbomCollectionRun) -> str | None:
+    """The name of the live schedule that started ``run`` (None: started by hand, or the schedule was deleted)."""
+    return schedule_names(session, run.team_id, [run.schedule_id]).get(run.schedule_id or 0)
+
+
 def _list_runs(engine, team_id: int, scan_id: int | None) -> dict:
     now = utcnow()
     with Session(engine) as session:
@@ -1659,12 +1684,28 @@ def _list_runs(engine, team_id: int, scan_id: int | None) -> dict:
         runs = session.exec(query.order_by(CbomCollectionRun.id.desc()).limit(50)).all()  # type: ignore[union-attr]
         # issue #159 (Rule P): the asset count the Scans table shows too, from the one function, one query for the page
         assets = RUN_LIST.asset_counts(session, team_id, [int(run.id) for run in runs])
+        # keyed by SOURCE id; kept apart from the schedule-name map below (both ids start at 1)
+        source_names = dict(session.exec(select(CbomCollectionSource.id, CbomCollectionSource.name)
+                                         .where(CbomCollectionSource.team_id == team_id)).all())
+        nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
+        # S4: the schedule's name for every run a live schedule started (one query for the page; null = deleted)
+        names = schedule_names(session, team_id, (run.schedule_id for run in runs))
         out = []
         for run in runs:
             counts: dict[str, int] = {}
+            rows = []
             for job in session.exec(select(CbomCollectionJob).where(CbomCollectionJob.run_id == run.id)).all():
                 counts[job.status] = counts.get(job.status, 0) + 1
-            out.append({**public_run(run), "job_counts": counts, "asset_count": assets.get(int(run.id), 0)})
+                rows.append({"id": job.id, "status": job.status, "outcome": job.outcome, "error": job.error,
+                             "summary": (job.result or {}).get("summary"),
+                             "source_name": source_names.get(job.source_id) or (job.params or {}).get("source_name"),
+                             "waiting_reason": (J.offline_wait_reason(job, nodes[job.node_id], now)
+                                                if job.status == "pending" and job.node_id in nodes
+                                                and node_status(nodes[job.node_id], now) == "offline" else None)})
+            # FIX-B3: the list says why a run is partial or failed, as the run detail does
+            reason = RUN_STATUS.status_reason(run.status, rows)
+            out.append({**public_run(run, schedule_name=names.get(run.schedule_id or 0)), "job_counts": counts,
+                        "asset_count": assets.get(int(run.id), 0), "status_reason": reason["status_reason"]})
         return {"runs": out, "server_time": iso_z(now)}
 
 
@@ -1705,7 +1746,7 @@ def _run_assets(engine, team_id: int, run_id: int, params: dict) -> dict:
             raise HTTPException(status_code=409, detail=f"The grade filter is not available for this run ({exc})") \
                 from None
         RUN_TICKETS.add_ticket_fields(session, team_id, run, out["items"])  # CB-38 PR-4: ticket_key, ticket_url
-        out["run"] = public_run(run)
+        out["run"] = public_run(run, schedule_name=_schedule_name(session, run))
         return out
 
 
@@ -1749,7 +1790,7 @@ async def run_assets(team_id: TeamId, run_id: ObjectId,
 EXPORT_SPOOL_BYTES = 8 * 1024 * 1024  # an export up to this size stays in memory; a larger one goes to a temp file
 
 
-def _run_cbom(engine, team_id: int, run_id: int, fmt: str = "json") -> IO[bytes]:
+def _run_cbom(engine, team_id: int, run_id: int, fmt: str = "json") -> tuple[IO[bytes], bytes]:
     """The run's CycloneDX document written to a temporary file (positioned at its start), checked first: 404 for
     another team's run; 429 with Retry-After when the run is large and every export slot is taken (export_slots).
     The document is written one component at a time (inventory.write_cyclonedx), so a 50,000-component export never
@@ -1762,13 +1803,15 @@ def _run_cbom(engine, team_id: int, run_id: int, fmt: str = "json") -> IO[bytes]
             with EXPORT_SLOTS.slot() if EXPORT_SLOTS.is_large(rows) else contextlib.nullcontext():
                 out = tempfile.SpooledTemporaryFile(max_size=EXPORT_SPOOL_BYTES)
                 try:
-                    # inventory's document with a stable timestamp: the bytes GET .../signature signs (CB-38 PR-8)
-                    RUN_DELIVERABLES.write_run_cbom(session, run, utcnow(), fmt, out)
+                    # inventory's document with a stable timestamp: the bytes GET .../signature signs (CB-38 PR-8);
+                    # hashed while written, for the detached signature header (D11)
+                    tee = RUN_DELIVERABLES.Digests(out)
+                    RUN_DELIVERABLES.write_run_cbom(session, run, utcnow(), fmt, tee)
                     out.seek(0)
                 except BaseException:
                     out.close()
                     raise
-                return out
+                return out, tee.sha.digest()
         except EXPORT_SLOTS.Busy:  # 429 + Retry-After: the UI's error handler already says "try again in N seconds"
             log("run cbom export busy", team=team_id, run=run_id, rows=rows, slots=EXPORT_SLOTS.SLOTS)
             raise busy_refusal("cbom") from None
@@ -1787,13 +1830,14 @@ def _chunks(out: IO[bytes], size: int = 1024 * 1024) -> Iterator[bytes]:
 async def run_cbom(team_id: TeamId, run_id: ObjectId, format: str = Query(default="json", pattern="^(json|xml)$"),
                    Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
-    out = await _run("run cbom", team_id, _run_cbom, engine, team_id, run_id, format)
+    out, digest = await _run("run cbom", team_id, _run_cbom, engine, team_id, run_id, format)
     length = out.seek(0, 2)
     out.seek(0)
-    # The JSON is signed on request (GET .../runs/{id}/signature, CB-38 PR-8); the XML is not covered
+    # D11: the JSON carries an embedded JSF signature; both formats get a detached ES256 signature of their exact
+    # bytes in X-ZS-Signature (base64 DER, openssl-verifiable with the key at GET /{team}/bom-signing-keys)
     media, ext = (CDX_XML.XML_MEDIA_TYPE, "xml") if format == "xml" else ("application/json", "json")
     return StreamingResponse(_chunks(out), media_type=media, headers={
-        **PRIVATE, "Content-Length": str(length),
+        **PRIVATE, "Content-Length": str(length), **signature_headers(digest),
         "Content-Disposition": f'attachment; filename="cbom-sources-run-{run_id}.cdx.{ext}"'})
 
 
@@ -1801,7 +1845,7 @@ def _run_posture(engine, team_id: int, run_id: int) -> dict:
     with Session(engine) as session:
         run = _get_owned(session, CbomCollectionRun, run_id, team_id, "Run")
         settings = get_or_create_settings(session, team_id)
-        return {"run": public_run(run, risk_model=settings.risk_model or {}),
+        return {"run": public_run(run, risk_model=settings.risk_model or {}, schedule_name=_schedule_name(session, run)),
                 "posture": POSTURE.run_posture(session, team_id=team_id, run_id=run.id, risk_model=settings.risk_model)}
 
 
@@ -1864,7 +1908,8 @@ def _run_asset_remediation(engine, team_id: int, run_id: int, asset_id: int) -> 
                    "description": view.get("finding") or "", "title": row.algorithm or row.name or row.location,
                    "algorithm_name": row.algorithm or row.name, "location": row.location,
                    "asset_type": row.asset_type, "target": row.target}
-    return remediation(finding, "node")
+        team = REG_ENTITY.team_profile(session, team_id)  # the clauses that bind the team (SOW audit A-11)
+    return remediation(finding, "node", team=team)
 
 
 @router.get(BASE + "/runs/{run_id}/assets/{asset_id}/remediation", dependencies=[*READ, access.team("cbom.read")],

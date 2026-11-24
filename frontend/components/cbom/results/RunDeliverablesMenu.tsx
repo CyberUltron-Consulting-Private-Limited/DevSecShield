@@ -32,19 +32,19 @@ export const RUN_DELIVERABLE_ITEMS: { kind: CbomRunDeliverable; label: string; t
   {
     kind: "signature",
     label: "Signature",
-    title: "HMAC-SHA256 signature over the exact bytes of this run's CycloneDX JSON download (the XML is not covered)",
+    title: "ES256 signature over the exact bytes of this run's CycloneDX JSON download, with the public key: verify it offline with openssl (the JSON also carries an embedded JSF signature)",
     done: "BOM signature downloaded",
   },
   {
     kind: "evidence-pack",
     label: "Evidence pack",
-    title: "Zip of the CycloneDX JSON and XML, OSCAL, VEX, signature and PDF report with a sha256 manifest",
+    title: "Zip of the CycloneDX JSON and XML, OSCAL, VEX, signature, PDF report and drift since the previous run (drift.json) with a sha256 manifest",
     done: "Evidence pack downloaded",
   },
   {
     kind: "report.pdf",
     label: "PDF Report",
-    title: "PDF report: posture, algorithm family by source, certificate expiry, top risks, compliance, findings and provenance",
+    title: "PDF report: posture, changes since the previous run, algorithm family by source, certificate expiry, top risks, compliance, findings and provenance",
     done: "PDF report downloaded",
   },
 ];

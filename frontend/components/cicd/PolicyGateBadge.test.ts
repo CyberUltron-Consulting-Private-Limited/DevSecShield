@@ -37,6 +37,13 @@ assert.equal(policyGateView(gate("no_result", 0, "")).blocked, true);
 // an unknown future verdict is not a pass either (gate_failed is "verdict != pass")
 assert.equal(policyGateView(gate("something_new", 0, "")).blocked, true);
 
+// S1: a verdict of the per-team policy names each failing finding's rules under the reason
+const withRules = { ...gate("fail", 1, "1 finding(s) blocked by the CBOM policy."), failing: [{
+  codes: [], title: "RSA-1024", location: "app/keys.py", line: 5, impact: "High",
+  rules: [{ rule: "min_key_size", outcome: "fail", detail: "x" }, { rule: "quantum_vulnerable", outcome: "warn", detail: "y" }],
+}] } as Parameters<typeof policyGateView>[0];
+assert.equal(policyGateView(withRules).title, "1 finding(s) blocked by the CBOM policy.\n• RSA-1024 (app/keys.py:5): min_key_size");
+
 // a log made before the gate: no verdict was given to that pipeline
 assert.equal(text(render(null)), "—");
 assert.equal(text(render(undefined)), "—");

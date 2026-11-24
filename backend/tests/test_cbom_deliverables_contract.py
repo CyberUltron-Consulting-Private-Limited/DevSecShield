@@ -64,37 +64,18 @@ NOW = datetime(2026, 10, 19, 12, 28, tzinfo=UTC)
 
 # The ten documents, in menu order.  Literals on purpose: the registry must not be able to
 # "agree with itself" after an accidental edit.
+# FIX-A3 (SOW audit A-04): SOW Table 7 IDs and titles, in SOW order (D3-D5 and D11 are per-scan / per-run files).
 EXPECTED = [
-    ("scope-baseline-register", 1, "Scope Baseline & Asset Population Register"),
-    ("quantum-risk-register", 2, "Quantum Risk Register"),
-    ("methodology-evidence-plan", 3, "Cryptographic Discovery Methodology & Evidence Plan"),
-    (
-        "infrastructure-cloud-encryption-posture",
-        5,
-        "Infrastructure & Cloud Encryption Posture",
-    ),
-    (
-        "network-tls-protocol-assessment",
-        6,
-        "Network, TLS & Crypto Protocol Assessment",
-    ),
-    ("certificate-estate-register", 7, "Certificate Estate Register"),
-    (
-        "data-at-rest-encryption-assessment",
-        9,
-        "Data-at-Rest Encryption Assessment",
-    ),
-    (
-        "third-party-assurance-register",
-        10,
-        "Third-Party Cryptographic Assurance & Attestation Register",
-    ),
-    ("pqc-migration-roadmap", 15, "PQC Migration Roadmap"),
-    (
-        "board-executive-report",
-        16,
-        "Board / IT Strategy Committee Regulatory & Executive Report",
-    ),
+    ("scope-baseline-register", 1, "Scope Baseline and Asset Population Register"),
+    ("methodology-evidence-plan", 2, "Discovery Methodology and Evidence Plan"),
+    ("infrastructure-cloud-encryption-posture", 6, "Infrastructure and Cloud Encryption Posture"),
+    ("network-tls-protocol-assessment", 7, "Network, TLS and Crypto Protocol Assessment"),
+    ("certificate-estate-register", 8, "Certificate Estate Register"),
+    ("data-at-rest-encryption-assessment", 9, "Data-at-Rest Encryption Assessment"),
+    ("third-party-assurance-register", 10, "Third-Party Cryptographic Assurance and Attestation Register"),
+    ("quantum-risk-register", 12, "Quantum Risk Register"),
+    ("pqc-migration-roadmap", 13, "PQC Migration Roadmap"),
+    ("board-executive-report", 14, "Board / IT Strategy Committee Report"),
 ]
 RENDERERS = {
     "scope-baseline-register": (cbom_scope_register_pdf, "DELIVERABLE_NUMBER"),
@@ -199,8 +180,13 @@ def test_each_entry_wires_its_own_renderer(slug):
     spec = DELIVERABLES[slug]
     assert spec.build is module.build_pdf
     assert spec.report_key == module.REPORT_KEY
-    printed_number = getattr(module, number_attr)
-    assert spec.number == printed_number, "registry number != the number the PDF prints"
+    # the Document ID prints the SOW ID of the report key (build_document reads REPORT_META sow_id), whatever a
+    # renderer's own constant says; the constants of the documents that are not being renumbered here agree too
+    from backend.utilities.pdf.cbom_deliverable_common import sow_number
+
+    assert spec.number == sow_number(module.REPORT_KEY), "registry number != the number the PDF prints"
+    if slug not in ("quantum-risk-register", "pqc-migration-roadmap"):
+        assert getattr(module, number_attr) == spec.number
     assert spec.data_dependent is (slug in DATA_DEPENDENT)
 
 
@@ -223,7 +209,7 @@ _FE_API = "frontend/utils/backend_api.ts"
 _FE_PAGE = "frontend/app/[team_id]/cbom/page.tsx"
 _FE_ITEM = re.compile(
     r'\{\s*slug:\s*"(?P<slug>[^"]+)"\s*,\s*number:\s*(?P<number>\d+)\s*,'
-    r'\s*title:\s*"(?P<title>[^"]+)"\s*\}'
+    r'\s*title:\s*"(?P<title>[^"]+)"\s*(?:,\s*csv:\s*true\s*)?\}'
 )
 
 
@@ -242,11 +228,26 @@ def test_frontend_menu_equals_the_backend_registry():
 
 def test_frontend_download_name_matches_the_server_file_name():
     page = _read(_FE_PAGE, needs_frontend=True)
-    assert "`cbom-${slug}-team${teamId}-${yyyymmdd}.pdf`" in page
+    assert "`cbom-${slug}-team${teamId}-${yyyymmdd}.${ext}`" in page
+    assert 'ext: "pdf" | "csv" = "pdf"' in page
     assert "toISOString().slice(0, 10)" in page, "the client date must stay the UTC date"
     for spec in DELIVERABLES.values():
         name = deliverable_filename(spec, 7, date(2026, 10, 19))
         assert name == f"cbom-{spec.slug}-team7-20261019.pdf"
+        assert deliverable_filename(spec, 7, date(2026, 10, 19), "csv") == f"cbom-{spec.slug}-team7-20261019.csv"
+
+
+def test_frontend_offers_a_csv_item_exactly_for_the_deliverables_that_have_one():
+    """SOW Table 7: D8 Certificate Estate Register is "PDF, CSV" (FIX-B2); the others are PDF only. The menu reads the
+    manifest's ``formats`` (review of #481: a frontend deployed before its backend must not offer a CSV that 404s)."""
+    assert {s.slug for s in DELIVERABLES.values() if "csv" in s.formats} == {"certificate-estate-register"}
+    ts = _read(_FE_API, needs_frontend=True)
+    page = _read(_FE_PAGE, needs_frontend=True)
+    assert 'hint?.formats?.includes("csv")' in page
+    assert "cbom-deliverable-${d.slug}-csv" in page and "downloadCbomDeliverableCsv" in page
+    assert "/cbom/deliverables/${slug}.csv" in ts
+    found = re.search(r"export const CBOM_DELIVERABLES = \[(.*?)\] as const;", ts, re.S)
+    assert "csv" not in re.sub(r"//[^\n]*", "", found.group(1))  # never hard-coded
 
 
 def _strip_ts_comments(text: str) -> str:
@@ -291,6 +292,7 @@ def test_frontend_manifest_types_match_the_backend_manifest_shape():
     for item in manifest["deliverables"]:
         assert set(item) == item_fields
         assert item["format"] == "pdf"
+        assert item["formats"][0] == "pdf" and set(item["formats"]) <= {"pdf", "csv"}
     assert item_optional == {"reason"}, "only `reason` may be omitted by the backend contract"
 
 
@@ -319,7 +321,7 @@ def test_disclaimers_equal_the_existing_product_constants():
     assert authored.MANUAL_DISCOVERY_ITEMS[2] == (
         "Data-at-rest encryption",
         "Whether stored data is actually encrypted. Declared settings are assessed in "
-        "document #9 and are not proof of operation.",
+        "D9 and are not proof of operation.",
     )
 
 
@@ -442,12 +444,13 @@ def test_timeline_strings_equal_the_engine_source_text():
     assert literal("_CNSA_TIMELINE") == authored.CNSA_2_0_SENTENCE
 
 
-def test_the_printed_timeline_carries_the_cnsa_sentence_and_the_draft_qualified_nist_rows():
+def test_the_printed_timeline_carries_the_cnsa_sentence_and_the_final_nist_rows():
     printed = " ".join(row.milestone for row in authored.PQC_TIMELINE_ROWS)
     assert authored.CNSA_2_0_SENTENCE in printed
     assert authored.PINNED_ENGINE_NIST_TIMELINE not in printed, "over-simplified engine wording"
     nist_rows = [row for row in authored.PQC_TIMELINE_ROWS if "8547" in row.source]
-    assert nist_rows and all(row.status == "Draft" for row in nist_rows)
+    # FIX-A3: NIST IR 8547 is final (27 Oct 2026); the status comes from the knowledge base
+    assert nist_rows and all(row.status == "Final" for row in nist_rows)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -502,13 +505,13 @@ def test_all_six_report_meta_keys_exist_and_belong_to_the_registry():
     keys = [spec.report_key for spec in DELIVERABLES.values()]
     assert keys == [
         "cbom_scope_register",
-        "cbom_risk_register",
         "cbom_methodology",
         "cbom_infra_posture",
         "cbom_network_tls",
         "cbom_cert_register",
         "cbom_data_at_rest",
         "cbom_assurance_register",
+        "cbom_risk_register",
         "cbom_pqc_roadmap",
         "cbom_board_report",
     ]
@@ -619,6 +622,7 @@ def test_a_manifest_row_is_exactly_the_registry_row():
             "title": spec.title,
             "description": spec.description,
             "format": "pdf",
+            "formats": ["pdf", "csv"] if spec.slug == "certificate-estate-register" else ["pdf"],
             "available": True,
             "reason": None,
         }

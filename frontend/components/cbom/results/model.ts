@@ -602,8 +602,12 @@ export function resolveMigrationRows(dist: CbomDistributions): CbomDistributions
 // ---------------------------------------------------------------------------- signature check (header)
 
 /** What the header says after POST /runs/{id}/signature/verify (CB-38 PR-8). */
-export function verifyResultText(v: { valid: boolean; signature_match?: boolean | null; digest_match?: boolean | null }): string {
+export function verifyResultText(v: {
+  valid: boolean; signature_match?: boolean | null; digest_match?: boolean | null; signed_by_deployment?: boolean | null;
+}): string {
   if (v.valid) return "Verified: this file is the run's signed CycloneDX JSON, unchanged.";
+  // signed by this deployment, but the file is another run's (review 6026853603 D4)
+  if (v.signed_by_deployment) return "Not verified: this file is signed by ZeroShield, but it is another run's file.";
   if (v.digest_match === false) return "Not verified: this file differs from the run's CycloneDX JSON (changed, or another run's file).";
   if (v.signature_match === false) return "Not verified: the signature does not match this file.";
   return "Not verified.";

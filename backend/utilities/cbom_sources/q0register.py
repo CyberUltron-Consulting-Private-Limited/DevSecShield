@@ -142,9 +142,13 @@ def _closed_event(row: CbomQ0Gap, now: _dt.datetime, cause: str, grade: str | No
             "asset_key": _fit(row.item_key, EVENT_KEY_MAX),
             "asset_label": str(detail.get("title") or detail.get("location") or row.item_key)[:255],
             "code": row.reason[:48], "severity": "Info",
+            # closed_by_run_id: the run whose write closed the gap (None: a settings save, an evidence answer or a
+            # source removal did); last_seen_run_id: the run that last saw it open. run_id keeps its old meaning
+            # (the causing run, else the last one that saw it) for readers of events stored before (review #486 M1)
             "detail": {"item_kind": row.item_kind, "item_key": row.item_key, "reason": row.reason,
                        "sub_reason": detail.get("sub_reason"), "cause": cause, "new_grade": grade,
-                       "opened_at": opened, "run_id": run_id if run_id is not None else row.run_id},
+                       "opened_at": opened, "closed_by_run_id": run_id, "last_seen_run_id": row.run_id,
+                       "run_id": run_id if run_id is not None else row.run_id},
             "dedupe_key": dedupe("register", row.team_id, row.item_key, opened), "forwarded_at": None}
 
 
@@ -320,21 +324,33 @@ def close_legacy_assets(session: Session, team_id: int, now: _dt.datetime) -> di
                   cause_of=lambda _r: ("model_change", None))
 
 
-def sync_mosca(session: Session, team_id: int, now: _dt.datetime, run_id: int | None = None) -> dict[str, int]:
-    """The one team item ``inputs:mosca``: open while a register asset grades Q0 ``mosca_missing``, closed (cause
-    ``inputs``) when none does."""
+def mosca_cause(mosca: dict[str, Any] | None) -> str:
+    """Why the ``inputs:mosca`` item closes when no caller knows better: ``inputs`` when the team has set its Mosca
+    X, Y and Z (the team supplied what was missing), else ``model_change`` (the grade model filled the gap with its
+    defaults: the team did nothing, so the closure is recorded, never forwarded nor counted as a gap closed)."""
+    values = (mosca or {}).values()
+    return "inputs" if mosca and all(v is not None for v in values) else "model_change"
+
+
+def sync_mosca(session: Session, team_id: int, now: _dt.datetime, run_id: int | None = None, *,
+               cause: str | None = None) -> dict[str, int]:
+    """The one team item ``inputs:mosca``: open while a register asset grades Q0 ``mosca_missing``, closed when none
+    does, with ``cause`` (the caller's: ``model_change`` after a grade-model re-grade, ``inputs`` after a Mosca edit),
+    else ``mosca_cause`` of the team's inputs."""
     from backend.new_models import CbomRiskRegister
     from backend.utilities.cbom_sources.risk_register import team_inputs
 
+    inputs = team_inputs(session, team_id)
     # only rows graded with the team's inputs now: rows waiting for the background re-grade after a Mosca edit must
     # not reopen the item that edit closed
     n = session.exec(select(sa_func.count()).select_from(CbomRiskRegister).where(  # type: ignore[call-overload]
         CbomRiskRegister.team_id == team_id, CbomRiskRegister.q_reason == "mosca_missing",
-        CbomRiskRegister.inputs_digest == team_inputs(session, team_id).digest)).one()
+        CbomRiskRegister.inputs_digest == inputs.digest)).one()
     existing = _open_rows(session, team_id, ("inputs",))
     current = {("inputs", "inputs:mosca"): {"reason": "mosca_missing", "detail": {"count": int(n)}}} if n else {}
+    closed_by = cause or mosca_cause(inputs.mosca)
     return _apply(session, team_id, now, current, existing, closable=set(existing),
-                  cause_of=lambda _r: ("inputs", None), run_id=run_id)
+                  cause_of=lambda _r: (closed_by, None), run_id=run_id)
 
 
 def on_estate_write(session: Session, write: Any) -> None:

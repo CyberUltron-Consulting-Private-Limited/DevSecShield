@@ -87,12 +87,16 @@ export function knownHostsProblem(text: string): string | null {
 
 /** #156: a Windows or Active Directory port that would send the login to a server that is not verified, or null
  * (the backend's kinds.credential_target_problem: WINRM_HTTP_PORTS and AD_NOT_LDAPS_PORTS). */
-export function windowsPortProblem(kind: string, port: number): string | null {
+export function windowsPortProblem(kind: string, port: number, tlsMode: "ldaps" | "starttls" = "ldaps"): string | null {
   if (kind === "windows_servers" && [80, 5985, 8080].includes(port)) {
     return `${port} is a plain-HTTP port: WinRM over HTTP cannot prove the server; use HTTPS (5986)`
   }
-  if (kind === "active_directory" && [389, 3268, 80, 5985, 5986, 8080].includes(port)) {
-    return `${port} is not LDAPS: use 636, or 3269 for the global catalog`
+  // FIX-B3: StartTLS runs on the plain LDAP ports (kinds.AD_STARTTLS_PORTS); LDAPS never does
+  if (kind === "active_directory" && tlsMode === "starttls" && ![389, 3268].includes(port)) {
+    return `${port} is not an LDAP port for StartTLS: use 389, or 3268 for the global catalog`
+  }
+  if (kind === "active_directory" && tlsMode !== "starttls" && [389, 3268, 80, 5985, 5986, 8080].includes(port)) {
+    return `${port} is not LDAPS: use 636, or 3269 for the global catalog (or choose StartTLS for 389)`
   }
   return null
 }

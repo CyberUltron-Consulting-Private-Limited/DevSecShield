@@ -4,8 +4,9 @@ One CycloneDX 1.6 document for the whole estate, one component per estate asset 
 only (``authorize``; another team gets the usual 403), the CBOM Sources write limit (one full pass over the estate, as
 the run export), and one of the host-wide export slots when the estate is large (``export_slots``; 429 + Retry-After
 when every slot is busy). The document is written to a spooled temporary file one component at a time and streamed;
-the response says it is unsigned (``X-Cbom-Signature: unsigned``) and carries the SHA-256 of the exact bytes
-(``X-Cbom-Sha256``), so anyone can check the file outside ZeroShield.
+the JSON carries an embedded JSF signature and the response a detached ES256 signature of the exact bytes
+(``X-ZS-Signature``, base64 DER; ``X-ZS-Signature-Key-Id``) and their SHA-256 (``X-Cbom-Sha256``), so anyone can check
+the file outside ZeroShield with the key published at ``GET /{team}/bom-signing-keys``.
 """
 from __future__ import annotations
 
@@ -20,6 +21,7 @@ from fastapi.responses import StreamingResponse
 from sqlmodel import Session
 
 from backend.utilities.cbom_sources import estate_export as EXPORT
+from backend.utilities.cbom_sources.bom_signing import signature_headers
 from backend.utilities.cbom_sources import export_slots as EXPORT_SLOTS
 from backend.utilities.cbom_sources.common import log, utcnow
 from backend.utilities.cbom_sources import http as _cbom_http
@@ -79,8 +81,8 @@ def _chunks(out: IO[bytes], size: int = 1024 * 1024) -> Iterator[bytes]:
 
 
 @router.get("/{team_id}/cbom/estate-export", dependencies=[*WRITE, access.team("cbom.read")],
-            summary="The team's estate CBOM: one CycloneDX component per asset across sources (unsigned; SHA-256 "
-                    "in X-Cbom-Sha256)")
+            summary="The team's estate CBOM: one CycloneDX component per asset across sources (JSON: embedded JSF "
+                    "signature; both formats: detached ES256 signature in X-ZS-Signature)")
 async def estate_export(team_id: TeamId, format: str = Query(default="json", pattern="^(json|xml)$"),
                         application: str | None = Query(default=None, max_length=128),
                         source: str | None = Query(default=None, max_length=255),
@@ -97,5 +99,5 @@ async def estate_export(team_id: TeamId, format: str = Query(default="json", pat
         raise server_error("cbom estate export", exc, team=team_id) from None
     name = f"cbom-estate-team{team_id}-{utcnow().date().isoformat()}.cdx.{format}"
     headers: dict[str, Any] = {**PRIVATE, "Content-Disposition": f'attachment; filename="{name}"',
-                               "X-Cbom-Signature": "unsigned", "X-Cbom-Sha256": sha, "X-Cbom-Assets": str(total)}
+                               **signature_headers(bytes.fromhex(sha)), "X-Cbom-Assets": str(total)}
     return StreamingResponse(_chunks(out), media_type=MEDIA[format], headers=headers)

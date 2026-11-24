@@ -53,7 +53,7 @@ def _fix_answer(code, explanation=None, notes=None):
 
 
 def _grounding(finding=FINDING):
-    return G.for_code_finding(77, "a" * 24, finding, explain(finding, "code"))
+    return G.for_code_finding(77, "a" * 24, finding, explain(finding, "code", team=None))
 
 
 def _window(finding=FINDING):

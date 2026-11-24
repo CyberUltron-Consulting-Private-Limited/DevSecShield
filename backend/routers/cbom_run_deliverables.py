@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import contextlib
 import datetime as _dt
+import hashlib
 import json
 import time
 from typing import IO, Annotated, Any, Iterator
@@ -25,6 +26,7 @@ from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectedAsset, CbomCollectionRun
 from backend.utilities.cbom_sources import cdx_xml as CDX_XML
+from backend.utilities.cbom_sources import drift_report as DRIFT_REPORT
 from backend.utilities.cbom_sources import export_slots as EXPORT_SLOTS
 from backend.utilities.cbom_sources import heatmap as HEAT
 from backend.utilities.cbom_sources import posture as POSTURE
@@ -68,7 +70,8 @@ VEX_MEDIA = "application/vnd.cyclonedx+json; version=1.6"
 # Full passes over the run's assets each route makes (export, remediation join, posture, heat-map, OSCAL): a run takes
 # an export slot when assets x passes reaches the single export's threshold (export_slots.LARGE_ASSETS).
 PASSES = {"signature": 1, "verify": 1, "vex": 2, "report": 4, "pack": 5}
-VERIFY_MAX_BYTES = 512 * 1024 * 1024  # a 50,000-component export is far below this
+VERIFY_MAX_BYTES = 512 * 1024 * 1024  # spooled to disk and hashed as it arrives: a detached / digest check of any export
+EMBEDDED_MAX_BYTES = RD.SIGN.EMBEDDED_MAX_BYTES  # D6: a JSON upload up to this size is parsed (once) for its JSF
 
 
 async def _run(what: str, team_id: int, fn, *args) -> Any:
@@ -87,10 +90,13 @@ def _get_owned(session: Session, run_id: int, team_id: int) -> CbomCollectionRun
     return run
 
 
-def _secret() -> bytes:
-    from backend.routers.certin import _hmac_secret  # the code lane's key (CERTIN_HMAC_SECRET), same key id
+def _secret() -> bytes | None:
+    """The code lane's legacy HMAC key (CERTIN_HMAC_SECRET, same key id), or None while it is a placeholder
+    (``bom_signing.legacy_hmac_problem``): then no HMAC is issued or accepted (review 6029745818 N3)."""
+    from backend.routers.certin import _hmac_secret
 
-    return _hmac_secret()
+    secret = _hmac_secret()  # 503 when neither variable is set, as before
+    return None if RD.SIGN.legacy_hmac_problem() else secret
 
 
 def _attachment(body: bytes, media: str, filename: str) -> Response:
@@ -99,11 +105,12 @@ def _attachment(body: bytes, media: str, filename: str) -> Response:
 
 
 @contextlib.contextmanager
-def _export_slot(session: Session, run: CbomCollectionRun, what: str) -> Iterator[None]:
-    """Hold one of the host-wide export slots while a large run's documents are built (module docstring)."""
+def _export_slot(session: Session, run: CbomCollectionRun, what: str, *, large: bool = False) -> Iterator[None]:
+    """Hold one of the host-wide export slots while a large run's documents are built (module docstring); ``large``:
+    take one whatever the run's size (an upload of ``bom_signing.LARGE_PARSE_BYTES`` or more is parsed)."""
     rows = int(session.exec(select(func.count()).select_from(CbomCollectedAsset).where(
         CbomCollectedAsset.team_id == run.team_id, CbomCollectedAsset.run_id == run.id)).one())
-    if not EXPORT_SLOTS.is_large(rows * PASSES[what]):
+    if not large and not EXPORT_SLOTS.is_large(rows * PASSES[what]):
         yield
         return
     try:
@@ -124,8 +131,20 @@ def _report_context(session: Session, team_id: int, options: ReportOptions = DEF
     return ReportContext(options=options, branding=load_report_branding(session, team_id))
 
 
+def _drift(session: Session, run: CbomCollectionRun) -> dict[str, Any]:
+    """S4: the run against its previous comparable run (``drift_report.run_drift``, the ``/diff`` numbers). A failure
+    is logged and printed as "not available": it never costs the customer the report or the pack."""
+    try:
+        return DRIFT_REPORT.run_drift(session, run)
+    except Exception as exc:  # noqa: BLE001 - the report and the pack must survive a drift failure
+        session.rollback()
+        log("run drift failed", team=run.team_id, run=run.id, error=type(exc).__name__)
+        return DRIFT_REPORT.summarise(run, None, None, message="Drift could not be computed for this report; the "
+                                                              "run page's Changes shows it")
+
+
 def _pdf(session: Session, run: CbomCollectionRun, data: RD.Summary, vex: dict[str, Any], cbom_sha256: str,
-         at: _dt.datetime, ctx: ReportContext | None = None) -> bytes:
+         at: _dt.datetime, ctx: ReportContext | None = None, drift: dict[str, Any] | None = None) -> bytes:
     settings = get_or_create_settings(session, run.team_id)
     posture = POSTURE.run_posture(session, team_id=run.team_id, run_id=run.id, risk_model=settings.risk_model)
     heatmap = HEAT.run_heatmap(session, run.team_id, run.id, by="source")
@@ -140,13 +159,13 @@ def _pdf(session: Session, run: CbomCollectionRun, data: RD.Summary, vex: dict[s
                         head=data.head, findings=data.findings, vex_states=RD.vex_states(vex),
                         provenance=RD.provenance(session, run), at=at, as_of_note=RD.as_of_note(run, at),
                         findings_cap=RD.PDF_FINDINGS_CAP, export_cap=RD.INV.EXPORT_CAP, cbom_sha256=cbom_sha256,
-                        ctx=used)
+                        ctx=used, drift=drift if drift is not None else _drift(session, run))
     if ctx is not None and used is not ctx:
         ctx.shown, ctx.total = used.shown, used.total
     return pdf
 
 
-def _vex_doc(engine, team_id: int, run_id: int) -> bytes:
+def _vex_doc(engine, team_id: int, run_id: int) -> bytes:  # signed: embedded JSF (RD.vex_bytes), D7
     now = utcnow()
     with Session(engine) as session:
         run = _get_owned(session, run_id, team_id)
@@ -157,7 +176,7 @@ def _vex_doc(engine, team_id: int, run_id: int) -> bytes:
 
 def _current_signature(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> dict[str, Any]:
     _out, data, tee = RD.written(session, run, now, "json", _secret(), keep=False)
-    return RD.run_signature(run, data.head, tee, RD.stamp(session, run, now))
+    return RD.run_signature(run, data.head, tee, RD.stamp(session, run, now), data.jsf)
 
 
 def _signature(engine, team_id: int, run_id: int) -> dict[str, Any]:
@@ -168,14 +187,59 @@ def _signature(engine, team_id: int, run_id: int) -> dict[str, Any]:
             return _current_signature(session, run, now)
 
 
+def _embedded(upload: RD.Digests) -> dict[str, Any] | None:
+    """The upload's own JSF signature checked against the published keys (``bom_signing.verify_document``), with the
+    run the file says it is (``zs:run_id``); None when it is not JSON, too large to parse (``EMBEDDED_MAX_BYTES``),
+    carries no signature or no key is configured. Parsed once, as I-JSON: a JSON body with a duplicate member name,
+    NaN or an out-of-range number, or a malformed signature member, is 400 (D1); one that is not JSON at all (a
+    corrupted download) is compared with the current CBOM as before."""
+    if upload.out is None or upload.size > EMBEDDED_MAX_BYTES or not RD.SIGN.available():
+        return None
+    upload.out.seek(0)
+    if not upload.out.read(4096).lstrip().startswith(b"{"):
+        return None
+    try:
+        doc = RD.BV.loads_file(upload.out)
+    except RD.BV.NotJSON:  # a corrupted file: compared with the run's current CBOM instead, as before
+        return None
+    except RD.BV.InputError as exc:
+        raise HTTPException(status_code=400, detail=f"Not verified: {exc}") from None
+    if not isinstance(doc, dict) or not isinstance(doc.get("signature"), dict):
+        return None
+    result = RD.SIGN.verify_document(doc)
+    if result.get("malformed"):
+        raise HTTPException(status_code=400, detail=f"Not verified: {result['reason']}")
+    result["subject"] = RD.BV.subject_of(doc)  # zs:run_id + zs:team_id (bom_signing.binding)
+    result["run_id"] = result["subject"].get("run_id")
+    return result
+
+
 def _verify(engine, team_id: int, run_id: int, upload: RD.Digests, sent_b64: str | None) -> dict[str, Any]:
     now = utcnow()
+    mac = upload.mac.digest() if upload.mac is not None else None  # None: the legacy key is a placeholder (N3)
     with Session(engine) as session:
         run = _get_owned(session, run_id, team_id)
+        # the run's current CBOM is rebuilt (an export slot for a large run); a large upload is parsed in a verify
+        # slot of its own (one per team, never an export slot: review 6029745818 minor 2)
         with _export_slot(session, run, "verify"):
-            current = _current_signature(session, run, now)
-    out = RD.verify_upload(upload.sha.hexdigest(), upload.mac.digest(), sent_b64=sent_b64,  # type: ignore[union-attr]
-                           current=current)
+            try:
+                with RD.SIGN.parse_slot(upload.size, team_id):
+                    embedded = _embedded(upload) if sent_b64 is None else None
+                    current = _current_signature(session, run, now)
+                    # D4: a file whose detached signature is good but that is not the run's current CBOM must say it
+                    # is this team's run's (zs:run_id + zs:team_id of the CBOM / VEX, the pack manifest's subject):
+                    # read only then, after the signature
+                    subject = None
+                    digest = upload.sha.hexdigest()
+                    if sent_b64 is not None and digest != current["digest"] and \
+                            RD.sent_signature(digest, mac, sent_b64) is not None:
+                        subject = RD.SIGN.file_subject(upload.out, upload.size)
+            except EXPORT_SLOTS.Busy:
+                log("run verify busy", team=team_id, run=run_id, bytes=upload.size)
+                raise busy_refusal("verify") from None
+    out = RD.verify_upload(upload.sha.hexdigest(), mac, sent_b64=sent_b64, current=current, embedded=embedded,
+                           run_id=run_id, team_id=team_id, subject=subject,
+                           legacy_problem=RD.SIGN.legacy_hmac_problem())
     out.update({"bytes": upload.size, "run_id": run_id, "current_digest": current["digest"],
                 "run_status": current["run_status"]})
     return out
@@ -198,11 +262,12 @@ def _oscal(session: Session, run: CbomCollectionRun, at: _dt.datetime) -> bytes 
     ``integrations._oscal_response``), with ``last-modified`` = the run's stamp; None while the run is active (the
     route answers 400 then)."""
     from backend.utilities.cbom_sources.drift import FINISHED
+    from backend.utilities.cbom_sources.regulated_entity import team_profile
     from backend.utilities.integrations import oscal as OSCAL
 
     if run.status not in FINISHED:
         return None
-    doc = OSCAL.run_document(session, run)
+    doc = OSCAL.run_document(session, run, team=team_profile(session, run.team_id))
     doc["assessment-results"]["metadata"]["last-modified"] = iso_z(at)
     problems = OSCAL.validate(doc)
     if problems:
@@ -225,9 +290,10 @@ def _evidence_pack(engine, team_id: int, run_id: int) -> tuple[IO[bytes], Report
                 temps.append(json_file)
                 xml_file, _xml_data, xml_tee = RD.written(session, run, now, "xml")
                 temps.append(xml_file)
-                signature = RD.run_signature(run, data.head, json_tee, at)
+                signature: dict[str, Any] | None = RD.run_signature(run, data.head, json_tee, at, data.jsf)
                 vex = _vex(session, run, data, at)
-                pdf = _pdf(session, run, data, vex, json_tee.sha.hexdigest(), at, ctx)
+                drift = _drift(session, run)  # S4: once, for report.pdf and drift.json
+                pdf = _pdf(session, run, data, vex, json_tee.sha.hexdigest(), at, ctx, drift)
                 sources = RD.run_sources(session, run)
                 oscal = _oscal(session, run, at)
                 files: list[Any] = [
@@ -240,9 +306,15 @@ def _evidence_pack(engine, team_id: int, run_id: int) -> tuple[IO[bytes], Report
                     omitted.append({"name": "oscal-assessment-results.json",
                                     "reason": "OSCAL assessment results are written for finished runs; "
                                               f"run is {run.status}."})
-                files += [("vex.json", RD.vex_bytes(vex), VEX_MEDIA, f"{base}/vex"),
-                          ("bom_signature.json", RD.signature_bytes(signature), JSON_MEDIA, f"{base}/signature"),
-                          ("report.pdf", pdf, "application/pdf", f"{base}/report.pdf")]
+                files.append(("vex.json", RD.vex_bytes(vex), VEX_MEDIA, f"{base}/vex"))
+                if signature is not None and signature.get("unsigned"):  # N3: nothing signed, nothing claimed
+                    omitted.append({"name": "bom_signature.json", "reason": str(signature["reason"])})
+                    signature = None
+                else:
+                    files.append(("bom_signature.json", RD.signature_bytes(signature), JSON_MEDIA,  # type: ignore
+                                  f"{base}/signature"))
+                files.append(("report.pdf", pdf, "application/pdf", f"{base}/report.pdf"))
+                files.append(("drift.json", DRIFT_REPORT.drift_bytes(drift), JSON_MEDIA, f"{base}/diff"))
                 return RD.evidence_pack(run=run, sources=sources, at=at, files=files, omitted=omitted,
                                         head=data.head, signature=signature,
                                         logo_sha256=ctx.branding.sha256 if ctx.branding.applied else None), ctx
@@ -266,34 +338,47 @@ def _chunks(out: IO[bytes], size: int = 1024 * 1024) -> Iterator[bytes]:
 async def run_vex(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader = None) -> Response:
     engine, _user = await authorize(team_id, Authorization)
     body = await _run("vex", team_id, _vex_doc, engine, team_id, run_id)
-    return _attachment(body, VEX_MEDIA, f"cbom-sources-run-{run_id}.vex.json")
+    response = _attachment(body, VEX_MEDIA, f"cbom-sources-run-{run_id}.vex.json")
+    response.headers.update(RD.SIGN.signature_headers(hashlib.sha256(body).digest()))  # D7: detached, as the CBOM
+    return response
 
 
 @router.get(RUN + "/signature", dependencies=[*WRITE, access.team("cbom.read")],
-            summary="HMAC-SHA256 signature (the code lane's bom_signature key and fields) over the exact bytes of the "
-                    "run's CycloneDX JSON download")
+            summary="ES256 signature over the exact bytes of the run's CycloneDX JSON download (also signed inside, "
+                    "JSF), with the public key; verify offline (openssl / zs_bom_verify.py) or with .../verify")
 async def run_signature(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader = None) -> Response:
     engine, _user = await authorize(team_id, Authorization)
     signature = await _run("signature", team_id, _signature, engine, team_id, run_id)
+    if signature.get("unsigned"):  # no ES256 key and a placeholder legacy key: nothing to hand out (N3)
+        raise HTTPException(status_code=503, detail=signature["reason"])
     return _attachment(RD.signature_bytes(signature), JSON_MEDIA, f"cbom-sources-run-{run_id}-signature.json")
 
 
 @router.post(RUN + "/signature/verify", dependencies=[*WRITE, access.team("cbom.read")],
-             summary="Verify a downloaded run CycloneDX JSON (the request body, as downloaded) against the signature "
-                     "sent in X-ZS-Signature-B64, else against the run's current CBOM")
+             summary="Verify a downloaded run file (the request body, as downloaded) against the signature sent in "
+                     "X-ZS-Signature-B64 (ES256 or the older HMAC), else its embedded JSF signature, else the run's "
+                     "current CBOM; valid only for this run's files (signed_by_deployment says whose signature)")
 async def verify_run_signature(team_id: TeamId, run_id: ObjectId, request: Request,
                                Authorization: AuthHeader = None,
-                               x_zs_signature_b64: Annotated[str | None, Header(max_length=256)] = None
+                               x_zs_signature_b64: Annotated[str | None, Header(max_length=512)] = None
                                ) -> JSONResponse:
     engine, _user = await authorize(team_id, Authorization)
-    upload = RD.Digests(None, _secret())
-    async for chunk in request.stream():
-        upload.write(chunk)
-        if upload.size > VERIFY_MAX_BYTES:
-            raise HTTPException(status_code=413, detail="The file is larger than any run CBOM export")
-    if not upload.size:
-        raise HTTPException(status_code=400, detail="Send the downloaded CycloneDX JSON file as the request body")
-    result = await _run("signature verify", team_id, _verify, engine, team_id, run_id, upload, x_zs_signature_b64)
+    # kept (spooled) so its embedded JSF signature can be checked; nodes counted so a body far denser than any BOM is
+    # refused while it arrives (review 6029745818 minor 2)
+    upload = RD.Digests(RD.spool(), _secret(), count_nodes=True)
+    try:
+        async for chunk in request.stream():
+            upload.write(chunk)
+            if upload.size > VERIFY_MAX_BYTES:
+                raise HTTPException(status_code=413, detail="The file is larger than any run CBOM export")
+            dense = upload.dense()
+            if dense:
+                raise HTTPException(status_code=400, detail=f"Not verified: {dense}")
+        if not upload.size:
+            raise HTTPException(status_code=400, detail="Send the downloaded CycloneDX JSON file as the request body")
+        result = await _run("signature verify", team_id, _verify, engine, team_id, run_id, upload, x_zs_signature_b64)
+    finally:
+        upload.out.close()
     return JSONResponse(result, headers=PRIVATE)
 
 
@@ -329,7 +414,8 @@ async def run_report_pdf(team_id: TeamId, run_id: ObjectId, request: Request,
 
 
 @router.get(RUN + "/evidence-pack", dependencies=[*WRITE, access.team("cbom.read")],
-            summary="Zip of the run's CycloneDX JSON and XML, OSCAL, VEX, signature and PDF with a sha256 manifest")
+            summary="Zip of the run's CycloneDX JSON and XML, OSCAL, VEX, signature and PDF with a signed sha256 "
+                    "manifest, the public key and an offline verifier")
 async def run_evidence_pack(team_id: TeamId, run_id: ObjectId, request: Request,
                             Authorization: AuthHeader = None) -> Response:
     started = time.monotonic()

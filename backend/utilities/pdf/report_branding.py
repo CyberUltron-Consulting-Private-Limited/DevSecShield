@@ -17,7 +17,7 @@ import logging
 import os
 import re
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +164,9 @@ REPORT_META: Dict[str, Dict[str, str]] = {
     # Team-wide CBOM regulatory deliverables (backend/utilities/pdf/cbom_*_pdf.py). Every key
     # needs its own entry: an unknown key silently falls back to the SAST header/footer.
     "cbom_scope_register": {
-        "title": "Scope Baseline & Asset Population Register",
+        # SOW Table 7 ID and title (the Document ID prints D1; the client accepts deliverables by these)
+        "sow_id": 1,
+        "title": "Scope Baseline and Asset Population Register",
         "subtitle": "Cryptographic Bill of Materials · Team-wide scope and asset population",
         "footer_label": "CBOM Scope Baseline Register",
         "kicker": "Regulatory Deliverable",
@@ -178,7 +180,9 @@ REPORT_META: Dict[str, Dict[str, str]] = {
         ),
     },
     "cbom_methodology": {
-        "title": "Cryptographic Discovery Methodology & Evidence Plan",
+        # SOW Table 7 ID and title (the Document ID prints D2; the client accepts deliverables by these)
+        "sow_id": 2,
+        "title": "Discovery Methodology and Evidence Plan",
         "subtitle": "Cryptographic Bill of Materials · Discovery methodology and evidence plan",
         "footer_label": "CBOM Discovery Methodology",
         "kicker": "Regulatory Deliverable",
@@ -192,6 +196,8 @@ REPORT_META: Dict[str, Dict[str, str]] = {
         ),
     },
     "cbom_cert_register": {
+        # SOW Table 7 ID and title (the Document ID prints D8; the client accepts deliverables by these)
+        "sow_id": 8,
         "title": "Certificate Estate Register",
         "subtitle": "Cryptographic Bill of Materials · Team-wide certificate estate",
         "footer_label": "CBOM Certificate Estate Register",
@@ -206,7 +212,9 @@ REPORT_META: Dict[str, Dict[str, str]] = {
         ),
     },
     "cbom_assurance_register": {
-        "title": "Third-Party Cryptographic Assurance & Attestation Register",
+        # SOW Table 7 ID and title (the Document ID prints D10; the client accepts deliverables by these)
+        "sow_id": 10,
+        "title": "Third-Party Cryptographic Assurance and Attestation Register",
         "subtitle": "Cryptographic Bill of Materials · Third-party assurance and attestations",
         "footer_label": "CBOM Third-Party Assurance Register",
         "kicker": "Regulatory Deliverable",
@@ -220,6 +228,8 @@ REPORT_META: Dict[str, Dict[str, str]] = {
         ),
     },
     "cbom_risk_register": {
+        # SOW Table 7 ID and title (the Document ID prints D12; the client accepts deliverables by these)
+        "sow_id": 12,
         "title": "Quantum Risk Register",
         "subtitle": "Cryptographic Bill of Materials · Quantum risk grade per asset (Q1-Q4, Q0 kept visible)",
         "footer_label": "CBOM Quantum Risk Register",
@@ -234,6 +244,8 @@ REPORT_META: Dict[str, Dict[str, str]] = {
         ),
     },
     "cbom_pqc_roadmap": {
+        # SOW Table 7 ID and title (the Document ID prints D13; the client accepts deliverables by these)
+        "sow_id": 13,
         "title": "PQC Migration Roadmap",
         "subtitle": "Cryptographic Bill of Materials · Post-quantum migration planning",
         "footer_label": "CBOM PQC Migration Roadmap",
@@ -243,12 +255,15 @@ REPORT_META: Dict[str, Dict[str, str]] = {
             "scans, with the NIST post-quantum target for each."
         ),
         "how_to_read": (
-            "Use the regulatory timeline for context, then assign wave, target date "
-            "and owner in the cells marked (assessor); the order is not a sequence."
+            "Read the regulatory timeline for context. Each row carries its wave, the date to fix any "
+            "classical weakness (counted from the day the asset was first found, and marked overdue once past) and "
+            "its post-quantum date; waves, dates and owners are proposals for the asset owners to confirm."
         ),
     },
     "cbom_board_report": {
-        "title": "Board / IT Strategy Committee Regulatory & Executive Report",
+        # SOW Table 7 ID and title (the Document ID prints D14; the client accepts deliverables by these)
+        "sow_id": 14,
+        "title": "Board / IT Strategy Committee Report",
         "subtitle": "Cryptographic Bill of Materials · Board and executive regulatory report",
         "footer_label": "CBOM Board Report",
         "kicker": "Regulatory Deliverable",
@@ -261,10 +276,12 @@ REPORT_META: Dict[str, Dict[str, str]] = {
             "and sign-offs are completed by the named owners."
         ),
     },
-    # Posture deliverables (#5, #6, #9). Appended after the six regulatory documents so their
+    # Posture deliverables (SOW D6, D7, D9). Appended after the six regulatory documents so their
     # headers and footers stay on the entries above.
     "cbom_infra_posture": {
-        "title": "Infrastructure & Cloud Encryption Posture",
+        # SOW Table 7 ID and title (the Document ID prints D6; the client accepts deliverables by these)
+        "sow_id": 6,
+        "title": "Infrastructure and Cloud Encryption Posture",
         "subtitle": "Cryptographic Bill of Materials · Declared infrastructure encryption",
         "footer_label": "CBOM Infrastructure Posture",
         "kicker": "Regulatory Deliverable",
@@ -278,7 +295,9 @@ REPORT_META: Dict[str, Dict[str, str]] = {
         ),
     },
     "cbom_network_tls": {
-        "title": "Network, TLS & Crypto Protocol Assessment",
+        # SOW Table 7 ID and title (the Document ID prints D7; the client accepts deliverables by these)
+        "sow_id": 7,
+        "title": "Network, TLS and Crypto Protocol Assessment",
         "subtitle": "Cryptographic Bill of Materials · Declared and imported TLS evidence",
         "footer_label": "CBOM Network TLS Assessment",
         "kicker": "Regulatory Deliverable",
@@ -292,6 +311,8 @@ REPORT_META: Dict[str, Dict[str, str]] = {
         ),
     },
     "cbom_data_at_rest": {
+        # SOW Table 7 ID and title (the Document ID prints D9; the client accepts deliverables by these)
+        "sow_id": 9,
         "title": "Data-at-Rest Encryption Assessment",
         "subtitle": "Cryptographic Bill of Materials · Declared storage encryption",
         "footer_label": "CBOM Data-at-Rest Assessment",
@@ -729,6 +750,34 @@ def append_bom_compliance_sections(
         )
     except Exception:
         logger.warning("BOM compliance appendix failed; continuing PDF export", exc_info=True)
+
+
+def wrap_at_separators(text: str, style: ParagraphStyle, width: float, separators: str = "-/:_.") -> str:
+    """Escaped Paragraph markup of ``text`` broken into lines of at most ``width`` points, only after one of
+    ``separators`` (a path at "/" and ":", an id or a primitive at "-"), so a narrow table column never breaks a
+    word in the middle ("block-ciph er"). A single part wider than the column is left to the paragraph."""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+
+    parts: List[str] = []
+    current = ""
+    for ch in text:
+        current += ch
+        if ch in separators:
+            parts.append(current)
+            current = ""
+    if current:
+        parts.append(current)
+    lines: List[str] = []
+    line = ""
+    for part in parts:
+        if line and stringWidth(line + part, style.fontName, style.fontSize) > width:
+            lines.append(line)
+            line = part
+        else:
+            line += part
+    if line:
+        lines.append(line)
+    return "<br/>".join(escape_html(x) for x in lines)
 
 
 def escape_html(text: Any) -> str:
@@ -1503,6 +1552,28 @@ def compute_risk_score(critical: int, high: int, medium: int, low: int) -> Tuple
     return score, "A", "Low risk"
 
 
+def compute_posture_risk_score(critical: int, high: int, medium: int, low: int) -> Tuple[int, str, str]:
+    """The AI BOM grade: ``compute_risk_score`` bounded by the worst severity present (no Critical -> at most D, no
+    Critical/High -> at most C, Low only -> at most B, nothing -> A). Computed by the engine's own function and table
+    (``aibom/src/aibom/score/posture.py``, loaded by ``aibom_posture``), so the PDF and the dashboard band agree."""
+    from backend.utilities.pdf.aibom_posture import posture_risk
+
+    return posture_risk(critical, high, medium, low)
+
+
+def compute_risk_score_band(score: int) -> Tuple[int, str, str]:
+    """The grade and band of a 0-100 score (the bands of ``compute_risk_score``)."""
+    if score >= 70:
+        return score, "F", "Critical risk"
+    if score >= 50:
+        return score, "D", "High risk"
+    if score >= 30:
+        return score, "C", "Elevated risk"
+    if score >= 15:
+        return score, "B", "Moderate risk"
+    return score, "A", "Low risk"
+
+
 def build_severity_bar(
     *,
     critical: int,
@@ -1865,6 +1936,7 @@ def append_executive_summary(
     meta_chips: Optional[Sequence[Tuple[str, str]]] = None,
     scan_time_hint: str = "Completed successfully",
     ctx: Any = None,
+    risk_score_fn: Optional[Callable[[int, int, int, int], Tuple[int, str, str]]] = None,
 ) -> None:
     styles = styles or get_report_styles()
     meta = REPORT_META.get(report_key, REPORT_META["sast"])
@@ -1919,7 +1991,7 @@ def append_executive_summary(
                 time_label = str(value)
                 break
 
-    risk_score, risk_grade, risk_band = compute_risk_score(critical, high, medium, low)
+    risk_score, risk_grade, risk_band = (risk_score_fn or compute_risk_score)(critical, high, medium, low)
 
     story.append(
         build_kpi_grid(
@@ -2180,7 +2252,9 @@ def build_finding_section(
             code_text = code_text[:700] + "..."
         code_text = "\n".join(code_text.split("\n")[:14])
         code_box = Table(
-            [[Preformatted(escape_html(code_text), styles["code"], maxLineLength=90)]],
+            # Preformatted draws its text verbatim (no markup is parsed), so the evidence goes in as written: escaping
+            # it printed "&lt;redacted:21&gt;" (review of #491 m1), and unescaped text cannot inject markup here
+            [[Preformatted(code_text, styles["code"], maxLineLength=90)]],
             colWidths=[CONTENT_WIDTH - 3.0 - 28],
         )
         code_box.setStyle(

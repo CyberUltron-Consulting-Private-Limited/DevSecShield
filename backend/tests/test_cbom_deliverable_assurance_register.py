@@ -79,21 +79,25 @@ CURRENT_SCAN_IDS = (2, 3, 4, 5, 6, 7, 8)  # latest scan of each of the 7 sources
 POOLED_SCAN_IDS = (2, 3, 4, 5, 6, 7)  # current AND full fidelity (legacy #8 has no compliance)
 
 # Headers are literals on purpose: they are the contract with plan 5.4, not a re-export.
+# SOW D10 (audit B-08): version, package URL and known-vulnerability / end-of-life status are data columns now;
+# only the vendor-assurance columns are MANUAL.
 LIB_HEADERS = (
     "Library",
+    "Version",
+    "Package URL or ecosystem",
     "#Sources",
     "Sources",
+    "Known-vulnerability / end-of-life status",
     "First seen",
     "Last seen",
-    "Version (not captured) (assessor)",
     "Vendor (assessor)",
     "FIPS 140-3 / CMVP cert # (assessor)",
     "SOC 2 / ISO 27001 ref (assessor)",
     "PQC statement (assessor)",
     "Attestation status (assessor)",
 )
-MANUAL_LIB_COLUMNS = LIB_HEADERS[5:]
-PREVIOUS_HEADERS = LIB_HEADERS[:5]
+MANUAL_LIB_COLUMNS = LIB_HEADERS[8:]
+PREVIOUS_HEADERS = ("Library", "#Sources", "Sources", "First seen", "Last seen")
 LATEST_HEADER = "Latest attestation (file \u00b7 note \u00b7 date)"
 LEDGER_HEADERS = (
     "Framework",
@@ -105,6 +109,8 @@ LEDGER_HEADERS = (
     LATEST_HEADER,
 )
 VENDOR_HEADERS = ("Vendor", "Service", "Crypto function", "Evidence ref", "Valid until", "Owner")
+RECORDED_VENDOR_HEADERS = ("Vendor", "Area", "Status", "Evidence level", "Attestation date", "Scope",
+                           "Evidence ref", "Renew by", "Owner (assessor)")
 SIGNOFF_HEADERS = ("Sign-off", "Name", "Role", "Date", "Signature")
 DASH = "\u2014"
 
@@ -431,9 +437,11 @@ def oracle_libraries(scans: list[dict]) -> dict[str, dict]:
             props = {p["name"]: p["value"] for p in comp.get("properties", [])}
             if comp.get("type") != "library" and props.get("crypto:role") != "library":
                 continue
-            entry = found.setdefault(
-                comp["name"].casefold(), {"labels": set(), "first": day, "last": day}
-            )
+            # one component per library name: the engine's ``name@version`` advisory component is the
+            # same library as the import-rule ``name`` (FIX-B1 review: golang.org/x/crypto twice)
+            base, _at, version = comp["name"].rpartition("@")
+            name = base if base and version else comp["name"]
+            entry = found.setdefault(name.casefold(), {"labels": set(), "first": day, "last": day})
             entry["labels"].add(label_of[key])
             entry["first"] = min(entry["first"], day)
             entry["last"] = max(entry["last"], day)
@@ -447,8 +455,8 @@ def oracle_ledger(scans: list[dict]) -> dict[tuple[str, str], dict]:
     for scan_id in POOLED_SCAN_IDS:
         compliance = by_id[scan_id]["scan_data"]["cbom_compliance"]
         for framework, block in compliance.items():
-            if not isinstance(block, dict):
-                continue
+            if not isinstance(block, dict) or framework == "rbi_free_ai_protection":
+                continue  # AI governance controls are not third-party crypto assurance (audit B-08)
             for req in block["requirements"]:
                 fresh = {"n": 0, "k": 0, "in_scope": 0}
                 entry = rows.setdefault((framework, req["id"]), fresh)
@@ -546,13 +554,14 @@ def no_network(monkeypatch):
 def test_oracles_match_the_plan_literals(raw_scans):
     libs = oracle_libraries(raw_scans)
     # Appendix B said 23; the WP13 regeneration adds Node.js crypto (stdlib) (require() import,
-    # ab0a446) and the two WP3a advisory components cryptography@42.0.5 / golang.org/x/crypto@v0.24.0
-    assert len(libs) == 26
+    # ab0a446) and the two WP3a advisory components cryptography@42.0.5 / golang.org/x/crypto@v0.24.0;
+    # FIX-B1 review: golang.org/x/crypto@v0.24.0 is the import-rule golang.org/x/crypto (one component, 25)
+    assert len(libs) == 25
     multi = {name for name, entry in libs.items() if len(entry["labels"]) > 1}
     assert multi == {"hashlib (stdlib)", "pyca/cryptography", "pyopenssl", "ssl (stdlib)"}
     ledger = oracle_ledger(raw_scans)
-    assert len(ledger) == 48  # plain-loop probe of the raw fixture: unique controls with NBE/PWE
-    assert sum(entry["n"] for entry in ledger.values()) == 207
+    assert len(ledger) == 46  # plain-loop probe of the raw fixture: unique controls with NBE/PWE (no RBI FREE-AI)
+    assert sum(entry["n"] for entry in ledger.values()) == 197
     assert sum(entry["k"] for entry in ledger.values()) == 0  # nothing attested in the fixture
 
 
@@ -585,7 +594,7 @@ def test_build_pdf_is_a_valid_landscape_pdf(base_pdf):
 
 def test_document_identity_metadata_and_footer(base_pdf, base_text):
     title = REPORT_META["cbom_assurance_register"]["title"]
-    assert title == "Third-Party Cryptographic Assurance & Attestation Register"
+    assert title == "Third-Party Cryptographic Assurance and Attestation Register"
     assert title in (info_field(base_pdf, "Title") or "")
     assert "E2E Demo Team" in (info_field(base_pdf, "Title") or "")
     assert "CBOM-D10-T1-20261019" in (info_field(base_pdf, "Subject") or "")
@@ -632,7 +641,7 @@ def test_components_table_lists_26_unique_libraries_four_with_several_sources(
     base_story, raw_scans
 ):
     rows = records(find_table(base_story, LIB_HEADERS))
-    assert len(rows) == 26  # Appendix B as regenerated in WP13 (see test_oracles_match_the_plan_literals)
+    assert len(rows) == 25  # Appendix B as regenerated in WP13, one row per component (see the oracle test)
     oracle = oracle_libraries(raw_scans)
     assert [r["Library"].casefold() for r in rows] == sorted(oracle)  # one row each, A to Z
     multi = [r["Library"] for r in rows if int(r["#Sources"]) > 1]
@@ -672,28 +681,35 @@ def test_multi_source_rows_list_every_source_label(base_story):
     assert rows["secrets (stdlib)"]["First seen"] == "2026-10-09"
 
 
-def test_version_column_says_not_captured_and_every_manual_cell_is_blank(base_story, base_text):
+def test_version_column_prints_only_recorded_versions_and_every_manual_cell_is_blank(base_story):
+    """SOW D10 / audit B-08: a version is printed when the engine recorded one on the component (the advisory
+    components ``cryptography@42.0.5`` and ``golang.org/x/crypto@v0.24.0`` carry ``crypto:version``) and "not
+    captured" otherwise; nothing is invented and the vendor-assurance columns stay blank MANUAL columns."""
     table = find_table(base_story, LIB_HEADERS)
-    assert LIB_HEADERS[5].startswith("Version (not captured)")
-    assert "Version (not captured) (assessor)" in base_text  # and so does the printed header
     for row in body_rows(table):
-        for column in range(5, len(LIB_HEADERS)):
+        for column in range(8, len(LIB_HEADERS)):
             assert cell_text(row[column]) == "", (LIB_HEADERS[column], cell_text(row[0]))
-    # nothing invented: no version-looking value in the component rows except inside the name the
-    # engine gave an advisory component (``<package>@<version>``, crypto_advisory_scan.py)
-    flat = "\n".join(cell_text(c) for row in body_rows(table) for c in row[1:])
-    assert not re.search(r"\b\d+\.\d+\.\d+\b", flat)
-    versioned = sorted(
-        cell_text(row[0]) for row in body_rows(table) if re.search(r"\d+\.\d+\.\d+", cell_text(row[0]))
+    rows = {r["Library"]: r for r in records(table)}
+    versions = {name: row["Version"] for name, row in rows.items() if row["Version"] != "not captured"}
+    # the name column is the name; the version is its own column (FIX-B1 review)
+    assert versions == {"cryptography": "42.0.5", "golang.org/x/crypto": "v0.24.0"}
+    assert not any("@" in name for name in rows)
+    assert rows["cryptography"]["Package URL or ecosystem"] == "pypi"
+    assert rows["golang.org/x/crypto"]["#Sources"] == "1"  # the import-rule row and the go.mod pin are one
+    assert rows["golang.org/x/crypto"]["Known-vulnerability / end-of-life status"] == (
+        "known vulnerability (CVE-2024-45337, CVE-2025-22869 +19 more)"
     )
-    assert versioned == ["cryptography@42.0.5", "golang.org/x/crypto@v0.24.0"]
-    # the version column is a blank MANUAL column like the four vendor-assurance ones
+    # a library without a recorded version cannot be checked against advisories: it says so
+    assert rows["Bouncy Castle"]["Known-vulnerability / end-of-life status"] == "not assessed (no version)"
     assert all("(assessor)" in header for header in MANUAL_LIB_COLUMNS)
 
 
 def test_library_note_and_summary_line_are_printed(base_text):
     assert norm(authored.ASSURANCE_LIBRARY_NOTE) in base_text
-    summary = "26 cryptographic libraries found in 4 of 7 sources; 4 used by more than one source."
+    summary = (
+        "25 cryptographic libraries found in 4 of 7 sources; 4 used by more than one source; "
+        "2 with a known-vulnerability or end-of-life status."
+    )
     assert summary in base_text
 
 
@@ -701,9 +717,9 @@ def test_library_seen_only_in_a_superseded_scan_goes_to_a_previously_seen_append
     scans = copy.deepcopy(raw_scans)
     add_library(scans, 1, "ObsoleteCryptoKit")  # scan 1 = payments v1, replaced by scan 2
     view = make_view(scans)
-    assert len(view.libs) == 27  # the aggregator keeps it, flagged current=False
+    assert len(view.libs) == 26  # the aggregator keeps it, flagged current=False
     story = build_story(view)
-    assert len(body_rows(find_table(story, LIB_HEADERS))) == 26  # headline unchanged
+    assert len(body_rows(find_table(story, LIB_HEADERS))) == 25  # headline unchanged
     old = records(find_table(story, PREVIOUS_HEADERS))
     assert len(old) == 1
     assert old[0]["Library"] == "ObsoleteCryptoKit"
@@ -711,7 +727,7 @@ def test_library_seen_only_in_a_superseded_scan_goes_to_a_previously_seen_append
     assert old[0]["Sources"] == "github.com/e2e-demo/payments-service (main)"
     assert (old[0]["First seen"], old[0]["Last seen"]) == ("2026-09-28", "2026-09-28")
     assert HEAD_A1 in norm(pdf_full_text(register.build_pdf(view)))
-    assert "26 cryptographic libraries found in 4 of 7 sources" in " ".join(story_texts(story))
+    assert "25 cryptographic libraries found in 4 of 7 sources" in " ".join(story_texts(story))
 
 
 def test_many_sources_are_capped_per_cell_with_a_plus_more_line():
@@ -767,7 +783,7 @@ def test_fixture_labels_fit_their_columns_without_wrapping(base_story):
     components = find_table(base_story, LIB_HEADERS)
     for row in records(components):
         for label in row["Sources"].split("\n"):
-            assert fits(label, components, 2), label
+            assert fits(label, components, LIB_HEADERS.index("Sources")), label
     ledger = find_table(base_story, LEDGER_HEADERS)
     for label in authored.FRAMEWORK_LABELS.values():
         assert fits(label, ledger, 0), label
@@ -781,7 +797,7 @@ def test_ledger_row_count_equals_the_unique_framework_requirements_with_nbe_or_p
     oracle = oracle_ledger(raw_scans)
     rows = records(find_table(base_story, LEDGER_HEADERS))
     keys = [(LABEL_TO_KEY[r["Framework"]], r["Req ID"]) for r in rows]
-    assert len(rows) == len(oracle) == 48
+    assert len(rows) == len(oracle) == 46  # 48 less the 2 RBI FREE-AI AI-governance controls (audit B-08)
     assert len(set(keys)) == len(keys)  # each control exactly once
     assert set(keys) == set(oracle)
 
@@ -811,7 +827,9 @@ def test_ledger_is_in_framework_order_then_natural_requirement_order(base_story)
     for row in rows:
         if not frameworks or frameworks[-1] != row["Framework"]:
             frameworks.append(row["Framework"])
-    assert frameworks == list(authored.FRAMEWORK_LABELS.values())  # engine order, no repeats
+    assert frameworks == [  # engine order, no repeats; RBI FREE-AI's AI controls are not on this register
+        label for key, label in authored.FRAMEWORK_LABELS.items() if key not in register.LEDGER_EXCLUDED_FRAMEWORKS
+    ]
     ids = {fw: [r["Req ID"] for r in rows if r["Framework"] == fw] for fw in frameworks}
     assert ids[CERT_IN] == [
         *(f"8.4.1.{n}" for n in range(1, 14)),  # 8.4.1.2 before 8.4.1.10: numeric, not text
@@ -841,7 +859,7 @@ def test_ledger_is_in_framework_order_then_natural_requirement_order(base_story)
         "CSCRF-QC-10",
         "CSCRF-RA-1",
     ]
-    assert ids["RBI FREE-AI (Protection)"] == ["FREEAI-PROT-7", "FREEAI-PROT-8"]
+    assert "RBI FREE-AI (Protection)" not in ids  # AI governance controls (red-teaming ...) are not on D10 (B-08)
 
 
 def test_ledger_explains_what_k_over_n_means_and_what_was_pooled(base_text):
@@ -872,7 +890,7 @@ def test_attestation_in_scan_2_shows_attested_1_of_5_with_file_note_and_date(raw
         for r in records(find_table(story, LEDGER_HEADERS))
         if (r["Framework"], r["Req ID"]) != (CERT_IN, "8.4.1.1")
     ]
-    assert len(others) == 47  # the attested control stays in the ledger (pass_with_evidence)
+    assert len(others) == 45  # the attested control stays in the ledger (pass_with_evidence)
     assert all(r["Attested k/n"].startswith("Attested 0/") for r in others)
     assert all(r[LATEST_HEADER] == DASH for r in others)
 
@@ -984,8 +1002,8 @@ def test_full_fidelity_team_with_nothing_to_attest_says_so(raw_scans):
     manifests = [s for s in copy.deepcopy(raw_scans) if s["id"] == 7]
     story = build_story(make_view(manifests))
     assert body_rows(find_table(story, LEDGER_HEADERS)) == []
-    # R-08: 19 libraries (+ the WP3a golang.org/x/crypto@v0.24.0 advisory component), 1 asset row
-    assert len(body_rows(find_table(story, LIB_HEADERS))) == 19
+    # R-08: 19 libraries; the WP3a golang.org/x/crypto@v0.24.0 advisory component is golang.org/x/crypto
+    assert len(body_rows(find_table(story, LIB_HEADERS))) == 18
     notes = story_texts(story)
     assert any("No control in the pooled scans needs an attestation" in t for t in notes)
 
@@ -995,22 +1013,22 @@ def test_full_fidelity_team_with_nothing_to_attest_says_so(raw_scans):
 # ---------------------------------------------------------------------------------------------
 def test_summary_kpis_for_the_unattested_fixture(base_story):
     cards = kpi_cards(base_story)
-    assert cards["Controls needing attestation"][0] == "48"
+    assert cards["Controls needing attestation"][0] == "46"
     assert cards["Fully attested"][0] == "0"
     assert cards["Partly attested"][0] == "0"
     assert cards["Attested (source level)"][0] == "0.0%"
-    assert "0 of 207" in cards["Attested (source level)"][1]
+    assert "0 of 197" in cards["Attested (source level)"][1]
 
 
 def test_summary_kpis_follow_an_injected_attestation(raw_scans):
     scans = copy.deepcopy(raw_scans)
     attest(scans, 2, {"cert_in_cbom": {"8.4.1.1": stamp("a.pdf", "n", "2026-10-15T09:30:00Z")}})
     cards = kpi_cards(build_story(make_view(scans)))
-    assert cards["Controls needing attestation"][0] == "48"
+    assert cards["Controls needing attestation"][0] == "46"
     assert cards["Fully attested"][0] == "0"
     assert cards["Partly attested"][0] == "1"
-    assert cards["Attested (source level)"][0] == "0.5%"  # 1 of 207
-    assert "1 of 207" in cards["Attested (source level)"][1]
+    assert cards["Attested (source level)"][0] == "0.5%"  # 1 of 197
+    assert "1 of 197" in cards["Attested (source level)"][1]
 
 
 def test_summary_kpis_count_fully_attested_controls(raw_scans):
@@ -1020,19 +1038,49 @@ def test_summary_kpis_count_fully_attested_controls(raw_scans):
     cards = kpi_cards(build_story(make_view(scans)))
     assert cards["Fully attested"][0] == "1"
     assert cards["Partly attested"][0] == "0"
-    assert cards["Attested (source level)"][0] == "2.4%"  # 5 of 207
+    assert cards["Attested (source level)"][0] == "2.5%"  # 5 of 197
 
 
 # ---------------------------------------------------------------------------------------------
 # D / E. Manual forms
 # ---------------------------------------------------------------------------------------------
-def test_vendor_register_is_twelve_blank_rows_with_the_plan_columns(base_story, base_text):
+def test_vendor_register_without_recorded_vendors_is_twelve_blank_rows(base_story, base_text):
     table = find_table(base_story, VENDOR_HEADERS)
     assert headers_of(table) == tuple(authored.ASSURANCE_VENDOR_COLUMNS) == VENDOR_HEADERS
     rows = body_rows(table)
     assert len(rows) == 12
     assert all(cell_text(cell) == "" for row in rows for cell in row)
+    assert "No vendor questionnaire is recorded in the Evidence tab" in base_text
     assert "To be completed by assessor" in base_text
+    assert not has_table(base_story, RECORDED_VENDOR_HEADERS)
+
+
+def test_vendor_register_lists_the_evidence_tab_vendors_then_blank_rows(base_view):
+    """Staging 23 Nov 2026 (audit B-08): vendor "Acme Payments Gateway" had answered its questionnaire in the
+    Evidence tab, yet section D printed twelve blank rows.  The register now lists it with its attestation date,
+    scope and evidence reference (``view.vendors``, built by ``evidence.vendor_register``)."""
+    view = dataclasses.replace(base_view, vendors=(
+        {"name": "Acme Payments Gateway", "area": "Third-party vendors", "status": "answered", "level": "E2",
+         "level_label": "Documented", "attested_on": "2026-11-12", "renew_by": "2027-11-12",
+         "scope": "TLS versions and cipher suites, key custody, post-quantum plan (3 of 3 answered)",
+         "evidence_ref": "https://acme.example/security"},
+        {"name": "Beta Card Switch", "area": "Third-party vendors", "status": "not sent", "level": "E0",
+         "level_label": "Unknown", "attested_on": None, "renew_by": None, "scope": "0 of 3 answered",
+         "evidence_ref": ""},
+    ))
+    story = build_story(view)
+    rows = records(find_table(story, RECORDED_VENDOR_HEADERS))
+    assert len(rows) == 2
+    assert rows[0] == {
+        "Vendor": "Acme Payments Gateway", "Area": "Third-party vendors", "Status": "answered",
+        "Evidence level": "E2 Documented", "Attestation date": "2026-11-12",
+        "Scope": "TLS versions and cipher suites, key custody, post-quantum plan (3 of 3 answered)",
+        "Evidence ref": "https://acme.example/security", "Renew by": "2027-11-12", "Owner (assessor)": "",
+    }
+    assert (rows[1]["Vendor"], rows[1]["Attestation date"], rows[1]["Evidence ref"]) == (
+        "Beta Card Switch", "not answered", DASH)
+    further = body_rows(find_table(story, VENDOR_HEADERS))  # write-in rows for vendors not asked yet
+    assert len(further) == 10 and all(cell_text(cell) == "" for row in further for cell in row)
 
 
 def test_signoff_block_is_blank_apart_from_the_roles(base_story):

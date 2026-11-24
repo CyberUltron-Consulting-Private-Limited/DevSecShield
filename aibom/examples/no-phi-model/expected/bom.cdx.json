@@ -5,12 +5,22 @@
   "version": 1,
   "metadata": {
     "timestamp": "2026-06-21T00:00:00Z",
-    "tools": [
-      {
-        "name": "clinithread-aibom",
-        "version": "0.1.0"
-      }
-    ],
+    "tools": {
+      "components": [
+        {
+          "type": "application",
+          "publisher": "Zero Shield",
+          "name": "DevSecShield AI BOM",
+          "version": "0.1.0",
+          "externalReferences": [
+            {
+              "type": "website",
+              "url": "https://zeroshield.ai"
+            }
+          ]
+        }
+      ]
+    },
     "component": {
       "type": "application",
       "name": "BoneAge-Research-Tool",

@@ -32,8 +32,10 @@ value its sources name), ``zs:data_classification`` (the most sensitive of its s
 ``zs:used_by_code`` per scan component that uses it; the metadata says ``zs:correlation`` ``included`` (or ``error``
 when the stored links could not be refreshed: the last stored ones are used).
 
-Signature: the estate export is not signed; the route says so (``X-Cbom-Signature: unsigned``) and sends the SHA-256 of
-the exact bytes, which anyone can check outside ZeroShield.
+Signature (D11, audit A-01): the JSON carries an embedded JSF ES256 signature (``bom_signing``), and the route sends a
+detached ES256 signature of the exact bytes of either format (``X-ZS-Signature``) with their SHA-256; the public key is
+published at ``GET /{team}/bom-signing-keys``. ``zs:signature`` in the metadata names the key (``unsigned`` only when
+the deployment has no signing key).
 """
 from __future__ import annotations
 
@@ -201,8 +203,15 @@ def _document(session: Session, team_id: int, f: Filters, now: _dt.datetime
             "properties": [
                 {"name": "zs:scope", "value": "estate"},
                 {"name": "zs:team_id", "value": str(team_id)},
+                # the three counts the documents reconcile (SOW audit A-09): distinct assets of the estate; asset
+                # components in this file (one per distinct asset, capped); the certificate part components
+                # (zs:part_of = certificate: signature algorithms, public keys) come on top and are not assets
                 {"name": "zs:asset_count", "value": str(total)},
-                {"name": "zs:component_count", "value": str(min(total, cap))},
+                {"name": "zs:asset_components", "value": str(min(total, cap))},
+                {"name": "zs:count_basis", "value": "zs:asset_count = distinct assets of the estate; "
+                                                    "zs:asset_components = asset components in this file; "
+                                                    "components with zs:part_of = certificate are parts of "
+                                                    "certificates, not assets"},
                 {"name": "zs:truncated", "value": str(total > cap).lower()},
                 *[{"name": f"zs:filter:{k}", "value": v} for k, v in f.public().items()],
                 {"name": "zs:kb_version", "value": crypto_kb.version()},
@@ -213,7 +222,7 @@ def _document(session: Session, team_id: int, f: Filters, now: _dt.datetime
                 *[{"name": f"zs:register_q_count:{g or 'none'}", "value": str(n)} for g, n in sorted(
                     grades.items(), key=lambda kv: str(kv[0]))],
                 {"name": "zs:estate_stale", "value": "true" if stale and stale.get("stale") else "false"},
-                {"name": "zs:signature", "value": "unsigned"},
+                {"name": "zs:signature", "value": _signature_value()},
                 {"name": "zs:cert_hygiene", "value": hygiene_status},
                 {"name": "zs:correlation", "value": "error" if links_status == "error" else "included"},
             ],
@@ -287,27 +296,28 @@ def _uuid(digest: str, now: _dt.datetime) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"zeroshield:estate:{digest}:{iso_z(now)}"))
 
 
+def _signature_value() -> str:
+    from backend.utilities.cbom_sources import bom_signing as SIGN
+
+    try:
+        return f"JSF {SIGN.ALG} {SIGN.keyring().active.kid} (XML: detached, X-ZS-Signature)"
+    except SIGN.SigningUnavailable:
+        return "unsigned"
+
+
 def write(session: Session, team_id: int, f: Filters, now: _dt.datetime, fmt: str, out: BinaryIO) -> None:
-    """Write the estate CBOM to ``out`` (JSON or XML), one component at a time."""
+    """Write the estate CBOM to ``out`` (JSON with its embedded JSF signature, or XML), one component at a time, with
+    its ``dependencies`` (``cdx_write``)."""
+    from backend.utilities.cbom_sources import cdx_write
+
     head, components, vulns = _document(session, team_id, f, now)
-    if fmt == "xml":
-        from backend.utilities.cbom_sources import cdx_xml
-
-        cdx_xml.write_xml(out, head, components, vulns)
-        return
-
-    def dumps(value: Any) -> bytes:
-        return json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode()
-
-    out.write(dumps(head)[:-1] + b',"components":[')
-    for index, component in enumerate(components):
-        out.write((b"," if index else b"") + dumps(component))
-    out.write(b'],"vulnerabilities":' + dumps(vulns()) + b"}")
+    cdx_write.write(out, head, components, vulns, fmt)
 
 
 def document(session: Session, team_id: int, f: Filters, now: _dt.datetime) -> dict[str, Any]:
-    head, components, vulns = _document(session, team_id, f, now)
-    return {**head, "components": list(components), "vulnerabilities": vulns()}
+    from backend.utilities.cbom_sources import cdx_write
+
+    return cdx_write.document(*_document(session, team_id, f, now))
 
 
 __all__ = ["Filters", "count", "write", "document", "cert_hygiene", "BATCH"]
