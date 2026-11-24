@@ -399,7 +399,7 @@ _ENUM_WORDS = {
     "Updating": "updating", "ENABLED": "enabled", "DISABLED": "disabled", "DESTROYED": "destroyed",
     "DESTROY_SCHEDULED": "destroy scheduled", "PENDING_GENERATION": "pending generation",
 }
-_SPEC = re.compile(r"^(RSA|HMAC|ECC_NIST|ECC_SECG|ML_DSA|SM2)_?P?(\d+)?K?(\d*)$")
+_SPEC = re.compile(r"^(RSA|HMAC|ECC_NIST|ECC_SECG|SM2)_?P?(\d+)?K?(\d*)$")
 
 
 def readable_enum(value: Any) -> str:
@@ -413,8 +413,6 @@ def readable_enum(value: Any) -> str:
     match = _SPEC.match(text)
     if match and match.group(2):
         family, bits = match.group(1).replace("_", " "), match.group(2)
-        if family == "ML DSA":
-            return f"ML-DSA-{bits}"
         if family.startswith("ECC"):
             return f"{family} {'P-' if 'NIST' in family else 'secp'}{bits}" + ("k1" if match.group(3) else "")
         return f"{family} {bits}"

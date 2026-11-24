@@ -231,6 +231,8 @@ def _policy(path: Path) -> tuple[set[str], tuple[str, ...]]:
     # FIX-B2: the one unique-certificate list (D8 PDF / CSV, D7 count) and the network evidence of D7 (SSH, appliance,
     # IKE, OT, deduplicated TLS endpoints with grades): pure functions over the collection rows, no AI
     backend += ("backend.utilities.cbom_sources.cert_estate", "backend.utilities.cbom_sources.network_estate")
+    # QA Q3-10: the one table of TLS cipher-suite names (IANA and OpenSSL spellings): pure data, no AI
+    backend += ("backend.utilities.cbom_sources.tls_suites",)
     if path.parent == _ROUTERS:
         roots |= {"fastapi", "starlette", "sqlmodel", "sqlalchemy", "rich"}
         backend += (

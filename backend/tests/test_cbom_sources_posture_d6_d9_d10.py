@@ -754,7 +754,8 @@ def test_d7_prints_a_listener_two_sources_collected_once_and_names_both(seeded_v
     cards = kpi_cards(body)
     assert (cards["Endpoints"], cards["Legacy protocol"], cards["Weak suites"]) == ("5", "3", "2")
     weak = rows_under(body, "Endpoint")
-    des = [r for r in weak if r.get("Suite") == "DES-CBC3-SHA"]
+    # QA Q3-10: the IANA name, with the OpenSSL name the AWS policy stored beside it
+    des = [r for r in weak if r.get("Suite") == "TLS_RSA_WITH_3DES_EDE_CBC_SHA (DES-CBC3-SHA)"]
     assert [r["Endpoint"] for r in des] == ["ComplianceShield-LB:443"]
     register = [r for r in weak if "Location" in r and r["Endpoint"] == "ComplianceShield-LB:443"]
     assert len(register) == 1

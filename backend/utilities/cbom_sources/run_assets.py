@@ -450,6 +450,8 @@ def run_item(session: Session, team_id: int, run: CbomCollectionRun, row: CbomCo
     names = INV._source_names(session, team_id, jobs)  # a deleted source: the job's snapshot name (as the list)
     job_names = {j.id: names.get(j.source_id or 0) or (j.params or {}).get("source_name") for j in jobs}
     item = INV.public_asset(row, names, job_names, None, grade, pqc)
+    # the other sources of the run that read the same resource, as the list shows them (QA Q3-01)
+    item["also_seen"] = list(RI.run_fold(session, team_id, int(run.id or 0)).also_seen.get(int(row.id or 0), ()))
     AGILITY.annotate_assets(session, team_id, jobs, [item])
     enrich_items(session, team_id, run, [item])
     return item

@@ -481,8 +481,10 @@ def _fit_cell(value: Any, width: float, styles: Styles, limit: int, max_height: 
 def header_fit_widths(labels: Sequence[str], widths: Sequence[float], style: Any) -> list[float]:
     """Column widths in which every header word fits on one line (staging QA Q3-10: "#Sou / rces", "Classificatio / n",
     "Attestatio / n status" split mid-word).  A column narrower than its longest header word (plus the cell padding)
-    is widened; the points come from the columns with room to spare, in proportion to that room, so the total width
-    never changes.  When the table cannot fit every word the widths are returned unchanged."""
+    is widened; the points come from the other columns in proportion to their width, none giving up more than 15 % of
+    its width or going below its own longest header word, so the total never changes and a column laid out for its
+    content (a date, a long source name) keeps nearly all of it.  When that cannot fit every word the widths are
+    returned unchanged."""
     from reportlab.pdfbase.pdfmetrics import stringWidth
 
     font, size = style.fontName, style.fontSize
@@ -492,11 +494,11 @@ def header_fit_widths(labels: Sequence[str], widths: Sequence[float], style: Any
     short = sum(max(0.0, n - w) for n, w in zip(need, out))
     if short <= 0:
         return out
-    room = [max(0.0, w - n) for n, w in zip(need, out)]
-    spare = sum(room)
+    give = [min(0.15 * w, max(0.0, w - n)) if w >= n else 0.0 for n, w in zip(need, out)]
+    spare = sum(give)
     if spare < short:
         return out
-    return [max(n, w - (r / spare) * short) if w >= n else n for n, w, r in zip(need, out, room)]
+    return [w - (g / spare) * short if w >= n else n for n, w, g in zip(need, out, give)]
 
 
 def dense_table(

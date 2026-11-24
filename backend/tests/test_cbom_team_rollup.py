@@ -2238,11 +2238,16 @@ SHARED_PURE_RULES = {"backend.utilities.cbom_sources.cbom_rows", "backend.utilit
                      "backend.utilities.cbom_sources.posture_mapper"}
 
 
+DB_LOADERS = {"load_team_cbom_view", "load_core_view", "_load_core", "_load_extras"}
+
+
 def test_only_the_db_loader_imports_non_stdlib_modules_and_only_lazily():
     outside = [(n, s) for n, s in _import_sites() if n.split(".")[0] not in sys.stdlib_module_names]
     assert outside, "load_team_cbom_view must import sqlmodel / backend.new_models lazily"
     db = [(n, s) for n, s in outside if n not in SHARED_PURE_RULES]
-    assert {scope for _, scope in db} == {"load_team_cbom_view"}
+    # the DB loader family: load_team_cbom_view and load_core_view (QA Q3-04: the certificate list reads the same core
+    # view as D8) share _load_core; _load_extras holds the register / roadmap / methodology / vendor reads
+    assert {scope for _, scope in db} <= DB_LOADERS
     assert {name.split(".")[0] for name, _ in db} <= {"sqlmodel", "backend"}
     assert all(scope != "<module>" for name, scope in outside if name in SHARED_PURE_RULES)
 
@@ -2270,7 +2275,7 @@ def test_the_only_clock_read_is_in_the_db_loader():
         and isinstance(call.func, ast.Attribute)
         and call.func.attr in clock
     }
-    assert readers == {"load_team_cbom_view"}
+    assert readers == {"load_team_cbom_view", "load_core_view"}  # the two public loaders (now=None: the clock)
 
 
 @pytest.mark.parametrize("isolated", [True, False], ids=["python-S-stdlib-only", "full-venv"])
