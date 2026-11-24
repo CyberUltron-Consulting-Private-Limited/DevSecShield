@@ -33,6 +33,7 @@ from aibom.cbom.weakness import (
     WEAK_CRYPTO_CODES,
 )
 from aibom.emit import get_reporter
+from aibom.emit.cyclonedx import crypto_provides
 from aibom.graph_view import (
     COMPACT_MAX_NODES,
     EXPANDED_MAX_NODES,
@@ -54,6 +55,15 @@ CONFIG_WEAKNESS_CODES = frozenset({
 _WEAKNESS_CODES = WEAK_CRYPTO_CODES | {EXPIRED_CERTIFICATE, "CUSTOM_CRYPTO"} | CONFIG_WEAKNESS_CODES
 
 _SEVERITY_IMPACT = {"error": "High", "warning": "Medium", "note": "Low", "none": "Low"}
+
+
+def _weakens(flag: Any) -> bool:
+    """A finding that makes the asset weak (classically broken). A KDF cost above
+    the NIST floor but below the OWASP minimum (WEAK_KDF_ITERATIONS at note, Low)
+    asks for a higher cost; it does not make PBKDF2 / scrypt / Argon2 broken today."""
+    if flag.code == "WEAK_KDF_ITERATIONS" and flag.severity == "note":
+        return False
+    return flag.code in _WEAKNESS_CODES
 _IMPACT_RANK = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
 
 
@@ -149,7 +159,7 @@ def _finding(comp: AIComponent, result: ScanResult) -> dict[str, Any]:
         "pqc_migration_roadmap": props.get("crypto:pqcMigrationRoadmap"),
         "parameter_set": props.get("crypto:parameterSet"),
         "hybrid": props.get("crypto:hybrid") == "true",
-        "weak": any(c in _WEAKNESS_CODES for c in codes),
+        "weak": any(_weakens(f) for f in result.flags_for(comp.bom_ref)),
         "finding_codes": codes,
         "description": _finding_description(comp, result),
         "location": props.get("crypto:source") or props.get("discovery:source") or "",
@@ -489,9 +499,7 @@ def _crypto_graph(
             "impact": _impact_for(c, result),
             "quantum_vulnerable": (c.properties or {}).get("crypto:quantumVulnerable")
             == "true",
-            "weak": any(
-                f.code in _WEAKNESS_CODES for f in result.flags_for(c.bom_ref)
-            ),
+            "weak": any(_weakens(f) for f in result.flags_for(c.bom_ref)),
             "location": (c.properties or {}).get("discovery:source")
             or (c.properties or {}).get("crypto:source"),
         }
@@ -518,16 +526,10 @@ def _crypto_graph(
                 _add(src, rel, target)
     for e in result.edges:  # native scanner edges (misuse used_by, certificate signed_by, ...)
         _add(e.src, e.rel, e.dst)
-    # library -> algorithm: the crypto libraries each asset's file imports (occurrence pass) "provide" it.
-    lib_by_label = {str(n["label"]).lower(): n["id"] for n in nodes if n["kind"] == "framework"}
-    for c in result.components:
-        libs = (c.properties or {}).get("crypto:libraries")
-        if c.kind != "crypto_asset" or not libs:
-            continue
-        for label in libs.split(","):
-            lib_id = lib_by_label.get(label.strip().lower())
-            if lib_id:
-                _add(lib_id, "provides", c.bom_ref)
+    # library -> algorithm "provides": the emitter's one rule (the library the algorithm's API call names, not every
+    # library its file imports), so a merge of these edges into CycloneDX ``dependencies`` adds nothing it lacks
+    for lib_id, algorithm in crypto_provides(result):
+        _add(lib_id, "provides", algorithm)
 
     nodes.sort(key=lambda n: str(n["id"]))
     edges.sort(key=lambda e: (str(e["source"]), str(e["rel"]), str(e["target"])))

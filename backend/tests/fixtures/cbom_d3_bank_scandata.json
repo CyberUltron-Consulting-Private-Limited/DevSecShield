@@ -1,0 +1,6362 @@
+{
+ "advisory_data": {
+  "advisories": 1169,
+  "age_days": 9,
+  "generated_at": "2026-11-14",
+  "max_age_days": 30,
+  "origin": "builtin",
+  "problems": [],
+  "sha256": "6da5bf0343477d51cd203d6dea2eab899f995a8682ecfba025ef756286ca3449",
+  "signed": false,
+  "snapshot_version": "2026.11.14.1",
+  "source": "osv-snapshot",
+  "stale": false
+ },
+ "cbom_compliance": {
+  "bsi_tr_02102": {
+   "coverage": 0.667,
+   "fail": 1,
+   "na": 0,
+   "not_bom_evidenceable": 1,
+   "out_of_scope": 0,
+   "pass": 2,
+   "pass_with_evidence": 0,
+   "requirements": [
+    {
+     "attestable": false,
+     "evidence": "4 algorithm(s) not a BSI TR-02102-1 approved mechanism (AES-only symmetric; no ChaCha20/FALCON/deprecated primitives)",
+     "id": "BSI-1",
+     "refs": [
+      "crypto-algo-argon2-app-kdf-py",
+      "crypto-algo-pbkdf2-app-encryption-py",
+      "crypto-algo-pbkdf2-app-kdf-py",
+      "crypto-algo-scrypt-app-kdf-py"
+     ],
+     "source": "BSI TR-02102-1",
+     "title": "Only BSI-approved mechanisms in use",
+     "verdict": "fail"
+    },
+    {
+     "attestable": false,
+     "evidence": "all algorithms meet the BSI 120-bit floor",
+     "id": "BSI-2",
+     "refs": [
+      "crypto-algo-aes-128-cbc-app-encryption-py",
+      "crypto-algo-aes-cbc-app-kdf-py",
+      "crypto-algo-argon2-app-kdf-py",
+      "crypto-algo-fernet-app-encryption-py",
+      "crypto-algo-hkdf-app-kdf-py",
+      "crypto-algo-hmac-sha256-app-encryption-py",
+      "crypto-algo-pbkdf2-app-encryption-py",
+      "crypto-algo-pbkdf2-app-kdf-py",
+      "crypto-algo-scrypt-app-kdf-py",
+      "crypto-algo-sha-256-app-encryption-py",
+      "crypto-algo-sha-256-app-kdf-py",
+      "crypto-algo-sha-512-app-kdf-py"
+     ],
+     "source": "BSI TR-02102-1",
+     "title": "\u2265 120-bit effective strength (RSA \u2265 3000, EC \u2265 250)",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no weak algorithms or ECB modes detected",
+     "id": "BSI-3",
+     "refs": [],
+     "source": "BSI TR-02102-1",
+     "title": "No weak algorithm or ECB mode",
+     "verdict": "pass"
+    },
+    {
+     "attestable": true,
+     "evidence": "defined cryptographic key-periods + renewal cadence (BSI TR-02102-1 \u00a7keys) is operational key-lifecycle policy not modelled in a crypto inventory",
+     "id": "BSI-4",
+     "refs": [],
+     "source": "BSI TR-02102-1",
+     "title": "Key lifecycle: defined crypto-periods + key renewal",
+     "verdict": "not_bom_evidenceable"
+    }
+   ]
+  },
+  "cert_in_cbom": {
+   "coverage": 0.909,
+   "fail": 2,
+   "na": 0,
+   "not_bom_evidenceable": 21,
+   "out_of_scope": 0,
+   "pass": 20,
+   "pass_with_evidence": 0,
+   "requirements": [
+    {
+     "attestable": false,
+     "evidence": "all 12 algorithm asset(s) carry name",
+     "id": "T9-Algorithms-Name",
+     "refs": [
+      "crypto-algo-aes-128-cbc-app-encryption-py",
+      "crypto-algo-aes-cbc-app-kdf-py",
+      "crypto-algo-argon2-app-kdf-py",
+      "crypto-algo-fernet-app-encryption-py",
+      "crypto-algo-hkdf-app-kdf-py",
+      "crypto-algo-hmac-sha256-app-encryption-py",
+      "crypto-algo-pbkdf2-app-encryption-py",
+      "crypto-algo-pbkdf2-app-kdf-py",
+      "crypto-algo-scrypt-app-kdf-py",
+      "crypto-algo-sha-256-app-encryption-py",
+      "crypto-algo-sha-256-app-kdf-py",
+      "crypto-algo-sha-512-app-kdf-py"
+     ],
+     "source": "Table 9 / Algorithms / Name",
+     "title": "Algorithm Name",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "all 12 algorithm asset(s) carry crypto:assetType",
+     "id": "T9-Algorithms-AssetType",
+     "refs": [
+      "crypto-algo-aes-128-cbc-app-encryption-py",
+      "crypto-algo-aes-cbc-app-kdf-py",
+      "crypto-algo-argon2-app-kdf-py",
+      "crypto-algo-fernet-app-encryption-py",
+      "crypto-algo-hkdf-app-kdf-py",
+      "crypto-algo-hmac-sha256-app-encryption-py",
+      "crypto-algo-pbkdf2-app-encryption-py",
+      "crypto-algo-pbkdf2-app-kdf-py",
+      "crypto-algo-scrypt-app-kdf-py",
+      "crypto-algo-sha-256-app-encryption-py",
+      "crypto-algo-sha-256-app-kdf-py",
+      "crypto-algo-sha-512-app-kdf-py"
+     ],
+     "source": "Table 9 / Algorithms / Asset Type",
+     "title": "Algorithm Asset Type",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "all 12 algorithm asset(s) carry crypto:primitive",
+     "id": "T9-Algorithms-Primitive",
+     "refs": [
+      "crypto-algo-aes-128-cbc-app-encryption-py",
+      "crypto-algo-aes-cbc-app-kdf-py",
+      "crypto-algo-argon2-app-kdf-py",
+      "crypto-algo-fernet-app-encryption-py",
+      "crypto-algo-hkdf-app-kdf-py",
+      "crypto-algo-hmac-sha256-app-encryption-py",
+      "crypto-algo-pbkdf2-app-encryption-py",
+      "crypto-algo-pbkdf2-app-kdf-py",
+      "crypto-algo-scrypt-app-kdf-py",
+      "crypto-algo-sha-256-app-encryption-py",
+      "crypto-algo-sha-256-app-kdf-py",
+      "crypto-algo-sha-512-app-kdf-py"
+     ],
+     "source": "Table 9 / Algorithms / Primitive",
+     "title": "Algorithm Primitive",
+     "verdict": "pass"
+    },
+    {
+     "attestable": true,
+     "evidence": "T9-Algorithms-Mode: 10/12 algorithm asset(s) lack crypto:mode; unknown \u2192 not BOM-evidenceable (Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification.)",
+     "id": "T9-Algorithms-Mode",
+     "refs": [
+      "crypto-algo-argon2-app-kdf-py",
+      "crypto-algo-fernet-app-encryption-py",
+      "crypto-algo-hkdf-app-kdf-py",
+      "crypto-algo-hmac-sha256-app-encryption-py",
+      "crypto-algo-pbkdf2-app-encryption-py",
+      "crypto-algo-pbkdf2-app-kdf-py",
+      "crypto-algo-scrypt-app-kdf-py",
+      "crypto-algo-sha-256-app-encryption-py",
+      "crypto-algo-sha-256-app-kdf-py",
+      "crypto-algo-sha-512-app-kdf-py"
+     ],
+     "source": "Table 9 / Algorithms / Mode",
+     "title": "Algorithm Mode",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "T9-Algorithms-Crypto-Functions: fact not BOM-evidenceable from static crypto inventory (Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification.)",
+     "id": "T9-Algorithms-Crypto-Functions",
+     "refs": [],
+     "source": "Table 9 / Algorithms / Crypto Functions",
+     "title": "Algorithm Crypto Functions",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": false,
+     "evidence": "T9-Algorithms-Classical-Security-Level: 7/12 algorithm asset(s) lack crypto:securityStrengthBits",
+     "id": "T9-Algorithms-Classical-Security-Level",
+     "refs": [
+      "crypto-algo-aes-cbc-app-kdf-py",
+      "crypto-algo-argon2-app-kdf-py",
+      "crypto-algo-hkdf-app-kdf-py",
+      "crypto-algo-hmac-sha256-app-encryption-py",
+      "crypto-algo-pbkdf2-app-encryption-py",
+      "crypto-algo-pbkdf2-app-kdf-py",
+      "crypto-algo-scrypt-app-kdf-py"
+     ],
+     "source": "Table 9 / Algorithms / Classical security level",
+     "title": "Algorithm Classical security level",
+     "verdict": "fail"
+    },
+    {
+     "attestable": true,
+     "evidence": "T9-Algorithms-OID: crypto:oid not present on algorithm assets; unknown \u2192 not BOM-evidenceable (Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification.)",
+     "id": "T9-Algorithms-OID",
+     "refs": [
+      "crypto-algo-aes-128-cbc-app-encryption-py",
+      "crypto-algo-aes-cbc-app-kdf-py",
+      "crypto-algo-argon2-app-kdf-py",
+      "crypto-algo-fernet-app-encryption-py",
+      "crypto-algo-hkdf-app-kdf-py",
+      "crypto-algo-hmac-sha256-app-encryption-py",
+      "crypto-algo-pbkdf2-app-encryption-py",
+      "crypto-algo-pbkdf2-app-kdf-py",
+      "crypto-algo-scrypt-app-kdf-py",
+      "crypto-algo-sha-256-app-encryption-py",
+      "crypto-algo-sha-256-app-kdf-py",
+      "crypto-algo-sha-512-app-kdf-py"
+     ],
+     "source": "Table 9 / Algorithms / OID",
+     "title": "Algorithm OID",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "T9-Algorithms-List: fact not BOM-evidenceable from static crypto inventory (Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification.)",
+     "id": "T9-Algorithms-List",
+     "refs": [],
+     "source": "Table 9 / Algorithms / List",
+     "title": "Algorithm List",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": false,
+     "evidence": "all 5 related-crypto-material asset(s) carry name",
+     "id": "T9-Keys-Name",
+     "refs": [
+      "crypto-material-initialization-vector-app-kdf-py-l28c49",
+      "crypto-material-salt-app-encryption-py-l12c14",
+      "crypto-material-salt-app-kdf-py-l13c52",
+      "crypto-material-salt-app-kdf-py-l21c60",
+      "crypto-material-salt-app-kdf-py-l9c15"
+     ],
+     "source": "Table 9 / Keys / Name",
+     "title": "Key Name",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "all 5 related-crypto-material asset(s) carry crypto:assetType",
+     "id": "T9-Keys-AssetType",
+     "refs": [
+      "crypto-material-initialization-vector-app-kdf-py-l28c49",
+      "crypto-material-salt-app-encryption-py-l12c14",
+      "crypto-material-salt-app-kdf-py-l13c52",
+      "crypto-material-salt-app-kdf-py-l21c60",
+      "crypto-material-salt-app-kdf-py-l9c15"
+     ],
+     "source": "Table 9 / Keys / Asset Type",
+     "title": "Key Asset Type",
+     "verdict": "pass"
+    },
+    {
+     "attestable": true,
+     "evidence": "T9-Keys-Id: crypto:id not present on related-crypto-material assets; unknown \u2192 not BOM-evidenceable (Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification.)",
+     "id": "T9-Keys-Id",
+     "refs": [
+      "crypto-material-initialization-vector-app-kdf-py-l28c49",
+      "crypto-material-salt-app-encryption-py-l12c14",
+      "crypto-material-salt-app-kdf-py-l13c52",
+      "crypto-material-salt-app-kdf-py-l21c60",
+      "crypto-material-salt-app-kdf-py-l9c15"
+     ],
+     "source": "Table 9 / Keys / id",
+     "title": "Key id",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "T9-Keys-State: crypto:state not present on related-crypto-material assets; unknown \u2192 not BOM-evidenceable (Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification.)",
+     "id": "T9-Keys-State",
+     "refs": [
+      "crypto-material-initialization-vector-app-kdf-py-l28c49",
+      "crypto-material-salt-app-encryption-py-l12c14",
+      "crypto-material-salt-app-kdf-py-l13c52",
+      "crypto-material-salt-app-kdf-py-l21c60",
+      "crypto-material-salt-app-kdf-py-l9c15"
+     ],
+     "source": "Table 9 / Keys / state",
+     "title": "Key state",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": false,
+     "evidence": "T9-Keys-Size: 5/5 related-crypto-material asset(s) lack crypto:keySize",
+     "id": "T9-Keys-Size",
+     "refs": [
+      "crypto-material-initialization-vector-app-kdf-py-l28c49",
+      "crypto-material-salt-app-encryption-py-l12c14",
+      "crypto-material-salt-app-kdf-py-l13c52",
+      "crypto-material-salt-app-kdf-py-l21c60",
+      "crypto-material-salt-app-kdf-py-l9c15"
+     ],
+     "source": "Table 9 / Keys / size",
+     "title": "Key size",
+     "verdict": "fail"
+    },
+    {
+     "attestable": true,
+     "evidence": "T9-Keys-Creation-Date: crypto:creationDate not present on related-crypto-material assets; unknown \u2192 not BOM-evidenceable (Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification.)",
+     "id": "T9-Keys-Creation-Date",
+     "refs": [
+      "crypto-material-initialization-vector-app-kdf-py-l28c49",
+      "crypto-material-salt-app-encryption-py-l12c14",
+      "crypto-material-salt-app-kdf-py-l13c52",
+      "crypto-material-salt-app-kdf-py-l21c60",
+      "crypto-material-salt-app-kdf-py-l9c15"
+     ],
+     "source": "Table 9 / Keys / Creation Date",
+     "title": "Key Creation Date",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "T9-Keys-Activation-Date: crypto:activationDate not present on related-crypto-material assets; unknown \u2192 not BOM-evidenceable (Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification.)",
+     "id": "T9-Keys-Activation-Date",
+     "refs": [
+      "crypto-material-initialization-vector-app-kdf-py-l28c49",
+      "crypto-material-salt-app-encryption-py-l12c14",
+      "crypto-material-salt-app-kdf-py-l13c52",
+      "crypto-material-salt-app-kdf-py-l21c60",
+      "crypto-material-salt-app-kdf-py-l9c15"
+     ],
+     "source": "Table 9 / Keys / Activation Date",
+     "title": "Key Activation Date",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": false,
+     "evidence": "no protocol assets in inventory; T9-Protocols-Name vacuously satisfied",
+     "id": "T9-Protocols-Name",
+     "refs": [],
+     "source": "Table 9 / Protocols / Name",
+     "title": "Protocol Name",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no protocol assets in inventory; T9-Protocols-AssetType vacuously satisfied",
+     "id": "T9-Protocols-AssetType",
+     "refs": [],
+     "source": "Table 9 / Protocols / Asset Type",
+     "title": "Protocol Asset Type",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no protocol assets in inventory; T9-Protocols-Version vacuously satisfied",
+     "id": "T9-Protocols-Version",
+     "refs": [],
+     "source": "Table 9 / Protocols / Version",
+     "title": "Protocol Version",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no protocol assets in inventory; T9-Protocols-Cipher-Suites vacuously satisfied",
+     "id": "T9-Protocols-Cipher-Suites",
+     "refs": [],
+     "source": "Table 9 / Protocols / Cipher Suites",
+     "title": "Protocol Cipher Suites",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no protocol assets in inventory; T9-Protocols-OID vacuously satisfied",
+     "id": "T9-Protocols-OID",
+     "refs": [],
+     "source": "Table 9 / Protocols / OID",
+     "title": "Protocol OID",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no certificate assets in inventory; T9-Certificates-Name vacuously satisfied",
+     "id": "T9-Certificates-Name",
+     "refs": [],
+     "source": "Table 9 / Certificates / Name",
+     "title": "Certificate Name",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no certificate assets in inventory; T9-Certificates-AssetType vacuously satisfied",
+     "id": "T9-Certificates-AssetType",
+     "refs": [],
+     "source": "Table 9 / Certificates / Asset Type",
+     "title": "Certificate Asset Type",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no certificate assets in inventory; T9-Certificates-Subject-Name vacuously satisfied",
+     "id": "T9-Certificates-Subject-Name",
+     "refs": [],
+     "source": "Table 9 / Certificates / Subject Name",
+     "title": "Certificate Subject Name",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no certificate assets in inventory; T9-Certificates-Issuer-Name vacuously satisfied",
+     "id": "T9-Certificates-Issuer-Name",
+     "refs": [],
+     "source": "Table 9 / Certificates / Issuer Name",
+     "title": "Certificate Issuer Name",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no certificate assets in inventory; T9-Certificates-Not-Valid-Before vacuously satisfied",
+     "id": "T9-Certificates-Not-Valid-Before",
+     "refs": [],
+     "source": "Table 9 / Certificates / Not Valid Before",
+     "title": "Certificate Not Valid Before",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no certificate assets in inventory; T9-Certificates-Not-Valid-After vacuously satisfied",
+     "id": "T9-Certificates-Not-Valid-After",
+     "refs": [],
+     "source": "Table 9 / Certificates / Not Valid After",
+     "title": "Certificate Not Valid After",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no certificate assets in inventory; T9-Certificates-Signature-Algorithm-Reference vacuously satisfied",
+     "id": "T9-Certificates-Signature-Algorithm-Reference",
+     "refs": [],
+     "source": "Table 9 / Certificates / Signature Algorithm Reference",
+     "title": "Certificate Signature Algorithm Reference",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no certificate assets in inventory; T9-Certificates-Subject-Public-Key-Reference vacuously satisfied",
+     "id": "T9-Certificates-Subject-Public-Key-Reference",
+     "refs": [],
+     "source": "Table 9 / Certificates / Subject Public Key Reference",
+     "title": "Certificate Subject Public Key Reference",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no certificate assets in inventory; T9-Certificates-Certificate-Format vacuously satisfied",
+     "id": "T9-Certificates-Certificate-Format",
+     "refs": [],
+     "source": "Table 9 / Certificates / Certificate Format",
+     "title": "Certificate Certificate Format",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no certificate assets in inventory; T9-Certificates-Certificate-Extension vacuously satisfied",
+     "id": "T9-Certificates-Certificate-Extension",
+     "refs": [],
+     "source": "Table 9 / Certificates / Certificate Extension",
+     "title": "Certificate Certificate Extension",
+     "verdict": "pass"
+    },
+    {
+     "attestable": true,
+     "evidence": "Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification. Process attestation for 8.4.1.1: Attest that CBOM is required in cryptography-related procurements..",
+     "id": "8.4.1.1",
+     "refs": [],
+     "source": "\u00a78.4.1.1",
+     "title": "Require CBOM in procurements",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification. Process attestation for 8.4.1.2: Attest that suppliers of cryptographic solutions deliver a complete CBOM..",
+     "id": "8.4.1.2",
+     "refs": [],
+     "source": "\u00a78.4.1.2",
+     "title": "Supplier must provide complete CBOM",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification. Process attestation for 8.4.1.3: Attest that an accurate, current CBOM is maintained for cryptographic systems in use..",
+     "id": "8.4.1.3",
+     "refs": [],
+     "source": "\u00a78.4.1.3",
+     "title": "Maintain CBOM for crypto systems",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification. Process attestation for 8.4.1.4: Attest that CBOMs provide transparency into crypto implementations (HW/SW/algorithms/protocols)..",
+     "id": "8.4.1.4",
+     "refs": [],
+     "source": "\u00a78.4.1.4",
+     "title": "Disclose crypto implementation detail",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification. Process attestation for 8.4.1.5: Attest that CBOMs are generated in SPDX or CycloneDX formats..",
+     "id": "8.4.1.5",
+     "refs": [],
+     "source": "\u00a78.4.1.5",
+     "title": "Emit CBOM in SPDX or CycloneDX",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification. Process attestation for 8.4.1.6: Attest that VEX documents are issued when cryptographic component vulnerabilities are discovered..",
+     "id": "8.4.1.6",
+     "refs": [],
+     "source": "\u00a78.4.1.6",
+     "title": "Issue VEX for crypto vulnerabilities",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification. Process attestation for 8.4.1.7: Attest that CBOM data is integrated with vulnerability databases and CERT-In advisories..",
+     "id": "8.4.1.7",
+     "refs": [],
+     "source": "\u00a78.4.1.7",
+     "title": "Integrate CBOM with vuln intel feeds",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification. Process attestation for 8.4.1.8: Attest that consumers maintain an internal CBOM aligned with supplier data..",
+     "id": "8.4.1.8",
+     "refs": [],
+     "source": "\u00a78.4.1.8",
+     "title": "Align internal CBOM with supplier data",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification. Process attestation for 8.4.1.9: Attest that security teams incorporate CBOM inventories into vulnerability-management workflows..",
+     "id": "8.4.1.9",
+     "refs": [],
+     "source": "\u00a78.4.1.9",
+     "title": "Include CBOM in vuln management",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification. Process attestation for 8.4.1.10: Attest that periodic audits verify CBOM completeness, accuracy, and policy compliance..",
+     "id": "8.4.1.10",
+     "refs": [],
+     "source": "\u00a78.4.1.10",
+     "title": "Audit CBOM completeness",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification. Process attestation for 8.4.1.11: Attest that CBOM component data is cross-referenced with VEX status for prioritization..",
+     "id": "8.4.1.11",
+     "refs": [],
+     "source": "\u00a78.4.1.11",
+     "title": "Cross-reference CBOM with VEX",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification. Process attestation for 8.4.1.12: Attest that CBOM data is stored and transmitted with encryption, access control, and integrity controls..",
+     "id": "8.4.1.12",
+     "refs": [],
+     "source": "\u00a78.4.1.12",
+     "title": "Protect CBOM data in storage/transit",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification. Process attestation for 8.4.1.13: Attest that workflows update the CBOM when cryptographic components or algorithms change..",
+     "id": "8.4.1.13",
+     "refs": [],
+     "source": "\u00a78.4.1.13",
+     "title": "Update CBOM as crypto components change",
+     "verdict": "not_bom_evidenceable"
+    }
+   ]
+  },
+  "cnsa_2_0": {
+   "coverage": 0.667,
+   "fail": 1,
+   "na": 0,
+   "not_bom_evidenceable": 1,
+   "out_of_scope": 0,
+   "pass": 2,
+   "pass_with_evidence": 0,
+   "requirements": [
+    {
+     "attestable": false,
+     "evidence": "4 symmetric/hash algorithm(s) below the CNSA 2.0 floor (NSS requires AES-256 and SHA-384/512; e.g. AES-128/192, SHA-256)",
+     "id": "CNSA-1",
+     "refs": [
+      "crypto-algo-aes-128-cbc-app-encryption-py",
+      "crypto-algo-hmac-sha256-app-encryption-py",
+      "crypto-algo-sha-256-app-encryption-py",
+      "crypto-algo-sha-256-app-kdf-py"
+     ],
+     "source": "NSA CNSA 2.0",
+     "title": "CNSA 2.0 symmetric + hashing: AES-256 and SHA-384/512 only",
+     "verdict": "fail"
+    },
+    {
+     "attestable": false,
+     "evidence": "no quantum-resistant algorithms adopted yet to evaluate",
+     "id": "CNSA-2",
+     "refs": [],
+     "source": "NSA CNSA 2.0",
+     "title": "Quantum-resistant algorithms at the CNSA 2.0 parameter set (ML-KEM-1024 / ML-DSA-87 / LMS / XMSS)",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no quantum-vulnerable public-key cryptography \u2014 no CNSA 2.0 migration pending",
+     "id": "CNSA-3",
+     "refs": [],
+     "source": "NSA CNSA 2.0",
+     "title": "Quantum-vulnerable public-key cryptography identified for CNSA 2.0 migration",
+     "verdict": "pass"
+    },
+    {
+     "attestable": true,
+     "evidence": "CNSA 2.0 NSS transition-timeline attestation (software/firmware signing by 2030, default across NSS by 2033, exclusive by 2035) is a program milestone outside a static crypto inventory",
+     "id": "CNSA-4",
+     "refs": [],
+     "source": "NSA CNSA 2.0",
+     "title": "CNSA 2.0 NSS transition-timeline milestones met",
+     "verdict": "not_bom_evidenceable"
+    }
+   ]
+  },
+  "disclaimer": "Regulatory mappings are advisory only; a CBOM creates visibility of cryptographic assets, not assurance, and does not by itself satisfy CERT-In, RBI, SEBI CSCRF, NIST or CNSA 2.0 obligations. A qualified reviewer must sign off.",
+  "eu_cra": {
+   "coverage": 1.0,
+   "fail": 0,
+   "na": 0,
+   "not_bom_evidenceable": 1,
+   "out_of_scope": 0,
+   "pass": 2,
+   "pass_with_evidence": 0,
+   "requirements": [
+    {
+     "attestable": false,
+     "evidence": "no known-vulnerable cryptography detected",
+     "id": "CRA-1",
+     "refs": [],
+     "source": "EU CRA Annex I",
+     "title": "No known-vulnerable cryptography in the product",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no hardcoded keys/secrets detected",
+     "id": "CRA-2",
+     "refs": [],
+     "source": "EU CRA Annex I",
+     "title": "No hardcoded keys / secrets in the product",
+     "verdict": "pass"
+    },
+    {
+     "attestable": true,
+     "evidence": "coordinated vulnerability disclosure process + SBOM provision are organizational obligations not visible in a crypto inventory",
+     "id": "CRA-3",
+     "refs": [],
+     "source": "EU CRA Annex I",
+     "title": "Coordinated vulnerability disclosure + SBOM",
+     "verdict": "not_bom_evidenceable"
+    }
+   ]
+  },
+  "eu_dora": {
+   "coverage": 1.0,
+   "fail": 0,
+   "na": 0,
+   "not_bom_evidenceable": 1,
+   "out_of_scope": 0,
+   "pass": 2,
+   "pass_with_evidence": 0,
+   "requirements": [
+    {
+     "attestable": false,
+     "evidence": "no transport protocols inventoried",
+     "id": "DORA-1",
+     "refs": [],
+     "source": "EU DORA (Reg. 2022/2554) Art.9",
+     "title": "Strong transport encryption (TLS 1.2+)",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "all algorithms in use are approved",
+     "id": "DORA-2",
+     "refs": [
+      "crypto-algo-aes-128-cbc-app-encryption-py",
+      "crypto-algo-aes-cbc-app-kdf-py",
+      "crypto-algo-argon2-app-kdf-py",
+      "crypto-algo-fernet-app-encryption-py",
+      "crypto-algo-hkdf-app-kdf-py",
+      "crypto-algo-hmac-sha256-app-encryption-py",
+      "crypto-algo-pbkdf2-app-encryption-py",
+      "crypto-algo-pbkdf2-app-kdf-py",
+      "crypto-algo-scrypt-app-kdf-py",
+      "crypto-algo-sha-256-app-encryption-py",
+      "crypto-algo-sha-256-app-kdf-py",
+      "crypto-algo-sha-512-app-kdf-py"
+     ],
+     "source": "EU DORA (Reg. 2022/2554) Art.9",
+     "title": "Approved cryptographic algorithms only",
+     "verdict": "pass"
+    },
+    {
+     "attestable": true,
+     "evidence": "ICT third-party risk register + the encryption policy itself are governance documents outside a crypto inventory",
+     "id": "DORA-3",
+     "refs": [],
+     "source": "EU DORA (Reg. 2022/2554) Art.9",
+     "title": "ICT third-party risk + encryption policy",
+     "verdict": "not_bom_evidenceable"
+    }
+   ]
+  },
+  "fips_140_3": {
+   "coverage": 0.667,
+   "fail": 1,
+   "na": 0,
+   "not_bom_evidenceable": 1,
+   "out_of_scope": 0,
+   "pass": 2,
+   "pass_with_evidence": 0,
+   "requirements": [
+    {
+     "attestable": false,
+     "evidence": "2 algorithm(s) not FIPS-approved security functions (SP 800-140C allowlist; e.g. DES/3DES/RC4/MD5/plain-DSA/ChaCha20/FALCON)",
+     "id": "FIPS-1",
+     "refs": [
+      "crypto-algo-argon2-app-kdf-py",
+      "crypto-algo-scrypt-app-kdf-py"
+     ],
+     "source": "FIPS 140-3 / SP 800-140C / SP 800-131A",
+     "title": "Only FIPS-approved security functions in use",
+     "verdict": "fail"
+    },
+    {
+     "attestable": false,
+     "evidence": "no undersized asymmetric keys detected",
+     "id": "FIPS-2",
+     "refs": [],
+     "source": "FIPS 140-3 / SP 800-140C / SP 800-131A",
+     "title": "Approved key sizes (asymmetric \u2265 2048-bit)",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no disallowed algorithms or ECB modes detected",
+     "id": "FIPS-3",
+     "refs": [],
+     "source": "FIPS 140-3 / SP 800-140C / SP 800-131A",
+     "title": "No disallowed algorithm or ECB mode (SP 800-131A)",
+     "verdict": "pass"
+    },
+    {
+     "attestable": true,
+     "evidence": "a CMVP module-validation certificate (the algorithm running inside a FIPS-validated boundary) is process/attestation evidence not derivable from source",
+     "id": "FIPS-4",
+     "refs": [],
+     "source": "FIPS 140-3 / SP 800-140C / SP 800-131A",
+     "title": "CMVP-validated cryptographic module (certificate)",
+     "verdict": "not_bom_evidenceable"
+    }
+   ]
+  },
+  "nist_1800_38b": {
+   "coverage": 1.0,
+   "fail": 0,
+   "na": 0,
+   "not_bom_evidenceable": 1,
+   "out_of_scope": 0,
+   "pass": 3,
+   "pass_with_evidence": 0,
+   "requirements": [
+    {
+     "attestable": false,
+     "evidence": "no quantum-vulnerable public-key algorithms in use",
+     "id": "PQC-1",
+     "refs": [],
+     "source": "NIST SP 1800-38B",
+     "title": "No quantum-vulnerable public-key cryptography in use",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no quantum-vulnerable assets to grade",
+     "id": "PQC-2",
+     "refs": [],
+     "source": "NIST SP 1800-38B",
+     "title": "Quantum-vulnerable assets graded (nistQuantumSecurityLevel)",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no quantum-vulnerable assets to migrate",
+     "id": "PQC-3",
+     "refs": [],
+     "source": "NIST SP 1800-38B",
+     "title": "NIST PQC migration target identified per quantum-vulnerable asset",
+     "verdict": "pass"
+    },
+    {
+     "attestable": true,
+     "evidence": "a crypto-agile / hybrid (classical+PQC) deployment architecture is design evidence not visible in a crypto inventory",
+     "id": "PQC-4",
+     "refs": [],
+     "source": "NIST SP 1800-38B",
+     "title": "Crypto-agile / hybrid deployment architecture",
+     "verdict": "not_bom_evidenceable"
+    }
+   ]
+  },
+  "nist_1800_38c": {
+   "coverage": 1.0,
+   "fail": 0,
+   "na": 0,
+   "not_bom_evidenceable": 1,
+   "out_of_scope": 0,
+   "pass": 3,
+   "pass_with_evidence": 0,
+   "requirements": [
+    {
+     "attestable": false,
+     "evidence": "cryptographic discovery identified the primitive of 12 algorithm(s)",
+     "id": "QR-1",
+     "refs": [
+      "crypto-algo-aes-128-cbc-app-encryption-py",
+      "crypto-algo-aes-cbc-app-kdf-py",
+      "crypto-algo-argon2-app-kdf-py",
+      "crypto-algo-fernet-app-encryption-py",
+      "crypto-algo-hkdf-app-kdf-py",
+      "crypto-algo-hmac-sha256-app-encryption-py",
+      "crypto-algo-pbkdf2-app-encryption-py",
+      "crypto-algo-pbkdf2-app-kdf-py",
+      "crypto-algo-scrypt-app-kdf-py",
+      "crypto-algo-sha-256-app-encryption-py",
+      "crypto-algo-sha-256-app-kdf-py",
+      "crypto-algo-sha-512-app-kdf-py"
+     ],
+     "source": "NIST SP 1800-38C",
+     "title": "Cryptographic discovery: every algorithm primitive identified",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no quantum-vulnerable assets discovered",
+     "id": "QR-2",
+     "refs": [],
+     "source": "NIST SP 1800-38C",
+     "title": "Quantum-vulnerable assets discovered + risk-graded",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no quantum-vulnerable cryptography requiring migration",
+     "id": "QR-3",
+     "refs": [],
+     "source": "NIST SP 1800-38C",
+     "title": "Crypto-agility: quantum-safe / hybrid mechanism adopted",
+     "verdict": "pass"
+    },
+    {
+     "attestable": true,
+     "evidence": "interoperability + performance testing of PQC (or hybrid) in the target environment is a validation activity outside a static crypto inventory",
+     "id": "QR-4",
+     "refs": [],
+     "source": "NIST SP 1800-38C",
+     "title": "PQC interoperability + performance testing in the environment",
+     "verdict": "not_bom_evidenceable"
+    }
+   ]
+  },
+  "nist_800_57": {
+   "coverage": 1.0,
+   "fail": 0,
+   "na": 0,
+   "not_bom_evidenceable": 1,
+   "out_of_scope": 0,
+   "pass": 6,
+   "pass_with_evidence": 0,
+   "requirements": [
+    {
+     "attestable": false,
+     "evidence": "all algorithms in use are NIST-approved",
+     "id": "KM-1",
+     "refs": [
+      "crypto-algo-aes-128-cbc-app-encryption-py",
+      "crypto-algo-aes-cbc-app-kdf-py",
+      "crypto-algo-argon2-app-kdf-py",
+      "crypto-algo-fernet-app-encryption-py",
+      "crypto-algo-hkdf-app-kdf-py",
+      "crypto-algo-hmac-sha256-app-encryption-py",
+      "crypto-algo-pbkdf2-app-encryption-py",
+      "crypto-algo-pbkdf2-app-kdf-py",
+      "crypto-algo-scrypt-app-kdf-py",
+      "crypto-algo-sha-256-app-encryption-py",
+      "crypto-algo-sha-256-app-kdf-py",
+      "crypto-algo-sha-512-app-kdf-py"
+     ],
+     "source": "NIST SP 800-57 Pt.1 / SP 800-131A",
+     "title": "No broken or deprecated algorithms",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no undersized asymmetric keys detected",
+     "id": "KM-2",
+     "refs": [],
+     "source": "NIST SP 800-57 Pt.1 / SP 800-131A",
+     "title": "Asymmetric keys meet the 2048-bit floor",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no hardcoded private/secret key material detected",
+     "id": "KM-3",
+     "refs": [],
+     "source": "NIST SP 800-57 Pt.1 / SP 800-131A",
+     "title": "No hardcoded private / secret key material",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no certificates inventoried",
+     "id": "KM-4",
+     "refs": [],
+     "source": "NIST SP 800-57 Pt.1 / SP 800-131A",
+     "title": "Certificates are CA-issued (not self-signed)",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no ECB cipher modes detected",
+     "id": "KM-5",
+     "refs": [],
+     "source": "NIST SP 800-57 Pt.1 / SP 800-131A",
+     "title": "Authenticated cipher modes (no ECB)",
+     "verdict": "pass"
+    },
+    {
+     "attestable": true,
+     "evidence": "key rotation cadence + HSM/KMS custody is operational-policy evidence not modelled in a crypto inventory",
+     "id": "KM-6",
+     "refs": [],
+     "source": "NIST SP 800-57 Pt.1 / SP 800-131A",
+     "title": "Key rotation + HSM-backed custody policy",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": false,
+     "evidence": "no crypto-policy artifact (java.security / openssl.cnf) disables an algorithm family; no disabled-but-used violation to evaluate",
+     "id": "KM-7",
+     "refs": [],
+     "source": "NIST SP 800-57 Pt.1 / SP 800-131A",
+     "title": "No algorithm in use is disabled by the environment crypto policy",
+     "verdict": "pass"
+    }
+   ]
+  },
+  "omb_m_23_02": {
+   "coverage": 1.0,
+   "fail": 0,
+   "na": 0,
+   "not_bom_evidenceable": 1,
+   "out_of_scope": 0,
+   "pass": 2,
+   "pass_with_evidence": 0,
+   "requirements": [
+    {
+     "attestable": false,
+     "evidence": "cryptographic inventory enumerates 12 algorithm(s) with identified primitives",
+     "id": "OMB-1",
+     "refs": [
+      "crypto-algo-aes-128-cbc-app-encryption-py",
+      "crypto-algo-aes-cbc-app-kdf-py",
+      "crypto-algo-argon2-app-kdf-py",
+      "crypto-algo-fernet-app-encryption-py",
+      "crypto-algo-hkdf-app-kdf-py",
+      "crypto-algo-hmac-sha256-app-encryption-py",
+      "crypto-algo-pbkdf2-app-encryption-py",
+      "crypto-algo-pbkdf2-app-kdf-py",
+      "crypto-algo-scrypt-app-kdf-py",
+      "crypto-algo-sha-256-app-encryption-py",
+      "crypto-algo-sha-256-app-kdf-py",
+      "crypto-algo-sha-512-app-kdf-py"
+     ],
+     "source": "OMB M-23-02",
+     "title": "Cryptographic inventory enumerates algorithm primitives",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no quantum-vulnerable systems to prioritize",
+     "id": "OMB-2",
+     "refs": [],
+     "source": "OMB M-23-02",
+     "title": "Quantum-vulnerable systems identified + prioritized",
+     "verdict": "pass"
+    },
+    {
+     "attestable": true,
+     "evidence": "submission of the agency-wide PQC migration plan to OMB is a process artifact outside a crypto inventory",
+     "id": "OMB-3",
+     "refs": [],
+     "source": "OMB M-23-02",
+     "title": "Agency PQC migration plan submitted to OMB",
+     "verdict": "not_bom_evidenceable"
+    }
+   ]
+  },
+  "pci_dss_4": {
+   "coverage": 1.0,
+   "fail": 0,
+   "na": 0,
+   "not_bom_evidenceable": 1,
+   "out_of_scope": 0,
+   "pass": 3,
+   "pass_with_evidence": 0,
+   "requirements": [
+    {
+     "attestable": false,
+     "evidence": "all algorithms meet the 112-bit strong-crypto floor",
+     "id": "PCI-1",
+     "refs": [
+      "crypto-algo-aes-128-cbc-app-encryption-py",
+      "crypto-algo-aes-cbc-app-kdf-py",
+      "crypto-algo-argon2-app-kdf-py",
+      "crypto-algo-fernet-app-encryption-py",
+      "crypto-algo-hkdf-app-kdf-py",
+      "crypto-algo-hmac-sha256-app-encryption-py",
+      "crypto-algo-pbkdf2-app-encryption-py",
+      "crypto-algo-pbkdf2-app-kdf-py",
+      "crypto-algo-scrypt-app-kdf-py",
+      "crypto-algo-sha-256-app-encryption-py",
+      "crypto-algo-sha-256-app-kdf-py",
+      "crypto-algo-sha-512-app-kdf-py"
+     ],
+     "source": "PCI-DSS v4.0.1 Req.3/4",
+     "title": "Strong cryptography only (\u2265 112-bit effective strength)",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no transport protocols inventoried",
+     "id": "PCI-2",
+     "refs": [],
+     "source": "PCI-DSS v4.0.1 Req.3/4",
+     "title": "Strong cryptography over open networks (no early TLS/SSL)",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no hardcoded key material detected",
+     "id": "PCI-3",
+     "refs": [],
+     "source": "PCI-DSS v4.0.1 Req.3/4",
+     "title": "No hardcoded key material (Req 3.6/3.7 key management)",
+     "verdict": "pass"
+    },
+    {
+     "attestable": true,
+     "evidence": "cryptographic key-management lifecycle (dual control, split knowledge, documented key-custodian procedures; PCI-DSS 4.0 Req 3.7) is operational evidence not visible in a crypto inventory",
+     "id": "PCI-4",
+     "refs": [],
+     "source": "PCI-DSS v4.0.1 Req.3/4",
+     "title": "Key-management lifecycle: dual control + split knowledge",
+     "verdict": "not_bom_evidenceable"
+    }
+   ]
+  },
+  "rbi_free_ai_protection": {
+   "coverage": 1.0,
+   "fail": 0,
+   "na": 0,
+   "not_bom_evidenceable": 2,
+   "out_of_scope": 0,
+   "pass": 6,
+   "pass_with_evidence": 0,
+   "requirements": [
+    {
+     "attestable": false,
+     "evidence": "no weak cryptographic algorithms detected",
+     "id": "FREEAI-PROT-1",
+     "refs": [
+      "crypto-algo-aes-128-cbc-app-encryption-py",
+      "crypto-algo-aes-cbc-app-kdf-py",
+      "crypto-algo-argon2-app-kdf-py",
+      "crypto-algo-fernet-app-encryption-py",
+      "crypto-algo-hkdf-app-kdf-py",
+      "crypto-algo-hmac-sha256-app-encryption-py",
+      "crypto-algo-pbkdf2-app-encryption-py",
+      "crypto-algo-pbkdf2-app-kdf-py",
+      "crypto-algo-scrypt-app-kdf-py",
+      "crypto-algo-sha-256-app-encryption-py",
+      "crypto-algo-sha-256-app-kdf-py",
+      "crypto-algo-sha-512-app-kdf-py"
+     ],
+     "source": "RBI FREE-AI Rec 19 / RBI Cyber Security Framework (2016)",
+     "title": "No broken or deprecated cryptographic algorithms",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no weak transport protocols detected",
+     "id": "FREEAI-PROT-2",
+     "refs": [],
+     "source": "RBI FREE-AI Rec 19 / RBI Cyber Security Framework (2016)",
+     "title": "Transport security: no weak TLS / protocol versions",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no hardcoded key material detected",
+     "id": "FREEAI-PROT-3",
+     "refs": [],
+     "source": "RBI FREE-AI Rec 19 / RBI Cyber Security Framework (2016)",
+     "title": "No hardcoded private / secret key material",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no undersized asymmetric keys detected",
+     "id": "FREEAI-PROT-4",
+     "refs": [],
+     "source": "RBI FREE-AI Rec 19 / RBI Cyber Security Framework (2016)",
+     "title": "Asymmetric keys meet the 2048-bit floor",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "all algorithms meet the 112-bit strength floor",
+     "id": "FREEAI-PROT-5",
+     "refs": [],
+     "source": "RBI FREE-AI Rec 19 / RBI Cyber Security Framework (2016)",
+     "title": "Security strength meets DPDP-aligned 112-bit floor",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no quantum-vulnerable public-key cryptography in use",
+     "id": "FREEAI-PROT-6",
+     "refs": [],
+     "source": "RBI FREE-AI Rec 19 / RBI Cyber Security Framework (2016)",
+     "title": "Quantum-vulnerable PKI graded with migration target",
+     "verdict": "pass"
+    },
+    {
+     "attestable": true,
+     "evidence": "AI-specific cybersecurity incident monitoring and response protocols are operational evidence not visible in a crypto inventory",
+     "id": "FREEAI-PROT-7",
+     "refs": [],
+     "source": "RBI FREE-AI Rec 19 / RBI Cyber Security Framework (2016)",
+     "title": "AI-specific cybersecurity incident response protocols",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "structured red teaming / adversarial testing cadence is process evidence",
+     "id": "FREEAI-PROT-8",
+     "refs": [],
+     "source": "RBI FREE-AI Rec 19 / RBI Cyber Security Framework (2016)",
+     "title": "Structured adversarial / red-team testing program",
+     "verdict": "not_bom_evidenceable"
+    }
+   ]
+  },
+  "sebi_cscrf_cbom": {
+   "coverage": 1.0,
+   "fail": 0,
+   "na": 0,
+   "not_bom_evidenceable": 10,
+   "out_of_scope": 0,
+   "pass": 8,
+   "pass_with_evidence": 0,
+   "requirements": [
+    {
+     "attestable": false,
+     "evidence": "17 cryptographic asset(s) inventoried",
+     "id": "CSCRF-QC-1",
+     "refs": [
+      "crypto-algo-aes-128-cbc-app-encryption-py",
+      "crypto-algo-aes-cbc-app-kdf-py",
+      "crypto-algo-argon2-app-kdf-py",
+      "crypto-algo-fernet-app-encryption-py",
+      "crypto-algo-hkdf-app-kdf-py",
+      "crypto-algo-hmac-sha256-app-encryption-py",
+      "crypto-algo-pbkdf2-app-encryption-py",
+      "crypto-algo-pbkdf2-app-kdf-py",
+      "crypto-algo-scrypt-app-kdf-py",
+      "crypto-algo-sha-256-app-encryption-py",
+      "crypto-algo-sha-256-app-kdf-py",
+      "crypto-algo-sha-512-app-kdf-py",
+      "crypto-material-initialization-vector-app-kdf-py-l28c49",
+      "crypto-material-salt-app-encryption-py-l12c14",
+      "crypto-material-salt-app-kdf-py-l13c52",
+      "crypto-material-salt-app-kdf-py-l21c60",
+      "crypto-material-salt-app-kdf-py-l9c15"
+     ],
+     "source": "SEBI CSCRF CIR/2024/113 Box Item 7 #1",
+     "title": "Cryptographic asset inventory present",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no quantum-vulnerable assets requiring migration targets",
+     "id": "CSCRF-QC-2",
+     "refs": [],
+     "source": "SEBI CSCRF CIR/2024/113 Box Item 7 #1/#2",
+     "title": "Quantum-vulnerable assets have PQC migration targets",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no quantum-vulnerable assets to grade",
+     "id": "CSCRF-QC-9",
+     "refs": [],
+     "source": "SEBI CSCRF CIR/2024/113 Box Item 7 #4",
+     "title": "PQC readiness grading present on quantum-vulnerable assets",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no weak transport protocols detected",
+     "id": "CSCRF-DS-1",
+     "refs": [],
+     "source": "SEBI CSCRF CIR/2024/113 PR.DS.S1",
+     "title": "No weak transport protocols",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no undersized asymmetric keys detected",
+     "id": "CSCRF-DS-2",
+     "refs": [],
+     "source": "SEBI CSCRF CIR/2024/113 PR.DS.S1\u2013S3",
+     "title": "Asymmetric keys meet 2048-bit floor",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "no weak cryptographic algorithms detected",
+     "id": "CSCRF-DS-6",
+     "refs": [
+      "crypto-algo-aes-128-cbc-app-encryption-py",
+      "crypto-algo-aes-cbc-app-kdf-py",
+      "crypto-algo-argon2-app-kdf-py",
+      "crypto-algo-fernet-app-encryption-py",
+      "crypto-algo-hkdf-app-kdf-py",
+      "crypto-algo-hmac-sha256-app-encryption-py",
+      "crypto-algo-pbkdf2-app-encryption-py",
+      "crypto-algo-pbkdf2-app-kdf-py",
+      "crypto-algo-scrypt-app-kdf-py",
+      "crypto-algo-sha-256-app-encryption-py",
+      "crypto-algo-sha-256-app-kdf-py",
+      "crypto-algo-sha-512-app-kdf-py"
+     ],
+     "source": "SEBI CSCRF CIR/2024/113 PR.DS strong algorithms",
+     "title": "No broken or deprecated algorithms",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "all graded algorithms meet the 112-bit strength floor",
+     "id": "CSCRF-DS-7",
+     "refs": [],
+     "source": "SEBI CSCRF CIR/2024/113 PR.DS strong algorithms",
+     "title": "Classical security strength at least 112 bits",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "encryption-relevant crypto inventory present (17 asset(s))",
+     "id": "CSCRF-SC-1",
+     "refs": [
+      "crypto-algo-aes-128-cbc-app-encryption-py",
+      "crypto-algo-aes-cbc-app-kdf-py",
+      "crypto-algo-argon2-app-kdf-py",
+      "crypto-algo-fernet-app-encryption-py",
+      "crypto-algo-hkdf-app-kdf-py",
+      "crypto-algo-hmac-sha256-app-encryption-py",
+      "crypto-algo-pbkdf2-app-encryption-py",
+      "crypto-algo-pbkdf2-app-kdf-py",
+      "crypto-algo-scrypt-app-kdf-py",
+      "crypto-algo-sha-256-app-encryption-py",
+      "crypto-algo-sha-256-app-kdf-py",
+      "crypto-algo-sha-512-app-kdf-py",
+      "crypto-material-initialization-vector-app-kdf-py-l28c49",
+      "crypto-material-salt-app-encryption-py-l12c14",
+      "crypto-material-salt-app-kdf-py-l13c52",
+      "crypto-material-salt-app-kdf-py-l21c60",
+      "crypto-material-salt-app-kdf-py-l9c15"
+     ],
+     "source": "SEBI CSCRF CIR/2024/113 GV.SC.S5(d)",
+     "title": "Encryption used evidenced in crypto BOM",
+     "verdict": "pass"
+    },
+    {
+     "attestable": true,
+     "evidence": "Advisory alignment to SEBI CSCRF Circular SEBI/HO/ITD-1/ITD_CSC_EXT/P/CIR/2024/113 dated 20.08.2024. Does not constitute SEBI certification, audit opinion, or satisfaction of SEBI / stock-exchange obligations. BOM evidence supports readiness assessment only. Process attestation for CSCRF-QC-3 (organizational / infra evidence not visible in a crypto BOM).",
+     "id": "CSCRF-QC-3",
+     "refs": [],
+     "source": "Box Item 7 #1c",
+     "title": "IT infrastructure assessed for quantum risk",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "Advisory alignment to SEBI CSCRF Circular SEBI/HO/ITD-1/ITD_CSC_EXT/P/CIR/2024/113 dated 20.08.2024. Does not constitute SEBI certification, audit opinion, or satisfaction of SEBI / stock-exchange obligations. BOM evidence supports readiness assessment only. Process attestation for CSCRF-QC-5 (organizational / infra evidence not visible in a crypto BOM).",
+     "id": "CSCRF-QC-5",
+     "refs": [],
+     "source": "Box Item 7 #2b",
+     "title": "Strategies for assets that cannot migrate to PQC",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "Advisory alignment to SEBI CSCRF Circular SEBI/HO/ITD-1/ITD_CSC_EXT/P/CIR/2024/113 dated 20.08.2024. Does not constitute SEBI certification, audit opinion, or satisfaction of SEBI / stock-exchange obligations. BOM evidence supports readiness assessment only. Process attestation for CSCRF-QC-6 (organizational / infra evidence not visible in a crypto BOM).",
+     "id": "CSCRF-QC-6",
+     "refs": [],
+     "source": "Box Item 7 #3a",
+     "title": "Workforce skills upgraded for PQC/QKD",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "Advisory alignment to SEBI CSCRF Circular SEBI/HO/ITD-1/ITD_CSC_EXT/P/CIR/2024/113 dated 20.08.2024. Does not constitute SEBI certification, audit opinion, or satisfaction of SEBI / stock-exchange obligations. BOM evidence supports readiness assessment only. Process attestation for CSCRF-QC-7 (organizational / infra evidence not visible in a crypto BOM).",
+     "id": "CSCRF-QC-7",
+     "refs": [],
+     "source": "Box Item 7 #3b",
+     "title": "Policies revised for post-quantum era",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "Advisory alignment to SEBI CSCRF Circular SEBI/HO/ITD-1/ITD_CSC_EXT/P/CIR/2024/113 dated 20.08.2024. Does not constitute SEBI certification, audit opinion, or satisfaction of SEBI / stock-exchange obligations. BOM evidence supports readiness assessment only. Process attestation for CSCRF-QC-8 (organizational / infra evidence not visible in a crypto BOM).",
+     "id": "CSCRF-QC-8",
+     "refs": [],
+     "source": "Box Item 7 #3c",
+     "title": "PoC trials of PQC solutions",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "Advisory alignment to SEBI CSCRF Circular SEBI/HO/ITD-1/ITD_CSC_EXT/P/CIR/2024/113 dated 20.08.2024. Does not constitute SEBI certification, audit opinion, or satisfaction of SEBI / stock-exchange obligations. BOM evidence supports readiness assessment only. Process attestation for CSCRF-QC-10 (organizational / infra evidence not visible in a crypto BOM).",
+     "id": "CSCRF-QC-10",
+     "refs": [],
+     "source": "Box Item 7 #4b",
+     "title": "QKD feasibility explored",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "Advisory alignment to SEBI CSCRF Circular SEBI/HO/ITD-1/ITD_CSC_EXT/P/CIR/2024/113 dated 20.08.2024. Does not constitute SEBI certification, audit opinion, or satisfaction of SEBI / stock-exchange obligations. BOM evidence supports readiness assessment only. Process attestation for CSCRF-DS-3 (organizational / infra evidence not visible in a crypto BOM).",
+     "id": "CSCRF-DS-3",
+     "refs": [],
+     "source": "PR.DS.S2 / FDE+FBE",
+     "title": "FDE and FBE layered at-rest encryption deployed",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "Advisory alignment to SEBI CSCRF Circular SEBI/HO/ITD-1/ITD_CSC_EXT/P/CIR/2024/113 dated 20.08.2024. Does not constitute SEBI certification, audit opinion, or satisfaction of SEBI / stock-exchange obligations. BOM evidence supports readiness assessment only. Process attestation for CSCRF-DS-4 (organizational / infra evidence not visible in a crypto BOM).",
+     "id": "CSCRF-DS-4",
+     "refs": [],
+     "source": "PR.DS.S3",
+     "title": "Encryption in-use (TEE / confidential compute)",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "Advisory alignment to SEBI CSCRF Circular SEBI/HO/ITD-1/ITD_CSC_EXT/P/CIR/2024/113 dated 20.08.2024. Does not constitute SEBI certification, audit opinion, or satisfaction of SEBI / stock-exchange obligations. BOM evidence supports readiness assessment only. Process attestation for CSCRF-DS-5 (organizational / infra evidence not visible in a crypto BOM).",
+     "id": "CSCRF-DS-5",
+     "refs": [],
+     "source": "PR.DS DLP",
+     "title": "DLP controls for sensitive data",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "Advisory alignment to SEBI CSCRF Circular SEBI/HO/ITD-1/ITD_CSC_EXT/P/CIR/2024/113 dated 20.08.2024. Does not constitute SEBI certification, audit opinion, or satisfaction of SEBI / stock-exchange obligations. BOM evidence supports readiness assessment only. Process attestation for CSCRF-RA-1 (organizational / infra evidence not visible in a crypto BOM).",
+     "id": "CSCRF-RA-1",
+     "refs": [],
+     "source": "p15 / ID.RA",
+     "title": "Post-quantum risks included in formal risk assessment",
+     "verdict": "not_bom_evidenceable"
+    }
+   ]
+  }
+ },
+ "cbom_distributions": {
+  "algorithms": {
+   "ae": 1,
+   "block-cipher": 2,
+   "hash": 3,
+   "kdf": 5,
+   "mac": 1
+  },
+  "certificates": [],
+  "key_material": [],
+  "pqc": {
+   "hybrid": 0,
+   "migration": [],
+   "nist_level_distribution": {
+    "1": 2,
+    "2": 2,
+    "5": 1
+   },
+   "quantum_safe": 12,
+   "quantum_vulnerable": 0,
+   "readiness_pct": 100.0
+  },
+  "protocols": {},
+  "weakness": {
+   "STATIC_IV": 1,
+   "STATIC_SALT": 3,
+   "VULNERABLE_CRYPTO_LIBRARY": 1,
+   "WEAK_KDF_ITERATIONS": 2
+  }
+ },
+ "cbom_graph": {
+  "edges": [
+   {
+    "rel": "depends_on",
+    "source": "crypto-algo-fernet-app-encryption-py",
+    "target": "crypto-algo-aes-128-cbc-app-encryption-py"
+   },
+   {
+    "rel": "depends_on",
+    "source": "crypto-algo-fernet-app-encryption-py",
+    "target": "crypto-algo-hmac-sha256-app-encryption-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-argon2-cffi",
+    "target": "crypto-algo-argon2-app-kdf-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-hashlib-stdlib",
+    "target": "crypto-algo-pbkdf2-app-kdf-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-hashlib-stdlib",
+    "target": "crypto-algo-scrypt-app-kdf-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-hashlib-stdlib",
+    "target": "crypto-algo-sha-512-app-kdf-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-aes-128-cbc-app-encryption-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-aes-cbc-app-kdf-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-fernet-app-encryption-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-hkdf-app-kdf-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-hmac-sha256-app-encryption-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-pbkdf2-app-encryption-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-sha-256-app-encryption-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-sha-256-app-kdf-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-sha-512-app-kdf-py"
+   },
+   {
+    "rel": "used_by",
+    "source": "crypto-material-salt-app-kdf-py-l9c15",
+    "target": "crypto-algo-aes-cbc-app-kdf-py"
+   }
+  ],
+  "nodes": [
+   {
+    "asset_type": null,
+    "id": "container-image-gcr-io-distroless-python3-debian12-sha256-0f1f7d2c4b3a6e5d8c9b0a1f2e3d4c5b6a7980716253443526170819a0b1c2d3",
+    "impact": null,
+    "kind": "container",
+    "label": "gcr.io/distroless/python3-debian12",
+    "location": "Dockerfile",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": null,
+    "id": "container-image-ghcr-io-acme-bank-router-1-4-2",
+    "impact": null,
+    "kind": "container",
+    "label": "ghcr.io/acme/bank-router",
+    "location": "docker-compose.yml",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": null,
+    "id": "container-image-python-3-11-slim",
+    "impact": null,
+    "kind": "container",
+    "label": "python",
+    "location": "Dockerfile",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": null,
+    "id": "container-image-redis-7-2-alpine",
+    "impact": null,
+    "kind": "container",
+    "label": "redis",
+    "location": "docker-compose.yml",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": null,
+    "id": "crypto-advisory-pypi-cryptography-41-0",
+    "impact": "High",
+    "kind": "framework",
+    "label": "cryptography@>=41.0",
+    "location": "requirements.txt",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": true
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-aes-128-cbc-app-encryption-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "AES-128-CBC",
+    "location": "app/encryption.py",
+    "primitive": "block-cipher",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-aes-cbc-app-kdf-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "AES-CBC",
+    "location": "app/kdf.py",
+    "primitive": "block-cipher",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-argon2-app-kdf-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "Argon2",
+    "location": "app/kdf.py",
+    "primitive": "kdf",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-fernet-app-encryption-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "Fernet",
+    "location": "app/encryption.py",
+    "primitive": "ae",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-hkdf-app-kdf-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "HKDF",
+    "location": "app/kdf.py",
+    "primitive": "kdf",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-hmac-sha256-app-encryption-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "HMAC-SHA256",
+    "location": "app/encryption.py",
+    "primitive": "mac",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-pbkdf2-app-encryption-py",
+    "impact": "Low",
+    "kind": "crypto_asset",
+    "label": "PBKDF2",
+    "location": "app/encryption.py",
+    "primitive": "kdf",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-pbkdf2-app-kdf-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "PBKDF2",
+    "location": "app/kdf.py",
+    "primitive": "kdf",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-scrypt-app-kdf-py",
+    "impact": "Low",
+    "kind": "crypto_asset",
+    "label": "scrypt",
+    "location": "app/kdf.py",
+    "primitive": "kdf",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-sha-256-app-encryption-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "SHA-256",
+    "location": "app/encryption.py",
+    "primitive": "hash",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-sha-256-app-kdf-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "SHA-256",
+    "location": "app/kdf.py",
+    "primitive": "hash",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-sha-512-app-kdf-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "SHA-512",
+    "location": "app/kdf.py",
+    "primitive": "hash",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": null,
+    "id": "crypto-lib-argon2-cffi",
+    "impact": null,
+    "kind": "framework",
+    "label": "argon2-cffi",
+    "location": "requirements.txt",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": null,
+    "id": "crypto-lib-hashlib-stdlib",
+    "impact": null,
+    "kind": "framework",
+    "label": "hashlib (stdlib)",
+    "location": "app/kdf.py",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": null,
+    "id": "crypto-lib-pyca-cryptography",
+    "impact": null,
+    "kind": "framework",
+    "label": "pyca/cryptography",
+    "location": "requirements.txt",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "related-crypto-material",
+    "id": "crypto-material-initialization-vector-app-kdf-py-l28c49",
+    "impact": "High",
+    "kind": "crypto_asset",
+    "label": "initialization-vector (app/kdf.py:28)",
+    "location": "app/kdf.py",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": true
+   },
+   {
+    "asset_type": "related-crypto-material",
+    "id": "crypto-material-salt-app-encryption-py-l12c14",
+    "impact": "Medium",
+    "kind": "crypto_asset",
+    "label": "salt (app/encryption.py:12)",
+    "location": "app/encryption.py",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": true
+   },
+   {
+    "asset_type": "related-crypto-material",
+    "id": "crypto-material-salt-app-kdf-py-l13c52",
+    "impact": "Medium",
+    "kind": "crypto_asset",
+    "label": "salt (app/kdf.py:13)",
+    "location": "app/kdf.py",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": true
+   },
+   {
+    "asset_type": "related-crypto-material",
+    "id": "crypto-material-salt-app-kdf-py-l21c60",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "salt (app/kdf.py:21)",
+    "location": "app/kdf.py",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "related-crypto-material",
+    "id": "crypto-material-salt-app-kdf-py-l9c15",
+    "impact": "Medium",
+    "kind": "crypto_asset",
+    "label": "salt (SCRYPT_SALT, kdf.py)",
+    "location": "app/kdf.py",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": true
+   }
+  ]
+ },
+ "cbom_graph_compact": {
+  "edges": [
+   {
+    "rel": "is_a",
+    "source": "crypto-algo-aes-128-cbc-app-encryption-py",
+    "target": "family:block-cipher"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-algo-aes-cbc-app-kdf-py",
+    "target": "family:block-cipher"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-algo-argon2-app-kdf-py",
+    "target": "family:kdf"
+   },
+   {
+    "rel": "depends_on",
+    "source": "crypto-algo-fernet-app-encryption-py",
+    "target": "crypto-algo-aes-128-cbc-app-encryption-py"
+   },
+   {
+    "rel": "depends_on",
+    "source": "crypto-algo-fernet-app-encryption-py",
+    "target": "crypto-algo-hmac-sha256-app-encryption-py"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-algo-fernet-app-encryption-py",
+    "target": "family:ae"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-algo-hkdf-app-kdf-py",
+    "target": "family:kdf"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-algo-hmac-sha256-app-encryption-py",
+    "target": "family:mac"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-algo-pbkdf2-app-encryption-py",
+    "target": "family:kdf"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-algo-pbkdf2-app-kdf-py",
+    "target": "family:kdf"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-algo-scrypt-app-kdf-py",
+    "target": "family:kdf"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-algo-sha-256-app-encryption-py",
+    "target": "family:hash"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-algo-sha-256-app-kdf-py",
+    "target": "family:hash"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-algo-sha-512-app-kdf-py",
+    "target": "family:hash"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-argon2-cffi",
+    "target": "crypto-algo-argon2-app-kdf-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-hashlib-stdlib",
+    "target": "crypto-algo-pbkdf2-app-kdf-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-hashlib-stdlib",
+    "target": "crypto-algo-scrypt-app-kdf-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-hashlib-stdlib",
+    "target": "crypto-algo-sha-512-app-kdf-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-aes-128-cbc-app-encryption-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-aes-cbc-app-kdf-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-fernet-app-encryption-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-hkdf-app-kdf-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-hmac-sha256-app-encryption-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-pbkdf2-app-encryption-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-sha-256-app-encryption-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-sha-256-app-kdf-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-sha-512-app-kdf-py"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-material-initialization-vector-app-kdf-py-l28c49",
+    "target": "family:related-crypto-material"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-material-salt-app-encryption-py-l12c14",
+    "target": "family:related-crypto-material"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-material-salt-app-kdf-py-l13c52",
+    "target": "family:related-crypto-material"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-material-salt-app-kdf-py-l21c60",
+    "target": "family:related-crypto-material"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-material-salt-app-kdf-py-l9c15",
+    "target": "family:related-crypto-material"
+   },
+   {
+    "rel": "used_by",
+    "source": "crypto-material-salt-app-kdf-py-l9c15",
+    "target": "crypto-algo-aes-cbc-app-kdf-py"
+   },
+   {
+    "rel": "declares",
+    "source": "folder:(repository root)",
+    "target": "crypto-advisory-pypi-cryptography-41-0"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-algo-aes-128-cbc-app-encryption-py"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-algo-aes-cbc-app-kdf-py"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-algo-argon2-app-kdf-py"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-algo-fernet-app-encryption-py"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-algo-hkdf-app-kdf-py"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-algo-hmac-sha256-app-encryption-py"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-algo-pbkdf2-app-encryption-py"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-algo-pbkdf2-app-kdf-py"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-algo-scrypt-app-kdf-py"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-algo-sha-256-app-encryption-py"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-algo-sha-256-app-kdf-py"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-algo-sha-512-app-kdf-py"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-material-initialization-vector-app-kdf-py-l28c49"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-material-salt-app-encryption-py-l12c14"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-material-salt-app-kdf-py-l13c52"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-material-salt-app-kdf-py-l21c60"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-material-salt-app-kdf-py-l9c15"
+   }
+  ],
+  "meta": {
+   "assets": 17,
+   "families": 6,
+   "folded_assets": 0,
+   "folders": 1,
+   "libraries": 8,
+   "max_nodes": 40,
+   "shown_assets": 17
+  },
+  "nodes": [
+   {
+    "asset_type": "library",
+    "cluster": true,
+    "cluster_count": 4,
+    "id": "cluster:libraries",
+    "kind": "framework",
+    "label": "4 more libraries",
+    "member_ids": [
+     "container-image-gcr-io-distroless-python3-debian12-sha256-0f1f7d2c4b3a6e5d8c9b0a1f2e3d4c5b6a7980716253443526170819a0b1c2d3",
+     "container-image-ghcr-io-acme-bank-router-1-4-2",
+     "container-image-python-3-11-slim",
+     "container-image-redis-7-2-alpine"
+    ],
+    "weak": false
+   },
+   {
+    "asset_type": null,
+    "id": "crypto-advisory-pypi-cryptography-41-0",
+    "impact": "High",
+    "kind": "framework",
+    "label": "cryptography@>=41.0",
+    "location": "requirements.txt",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": true
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-aes-128-cbc-app-encryption-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "AES-128-CBC",
+    "location": "app/encryption.py",
+    "primitive": "block-cipher",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-aes-cbc-app-kdf-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "AES-CBC",
+    "location": "app/kdf.py",
+    "primitive": "block-cipher",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-argon2-app-kdf-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "Argon2",
+    "location": "app/kdf.py",
+    "primitive": "kdf",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-fernet-app-encryption-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "Fernet",
+    "location": "app/encryption.py",
+    "primitive": "ae",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-hkdf-app-kdf-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "HKDF",
+    "location": "app/kdf.py",
+    "primitive": "kdf",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-hmac-sha256-app-encryption-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "HMAC-SHA256",
+    "location": "app/encryption.py",
+    "primitive": "mac",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-pbkdf2-app-encryption-py",
+    "impact": "Low",
+    "kind": "crypto_asset",
+    "label": "PBKDF2",
+    "location": "app/encryption.py",
+    "primitive": "kdf",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-pbkdf2-app-kdf-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "PBKDF2",
+    "location": "app/kdf.py",
+    "primitive": "kdf",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-scrypt-app-kdf-py",
+    "impact": "Low",
+    "kind": "crypto_asset",
+    "label": "scrypt",
+    "location": "app/kdf.py",
+    "primitive": "kdf",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-sha-256-app-encryption-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "SHA-256",
+    "location": "app/encryption.py",
+    "primitive": "hash",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-sha-256-app-kdf-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "SHA-256",
+    "location": "app/kdf.py",
+    "primitive": "hash",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-sha-512-app-kdf-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "SHA-512",
+    "location": "app/kdf.py",
+    "primitive": "hash",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": null,
+    "id": "crypto-lib-argon2-cffi",
+    "impact": null,
+    "kind": "framework",
+    "label": "argon2-cffi",
+    "location": "requirements.txt",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": null,
+    "id": "crypto-lib-hashlib-stdlib",
+    "impact": null,
+    "kind": "framework",
+    "label": "hashlib (stdlib)",
+    "location": "app/kdf.py",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": null,
+    "id": "crypto-lib-pyca-cryptography",
+    "impact": null,
+    "kind": "framework",
+    "label": "pyca/cryptography",
+    "location": "requirements.txt",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "related-crypto-material",
+    "id": "crypto-material-initialization-vector-app-kdf-py-l28c49",
+    "impact": "High",
+    "kind": "crypto_asset",
+    "label": "initialization-vector (app/kdf.py:28)",
+    "location": "app/kdf.py",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": true
+   },
+   {
+    "asset_type": "related-crypto-material",
+    "id": "crypto-material-salt-app-encryption-py-l12c14",
+    "impact": "Medium",
+    "kind": "crypto_asset",
+    "label": "salt (app/encryption.py:12)",
+    "location": "app/encryption.py",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": true
+   },
+   {
+    "asset_type": "related-crypto-material",
+    "id": "crypto-material-salt-app-kdf-py-l13c52",
+    "impact": "Medium",
+    "kind": "crypto_asset",
+    "label": "salt (app/kdf.py:13)",
+    "location": "app/kdf.py",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": true
+   },
+   {
+    "asset_type": "related-crypto-material",
+    "id": "crypto-material-salt-app-kdf-py-l21c60",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "salt (app/kdf.py:21)",
+    "location": "app/kdf.py",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "related-crypto-material",
+    "id": "crypto-material-salt-app-kdf-py-l9c15",
+    "impact": "Medium",
+    "kind": "crypto_asset",
+    "label": "salt (SCRYPT_SALT, kdf.py)",
+    "location": "app/kdf.py",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": true
+   },
+   {
+    "asset_type": "family",
+    "count": 1,
+    "id": "family:ae",
+    "kind": "family",
+    "label": "Authenticated encryption (1)",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "family",
+    "count": 2,
+    "id": "family:block-cipher",
+    "kind": "family",
+    "label": "Block ciphers (2)",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "family",
+    "count": 3,
+    "id": "family:hash",
+    "kind": "family",
+    "label": "Hash functions (3)",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "family",
+    "count": 5,
+    "id": "family:kdf",
+    "kind": "family",
+    "label": "Key derivation (5)",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "family",
+    "count": 1,
+    "id": "family:mac",
+    "kind": "family",
+    "label": "MACs (1)",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "family",
+    "count": 5,
+    "id": "family:related-crypto-material",
+    "kind": "family",
+    "label": "Keys and secrets (5)",
+    "quantum_vulnerable": false,
+    "weak": true
+   },
+   {
+    "asset_type": "location",
+    "count": 0,
+    "id": "folder:(repository root)",
+    "kind": "location",
+    "label": "(repository root)"
+   },
+   {
+    "asset_type": "location",
+    "count": 17,
+    "id": "folder:app/",
+    "kind": "location",
+    "label": "app/ (17)"
+   }
+  ]
+ },
+ "cbom_graph_expanded": {
+  "edges": [
+   {
+    "rel": "is_a",
+    "source": "crypto-algo-aes-128-cbc-app-encryption-py",
+    "target": "family:block-cipher"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-algo-aes-cbc-app-kdf-py",
+    "target": "family:block-cipher"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-algo-argon2-app-kdf-py",
+    "target": "family:kdf"
+   },
+   {
+    "rel": "depends_on",
+    "source": "crypto-algo-fernet-app-encryption-py",
+    "target": "crypto-algo-aes-128-cbc-app-encryption-py"
+   },
+   {
+    "rel": "depends_on",
+    "source": "crypto-algo-fernet-app-encryption-py",
+    "target": "crypto-algo-hmac-sha256-app-encryption-py"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-algo-fernet-app-encryption-py",
+    "target": "family:ae"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-algo-hkdf-app-kdf-py",
+    "target": "family:kdf"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-algo-hmac-sha256-app-encryption-py",
+    "target": "family:mac"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-algo-pbkdf2-app-encryption-py",
+    "target": "family:kdf"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-algo-pbkdf2-app-kdf-py",
+    "target": "family:kdf"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-algo-scrypt-app-kdf-py",
+    "target": "family:kdf"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-algo-sha-256-app-encryption-py",
+    "target": "family:hash"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-algo-sha-256-app-kdf-py",
+    "target": "family:hash"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-algo-sha-512-app-kdf-py",
+    "target": "family:hash"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-argon2-cffi",
+    "target": "crypto-algo-argon2-app-kdf-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-hashlib-stdlib",
+    "target": "crypto-algo-pbkdf2-app-kdf-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-hashlib-stdlib",
+    "target": "crypto-algo-scrypt-app-kdf-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-hashlib-stdlib",
+    "target": "crypto-algo-sha-512-app-kdf-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-aes-128-cbc-app-encryption-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-aes-cbc-app-kdf-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-fernet-app-encryption-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-hkdf-app-kdf-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-hmac-sha256-app-encryption-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-pbkdf2-app-encryption-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-sha-256-app-encryption-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-sha-256-app-kdf-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-sha-512-app-kdf-py"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-material-initialization-vector-app-kdf-py-l28c49",
+    "target": "family:related-crypto-material"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-material-salt-app-encryption-py-l12c14",
+    "target": "family:related-crypto-material"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-material-salt-app-kdf-py-l13c52",
+    "target": "family:related-crypto-material"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-material-salt-app-kdf-py-l21c60",
+    "target": "family:related-crypto-material"
+   },
+   {
+    "rel": "is_a",
+    "source": "crypto-material-salt-app-kdf-py-l9c15",
+    "target": "family:related-crypto-material"
+   },
+   {
+    "rel": "used_by",
+    "source": "crypto-material-salt-app-kdf-py-l9c15",
+    "target": "crypto-algo-aes-cbc-app-kdf-py"
+   },
+   {
+    "rel": "declares",
+    "source": "folder:(repository root)",
+    "target": "crypto-advisory-pypi-cryptography-41-0"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-algo-aes-128-cbc-app-encryption-py"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-algo-aes-cbc-app-kdf-py"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-algo-argon2-app-kdf-py"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-algo-fernet-app-encryption-py"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-algo-hkdf-app-kdf-py"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-algo-hmac-sha256-app-encryption-py"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-algo-pbkdf2-app-encryption-py"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-algo-pbkdf2-app-kdf-py"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-algo-scrypt-app-kdf-py"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-algo-sha-256-app-encryption-py"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-algo-sha-256-app-kdf-py"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-algo-sha-512-app-kdf-py"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-material-initialization-vector-app-kdf-py-l28c49"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-material-salt-app-encryption-py-l12c14"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-material-salt-app-kdf-py-l13c52"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-material-salt-app-kdf-py-l21c60"
+   },
+   {
+    "rel": "contains",
+    "source": "folder:app/",
+    "target": "crypto-material-salt-app-kdf-py-l9c15"
+   }
+  ],
+  "meta": {
+   "assets": 17,
+   "families": 6,
+   "folded_assets": 0,
+   "folders": 1,
+   "libraries": 8,
+   "max_nodes": 120,
+   "shown_assets": 17
+  },
+  "nodes": [
+   {
+    "asset_type": "library",
+    "cluster": true,
+    "cluster_count": 4,
+    "id": "cluster:libraries",
+    "kind": "framework",
+    "label": "4 more libraries",
+    "member_ids": [
+     "container-image-gcr-io-distroless-python3-debian12-sha256-0f1f7d2c4b3a6e5d8c9b0a1f2e3d4c5b6a7980716253443526170819a0b1c2d3",
+     "container-image-ghcr-io-acme-bank-router-1-4-2",
+     "container-image-python-3-11-slim",
+     "container-image-redis-7-2-alpine"
+    ],
+    "weak": false
+   },
+   {
+    "asset_type": null,
+    "id": "crypto-advisory-pypi-cryptography-41-0",
+    "impact": "High",
+    "kind": "framework",
+    "label": "cryptography@>=41.0",
+    "location": "requirements.txt",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": true
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-aes-128-cbc-app-encryption-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "AES-128-CBC",
+    "location": "app/encryption.py",
+    "primitive": "block-cipher",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-aes-cbc-app-kdf-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "AES-CBC",
+    "location": "app/kdf.py",
+    "primitive": "block-cipher",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-argon2-app-kdf-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "Argon2",
+    "location": "app/kdf.py",
+    "primitive": "kdf",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-fernet-app-encryption-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "Fernet",
+    "location": "app/encryption.py",
+    "primitive": "ae",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-hkdf-app-kdf-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "HKDF",
+    "location": "app/kdf.py",
+    "primitive": "kdf",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-hmac-sha256-app-encryption-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "HMAC-SHA256",
+    "location": "app/encryption.py",
+    "primitive": "mac",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-pbkdf2-app-encryption-py",
+    "impact": "Low",
+    "kind": "crypto_asset",
+    "label": "PBKDF2",
+    "location": "app/encryption.py",
+    "primitive": "kdf",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-pbkdf2-app-kdf-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "PBKDF2",
+    "location": "app/kdf.py",
+    "primitive": "kdf",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-scrypt-app-kdf-py",
+    "impact": "Low",
+    "kind": "crypto_asset",
+    "label": "scrypt",
+    "location": "app/kdf.py",
+    "primitive": "kdf",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-sha-256-app-encryption-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "SHA-256",
+    "location": "app/encryption.py",
+    "primitive": "hash",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-sha-256-app-kdf-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "SHA-256",
+    "location": "app/kdf.py",
+    "primitive": "hash",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-sha-512-app-kdf-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "SHA-512",
+    "location": "app/kdf.py",
+    "primitive": "hash",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": null,
+    "id": "crypto-lib-argon2-cffi",
+    "impact": null,
+    "kind": "framework",
+    "label": "argon2-cffi",
+    "location": "requirements.txt",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": null,
+    "id": "crypto-lib-hashlib-stdlib",
+    "impact": null,
+    "kind": "framework",
+    "label": "hashlib (stdlib)",
+    "location": "app/kdf.py",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": null,
+    "id": "crypto-lib-pyca-cryptography",
+    "impact": null,
+    "kind": "framework",
+    "label": "pyca/cryptography",
+    "location": "requirements.txt",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "related-crypto-material",
+    "id": "crypto-material-initialization-vector-app-kdf-py-l28c49",
+    "impact": "High",
+    "kind": "crypto_asset",
+    "label": "initialization-vector (app/kdf.py:28)",
+    "location": "app/kdf.py",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": true
+   },
+   {
+    "asset_type": "related-crypto-material",
+    "id": "crypto-material-salt-app-encryption-py-l12c14",
+    "impact": "Medium",
+    "kind": "crypto_asset",
+    "label": "salt (app/encryption.py:12)",
+    "location": "app/encryption.py",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": true
+   },
+   {
+    "asset_type": "related-crypto-material",
+    "id": "crypto-material-salt-app-kdf-py-l13c52",
+    "impact": "Medium",
+    "kind": "crypto_asset",
+    "label": "salt (app/kdf.py:13)",
+    "location": "app/kdf.py",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": true
+   },
+   {
+    "asset_type": "related-crypto-material",
+    "id": "crypto-material-salt-app-kdf-py-l21c60",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "salt (app/kdf.py:21)",
+    "location": "app/kdf.py",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "related-crypto-material",
+    "id": "crypto-material-salt-app-kdf-py-l9c15",
+    "impact": "Medium",
+    "kind": "crypto_asset",
+    "label": "salt (SCRYPT_SALT, kdf.py)",
+    "location": "app/kdf.py",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": true
+   },
+   {
+    "asset_type": "family",
+    "count": 1,
+    "id": "family:ae",
+    "kind": "family",
+    "label": "Authenticated encryption (1)",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "family",
+    "count": 2,
+    "id": "family:block-cipher",
+    "kind": "family",
+    "label": "Block ciphers (2)",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "family",
+    "count": 3,
+    "id": "family:hash",
+    "kind": "family",
+    "label": "Hash functions (3)",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "family",
+    "count": 5,
+    "id": "family:kdf",
+    "kind": "family",
+    "label": "Key derivation (5)",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "family",
+    "count": 1,
+    "id": "family:mac",
+    "kind": "family",
+    "label": "MACs (1)",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "family",
+    "count": 5,
+    "id": "family:related-crypto-material",
+    "kind": "family",
+    "label": "Keys and secrets (5)",
+    "quantum_vulnerable": false,
+    "weak": true
+   },
+   {
+    "asset_type": "location",
+    "count": 0,
+    "id": "folder:(repository root)",
+    "kind": "location",
+    "label": "(repository root)"
+   },
+   {
+    "asset_type": "location",
+    "count": 17,
+    "id": "folder:app/",
+    "kind": "location",
+    "label": "app/ (17)"
+   }
+  ]
+ },
+ "cbom_graph_view": {
+  "edges": [
+   {
+    "rel": "depends_on",
+    "source": "crypto-algo-fernet-app-encryption-py",
+    "target": "crypto-algo-aes-128-cbc-app-encryption-py"
+   },
+   {
+    "rel": "depends_on",
+    "source": "crypto-algo-fernet-app-encryption-py",
+    "target": "crypto-algo-hmac-sha256-app-encryption-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-argon2-cffi",
+    "target": "crypto-algo-argon2-app-kdf-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-hashlib-stdlib",
+    "target": "crypto-algo-pbkdf2-app-kdf-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-hashlib-stdlib",
+    "target": "crypto-algo-scrypt-app-kdf-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-hashlib-stdlib",
+    "target": "crypto-algo-sha-512-app-kdf-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-aes-128-cbc-app-encryption-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-aes-cbc-app-kdf-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-fernet-app-encryption-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-hkdf-app-kdf-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-hmac-sha256-app-encryption-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-pbkdf2-app-encryption-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-sha-256-app-encryption-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-sha-256-app-kdf-py"
+   },
+   {
+    "rel": "provides",
+    "source": "crypto-lib-pyca-cryptography",
+    "target": "crypto-algo-sha-512-app-kdf-py"
+   },
+   {
+    "rel": "used_by",
+    "source": "crypto-material-salt-app-kdf-py-l9c15",
+    "target": "crypto-algo-aes-cbc-app-kdf-py"
+   }
+  ],
+  "meta": {
+   "clustered_members": 9,
+   "lane": "cbom",
+   "max_nodes": 40,
+   "raw_edge_count": 16,
+   "raw_node_count": 25,
+   "view_edge_count": 16,
+   "view_node_count": 19
+  },
+  "nodes": [
+   {
+    "asset_type": "container",
+    "cluster": true,
+    "cluster_count": 4,
+    "clustered_count": 4,
+    "id": "cluster:orphan:container",
+    "impact": null,
+    "is_cluster": true,
+    "kind": "container",
+    "label": "Unlinked container (4)",
+    "member_ids": [
+     "container-image-gcr-io-distroless-python3-debian12-sha256-0f1f7d2c4b3a6e5d8c9b0a1f2e3d4c5b6a7980716253443526170819a0b1c2d3",
+     "container-image-ghcr-io-acme-bank-router-1-4-2",
+     "container-image-python-3-11-slim",
+     "container-image-redis-7-2-alpine"
+    ],
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": null,
+    "cluster": true,
+    "cluster_count": 1,
+    "clustered_count": 1,
+    "id": "cluster:orphan:library",
+    "impact": "High",
+    "is_cluster": true,
+    "kind": "framework",
+    "label": "Unlinked library (1)",
+    "member_ids": [
+     "crypto-advisory-pypi-cryptography-41-0"
+    ],
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": true
+   },
+   {
+    "asset_type": "related-crypto-material",
+    "cluster": true,
+    "cluster_count": 4,
+    "clustered_count": 4,
+    "id": "cluster:orphan:related-crypto-material",
+    "impact": "High",
+    "is_cluster": true,
+    "kind": "crypto_asset",
+    "label": "Unlinked related-crypto-material (4)",
+    "member_ids": [
+     "crypto-material-initialization-vector-app-kdf-py-l28c49",
+     "crypto-material-salt-app-encryption-py-l12c14",
+     "crypto-material-salt-app-kdf-py-l13c52",
+     "crypto-material-salt-app-kdf-py-l21c60"
+    ],
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": true
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-aes-128-cbc-app-encryption-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "AES-128-CBC",
+    "location": "app/encryption.py",
+    "primitive": "block-cipher",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-aes-cbc-app-kdf-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "AES-CBC",
+    "location": "app/kdf.py",
+    "primitive": "block-cipher",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-argon2-app-kdf-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "Argon2",
+    "location": "app/kdf.py",
+    "primitive": "kdf",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-fernet-app-encryption-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "Fernet",
+    "location": "app/encryption.py",
+    "primitive": "ae",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-hkdf-app-kdf-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "HKDF",
+    "location": "app/kdf.py",
+    "primitive": "kdf",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-hmac-sha256-app-encryption-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "HMAC-SHA256",
+    "location": "app/encryption.py",
+    "primitive": "mac",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-pbkdf2-app-encryption-py",
+    "impact": "Low",
+    "kind": "crypto_asset",
+    "label": "PBKDF2",
+    "location": "app/encryption.py",
+    "primitive": "kdf",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-pbkdf2-app-kdf-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "PBKDF2",
+    "location": "app/kdf.py",
+    "primitive": "kdf",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-scrypt-app-kdf-py",
+    "impact": "Low",
+    "kind": "crypto_asset",
+    "label": "scrypt",
+    "location": "app/kdf.py",
+    "primitive": "kdf",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-sha-256-app-encryption-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "SHA-256",
+    "location": "app/encryption.py",
+    "primitive": "hash",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-sha-256-app-kdf-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "SHA-256",
+    "location": "app/kdf.py",
+    "primitive": "hash",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "algorithm",
+    "id": "crypto-algo-sha-512-app-kdf-py",
+    "impact": null,
+    "kind": "crypto_asset",
+    "label": "SHA-512",
+    "location": "app/kdf.py",
+    "primitive": "hash",
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": null,
+    "id": "crypto-lib-argon2-cffi",
+    "impact": null,
+    "kind": "framework",
+    "label": "argon2-cffi",
+    "location": "requirements.txt",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": null,
+    "id": "crypto-lib-hashlib-stdlib",
+    "impact": null,
+    "kind": "framework",
+    "label": "hashlib (stdlib)",
+    "location": "app/kdf.py",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": null,
+    "id": "crypto-lib-pyca-cryptography",
+    "impact": null,
+    "kind": "framework",
+    "label": "pyca/cryptography",
+    "location": "requirements.txt",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": false
+   },
+   {
+    "asset_type": "related-crypto-material",
+    "id": "crypto-material-salt-app-kdf-py-l9c15",
+    "impact": "Medium",
+    "kind": "crypto_asset",
+    "label": "salt (SCRYPT_SALT, kdf.py)",
+    "location": "app/kdf.py",
+    "primitive": null,
+    "quantum_vulnerable": false,
+    "weak": true
+   }
+  ]
+ },
+ "cbom_json": {
+  "bomFormat": "CycloneDX",
+  "components": [
+   {
+    "bom-ref": "container-image-gcr-io-distroless-python3-debian12-sha256-0f1f7d2c4b3a6e5d8c9b0a1f2e3d4c5b6a7980716253443526170819a0b1c2d3",
+    "name": "gcr.io/distroless/python3-debian12",
+    "properties": [
+     {
+      "name": "discovery:line",
+      "value": "5"
+     },
+     {
+      "name": "discovery:source",
+      "value": "Dockerfile"
+     },
+     {
+      "name": "image:digest",
+      "value": "sha256:0f1f7d2c4b3a6e5d8c9b0a1f2e3d4c5b6a7980716253443526170819a0b1c2d3"
+     },
+     {
+      "name": "image:origin",
+      "value": "Dockerfile FROM"
+     },
+     {
+      "name": "image:reference",
+      "value": "gcr.io/distroless/python3-debian12@sha256:0f1f7d2c4b3a6e5d8c9b0a1f2e3d4c5b6a7980716253443526170819a0b1c2d3"
+     }
+    ],
+    "purl": "pkg:oci/python3-debian12@sha256%3A0f1f7d2c4b3a6e5d8c9b0a1f2e3d4c5b6a7980716253443526170819a0b1c2d3?repository_url=gcr.io/distroless/python3-debian12",
+    "type": "container",
+    "version": "sha256:0f1f7d2c4b3a6e5d8c9b0a1f2e3d4c5b6a7980716253443526170819a0b1c2d3"
+   },
+   {
+    "bom-ref": "container-image-ghcr-io-acme-bank-router-1-4-2",
+    "name": "ghcr.io/acme/bank-router",
+    "properties": [
+     {
+      "name": "discovery:line",
+      "value": "3"
+     },
+     {
+      "name": "discovery:source",
+      "value": "docker-compose.yml"
+     },
+     {
+      "name": "image:origin",
+      "value": "Compose image"
+     },
+     {
+      "name": "image:reference",
+      "value": "ghcr.io/acme/bank-router:1.4.2"
+     }
+    ],
+    "purl": "pkg:oci/bank-router?repository_url=ghcr.io/acme/bank-router&tag=1.4.2",
+    "type": "container",
+    "version": "1.4.2"
+   },
+   {
+    "bom-ref": "container-image-python-3-11-slim",
+    "name": "python",
+    "properties": [
+     {
+      "name": "discovery:line",
+      "value": "2"
+     },
+     {
+      "name": "discovery:source",
+      "value": "Dockerfile"
+     },
+     {
+      "name": "image:origin",
+      "value": "Dockerfile FROM"
+     },
+     {
+      "name": "image:reference",
+      "value": "python:3.11-slim"
+     }
+    ],
+    "purl": "pkg:oci/python?tag=3.11-slim",
+    "type": "container",
+    "version": "3.11-slim"
+   },
+   {
+    "bom-ref": "container-image-redis-7-2-alpine",
+    "name": "redis",
+    "properties": [
+     {
+      "name": "discovery:line",
+      "value": "5"
+     },
+     {
+      "name": "discovery:source",
+      "value": "docker-compose.yml"
+     },
+     {
+      "name": "image:origin",
+      "value": "Compose image"
+     },
+     {
+      "name": "image:reference",
+      "value": "redis:7.2-alpine"
+     }
+    ],
+    "purl": "pkg:oci/redis?tag=7.2-alpine",
+    "type": "container",
+    "version": "7.2-alpine"
+   },
+   {
+    "bom-ref": "crypto-algo-aes-128-cbc-app-encryption-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "classicalSecurityLevel": 128,
+      "mode": "cbc",
+      "nistQuantumSecurityLevel": 1,
+      "parameterSetIdentifier": "128",
+      "primitive": "block-cipher"
+     },
+     "assetType": "algorithm",
+     "oid": "2.16.840.1.101.3.4.1.2"
+    },
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 16,
+       "location": "app/encryption.py"
+      }
+     ]
+    },
+    "name": "AES-128-CBC",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:derived",
+      "value": "true"
+     },
+     {
+      "name": "crypto:derivedFrom",
+      "value": "crypto-algo-fernet-app-encryption-py"
+     },
+     {
+      "name": "crypto:detectedBy",
+      "value": "pyca/cryptography"
+     },
+     {
+      "name": "crypto:keySize",
+      "value": "128"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "pyca/cryptography"
+     },
+     {
+      "name": "crypto:line",
+      "value": "16"
+     },
+     {
+      "name": "crypto:mode",
+      "value": "CBC"
+     },
+     {
+      "name": "crypto:nistQuantumSecurityLevel",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "16"
+     },
+     {
+      "name": "crypto:padding",
+      "value": "PKCS7"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "block-cipher"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "false"
+     },
+     {
+      "name": "crypto:securityStrengthBits",
+      "value": "128"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "strong"
+     },
+     {
+      "name": "discovery:source",
+      "value": "app/encryption.py"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Info"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-algo-aes-cbc-app-kdf-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "mode": "cbc",
+      "primitive": "block-cipher"
+     },
+     "assetType": "algorithm"
+    },
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 28,
+       "location": "app/kdf.py"
+      }
+     ]
+    },
+    "name": "AES-CBC",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:confidence",
+      "value": "high"
+     },
+     {
+      "name": "crypto:detectedBy",
+      "value": "pyca/cryptography"
+     },
+     {
+      "name": "crypto:detectionContext",
+      "value": "cipher"
+     },
+     {
+      "name": "crypto:detectionMethod",
+      "value": "ast"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "hashlib (stdlib),pyca/cryptography"
+     },
+     {
+      "name": "crypto:line",
+      "value": "28"
+     },
+     {
+      "name": "crypto:mode",
+      "value": "CBC"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "28"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "block-cipher"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "false"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "strong"
+     },
+     {
+      "name": "discovery:source",
+      "value": "app/kdf.py"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Info"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-algo-argon2-app-kdf-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "primitive": "kdf"
+     },
+     "assetType": "algorithm"
+    },
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 24,
+       "location": "app/kdf.py"
+      }
+     ]
+    },
+    "name": "Argon2",
+    "properties": [
+     {
+      "name": "crypto:argon2MemoryCost",
+      "value": "65536"
+     },
+     {
+      "name": "crypto:argon2Parallelism",
+      "value": "4"
+     },
+     {
+      "name": "crypto:argon2TimeCost",
+      "value": "3"
+     },
+     {
+      "name": "crypto:argon2Variant",
+      "value": "Argon2id (library default)"
+     },
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:confidence",
+      "value": "high"
+     },
+     {
+      "name": "crypto:detectedBy",
+      "value": "argon2-cffi"
+     },
+     {
+      "name": "crypto:detectionContext",
+      "value": "kdf"
+     },
+     {
+      "name": "crypto:detectionMethod",
+      "value": "ast"
+     },
+     {
+      "name": "crypto:kdfLength",
+      "value": "32"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "hashlib (stdlib),pyca/cryptography"
+     },
+     {
+      "name": "crypto:line",
+      "value": "24"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "24"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "kdf"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "false"
+     },
+     {
+      "name": "crypto:saltLength",
+      "value": "16"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "strong"
+     },
+     {
+      "name": "discovery:source",
+      "value": "app/kdf.py"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Info"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-algo-fernet-app-encryption-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "classicalSecurityLevel": 128,
+      "nistQuantumSecurityLevel": 1,
+      "parameterSetIdentifier": "128",
+      "primitive": "ae"
+     },
+     "assetType": "algorithm"
+    },
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 16,
+       "location": "app/encryption.py"
+      }
+     ]
+    },
+    "name": "Fernet",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:construction",
+      "value": "AES-128-CBC + HMAC-SHA256"
+     },
+     {
+      "name": "crypto:detectedBy",
+      "value": "pyca/cryptography"
+     },
+     {
+      "name": "crypto:detectionMethod",
+      "value": "call-expr"
+     },
+     {
+      "name": "crypto:keyMaterialBits",
+      "value": "256"
+     },
+     {
+      "name": "crypto:keySize",
+      "value": "128"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "pyca/cryptography"
+     },
+     {
+      "name": "crypto:line",
+      "value": "16"
+     },
+     {
+      "name": "crypto:nistQuantumSecurityLevel",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "16"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "ae"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "false"
+     },
+     {
+      "name": "crypto:securityStrengthBits",
+      "value": "128"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "strong"
+     },
+     {
+      "name": "discovery:source",
+      "value": "app/encryption.py"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Info"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-algo-hkdf-app-kdf-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "primitive": "kdf"
+     },
+     "assetType": "algorithm"
+    },
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 21,
+       "location": "app/kdf.py"
+      }
+     ]
+    },
+    "name": "HKDF",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:confidence",
+      "value": "high"
+     },
+     {
+      "name": "crypto:detectedBy",
+      "value": "pyca/cryptography"
+     },
+     {
+      "name": "crypto:detectionContext",
+      "value": "kdf"
+     },
+     {
+      "name": "crypto:detectionMethod",
+      "value": "ast"
+     },
+     {
+      "name": "crypto:innerDigest",
+      "value": "SHA-256"
+     },
+     {
+      "name": "crypto:kdfLength",
+      "value": "32"
+     },
+     {
+      "name": "crypto:kdfPrf",
+      "value": "HMAC-SHA256"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "hashlib (stdlib),pyca/cryptography"
+     },
+     {
+      "name": "crypto:line",
+      "value": "21"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "21"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "kdf"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "false"
+     },
+     {
+      "name": "crypto:saltLength",
+      "value": "11"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "strong"
+     },
+     {
+      "name": "discovery:source",
+      "value": "app/kdf.py"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Info"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-algo-hmac-sha256-app-encryption-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "primitive": "mac"
+     },
+     "assetType": "algorithm"
+    },
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 16,
+       "location": "app/encryption.py"
+      }
+     ]
+    },
+    "name": "HMAC-SHA256",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:derived",
+      "value": "true"
+     },
+     {
+      "name": "crypto:derivedFrom",
+      "value": "crypto-algo-fernet-app-encryption-py"
+     },
+     {
+      "name": "crypto:detectedBy",
+      "value": "pyca/cryptography"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "pyca/cryptography"
+     },
+     {
+      "name": "crypto:line",
+      "value": "16"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "16"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "mac"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "false"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "strong"
+     },
+     {
+      "name": "discovery:source",
+      "value": "app/encryption.py"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Info"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-algo-pbkdf2-app-encryption-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "primitive": "kdf"
+     },
+     "assetType": "algorithm"
+    },
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 9,
+       "location": "app/encryption.py"
+      }
+     ]
+    },
+    "name": "PBKDF2",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:confidence",
+      "value": "high"
+     },
+     {
+      "name": "crypto:detectedBy",
+      "value": "pyca/cryptography"
+     },
+     {
+      "name": "crypto:detectionContext",
+      "value": "kdf"
+     },
+     {
+      "name": "crypto:detectionMethod",
+      "value": "ast"
+     },
+     {
+      "name": "crypto:iterations",
+      "value": "480000"
+     },
+     {
+      "name": "crypto:kdfLength",
+      "value": "32"
+     },
+     {
+      "name": "crypto:kdfPrf",
+      "value": "HMAC-SHA256"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "pyca/cryptography"
+     },
+     {
+      "name": "crypto:line",
+      "value": "9"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "9"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "kdf"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "false"
+     },
+     {
+      "name": "crypto:saltLength",
+      "value": "19"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "strong"
+     },
+     {
+      "name": "discovery:source",
+      "value": "app/encryption.py"
+     },
+     {
+      "name": "zs:finding_code",
+      "value": "WEAK_KDF_ITERATIONS"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Low"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-algo-pbkdf2-app-kdf-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "primitive": "kdf"
+     },
+     "assetType": "algorithm"
+    },
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 13,
+       "location": "app/kdf.py"
+      }
+     ]
+    },
+    "name": "PBKDF2",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:confidence",
+      "value": "high"
+     },
+     {
+      "name": "crypto:detectedBy",
+      "value": "hashlib (stdlib)"
+     },
+     {
+      "name": "crypto:detectionContext",
+      "value": "kdf"
+     },
+     {
+      "name": "crypto:detectionMethod",
+      "value": "ast"
+     },
+     {
+      "name": "crypto:iterations",
+      "value": "600000"
+     },
+     {
+      "name": "crypto:kdfLength",
+      "value": "64"
+     },
+     {
+      "name": "crypto:kdfPrf",
+      "value": "HMAC-SHA512"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "hashlib (stdlib),pyca/cryptography"
+     },
+     {
+      "name": "crypto:line",
+      "value": "13"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "13"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "kdf"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "false"
+     },
+     {
+      "name": "crypto:saltLength",
+      "value": "16"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "strong"
+     },
+     {
+      "name": "discovery:source",
+      "value": "app/kdf.py"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Info"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-algo-scrypt-app-kdf-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "primitive": "kdf"
+     },
+     "assetType": "algorithm"
+    },
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 17,
+       "location": "app/kdf.py"
+      }
+     ]
+    },
+    "name": "scrypt",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:confidence",
+      "value": "high"
+     },
+     {
+      "name": "crypto:detectedBy",
+      "value": "hashlib (stdlib)"
+     },
+     {
+      "name": "crypto:detectionContext",
+      "value": "kdf"
+     },
+     {
+      "name": "crypto:detectionMethod",
+      "value": "ast"
+     },
+     {
+      "name": "crypto:kdfLength",
+      "value": "32"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "hashlib (stdlib),pyca/cryptography"
+     },
+     {
+      "name": "crypto:line",
+      "value": "17"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "17"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "kdf"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "false"
+     },
+     {
+      "name": "crypto:saltLength",
+      "value": "20"
+     },
+     {
+      "name": "crypto:scryptN",
+      "value": "16384"
+     },
+     {
+      "name": "crypto:scryptP",
+      "value": "1"
+     },
+     {
+      "name": "crypto:scryptR",
+      "value": "8"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "strong"
+     },
+     {
+      "name": "discovery:source",
+      "value": "app/kdf.py"
+     },
+     {
+      "name": "zs:finding_code",
+      "value": "WEAK_KDF_ITERATIONS"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Low"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-algo-sha-256-app-encryption-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "classicalSecurityLevel": 128,
+      "nistQuantumSecurityLevel": 2,
+      "primitive": "hash"
+     },
+     "assetType": "algorithm",
+     "oid": "2.16.840.1.101.3.4.2.1"
+    },
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 10,
+       "location": "app/encryption.py"
+      }
+     ]
+    },
+    "name": "SHA-256",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:detectedBy",
+      "value": "pyca/cryptography"
+     },
+     {
+      "name": "crypto:detectionMethod",
+      "value": "call-expr"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "pyca/cryptography"
+     },
+     {
+      "name": "crypto:line",
+      "value": "10"
+     },
+     {
+      "name": "crypto:nistQuantumSecurityLevel",
+      "value": "2"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "10"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "hash"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "false"
+     },
+     {
+      "name": "crypto:securityStrengthBits",
+      "value": "128"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "strong"
+     },
+     {
+      "name": "discovery:source",
+      "value": "app/encryption.py"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Info"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-algo-sha-256-app-kdf-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "classicalSecurityLevel": 128,
+      "nistQuantumSecurityLevel": 2,
+      "primitive": "hash"
+     },
+     "assetType": "algorithm",
+     "oid": "2.16.840.1.101.3.4.2.1"
+    },
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 21,
+       "location": "app/kdf.py"
+      }
+     ]
+    },
+    "name": "SHA-256",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:derived",
+      "value": "true"
+     },
+     {
+      "name": "crypto:derivedFrom",
+      "value": "crypto-algo-hkdf-app-kdf-py"
+     },
+     {
+      "name": "crypto:detectedBy",
+      "value": "pyca/cryptography"
+     },
+     {
+      "name": "crypto:detectionMethod",
+      "value": "call-expr"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "hashlib (stdlib),pyca/cryptography"
+     },
+     {
+      "name": "crypto:line",
+      "value": "21"
+     },
+     {
+      "name": "crypto:nistQuantumSecurityLevel",
+      "value": "2"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "21"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "hash"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "false"
+     },
+     {
+      "name": "crypto:securityStrengthBits",
+      "value": "128"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "strong"
+     },
+     {
+      "name": "discovery:source",
+      "value": "app/kdf.py"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Info"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-algo-sha-512-app-kdf-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "classicalSecurityLevel": 256,
+      "nistQuantumSecurityLevel": 5,
+      "primitive": "hash"
+     },
+     "assetType": "algorithm",
+     "oid": "2.16.840.1.101.3.4.2.3"
+    },
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 13,
+       "location": "app/kdf.py"
+      }
+     ]
+    },
+    "name": "SHA-512",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "hashlib (stdlib),pyca/cryptography"
+     },
+     {
+      "name": "crypto:line",
+      "value": "13"
+     },
+     {
+      "name": "crypto:nistQuantumSecurityLevel",
+      "value": "5"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "13"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "hash"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "false"
+     },
+     {
+      "name": "crypto:securityStrengthBits",
+      "value": "256"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "strong"
+     },
+     {
+      "name": "discovery:source",
+      "value": "app/kdf.py"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Info"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-material-initialization-vector-app-kdf-py-l28c49",
+    "cryptoProperties": {
+     "assetType": "related-crypto-material",
+     "relatedCryptoMaterialProperties": {
+      "type": "initialization-vector"
+     }
+    },
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 28,
+       "location": "app/kdf.py"
+      }
+     ]
+    },
+    "name": "initialization-vector (app/kdf.py:28)",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "related-crypto-material"
+     },
+     {
+      "name": "crypto:detectionMethod",
+      "value": "ast"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "hashlib (stdlib),pyca/cryptography"
+     },
+     {
+      "name": "crypto:line",
+      "value": "28"
+     },
+     {
+      "name": "crypto:literalLength",
+      "value": "16"
+     },
+     {
+      "name": "crypto:materialKind",
+      "value": "initialization-vector"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "28"
+     },
+     {
+      "name": "crypto:staticIv",
+      "value": "true"
+     },
+     {
+      "name": "crypto:usedBy",
+      "value": "AES-CBC"
+     },
+     {
+      "name": "discovery:source",
+      "value": "app/kdf.py"
+     },
+     {
+      "name": "zs:finding_code",
+      "value": "STATIC_IV"
+     },
+     {
+      "name": "zs:impact",
+      "value": "High"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-material-salt-app-encryption-py-l12c14",
+    "cryptoProperties": {
+     "assetType": "related-crypto-material",
+     "relatedCryptoMaterialProperties": {
+      "type": "salt"
+     }
+    },
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 12,
+       "location": "app/encryption.py"
+      }
+     ]
+    },
+    "name": "salt (app/encryption.py:12)",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "related-crypto-material"
+     },
+     {
+      "name": "crypto:detectionMethod",
+      "value": "ast"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "pyca/cryptography"
+     },
+     {
+      "name": "crypto:line",
+      "value": "12"
+     },
+     {
+      "name": "crypto:literalLength",
+      "value": "19"
+     },
+     {
+      "name": "crypto:materialKind",
+      "value": "salt"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "12"
+     },
+     {
+      "name": "crypto:staticSalt",
+      "value": "true"
+     },
+     {
+      "name": "crypto:usedBy",
+      "value": "PBKDF2"
+     },
+     {
+      "name": "discovery:source",
+      "value": "app/encryption.py"
+     },
+     {
+      "name": "zs:finding_code",
+      "value": "STATIC_SALT"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Medium"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-material-salt-app-kdf-py-l13c52",
+    "cryptoProperties": {
+     "assetType": "related-crypto-material",
+     "relatedCryptoMaterialProperties": {
+      "type": "salt"
+     }
+    },
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 13,
+       "location": "app/kdf.py"
+      }
+     ]
+    },
+    "name": "salt (app/kdf.py:13)",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "related-crypto-material"
+     },
+     {
+      "name": "crypto:detectionMethod",
+      "value": "ast"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "hashlib (stdlib),pyca/cryptography"
+     },
+     {
+      "name": "crypto:line",
+      "value": "13"
+     },
+     {
+      "name": "crypto:literalLength",
+      "value": "16"
+     },
+     {
+      "name": "crypto:materialKind",
+      "value": "salt"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "13"
+     },
+     {
+      "name": "crypto:staticSalt",
+      "value": "true"
+     },
+     {
+      "name": "crypto:usedBy",
+      "value": "PBKDF2"
+     },
+     {
+      "name": "discovery:source",
+      "value": "app/kdf.py"
+     },
+     {
+      "name": "zs:finding_code",
+      "value": "STATIC_SALT"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Medium"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-material-salt-app-kdf-py-l21c60",
+    "cryptoProperties": {
+     "assetType": "related-crypto-material",
+     "relatedCryptoMaterialProperties": {
+      "type": "salt"
+     }
+    },
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 21,
+       "location": "app/kdf.py"
+      }
+     ]
+    },
+    "name": "salt (app/kdf.py:21)",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "related-crypto-material"
+     },
+     {
+      "name": "crypto:detectionMethod",
+      "value": "ast"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "hashlib (stdlib),pyca/cryptography"
+     },
+     {
+      "name": "crypto:line",
+      "value": "21"
+     },
+     {
+      "name": "crypto:materialKind",
+      "value": "salt"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "21"
+     },
+     {
+      "name": "discovery:source",
+      "value": "app/kdf.py"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Info"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-material-salt-app-kdf-py-l9c15",
+    "cryptoProperties": {
+     "assetType": "related-crypto-material",
+     "relatedCryptoMaterialProperties": {
+      "type": "salt"
+     }
+    },
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 9,
+       "location": "app/kdf.py"
+      }
+     ]
+    },
+    "name": "salt (SCRYPT_SALT, kdf.py)",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "related-crypto-material"
+     },
+     {
+      "name": "crypto:detectionMethod",
+      "value": "ast"
+     },
+     {
+      "name": "crypto:hardcoded",
+      "value": "true"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "hashlib (stdlib),pyca/cryptography"
+     },
+     {
+      "name": "crypto:line",
+      "value": "9"
+     },
+     {
+      "name": "crypto:literalLength",
+      "value": "20"
+     },
+     {
+      "name": "crypto:materialKind",
+      "value": "salt"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "9"
+     },
+     {
+      "name": "crypto:staticSalt",
+      "value": "true"
+     },
+     {
+      "name": "crypto:usedBy",
+      "value": "scrypt"
+     },
+     {
+      "name": "discovery:source",
+      "value": "app/kdf.py"
+     },
+     {
+      "name": "zs:finding_code",
+      "value": "STATIC_SALT"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Medium"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-advisory-pypi-cryptography-41-0",
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 1,
+       "location": "requirements.txt"
+      }
+     ]
+    },
+    "name": "cryptography@>=41.0",
+    "properties": [
+     {
+      "name": "crypto:advisory",
+      "value": "CVE-2023-38325,CVE-2023-49083,CVE-2023-50782,CVE-2024-0727,CVE-2024-12797,CVE-2024-26130,CVE-2026-26007,CVE-2026-34073,CVE-2026-39892,CVE-2026-69247,CVE-2026-69248,CVE-2026-69249,GHSA-537c-gmf6-5ccf,GHSA-h4gh-qq45-vh27,GHSA-jm77-qphf-c4w8,GHSA-v8gr-m533-ghj9"
+     },
+     {
+      "name": "crypto:advisoryCount",
+      "value": "16"
+     },
+     {
+      "name": "crypto:dependencyScope",
+      "value": "direct"
+     },
+     {
+      "name": "crypto:ecosystem",
+      "value": "pypi"
+     },
+     {
+      "name": "crypto:language",
+      "value": "pip-requirements"
+     },
+     {
+      "name": "crypto:libraryRef",
+      "value": "crypto-lib-pyca-cryptography"
+     },
+     {
+      "name": "crypto:line",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "1"
+     },
+     {
+      "name": "crypto:role",
+      "value": "library"
+     },
+     {
+      "name": "crypto:version",
+      "value": ">=41.0"
+     },
+     {
+      "name": "crypto:vulnerable",
+      "value": "true"
+     },
+     {
+      "name": "discovery:source",
+      "value": "requirements.txt"
+     },
+     {
+      "name": "zs:finding_code",
+      "value": "VULNERABLE_CRYPTO_LIBRARY"
+     },
+     {
+      "name": "zs:impact",
+      "value": "High"
+     }
+    ],
+    "type": "library"
+   },
+   {
+    "bom-ref": "crypto-lib-argon2-cffi",
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 2,
+       "location": "requirements.txt"
+      }
+     ]
+    },
+    "name": "argon2-cffi",
+    "properties": [
+     {
+      "name": "crypto:language",
+      "value": "pip-requirements"
+     },
+     {
+      "name": "crypto:line",
+      "value": "2"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "2"
+     },
+     {
+      "name": "crypto:role",
+      "value": "library"
+     },
+     {
+      "name": "crypto:versionSource",
+      "value": "requirements.txt"
+     },
+     {
+      "name": "discovery:source",
+      "value": "requirements.txt"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Info"
+     }
+    ],
+    "purl": "pkg:pypi/argon2-cffi@23.1.0",
+    "type": "library",
+    "version": "23.1.0"
+   },
+   {
+    "bom-ref": "crypto-lib-hashlib-stdlib",
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 1,
+       "location": "app/kdf.py"
+      },
+      {
+       "line": 13,
+       "location": "app/kdf.py"
+      },
+      {
+       "line": 17,
+       "location": "app/kdf.py"
+      }
+     ]
+    },
+    "name": "hashlib (stdlib)",
+    "properties": [
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:line",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "3"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "1,13,17"
+     },
+     {
+      "name": "crypto:role",
+      "value": "library"
+     },
+     {
+      "name": "crypto:versionUnknownReason",
+      "value": "part of the language runtime: the version is the runtime's (python:3.11-slim, Dockerfile:2)"
+     },
+     {
+      "name": "discovery:source",
+      "value": "app/kdf.py"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Info"
+     }
+    ],
+    "type": "library"
+   },
+   {
+    "bom-ref": "crypto-lib-pyca-cryptography",
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 1,
+       "location": "requirements.txt"
+      }
+     ]
+    },
+    "name": "pyca/cryptography",
+    "properties": [
+     {
+      "name": "crypto:language",
+      "value": "pip-requirements"
+     },
+     {
+      "name": "crypto:line",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "1"
+     },
+     {
+      "name": "crypto:role",
+      "value": "library"
+     },
+     {
+      "name": "crypto:versionConstraint",
+      "value": ">=41.0"
+     },
+     {
+      "name": "crypto:versionSource",
+      "value": "uv.lock"
+     },
+     {
+      "name": "discovery:source",
+      "value": "requirements.txt"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Info"
+     }
+    ],
+    "purl": "pkg:pypi/cryptography@43.0.1",
+    "type": "library",
+    "version": "43.0.1"
+   },
+   {
+    "bom-ref": "crypto-cfg_54b97fc6498650a9",
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 5,
+       "location": "docker-compose.yml"
+      }
+     ]
+    },
+    "name": "cache:cache",
+    "properties": [
+     {
+      "name": "crypto:factAddress",
+      "value": "cache"
+     },
+     {
+      "name": "crypto:factBasis",
+      "value": "[{\"name\": \"image\", \"unknown_reason\": \"\", \"value\": \"redis\"}, {\"name\": \"database\", \"unknown_reason\": \"layer_not_observable\", \"value\": \"\"}, {\"name\": \"volume\", \"unknown_reason\": \"layer_not_observable\", \"value\": \"\"}, {\"name\": \"transport\", \"unknown_reason\": \"layer_not_observable\", \"value\": \"\"}]"
+     },
+     {
+      "name": "crypto:factDefaultRow",
+      "value": ""
+     },
+     {
+      "name": "crypto:factFindingCodes",
+      "value": "[]"
+     },
+     {
+      "name": "crypto:factFormat",
+      "value": "compose"
+     },
+     {
+      "name": "crypto:factId",
+      "value": "54b97fc6498650a9"
+     },
+     {
+      "name": "crypto:factKeyManagement",
+      "value": "unspecified"
+     },
+     {
+      "name": "crypto:factKeyRef",
+      "value": ""
+     },
+     {
+      "name": "crypto:factKind",
+      "value": "cache"
+     },
+     {
+      "name": "crypto:factLayers",
+      "value": "{\"database\": \"UNKNOWN\", \"transport\": \"UNKNOWN\", \"volume\": \"UNKNOWN\"}"
+     },
+     {
+      "name": "crypto:factLine",
+      "value": "5"
+     },
+     {
+      "name": "crypto:factLinkage",
+      "value": "{\"data_classification\": \"\", \"data_lifetime\": \"\", \"owner\": \"\", \"owner_hint\": \"\", \"source\": \"\", \"system\": \"\"}"
+     },
+     {
+      "name": "crypto:factNativeType",
+      "value": "redis"
+     },
+     {
+      "name": "crypto:factPath",
+      "value": "docker-compose.yml"
+     },
+     {
+      "name": "crypto:factPathContext",
+      "value": "production_like"
+     },
+     {
+      "name": "crypto:factProvider",
+      "value": "compose"
+     },
+     {
+      "name": "crypto:factSchema",
+      "value": "1"
+     },
+     {
+      "name": "crypto:factUnknownReason",
+      "value": "layer_not_observable"
+     },
+     {
+      "name": "crypto:factVerdict",
+      "value": "UNKNOWN"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Info"
+     }
+    ],
+    "type": "platform"
+   }
+  ],
+  "dependencies": [
+   {
+    "dependsOn": [
+     "crypto-material-initialization-vector-app-kdf-py-l28c49"
+    ],
+    "ref": "crypto-algo-aes-cbc-app-kdf-py"
+   },
+   {
+    "dependsOn": [
+     "crypto-algo-aes-128-cbc-app-encryption-py",
+     "crypto-algo-hmac-sha256-app-encryption-py"
+    ],
+    "ref": "crypto-algo-fernet-app-encryption-py"
+   },
+   {
+    "dependsOn": [
+     "crypto-algo-sha-256-app-kdf-py"
+    ],
+    "ref": "crypto-algo-hkdf-app-kdf-py"
+   },
+   {
+    "dependsOn": [
+     "crypto-algo-sha-256-app-encryption-py",
+     "crypto-material-salt-app-encryption-py-l12c14"
+    ],
+    "ref": "crypto-algo-pbkdf2-app-encryption-py"
+   },
+   {
+    "dependsOn": [
+     "crypto-algo-sha-512-app-kdf-py",
+     "crypto-material-salt-app-kdf-py-l13c52"
+    ],
+    "ref": "crypto-algo-pbkdf2-app-kdf-py"
+   },
+   {
+    "dependsOn": [
+     "crypto-material-salt-app-kdf-py-l9c15"
+    ],
+    "ref": "crypto-algo-scrypt-app-kdf-py"
+   },
+   {
+    "provides": [
+     "crypto-algo-argon2-app-kdf-py"
+    ],
+    "ref": "crypto-lib-argon2-cffi"
+   },
+   {
+    "provides": [
+     "crypto-algo-pbkdf2-app-kdf-py",
+     "crypto-algo-scrypt-app-kdf-py",
+     "crypto-algo-sha-512-app-kdf-py"
+    ],
+    "ref": "crypto-lib-hashlib-stdlib"
+   },
+   {
+    "provides": [
+     "crypto-algo-aes-128-cbc-app-encryption-py",
+     "crypto-algo-aes-cbc-app-kdf-py",
+     "crypto-algo-fernet-app-encryption-py",
+     "crypto-algo-hkdf-app-kdf-py",
+     "crypto-algo-hmac-sha256-app-encryption-py",
+     "crypto-algo-pbkdf2-app-encryption-py",
+     "crypto-algo-sha-256-app-encryption-py",
+     "crypto-algo-sha-256-app-kdf-py",
+     "crypto-algo-sha-512-app-kdf-py"
+    ],
+    "ref": "crypto-lib-pyca-cryptography"
+   },
+   {
+    "dependsOn": [
+     "crypto-algo-aes-cbc-app-kdf-py"
+    ],
+    "ref": "crypto-material-salt-app-kdf-py-l9c15"
+   }
+  ],
+  "metadata": {
+   "component": {
+    "name": "cbom-d3-bank",
+    "type": "application"
+   },
+   "properties": [
+    {
+     "name": "regulatory:disclaimer",
+     "value": "Regulatory mappings are advisory only; a CBOM creates visibility of cryptographic assets, not assurance, and does not by itself satisfy CERT-In, RBI, SEBI CSCRF, NIST or CNSA 2.0 obligations. A qualified reviewer must sign off."
+    },
+    {
+     "name": "zs:advisory_source",
+     "value": "osv-snapshot"
+    },
+    {
+     "name": "zs:advisory_snapshot_version",
+     "value": "2026.11.14.1"
+    },
+    {
+     "name": "zs:advisory_snapshot_date",
+     "value": "2026-11-14"
+    },
+    {
+     "name": "zs:advisory_snapshot_stale",
+     "value": "false"
+    },
+    {
+     "name": "zs:advisory_snapshot_sha256",
+     "value": "6da5bf0343477d51cd203d6dea2eab899f995a8682ecfba025ef756286ca3449"
+    }
+   ],
+   "timestamp": "2026-11-23T20:18:31Z",
+   "tools": {
+    "components": [
+     {
+      "externalReferences": [
+       {
+        "type": "website",
+        "url": "https://zeroshield.ai"
+       }
+      ],
+      "name": "DevSecShield CBOM",
+      "publisher": "Zero Shield",
+      "type": "application",
+      "version": "0.1.0"
+     }
+    ]
+   }
+  },
+  "serialNumber": "urn:uuid:4b50d636-b44f-5926-847d-0ac2f30aebb9",
+  "specVersion": "1.6",
+  "version": 1
+ },
+ "cbom_posture": {
+  "assembly_failed": false,
+  "diagnostic_totals": {},
+  "diagnostics": [],
+  "disabled_resources": [],
+  "dropped": {
+   "components": 0,
+   "facts": 0,
+   "run_object_budget": 0
+  },
+  "facts": [
+   {
+    "address": "cache",
+    "finding_codes": [],
+    "id": "54b97fc6498650a9",
+    "kind": "cache",
+    "layers": {
+     "database": "UNKNOWN",
+     "transport": "UNKNOWN",
+     "volume": "UNKNOWN"
+    },
+    "line": 5,
+    "native_type": "redis",
+    "path": "docker-compose.yml",
+    "provider": "compose",
+    "verdict": "UNKNOWN"
+   }
+  ],
+  "failed_lanes": [],
+  "imports": [],
+  "lanes": [
+   "posture_database",
+   "posture_findings",
+   "posture_iac",
+   "posture_linkage",
+   "posture_server",
+   "posture_tls_import",
+   "posture_verification"
+  ],
+  "out_of_scope": 0,
+  "schema_version": 1,
+  "validations": 1
+ },
+ "cbom_scores": {
+  "by_component": {
+   "crypto-advisory-pypi-cryptography-41-0": 8.0,
+   "crypto-algo-pbkdf2-app-encryption-py": 1.0,
+   "crypto-algo-scrypt-app-kdf-py": 1.0,
+   "crypto-material-initialization-vector-app-kdf-py-l28c49": 8.0,
+   "crypto-material-salt-app-encryption-py-l12c14": 4.0,
+   "crypto-material-salt-app-kdf-py-l13c52": 4.0,
+   "crypto-material-salt-app-kdf-py-l9c15": 4.0
+  },
+  "by_flag": {
+   "STATIC_IV": 8.0,
+   "STATIC_SALT": 12.0,
+   "VULNERABLE_CRYPTO_LIBRARY": 8.0,
+   "WEAK_KDF_ITERATIONS": 2.0
+  },
+  "component_severity": {
+   "crypto-advisory-pypi-cryptography-41-0": "high",
+   "crypto-algo-pbkdf2-app-encryption-py": "low",
+   "crypto-algo-scrypt-app-kdf-py": "low",
+   "crypto-material-initialization-vector-app-kdf-py-l28c49": "high",
+   "crypto-material-salt-app-encryption-py-l12c14": "medium",
+   "crypto-material-salt-app-kdf-py-l13c52": "medium",
+   "crypto-material-salt-app-kdf-py-l9c15": "medium"
+  },
+  "flag_count": 7,
+  "risk_band": "low",
+  "risk_normalized": 26.8,
+  "risk_total": 30.0
+ },
+ "duration_of_scan": 0.5,
+ "kb_version": "2026.11.15.6",
+ "quantum_vulnerable_count": 0,
+ "results": [
+  {
+   "algorithm_name": "cryptography@>=41.0",
+   "algorithm_type": "library",
+   "asset_type": null,
+   "bom_ref": "crypto-advisory-pypi-cryptography-41-0",
+   "compliance_controls": {
+    "NIST80053_SI": "NIST 800-53 - System and Information Integrity"
+   },
+   "container_format": null,
+   "crypto_strength": "weak",
+   "curve": null,
+   "cves": [
+    "CVE-2023-38325",
+    "CVE-2023-49083",
+    "CVE-2023-50782",
+    "CVE-2024-0727",
+    "CVE-2024-12797",
+    "CVE-2024-26130",
+    "CVE-2026-26007",
+    "CVE-2026-34073"
+   ],
+   "cwe": [
+    "CWE-1395"
+   ],
+   "description": "cryptography >=41.0 (direct, pypi) matches CVE-2023-38325: cryptography mishandles SSH certificates; CVE-2023-49083: cryptography vulnerable to NULL-dereference when loading PKCS7 certificates; CVE-2023-50782: Python Cryptography package vulnerable to Bleichenbacher timing oracle attack; CVE-2024-0727: Null pointer dereference in PKCS12 parsing; CVE-2024-12797: Vulnerable OpenSSL included in cryptography wheels; CVE-2024-26130: cryptography NULL pointer dereference with pkcs12.serialize_key_and_certificates when called with a non-matching certificate and private key and an hmac_hash override; CVE-2026-26007: cryptography Vulnerable to a Subgroup Attack Due to Missing Subgroup Validation for SECT Curves; CVE-2026-34073: cryptography has incomplete DNS name constraint enforcement on peer names; and 8 more. At least one advisory has no fixed release: replace the library. https://osv.dev/vulnerability/GHSA-cf7p-gm2m-833m",
+   "expired": false,
+   "finding_codes": [
+    "VULNERABLE_CRYPTO_LIBRARY"
+   ],
+   "hybrid": false,
+   "impact": "High",
+   "key_size": null,
+   "language": "pip-requirements",
+   "line": 1,
+   "location": "requirements.txt",
+   "material_kind": null,
+   "mode": null,
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "occurrence_count": 1,
+   "occurrences": [
+    1
+   ],
+   "owasp_top_10": {
+    "VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+   },
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": null,
+   "protocol_version": null,
+   "quantum_safe": null,
+   "quantum_vulnerable": false,
+   "risk_score": 7.5,
+   "security_strength_bits": null,
+   "self_signed": false,
+   "snippet": "cryptography>=41.0\nargon2-cffi==23.1.0\nfastapi>=0.110",
+   "snippet_redactions": 0,
+   "snippet_start": 1,
+   "suggested_fix": "Upgrade to the fixed version named in the advisory.",
+   "title": "cryptography@>=41.0",
+   "weak": true
+  },
+  {
+   "algorithm_name": "initialization-vector (app/kdf.py:28)",
+   "algorithm_type": "key",
+   "asset_type": "related-crypto-material",
+   "bom_ref": "crypto-material-initialization-vector-app-kdf-py-l28c49",
+   "compliance_controls": {
+    "ISO27001_A10_CRYPTOGRAPHY": "ISO 27001 - A.10 Cryptography",
+    "NIST80053_SC": "NIST 800-53 - System and Communications Protection"
+   },
+   "container_format": null,
+   "crypto_strength": "weak",
+   "curve": null,
+   "cves": [],
+   "cwe": [
+    "CWE-329",
+    "CWE-1204"
+   ],
+   "description": "Static IV/nonce initialization-vector (app/kdf.py:28): a constant, predictable initialization-vector reaches a cipher (CWE-329); it defeats CBC/CTR semantic security. Use a fresh random IV per message.",
+   "expired": false,
+   "finding_codes": [
+    "STATIC_IV"
+   ],
+   "hybrid": false,
+   "impact": "High",
+   "key_size": null,
+   "language": "python",
+   "line": 28,
+   "location": "app/kdf.py",
+   "material_kind": "initialization-vector",
+   "mode": null,
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "occurrence_count": 1,
+   "occurrences": [
+    28
+   ],
+   "owasp_top_10": {
+    "CRYPTOGRAPHIC_FAILURES": "A02:2021 - Cryptographic Failures"
+   },
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": null,
+   "protocol_version": null,
+   "quantum_safe": null,
+   "quantum_vulnerable": false,
+   "risk_score": 7.5,
+   "security_strength_bits": null,
+   "self_signed": false,
+   "snippet": "\n\ndef encrypt(key: bytes, data: bytes) -> bytes:\n    enc = Cipher(algorithms.AES(key), modes.CBC(b\"<redacted:16>\")).encryptor()\n    return enc.update(data) + enc.finalize() + os.urandom(1)",
+   "snippet_redactions": 1,
+   "snippet_start": 25,
+   "source_encoding": "utf-8",
+   "suggested_fix": "Generate a fresh random IV/nonce per message and store it with the ciphertext.",
+   "title": "initialization-vector (app/kdf.py:28)",
+   "weak": true
+  },
+  {
+   "algorithm_name": "salt (SCRYPT_SALT, kdf.py)",
+   "algorithm_type": "key",
+   "asset_type": "related-crypto-material",
+   "bom_ref": "crypto-material-salt-app-kdf-py-l9c15",
+   "compliance_controls": {
+    "ISO27001_A10_CRYPTOGRAPHY": "ISO 27001 - A.10 Cryptography",
+    "NIST80053_SC": "NIST 800-53 - System and Communications Protection"
+   },
+   "container_format": null,
+   "crypto_strength": "weak",
+   "curve": null,
+   "cves": [],
+   "cwe": [
+    "CWE-760"
+   ],
+   "description": "Static salt salt (SCRYPT_SALT, kdf.py): a constant salt reaches scrypt (CWE-760), so one precomputed table or one guessing run serves every password it protects. Use a fresh random salt of at least 16 bytes per password (SecureRandom) and store it with the result.",
+   "expired": false,
+   "finding_codes": [
+    "STATIC_SALT"
+   ],
+   "hybrid": false,
+   "impact": "Medium",
+   "key_size": null,
+   "language": "python",
+   "line": 9,
+   "location": "app/kdf.py",
+   "material_kind": "salt",
+   "mode": null,
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "occurrence_count": 1,
+   "occurrences": [
+    9
+   ],
+   "owasp_top_10": {
+    "CRYPTOGRAPHIC_FAILURES": "A02:2021 - Cryptographic Failures"
+   },
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": null,
+   "protocol_version": null,
+   "quantum_safe": null,
+   "quantum_vulnerable": false,
+   "risk_score": 4.5,
+   "security_strength_bits": null,
+   "self_signed": false,
+   "snippet": "from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes\nfrom cryptography.hazmat.primitives.kdf.hkdf import HKDF\n\nSCRYPT_SALT = b\"<redacted:20>\"\n\n\ndef stretch(password: bytes) -> bytes:",
+   "snippet_redactions": 1,
+   "snippet_start": 6,
+   "source_encoding": "utf-8",
+   "suggested_fix": "Generate a random salt of at least 16 bytes for each password with a CSPRNG and store it next to the derived value.",
+   "title": "salt (SCRYPT_SALT, kdf.py)",
+   "weak": true
+  },
+  {
+   "algorithm_name": "salt (app/encryption.py:12)",
+   "algorithm_type": "key",
+   "asset_type": "related-crypto-material",
+   "bom_ref": "crypto-material-salt-app-encryption-py-l12c14",
+   "compliance_controls": {
+    "ISO27001_A10_CRYPTOGRAPHY": "ISO 27001 - A.10 Cryptography",
+    "NIST80053_SC": "NIST 800-53 - System and Communications Protection"
+   },
+   "container_format": null,
+   "crypto_strength": "weak",
+   "curve": null,
+   "cves": [],
+   "cwe": [
+    "CWE-760"
+   ],
+   "description": "Static salt salt (app/encryption.py:12): a constant salt reaches PBKDF2 (CWE-760), so one precomputed table or one guessing run serves every password it protects. Use a fresh random salt of at least 16 bytes per password (SecureRandom) and store it with the result.",
+   "expired": false,
+   "finding_codes": [
+    "STATIC_SALT"
+   ],
+   "hybrid": false,
+   "impact": "Medium",
+   "key_size": null,
+   "language": "python",
+   "line": 12,
+   "location": "app/encryption.py",
+   "material_kind": "salt",
+   "mode": null,
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "occurrence_count": 1,
+   "occurrences": [
+    12
+   ],
+   "owasp_top_10": {
+    "CRYPTOGRAPHIC_FAILURES": "A02:2021 - Cryptographic Failures"
+   },
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": null,
+   "protocol_version": null,
+   "quantum_safe": null,
+   "quantum_vulnerable": false,
+   "risk_score": 4.5,
+   "security_strength_bits": null,
+   "self_signed": false,
+   "snippet": "    kdf = PBKDF2HMAC(\n        algorithm=hashes.SHA256(),\n        length=32,\n        salt=b\"<redacted:19>\",  # fixed salt (the SmarterRouter pattern)\n        iterations=480000,\n    )\n    key = base64.urlsafe_b64encode(kdf.derive(master_key.encode()))",
+   "snippet_redactions": 1,
+   "snippet_start": 9,
+   "source_encoding": "utf-8",
+   "suggested_fix": "Generate a random salt of at least 16 bytes for each password with a CSPRNG and store it next to the derived value.",
+   "title": "salt (app/encryption.py:12)",
+   "weak": true
+  },
+  {
+   "algorithm_name": "salt (app/kdf.py:13)",
+   "algorithm_type": "key",
+   "asset_type": "related-crypto-material",
+   "bom_ref": "crypto-material-salt-app-kdf-py-l13c52",
+   "compliance_controls": {
+    "ISO27001_A10_CRYPTOGRAPHY": "ISO 27001 - A.10 Cryptography",
+    "NIST80053_SC": "NIST 800-53 - System and Communications Protection"
+   },
+   "container_format": null,
+   "crypto_strength": "weak",
+   "curve": null,
+   "cves": [],
+   "cwe": [
+    "CWE-760"
+   ],
+   "description": "Static salt salt (app/kdf.py:13): a constant salt reaches PBKDF2 (CWE-760), so one precomputed table or one guessing run serves every password it protects. Use a fresh random salt of at least 16 bytes per password (SecureRandom) and store it with the result.",
+   "expired": false,
+   "finding_codes": [
+    "STATIC_SALT"
+   ],
+   "hybrid": false,
+   "impact": "Medium",
+   "key_size": null,
+   "language": "python",
+   "line": 13,
+   "location": "app/kdf.py",
+   "material_kind": "salt",
+   "mode": null,
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "occurrence_count": 1,
+   "occurrences": [
+    13
+   ],
+   "owasp_top_10": {
+    "CRYPTOGRAPHIC_FAILURES": "A02:2021 - Cryptographic Failures"
+   },
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": null,
+   "protocol_version": null,
+   "quantum_safe": null,
+   "quantum_vulnerable": false,
+   "risk_score": 4.5,
+   "security_strength_bits": null,
+   "self_signed": false,
+   "snippet": "\n\ndef stretch(password: bytes) -> bytes:\n    return hashlib.pbkdf2_hmac(\"sha512\", password, b\"<redacted:16>\", 600000, 64)\n\n\ndef scrypt_key(password: bytes) -> bytes:",
+   "snippet_redactions": 1,
+   "snippet_start": 10,
+   "source_encoding": "utf-8",
+   "suggested_fix": "Generate a random salt of at least 16 bytes for each password with a CSPRNG and store it next to the derived value.",
+   "title": "salt (app/kdf.py:13)",
+   "weak": true
+  },
+  {
+   "algorithm_name": "PBKDF2",
+   "algorithm_type": "kdf",
+   "asset_type": "algorithm",
+   "bom_ref": "crypto-algo-pbkdf2-app-encryption-py",
+   "compliance_controls": {
+    "ISO27001_A10_CRYPTOGRAPHY": "ISO 27001 - A.10 Cryptography",
+    "NIST80053_SC": "NIST 800-53 - System and Communications Protection"
+   },
+   "container_format": null,
+   "crypto_strength": "quantum_safe",
+   "curve": null,
+   "cves": [],
+   "cwe": [
+    "CWE-916"
+   ],
+   "description": "KDF iteration count PBKDF2 (line 9): 480,000 iterations, below the OWASP Password Storage minimum of 600,000 for PBKDF2-HMAC-SHA256 (CWE-916). Raise it, or move to Argon2id.",
+   "expired": false,
+   "finding_codes": [
+    "WEAK_KDF_ITERATIONS"
+   ],
+   "hybrid": false,
+   "impact": "Low",
+   "key_size": null,
+   "language": "python",
+   "line": 9,
+   "location": "app/encryption.py",
+   "material_kind": null,
+   "mode": null,
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "occurrence_count": 1,
+   "occurrences": [
+    9
+   ],
+   "owasp_top_10": {
+    "CRYPTOGRAPHIC_FAILURES": "A02:2021 - Cryptographic Failures"
+   },
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": "kdf",
+   "protocol_version": null,
+   "quantum_safe": true,
+   "quantum_vulnerable": false,
+   "risk_score": 1.4,
+   "security_strength_bits": null,
+   "self_signed": false,
+   "snippet": "\n\ndef fernet_for(master_key: str) -> Fernet:\n    kdf = PBKDF2HMAC(\n        algorithm=hashes.SHA256(),\n        length=32,\n        salt=b\"<redacted:19>\",  # fixed salt (the SmarterRouter pattern)",
+   "snippet_redactions": 1,
+   "snippet_start": 6,
+   "source_encoding": "utf-8",
+   "suggested_fix": "Use PBKDF2 with at least 600,000 iterations for HMAC-SHA256 (OWASP), or a memory-hard KDF such as Argon2id or scrypt, and keep the count in configuration so it can rise.",
+   "title": "PBKDF2",
+   "weak": false
+  },
+  {
+   "algorithm_name": "scrypt",
+   "algorithm_type": "kdf",
+   "asset_type": "algorithm",
+   "bom_ref": "crypto-algo-scrypt-app-kdf-py",
+   "compliance_controls": {
+    "ISO27001_A10_CRYPTOGRAPHY": "ISO 27001 - A.10 Cryptography",
+    "NIST80053_SC": "NIST 800-53 - System and Communications Protection"
+   },
+   "container_format": null,
+   "crypto_strength": "quantum_safe",
+   "curve": null,
+   "cves": [],
+   "cwe": [
+    "CWE-916"
+   ],
+   "description": "scrypt cost scrypt (line 17): N = 16,384, r = 8, p = 1, below the OWASP Password Storage minimum (N = 2^17 with r = 8, p = 1, or an equal-strength pair: 2^16 / p 2, 2^15 / p 3, 2^14 / p 5, 2^13 / p 10) (CWE-916).",
+   "expired": false,
+   "finding_codes": [
+    "WEAK_KDF_ITERATIONS"
+   ],
+   "hybrid": false,
+   "impact": "Low",
+   "key_size": null,
+   "language": "python",
+   "line": 17,
+   "location": "app/kdf.py",
+   "material_kind": null,
+   "mode": null,
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "occurrence_count": 1,
+   "occurrences": [
+    17
+   ],
+   "owasp_top_10": {
+    "CRYPTOGRAPHIC_FAILURES": "A02:2021 - Cryptographic Failures"
+   },
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": "kdf",
+   "protocol_version": null,
+   "quantum_safe": true,
+   "quantum_vulnerable": false,
+   "risk_score": 1.4,
+   "security_strength_bits": null,
+   "self_signed": false,
+   "snippet": "\n\ndef scrypt_key(password: bytes) -> bytes:\n    return hashlib.scrypt(password, salt=SCRYPT_SALT, n=16384, r=8, p=1, dklen=32)\n\n\ndef session_key(shared: bytes) -> bytes:",
+   "snippet_redactions": 0,
+   "snippet_start": 14,
+   "source_encoding": "utf-8",
+   "suggested_fix": "Raise the scrypt cost to at least N = 2^17 with r = 8 and p = 1 (OWASP; or an equal-strength pair such as N = 2^16 with p = 2), or use Argon2id, and keep the cost in configuration so it can rise.",
+   "title": "scrypt",
+   "weak": false
+  },
+  {
+   "algorithm_name": "AES-128-CBC",
+   "algorithm_type": "block-cipher",
+   "asset_type": "algorithm",
+   "bom_ref": "crypto-algo-aes-128-cbc-app-encryption-py",
+   "compliance_controls": {},
+   "container_format": null,
+   "crypto_strength": "quantum_safe",
+   "curve": null,
+   "cves": [],
+   "cwe": [],
+   "description": "Inventoried crypto asset (algorithm).",
+   "expired": false,
+   "finding_codes": [],
+   "hybrid": false,
+   "impact": null,
+   "key_size": "128",
+   "language": "python",
+   "line": 16,
+   "location": "app/encryption.py",
+   "material_kind": null,
+   "mode": "CBC",
+   "nist_quantum_security_level": 1,
+   "not_valid_after": null,
+   "occurrence_count": 1,
+   "occurrences": [
+    16
+   ],
+   "owasp_top_10": {},
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": "block-cipher",
+   "protocol_version": null,
+   "quantum_safe": true,
+   "quantum_vulnerable": false,
+   "risk_score": 0.0,
+   "security_strength_bits": 128,
+   "self_signed": false,
+   "snippet": "        iterations=480000,\n    )\n    key = base64.urlsafe_b64encode(kdf.derive(master_key.encode()))\n    return Fernet(key)",
+   "snippet_redactions": 0,
+   "snippet_start": 13,
+   "source_encoding": "utf-8",
+   "suggested_fix": "Keep this cryptographic asset in the organization's crypto inventory and post-quantum migration plan.",
+   "title": "AES-128-CBC",
+   "weak": false
+  },
+  {
+   "algorithm_name": "AES-CBC",
+   "algorithm_type": "block-cipher",
+   "asset_type": "algorithm",
+   "bom_ref": "crypto-algo-aes-cbc-app-kdf-py",
+   "compliance_controls": {},
+   "container_format": null,
+   "crypto_strength": "quantum_safe",
+   "curve": null,
+   "cves": [],
+   "cwe": [],
+   "description": "Inventoried crypto asset (algorithm).",
+   "expired": false,
+   "finding_codes": [],
+   "hybrid": false,
+   "impact": null,
+   "key_size": null,
+   "language": "python",
+   "line": 28,
+   "location": "app/kdf.py",
+   "material_kind": null,
+   "mode": "CBC",
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "occurrence_count": 1,
+   "occurrences": [
+    28
+   ],
+   "owasp_top_10": {},
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": "block-cipher",
+   "protocol_version": null,
+   "quantum_safe": true,
+   "quantum_vulnerable": false,
+   "risk_score": 0.0,
+   "security_strength_bits": null,
+   "self_signed": false,
+   "snippet": "\n\ndef encrypt(key: bytes, data: bytes) -> bytes:\n    enc = Cipher(algorithms.AES(key), modes.CBC(b\"<redacted:16>\")).encryptor()\n    return enc.update(data) + enc.finalize() + os.urandom(1)",
+   "snippet_redactions": 1,
+   "snippet_start": 25,
+   "source_encoding": "utf-8",
+   "suggested_fix": "Keep this cryptographic asset in the organization's crypto inventory and post-quantum migration plan.",
+   "title": "AES-CBC",
+   "weak": false
+  },
+  {
+   "algorithm_name": "Argon2",
+   "algorithm_type": "kdf",
+   "asset_type": "algorithm",
+   "bom_ref": "crypto-algo-argon2-app-kdf-py",
+   "compliance_controls": {},
+   "container_format": null,
+   "crypto_strength": "quantum_safe",
+   "curve": null,
+   "cves": [],
+   "cwe": [],
+   "description": "Inventoried crypto asset (algorithm).",
+   "expired": false,
+   "finding_codes": [],
+   "hybrid": false,
+   "impact": null,
+   "key_size": null,
+   "language": "python",
+   "line": 24,
+   "location": "app/kdf.py",
+   "material_kind": null,
+   "mode": null,
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "occurrence_count": 1,
+   "occurrences": [
+    24
+   ],
+   "owasp_top_10": {},
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": "kdf",
+   "protocol_version": null,
+   "quantum_safe": true,
+   "quantum_vulnerable": false,
+   "risk_score": 0.0,
+   "security_strength_bits": null,
+   "self_signed": false,
+   "snippet": "    return HKDF(algorithm=hashes.SHA256(), length=32, salt=b\"<redacted:11>\", info=b\"<redacted:7>\").derive(shared)\n\n\nHASHER = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=4, hash_len=32, salt_len=16)\n\n\ndef encrypt(key: bytes, data: bytes) -> bytes:",
+   "snippet_redactions": 2,
+   "snippet_start": 21,
+   "source_encoding": "utf-8",
+   "suggested_fix": "Keep this cryptographic asset in the organization's crypto inventory and post-quantum migration plan.",
+   "title": "Argon2",
+   "weak": false
+  },
+  {
+   "algorithm_name": "Fernet",
+   "algorithm_type": "ae",
+   "asset_type": "algorithm",
+   "bom_ref": "crypto-algo-fernet-app-encryption-py",
+   "compliance_controls": {},
+   "container_format": null,
+   "crypto_strength": "quantum_safe",
+   "curve": null,
+   "cves": [],
+   "cwe": [],
+   "description": "Inventoried crypto asset (algorithm).",
+   "expired": false,
+   "finding_codes": [],
+   "hybrid": false,
+   "impact": null,
+   "key_size": "128",
+   "language": "python",
+   "line": 16,
+   "location": "app/encryption.py",
+   "material_kind": null,
+   "mode": null,
+   "nist_quantum_security_level": 1,
+   "not_valid_after": null,
+   "occurrence_count": 1,
+   "occurrences": [
+    16
+   ],
+   "owasp_top_10": {},
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": "ae",
+   "protocol_version": null,
+   "quantum_safe": true,
+   "quantum_vulnerable": false,
+   "risk_score": 0.0,
+   "security_strength_bits": 128,
+   "self_signed": false,
+   "snippet": "        iterations=480000,\n    )\n    key = base64.urlsafe_b64encode(kdf.derive(master_key.encode()))\n    return Fernet(key)",
+   "snippet_redactions": 0,
+   "snippet_start": 13,
+   "source_encoding": "utf-8",
+   "suggested_fix": "Keep this cryptographic asset in the organization's crypto inventory and post-quantum migration plan.",
+   "title": "Fernet",
+   "weak": false
+  },
+  {
+   "algorithm_name": "HKDF",
+   "algorithm_type": "kdf",
+   "asset_type": "algorithm",
+   "bom_ref": "crypto-algo-hkdf-app-kdf-py",
+   "compliance_controls": {},
+   "container_format": null,
+   "crypto_strength": "quantum_safe",
+   "curve": null,
+   "cves": [],
+   "cwe": [],
+   "description": "Inventoried crypto asset (algorithm).",
+   "expired": false,
+   "finding_codes": [],
+   "hybrid": false,
+   "impact": null,
+   "key_size": null,
+   "language": "python",
+   "line": 21,
+   "location": "app/kdf.py",
+   "material_kind": null,
+   "mode": null,
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "occurrence_count": 1,
+   "occurrences": [
+    21
+   ],
+   "owasp_top_10": {},
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": "kdf",
+   "protocol_version": null,
+   "quantum_safe": true,
+   "quantum_vulnerable": false,
+   "risk_score": 0.0,
+   "security_strength_bits": null,
+   "self_signed": false,
+   "snippet": "\n\ndef session_key(shared: bytes) -> bytes:\n    return HKDF(algorithm=hashes.SHA256(), length=32, salt=b\"<redacted:11>\", info=b\"<redacted:7>\").derive(shared)\n\n\nHASHER = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=4, hash_len=32, salt_len=16)",
+   "snippet_redactions": 2,
+   "snippet_start": 18,
+   "source_encoding": "utf-8",
+   "suggested_fix": "Keep this cryptographic asset in the organization's crypto inventory and post-quantum migration plan.",
+   "title": "HKDF",
+   "weak": false
+  },
+  {
+   "algorithm_name": "HMAC-SHA256",
+   "algorithm_type": "mac",
+   "asset_type": "algorithm",
+   "bom_ref": "crypto-algo-hmac-sha256-app-encryption-py",
+   "compliance_controls": {},
+   "container_format": null,
+   "crypto_strength": "quantum_safe",
+   "curve": null,
+   "cves": [],
+   "cwe": [],
+   "description": "Inventoried crypto asset (algorithm).",
+   "expired": false,
+   "finding_codes": [],
+   "hybrid": false,
+   "impact": null,
+   "key_size": null,
+   "language": "python",
+   "line": 16,
+   "location": "app/encryption.py",
+   "material_kind": null,
+   "mode": null,
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "occurrence_count": 1,
+   "occurrences": [
+    16
+   ],
+   "owasp_top_10": {},
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": "mac",
+   "protocol_version": null,
+   "quantum_safe": true,
+   "quantum_vulnerable": false,
+   "risk_score": 0.0,
+   "security_strength_bits": null,
+   "self_signed": false,
+   "snippet": "        iterations=480000,\n    )\n    key = base64.urlsafe_b64encode(kdf.derive(master_key.encode()))\n    return Fernet(key)",
+   "snippet_redactions": 0,
+   "snippet_start": 13,
+   "source_encoding": "utf-8",
+   "suggested_fix": "Keep this cryptographic asset in the organization's crypto inventory and post-quantum migration plan.",
+   "title": "HMAC-SHA256",
+   "weak": false
+  },
+  {
+   "algorithm_name": "PBKDF2",
+   "algorithm_type": "kdf",
+   "asset_type": "algorithm",
+   "bom_ref": "crypto-algo-pbkdf2-app-kdf-py",
+   "compliance_controls": {},
+   "container_format": null,
+   "crypto_strength": "quantum_safe",
+   "curve": null,
+   "cves": [],
+   "cwe": [],
+   "description": "Inventoried crypto asset (algorithm).",
+   "expired": false,
+   "finding_codes": [],
+   "hybrid": false,
+   "impact": null,
+   "key_size": null,
+   "language": "python",
+   "line": 13,
+   "location": "app/kdf.py",
+   "material_kind": null,
+   "mode": null,
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "occurrence_count": 1,
+   "occurrences": [
+    13
+   ],
+   "owasp_top_10": {},
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": "kdf",
+   "protocol_version": null,
+   "quantum_safe": true,
+   "quantum_vulnerable": false,
+   "risk_score": 0.0,
+   "security_strength_bits": null,
+   "self_signed": false,
+   "snippet": "\n\ndef stretch(password: bytes) -> bytes:\n    return hashlib.pbkdf2_hmac(\"sha512\", password, b\"<redacted:16>\", 600000, 64)\n\n\ndef scrypt_key(password: bytes) -> bytes:",
+   "snippet_redactions": 1,
+   "snippet_start": 10,
+   "source_encoding": "utf-8",
+   "suggested_fix": "Keep this cryptographic asset in the organization's crypto inventory and post-quantum migration plan.",
+   "title": "PBKDF2",
+   "weak": false
+  },
+  {
+   "algorithm_name": "SHA-256",
+   "algorithm_type": "hash",
+   "asset_type": "algorithm",
+   "bom_ref": "crypto-algo-sha-256-app-encryption-py",
+   "compliance_controls": {},
+   "container_format": null,
+   "crypto_strength": "quantum_safe",
+   "curve": null,
+   "cves": [],
+   "cwe": [],
+   "description": "Inventoried crypto asset (algorithm).",
+   "expired": false,
+   "finding_codes": [],
+   "hybrid": false,
+   "impact": null,
+   "key_size": null,
+   "language": "python",
+   "line": 10,
+   "location": "app/encryption.py",
+   "material_kind": null,
+   "mode": null,
+   "nist_quantum_security_level": 2,
+   "not_valid_after": null,
+   "occurrence_count": 1,
+   "occurrences": [
+    10
+   ],
+   "owasp_top_10": {},
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": "hash",
+   "protocol_version": null,
+   "quantum_safe": true,
+   "quantum_vulnerable": false,
+   "risk_score": 0.0,
+   "security_strength_bits": 128,
+   "self_signed": false,
+   "snippet": "\ndef fernet_for(master_key: str) -> Fernet:\n    kdf = PBKDF2HMAC(\n        algorithm=hashes.SHA256(),\n        length=32,\n        salt=b\"<redacted:19>\",  # fixed salt (the SmarterRouter pattern)\n        iterations=480000,",
+   "snippet_redactions": 1,
+   "snippet_start": 7,
+   "source_encoding": "utf-8",
+   "suggested_fix": "Keep this cryptographic asset in the organization's crypto inventory and post-quantum migration plan.",
+   "title": "SHA-256",
+   "weak": false
+  },
+  {
+   "algorithm_name": "SHA-256",
+   "algorithm_type": "hash",
+   "asset_type": "algorithm",
+   "bom_ref": "crypto-algo-sha-256-app-kdf-py",
+   "compliance_controls": {},
+   "container_format": null,
+   "crypto_strength": "quantum_safe",
+   "curve": null,
+   "cves": [],
+   "cwe": [],
+   "description": "Inventoried crypto asset (algorithm).",
+   "expired": false,
+   "finding_codes": [],
+   "hybrid": false,
+   "impact": null,
+   "key_size": null,
+   "language": "python",
+   "line": 21,
+   "location": "app/kdf.py",
+   "material_kind": null,
+   "mode": null,
+   "nist_quantum_security_level": 2,
+   "not_valid_after": null,
+   "occurrence_count": 1,
+   "occurrences": [
+    21
+   ],
+   "owasp_top_10": {},
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": "hash",
+   "protocol_version": null,
+   "quantum_safe": true,
+   "quantum_vulnerable": false,
+   "risk_score": 0.0,
+   "security_strength_bits": 128,
+   "self_signed": false,
+   "snippet": "\n\ndef session_key(shared: bytes) -> bytes:\n    return HKDF(algorithm=hashes.SHA256(), length=32, salt=b\"<redacted:11>\", info=b\"<redacted:7>\").derive(shared)\n\n\nHASHER = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=4, hash_len=32, salt_len=16)",
+   "snippet_redactions": 2,
+   "snippet_start": 18,
+   "source_encoding": "utf-8",
+   "suggested_fix": "Keep this cryptographic asset in the organization's crypto inventory and post-quantum migration plan.",
+   "title": "SHA-256",
+   "weak": false
+  },
+  {
+   "algorithm_name": "SHA-512",
+   "algorithm_type": "hash",
+   "asset_type": "algorithm",
+   "bom_ref": "crypto-algo-sha-512-app-kdf-py",
+   "compliance_controls": {},
+   "container_format": null,
+   "crypto_strength": "quantum_safe",
+   "curve": null,
+   "cves": [],
+   "cwe": [],
+   "description": "Inventoried crypto asset (algorithm).",
+   "expired": false,
+   "finding_codes": [],
+   "hybrid": false,
+   "impact": null,
+   "key_size": null,
+   "language": "python",
+   "line": 13,
+   "location": "app/kdf.py",
+   "material_kind": null,
+   "mode": null,
+   "nist_quantum_security_level": 5,
+   "not_valid_after": null,
+   "occurrence_count": 1,
+   "occurrences": [
+    13
+   ],
+   "owasp_top_10": {},
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": "hash",
+   "protocol_version": null,
+   "quantum_safe": true,
+   "quantum_vulnerable": false,
+   "risk_score": 0.0,
+   "security_strength_bits": 256,
+   "self_signed": false,
+   "snippet": "\n\ndef stretch(password: bytes) -> bytes:\n    return hashlib.pbkdf2_hmac(\"sha512\", password, b\"<redacted:16>\", 600000, 64)\n\n\ndef scrypt_key(password: bytes) -> bytes:",
+   "snippet_redactions": 1,
+   "snippet_start": 10,
+   "source_encoding": "utf-8",
+   "suggested_fix": "Keep this cryptographic asset in the organization's crypto inventory and post-quantum migration plan.",
+   "title": "SHA-512",
+   "weak": false
+  },
+  {
+   "algorithm_name": "salt (app/kdf.py:21)",
+   "algorithm_type": "key",
+   "asset_type": "related-crypto-material",
+   "bom_ref": "crypto-material-salt-app-kdf-py-l21c60",
+   "compliance_controls": {},
+   "container_format": null,
+   "crypto_strength": "strong",
+   "curve": null,
+   "cves": [],
+   "cwe": [],
+   "description": "Inventoried crypto asset (related-crypto-material).",
+   "expired": false,
+   "finding_codes": [],
+   "hybrid": false,
+   "impact": null,
+   "key_size": null,
+   "language": "python",
+   "line": 21,
+   "location": "app/kdf.py",
+   "material_kind": "salt",
+   "mode": null,
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "occurrence_count": 1,
+   "occurrences": [
+    21
+   ],
+   "owasp_top_10": {},
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": null,
+   "protocol_version": null,
+   "quantum_safe": null,
+   "quantum_vulnerable": false,
+   "risk_score": 0.0,
+   "security_strength_bits": null,
+   "self_signed": false,
+   "snippet": "\n\ndef session_key(shared: bytes) -> bytes:\n    return HKDF(algorithm=hashes.SHA256(), length=32, salt=b\"<redacted:11>\", info=b\"<redacted:7>\").derive(shared)\n\n\nHASHER = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=4, hash_len=32, salt_len=16)",
+   "snippet_redactions": 2,
+   "snippet_start": 18,
+   "source_encoding": "utf-8",
+   "suggested_fix": "Keep this cryptographic asset in the organization's crypto inventory and post-quantum migration plan.",
+   "title": "salt (app/kdf.py:21)",
+   "weak": false
+  }
+ ]
+}

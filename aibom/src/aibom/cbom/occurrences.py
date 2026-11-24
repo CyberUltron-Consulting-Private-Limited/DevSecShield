@@ -222,9 +222,13 @@ def annotate(root: Path, components: list, project=None) -> dict[str, int]:
         m = re.match(r"^(?P<path>.+?):(?P<line>\d+)$", rel)
         if m:  # some sources already carry path:line (key specs, Kubernetes)
             rel, known = m.group("path"), [int(m.group("line"))]
-        if props.get("crypto:line", "").isdigit():  # a scanner that located the asset itself (all its lines)
+        # a scanner that located the asset itself (all its lines); the line it chose stays the row's line (a KDF row
+        # points at its weakest call, not its first: second review of #491, m-a)
+        chosen: int | None = None
+        if props.get("crypto:line", "").isdigit():
+            chosen = int(props["crypto:line"])
             known = [int(x) for x in str(props.get("crypto:occurrences") or props["crypto:line"]).split(",")
-                     if x.strip().isdigit()] or [int(props["crypto:line"])]
+                     if x.strip().isdigit()] or [chosen]
         if not rel:
             continue
         lang = language_of(rel)
@@ -264,11 +268,12 @@ def annotate(root: Path, components: list, project=None) -> dict[str, int]:
             if calls:
                 props["crypto:calledFrom"] = ",".join(calls[:MAX_OCCURRENCES])
         if lines:
-            props["crypto:line"] = str(lines[0])
+            line = chosen if chosen in lines else lines[0]
+            props["crypto:line"] = str(line)
             props["crypto:occurrences"] = ",".join(str(n) for n in lines[:MAX_OCCURRENCES])
             props["crypto:occurrenceCount"] = str(len(lines))
             if is_notebook(rel):  # notebook lines are virtual-source lines: say which cell they are in
-                cell = _notebook_cell(root, rel, lines[0], notebooks)
+                cell = _notebook_cell(root, rel, line, notebooks)
                 if cell:
                     props["crypto:notebookCell"] = cell
             stats["located"] += 1

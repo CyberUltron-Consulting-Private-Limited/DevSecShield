@@ -121,14 +121,26 @@ class CryptoMisuseScanner(Scanner):
                 refs.append(c.bom_ref)
         return sorted(refs)
 
-    def _emit(
-        self, ctx: ScanContext, fact, rel: str, cipher_refs: list[str]
-    ) -> str:
-        var = fact.var or "inline"
-        ref = (
-            f"crypto-material-misuse-{fact.kind}-{_slug(var)}"
-            f"-{_slug(rel)}-l{fact.line}"
-        )
+    @staticmethod
+    def _ast_row(ctx: ScanContext, fact, rel: str):
+        """The AST scanner's row for the same literal (same file, kind and line)."""
+        line = str(getattr(fact, "line", "") or "")
+        if not line:
+            return None
+        for c in ctx.components:
+            props = c.properties or {}
+            if (
+                c.kind == "crypto_asset"
+                and props.get("crypto:detectionMethod") == "ast"
+                and props.get("crypto:materialKind") == fact.kind
+                and props.get("discovery:source") == rel
+                and props.get("crypto:line") == line
+            ):
+                return c
+        return None
+
+    @staticmethod
+    def _props(fact, rel: str, cipher_refs: list[str]) -> dict[str, str]:
         props: dict[str, str] = {
             "crypto:assetType": "related-crypto-material",
             "crypto:materialKind": fact.kind,
@@ -156,6 +168,29 @@ class CryptoMisuseScanner(Scanner):
             props["crypto:derivedWith"] = fact.derived_with
         if getattr(fact, "defined_at", None):
             props["crypto:definedAt"] = fact.defined_at
+        return props
+
+    def _emit(
+        self, ctx: ScanContext, fact, rel: str, cipher_refs: list[str]
+    ) -> str:
+        var = fact.var or "inline"
+        ref = (
+            f"crypto-material-misuse-{fact.kind}-{_slug(var)}"
+            f"-{_slug(rel)}-l{fact.line}"
+        )
+        same = self._ast_row(ctx, fact, rel)
+        if same is not None:
+            # the AST scanner already inventoried this literal at this line (with its
+            # length and STATIC_SALT verdict): one row, carrying both lanes' facts and
+            # the variable's name (review of #491 m6)
+            merged = {**self._props(fact, rel, cipher_refs), **(same.properties or {})}
+            same.properties = merged
+            if fact.var:
+                same.name = f"{fact.kind} ({fact.var}, {Path(rel).name})"
+            for cipher_ref in cipher_refs:
+                ctx.add_edge(same.bom_ref, "used_by", cipher_ref)
+            return same.bom_ref
+        props = self._props(fact, rel, cipher_refs)
         name = f"{fact.kind} ({var}, {Path(rel).name})"
         ctx.add_component(
             CryptoAssetComponent(bom_ref=ref, name=name, properties=props)
