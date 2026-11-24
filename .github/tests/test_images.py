@@ -243,5 +243,54 @@ class BuildCache(unittest.TestCase):
         self.assertIn("docker builder prune --all --force", step_script("Free the build cache"))
 
 
+class RequiredFiles(unittest.TestCase):
+    """Second review of #487 (m-b): an image built without a named context (the backend without `aibom`) builds
+    fine and fails later at run time (every AI BOM PDF: ImportError on aibom/score/posture.py). The image job fails
+    instead, before Trivy, when a file the image needs is absent."""
+
+    NAME = "Required files in the image"
+
+    def check(self, present: set[str], files: str) -> subprocess.CompletedProcess:
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            # fake `docker run --rm --network none --entrypoint test <image> -f <path>`: exit 0 when <path> is present
+            fake_bin(d, "docker", 'p="${@: -1}"; case " ' + " ".join(sorted(present)) + ' " in *" $p "*) exit 0;; esac; exit 1\n')
+            return run(step_script(self.NAME), {"FILES": files, "IMAGE_REF": "ci.local/backend:x", "NAME": "backend"}, d)
+
+    def test_it_runs_after_the_build_and_before_trivy(self):
+        self.assertLess(NAMES.index("Image size"), NAMES.index(self.NAME))
+        self.assertLess(NAMES.index(self.NAME), NAMES.index("Trivy image scan"))
+        self.assertIn("if: matrix.image.require-files", step(self.NAME))
+
+    def test_a_missing_file_fails_the_job_and_names_it(self):
+        res = self.check({"/a"}, "/a /opt/aibom/src/aibom/score/posture.py")
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("::error::backend image has no /opt/aibom/src/aibom/score/posture.py", res.stdout)
+
+    def test_every_file_present_passes(self):
+        res = self.check({"/a", "/b"}, "/a /b")
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+
+    def test_the_backend_image_requires_the_engine_posture_module(self):
+        ci = (Path(__file__).resolve().parents[1] / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        line = next(ln for ln in ci.splitlines() if '"name":"backend"' in ln and "add '" in ln)
+        self.assertIn("aibom=aibom", line)
+        self.assertRegex(line, r'"require-files":"[^"]*/opt/aibom/src/aibom/score/posture\.py')
+        self.assertRegex(line, r'"require-files":"[^"]*/prod_database_migrations/alembic\.ini')
+
+    def test_build_images_checks_the_backend_image_for_it(self):
+        sh = (Path(__file__).resolve().parents[2] / "scripts" / "deploy" / "build_images.sh").read_text(encoding="utf-8")
+        backend = sh.split("check_component() {", 1)[1].split(";;", 1)[0]
+        self.assertIn("-f /opt/aibom/src/aibom/score/posture.py", backend)
+
+    def test_the_e2e_backend_image_carries_and_checks_it(self):
+        root = Path(__file__).resolve().parents[2]
+        dockerfile = (root / "e2e" / "docker" / "backend.e2e.Dockerfile").read_text(encoding="utf-8")
+        self.assertIn("COPY --from=aibom /src /opt/aibom/src", dockerfile)
+        build = (root / "e2e" / "scripts" / "build.sh").read_text(encoding="utf-8")
+        self.assertIn("--build-context \"aibom=${REPO_ROOT}/aibom\"", build)
+        self.assertIn("/opt/aibom/src/aibom/score/posture.py", build.split("assert_backend() {", 1)[1].split("\n}\n", 1)[0])
+
+
 if __name__ == "__main__":
     unittest.main()

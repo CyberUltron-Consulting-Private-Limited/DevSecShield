@@ -352,6 +352,7 @@ export const INFO_TIP_LABELS = {
   "cbsrc.servers.host_ca_keys": "Host CA public keys",
   "cbsrc.servers.known_hosts": "known_hosts lines",
   "cbsrc.servers.ca_pem": "CA certificate",
+  "cbsrc.servers.ad_tls_mode": "TLS (Active Directory)",
   "cbsrc.servers.credential": "Credential",
   "cbsrc.servers.ssh_certificate": "SSH certificate",
   "cbsrc.servers.private_key": "Private key",

@@ -46,11 +46,17 @@ const set = (name: string) => Array.from((new RegExp(`${name} = frozenset\\(\\{(
 for (const p of set("WINRM_HTTP_PORTS")) assert.ok(windowsPortProblem("windows_servers", p), `WinRM ${p}`);
 for (const p of set("AD_NOT_LDAPS_PORTS")) assert.ok(windowsPortProblem("active_directory", p), `AD ${p}`);
 assert.ok(set("WINRM_HTTP_PORTS").length >= 3 && set("AD_NOT_LDAPS_PORTS").length >= 4);
+// FIX-B3: StartTLS on the plain LDAP ports only, as kinds.AD_STARTTLS_PORTS
+for (const p of set("AD_STARTTLS_PORTS")) assert.equal(windowsPortProblem("active_directory", p, "starttls"), null, `StartTLS ${p}`);
+for (const p of set("AD_LDAPS_PORTS")) assert.ok(windowsPortProblem("active_directory", p, "starttls"), `StartTLS on LDAPS ${p}`);
+assert.match(windowsPortProblem("active_directory", 389) ?? "", /StartTLS/);
+assert.ok(set("AD_STARTTLS_PORTS").length === 2 && set("AD_LDAPS_PORTS").length === 2);
 
 // wired into the Servers form: validate(), the CSV import and the known_hosts upload
 const tab = fs.readFileSync(path.join(here, "ServersTab.tsx"), "utf8");
 assert.match(tab, /knownHostsProblem\(form\.knownHosts\)/);
 assert.match(tab, /const problem = knownHostsProblem\(text\);/);
 assert.match(tab, /mergeImportedTargets\(form\.targets, rows, MAX_TARGET_LINES\)/);
-assert.match(tab, /windowsPortProblem\(form\.kind, Number\(form\.port\)\)/);
+assert.match(tab, /windowsPortProblem\(form\.kind, Number\(form\.port\), form\.tlsMode\)/);
+assert.match(tab, /tls_mode: form\.tlsMode/);
 console.log("sourceFormChecks.test.ts: ok");

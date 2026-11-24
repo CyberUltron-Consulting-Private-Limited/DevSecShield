@@ -11,6 +11,14 @@ from typing import Any
 _BY_KIND = {
     "awx_hosts": "transport_awx",    # F1.3
     "salt_hosts": "transport_salt",  # F1.3
+    "active_directory": "ad_ldaps",  # FIX-B3 (#488 review m3): 1.0.x nodes up to 1.0.6 have no AD collector
+}
+# Capabilities whose absence the run plan names (the source is skipped with this advice instead of queueing a job no
+# node of that version will ever claim): what the node needs, and from which release it has it.  Staging ran nodes
+# 1.0.0, 1.0.2 and 1.0.6 when the AD collector was added; the first release that reports ``ad_ldaps`` comes after
+# 1.0.6 (scan_node/release.json numbers releases).  The claim still decides by capability, never by version.
+UPGRADE_HINTS = {
+    "ad_ldaps": ("Active Directory support", "1.0.6"),
 }
 _BY_CREDENTIAL = {
     "ssh_ca": "ssh_ca",              # F1.4
@@ -41,6 +49,20 @@ def missing_for(node, kind: str | None, config: dict[str, Any] | None) -> frozen
 
 def can_run(node, kind: str | None, config: dict[str, Any] | None) -> bool:
     return not missing_for(node, kind, config)
+
+
+def upgrade_reason(node, kind: str | None, config: dict[str, Any] | None) -> str | None:
+    """The plan's skip reason when ``node`` lacks a capability listed in ``UPGRADE_HINTS`` for this source, else
+    None (a node that has it, no node, or a capability the plan does not name)."""
+    if node is None:
+        return None
+    for cap in sorted(missing_for(node, kind, config)):
+        hint = UPGRADE_HINTS.get(cap)
+        if hint:
+            running = getattr(node, "node_version", None) or "an older version"
+            return (f"Needs a scan node with {hint[0]}: scan node {node.name} runs {running}; update it to a release "
+                    f"after {hint[1]} (it reports the {cap} capability)")
+    return None
 
 
 def excluded_for(node) -> tuple[list[str], list[str]]:

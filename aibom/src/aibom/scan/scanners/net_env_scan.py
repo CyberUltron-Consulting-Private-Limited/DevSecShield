@@ -129,9 +129,11 @@ _HOST_RES = [
 
 _SUFFIXES = {".env", ".py", ".ts", ".js", ".yaml", ".yml", ".toml", ".sh", ".cfg"}
 _LOOPBACK = ("localhost", "127.0.0.1")
-# An API version path segment: v1, v2, v1beta, v1alpha2, 2023-05-15.
+# An API version path segment: v1, v2, v1beta, v1alpha2, v2preview, 2023-05-15. Only
+# the real version words may follow the number, so a key-shaped segment such as
+# ``v2abcdefFAKEghij123`` is not taken for a version (second review of #487, m-a).
 _VERSION_SEGMENT = re.compile(
-    r"^(?:v\d+(?:[a-z]+\d*)?|\d{4}-\d{2}-\d{2})$", re.IGNORECASE
+    r"^(?:v\d+(?:(?:alpha|beta|preview)\d*)?|\d{4}-\d{2}-\d{2})$", re.IGNORECASE
 )
 
 

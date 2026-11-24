@@ -7,7 +7,7 @@ from typing import Any
 from reportlab.lib import colors
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import KeepTogether, Paragraph, Spacer, Table, TableStyle
 
 from backend.utilities.dashboard.rbi_posture import build_rbi_csf_rollup
 
@@ -103,7 +103,7 @@ def append_rbi_compliance_pdf_section(
     pillars = (rollup or {}).get("rbi_csf_rollup") if isinstance(rollup, dict) else None
     if isinstance(pillars, dict) and pillars:
         story.append(Spacer(1, 0.15 * inch))
-        story.append(Paragraph("RBI CSF Pillar Rollup", heading_style))
+        pillar_heading = Paragraph("RBI CSF Pillar Rollup", heading_style)
         prow = [["Pillar", "Pass", "Fail", "Coverage"]]
         for pname, pdata in pillars.items():
             if not isinstance(pdata, dict):
@@ -130,4 +130,4 @@ def append_rbi_compliance_pdf_section(
                 ]
             )
         )
-        story.append(ptable)
+        story.append(KeepTogether([pillar_heading, ptable]))  # the heading never sits alone at a page foot

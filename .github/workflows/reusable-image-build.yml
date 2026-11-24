@@ -10,7 +10,8 @@
 #            {"name":"web","context":"web","dockerfile":"web/Dockerfile","build-args":"API_URL=http://localhost:8000"}]
 #
 # `images` is a JSON array; each item has name, context, dockerfile, and optionally build-args and build-contexts
-# (newline-separated, as for docker/build-push-action).
+# (newline-separated, as for docker/build-push-action) and require-files (space-separated absolute paths the built
+# image must contain; the job fails before the Trivy scan when one is absent).
 #
 # Gating: the build must succeed. Trivy findings are reported; with `trivy-fail-on` set (for example CRITICAL) the
 # job also fails on fixable vulnerabilities of that severity.
@@ -26,7 +27,7 @@ on:
   workflow_call:
     inputs:
       images:
-        description: JSON array of {name, context, dockerfile, build-args?, build-contexts?}.
+        description: JSON array of {name, context, dockerfile, build-args?, build-contexts?, require-files?}.
         type: string
         required: true
       pre-build-command:
@@ -196,6 +197,26 @@ jobs:
 
       - name: Image size
         run: docker image inspect "$IMAGE_REF" --format 'size={{.Size}} bytes' | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # An image whose Dockerfile falls back to an empty stage when a named build context is missing (the backend
+      # without `aibom`) still builds; the files it needs at run time are checked here, before the scan.
+      - name: Required files in the image
+        if: matrix.image.require-files
+        env:
+          FILES: ${{ matrix.image.require-files }}
+          NAME: ${{ matrix.image.name }}
+        run: |
+          set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
+          missing=0
+          for f in $FILES; do
+            if docker run --rm --network none --entrypoint test "$IMAGE_REF" -f "$f"; then
+              echo "present: $f"
+            else
+              echo "::error::$NAME image has no $f (was a named build context left out?)"
+              missing=1
+            fi
+          done
+          exit "$missing"
 
       - name: Install Trivy
         env:
