@@ -36,6 +36,8 @@ export function postureSlices(p: Pick<CbomPostureWithExposure, "pqc_classes">): 
     { key: "safe", label: "Safe", count: ready, stroke: "stroke-teal-500", dot: "bg-teal-500" },
     { key: "unknown", label: "Unknown", count: c.unknown ?? 0, stroke: "stroke-zinc-400 dark:stroke-zinc-500", dot: "bg-zinc-400 dark:bg-zinc-500" },
     { key: "na", label: "Not applicable", count: c["not-applicable"] ?? 0, stroke: "stroke-zinc-300 dark:stroke-zinc-700", dot: "bg-zinc-300 dark:bg-zinc-700" },
+    // SP 800-131A-disallowed, no public key (class model pc-3): graded separately, outside readiness
+    { key: "deprecated", label: "Disallowed (SP 800-131A)", count: c.deprecated ?? 0, stroke: "stroke-red-600", dot: "bg-red-600" },
   ].filter((s) => s.count > 0);
 }
 

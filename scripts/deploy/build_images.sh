@@ -199,6 +199,10 @@ check_component() { # <component>
       assert_no_secrets backend /backend /prod_database_migrations /opt/aibom
       docker run --rm --network none --entrypoint test "$(image_name backend)" -f /prod_database_migrations/alembic.ini ||
         die "backend image has no Alembic bundle"
+      # the AI BOM PDF grade loads the engine's posture module by path (backend/utilities/pdf/aibom_posture.py);
+      # without the `aibom` build context the stage is empty and every AI BOM PDF would fail at render
+      docker run --rm --network none --entrypoint test "$(image_name backend)" -f /opt/aibom/src/aibom/score/posture.py ||
+        die "backend image has no aibom engine (/opt/aibom/src/aibom/score/posture.py): build with --build-context aibom=aibom"
       ;;
     frontend) assert_no_secrets frontend /frontend ;;
     scan-worker) assert_no_secrets scan-worker /build ;;

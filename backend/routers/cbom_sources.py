@@ -48,6 +48,7 @@ from backend.utilities.cbom_sources import http as _cbom_http
 from backend.utilities.rbac.policy import Access
 from backend.utilities.cbom_sources import agents as AG
 from backend.utilities.cbom_sources import limits as LIM
+from backend.utilities.cbom_sources import pqc_targets as PQT
 from backend.utilities.cbom_sources import held as HELD
 from backend.utilities.cbom_sources import host_key_resets as HKR  # #150
 from backend.utilities.cbom_sources import drift as DRIFT
@@ -1270,6 +1271,10 @@ def _update_settings(engine, team_id: int, user_id: int, body: SettingsUpdate) -
             # clears all three
             changes["risk_model"] = ({**(row.risk_model or {}), **body.risk_model.model_dump(exclude_unset=True)}
                                      if body.risk_model is not None else {})
+            # the wave windows in force after the merge (a stored value or the KB default fills a field not sent)
+            order = PQT.window_order_error(PQT.fix_windows(changes["risk_model"]))
+            if order:
+                raise HTTPException(status_code=422, detail=order)
         if "require_signed_nodes" in changes and changes["require_signed_nodes"] is None:
             changes.pop("require_signed_nodes")  # null means "leave as is" (the column is NOT NULL)
         if "cert_domains" in changes:

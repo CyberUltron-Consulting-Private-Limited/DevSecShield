@@ -123,7 +123,7 @@ def _rows(session: Session, team_id: int, run_id: int, *, by: str, metric: str):
     grade or None, source name, job). The map and a cell's drill-down both read this one loop."""
     from backend.utilities.cbom_sources import qgrade as QG
     from backend.utilities.cbom_sources.classify import shown
-    from backend.utilities.cbom_sources.posture import JudgedElsewhere, classify_pqc
+    from backend.utilities.cbom_sources.posture import JudgedElsewhere, graded_class
 
     jobs = {j.id: j for j in session.exec(select(CbomCollectionJob).where(
         CbomCollectionJob.team_id == team_id, CbomCollectionJob.run_id == run_id)).all()}
@@ -148,7 +148,7 @@ def _rows(session: Session, team_id: int, run_id: int, *, by: str, metric: str):
         src = sources.get((job.source_id if job else None) or 0)
         name = ID.job_source_name(job, src) if job else None
         column = (name if job else "Unknown source") if by == "source" else row.asset_type
-        cls = classify_pqc(row, codes, elsewhere=elsewhere)[0]  # the one class function (CB-18)
+        cls = graded_class(row, codes, elsewhere=elsewhere)[0]  # the one class function (CB-18; deprecated, D12)
         graded = grading.grade_row(row, codes, explain=False, cls=cls) if grading is not None else None
         yield (row, algorithm_family(row.algorithm, row.asset_type, row.facts), column, view["impact"], cls, graded,
                name, today)

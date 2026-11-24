@@ -359,3 +359,42 @@ def test_saas_providers_are_not_local(model_fn: dict) -> None:
     assert rows["Google Gemini API"] == "google"
     assert rows["gemini-1.5-flash"] == "google"
     assert rows["OpenAI API"] == "openai"
+
+
+# --------------------------------------------------------------- second review of #487
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        # a token-shaped segment after the version is not a version (m-a)
+        ('U = "https://api.openai.com/v1/v2abcdefFAKEghij123"', "https://api.openai.com/v1"),
+        ('U = "https://api.openai.com/v1/v9FAKEVERSzz0010"', "https://api.openai.com/v1"),
+        ('U = "https://api.openai.com/v20231115FAKE"', "https://api.openai.com"),
+        # real version words stay
+        ('U = "https://api.openai.com/v1beta2/models"', "https://api.openai.com/v1beta2"),
+        ('U = "https://api.openai.com/v1alpha/x"', "https://api.openai.com/v1alpha"),
+        ('U = "https://api.openai.com/v2preview/x"', "https://api.openai.com/v2preview"),
+    ],
+)
+def test_only_real_version_words_follow_a_version(
+    tmp_path: pathlib.Path, line: str, expected: str
+) -> None:
+    _write(tmp_path, {"app/client.py": line + "\n"})
+    out = scan_to_devsecshield(tmp_path, level=4)
+    assert "fake" not in json.dumps(out, default=str).lower()
+    (service,) = out["ai_bom_json"]["services"]
+    assert service["endpoints"] == [expected]
+
+
+def test_alibaba_provider_is_not_local(tmp_path: pathlib.Path) -> None:
+    _write(
+        tmp_path,
+        {
+            "app/hf.py": "from transformers import AutoModelForCausalLM\n"
+            'm = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2.5-1.5B-Instruct")\n'
+        },
+    )
+    rows = {
+        r["component_name"]: r["source"]
+        for r in scan_to_devsecshield(tmp_path, level=4)["results"]
+    }
+    assert rows["Alibaba"] == "alibaba"

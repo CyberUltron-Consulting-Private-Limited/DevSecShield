@@ -29,11 +29,13 @@ from pathlib import Path
 
 from aibom.cbom.detect import _strip_line_comment, detect_crypto, strip_noncode
 from aibom.cbom.files import FileWalk, file_walk
+from aibom.cbom.library_versions import resolve_library_versions
 from aibom.cbom.project import ProjectIndex, project_index
 from aibom.cbom.purpose import hash_purpose
 from aibom.cbom.registry import cbom_register
 from aibom.cbom.rules import (
     ALGORITHM_NORMALIZE,
+    COMPOSITE_PARTS,
     CRYPTO_IMPORT_MODULES,
     CRYPTO_IMPORT_MODULES_BY_LANG,
     CRYPTO_LIBRARY_PACKAGES,
@@ -43,6 +45,7 @@ from aibom.cbom.rules import (
     source_language,
 )
 from aibom.model.component import CryptoAssetComponent, FrameworkComponent
+from aibom.model.result import REL_DEPENDS_ON
 from aibom.scan.registry import ScanContext, Scanner
 
 # Detection of concrete crypto-API usage (receiver+method+arg-role rule model,
@@ -463,14 +466,27 @@ class CryptoAlgorithmScanner(Scanner):
 
     def scan(self, ctx: ScanContext) -> None:
         walk = file_walk(ctx)
-        for label, src, line in _detect_libraries(ctx.root, walk):
+        libraries = _detect_libraries(ctx.root, walk)
+        # the library's version from the tree's manifests and lockfiles (or why not)
+        labels = [label for label, _src, _line in libraries]
+        versions = resolve_library_versions(ctx.root, walk, labels)
+        for label, src, line in libraries:
             ref = f"crypto-lib-{_slug(label)}"
             if ctx.has_ref(ref):
                 continue
-            props = {"crypto:role": "library", "discovery:source": src}
+            lib_props = {"crypto:role": "library", "discovery:source": src}
             if line:  # the requirement / import line that named it: where the occurrence pass finds no usage line
-                props["crypto:importLine"] = str(line)
-            ctx.add_component(FrameworkComponent(bom_ref=ref, name=label, properties=props))
+                lib_props["crypto:importLine"] = str(line)
+            found = versions.get(label)
+            version = purl = None
+            if found is not None:
+                version, purl = found.version, found.purl
+                lib_props.update(found.properties())
+            ctx.add_component(
+                FrameworkComponent(
+                    bom_ref=ref, name=label, version=version, purl=purl, properties=lib_props
+                )
+            )
 
         for asset in _detect_assets(ctx.root, walk, project_index(ctx)):
             # The AST scanner (order 8) owns Python algorithm detection with
@@ -522,13 +538,64 @@ class CryptoAlgorithmScanner(Scanner):
                     lines = sorted(set(asset.lines))
                     props["crypto:line"] = str(lines[0])
                     props["crypto:occurrences"] = ",".join(str(n) for n in lines[:25])
+            info_material = asset.info.get("key_material_bits")
+            if info_material:
+                props["crypto:keyMaterialBits"] = str(info_material)
+            ref = f"crypto-algo-{_slug(asset.name)}-{_slug(asset.location)}"
             ctx.add_component(
-                CryptoAssetComponent(
-                    bom_ref=f"crypto-algo-{_slug(asset.name)}-{_slug(asset.location)}",
-                    name=asset.name,
-                    properties=props,
-                )
+                CryptoAssetComponent(bom_ref=ref, name=asset.name, properties=props)
             )
+            _add_composite_parts(ctx, asset, ref)
+
+
+def _add_composite_parts(ctx: ScanContext, asset: _Asset, ref: str) -> None:
+    """A construction (Fernet) inventories the primitives it is built from at its
+    own lines, each graded on its own (AES-128-CBC is NIST category 1, HMAC-SHA256 a
+    MAC), and depends on them."""
+    parts = COMPOSITE_PARTS.get(asset.key)
+    if not parts:
+        return
+    lines = sorted(set(asset.lines))
+    built: list[str] = []
+    for key, key_size, mode, padding, variant in parts:
+        info = algo_info(key) or {}
+        name = _display_name(key, key_size, mode, None, variant)
+        part_ref = f"crypto-algo-{_slug(name)}-{_slug(asset.location)}"
+        built.append(name)
+        if not ctx.has_ref(part_ref):
+            props: dict[str, str] = {
+                "crypto:assetType": "algorithm",
+                "crypto:primitive": info.get("primitive") or "other",
+                "crypto:strength": info.get("strength", "unknown"),
+                "crypto:quantumVulnerable": str(
+                    bool(info.get("quantum_vulnerable", False))
+                ).lower(),
+                "discovery:source": asset.location,
+                "crypto:derived": "true",
+                "crypto:derivedFrom": ref,
+            }
+            if key_size or info.get("key_size"):
+                props["crypto:keySize"] = str(key_size or info.get("key_size"))
+            if mode:
+                props["crypto:mode"] = mode
+            if padding:
+                props["crypto:padding"] = padding
+            if asset.library:
+                props["crypto:detectedBy"] = asset.library
+            if lines:
+                props["crypto:line"] = str(lines[0])
+                props["crypto:occurrences"] = ",".join(str(n) for n in lines[:25])
+            ctx.add_component(
+                CryptoAssetComponent(bom_ref=part_ref, name=name, properties=props)
+            )
+        ctx.add_edge(ref, REL_DEPENDS_ON, part_ref)
+    for comp in ctx.components:
+        if comp.bom_ref == ref:
+            construction = " + ".join(built)
+            comp.properties = {
+                **(comp.properties or {}),
+                "crypto:construction": construction,
+            }
 
 
 __all__ = ["CryptoAlgorithmScanner"]

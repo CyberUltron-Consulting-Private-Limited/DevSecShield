@@ -161,9 +161,14 @@ def test_the_register_and_its_csv_name_owners_and_data_classification(api, estat
     rows = {i["asset_type"]: i for i in r.json()["items"]}
     assert rows["tls_endpoint"]["owners"] == ["Alice", "Bob"]
     assert rows["tls_endpoint"]["data_classification"] == "restricted"
-    csv = api("GET", "/1/cbom/register.csv").text.splitlines()
-    assert csv[0].endswith(",owners,data_classification")
-    assert any(line.endswith(",Alice; Bob,restricted") for line in csv[1:])
+    import csv as _csv
+    import io as _io
+
+    text = api("GET", "/1/cbom/register.csv").content.decode("utf-8-sig")  # SOW D12: UTF-8 with a byte order mark
+    table = list(_csv.DictReader(_io.StringIO(text, newline="")))
+    assert {"owners", "data_classification", "owner", "criticality"} <= set(table[0])
+    assert any((r["owners"], r["data_classification"], r["owner"]) == ("Alice; Bob", "restricted", "Alice; Bob")
+               for r in table)
 
 
 def test_the_estate_export_carries_the_correlation(api, estate):

@@ -143,11 +143,14 @@ export function ComplianceCoverage({
   groups = FRAMEWORK_GROUPS_AIBOM_WITH_INDIA,
   defaultGroup = "all",
   onAttest,
+  hideOutOfScope = false,
 }: {
   compliance?: Compliance;
   groups?: FrameworkGroup[];
   defaultGroup?: string;
   onAttest?: AttestHandler;
+  /** Hide frameworks that do not apply at all (every requirement out of scope). */
+  hideOutOfScope?: boolean;
 }) {
   return (
     <ComplianceMatrix
@@ -156,6 +159,7 @@ export function ComplianceCoverage({
       icon="shield"
       enableAttestation
       onAttest={onAttest}
+      hideOutOfScope={hideOutOfScope}
       groups={groups}
       defaultGroup={defaultGroup}
       className="col-span-full"
@@ -685,7 +689,7 @@ export function AiBomVisualizations({
         </p>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <ComplianceCoverage compliance={compliance} onAttest={onAttest} />
+        <ComplianceCoverage compliance={compliance} onAttest={onAttest} hideOutOfScope />
         <DependencyGraph
           graph={graph}
           graphCompact={graphCompact}

@@ -29,6 +29,7 @@ from backend.utilities.pdf.report_branding import (
     build_finding_section,
     compute_posture_risk_score,
     styled_data_table,
+    wrap_at_separators,
     count_label,
     escape_html,
     finding_location,
@@ -356,22 +357,8 @@ _ID_COL = 1.45 * inch
 
 
 def _breakable(text: str, style: Any, width: float = _ID_COL - 18) -> str:
-    """Escaped text wrapped at its hyphens to fit ``width`` (requirement ids such as T10-ML-Models-and-Algorithms),
-    so a line never breaks in the middle of a word. A single part wider than the column is left to the paragraph."""
-    from reportlab.pdfbase.pdfmetrics import stringWidth
-
-    parts = [p + "-" for p in text.split("-")]
-    parts[-1] = parts[-1][:-1]
-    lines: List[str] = []
-    line = ""
-    for part in parts:
-        if line and stringWidth(line + part, style.fontName, style.fontSize) > width:
-            lines.append(line)
-            line = part
-        else:
-            line += part
-    lines.append(line)
-    return "<br/>".join(escape_html(x) for x in lines if x)
+    """A requirement id (T10-ML-Models-and-Algorithms) wrapped at its hyphens to fit the id column."""
+    return wrap_at_separators(text, style, width, "-")
 
 
 def _framework_rows(fw: dict, styles: Dict[str, Any]) -> List[List[Any]]:
