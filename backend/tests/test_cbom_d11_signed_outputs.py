@@ -138,8 +138,8 @@ def test_code_scan_vex_states_only_components_of_the_bom():
     vex = VEX.code_scan_vex(rows, scan_id=1, components=["crypto-a", "crypto-b"],
                             now=dt.datetime(2026, 11, 23, 10))
     stated = {t["ref"] for v in vex["vulnerabilities"] for t in v["affects"]}
-    assert stated == {"crypto-a", "crypto-b"}
-    assert {v["id"] for v in vex["vulnerabilities"]} == {"ZS-CBOM-WEAK_ALGORITHM", "not-affected:crypto-b"}
+    assert stated == {"crypto-a"}  # crypto-b has no finding: no unjustified not_affected stub (staging QA A-13d)
+    assert {v["id"] for v in vex["vulnerabilities"]} == {"ZS-CBOM-WEAK_ALGORITHM"}
     meta = {p["name"]: p["value"] for p in vex["metadata"]["properties"]}
     assert meta["zs:affects_not_in_bom"] == "2"
 

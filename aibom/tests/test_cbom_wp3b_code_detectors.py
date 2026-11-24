@@ -429,7 +429,11 @@ def test_hash_purpose_lines() -> None:
     assert purpose("def digest(data):\n    return hashlib.md5(data).hexdigest()\n", 2) is None
 
 
-def test_cache_key_md5_is_inventory_not_a_weakness(tmp_path: Path) -> None:
+def test_cache_key_md5_is_a_low_weakness(tmp_path: Path) -> None:
+    """A cache key's MD5 keeps the weak-hash finding at Low (staging QA G-D3-6: it was
+    dropped as inventory, and an
+    unrecognised cache key got the High finding with the certificate CVE); a password's
+    MD5 stays High."""
     rows, _ = _rows(tmp_path, {
         "services/cache/key.py": "import hashlib\ndef cache_key(url):\n"
                                  "    # content-addressing for the on-disk render cache\n"
@@ -438,7 +442,10 @@ def test_cache_key_md5_is_inventory_not_a_weakness(tmp_path: Path) -> None:
                                "    return hashlib.md5(password.encode()).hexdigest()\n",
     })
     cache = _at(rows, "services/cache/key.py")["MD5"]
-    assert cache["codes"] == [] and cache["props"]["crypto:purpose"] == "cache-key"
+    assert (
+        cache["codes"] == ["WEAK_ALGORITHM"]
+        and cache["props"]["crypto:purpose"] == "cache-key"
+    )
     assert "WEAK_ALGORITHM" in _at(rows, "services/auth/pw.py")["MD5"]["codes"]
 
 

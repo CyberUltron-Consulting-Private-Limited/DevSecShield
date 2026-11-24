@@ -68,7 +68,11 @@ def test_sample_findings_mappings_and_fixes(tmp_path):
     rows = _by_title(run)
     assert run["cbom_input"]["imported"] == 10 and run["cbom_input"]["skipped_not_crypto"] == 1
     assert run["kb_version"]
-    assert rows["MD5"]["finding_codes"] == ["WEAK_ALGORITHM"] and rows["MD5"]["cves"] == ["CVE-2004-2761"]
+    # CVE-2004-2761 is MD5 in a certificate signature: not attached to an MD5 algorithm
+    # row (staging QA G-D3-6)
+    assert (
+        rows["MD5"]["finding_codes"] == ["WEAK_ALGORITHM"] and rows["MD5"]["cves"] == []
+    )
     assert rows["MD5"]["location"] == "src/hash.py:12"
     assert rows["MD5"]["owasp_top_10"] == {"CRYPTOGRAPHIC_FAILURES": "A02:2021 - Cryptographic Failures"}
     assert "SHA-256" in rows["MD5"]["suggested_fix"]

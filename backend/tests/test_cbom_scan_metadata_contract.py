@@ -80,7 +80,14 @@ def test_reconciled_scan_surfaces_all_additive_keys() -> None:
     src = _reconciled_scan_data()
     for key in _ADDITIVE_KEYS:
         assert key in out, f"{key} missing from cbom scan_metadata"
+        if key == "cbom_scores":
+            continue
         assert out[key] == src[key], f"{key} altered in passthrough"
+    # cbom_scores keeps every stored member and carries the D3 risk score of the scan's findings (staging QA Q2-01:
+    # one number on every surface; a scan stored before the posture score gets it on read)
+    scores = out["cbom_scores"]
+    assert {k: scores[k] for k in src["cbom_scores"]} == src["cbom_scores"]
+    assert scores["risk_scale"] == "posture" and {"risk_normalized", "risk_grade", "risk_label"} <= set(scores)
 
 
 def test_graph_is_surfaced_with_nodes_and_edges() -> None:

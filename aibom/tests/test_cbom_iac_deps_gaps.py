@@ -358,13 +358,18 @@ def test_requirements_constraints_and_go_pseudo_versions(tmp_path: Path) -> None
     assert "CVE-2019-11840" in {a.id for a in xcrypto.advisories}
     result = scan_crypto(tmp_path)
     libs = [r for r in _rows_by_source(result) if "VULNERABLE_CRYPTO_LIBRARY" in r[4]]
+    # one library row per package, named without its version (the version and purl are
+    # their own fields; staging QA
+    # Q2-09): pypi "cryptography" is the code lane's pyca/cryptography row
     assert {(r[1], r[2], r[3]) for r in libs} == {
-        ("pycrypto@2.6.1", "requirements.txt", "2"),
-        ("cryptography@3.2", "requirements-extra.txt", "2"),
-        ("pyjwt@2.0.0", "constraints.txt", "1"),
-        ("golang.org/x/crypto@v0.0.0-20190308221718-c2843e01d9a2", "go.mod", "6"),
+        ("pycrypto", "requirements.txt", "2"),
+        ("pyca/cryptography", "requirements-extra.txt", "2"),
+        ("pyjwt", "constraints.txt", "1"),
+        ("golang.org/x/crypto", "go.mod", "6"),
     }
     assert len([r for r in libs if r[1].startswith("pycrypto")]) == 1  # one row per pin, not per CVE
+    versions = {c.name: c.version for c in result.components if c.kind == "framework"}
+    assert versions["pycrypto"] == "2.6.1" and versions["pyjwt"] == "2.0.0"
 
 
 def test_version_ordering_and_clean_pins(tmp_path: Path) -> None:

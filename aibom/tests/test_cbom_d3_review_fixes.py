@@ -286,8 +286,11 @@ def test_one_salt_row_per_literal_with_its_line(tmp_path: pathlib.Path) -> None:
 
 
 def test_vulnerable_pin_is_linked_to_its_library_row(tmp_path: pathlib.Path) -> None:
-    """``cryptography@>=42`` (the advisory lane's vulnerable pin) names the code
-    lane's ``pyca/cryptography`` row, so the report prints one library (m6)."""
+    """``cryptography>=42`` is one library row, the code lane's ``pyca/cryptography``
+    (m6; staging QA Q2-09: the
+    advisory lane no longer adds a ``cryptography@>=42`` component): a range's lower
+    bound is no installed version, so
+    its advisories are listed on that row as unverified and raise no finding."""
     _write(
         tmp_path,
         {
@@ -300,10 +303,14 @@ def test_vulnerable_pin_is_linked_to_its_library_row(tmp_path: pathlib.Path) -> 
     libs = {
         c["name"]: c for c in out["cbom_json"]["components"] if c["type"] == "library"
     }
-    pin = libs["cryptography@>=42"]
-    assert _props(pin)["crypto:libraryRef"] == libs["pyca/cryptography"]["bom-ref"]
-    (row,) = _findings(out, "VULNERABLE_CRYPTO_LIBRARY")
-    assert row["title"] == "cryptography@>=42"  # the finding keeps the pinned version
+    assert "cryptography@>=42" not in libs and "pyca/cryptography" in libs
+    props = _props(libs["pyca/cryptography"])
+    assert props["crypto:versionConstraint"] == ">=42"
+    assert (
+        props["crypto:versionVerified"] == "false"
+        and int(props["crypto:unverifiedAdvisoryCount"]) > 0
+    )
+    assert not _findings(out, "VULNERABLE_CRYPTO_LIBRARY")
 
 
 # --------------------------------------------------------------------------- m4

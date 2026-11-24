@@ -496,7 +496,8 @@ def test_code_scan_vex_states_drift_resolved_and_schema(api, certin_db, monkeypa
     quantum = by[("ZS-CBOM-QUANTUM_VULNERABLE", "in_triage")]
     assert "Quantum-only exposure" in quantum["analysis"]["detail"] and "Q-grade" in quantum["analysis"]["detail"]
     fixed = by[("ZS-CBOM-WEAK_ALGORITHM", "resolved")]
-    # 3DES still listed, finding gone: local ref; MD5 gone: a BOM-Link to its component in the baseline scan's CBOM
+    # 3DES still listed, finding gone: its ref (scan 61 stores no CBOM to link into; with one, a BOM-Link: staging QA
+    # A-13d); MD5 gone: a BOM-Link to its component in the baseline scan's CBOM
     assert fixed["affects"] == [{"ref": des["bom_ref"]},
                                 {"ref": VEX.bom_link(BASE_SERIAL, 1, md5["bom_ref"])}]
     assert _props(fixed)["zs:resolved_assets_not_listed"] == "1" and _props(fixed)["zs:baseline_scan_id"] == "60"
@@ -545,7 +546,8 @@ def test_a_cbom_scan_without_result_rows_gets_a_current_vex_once(api, certin_db,
     for sid in (70, 71):
         first = api("GET", f"/1/cbom/scan/{sid}/vex").json()
         assert VEX.is_current("cbom", first) and json_errors(first) == []
-        assert [v["affects"] for v in first["vulnerabilities"]] == [[{"ref": "crypto-aes"}]]  # F5 stub per component
+        # no finding, no statement: the per-component not_affected stub had no justification (staging QA A-13d)
+        assert first["vulnerabilities"] == []
         assert api("GET", f"/1/cbom/scan/{sid}/vex").json() == first
     assert len(writes) == 2  # one write per scan: the second call serves the stored document
 
@@ -555,8 +557,9 @@ def test_code_scan_vex_is_one_rule_set_with_the_export():
     vex = VEX.code_scan_vex(findings)
     q = next(v for v in vex["vulnerabilities"] if v["id"] == "ZS-CBOM-QUANTUM_VULNERABLE")
     assert q["analysis"] == VEX.analysis_for("quantum_only", code="QUANTUM_VULNERABLE", grade_text=VEX.CODE_SCAN_GRADE)
-    stub = next(v for v in vex["vulnerabilities"] if v["analysis"]["state"] == "not_affected")
-    assert stub["affects"] == [{"ref": findings[1]["bom_ref"]}]  # CERT-In F5 "no weakness found" kept
+    # a clean asset gets no not_affected stub: "no weakness found" is no VEX justification (staging QA A-13d)
+    assert not any(v["analysis"]["state"] == "not_affected" for v in vex["vulnerabilities"])
+    assert not any(a["ref"] == findings[1]["bom_ref"] for v in vex["vulnerabilities"] for a in v["affects"])
     assert json_errors(vex) == []
 
 
