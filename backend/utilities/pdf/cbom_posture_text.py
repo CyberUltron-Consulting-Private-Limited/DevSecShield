@@ -192,8 +192,9 @@ KERBEROS_DC_DEFAULT_LIMIT = (
 )
 INFRA_FINDINGS_NOTE = (
     "Findings on the keys, key stores, at-rest resources, cloud-managed TLS listeners, secrets and private CAs "
-    "listed in this document. Probed and server-configured TLS endpoints are assessed in SOW D7 (TLS and crypto "
-    "protocol assessment)."
+    "listed in this document, and the Kerberos and Active Directory posture. Probed and server-configured TLS "
+    "endpoints, the domain controllers' LDAPS ports among them, are assessed in SOW D7 (TLS and crypto protocol "
+    "assessment)."
 )
 # Rows printed per posture register of D6 / D9, worst impact first.  A team with tens of thousands of collected
 # resources would otherwise get a document of thousands of pages; the note above a cut register gives the exact
@@ -296,8 +297,6 @@ AT_REST_KINDS = DATA_STORE_KINDS | frozenset(
     {"backup", "k8s_secrets_etcd", "k8s_storage_class", "disk_encryption"}
 )
 MANAGED_TLS_PROVIDERS = frozenset({"aws", "azure", "gcp", "oci", "kubernetes"})
-# the AD collector's posture kinds (posture_mapper.KERBEROS_KINDS; test_cbom_ad_followups keeps them equal): D6 only
-KERBEROS_KINDS = frozenset({"kerberos_account", "ad_domain"})
 DATABASE_KINDS = frozenset({"relational_db", "nosql_db", "cache", "search_index"})
 
 

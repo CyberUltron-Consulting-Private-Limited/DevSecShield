@@ -52,6 +52,12 @@ def _is_managed_tls(fact: Mapping[str, Any]) -> bool:
     )
 
 
+def _is_identity(fact: Mapping[str, Any]) -> bool:
+    """A Kerberos / Active Directory fact: the posture mapper's ``sources_identity`` lane (the lane the roll-up keeps on
+    every Sources fact; the PDF modules may not import the mapper)."""
+    return fact.get("lane") == "sources_identity"
+
+
 def _is_at_rest(fact: Mapping[str, Any]) -> bool:
     return common.kind_of(fact) in text.AT_REST_KINDS and not common.is_evidence_only(fact)
 
@@ -81,7 +87,7 @@ def scope_facts(view: object) -> list[dict[str, Any]]:
         or common.kind_of(fact) in _SECRET_KINDS
         or _is_at_rest(fact)
         or _is_managed_tls(fact)
-        or common.kind_of(fact) in text.KERBEROS_KINDS  # #488 review 6031264030 (D6); verdict None: not at rest
+        or _is_identity(fact)  # #488 review 6031264030 (D6); verdict None: not at rest
     ]
     if cacheable:
         block.__dict__[_SCOPE_ATTR] = (raw, found)  # not a dataclass field: replace() / asdict() never copy it
@@ -99,18 +105,28 @@ def _at_rest_counts(facts: Sequence[Mapping[str, Any]]) -> dict[str, int]:
 
 
 def finding_rows(facts: Sequence[Mapping[str, Any]]) -> list[tuple[str, int, str]]:
-    """``(code, occurrences, impact)`` over ``facts``: the findings table and the severity cards both read it."""
+    """``(code, occurrences, impact)`` over ``facts``: the findings table and the severity cards both read it.
+
+    A code's impact is the worst impact the classifier gave THAT code on the facts carrying it (``code_impacts``, set
+    by the posture mapper for Sources facts), else ``finding_impact`` (posture table, KB default, then the facts'
+    impact).  A code whose impact depends on the facts (a domain's level, a key's size) is therefore never printed at
+    the KB default (#493 review 6032906354 M1)."""
     counts: dict[str, int] = {}
     worst: dict[str, str] = {}
+    judged: dict[str, str] = {}
     rank = {band: index for index, band in enumerate(_SEVERITY_BANDS)}
     for fact in facts:
         impact = str(fact.get("impact") or "")
+        own = common.as_mapping(fact.get("code_impacts"))
         for code in common.as_rows(fact.get("finding_codes")):
             key = str(code)
             counts[key] = counts.get(key, 0) + 1
             if impact in rank and rank[impact] < rank.get(worst.get(key, ""), 9):
                 worst[key] = impact
-    rows = [(code, counts[code], text.finding_impact(code, worst.get(code))) for code in counts]
+            mine = str(own.get(key) or "")
+            if mine in rank and rank[mine] < rank.get(judged.get(key, ""), 9):
+                judged[key] = mine
+    rows = [(code, counts[code], judged.get(code) or text.finding_impact(code, worst.get(code))) for code in counts]
     rows.sort(key=lambda row: (rank.get(row[2], 9), -row[1], text.finding_label(row[0]).casefold(), row[0]))
     return rows
 
@@ -532,40 +548,93 @@ def _key_age(view: object, last_set: str) -> str:
     as_of = common.grab(view, "as_of")
     if not isinstance(as_of, _dt.date):
         as_of = _dt.datetime.now(_dt.UTC).date()
-    return f"{(as_of - moment).days} days (last set {moment.isoformat()})"
+    days = max(0, (as_of - moment).days)  # a pwdLastSet after the report date (clock skew) reads 0, never negative
+    return f"{days} day{'' if days == 1 else 's'} (last set {moment.isoformat()})"
 
 
-def _ldaps_cell(view: object, source: str) -> tuple[str, list[str]]:
-    """The LDAPS / StartTLS posture the AD collection probed (D7's endpoints of the same collection, summarised)."""
-    parts, codes = [], set()
+# the prober's weak-suite classes (``weak_ciphers_accepted`` keys), worst first; others follow by name
+_WEAK_CLASSES = (("obsolete", "obsolete"), ("static_rsa", "static RSA key exchange"), ("cbc", "CBC"),
+                 ("dhe", "finite-field DHE"))
+_OBSOLETE_NAMES = 2  # obsolete suites printed by name
+
+
+def _families(suites: Sequence[str]) -> list[str]:
+    """The broken cipher families named by the suites (3DES and RC4 first): printed before any count."""
+    found = []
+    for family, hit in (("3DES", lambda n: "3DES" in n or "DES_CBC3" in n or "DES-CBC3" in n),
+                        ("RC4", lambda n: "RC4" in n),
+                        ("DES", lambda n: ("_DES_" in n or "DES_CBC_" in n or n.startswith("DES-")) and "3DES" not in n),
+                        ("NULL", lambda n: "NULL" in n), ("EXPORT", lambda n: "EXPORT" in n)):
+        if any(hit(name.upper()) for name in suites):
+            found.append(family)
+    return found
+
+
+def _weak_summary(net: Mapping[str, Any]) -> str:
+    """The weak suites an endpoint accepted, by class, worst first: the obsolete ones by family and name (3DES and RC4
+    are always named before any "and N more"), the other classes by count (#493 review 6032906354 m2)."""
+    by_class: dict[str, list[str]] = {}
+    for item in common.as_rows(net.get("weak_suites")):
+        if not isinstance(item, Mapping) or not item.get("suite"):
+            continue
+        for reason in common.as_rows(item.get("reasons")) or ["weak"]:
+            names = by_class.setdefault(str(reason), [])
+            if str(item["suite"]) not in names:
+                names.append(str(item["suite"]))
+    if not by_class:
+        return "no weak suite accepted"
+    every = [n for names in by_class.values() for n in names]
+    families = _families(every)
+    parts = []
+    known = [key for key, _label in _WEAK_CLASSES]
+    labels = dict(_WEAK_CLASSES)
+    for key in known + sorted(k for k in by_class if k not in known):
+        names = by_class.get(key)
+        if not names:
+            continue
+        label = labels.get(key, key.replace("_", " "))
+        if key == "obsolete":
+            shown = ", ".join(names[:_OBSOLETE_NAMES])
+            more = len(names) - _OBSOLETE_NAMES
+            parts.append(f"{label} {len(names)}: {shown}" + (f" and {more} more" if more > 0 else ""))
+        else:
+            parts.append(f"{label} {len(names)}")
+    lead = f"weak suites accepted ({', '.join(families)})" if families else "weak suites accepted"
+    return f"{lead}: {'; '.join(parts)}"
+
+
+def _ldaps_cell(view: object, source: str) -> str:
+    """The LDAPS / StartTLS posture the AD collection probed: D7's endpoints of the same collection, summarised in
+    D6's words.  Their finding codes are D7's (not in this document's findings), so none is printed here."""
+    parts = []
     for fact in _facts(view):
         if common.kind_of(fact) != "tls_endpoint" or fact.get("evidence") != PROBED_EVIDENCE \
                 or str(fact.get("location") or "") != source:
             continue
         net = common.net_of(fact)
         span = f"{net.get('min') or '?'} to {net.get('max') or '?'}"
-        weak = [str(w.get("suite")) for w in common.as_rows(net.get("weak_suites")) if isinstance(w, Mapping)]
-        weak = list(dict.fromkeys(weak))
-        tail = f"; weak suites accepted: {', '.join(weak[:4])}" + (f" and {len(weak) - 4} more" if len(weak) > 4
-                                                                    else "") if weak else "; no weak suite accepted"
-        parts.append(f"{net.get('endpoint') or common.address_of(fact)}: {span}{tail}")
-        codes.update(str(c) for c in common.as_rows(fact.get("finding_codes")) if c)
+        parts.append(f"{net.get('endpoint') or common.address_of(fact)}: {span}; {_weak_summary(net)}")
     if not parts:
-        return "not probed in this collection", []
-    return "; ".join(sorted(parts)) + " (assessed in SOW D7)", sorted(codes)
+        return "not probed in this collection"
+    return "; ".join(sorted(parts)) + " (findings in SOW D7)"
+
+
+_LEVEL_CODES = ("AD_FUNCTIONAL_LEVEL_PRE2008", "AD_FUNCTIONAL_LEVEL_LEGACY")
 
 
 def _kerberos_rows(view: object) -> list[list[Any]]:
-    """Five rows per domain: functional level, krbtgt key age, RC4-only accounts, accounts on the DC default and the
-    LDAPS TLS posture.  Counts are the collector's domain-wide tally (computers are counted, not listed); names are
-    the account rows this document lists."""
+    """Five rows per domain and source: functional level, krbtgt key age, RC4-only accounts, accounts on the DC
+    default and the LDAPS TLS posture.  Counts are the collector's domain-wide tally (computers are counted, not
+    listed); names are the account rows of the SAME collection (two sources reading one domain each list their own,
+    never both: #493 review 6032906354 M2)."""
     facts = scope_facts(view)
     accounts = [f for f in facts if common.kind_of(f) == "kerberos_account"]
     rows: list[list[Any]] = []
-    for domain in sorted((f for f in facts if common.kind_of(f) == "ad_domain"), key=common.address_of):
+    for domain in sorted((f for f in facts if common.kind_of(f) == "ad_domain"),
+                         key=lambda f: (common.address_of(f), _source_cell(f))):
         name, source = common.address_of(domain), _source_cell(domain)
-        own = [a for a in accounts if str(a.get("domain") or "") == name
-               or (not a.get("domain") and _source_cell(a) == source)]
+        own = [a for a in accounts if _source_cell(a) == source
+               and (str(a.get("domain") or "") == name or not a.get("domain"))]
         codes = {str(c) for c in common.as_rows(domain.get("finding_codes"))}
 
         def picked(rows_of: Sequence[Mapping[str, Any]], code: str) -> str:
@@ -575,21 +644,21 @@ def _kerberos_rows(view: object) -> list[list[Any]]:
         reading = (f"{level_name} (level {level})" if level_name and level is not None
                    else level_name or (f"level {level}" if level is not None else "not read"))
         tally = common.as_mapping(domain.get("accounts"))
+        cut = [str(t) for t in common.as_rows(domain.get("truncated")) if t]
+        partial = f" (tally truncated: {', '.join(cut)})" if cut else ""  # n4: the count is a lower bound
         rc4 = sorted(common.address_of(a) for a in own if a.get("rc4_only") is True)
         default = sorted(common.address_of(a) for a in own if a.get("dc_default") is True
                          and a.get("account_type") != "krbtgt")
-        ldaps, ldaps_codes = _ldaps_cell(view, source)
         last_set = str(domain.get("krbtgt_password_last_set") or "")
         for check, value, code in (
-            ("Domain functional level", reading, "AD_FUNCTIONAL_LEVEL_LEGACY" if "AD_FUNCTIONAL_LEVEL_LEGACY" in codes
-             else ""),
+            ("Domain functional level", reading, ", ".join(c for c in _LEVEL_CODES if c in codes)),
             ("krbtgt key age", _key_age(view, last_set) if last_set else "not read",
              "KRBTGT_KEY_OLD" if "KRBTGT_KEY_OLD" in codes else ""),
-            ("Accounts with RC4 only", _names_cell(_account_total(tally, "rc4_only"), rc4),
+            ("Accounts with RC4 only", _names_cell(_account_total(tally, "rc4_only"), rc4) + partial,
              picked(own, "KERBEROS_RC4_ONLY")),
-            ("Accounts on the DC default", _names_cell(_account_total(tally, "dc_default"), default),
+            ("Accounts on the DC default", _names_cell(_account_total(tally, "dc_default"), default) + partial,
              picked(own, "KERBEROS_ENCTYPES_DEFAULT")),
-            ("LDAPS TLS posture", ldaps, ", ".join(ldaps_codes)),
+            ("LDAPS TLS posture", _ldaps_cell(view, source), ""),
         ):
             rows.append([name, check, value, code, source])
     return rows
@@ -614,7 +683,7 @@ def _kerberos(view: object, styles: Styles, width: float) -> list[Flowable]:
 
 
 def _has_kerberos(view: object) -> bool:
-    return any(common.kind_of(fact) in text.KERBEROS_KINDS for fact in scope_facts(view))
+    return any(_is_identity(fact) for fact in scope_facts(view))
 
 
 def _findings(view: object, styles: Styles, width: float) -> list[Flowable]:

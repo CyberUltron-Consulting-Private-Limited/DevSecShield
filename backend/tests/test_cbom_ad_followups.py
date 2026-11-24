@@ -70,9 +70,8 @@ def test_every_lane_reaches_its_own_branch_and_nothing_falls_through_to_cloud_ca
     """Review point 1: a type added to ``_LANES`` without its own branch silently became a private CA."""
     assert {"kerberos_account", "ad_domain"} <= M.MAPPED_TYPES
     assert M._LANES["kerberos_account"] == M._LANES["ad_domain"] == "sources_identity"
-    from backend.utilities.pdf import cbom_posture_text as text
-
-    assert text.KERBEROS_KINDS == M.KERBEROS_KINDS  # D6 keeps its own copy (the PDF import allow-list)
+    # D6 keys on this lane (the PDF modules may not import the mapper): exactly the AD kinds are in it
+    assert {t for t, lane in M._LANES.items() if lane == "sources_identity"} == M.KERBEROS_KINDS
     sample = {}
     for _s, _k, _r, asset in FX.assets():
         sample.setdefault(asset["type"], asset["facts"])
@@ -152,8 +151,9 @@ def test_d6_prints_the_kerberos_and_ad_register(view):
     assert by_check["Accounts on the DC default"]["Reading"] == "6: svc-sql, svc-zero and 4 more not listed"
     assert by_check["Accounts on the DC default"]["Finding codes"] == "KERBEROS_ENCTYPES_DEFAULT"
     ldaps = by_check["LDAPS TLS posture"]
-    assert ldaps["Reading"].startswith("dc1.corp.test:636: TLS 1.0 to TLS 1.3")
-    assert "TLS_RSA_WITH_3DES_EDE_CBC_SHA" in ldaps["Reading"] and "SOW D7" in ldaps["Reading"]
+    assert ldaps["Reading"] == ("dc1.corp.test:636: TLS 1.0 to TLS 1.3; weak suites accepted (3DES): obsolete 1: "
+                                "TLS_RSA_WITH_3DES_EDE_CBC_SHA; static RSA key exchange 1 (findings in SOW D7)")
+    assert ldaps["Finding codes"] == ""  # D7's codes are not this document's findings (#493 review m2)
     assert all(row["Source"] == AD_LABEL for row in rows)
 
 
@@ -244,3 +244,133 @@ def test_n3_one_capable_member_is_enough_and_the_source_is_queued(api, world):  
     est = api("POST", "/1/cbom/sources/estimate", json={"include": {"servers": True}}).json()
     assert not any(i["source_id"] == src for i in est["skipped"]), est["skipped"]
     assert any(i["source_id"] == src and i["status"] == "queued" for i in est["items"])
+
+
+# ----------------------------------------------------------------------------------------------- #493 review 6032906354
+def _with_domain(**facts):
+    """The fixture with the AD domain's facts replaced (level, krbtgt date, truncation)."""
+    import copy
+
+    sources = copy.deepcopy(FX.SOURCES)
+    kind, run, items = sources[AD_SOURCE]
+    domain = next(a for a in items if a["type"] == "ad_domain")
+    domain["facts"].update(facts)
+    return sources
+
+
+def test_m1_below_2008_is_its_own_high_code_and_2008_to_2012r2_is_low_in_the_classifier_and_the_kb():
+    from backend.utilities.cbom_sources import classify as C
+    from backend.utilities.cbom_sources import crypto_kb
+
+    now = dt.datetime(2026, 11, 23)
+    fresh = "2026-11-01T00:00:00Z"
+    low = C.classify("ad_domain", None, None, "kerberos", {"domain_functional_level": 4,
+                                                            "krbtgt_password_last_set": fresh}, now)
+    high = C.classify("ad_domain", None, None, "kerberos", {"domain_functional_level": 2,
+                                                             "krbtgt_password_last_set": fresh}, now)
+    assert (low["finding_codes"], low["impacts"]) == (["AD_FUNCTIONAL_LEVEL_LEGACY"], {"AD_FUNCTIONAL_LEVEL_LEGACY": "Low"})
+    assert (high["finding_codes"], high["impacts"]) == (["AD_FUNCTIONAL_LEVEL_PRE2008"],
+                                                        {"AD_FUNCTIONAL_LEVEL_PRE2008": "High"})
+    for code, impact in (("AD_FUNCTIONAL_LEVEL_LEGACY", "Low"), ("AD_FUNCTIONAL_LEVEL_PRE2008", "High")):
+        entry = crypto_kb.entry("node", code)
+        assert entry["default_impact"] == impact, code
+        assert entry["vex_default"] and entry["fix_class"] and "clauses" in entry, code
+
+
+def _cards_and_findings(sources):
+    body = _story(d6, _view(sources))
+    return kpi_cards(body), {row["Label"]: row for row in rows_under(body, "Label")}
+
+
+def test_m1_d6_prints_a_level_2003_domain_high_and_a_level_2008r2_domain_low_and_the_cards_follow():
+    """Before: D6 printed AD_FUNCTIONAL_LEVEL_LEGACY at the KB default (Medium) at every level, so a domain whose
+    krbtgt has no AES keys was Medium and the High card did not count it."""
+    from backend.utilities.pdf import cbom_posture_text as text
+
+    fresh = "2026-11-01T00:00:00Z"
+    cards2, rows2 = _cards_and_findings(_with_domain(domain_functional_level=2, krbtgt_password_last_set=fresh,
+                                                     domain_functional_level_name="Windows Server 2003"))
+    cards4, rows4 = _cards_and_findings(_with_domain(domain_functional_level=4, krbtgt_password_last_set=fresh))
+    pre = text.finding_label("AD_FUNCTIONAL_LEVEL_PRE2008")
+    legacy = text.finding_label("AD_FUNCTIONAL_LEVEL_LEGACY")
+    assert rows2[pre]["Impact"] == "High" and legacy not in rows2
+    assert rows4[legacy]["Impact"] == "Low" and pre not in rows4
+    assert int(cards2["Findings High"]) == int(cards4["Findings High"]) + 1
+    assert int(cards2["Findings Low"]) == int(cards4["Findings Low"]) - 1
+    assert cards2["Findings Medium"] == cards4["Findings Medium"]
+
+
+def test_m1_a_code_judged_by_its_facts_keeps_the_classifiers_impact_not_the_kb_default(view):
+    """The general rule behind M1: 15 codes have a classifier impact that depends on the facts (CA_ALLOWS_ANY_NAME
+    High or Medium, MESH_DR_TLS_DISABLED High or Low ...), so the mapper keeps each code's impact on the fact and
+    the findings table reads it before the KB default."""
+    judged = [{"finding_codes": ["CA_ALLOWS_ANY_NAME"], "impact": "High",
+               "code_impacts": {"CA_ALLOWS_ANY_NAME": "High"}}]
+    assert d6.finding_rows(judged) == [("CA_ALLOWS_ANY_NAME", 1, "High")]  # KB default: Medium
+    assert d6.finding_rows([{"finding_codes": ["CA_ALLOWS_ANY_NAME"], "impact": "High"}]) == [
+        ("CA_ALLOWS_ANY_NAME", 1, "Medium")]  # a fact without per-code impacts (code lane): as before
+    mixed = [{"finding_codes": ["MESH_DR_TLS_DISABLED"], "code_impacts": {"MESH_DR_TLS_DISABLED": "Low"}},
+             {"finding_codes": ["MESH_DR_TLS_DISABLED"], "code_impacts": {"MESH_DR_TLS_DISABLED": "High"}}]
+    assert d6.finding_rows(mixed) == [("MESH_DR_TLS_DISABLED", 2, "High")]  # the worst the classifier gave it
+    facts = [f for f in d6.scope_facts(view) if str(f.get("id", "")).startswith("sources:")]
+    assert facts and all(set(f["code_impacts"]) <= set(f["finding_codes"]) for f in facts)
+    domain = next(f for f in facts if f.get("kind") == "ad_domain")
+    assert domain["code_impacts"] == {"AD_FUNCTIONAL_LEVEL_LEGACY": "Low", "KRBTGT_KEY_OLD": "Medium"}
+
+
+def test_m2_two_sources_reading_one_domain_each_list_their_own_accounts_once():
+    """Before: accounts were matched by domain name across every source, so with a second AD source (one per site)
+    each row listed every account twice and the count became 2 for one RC4-only account."""
+    import copy
+
+    sources = copy.deepcopy(FX.SOURCES)
+    kind, run, items = sources[AD_SOURCE]
+    sources["Corp AD (site B)"] = (kind, run, copy.deepcopy(items))
+    rows = rows_under(_story(d6, _view(sources)), "Domain")
+    by = {(r["Source"], r["Check"]): r["Reading"] for r in rows}
+    for label in (AD_LABEL, "Sources run #52 · Corp AD (site B)"):
+        assert by[(label, "Accounts with RC4 only")] == "1: svc-rc4only"
+        assert by[(label, "Accounts on the DC default")] == "6: svc-sql, svc-zero and 4 more not listed"
+    assert len(rows) == 10
+
+
+def test_m2_the_ldaps_row_names_3des_and_rc4_before_any_count_and_prints_no_d7_codes():
+    """The real Samba 3DES run: four CBC suites came first and the 3DES ones fell into "and 10 more"."""
+    weak = ([{"suite": s, "reasons": ["cbc"]} for s in ("TLS_DHE_RSA_WITH_AES_128_CBC_SHA",
+                                                         "TLS_DHE_RSA_WITH_AES_256_CBC_SHA",
+                                                         "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+                                                         "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA")]
+            + [{"suite": s, "reasons": ["dhe"]} for s in ("TLS_DHE_RSA_WITH_AES_128_GCM_SHA256",)]
+            + [{"suite": s, "reasons": ["obsolete"]} for s in ("TLS_DHE_RSA_WITH_3DES_EDE_CBC_SHA",
+                                                              "TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA",
+                                                              "TLS_RSA_WITH_3DES_EDE_CBC_SHA", "TLS_RSA_WITH_RC4_128_SHA")]
+            + [{"suite": s, "reasons": ["static_rsa"]} for s in ("TLS_RSA_WITH_AES_128_CBC_SHA",
+                                                                 "TLS_RSA_WITH_AES_256_GCM_SHA384")])
+    summary = d6._weak_summary({"weak_suites": weak})
+    assert summary == ("weak suites accepted (3DES, RC4): obsolete 4: TLS_DHE_RSA_WITH_3DES_EDE_CBC_SHA, "
+                       "TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA and 2 more; static RSA key exchange 2; CBC 4; "
+                       "finite-field DHE 1")
+    assert summary.index("3DES") < summary.index("more") and summary.index("RC4") < summary.index("more")
+    assert d6._weak_summary({"weak_suites": []}) == "no weak suite accepted"
+
+
+def test_m3_the_findings_note_names_the_kerberos_and_ad_posture():
+    from backend.utilities.pdf import cbom_posture_text as text
+
+    assert "Kerberos and Active Directory" in text.INFRA_FINDINGS_NOTE
+
+
+def test_n2_one_day_is_singular_and_a_future_password_date_is_zero_days():
+    from types import SimpleNamespace
+
+    at = SimpleNamespace(as_of=dt.date(2026, 11, 24))
+    assert d6._key_age(at, "2026-11-23T08:00:00Z") == "1 day (last set 2026-11-23)"
+    assert d6._key_age(at, "2026-11-25T08:00:00Z") == "0 days (last set 2026-11-25)"
+    assert d6._key_age(at, "2026-11-20T08:00:00Z") == "4 days (last set 2026-11-20)"
+
+
+def test_n4_a_truncated_tally_says_so():
+    rows = rows_under(_story(d6, _view(_with_domain(truncated=["computer"]))), "Domain")
+    by = {r["Check"]: r["Reading"] for r in rows}
+    assert by["Accounts on the DC default"].endswith("(tally truncated: computer)")
+    assert by["Accounts with RC4 only"] == "1: svc-rc4only (tally truncated: computer)"
