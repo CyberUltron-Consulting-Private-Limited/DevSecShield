@@ -43,6 +43,7 @@ from backend.utilities.cbom_sources import classify as CLASSIFY
 from backend.utilities.cbom_sources import clause_evidence as CE
 from backend.utilities.cbom_sources import crypto_kb
 from backend.utilities.cbom_sources import posture as POSTURE
+from backend.utilities.cbom_sources import regulated_entity
 from backend.utilities.cbom_sources import run_results as RR
 from backend.utilities.cbom_sources.kb_remediation import (
     code_evidence,
@@ -97,6 +98,8 @@ def _clauses(posture):
 # ------------------------------------------------------------------------------------------ N1 / N2: the verdict
 def test_n1_unrecorded_only_clause_needs_evidence_and_framework_too(api, world, no_mongo):
     engine, ids = world
+    # a SEBI-regulated team: SEBI CSCRF binds it (PR #485 M4 filters every surface by the team's profile)
+    assert api("PATCH", "/1/cbom/sources/settings", json={"sebi_regulated": True}).status_code == 200
     run_id, _ = _seed(engine, ids, "n1a", [("legacy", "tls_endpoint", ["WEAK_CIPHER"], TLS_PLAIN),
                                            ("hk", "ssh_host_key", [], {})])
     posture = _get(api, f"/1/cbom/sources/runs/{run_id}/posture")["posture"]
@@ -187,7 +190,8 @@ def test_n3_oscal_marks_clauses_that_need_evidence(api, world, no_mongo):
     engine, ids = world
     run_id, _ = _seed(engine, ids, "n3", [("legacy", "tls_endpoint", ["WEAK_CIPHER"], TLS_PLAIN)])
     with Session(engine) as session:
-        doc = oscal.run_document(session, session.get(CbomCollectionRun, run_id))
+        doc = oscal.run_document(session, session.get(CbomCollectionRun, run_id),
+                                 team=regulated_entity.team_profile(session, 1))
     findings = [f for r in doc["assessment-results"]["results"] for f in r.get("findings") or []]
     weak = [f for f in findings if any(p["name"] == "finding-code" and p["value"] == "WEAK_CIPHER" for p in f["props"])]
     assert weak
@@ -203,13 +207,13 @@ def test_n3_oscal_marks_clauses_that_need_evidence(api, world, no_mongo):
 def test_n4_code_scan_file_name_never_decides_a_clause():
     finding = {"title": "des3_keys.pem", "description": "Certificate signed with SHA256withRSA"}
     assert code_evidence(finding) == []
-    for detail in explain({"finding_codes": ["WEAK_ALGORITHM"], **finding}):
+    for detail in explain({"finding_codes": ["WEAK_ALGORITHM"], **finding}, team=None):
         for ref in detail["compliance"]:
             if (ref["framework"], ref["id"]) in (NIST_TDEA, SEBI_H5):
                 assert ref.get("evidence") == "not_recorded", ref  # cited for review only, never decided
     # with the scanner's algorithm the rule decides as before
     named = {"title": "des3_keys.pem", "algorithm_name": "DESede", "description": "Weak algorithm DESede"}
-    cited = {(r["framework"], r["id"]): r for d in explain({"finding_codes": ["WEAK_ALGORITHM"], **named})
+    cited = {(r["framework"], r["id"]): r for d in explain({"finding_codes": ["WEAK_ALGORITHM"], **named}, team=None)
              for r in d["compliance"]}
     assert NIST_TDEA in cited and not cited[NIST_TDEA].get("evidence")
     assert "des3_keys.pem" not in code_evidence(named)

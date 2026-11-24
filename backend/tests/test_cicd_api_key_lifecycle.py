@@ -70,7 +70,7 @@ def _world(monkeypatch: pytest.MonkeyPatch, eng):
     monkeypatch.setattr(router, "get_celery_app", lambda: object())
     monkeypatch.setattr(router, "get_cicd_list_dashboard_data", lambda **_k: {})
     monkeypatch.setattr(router, "get_cicd_vuln_chart_data", lambda **_k: {})
-    monkeypatch.setattr(router, "project_cbom_ci_page", lambda _run: None)
+    monkeypatch.setattr(router, "project_cbom_ci_page", lambda _run, **_kw: None)
 
     people: dict[str, int] = {}
     with Session(eng) as session:

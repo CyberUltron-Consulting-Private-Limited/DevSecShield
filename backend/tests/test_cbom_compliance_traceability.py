@@ -26,7 +26,7 @@ from test_cbom_deliverable_common import norm, pdf_full_text  # noqa: E402
 from test_cbom_sources_api import CERT_FACTS, api, enroll_node, linux_body, world  # noqa: E402,F401
 from test_cbom_wp10_outputs import GONE, OLD_CERT, OPENSSL, WEAK_TLS, _claim, _collect, _run, two_runs  # noqa: E402,F401
 
-from backend.utilities.cbom_sources import crypto_kb  # noqa: E402
+from backend.utilities.cbom_sources import crypto_kb, regulated_entity  # noqa: E402
 
 _FIXTURES = (api, world, two_runs)  # pytest fixtures shared with the CBOM Sources tests (used by name)
 FRAMEWORKS = ("CERT-In", "RBI", "SEBI CSCRF", "NSA CNSA 2.0")
@@ -75,7 +75,8 @@ def _expected_clauses(assets: list[dict]) -> dict[tuple[str, str], tuple[set[int
         for code in asset["finding_codes"]:
             if code.startswith("COVERAGE_"):
                 continue
-            for ref in crypto_kb.clauses_for("node", code, evidence):  # the clauses the code breaks (#269)
+            # the clauses the code breaks (#269) that bind the team (its default profile: an NBFC; PR #485 M2)
+            for ref in crypto_kb.clauses_for("node", code, evidence, team=regulated_entity.profile("nbfc")):
                 ids, codes = out[(ref["framework"], ref["id"])]
                 ids.add(asset["id"])
                 codes.add(code)
@@ -129,8 +130,10 @@ def _check_run(api, run_id):
 def test_every_mapped_clause_traces_to_findings_on_two_real_runs(api, two_runs):
     a1, _p1, e1 = _check_run(api, two_runs["run1"]["id"])
     a2, _p2, e2 = _check_run(api, two_runs["run2"]["id"])
-    # the seeded findings reach all four frameworks in run 1
-    assert {k[0] for k in e1} >= set(FRAMEWORKS)
+    # the seeded findings reach every framework that binds the team in run 1 (an NBFC that is not SEBI-regulated:
+    # SEBI CSCRF binds it not, PR #485 M4)
+    assert {k[0] for k in e1} >= set(FRAMEWORKS) - {"SEBI CSCRF"}
+    assert not any(k[0] == "SEBI CSCRF" for k in e1)
     # run 2 fixed the TLS endpoint and renewed the certificate: the RBI clauses (key length, algorithms, protocols)
     # are no longer touched, CNSA 2.0 still is (RSA certificate, no post-quantum key exchange)
     assert not any(k[0] == "RBI" for k in e2) and any(k[0] == "NSA CNSA 2.0" for k in e2)
@@ -176,11 +179,23 @@ def _deliverable_checks(api, run_id):
     # 5. regulatory exposure: every CERT-In / RBI / SEBI CSCRF / CNSA 2.0 clause the run maps, with its asset count
     exposure = _section(board, "5. Regulatory exposure", "6. Remediation priorities")
     assert "No compliance results are available" not in exposure
+    # FIX-A3 (SOW audit A-11): the board cites only the RBI instrument of the team's regulated-entity type (NBFC by
+    # default); the run API lists every clause the knowledge base maps, each with its applicability note
+    from backend.utilities.cbom_sources import crypto_kb, regulated_entity
+
+    not_binding = {(c["framework"], c["id"]) for c in crypto_kb.load()["clauses"].values()
+                   if not regulated_entity.applies(c, "nbfc")}
     for fw in posture["compliance"]:
         if fw["framework"] not in FRAMEWORKS:
             continue
         for clause in fw["clauses"]:
-            hit = re.search(re.escape(norm(f"{fw['framework']} {clause['id']}")) + r" (\d+)", exposure)
+            from backend.utilities.pdf.cbom_board_report_pdf import clause_title
+
+            label = re.escape(norm(clause_title(fw["framework"], clause["id"])))
+            if (fw["framework"], clause["id"]) in not_binding:
+                assert not re.search(label + r" \d+", exposure), (fw["framework"], clause["id"])
+                continue
+            hit = re.search(label + r" (\d+)", exposure)
             assert hit and int(hit.group(1)) == clause["assets"], (fw["framework"], clause["id"], exposure[:600])
     # 7. post-quantum summary: never "none found" while the run has quantum-vulnerable assets
     pqc = _section(board, "7. Post-quantum roadmap summary", "8. Governance")

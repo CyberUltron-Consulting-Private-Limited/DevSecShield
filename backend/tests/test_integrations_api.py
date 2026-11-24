@@ -383,7 +383,7 @@ def test_oscal_export_of_a_run_maps_findings_to_controls_and_validates(api, two_
 
 def test_oscal_schema_validation_is_not_vacuous():
     doc = OSCAL.assessment_results(team_id=1, anchor="x", title="t", namespace="node", start=dt.datetime(2026, 1, 1),
-                                   end=None, views=[], kb_version="1", description="d")
+                                   end=None, views=[], kb_version="1", description="d", team=None)
     assert OSCAL.validate(doc) == []
     broken = json.loads(json.dumps(doc))
     del broken["assessment-results"]["import-ap"]

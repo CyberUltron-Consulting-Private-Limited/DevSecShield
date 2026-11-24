@@ -841,7 +841,7 @@ export default function CBOMPage() {
                           onSelect={() => downloadDeliverableMutation.mutate(d.slug)}
                         >
                           {pendingSlug === d.slug && !pendingCsv ? <Loader2 className="animate-spin" /> : <FileText />}
-                          <span>{`#${d.number} · ${d.title}`}</span>
+                          <span>{`D${d.number} · ${d.title}`}</span>
                         </DropdownMenuItem>
                         {/* the backend says which formats exist (a frontend newer than its backend offers no CSV) */}
                         {hint?.formats?.includes("csv") && (
@@ -853,7 +853,7 @@ export default function CBOMPage() {
                             onSelect={() => downloadDeliverableCsvMutation.mutate(d.slug)}
                           >
                             {pendingSlug === d.slug && pendingCsv ? <Loader2 className="animate-spin" /> : <FileSpreadsheet />}
-                            <span>{`#${d.number} · ${d.title} (CSV)`}</span>
+                            <span>{`D${d.number} · ${d.title} (CSV)`}</span>
                           </DropdownMenuItem>
                         )}
                       </Fragment>

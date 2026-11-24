@@ -142,6 +142,7 @@ def _scan_finding_grounding(engine, team_id: int, scan_id: int, finding_id: str,
                             ) -> tuple[G.Grounding, dict | None]:
     from backend.get_db import get_mongo_client_db
     from backend.utilities.cbom_sources.kb_remediation import explain
+    from backend.utilities.cbom_sources.regulated_entity import team_profile
 
     with Session(engine) as session:
         scan = session.exec(select(Scan).where(Scan.id == scan_id, Scan.team_id == team_id,
@@ -156,8 +157,11 @@ def _scan_finding_grounding(engine, team_id: int, scan_id: int, finding_id: str,
     if not finding or finding.get("scan_id") != scan_id:
         raise HTTPException(status_code=404, detail="Finding not found")
     data = finding.get("finding_data") or {}
+    with Session(engine) as session:  # the clauses that bind the team (SOW audit A-11), as on its other pages
+        team = team_profile(session, team_id)
     # the window the in-house fixer reads (mode "fix"); the scanner stores it with secret values redacted
-    return G.for_code_finding(scan_id, finding_id, data, explain(data, "code"), minimise=minimise), FIX.window_of(data)
+    return (G.for_code_finding(scan_id, finding_id, data, explain(data, "code", team=team), minimise=minimise),
+            FIX.window_of(data))
 
 
 @router.post(BASE + "/assist", dependencies=[Depends(assist_limiter), access.team("finding.remediate")],

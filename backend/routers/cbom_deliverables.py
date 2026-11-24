@@ -43,6 +43,7 @@ from backend.new_models import Scan
 from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
 from backend.utilities.dashboard.cbom_team_rollup import ScanHead, load_team_cbom_view
 from backend.utilities.ratelimit import RateLimiter, user_key
+from backend.utilities.pdf.cbom_deliverable_common import document_id
 from backend.utilities.pdf.cbom_deliverables import (
     DELIVERABLES,
     build_manifest,
@@ -171,10 +172,38 @@ def _log_failure(what: str, team_id: int, exc: BaseException) -> None:
 
 async def _authorize(team_id: int, authorization: str | None) -> Any:
     """Bearer token -> user -> team membership.  Returns the engine for the work that follows."""
+    engine, _user_id = await _authorize_user(team_id, authorization)
+    return engine
+
+
+async def _authorize_user(team_id: int, authorization: str | None) -> tuple[Any, int | None]:
+    """``_authorize`` that also returns the user id (the board report records who issued it)."""
     engine = get_db()
     user = await get_user_from_header_or_raise_exception(engine, authorization)
     await run_in_threadpool(check_if_user_is_in_team, user.id, team_id, engine)
-    return engine
+    return engine, getattr(user, "id", None)
+
+
+BOARD_SLUG = "board-executive-report"  # SOW D14: its issues are recorded for the trend (cbom_board_issues)
+
+
+def _previous_issue(engine: Any, team_id: int, number: int, content_id: str) -> dict[str, Any] | None:
+    """The issue this content is compared with (``cbom_board_issues.previous``: fixed once the content is issued)."""
+    from backend.utilities.dashboard.cbom_board_issues import previous
+
+    with Session(engine) as session:
+        return previous(session, team_id, number, content_id)
+
+
+def _record_issue(engine: Any, team_id: int, number: int, snapshot: dict[str, Any], user_id: int | None) -> None:
+    """Record this issue of the board report; a failure is logged and never fails the download."""
+    from backend.utilities.dashboard.cbom_board_issues import record
+
+    try:
+        with Session(engine) as session:
+            record(session, team_id, number, snapshot, user_id)
+    except Exception as exc:  # noqa: BLE001 - the PDF was built; the trend of the next issue is what is lost
+        _log_failure("issue record", team_id, exc)
 
 
 TeamId = Annotated[int, Path(ge=1, le=_MAX_TEAM_ID, description="Team id")]
@@ -287,7 +316,7 @@ async def download_cbom_deliverable_csv(
             **PRIVATE,
             "Content-Disposition": f'attachment; filename="{filename}"',
             "X-Content-Type-Options": "nosniff",
-            "X-Cbom-Fingerprint": view.fingerprint,
+            "X-Cbom-Fingerprint": view.document_digest,  # the Document ID's digest (M1)
         },
     )
 
@@ -339,13 +368,17 @@ async def download_cbom_deliverable(
     authorized = False  # a request that passed the token and membership checks logs one line, whatever its outcome
     known = slug if slug in DELIVERABLES else "unknown"
     try:
-        engine = await _authorize(team_id, Authorization)
+        engine, user_id = await _authorize_user(team_id, Authorization)
         authorized = True
         spec = DELIVERABLES.get(slug)
         if spec is None:
             raise HTTPException(status_code=404, detail=UNKNOWN_DELIVERABLE_DETAIL)
         options = await request_options(request, "deliverable")
         view = await run_in_threadpool(load_team_cbom_view, engine, team_id, now=_utcnow())
+        content_id = document_id(view, spec.number)  # the content alone: no previous issue in the digest yet
+        if spec.slug == BOARD_SLUG:  # the trend against the previous issue (review M7c)
+            # the previous issue's Document ID is part of D14's digest (review 2 m5): one ID, one trend
+            view.previous_issue = await run_in_threadpool(_previous_issue, engine, team_id, spec.number, content_id)
         ctx = ReportContext(options=options, branding=await run_in_threadpool(_branding, engine, team_id))
         if options.is_default and not ctx.branding.applied:
             pdf = await run_in_threadpool(spec.build, view)  # today's document, byte for byte
@@ -362,13 +395,18 @@ async def download_cbom_deliverable(
         if authorized:
             _log_outcome(team_id, known, "error", 500, started)
         raise HTTPException(status_code=500, detail=GENERIC_ERROR_DETAIL) from None
+    if spec.slug == BOARD_SLUG and not view.is_empty:
+        from backend.utilities.pdf.cbom_board_report_pdf import issue_snapshot
+
+        snapshot = {**issue_snapshot(view), "content_id": content_id}
+        await run_in_threadpool(_record_issue, engine, team_id, spec.number, snapshot, user_id)
     filename = deliverable_filename(spec, team_id, view.as_of)
     headers = {
         **report_headers(ctx, filename, findings=False),
         "X-Cbom-Scans-Included": str(view.included),
         "X-Cbom-Sources": str(len(view.sources)),
         "X-Cbom-Fidelity": view.fidelity_summary,
-        "X-Cbom-Fingerprint": view.fingerprint,
+        "X-Cbom-Fingerprint": view.document_digest,  # the Document ID's digest (M1)
         "X-Cbom-Posture": _posture_header(view),
     }
     if ctx.branding.applied:

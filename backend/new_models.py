@@ -755,7 +755,13 @@ class CbomEvidenceVendor(SQLModel, table=True):
 
 
 class CbomCollectionAuditEvent(SQLModel, table=True):
-    """Who changed what in CBOM Sources and when; field names only, never values."""
+    """Who changed what in CBOM Sources and when; field names only, never values.
+
+    One documented exception: action ``deliverable_issued`` (object ``deliverable``, id = the SOW deliverable number)
+    records an issue of the Board report (D14) for its trend, with ``name=value`` items of the figures the PDF itself
+    prints (Document ID, as-of day, grade, score, counts), never a setting's value or a secret
+    (``dashboard.cbom_board_issues``). It moves to a dedicated ``cbom_deliverable_issue`` table (team, number,
+    document_id unique) with the next migration (PR #485 review 2 m1)."""
     __tablename__ = "cbomcollectionauditevent"
     id: int | None = Field(default=None, primary_key=True)
     team_id: int = Field(foreign_key="team.id", index=True)

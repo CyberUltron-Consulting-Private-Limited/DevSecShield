@@ -858,7 +858,7 @@ REPORT_ALL = 2000  # the PDF's per-asset appendix; the CSV always holds every ro
 
 
 def report(session: Session, team_id: int, now: _dt.datetime) -> dict[str, Any]:
-    """What the register PDF prints (deliverable #2): the summary, the heat-map, the top Q1 Critical items and the
+    """What the register PDF prints (SOW deliverable D12): the summary, the heat-map, the top Q1 Critical items and the
     open Q0 gaps by reason, read in one place so the PDF and the API cannot disagree."""
     from backend.new_models import CbomQ0Gap
     from backend.utilities.cbom_sources import qgrade as QG

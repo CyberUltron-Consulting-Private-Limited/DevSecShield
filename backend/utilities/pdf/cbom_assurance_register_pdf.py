@@ -72,7 +72,7 @@ from backend.utilities.pdf.cbom_deliverable_common import (
 )
 from backend.utilities.pdf.report_branding import REPORT_META
 
-DOCUMENT_NUMBER = 10  # SOW Table 7: D10 (Document ID ...-D10-...)
+DOCUMENT_NUMBER = 10  # SOW D10 (REPORT_META sow_id; the Document ID reads it)
 REPORT_KEY = "cbom_assurance_register"  # REPORT_META key: its own header and footer label
 
 MAX_LIBRARY_ROWS = 1000  # decision D-04: libraries table cap

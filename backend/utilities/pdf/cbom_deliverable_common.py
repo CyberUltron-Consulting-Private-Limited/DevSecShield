@@ -283,17 +283,28 @@ def fmt_date_utc(dt: datetime | date | None) -> str:
     return _DASH
 
 
-def document_id(view: TeamCbomView, number: int | str) -> str:
-    """``CBOM-D07-T1-20261019-ab12cd34``: deliverable number, team, as-of day, data fingerprint.
+def sow_number(report_key: str) -> int | None:
+    """The SOW Table 7 deliverable ID of a report (``REPORT_META[...]["sow_id"]``: D1 ... D14), None for a report
+    that is not a numbered SOW deliverable. The ONE place a document's number comes from: the registry, the
+    manifest, the menu and the Document ID all read it (SOW audit A-04: the PDFs printed D02 / D15 / D16)."""
+    value = (REPORT_META.get(report_key) or {}).get("sow_id")
+    return int(value) if isinstance(value, int) and not isinstance(value, bool) else None
 
-    The fingerprint part is the first 8 hex characters of ``view.fingerprint`` (padded with
-    zeros when it is shorter or empty), so the same scan set always yields the same ID.  A
-    ``str`` number is a SOW Table 7 identifier printed as given (``"D2"``: ``CBOM-D2-T1-...``).
+
+def document_id(view: TeamCbomView, number: int | str) -> str:
+    """``CBOM-D08-T1-20261019-ab12cd34``: SOW deliverable ID (two digits, D01 ... D14), team, as-of day, fingerprint.
+
+    The fingerprint part is the first 8 hex characters of ``view.document_digest`` (padded with
+    zeros when it is shorter or empty): the scans and collections, plus the team settings and register
+    inputs the documents print (regulatory profile, source metadata, grade inputs). The same content
+    always yields the same ID, and different content never shares one (SOW review M1).
     """
-    fingerprint = re.sub(r"[^0-9a-f]", "", str(view.fingerprint or "").lower())[:8]
+    digest = getattr(view, "document_digest", None) or view.fingerprint
+    fingerprint = re.sub(r"[^0-9a-f]", "", str(digest or "").lower())[:8]
     day = view.as_of
     stamp = f"{day.year:04d}{day.month:02d}{day.day:02d}"
-    code = re.sub(r"[^A-Za-z0-9]", "", number)[:8] if isinstance(number, str) else f"D{int(number):02d}"
+    digits = re.sub(r"[^0-9]", "", number) if isinstance(number, str) else str(int(number))
+    code = f"D{int(digits or 0):02d}"
     return f"CBOM-{code}-T{int(view.team_id)}-{stamp}-{fingerprint.ljust(8, '0')}"
 
 
@@ -826,7 +837,8 @@ def _control_table(
         (labels["window"], pdf_text(_window_text(view)), value),
         (labels["basis"], pdf_text(authored.BASIS_CONTROL_SUMMARY), value),
         (labels["template"], pdf_text(f"{TEMPLATE_VERSION} \u00b7 {authored.TOOL_NAME}"), value),
-        (labels["fingerprint"], pdf_text(view.fingerprint or "n/a", limit=40), mono),
+        (labels["fingerprint"], pdf_text(getattr(view, "document_digest", None) or view.fingerprint or "n/a",
+                                         limit=40), mono),
     ]
     presentation = presentation_text(ctx)
     if presentation is not None:
@@ -1029,6 +1041,7 @@ def build_document(
     if report_key not in REPORT_META:
         raise ValueError(f"unknown report_key {report_key!r}: add it to REPORT_META")
     meta = REPORT_META[report_key]
+    number = sow_number(report_key) or number  # the SOW ID wins over a renderer's own constant
     styles = get_deliverable_styles()
     doc_id = document_id(view, number)
     team = pdf_plain(view.team_name, limit=80)

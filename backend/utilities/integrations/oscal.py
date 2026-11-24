@@ -29,6 +29,7 @@ from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectionJob, CbomCollectedAsset, CbomCollectionRun, CbomCollectionSource, Scan
 from backend.utilities.build_info import build_sha
+from backend.utilities.cbom_sources import regulated_entity as REG_ENTITY
 from backend.utilities.cbom_sources.common import iso_z, utcnow
 from backend.utilities.integrations.base import Cfg, Context, Outcome, ca_pem, https_url
 from backend.utilities.integrations.webhook import post_signed
@@ -125,26 +126,28 @@ def controls_for(namespace: str, code: str) -> list[str]:
     return [c for c in dict.fromkeys(out or ["sc-13"]) if c in known]
 
 
-def _references(namespace: str, code: str, evidence: Iterable[Any] = (None,)) -> list[dict[str, str]]:
+def _references(namespace: str, code: str, evidence: Iterable[Any] = (None,),
+                team: dict[str, Any] | None = None) -> list[dict[str, str]]:
     """Links to the clauses the code breaks on the assets that carry it (one algorithm-name list per asset, None when
     not recorded; #269, #289). A clause cited only for review on some assets (the algorithm it depends on was not
     recorded) says so in its link text."""
-    return _clause_links(namespace, code, evidence)[0]
+    return _clause_links(namespace, code, evidence, team)[0]
 
 
 NOT_RECORDED_ALL = " (algorithm not recorded: needs evidence, verify)"
 
 
-def _clause_links(namespace: str, code: str, evidence: Iterable[Any] = (None,)
+def _clause_links(namespace: str, code: str, evidence: Iterable[Any] = (None,), team: dict[str, Any] | None = None
                   ) -> tuple[list[dict[str, str]], list[str]]:
     """(links, the clauses that need evidence as "<framework>: <id>"): #289 review, a clause cited without a recorded
-    algorithm is no confirmed violation, so its link text is marked and the finding carries a prop per clause."""
+    algorithm is no confirmed violation, so its link text is marked and the finding carries a prop per clause.
+    ``team``: the team's regulatory profile; only the clauses that bind it are linked (SOW audit A-11)."""
     from backend.utilities.cbom_sources.crypto_kb import clauses_for
 
     order: list[tuple[str, str]] = []
     cited: dict[tuple[str, str], list[int]] = {}  # (href, text) -> [assets, of which unrecorded]
     for text_of_asset in evidence:
-        for ref in clauses_for(namespace, code, text_of_asset):
+        for ref in clauses_for(namespace, code, text_of_asset, team=team):
             href, text = str(ref.get("source") or ""), f"{ref.get('framework')}: {ref.get('id')}"
             if not href.startswith(("http://", "https://")):
                 continue
@@ -191,13 +194,18 @@ def _text(value: Any, fallback: str) -> str:
 def assessment_results(*, team_id: int, anchor: str, title: str, namespace: str, start: _dt.datetime | None,
                        end: _dt.datetime | None, views: Iterable[tuple[str | None, Any]], kb_version: str | None,
                        description: str, not_read: Iterable[str] = (),
-                       partly_read: Iterable[tuple[str, str]] = (), engine_version: str | None = None) -> dict[str, Any]:
+                       partly_read: Iterable[tuple[str, str]] = (), engine_version: str | None = None,
+                       team: dict[str, Any] | None) -> dict[str, Any]:
     """Build the document from drift ``View``s (``drift.node_views`` / ``drift.code_views``) of finding assets.
     ``not_read``: sources whose collection failed; ``partly_read``: (source, what was not read). Neither is claimed
     as reviewed: they are listed in the result's props and in the reviewed-controls remarks. ``engine_version``: the
-    build that judged a collection run (its ``engine_version``); the document also names the build that wrote it."""
+    build that judged a collection run (its ``engine_version``); the document also names the build that wrote it.
+    ``team``: the team's regulatory profile (``regulated_entity.team_profile``), required so no caller can forget it
+    and cite another entity's instrument (PR #485 review 2 M1); None only for a document that belongs to no team (every
+    clause, as the code engine). The feed never cites a clause the team's pages leave out (SOW audit A-11)."""
     from backend.utilities.cbom_sources.crypto_kb import entry
 
+    profile = dict(team) if team is not None else None
     findings_views = [(src, v) for src, v in views if v.finding and v.codes]
     truncated = len(findings_views) > MAX_OBSERVATIONS
     findings_views = findings_views[:MAX_OBSERVATIONS]
@@ -242,7 +250,7 @@ def assessment_results(*, team_id: int, anchor: str, title: str, namespace: str,
                            "status": {"state": "not-satisfied"}},
                 "related-observations": [{"observation-uuid": o} for o, _i in by_code[code]],
             }
-            links, needs = _clause_links(namespace, code, evidence_by_code[code])
+            links, needs = _clause_links(namespace, code, evidence_by_code[code], profile)
             if links:
                 finding["links"] = links
             if needs:  # #289: cited for review only, never read as a confirmed violation of these clauses
@@ -297,7 +305,9 @@ def assessment_results(*, team_id: int, anchor: str, title: str, namespace: str,
 
 
 # ----------------------------------------------------------------------------- run / scan
-def run_document(session: Session, run: CbomCollectionRun) -> dict[str, Any]:
+def run_document(session: Session, run: CbomCollectionRun, *, team: dict[str, Any] | None) -> dict[str, Any]:
+    """The OSCAL assessment results of a finished collection run; ``team``: the run team's profile
+    (``regulated_entity.team_profile``), a required keyword (review 2 M1)."""
     from backend.utilities.cbom_sources import drift as DRIFT
     from backend.utilities.cbom_sources import identity as ID
 
@@ -335,10 +345,14 @@ def run_document(session: Session, run: CbomCollectionRun) -> dict[str, Any]:
         team_id=run.team_id, anchor=f"run-{run.id}", title=f"ZeroShield CBOM collection run #{run.id}",
         namespace="node", start=run.created_at, end=run.finished_at, views=views, kb_version=run.kb_version,
         description=f"Cryptographic inventory collected from {len(jobs)} source(s); run status {run.status}.",
-        not_read=not_read, partly_read=partly_read, engine_version=run.engine_version)
+        not_read=not_read, partly_read=partly_read, engine_version=run.engine_version,
+        team=team)
 
 
-def scan_document(scan: Scan) -> dict[str, Any]:
+def scan_document(scan: Scan, *, team: dict[str, Any] | None) -> dict[str, Any]:
+    """The OSCAL assessment results of a CBOM code scan; ``team``: the scan team's profile
+    (``regulated_entity.team_profile``), a required keyword: the download cited the NBFC directions to every team when
+    it was left out (review 2 M1)."""
     from backend.utilities.cbom_sources import drift as DRIFT
 
     key, label = DRIFT.code_source(scan)
@@ -350,18 +364,20 @@ def scan_document(scan: Scan) -> dict[str, Any]:
         namespace="code", start=scan.created_at, end=scan.last_updated, views=views, kb_version=None,
         description=f"Cryptographic inventory of {label} (CBOM code scan).",
         partly_read=[(label, "the uploaded CBOM was truncated at its component limit")]
-        if DRIFT.scan_truncated(scan) else ())
+        if DRIFT.scan_truncated(scan) else (), team=team)
 
 
 def document_for(engine, team_id: int, *, run_id: int | None = None, scan_id: int | None = None) -> dict | None:
     with Session(engine) as session:
         if run_id is not None:
             run = session.get(CbomCollectionRun, run_id)
-            return run_document(session, run) if run is not None and run.team_id == team_id else None
+            if run is None or run.team_id != team_id:
+                return None
+            return run_document(session, run, team=REG_ENTITY.team_profile(session, team_id))
         scan = session.get(Scan, scan_id) if scan_id is not None else None
         if scan is None or scan.team_id != team_id or scan.scan_type != "cbom" or scan.scan_status != "success":
             return None
-        return scan_document(scan)
+        return scan_document(scan, team=REG_ENTITY.team_profile(session, team_id))
 
 
 # ----------------------------------------------------------------------------- push connector
@@ -398,7 +414,7 @@ def test(ctx: Context, event: dict[str, Any]) -> Outcome:
     """Push a small valid document (no findings) so the GRC side can check the signature and the format."""
     doc = assessment_results(team_id=ctx.team_id, anchor=f"test-{event['id']}", title="ZeroShield OSCAL push test",
                              namespace="node", start=utcnow(), end=utcnow(), views=[], kb_version=None,
-                             description="Connection test: no assets.")
+                             description="Connection test: no assets.", team=None)  # no finding: no clause
     body = json.dumps(doc, separators=(",", ":"), ensure_ascii=True).encode("ascii")
     return post_signed(ctx.config.url, ctx.secrets.get("signing_secret") or "", event["id"], "integration.test", body,
                        ctx.config.ca_pem)

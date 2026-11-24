@@ -75,19 +75,19 @@ FIXTURE = Path(__file__).resolve().parent / "fixtures" / "cbom_team_rollup_scans
 MANIFEST_PATH = "/{team_id}/cbom/deliverables"
 PDF_PATH = "/{team_id}/cbom/deliverables/{slug}"
 CSV_PATH = "/{team_id}/cbom/deliverables/{slug}.csv"
-SLUGS = [
+SLUGS = [  # SOW Table 7 order and IDs (FIX-A3, SOW audit A-04)
     "scope-baseline-register",
-    "quantum-risk-register",
     "methodology-evidence-plan",
     "infrastructure-cloud-encryption-posture",
     "network-tls-protocol-assessment",
     "certificate-estate-register",
     "data-at-rest-encryption-assessment",
     "third-party-assurance-register",
+    "quantum-risk-register",
     "pqc-migration-roadmap",
     "board-executive-report",
 ]
-NUMBERS = dict(zip(SLUGS, [1, 2, 3, 6, 7, 8, 9, 10, 15, 16], strict=True))  # 6-10: SOW Table 7 D6-D10
+NUMBERS = dict(zip(SLUGS, [1, 2, 6, 7, 8, 9, 10, 12, 13, 14], strict=True))
 GENERIC_500 = {"detail": "Error generating deliverable, please try again later"}
 
 # Strings that exist ONLY in scans a team-1 document must never read (plan Appendix B).
@@ -211,6 +211,21 @@ def expected_fingerprint(scans: list[dict[str, Any]], included_ids: list[int]) -
         if s["id"] in included_ids
     )
     return hashlib.sha256(f"cbom-team-rollup|{stamped}".encode()).hexdigest()[:12]
+
+
+def expected_document_digest(fingerprint: str, engine: Any, team_id: int) -> str:
+    """The Document ID's digest (review M1), the documented formula: the data fingerprint above when the view prints
+    nothing beyond its scans, else sha256(fingerprint + "|content|" + the content as canonical JSON)[:12], the content
+    being the team's regulatory profile, the source metadata, the register's grade inputs and grade counts."""
+    from backend.utilities.dashboard.cbom_team_rollup import _document_content, load_team_cbom_view
+
+    view = load_team_cbom_view(engine, team_id, now=NOW)
+    assert view.fingerprint == fingerprint  # the scans part still follows plan 4.8
+    content = _document_content(view)
+    if not content:
+        return fingerprint
+    text = json.dumps(content, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(f"{fingerprint}|content|{text}".encode()).hexdigest()[:12]
 
 
 @dataclass
@@ -371,7 +386,8 @@ def pdf_url(team_id: int, slug: str) -> str:
 @pytest.mark.parametrize("slug", SLUGS)
 def test_each_slug_returns_its_own_pdf_with_the_contract_headers(api, world, slug):
     scans = [s for s in world.fixture["scans"] if s["team_id"] == TEAM_ONE]
-    fingerprint = expected_fingerprint(scans, [1, 2, 3, 4, 5, 6, 7, 8])
+    fingerprint = expected_document_digest(expected_fingerprint(scans, [1, 2, 3, 4, 5, 6, 7, 8]), world.engine,
+                                           TEAM_ONE)
 
     response = api.get(pdf_url(TEAM_ONE, slug))
 
@@ -396,9 +412,8 @@ def test_each_slug_returns_its_own_pdf_with_the_contract_headers(api, world, slu
     text = squash(full_text(body))  # cells wrap differently in portrait and landscape
     for needle in (
         # the right document: its own number, the data fingerprint and its own footer label
-        # (D2 prints its SOW identifier, FIX-D1)
-        f"CBOM-D2-T1-20261019-{fingerprint[:8]}" if slug == "methodology-evidence-plan"
-        else f"CBOM-D{NUMBERS[slug]:02d}-T1-20261019-{fingerprint[:8]}",
+        # (every deliverable prints its SOW identifier as two digits, D2 included: CBOM-D02-...)
+        f"CBOM-D{NUMBERS[slug]:02d}-T1-20261019-{fingerprint[:8]}",
         fingerprint,
         REPORT_META[DELIVERABLES[slug].report_key]["footer_label"],
         "2026-10-19 12:28 UTC (17:58 IST)",
@@ -527,8 +542,8 @@ def test_the_legacy_scan_url_is_sanitised_and_its_fingerprint_follows_the_docume
     response = api.get(pdf_url(TEAM_LEGACY, "scope-baseline-register"))
     legacy = next(s for s in world.fixture["scans"] if s["id"] == 8)
     clone = {**legacy, "id": LEGACY_SCAN_ID}  # the seeded legacy-only team holds a copy of scan 8
-    assert response.headers["x-cbom-fingerprint"] == expected_fingerprint(
-        [clone], [LEGACY_SCAN_ID]
+    assert response.headers["x-cbom-fingerprint"] == expected_document_digest(
+        expected_fingerprint([clone], [LEGACY_SCAN_ID]), world.engine, TEAM_LEGACY
     )
     text = squash(full_text(response.content))
     assert "github.com/e2e-demo/legacy-billing" in text, "the source must still be listed"
