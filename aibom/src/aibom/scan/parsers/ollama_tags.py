@@ -52,7 +52,10 @@ _RULES: tuple[tuple[str, str | None, str | None, str | None, str], ...] = (
     (r"mixtral", None, "Mistral", "Apache-2.0", _CHAT),
     # ollama.com/library/phi3 "MIT license"; HF Phi-3-mini-4k, Phi-3.5-mini, phi-4,
     # Phi-4-mini-instruct mit
-    (r"phi3(?:\.5)?|phi4(?:-mini)?", None, "Microsoft", "MIT", _CHAT),
+    # HF microsoft/Phi-4-reasoning mit (restored: review 6063929550 m2)
+    (r"phi3(?:\.5)?|phi4(?:-mini|-reasoning|-mini-reasoning)?", None, "Microsoft",
+     "MIT",
+     _CHAT),
     # ollama.com/library/deepseek-r1/tags: 671b = R1 (HF DeepSeek-R1 mit); 8b =
     # 8b-0528-qwen3 (HF DeepSeek-R1-0528-Qwen3-8B mit)
     (r"deepseek-r1", r"(?:671b|8b)(?:-.*)?", "DeepSeek", "MIT", _CHAT),
@@ -78,8 +81,9 @@ _RULES: tuple[tuple[str, str | None, str | None, str | None, str], ...] = (
     (r"gpt-oss", None, "OpenAI", "Apache-2.0", _CHAT),
     # HF CohereLabs/c4ai-command-r-v01, -plus, -r7b-12-2024 cc-by-nc-4.0
     (r"command-r(?:-plus|7b)?", None, "Cohere", "CC-BY-NC-4.0", _CHAT),
-    # HF google/gemma-2-9b, gemma-3-4b-it, codegemma-7b-it license gemma
-    (r"(?:code)?gemma\d*", None, "Google", "LicenseRef-Gemma-Terms-of-Use", _CHAT),
+    # HF google/gemma-2-9b, gemma-3-4b-it, codegemma-7b-it, gemma-3n-E4B-it license
+    # gemma (gemma3n restored: review 6063929550 m2)
+    (r"(?:code)?gemma\d*n?", None, "Google", "LicenseRef-Gemma-Terms-of-Use", _CHAT),
     # HF nomic-ai/nomic-embed-text-v1.5, mixedbread-ai/mxbai-embed-large-v1 apache-2.0
     (r"nomic-embed-text", None, "Nomic", "Apache-2.0", "text-embedding"),
     (r"mxbai-embed-large", None, "mixedbread", "Apache-2.0", "text-embedding"),
@@ -90,7 +94,16 @@ _RULES: tuple[tuple[str, str | None, str | None, str | None, str], ...] = (
     (r"qwen2\.5", r"72b(?:-.*)?", "Alibaba", "LicenseRef-Qwen-License", _CHAT),
     (r"qwen2\.5", r"(?:0\.5b|1\.5b|7b|14b|32b)(?:-.*)?", "Alibaba", "Apache-2.0",
      _CHAT),
-    (r"qwen2\.5", None, "Alibaba", None, _CHAT),  # bare / latest / -coder …
+    # qwen2.5-coder: HF Qwen2.5-Coder-3B-Instruct license_name qwen-research; 0.5B /
+    # 1.5B / 7B / 14B / 32B apache-2.0 (review 6063929550 m2)
+    (r"qwen2\.5-coder", r"3b(?:-.*)?", "Alibaba", "LicenseRef-Qwen-Research-License",
+     "code generation"),
+    (r"qwen2\.5-coder", r"(?:0\.5b|1\.5b|7b|14b|32b)(?:-.*)?", "Alibaba", "Apache-2.0",
+     "code generation"),
+    # Note: the rules match the WHOLE name part, so ``qwen2.5-coder`` / ``qwen2.5-vl``
+    # never fall to the plain ``qwen2.5`` rules; an unlisted variant or the bare alias
+    # reaches the NOASSERTION catch-alls below.
+    (r"qwen2\.5(?:-coder|-vl)?", None, "Alibaba", None, _CHAT),  # bare / latest …
     # HF Qwen/Qwen3-8B, Qwen3-235B-A22B apache-2.0 (every Qwen3 size)
     (r"qwen3", None, "Alibaba", "Apache-2.0", _CHAT),
     # HF ibm-granite/granite-3.1-8b-instruct, -3b-a800m-instruct apache-2.0
@@ -128,6 +141,10 @@ _LANGCHAIN_CALL = re.compile(
     r"(?<!\w)(?:new\s+)?(?:ChatOllama|OllamaLLM|OllamaEmbeddings|Ollama)\s*\("
 )
 _REST = re.compile(r"/api/(?:chat|generate|embed|embeddings)\b")
+_LITELLM_ROUTE = re.compile(
+    r"""['"]ollama(?:_chat)?/(?P<tag>[a-z0-9][\w.-]*(?::[\w.-]+)?)['"]""",
+    re.IGNORECASE,
+)
 _JSON_MODEL = re.compile(r"""['"]model['"]\s*:\s*['"](?P<tag>[^'"\s]+)['"]""")
 
 
@@ -179,6 +196,9 @@ def find_ollama_tags(text: str, lang: str = "py") -> list[str]:
         found += [m.group("tag") for m in _MODEL_LITERAL.finditer(span)]
     if _REST.search(code):
         found += [m.group("tag") for m in _JSON_MODEL.finditer(code)]
+    # LiteLLM's Ollama provider: model="ollama/llama3:8b" / "ollama_chat/…"
+    # (review 6063929550 of #498, m5)
+    found += [m.group("tag") for m in _LITELLM_ROUTE.finditer(code)]
     out: list[str] = []
     for tag in found:
         if _TAG.match(tag) and tag.lower() not in {t.lower() for t in out}:
@@ -187,28 +207,154 @@ def find_ollama_tags(text: str, lang: str = "py") -> list[str]:
 
 
 _TAG_LITERAL = re.compile(r"""['"](?P<tag>[a-z][\w.-]*:[\w.-]+)['"]""", re.IGNORECASE)
+# The tag part of a real Ollama tag: a size (8b, 0.5b, 135m, 8x7b, e4b), latest, a
+# known variant word, optionally followed by more -/_/. parts (8b-instruct-q4_K_M,
+# 120b-cloud). ``llama3:hits`` is no tag (review 6063929550 of #498, R5-M1).
+_TAG_PART = re.compile(
+    r"^(?:\d+(?:\.\d+)?[bmk]|\d+x\d+(?:\.\d+)?b|e\d+b|a\d+(?:\.\d+)?b|latest|mini|"
+    r"small|medium|large|instruct|chat|text|vision|code|cloud|fp16|q\d\w*)"
+    r"(?:[-_.][\w.]+)*$",
+    re.IGNORECASE,
+)
+# What tells the scan the repository uses Ollama at all (an SDK import / call, a
+# LangChain wrapper, the REST API, OLLAMA_HOST, the container image, a LiteLLM
+# ``ollama/`` route)
+_OLLAMA_EVIDENCE = re.compile(
+    r"""\bimport\s+(?:[\w.]+\s*,\s*)*ollama\b|\bfrom\s+ollama\b|['"]ollama['"]|"""
+    r"""\bollama\.\w+\s*\(|ChatOllama|OllamaLLM|OllamaEmbeddings|langchain[_-]ollama|"""
+    r"""/api/(?:chat|generate|embed)\b|:11434\b|\bOLLAMA_HOST\b|ollama/ollama|"""
+    r"""['"]ollama(?:_chat)?/[\w.-]+:""",
+    re.IGNORECASE,
+)
+# a key / cache / log argument (``r.set("mistral:7b", 1)``) is never a model
+_KEY_CALL = re.compile(
+    r"\.(?:set|get|setex|setnx|incr|incrby|decr|hget|hset|hincrby|delete|expire|exists|"
+    r"lpush|rpush|sadd|zadd|zincrby|pop|getdel|cache|memoize)\s*\(\s*$"
+)
+_ASSIGN_TARGET = re.compile(r"(?P<name>[A-Za-z_][\w.]*)\s*(?::[^=\n]+)?=\s*$")
+_MODELISH = re.compile(r"model|llm|chat|embed|gen|complet|default|ollama|tag", re.I)
 
 
-def find_ollama_tag_literals(text: str, lang: str = "py") -> list[str]:
-    """String literals with Ollama tag syntax (``family:size``, the family one the
-    Ollama library serves) anywhere in source code, outside comments: the model a
-    constant names (``PROD_MODEL = "llama3.1:70b"``) or a wrapper is called with
-    (``ask("mistral:7b")``) in another file than the Ollama call (review 6063080163
-    of #498, R4-M3). ``name:tag`` is Ollama syntax: such a model is self-hosted open
-    weights, never its maker's hosted product."""
-    code, _bare = mask(text, lang)
-    out: list[str] = []
+def has_ollama_evidence(text: str) -> bool:
+    """Whether a file shows the repository uses Ollama (see ``_OLLAMA_EVIDENCE``)."""
+    return bool(_OLLAMA_EVIDENCE.search(text))
+
+
+def valid_tag(tag: str) -> bool:
+    """``family:part`` with a family Ollama serves and a real tag part."""
+    name, _, part = tag.partition(":")
+    return is_ollama_family(name) and bool(_TAG_PART.match(part))
+
+
+def _docstring_spans(text: str) -> list[tuple[int, int]]:
+    return [m.span() for m in re.finditer(r'("""|\'\'\')(?:.|\n)*?\1', text)]
+
+
+def _enclosing_open(bare: str, pos: int) -> int | None:
+    """The unmatched ``[`` / ``(`` / ``{`` before ``pos`` in masked text, if any."""
+    depth = 0
+    for k in range(pos - 1, max(-1, pos - 4000), -1):
+        ch = bare[k]
+        if ch in ")]}":
+            depth += 1
+        elif ch in "([{":
+            if depth == 0:
+                return k
+            depth -= 1
+    return None
+
+
+def find_ollama_tag_literals(
+    text: str, lang: str | None = "py", config: bool = False
+) -> list[tuple[str, str]]:
+    """``[(tag, "usage" | "catalog")]``: string literals with Ollama tag syntax
+    (a family Ollama serves and a real tag part) outside comments and docstrings.
+
+    Usage: a value a model-like name is assigned (``PROD_MODEL = "llama3.1:70b"``),
+    a lone call argument (``ask("mistral:7b")``) or a ``"model": …`` value. A
+    catalogue: an element of a list / tuple / set holding several tags (a picker),
+    a dict key (a benchmark table), or a literal assigned to another name. A key
+    argument (``r.set("mistral:7b", 1)``) is never recorded (review 6063929550 of
+    #498, R5-M1). The caller treats usage as a model in use only when the repository
+    has Ollama evidence."""
+    code, bare = mask(text, lang or "py") if lang else (text, text)
+    docs = _docstring_spans(text) if lang == "py" else []
+    out: dict[str, tuple[str, str]] = {}
     for m in _TAG_LITERAL.finditer(code):
         tag = m.group("tag")
-        if "://" in tag or not is_ollama_family(tag.split(":", 1)[0]):
+        if "://" in tag or not valid_tag(tag):
             continue
-        if tag.lower() not in {t.lower() for t in out}:
-            out.append(tag)
-    return out
+        start, end = m.span()
+        if any(a <= start < b for a, b in docs):
+            continue  # prose in a docstring
+        before = code[max(0, start - 200) : start]
+        after = code[end : end + 40]
+        if _KEY_CALL.search(before):
+            continue  # a cache / log / store key
+        kind = "usage"
+        model_key = re.search(r"['\"]model['\"]\s*:\s*$", before)
+        if re.match(r"\s*:", after) and not model_key:
+            kind = "catalog"  # a dict key (a benchmark / price table)
+        else:
+            open_at = _enclosing_open(bare, start)
+            if open_at is not None:
+                opener = bare[open_at]
+                head = bare[max(0, open_at - 60) : open_at]
+                is_call = opener == "(" and re.search(r"[\w)\]]\s*$", head)
+                if not is_call:
+                    close = {"[": "]", "(": ")", "{": "}"}[opener]
+                    depth, k = 0, open_at
+                    while k < len(bare):
+                        if bare[k] in "([{":
+                            depth += 1
+                        elif bare[k] in ")]}":
+                            depth -= 1
+                            if depth == 0:
+                                break
+                        k += 1
+                    inner = code[open_at + 1 : k]
+                    if bare[k : k + 1] == close and len(
+                        [t for t in _TAG_LITERAL.findall(inner) if valid_tag(t)]
+                    ) >= 2 and not re.search(r"['\"]model['\"]\s*:\s*$", before):
+                        kind = "catalog"  # several tags in one collection: a picker
+            if kind == "usage":
+                target = _ASSIGN_TARGET.search(before)
+                if target and not _MODELISH.search(target.group("name")):
+                    kind = "catalog"  # ``log = "phi3:mini"``: not a model setting
+        _keep(out, tag, kind)
+    if config:
+        # an unquoted YAML / .env / TOML value: ``model: llama3.1:8b`` is typed as
+        # ``{"model": "llama3.1:8b"}`` in JSON (review 6063929550 of #498, m5)
+        for m in _CONFIG_VALUE.finditer(text):
+            tag = m.group("tag")
+            if not valid_tag(tag):
+                continue
+            key = m.group("key")
+            kind = "usage" if key and _MODELISH.search(key) else "catalog"
+            _keep(out, tag, kind)
+    return list(out.values())
+
+
+# ``model: llama3.1:8b`` / ``OLLAMA_MODEL=mistral:7b`` / ``- phi3:mini`` (a list item)
+_CONFIG_VALUE = re.compile(
+    r"(?m)^[ \t]*(?:-[ \t]+)?(?:(?P<key>[A-Za-z_][\w.-]*)[ \t]*[:=][ \t]*)?"
+    r"(?P<tag>[a-z][\w.-]*:[\w.-]+)[ \t]*(?:#.*)?$",
+    re.IGNORECASE,
+)
+
+
+def _keep(out: dict[str, tuple[str, str]], tag: str, kind: str) -> None:
+    key = tag.lower()
+    if key not in out:
+        out[key] = (tag, kind)
+    elif kind == "usage":
+        out[key] = (out[key][0], "usage")  # usage anywhere wins
 
 
 __all__ = [
     "find_ollama_tag_literals",
+    "has_ollama_evidence",
+    "valid_tag",
     "find_ollama_tags",
     "is_cloud_tag",
     "is_ollama_family",

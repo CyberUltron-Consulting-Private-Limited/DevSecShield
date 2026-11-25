@@ -331,8 +331,20 @@ def find_model_refs_ctx(
 
     found: dict[str, tuple[str, str]] = {}
     casing: dict[str, str] = {}
+    from aibom.scan.parsers.ollama_tags import is_ollama_family, valid_tag
+
     for pos, name, vendor in _matches(text):
         low = name.lower()
+        # ``llama3:hits`` (a cache key) is no model: a family name followed by a
+        # ``:part`` that is no Ollama tag (review 6063929550 of #498, R5-M1). Only
+        # for a family Ollama serves: ``models/gemini-1.5-flash:generateContent``
+        # is a REST path naming a hosted model
+        after_name = text[pos + len(name) : pos + len(name) + 60]
+        colon = re.match(r":([A-Za-z_][\w.-]*)", after_name)
+        if colon and is_ollama_family(name) and not valid_tag(
+            f"{name}:{colon.group(1)}"
+        ) and parse_bedrock_id(name) is None:
+            continue
         li = line_index(pos) if offsets else 0
         line = lines[li] if li < len(lines) else ""
         prev = lines[li - 1] if li > 0 else ""

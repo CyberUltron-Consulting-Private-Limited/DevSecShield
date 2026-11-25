@@ -81,6 +81,9 @@ def run_framework(
 
     counts = dict.fromkeys(_STATES, 0)
     requirements: list[dict[str, Any]] = []
+    # a partial scan qualifies every verdict: a pass or a fail may change once the
+    # scanner that did not finish runs (review 6063929550 of #498, R5-M2)
+    incomplete = incomplete_basis(result)
     for requirement, check in checks_for(framework):
         if oos_reason is not None:
             cr = CheckResult("out_of_scope", oos_reason)
@@ -94,9 +97,12 @@ def run_framework(
                     f"attested: {evidence[requirement.id]}",
                     cr.refs,
                 )
+        if incomplete and cr.verdict in ("pass", "fail", "pass_with_evidence"):
+            cr = CheckResult(cr.verdict, f"{cr.evidence} ({incomplete})", cr.refs)
         counts[cr.verdict] = counts.get(cr.verdict, 0) + 1
         requirements.append(
             {
+                **({"basis": "incomplete_scan"} if incomplete else {}),
                 "id": requirement.id,
                 "title": requirement.title_for(result),
                 "source": requirement.source_for(result),
@@ -118,8 +124,25 @@ def run_framework(
         "not_bom_evidenceable": counts["not_bom_evidenceable"],
         "na": counts["na"],
         "coverage": coverage,  # pass/(pass+fail); None when 0 applicable
+        # present only on a partial scan: a complete scan's report is unchanged
+        **({"basis": "incomplete_scan"} if incomplete else {}),
         "requirements": requirements,
     }
+
+
+INCOMPLETE_PREFIX = "based on an incomplete scan"
+
+
+def incomplete_basis(result: ScanResult) -> str:
+    """'' for a complete scan; else the qualifier every verdict carries, naming
+    the scanners that did not finish."""
+    props = result.properties or {}
+    errors = (props.get("aibom:scanner_errors") or "").strip()
+    if not errors and props.get("aibom:scan_completeness") != "partial":
+        return ""
+    names = [e.split(":", 1)[0].strip() for e in errors.split(";") if e.strip()]
+    tail = f": {', '.join(names)} did not finish" if names else ""
+    return f"{INCOMPLETE_PREFIX}{tail}"
 
 
 def run_all(

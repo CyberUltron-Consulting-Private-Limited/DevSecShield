@@ -730,7 +730,7 @@ class NetEnvScanner(Scanner):
                     ctx.unreadable_notebooks.add(path.name)
             files.append((path, text, source))
         # OLLAMA_HOST and other endpoints set in env / compose files (M1)
-        env = env_values([(src, t) for _p, t, src in files])
+        env = env_values([(src, t) for _p, t, src in files], ctx.root.name)
         _INDEX.append(ProjectIndex(
             [(src, t) for p_, t, src in files
              if p_.suffix.lower() not in (".yaml", ".yml") and not is_env_file(p_)]))
@@ -875,14 +875,129 @@ _EXAMPLE_FILE = re.compile(
 EXAMPLE = "@example"  # env key suffix: a value from an example / template file
 
 
-def env_values(files: list[tuple[str, str]]) -> dict[str, str]:
+# env key suffix: the deployment sets the name to different values
+CONFLICT = "@conflict"
+
+#: workload names that are the application itself (a container / compose service
+#: that runs the repository's code), besides the repository's own name
+_APP_NAMES = frozenset({"app", "api", "web", "server", "backend", "worker", "main",
+                        "service", "application"})
+_WORKLOAD_KINDS = ("containers:", "services:")
+
+
+def _slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", text.lower())
+
+
+def _is_app(name: object, image: object, built: bool, repo: str) -> bool:
+    """A Kubernetes container / compose service runs the repository's code: it is
+    built from the repository, or its name or image names the repository or a
+    generic application role (review 6063929550 of #498, m1). An unrelated tool's
+    container (Open WebUI, a gateway) does not configure the application."""
+    if built:
+        return True
+    repo_slug = _slug(repo)
+    image_name = str(image or "").rsplit("/", 1)[-1].split(":", 1)[0].split("@", 1)[0]
+    for cand in (str(name or ""), image_name):
+        slug = _slug(cand)
+        if not slug:
+            continue
+        if cand.lower() in _APP_NAMES or (
+            repo_slug and (repo_slug in slug or slug in repo_slug)
+        ):
+            return True
+    return False
+
+
+def _container_env(env: object) -> list[tuple[str, str]]:
+    out: list[tuple[str, str]] = []
+    if isinstance(env, list):
+        for item in env:
+            if isinstance(item, dict) and isinstance(item.get("name"), str) \
+                    and isinstance(item.get("value"), (str, int, float)):
+                out.append((item["name"], str(item["value"])))
+            elif isinstance(item, str) and "=" in item:
+                k, _, v = item.partition("=")
+                out.append((k.strip(), v.strip()))
+    elif isinstance(env, dict):
+        out += [(str(k), str(v)) for k, v in env.items()
+                if isinstance(v, (str, int, float)) and not isinstance(v, bool)]
+    return out
+
+
+def _workload_env(text: str, repo: str) -> list[tuple[str, str]] | None:
+    """``[(NAME, value)]`` from the app workloads of a Kubernetes manifest or a
+    compose file, None when the file is neither (or does not parse: a Helm
+    template keeps the plain reading)."""
+    if not any(k in text for k in _WORKLOAD_KINDS):
+        return None
+    import yaml
+
+    try:
+        docs = list(yaml.safe_load_all(text))
+    except (yaml.YAMLError, ValueError, RecursionError):
+        return None  # a Helm template / broken YAML keeps the plain reading
+    if not docs:
+        return None
+    found = False
+    out: list[tuple[str, str]] = []
+    visited: set[int] = set()  # an alias is walked once (no billion-laughs walk)
+
+    def containers(node: object, depth: int = 0) -> None:
+        nonlocal found
+        if depth > 12 or id(node) in visited:
+            return
+        visited.add(id(node))
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key in ("containers", "initContainers") and isinstance(value, list):
+                    found = True
+                    for c in value:
+                        if isinstance(c, dict) and _is_app(
+                            c.get("name"), c.get("image"), False, repo
+                        ):
+                            out.extend(_container_env(c.get("env")))
+                elif isinstance(value, (dict, list)):
+                    containers(value, depth + 1)
+        elif isinstance(node, list):
+            for item in node:
+                containers(item, depth + 1)
+
+    for doc in docs:
+        if not isinstance(doc, dict):
+            continue
+        services = doc.get("services")
+        if isinstance(services, dict) and all(
+            isinstance(v, dict) for v in services.values()
+        ):
+            found = True
+            for name, svc in services.items():
+                if _is_app(name, svc.get("image"), "build" in svc, repo):
+                    out.extend(_container_env(svc.get("environment")))
+            continue
+        containers(doc)
+    return out if found else None
+
+
+def env_values(files: list[tuple[str, str]], repo: str = "") -> dict[str, str]:
     """``NAME -> literal value`` that configures the deployment: env and compose
     files, Kubernetes / Helm ``env`` name / value pairs and ``values.yaml`` keys, and
     in-code ``os.environ[NAME] = …`` / ``setdefault`` / ``putenv`` (review
     6063080163 of #498, R4-M4). A value from an example / template file
     (``.env.example``, ``.sample``, ``.template``) is not the deployment's: it is
-    kept as ``NAME@example``, a default at most."""
-    out: dict[str, str] = {}
+    kept as ``NAME@example``, a default at most.
+
+    Only the workloads that are the application configure it: a Kubernetes
+    container or compose service of an unrelated tool is skipped. A name the
+    deployment sets to different values is ``NAME@conflict`` (the values, comma
+    separated), never one of them picked silently (review 6063929550 of #498, m1)."""
+    seen: dict[str, list[str]] = {}
+
+    def put(key: str, value: str) -> None:
+        values = seen.setdefault(key, [])
+        if value not in values:
+            values.append(value)
+
     for name, text in files:
         example = bool(_EXAMPLE_FILE.search(name))
         suffix = EXAMPLE if example else ""
@@ -890,12 +1005,25 @@ def env_values(files: list[tuple[str, str]]) -> dict[str, str]:
             for m in _CODE_ENV_SET.finditer(text):
                 k = m.group("k") or m.group("k2") or m.group("k3") or m.group("k4")
                 v = m.group("v") or m.group("v2") or m.group("v3") or m.group("v4")
-                out.setdefault(k + suffix, v)
+                put(k + suffix, v)
+            continue
+        workload = (_workload_env(text, repo)
+                    if name.lower().endswith((".yaml", ".yml")) else None)
+        if workload is not None:
+            for k, v in workload:
+                if re.fullmatch(r"[A-Z_][A-Z0-9_]*", k) and v and not v.startswith("$"):
+                    put(k + suffix, v)
             continue
         for m in _K8S_ENV.finditer(text):
-            out.setdefault(m.group("k") + suffix, m.group("v"))
+            put(m.group("k") + suffix, m.group("v"))
         for m in _ENV_ASSIGN.finditer(text):
-            out.setdefault(m.group("k") + suffix, m.group("v"))
+            put(m.group("k") + suffix, m.group("v"))
+    out: dict[str, str] = {}
+    for key, values in seen.items():
+        if len(values) == 1 or key.endswith(EXAMPLE):
+            out[key] = values[0]
+        else:
+            out[key + CONFLICT] = ", ".join(values)
     return out
 
 
@@ -905,6 +1033,7 @@ def _ollama_server(
     source: str,
     env_name: str | None = None,
     default: str | None = None,
+    candidates: str | None = None,
 ) -> CloudServiceComponent | EndpointComponent:
     """The Ollama server a client talks to. ``host_value`` None: the endpoint is not
     known (a variable, an environment value the repository does not set): never the
@@ -923,6 +1052,9 @@ def _ollama_server(
             # the fallback the code (or an example file) gives: a default, not the
             # deployment's endpoint
             comp.properties["service:endpoint_default"] = default
+        if candidates:
+            # the hosts the deployment sets the variable to (review 6063929550, m1)
+            comp.properties["service:endpoint_candidates"] = candidates
         return comp
     url = host_value if "://" in host_value else f"http://{host_value}"
     host, path = _split_url(url)
@@ -995,7 +1127,11 @@ def _ollama_services(
                 value = _arg_value(code, open_paren + 1 + lead)
         if value is None:
             # no host given: ollama-python reads OLLAMA_HOST, else 127.0.0.1:11434
-            if "OLLAMA_HOST" in env:
+            if "OLLAMA_HOST" + CONFLICT in env:
+                # set to different hosts: which one runs is not known, never local
+                comp = _ollama_server(None, "conflicting", source, "OLLAMA_HOST",
+                                      candidates=env["OLLAMA_HOST" + CONFLICT])
+            elif "OLLAMA_HOST" in env:
                 comp = _ollama_server(env["OLLAMA_HOST"], "env-file", source,
                                       "OLLAMA_HOST")
             elif "OLLAMA_HOST" + EXAMPLE in env:
@@ -1009,7 +1145,10 @@ def _ollama_services(
         else:
             ref = _ENV_REF.search(value)
             name = (ref.group("a") or ref.group("b")) if ref else None
-            if name and name in env:
+            if name and name + CONFLICT in env:
+                comp = _ollama_server(None, "conflicting", source, name,
+                                      candidates=env[name + CONFLICT])
+            elif name and name in env:
                 comp = _ollama_server(env[name], "env-file", source, name)
             else:
                 # read from the environment at run time: unknown, its fallback

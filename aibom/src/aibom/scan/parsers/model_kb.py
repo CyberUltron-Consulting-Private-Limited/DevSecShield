@@ -273,6 +273,40 @@ _KB: tuple[tuple[str, dict], ...] = (
             ("mistral", "chat/completion", "Mistral"),
         )
     ),
+    # Llama: one licence id per version on every path (Ollama tag, Bedrock id,
+    # config value, Hub id), the same refs as ``ollama_tags`` (review 6063929550 of
+    # #498, m3). HF meta-llama/Llama-2-7b-hf llama2, Meta-Llama-3-8B llama3,
+    # Llama-3.1-8B llama3.1, Llama-3.2-3B llama3.2, Llama-3.3-70B llama3.3,
+    # CodeLlama-7b-hf llama2. A name without its version keeps the generic ref.
+    *(
+        (
+            token,
+            {
+                "approach_type": "self-supervised",
+                "task": (
+                    "code generation" if token.startswith("code") else "chat/completion"
+                ),
+                "architecture_family": "transformer",
+                "model_architecture": (
+                    "Code Llama" if token.startswith("code") else "LLaMA"
+                ),
+                "license": licence,
+                "lineage": [],
+            },
+        )
+        for tokens, licence in (
+            (("codellama", "code-llama"), "LicenseRef-llama2-community"),
+            (("llama-3.3", "llama3.3", "llama3-3", "llama-3-3"),
+             "LicenseRef-llama3.3-community"),
+            (("llama-3.2", "llama3.2", "llama3-2", "llama-3-2"),
+             "LicenseRef-llama3.2-community"),
+            (("llama-3.1", "llama3.1", "llama3-1", "llama-3-1", "meta-llama-3.1"),
+             "LicenseRef-llama3.1-community"),
+            (("llama-3", "llama3"), "LicenseRef-llama3-community"),
+            (("llama-2", "llama2"), "LicenseRef-llama2-community"),
+        )
+        for token in tokens
+    ),
     (
         "llama",
         {

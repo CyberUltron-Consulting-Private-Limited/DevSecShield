@@ -33,8 +33,10 @@ from aibom.scan.parsers.model_refs import (
 from aibom.scan.parsers.ollama_tags import (
     find_ollama_tag_literals,
     find_ollama_tags,
+    has_ollama_evidence,
     is_cloud_tag,
     ollama_family,
+    valid_tag,
 )
 from aibom.scan.path_roles import (
     evidence_rank,
@@ -259,6 +261,10 @@ _HASH_COMMENT = {".py", ".pyi", ".yaml", ".yml", ".toml", ".env", ".sh", ".cfg"}
 _JS_SOURCE = {".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"}
 
 
+#: configuration files whose values are unquoted (``model: llama3.1:8b``)
+_CONFIG_SUFFIXES = frozenset({".yaml", ".yml", ".toml", ".cfg", ".ini", ".env"})
+
+
 def _source_lang(path: Path) -> str | None:
     suffix = path.suffix.lower()
     if suffix in _JS_SOURCE:
@@ -292,6 +298,13 @@ class ModelRefScanner(Scanner):
         # usage patterns into data loss (review of #487 M1).
         seen: dict[str, dict[str, Any]] = {}
         loose_tags: set[str] = set()
+        # does the repository use Ollama at all (an SDK import / call, a LangChain
+        # wrapper, the REST API, OLLAMA_HOST, the container image, a LiteLLM route)?
+        uses_ollama = any(
+            has_ollama_evidence(t)
+            for t in (read_text(p, _MAX_BYTES) for p in _walk(ctx.root))
+            if t is not None
+        )
         for path in _walk(ctx.root):
             # None: a link, not a regular file, or over the limit
             text = read_text(path, _MAX_BYTES)
@@ -341,15 +354,27 @@ class ModelRefScanner(Scanner):
             # a ``family:size`` literal outside an Ollama call (a constant, a
             # wrapper's argument) is an Ollama tag too, at low confidence (review
             # 6063080163 of #498, R4-M3)
-            loose = [
-                t for t in (find_ollama_tag_literals(text, lang) if lang else [])
-                if t.lower() not in {c.lower() for c in in_call}
+            # Only with Ollama evidence in the repository is such a literal a model
+            # in use; a picker list, a table's keys or any literal in a repository
+            # that never uses Ollama is a catalogue mention (review 6063929550 of
+            # #498, R5-M1)
+            in_call_low = {c.lower() for c in in_call}
+            loose_found = [
+                (t, k) for t, k in find_ollama_tag_literals(
+                    text, lang,
+                    config=path.suffix.lower() in _CONFIG_SUFFIXES or is_env_file(path))
+                if t.lower() not in in_call_low
             ]
-            for tag in in_call + loose:
+            loose = [t for t, k in loose_found if k == "usage" and uses_ollama]
+            listed = [t for t, k in loose_found if t not in loose]
+            for tag in in_call + loose + listed:
                 base = tag.split(":", 1)[0].lower()
                 for other in [n for n in refs if n.lower() in (base, tag.lower())]:
                     del refs[other]
                 vendor_t, _lic, _task = ollama_family(tag)
+                if tag in listed:
+                    refs[tag] = (vendor_t or "", "catalog")
+                    continue
                 refs[tag] = (vendor_t or "", "usage")
                 ollama_of[tag] = "ollama-cloud" if is_cloud_tag(tag) else "ollama"
                 if tag in loose:
@@ -400,10 +425,10 @@ class ModelRefScanner(Scanner):
             spdx = (kb.get("license") if kb else None) or (
                 None if hub else _MODEL_LICENSE_BY_VENDOR.get(vendor)
             )
-            if served_via:
-                # an Ollama tag: the open-weights licence of its family (a hosted
-                # vendor's terms never apply), else the KB's when it is not a hosted
-                # product's, else unknown
+            if served_via or (":" in name and valid_tag(name)):
+                # an Ollama tag (in use or only listed): the open-weights licence of
+                # its family per tag (a hosted vendor's terms never apply), else
+                # unknown: one licence id per model version on every path
                 # (an unknown family stays unknown: ``tinyllama`` is no Llama-licensed
                 # model although the dictionary's "llama" token is in its name)
                 _vendor_t, spdx, task_t = ollama_family(name)

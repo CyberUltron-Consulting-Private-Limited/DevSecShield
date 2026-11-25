@@ -203,6 +203,7 @@ def component_severity(raw: float, weights_path: str | None = None) -> str:
 
 GRADE_WITHHELD = "—"
 WITHHELD_LABEL = "Grade withheld: scan incomplete"
+BAND_WITHHELD = "withheld"
 
 
 def score_result(
@@ -276,6 +277,9 @@ def score_result(
         if "risk_grade" in scores:
             scores["risk_grade"] = GRADE_WITHHELD
             scores["risk_label"] = WITHHELD_LABEL
+            # the band word is withheld too: no surface reads "low" for a partial
+            # scan (review 6063929550 of #498, R5-M2)
+            scores["risk_band"] = BAND_WITHHELD
     result.scores = scores
     return result
 
