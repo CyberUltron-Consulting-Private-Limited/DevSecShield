@@ -2324,7 +2324,9 @@ FROZEN_FIELDS = {
         # row_kind / node_type: FIX-A3 (D1 counts libraries and encryption settings, never "other"; not compared)
         # also_at: review 6038529822 m6 (the other places a de-duplicated certificate was read; not compared)
         "first_seen last_seen scan_count scan_ids latest_scan_id broken_today collector_codes clause_evidence "
-        "row_kind node_type asset_key also_at"
+        # code_context / config_status: #505 round 4 (the Board Report grades as the tile: test code not scored,
+        # unconfirmed settings unverified; not compared)
+        "row_kind node_type asset_key also_at code_context config_status"
     ),
     "CertAgg": (
         "key identity_strong name file_names subject_cn issuer_cn not_before not_after "

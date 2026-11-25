@@ -64,7 +64,7 @@ type MaybePosture = {
   risk_posture?: RiskPosture | null;
   risk_posture_status?: RiskPostureStatus | string | null;
   /** an SBOM's matches on guessed versions, never in the confirmed score */
-  risk_unverified?: { count: number; worst?: string | null; worst_case?: RiskPosture | null } | null;
+  risk_unverified?: { count: number; worst?: string | null; worst_case?: RiskPosture | null; kind?: string | null } | null;
   risk_score?: unknown;
   risk_grade?: unknown;
   risk_label?: unknown;
@@ -142,12 +142,21 @@ export function postureSortValue(item: MaybePosture): number {
   return p.score * 1e9 + Math.min(Math.max(p.weighted ?? 0, 0), 1e9 - 1);
 }
 
-/** "unverified: 10 guessed-version matches (worst: Critical)" for an SBOM with matches on guessed versions; else null. */
+/** What the unverified findings are, by `risk_unverified.kind` (backend risk_scale._UNVERIFIED_WORDS): an SBOM's
+ * guessed-version matches, or a CBOM's settings no crypto call is proven to read ("unconfirmed_setting"). */
+const UNVERIFIED_WORDS: Record<string, readonly [string, string]> = {
+  "": ["guessed-version match", "guessed-version matches"],
+  unconfirmed_setting: ["unconfirmed setting", "unconfirmed settings"],
+};
+
+/** "unverified: 10 guessed-version matches (worst: Critical)" for an SBOM, "unverified: 1 unconfirmed setting (worst:
+ * Critical)" for a CBOM; else null. */
 export function riskCellNote(item: MaybePosture): string | null {
   const u = item?.risk_unverified;
   if (!u || !u.count) return null;
   const worst = u.worst ? `${u.worst[0].toUpperCase()}${u.worst.slice(1)}` : "";
-  return `unverified: ${u.count} guessed-version match${u.count === 1 ? "" : "es"}${worst ? ` (worst: ${worst})` : ""}`;
+  const [one, many] = UNVERIFIED_WORDS[u.kind ?? ""] ?? UNVERIFIED_WORDS[""];
+  return `unverified: ${u.count} ${u.count === 1 ? one : many}${worst ? ` (worst: ${worst})` : ""}`;
 }
 
 /** What a list cell or a tile shows: "56 · D", "incomplete" for a finished scan that cannot be scored, else "—". Never
@@ -164,7 +173,10 @@ export function riskCellHint(item: MaybePosture): string | null {
   const status = postureStatus(item);
   if (status === "incomplete") return "Scan incomplete: not enough to score";
   const note = riskCellNote(item);
-  if (status === "unverified") return `worst case of guessed-version matches · ${riskScoreHint(postureOf(item))}`;
+  if (status === "unverified") {
+    const what = item?.risk_unverified?.kind === "unconfirmed_setting" ? "unconfirmed settings" : "guessed-version matches";
+    return `worst case of ${what} · ${riskScoreHint(postureOf(item))}`;
+  }
   const hint = riskScoreHint(postureOf(item));
   return note && hint ? `${hint} · ${note}` : hint ?? note;
 }

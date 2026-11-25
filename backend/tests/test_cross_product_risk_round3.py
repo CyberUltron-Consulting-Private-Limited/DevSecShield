@@ -111,11 +111,11 @@ def test_the_cbom_tile_gate_only_gates_a_judged_team():
     p500 = {"score": 4, "grade": "A", "label": "Low risk", "band": "low"}
     out = {"card_data": {"risk_score": 4, "risk_grade": "A", "risk_label": "Low risk", P: dict(p500)},
            "severity_distribution": {"high": 6, "low": 1, "informational": 0}}
-    card = scan_list_mod._gate_cbom_tile([object()], SimpleNamespace(rows=[]), out, {"low": 1})["card_data"]
+    card = scan_list_mod._gate_cbom_tile([object()], SimpleNamespace(rows=[]), out, APP_LOW)["card_data"]
     assert card[P] == p500 and _flat(card) == (4, "A") and card[S] == "scored"
     # no #500 fields: the scored counts, not the severity distribution (6 Highs + 1 Low = 69 · D)
     card = scan_list_mod._gate_cbom_tile([object()], SimpleNamespace(rows=[]), {
-        "card_data": {}, "severity_distribution": {"high": 6, "low": 1}}, {"low": 1})["card_data"]
+        "card_data": {}, "severity_distribution": {"high": 6, "low": 1}}, APP_LOW + TEST_HIGHS)["card_data"]
     assert _sg(card) == (4, "A") and "risk_score" not in card
 
 
@@ -293,20 +293,14 @@ def _scan(scan_type, meta, *, sid=1, title="t", estimate=None):
                            scan_data={}, credit_estimate=estimate, created_at=T0)
 
 
-def test_uploads_are_keyed_by_their_content_not_their_title():
+def test_uploads_are_never_keyed_on_the_bare_title_case():
+    """Round 3 keyed uploads on their file hash; round 4 (review 6066492618) keys them on the project
+    (test_cross_product_risk_round4.py). Kept here: an upload's key never depends on the title's case or extension."""
     k = risk_rollup.target_key
     up = {"zip_file_used": True}
-    a = _scan("sast", up, sid=1, title="app.zip", estimate={"file_sha256": "a" * 64})
+    a = _scan("sast", up, sid=1, title="App.ZIP", estimate={"file_sha256": "a" * 64})
     b = _scan("sast", up, sid=2, title="app.zip", estimate={"file_sha256": "b" * 64})
-    a2 = _scan("sast", up, sid=3, title="renamed.zip", estimate={"file_sha256": "A" * 64})
-    assert k("sast", a) != k("sast", b)  # two different archives named app.zip
-    assert k("sast", a) == k("sast", a2)  # the same archive under another title
-    # no content hash recorded: the upload is its own target (never merged on a title)
-    assert k("sast", _scan("sast", up, sid=4, title="app.zip")) == ("scan", 4)
-    assert k("sast", _scan("sast", up, sid=5, title="app.zip")) == ("scan", 5)
-    # an uploaded SBOM / CBOM / AI BOM file is an upload too
-    f = _scan("sbom_sca", {"sbom_file_used": True}, sid=6, estimate={"file_sha256": "c" * 64})
-    assert k("sbom_sca", f)[0] == "upload"
+    assert k("sast", a) == k("sast", b) == ("upload", "app")
 
 
 def test_custom_llm_models_are_keyed_by_endpoint_and_model():
@@ -319,7 +313,8 @@ def test_custom_llm_models_are_keyed_by_endpoint_and_model():
     other = llm(2, model_type="custom", model_name="chat", model_uri="https://ml.other.test/v1")
     again = llm(3, model_type="custom", model_name="chat", model_uri="HTTPS://ML.acme.test/v1")
     assert k("llm", one) != k("llm", other) and k("llm", one) == k("llm", again)
-    assert k("llm", llm(4, model_type="custom", model_name="chat")) == ("scan", 4)  # endpoint not recorded
+    # endpoint not recorded (a scan stored before round 3): grouped by its name (round 4)
+    assert k("llm", llm(4, model_type="custom", model_name="chat")) == ("model", "custom", "chat")
     assert k("llm", llm(5, model_type="openai", model_name="gpt-4o")) != k("llm", llm(6, model_type="azure",
                                                                                       model_name="gpt-4o"))
     assert k("llm", llm(7, model_type="openai", model_name="gpt-4o")) == k("llm", llm(8, model_type="openai",

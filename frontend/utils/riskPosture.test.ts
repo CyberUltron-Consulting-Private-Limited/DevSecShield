@@ -151,6 +151,19 @@ test("round 3 (review 6065663183, 6): 1 confirmed Low + guessed Criticals is sho
   assert.match(read("frontend/app/[team_id]/sbom_sca/page.tsx"), /return triageScore\(c\);/);
 });
 
+test("round 4 (review 6066492618): a CBOM's unconfirmed settings are unverified, in their own words", () => {
+  const only = { risk_posture: { score: 70, grade: "F", label: "Critical risk", weighted: 10 }, risk_posture_status: "unverified",
+                 risk_unverified: { count: 1, worst: "critical", kind: "unconfirmed_setting",
+                                    worst_case: { score: 70, grade: "F", label: "Critical risk", weighted: 10 } } };
+  assert.equal(riskCellText(only), "70 · F (unverified)");
+  assert.equal(riskCellNote(only), "unverified: 1 unconfirmed setting (worst: Critical)");
+  assert.match(riskCellHint(only) ?? "", /^worst case of unconfirmed settings/);
+  const two = { ...only, risk_unverified: { ...only.risk_unverified, count: 2 } };
+  assert.equal(riskCellNote(two), "unverified: 2 unconfirmed settings (worst: Critical)");
+  // the backend says the same words
+  assert.match(read("backend/utilities/dashboard/risk_scale.py"), /KIND_UNCONFIRMED: \("unconfirmed setting", "unconfirmed settings"\)/);
+});
+
 const PAGES = ["sbom_sca", "dast", "sast", "llm", "iac"] as const;
 
 test("the SBOM, DAST, SAST and LLM list pages filter, sort, show and tile the one score", () => {

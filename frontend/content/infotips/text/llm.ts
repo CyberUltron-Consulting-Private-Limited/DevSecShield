@@ -83,7 +83,7 @@ const TEXT = {
   },
   // src: backend/utilities/dashboard/risk_rollup.py:1-17,123-149, backend/utilities/dashboard/risk_scale.py:76-95, frontend/utils/riskPosture.ts:22-28, frontend/app/[team_id]/llm/page.tsx:304-307 — risk_rollup.team_posture: the latest successful scan per target, then risk_scale.posture over the findings of successful LLM scans
   "llm.kpi.avg_risk": {
-    what: "The current risk: the findings of the latest successful scan of each model, scored as one: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), set by the worst severity: any Critical 70+, any High 50–69, Medium at most 49, Low only 29. Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+.",
+    what: "The current risk: the findings of the latest successful scan of each model (a custom model: per endpoint; one scanned before endpoints were recorded: per name), scored as one: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), set by the worst severity: any Critical 70+, any High 50–69, Medium at most 49, Low only 29. Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+.",
     why: "One number and grade to compare model risk over time, as every product shows it.",
     example: "One Critical and one Low in the latest scans: 4 × 11 = 44, raised to 70 by the Critical, grade F.",
   },

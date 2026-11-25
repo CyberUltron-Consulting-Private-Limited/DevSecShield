@@ -18,6 +18,7 @@ from backend.utilities.pdf.report_branding import (
     report_generated,
     append_report_masthead,
     append_bom_compliance_sections,
+    CBOM_METHOD_NOTE,
     append_executive_summary,
     append_findings_catalog,
     build_finding_section,
@@ -252,6 +253,8 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
       append_executive_summary(
         summary_part,
         report_key="cbom",
+        # the headline is the shared posture: print its method and what a CBOM leaves out (#505 round 4)
+        posture_method=True, method_note=CBOM_METHOD_NOTE,
         overview_rows=overview,
         severity_counts=by_impact,
         styles=styles,

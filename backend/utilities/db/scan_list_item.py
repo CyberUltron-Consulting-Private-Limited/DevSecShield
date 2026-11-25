@@ -571,18 +571,29 @@ def _posture(scan: Scan, critical: int, high: int, medium: int, low: int, *, inc
 
 def _cbom_gate(scan: Scan, row: dict, rows: list) -> dict:
     """The CBOM row's one risk score, gated on success like every product (review 6064315680 of #505, 4). It only
-    gates (review 6065663183 of #505, 1):
+    gates (reviews 6065663183 and 6066492618 of #505):
 
     * a scan that did not succeed (failed, running, cancelled, pending): no score, ``risk_posture`` and the flat
       ``risk_score`` / ``risk_grade`` / ``risk_label`` (#500) null, ``not_scored``: the page shows "—", never "0 · A";
-    * a successful scan whose row already carries #500's posture: unchanged, plus ``risk_posture_status``;
-    * without #500's fields: the posture of the counts #500 scores (``risk_rollup.cbom_scored_counts``: test code and
-      unconfirmed settings are listed, not scored), never every finding's severity."""
+    * a successful scan whose row already carries a ``risk_posture_status`` (#500's ``scored``, ``unverified`` with
+      its worst case, ``incomplete``): unchanged;
+    * #500's ``risk_posture`` without a status: unchanged, plus ``scored`` (``not_scored`` for a null posture, never a
+      computed 0 · A next to it);
+    * neither #500 field: ``risk_rollup.cbom_posture_field`` over the rows (test code not scored; unconfirmed
+      settings "unverified")."""
     if str(scan.scan_status or "").lower() != "success":
         return {**row, risk_scale.POSTURE_KEY: None, risk_scale.STATUS_KEY: "not_scored",
                 "risk_score": None, "risk_grade": None, "risk_label": None}
-    if row.get(risk_scale.POSTURE_KEY) is not None:
-        return {**row, risk_scale.STATUS_KEY: row.get(risk_scale.STATUS_KEY) or "scored"}
-    from backend.utilities.dashboard.risk_rollup import cbom_scored_counts
+    return gate_judged(row, rows)
 
-    return {**row, **risk_scale.posture_field(cbom_scored_counts(rows))}
+
+def gate_judged(out: dict, rows: list) -> dict:
+    """``_cbom_gate`` for a judged scan or team (the tile uses it too): pass a status through, else compute."""
+    if out.get(risk_scale.STATUS_KEY):
+        return out
+    if risk_scale.POSTURE_KEY in out:
+        scored = out[risk_scale.POSTURE_KEY] is not None
+        return {**out, risk_scale.STATUS_KEY: "scored" if scored else "not_scored"}
+    from backend.utilities.dashboard.risk_rollup import cbom_posture_field
+
+    return {**out, **cbom_posture_field(rows)}

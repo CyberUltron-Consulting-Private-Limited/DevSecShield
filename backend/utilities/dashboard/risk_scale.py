@@ -110,7 +110,8 @@ UNVERIFIED_KEY = "risk_unverified"
 
 def posture_field(impact_counts: Mapping[str, int], *, judged: bool = True, incomplete: bool = False,
                   unverified: Mapping[str, int] | None = None,
-                  confirmed: Mapping[str, int] | None = None) -> dict[str, Any]:
+                  confirmed: Mapping[str, int] | None = None,
+                  unverified_kind: str | None = None) -> dict[str, Any]:
     """``{"risk_posture": posture(...), "risk_posture_status": "scored"}`` to spread into a list row or a card. No
     score (``None``) when the scan has no result to judge (``judged=False``: pending, running, failed) or its result is
     incomplete: such a row shows "—" or "incomplete", never "0 · A".
@@ -121,7 +122,9 @@ def posture_field(impact_counts: Mapping[str, int], *, judged: bool = True, inco
     filter and sort read, so 1 confirmed Low + 10 guessed Criticals is shown 4 · A and also found under "Critical";
     review 6065663183 of #505, 6). When they are the only vulnerabilities, the score is their worst case, status
     "unverified". ``confirmed``: the confirmed counts when ``impact_counts`` is not (the SBOM tile, whose
-    ``impact_counts`` already hold an unverified target's worst case)."""
+    ``impact_counts`` already hold an unverified target's worst case). ``unverified_kind``: what the unverified findings
+    are, when not an SBOM's guessed versions (``KIND_UNCONFIRMED``: a CBOM's settings no crypto call is proven to
+    read), carried as ``risk_unverified.kind`` for the note's words."""
     if not judged:
         return {POSTURE_KEY: None, STATUS_KEY: "not_scored"}
     if incomplete:
@@ -133,7 +136,8 @@ def posture_field(impact_counts: Mapping[str, int], *, judged: bool = True, inco
         n = sum(guessed.values())
         worst = next((sev for sev in SEVERITIES if guessed[sev] > 0), None)
         out[UNVERIFIED_KEY] = {"count": n, "worst": worst,
-                               "worst_case": posture({k: sure[k] + guessed[k] for k in SEVERITIES})} if n else None
+                               "worst_case": posture({k: sure[k] + guessed[k] for k in SEVERITIES}),
+                               **({"kind": unverified_kind} if unverified_kind else {})} if n else None
         if n and not sum(_severity_counts(impact_counts).values()):
             out = {**out, POSTURE_KEY: posture(guessed), STATUS_KEY: "unverified"}
     return out
@@ -162,13 +166,20 @@ def ai_bom_scores_now(scores: Any, rows: Any = None) -> Any:
             "risk_label": p["label"], "severity_counts": counts}
 
 
+KIND_UNCONFIRMED = "unconfirmed_setting"
+_UNVERIFIED_WORDS = {None: ("guessed-version match", "guessed-version matches"),
+                     KIND_UNCONFIRMED: ("unconfirmed setting", "unconfirmed settings")}
+
+
 def unverified_note(unverified: Mapping[str, Any] | None) -> str | None:
-    """"unverified: 10 guessed-version matches (worst: Critical)"; None without any."""
+    """"unverified: 10 guessed-version matches (worst: Critical)" (an SBOM), "unverified: 1 unconfirmed setting
+    (worst: Critical)" (a CBOM); None without any."""
     if not unverified or not unverified.get("count"):
         return None
     n = int(unverified["count"])
+    one, many = _UNVERIFIED_WORDS.get(unverified.get("kind"), _UNVERIFIED_WORDS[None])
     worst = str(unverified.get("worst") or "").capitalize()
-    return f"unverified: {n} guessed-version match{'es' if n != 1 else ''}" + (f" (worst: {worst})" if worst else "")
+    return f"unverified: {n} {one if n == 1 else many}" + (f" (worst: {worst})" if worst else "")
 
 
 def gate_dashboard(scan_type: str, dashboard: Any, scan_status: Any) -> Any:
@@ -190,5 +201,5 @@ def gate_dashboard(scan_type: str, dashboard: Any, scan_status: Any) -> Any:
     return out
 
 
-__all__ = ["ai_bom_scores_now", "IMPACT_RISK", "POSTURE_KEY", "RISK_BANDS", "SEVERITIES", "STATUSES", "STATUS_KEY", "UNVERIFIED_KEY", "gate_dashboard", "unverified_note", "average_risk", "average_risk_of", "impact_risk",
+__all__ = ["ai_bom_scores_now", "IMPACT_RISK", "KIND_UNCONFIRMED", "POSTURE_KEY", "RISK_BANDS", "SEVERITIES", "STATUSES", "STATUS_KEY", "UNVERIFIED_KEY", "gate_dashboard", "unverified_note", "average_risk", "average_risk_of", "impact_risk",
            "posture", "posture_field", "posture_of", "risk_band"]

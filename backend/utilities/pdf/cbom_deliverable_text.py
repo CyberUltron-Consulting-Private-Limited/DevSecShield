@@ -641,6 +641,12 @@ GRADE_FORMULA = (
     "any High at least 50 and at most 69, Medium at most 49, Low only at most 29. Grade bands: F at 70 or above, "
     "D at 50, C at 30, B at 15, A below 15. The same score as every scan's list row, results page and PDF."
 )
+# the exclusion every CBOM surface applies, printed after the grade input in Appendix A (review 6066492618 of #505, 3)
+GRADE_EXCLUSION = (
+    "Findings in test, fixture or example code are listed but not scored. A setting no crypto call is "
+    "proven to read is unverified: graded on its worst case and marked unverified only when the team has "
+    "no other finding, else noted beside the grade. The dashboard tile counts the same way."
+)
 GRADE_INPUT = (
     "Grade input: current crypto assets that carry at least one finding, counted once per "
     "source and bucketed by impact. Inventory-only assets without findings are excluded."
@@ -1306,6 +1312,7 @@ __all__ = [
     "GOVERNANCE_ACTIONS",
     "GRADE_BANDS",
     "GRADE_CAPS",
+    "GRADE_EXCLUSION",
     "GRADE_FLOORS",
     "GRADE_DISCLAIMER",
     "GRADE_FORMULA",

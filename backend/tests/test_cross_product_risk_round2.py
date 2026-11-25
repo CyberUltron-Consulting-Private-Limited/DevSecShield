@@ -230,12 +230,12 @@ def test_a_successful_cbom_scan_keeps_its_score():
 
 def test_the_cbom_tile_of_a_team_whose_scans_failed_has_no_score():
     tile = scan_list_mod._gate_cbom_tile([], SimpleNamespace(rows=[]), {
-        "card_data": {"risk_score": 0, "risk_grade": "A", "risk_label": "Low risk"}, "severity_distribution": {}}, {})
+        "card_data": {"risk_score": 0, "risk_grade": "A", "risk_label": "Low risk"}, "severity_distribution": {}}, [])
     card = tile["card_data"]
     assert card[risk_scale.STATUS_KEY] == "not_scored" and card["risk_score"] is None and card["risk_grade"] is None
     scored = scan_list_mod._gate_cbom_tile([object()], SimpleNamespace(rows=[]), {
         "card_data": {"risk_score": 70}, "severity_distribution": {"critical": 1, "informational": 4}},
-        {"critical": 1})["card_data"]
+        [{"title": "MD5", "impact": "Critical"}])["card_data"]
     assert scored["risk_score"] == 70 and scored[risk_scale.POSTURE_KEY]["score"] == 70
 
 

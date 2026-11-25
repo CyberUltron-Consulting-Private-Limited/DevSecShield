@@ -1555,6 +1555,13 @@ POSTURE_METHOD = (
 )
 
 
+# The CBOM scan and run PDFs print this after the method (review 6066492618 of #505, 4): what the score leaves out.
+CBOM_METHOD_NOTE = (
+    "Findings in test, fixture or example code are listed but not scored; a setting no crypto call is proven to read "
+    "is unverified: its worst case is the score, marked unverified, only when nothing else was found."
+)
+
+
 def compute_posture_risk_score(critical: int, high: int, medium: int, low: int) -> Tuple[int, str, str]:
     """The AI BOM grade: ``compute_risk_score`` bounded by the worst severity present (no Critical -> at most D, no
     Critical/High -> at most C, Low only -> at most B, nothing -> A). Computed by the engine's own function and table
@@ -1571,6 +1578,15 @@ def compute_risk_score_band(score: int) -> Tuple[int, str, str]:
     engine = engine_posture()
     grade, band = engine.posture_grade(score)
     return score, str(grade), str(engine.posture_label(band))
+
+
+def _prints_method(posture_method: Optional[bool], risk_score_fn: Any) -> bool:
+    """Whether a headline is the shared posture and prints its method line: the explicit ``posture_method`` flag (a
+    caller passing its own function over the posture, as the CBOM scan PDF with #500); unset, when the function is the
+    shared posture or none (the default is the posture)."""
+    if posture_method is not None:
+        return bool(posture_method)
+    return risk_score_fn is None or risk_score_fn is compute_posture_risk_score
 
 
 def build_severity_bar(
@@ -1938,6 +1954,8 @@ def append_executive_summary(
     risk_score_fn: Optional[Callable[[int, int, int, int], Tuple[int, str, str]]] = None,
     unverified: int = 0,
     risk_override: Optional[Tuple[Any, str, str]] = None,
+    posture_method: Optional[bool] = None,
+    method_note: Optional[str] = None,
 ) -> None:
     """``unverified``: findings listed in the catalogue but left out of the counts and the grade (an SBOM match on
     a version read from a manifest range); the headline says how many, so it agrees with the catalogue.
@@ -2046,8 +2064,9 @@ def append_executive_summary(
         Paragraph(intro, styles["body"]),
         Paragraph(f"<b>How to read:</b> {escape_html(how_to_read)}", styles["muted"]),
         # the one 0-100 score's method, where the headline is it (every product's PDF but the CBOM board report)
-        *([Paragraph(f"<b>Risk score:</b> {escape_html(POSTURE_METHOD)}", styles["muted"])]
-          if risk_score_fn is compute_posture_risk_score else []),
+        *([Paragraph(f"<b>Risk score:</b> {escape_html(POSTURE_METHOD)}"
+                     + (f" {escape_html(method_note)}" if method_note else ""), styles["muted"])]
+          if _prints_method(posture_method, risk_score_fn) else []),
         Paragraph(
             f"<b>Platform:</b> {BRAND_NAME} · <font color='#0F766E'><b>{BRAND_URL}</b></font>",
             styles["muted"],
