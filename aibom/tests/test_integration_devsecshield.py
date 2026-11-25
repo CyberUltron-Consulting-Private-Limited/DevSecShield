@@ -204,7 +204,14 @@ def test_raw_bom_artifacts_present_and_cyclonedx_valid() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_normalize_is_deterministic() -> None:
+def test_normalize_is_deterministic(monkeypatch) -> None:
+    # every scan is stamped with its own time (generated_at): two scans either side of
+    # a second boundary differ only there (CI flake on #498). Determinism is "same
+    # input, same scan time -> same output", so the clock is pinned.
+    import aibom.emit.identity as identity
+
+    pinned = identity.utc_now()
+    monkeypatch.setattr(identity, "utc_now", lambda: pinned)
     r1 = run_native_scan(_SHADOW, level=4, allowlist=_ALLOW)
     r2 = run_native_scan(_SHADOW, level=4, allowlist=_ALLOW)
     assert normalize(r1, duration_of_scan=0.0) == normalize(r2, duration_of_scan=0.0)
