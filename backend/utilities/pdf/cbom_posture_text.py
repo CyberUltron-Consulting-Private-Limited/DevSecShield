@@ -410,9 +410,12 @@ def readable_enum(value: Any) -> str:
         return ""
     if text in _ENUM_WORDS:
         return _ENUM_WORDS[text]
-    pq = re.fullmatch(r"(ML|SLH)_(DSA|KEM)_?(\d+[A-Z]?)", text)
-    if pq:  # AWS KMS ML_DSA_65 -> "ML-DSA-65", the FIPS 204 / 203 / 205 parameter-set name
-        return f"{pq.group(1)}-{pq.group(2)}-{pq.group(3)}"
+    # a post-quantum key spec reads as its standard parameter-set name, resolved by algid (the one place PQ names live)
+    from backend.utilities.cbom_sources import algid
+
+    found = algid.resolve(text)
+    if found is not None and found.name and found.quantum == "safe" and found.standard:
+        return found.name
     match = _SPEC.match(text)
     if match and match.group(2):
         family, bits = match.group(1).replace("_", " "), match.group(2)
