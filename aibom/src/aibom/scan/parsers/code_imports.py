@@ -82,7 +82,8 @@ def read_notebook(text: str) -> str | None:
     are not objects and ``source`` items that are not strings are skipped. nbformat 3
     (``worksheets[].cells[].input``) is read too."""
     try:
-        nb = json.loads(text)
+        # a UTF-8 byte-order mark is no reason to read it as raw text (review nit)
+        nb = json.loads(text.lstrip("\ufeff"))
     except (json.JSONDecodeError, ValueError, RecursionError):
         return None
     if not isinstance(nb, dict):

@@ -32,25 +32,43 @@ class UnnamedModels(Scanner):
     def scan(self, ctx: ScanContext) -> None:
         if not ctx.properties.get("aibom:model_unnamed_calls"):
             return
-        libs = sorted(
-            (c.name, c.version)
-            for c in ctx.components
-            if c.kind == "framework" and (c.name or "").lower().startswith("langchain")
-        )
-        library = (
-            ", ".join(
+        frameworks = [c for c in ctx.components if c.kind == "framework"]
+
+        def library_of(cls: str) -> str:
+            """The library whose client the call uses (review 6063080163 of #498,
+            m5): the SDK for a direct call, LangChain for a LangChain wrapper."""
+            prefix = _SDK_LIBRARY.get(cls)
+            libs = sorted(
+                (c.name, c.version) for c in frameworks
+                if (prefix and (c.name or "").lower() == prefix)
+                or (not prefix and (c.name or "").lower().startswith("langchain"))
+            )
+            label = prefix or "langchain"
+            if not libs:
+                return f"{label} (not declared)"
+            return ", ".join(
                 f"{name} {version}" if version else f"{name} (version not pinned)"
                 for name, version in libs
             )
-            if libs
-            else "langchain (not declared)"
-        )
-        ctx.properties["aibom:model_unnamed_library"] = library
-        # the unidentified model entries carry the library that decides the default
+
+        classes = (ctx.properties.get("aibom:model_unnamed_classes") or "").split(",")
+        by_class = {cls: library_of(cls) for cls in classes if cls}
+        ctx.properties["aibom:model_unnamed_library"] = "; ".join(
+            dict.fromkeys(by_class.values())
+        ) or "langchain (not declared)"
+        # each unidentified model entry carries the library that decides its default
         for comp in ctx.components:
             props = comp.properties or {}
             if comp.kind == "model" and props.get("model:identified") == "false":
-                comp.properties = {**props, "model:default_from_library": library}
+                cls = (comp.name or "").removeprefix("unidentified model (").rstrip(")")
+                if cls in by_class:
+                    comp.properties = {
+                        **props, "model:default_from_library": by_class[cls]
+                    }
+
+
+# direct SDK calls (net-env ``_SDK_MODEL_CALLS``): the SDK package
+_SDK_LIBRARY = {"OpenAI": "openai", "Anthropic": "anthropic", "Ollama": "ollama"}
 
 
 __all__ = ["UnnamedModels"]

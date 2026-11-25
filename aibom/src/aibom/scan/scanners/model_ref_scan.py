@@ -30,7 +30,12 @@ from aibom.scan.parsers.model_refs import (
     hf_purl,
     parse_bedrock_id,
 )
-from aibom.scan.parsers.ollama_tags import find_ollama_tags, is_cloud_tag, ollama_family
+from aibom.scan.parsers.ollama_tags import (
+    find_ollama_tag_literals,
+    find_ollama_tags,
+    is_cloud_tag,
+    ollama_family,
+)
 from aibom.scan.path_roles import (
     evidence_rank,
     is_doc_path,
@@ -286,6 +291,7 @@ class ModelRefScanner(Scanner):
         # listed 71 "models", 6 real). Dropping them instead turned every gap in the
         # usage patterns into data loss (review of #487 M1).
         seen: dict[str, dict[str, Any]] = {}
+        loose_tags: set[str] = set()
         for path in _walk(ctx.root):
             # None: a link, not a regular file, or over the limit
             text = read_text(path, _MAX_BYTES)
@@ -331,13 +337,23 @@ class ModelRefScanner(Scanner):
             # The tag (``mistral:7b``) is the model's id; a family-dictionary hit on
             # the same name (``gpt-oss`` → OpenAI) is replaced by it.
             ollama_of: dict[str, str] = {}
-            for tag in find_ollama_tags(text, lang or "py") if lang else []:
+            in_call = find_ollama_tags(text, lang or "py") if lang else []
+            # a ``family:size`` literal outside an Ollama call (a constant, a
+            # wrapper's argument) is an Ollama tag too, at low confidence (review
+            # 6063080163 of #498, R4-M3)
+            loose = [
+                t for t in (find_ollama_tag_literals(text, lang) if lang else [])
+                if t.lower() not in {c.lower() for c in in_call}
+            ]
+            for tag in in_call + loose:
                 base = tag.split(":", 1)[0].lower()
                 for other in [n for n in refs if n.lower() in (base, tag.lower())]:
                     del refs[other]
                 vendor_t, _lic, _task = ollama_family(tag)
                 refs[tag] = (vendor_t or "", "usage")
                 ollama_of[tag] = "ollama-cloud" if is_cloud_tag(tag) else "ollama"
+                if tag in loose:
+                    loose_tags.add(tag.lower())
             for name, (vendor, rtype) in refs.items():
                 kind = role or rtype
                 low = name.lower()
@@ -353,7 +369,10 @@ class ModelRefScanner(Scanner):
                                  "hub": hub_of.get(name)
                                  or (entry or {}).get("hub"),
                                  "ollama": ollama_of.get(name)
-                                 or (entry or {}).get("ollama")}
+                                 or (entry or {}).get("ollama"),
+                                 "loose": low in loose_tags and not (
+                                     entry and entry.get("ollama")
+                                     and not entry.get("loose"))}
                 elif hub_of.get(name) and not entry.get("hub"):
                     entry["hub"] = hub_of[name]
         for kind in ("catalog", "test"):
@@ -394,6 +413,9 @@ class ModelRefScanner(Scanner):
                 # read by the linker: served by the Ollama server the call uses
                 props["model:served_via"] = served_via
                 props["model:weights"] = "open"
+                if entry.get("loose"):
+                    # named outside an Ollama call: the tag syntax is the evidence
+                    props["discovery:confidence"] = "low"
             if hub:
                 # read by the model-graph linker: a Hub model is loaded from the Hub
                 # and run by the application (never "served by" its maker's API)

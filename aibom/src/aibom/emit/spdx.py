@@ -289,11 +289,14 @@ def _relationship(
 def _license_expr_str(licenses: list[dict] | None) -> str:
     """Best-effort single SPDX license expression from a CycloneDX licenseChoice."""
     if licenses:
+        if licenses[0].get("expression"):
+            return str(licenses[0]["expression"])  # already an SPDX expression
         lic = licenses[0].get("license", {})
         if lic.get("id"):
             return str(lic["id"])
         if lic.get("name"):
-            return f"LicenseRef-{str(lic['name']).replace(' ', '-')}"
+            name = str(lic["name"]).replace(" ", "-")
+            return name if name.startswith("LicenseRef-") else f"LicenseRef-{name}"
     return "NOASSERTION"
 
 

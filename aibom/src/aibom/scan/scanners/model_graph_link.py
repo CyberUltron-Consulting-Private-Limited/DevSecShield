@@ -244,6 +244,12 @@ class ModelGraphLinker(Scanner):
                 # open weights from the Hub that the application runs itself
                 continue
 
+            if _open_weights(model):
+                # open weights (Llama, Qwen, Gemma, Mistral open releases …, or a
+                # licence not known): their maker's hosted API is not how they are
+                # run, so no endpoint-less vendor "provider" is invented (review
+                # 6063080163 of #498, R4-M3: "Meta" for PROD_MODEL = "llama3.1:70b")
+                continue
             # Nothing else is known: a provider node for the vendor + served_by.
             if vendor not in vendor_nodes:
                 ref = f"provider-{_slug(vendor)}"

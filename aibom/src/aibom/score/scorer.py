@@ -201,6 +201,10 @@ def component_severity(raw: float, weights_path: str | None = None) -> str:
     return "low"
 
 
+GRADE_WITHHELD = "—"
+WITHHELD_LABEL = "Grade withheld: scan incomplete"
+
+
 def score_result(
     result: ScanResult, weights_path: str | None = None, *, posture: bool = True
 ) -> ScanResult:
@@ -264,6 +268,14 @@ def score_result(
         "component_severity": dict(sorted(component_severity_map.items())),
         "flag_count": len(result.flags),
     })
+    if (result.properties or {}).get("aibom:scan_completeness") == "partial":
+        # a scanner did not finish: the inventory may be missing components, so no
+        # clean grade is given. The grade is WITHHELD ("—"); the 0-100 score stays,
+        # marked provisional (review 6063080163 of #498, R4-M2)
+        scores["completeness"] = "partial"
+        if "risk_grade" in scores:
+            scores["risk_grade"] = GRADE_WITHHELD
+            scores["risk_label"] = WITHHELD_LABEL
     result.scores = scores
     return result
 

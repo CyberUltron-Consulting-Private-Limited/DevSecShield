@@ -213,26 +213,45 @@ def vendor_accountability(r: ScanResult, ms: list[ModelComponent]) -> CheckResul
     if not served:
         return NA("no externally-served models to assess vendor accountability")
     keys = ("service:dpa", "service:contract", "service:baa")
+
+    def self_hosted(m: ModelComponent) -> bool:
+        # every service outside the machine is a self-hosted model server (a remote
+        # Ollama): there is no vendor; who operates the host is the evidence
+        # (review 6063080163 of #498, m3)
+        return all(
+            (s.properties or {}).get("service:kind") == "model_server"
+            for s in external_serving_services(r, m)
+        )
+
     missing = [
-        m.bom_ref
+        m
         for m in served
         if not any(
             (s.properties or {}).get(k) == "true"
             for s in external_serving_services(r, m)
-            for k in keys
+            for k in keys + ("service:operator_attested",)
         )
     ]
     if not missing:
         return PASS(
             "every externally-served model's vendor records a contract "
-            "(DPA / outsourcing agreement)",
+            "(DPA / outsourcing agreement) or its self-hosted operator",
             [m.bom_ref for m in served],
         )
-    return NOT_EVIDENCEABLE(
-        f"{len(missing)} served model(s): the vendor contract (DPA / outsourcing "
-        "agreement) is not visible in code; attach it as evidence",
-        missing,
-    )
+    hosted = [m.bom_ref for m in missing if self_hosted(m)]
+    vendor = [m.bom_ref for m in missing if not self_hosted(m)]
+    parts = []
+    if vendor:
+        parts.append(
+            f"{len(vendor)} served model(s): the vendor contract (DPA / outsourcing "
+            "agreement) is not visible in code; attach it as evidence"
+        )
+    if hosted:
+        parts.append(
+            f"{len(hosted)} model(s) on a self-hosted model server: no vendor; attest "
+            "who operates the host and its access controls (hosting evidence)"
+        )
+    return NOT_EVIDENCEABLE("; ".join(parts), vendor + hosted)
 
 
 def NOT_EVIDENCEABLE(evidence: str, refs: list[str] | None = None) -> CheckResult:

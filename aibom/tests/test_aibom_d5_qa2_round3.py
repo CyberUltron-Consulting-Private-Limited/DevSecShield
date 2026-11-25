@@ -309,7 +309,8 @@ def test_ollama_rows_are_local_serving_with_open_weights_licences(tmp_path) -> N
     assert server["license"] == "NOASSERTION"
     # an Ollama tag is the model's id; run by the server, no file (round 4, m6)
     assert rows["llama3.1:8b"]["component_type"] == "self_hosted_model"
-    assert rows["llama3.1:8b"]["license"] == "LicenseRef-llama-community"
+    # licences per tag (review 6063080163 R4-M1): Llama 3.1's own community licence
+    assert rows["llama3.1:8b"]["license"] == "LicenseRef-llama3.1-community"
     assert rows["gemma2:9b"]["license"] == "LicenseRef-Gemma-Terms-of-Use"
     assert rows["ollama"]["license"] == "MIT"  # the client library (PyPI)
 

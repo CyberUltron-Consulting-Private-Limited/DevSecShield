@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 
 from aibom.model.component import ContainerComponent, VectorStoreComponent
+from aibom.scan.parsers.licenses import license_choice
 from aibom.scan.registry import ScanContext, Scanner, register
 from aibom.scan.safe_files import is_regular_file, read_text
 
@@ -31,6 +32,16 @@ _RUNTIMES = {
 }
 
 _IMAGE_RE = re.compile(r"(?:image:\s*|FROM\s+)([\w./-]+(?::[\w.-]+)?)", re.IGNORECASE)
+
+
+# runtimes that serve models (the container is a model server) -> platform key
+_MODEL_SERVERS = {
+    "ollama": "ollama", "vllm": "vllm", "tritonserver": "triton", "triton": "triton",
+    "text-generation-inference": "tgi", "localai": "localai",
+}
+# the runtime software's own licence: Ollama (github.com/ollama/ollama LICENSE: MIT),
+# vLLM (PyPI vllm 0.34.0 license_expression Apache-2.0)
+_RUNTIME_LICENCE = {"ollama": "MIT", "vllm": "Apache-2.0"}
 
 
 def _compose_files(root: Path) -> list[Path]:
@@ -70,13 +81,22 @@ class DockerScanner(Scanner):
                             "discovery:source": path.name,
                             "discovery:image": image,
                         }
+                        if needle in _MODEL_SERVERS:
+                            # a model server the repository runs as a container:
+                            # self-hosted, never an external provider (review
+                            # 6063080163 of #498, m8)
+                            props["service:kind"] = "model_server"
+                            props["service:platform"] = _MODEL_SERVERS[needle]
                         comp = (
                             VectorStoreComponent(
                                 bom_ref=ref, name=label, properties=props
                             )
                             if kind == "vector_store"
                             else ContainerComponent(
-                                bom_ref=ref, name=label, properties=props
+                                bom_ref=ref, name=label, properties=props,
+                                licenses=[license_choice(_RUNTIME_LICENCE[needle])]
+                                if needle in _RUNTIME_LICENCE
+                                else None,
                             )
                         )
                         ctx.add_component(comp)

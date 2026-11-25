@@ -263,7 +263,10 @@ def _component_type(
         # a self-hosted model server on the machine (Ollama on localhost): inside
         # the trust boundary, never an external provider (#498 round 3 follow-up)
         return LOCAL_MODEL_SERVER
-    if kind in _SERVICE_KINDS and comp is not None and _is_model_server(comp):
+    if kind in (*_SERVICE_KINDS, "container") and comp is not None and _is_model_server(
+        comp
+    ):
+        # a remote / self-hosted model server, or one the repo runs as a container
         return SELF_HOSTED_MODEL_SERVER
     return _KIND_TO_AI_TYPE.get(kind, "external_provider")
 

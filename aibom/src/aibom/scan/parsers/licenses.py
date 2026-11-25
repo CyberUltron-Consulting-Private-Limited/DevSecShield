@@ -7,6 +7,8 @@ Known SPDX identifiers serialize as ``{"license": {"id": ...}}``; anything else
 
 from __future__ import annotations
 
+import re
+
 # A small, common SPDX id set keyed by lowercase for case-insensitive lookup.
 _SPDX_IDS = {
     spdx.lower(): spdx
@@ -32,6 +34,10 @@ _SPDX_IDS = {
 
 def license_choice(value: str) -> dict:
     """Return a CycloneDX ``licenseChoice`` dict for a license string."""
+    if re.search(r"\s(?:AND|OR|WITH)\s", value):
+        # an SPDX licence expression (deepseek-r1:70b "MIT AND
+        # LicenseRef-llama3.3-community"): CycloneDX's expression choice
+        return {"expression": value.strip()}
     canonical = _SPDX_IDS.get(value.strip().lower())
     if canonical:
         return {"license": {"id": canonical}}

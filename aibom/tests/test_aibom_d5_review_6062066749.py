@@ -52,6 +52,8 @@ def _served(result, name: str) -> list[str]:
 def _licence(comp) -> str | None:
     if not comp.licenses:
         return None
+    if "expression" in comp.licenses[0]:
+        return comp.licenses[0]["expression"]
     lic = comp.licenses[0]["license"]
     return lic.get("id") or lic.get("name")
 
@@ -157,17 +159,22 @@ _TAGS = {
     "mixtral:8x7b": ("Mistral", "Apache-2.0"),
     "phi3:mini": ("Microsoft", "MIT"),
     "phi4": ("Microsoft", "MIT"),
-    "deepseek-r1:8b": ("DeepSeek", "MIT"),
+    "deepseek-r1:8b": ("DeepSeek", "MIT"),  # 8b = R1-0528-Qwen3-8B (HF mit)
     "codellama:7b": ("Meta", "LicenseRef-llama2-community"),
+    # per tag (review 6063080163 R4-M1): 22b = 2409 under the MRL, 24b = 2501 Apache-2.0
+    "mistral-small:22b": ("Mistral", "LicenseRef-Mistral-Research-License"),
+    "mistral-small:24b": ("Mistral", "Apache-2.0"),
+    "deepseek-r1:70b": ("DeepSeek", "MIT AND LicenseRef-llama3.3-community"),
+    "llama2:7b": ("Meta", "LicenseRef-llama2-community"),
     "llava:13b": ("LLaVA", None),
     "nomic-embed-text": ("Nomic", "Apache-2.0"),
     "mxbai-embed-large": ("mixedbread", "Apache-2.0"),
     "gpt-oss:20b": ("OpenAI", "Apache-2.0"),
     "command-r": ("Cohere", "CC-BY-NC-4.0"),
-    "qwen2.5:7b": ("Alibaba", None),
+    "qwen2.5:7b": ("Alibaba", "Apache-2.0"),  # 7b Apache; only 3b / 72b are Qwen licences
     "gemma2:9b": ("Google", "LicenseRef-Gemma-Terms-of-Use"),
-    "llama3.1:8b": ("Meta", "LicenseRef-llama-community"),
-    "llama3.2": ("Meta", "LicenseRef-llama-community"),
+    "llama3.1:8b": ("Meta", "LicenseRef-llama3.1-community"),
+    "llama3.2": ("Meta", "LicenseRef-llama3.2-community"),
     "tinyllama": (None, None),
 }
 
@@ -241,7 +248,9 @@ def test_a_failing_scanner_is_recorded_not_raised(tmp_path, monkeypatch) -> None
 
     monkeypatch.setattr(model_ref_scan.ModelRefScanner, "scan", boom)
     result = _scan(tmp_path, {"requirements.txt": "openai==1.50.0\n"})
-    assert result.properties["aibom:scanner_errors"] == "model-ref: RuntimeError"
+    # an engine bug (not bad input): logged with its traceback, counted, marked unexpected
+    assert result.properties["aibom:scanner_errors"] == "model-ref: RuntimeError (unexpected)"
+    assert result.properties["aibom:scan_completeness"] == "partial"
     assert [c.name for c in result.components if c.kind == "framework"] == ["openai"]
 
 

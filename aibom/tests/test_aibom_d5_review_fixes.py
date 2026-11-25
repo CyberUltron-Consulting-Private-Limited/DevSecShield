@@ -386,21 +386,24 @@ def test_only_real_version_words_follow_a_version(
     assert service["endpoints"] == [expected]
 
 
-def test_alibaba_provider_is_not_local(tmp_path: pathlib.Path) -> None:
-    # A Qwen model the code names with no serving service: the endpoint-less
-    # "Alibaba" provider node is Alibaba's, never "local". (Weights loaded with
-    # from_pretrained("Qwen/…") are run by the application itself and get no
-    # provider node at all since #498 round 3: see test_aibom_d5_qa2_round3.py.)
+def test_an_open_weights_model_gets_no_invented_provider(
+    tmp_path: pathlib.Path,
+) -> None:
+    # A Qwen model the code names with no serving service. Until #498 round 5 it got
+    # an endpoint-less "Alibaba" provider node (source "alibaba", never "local").
+    # Open weights are not run through their maker's API by default, so no provider
+    # is invented at all (review 6063080163 of #498, R4-M3).
     _write(
         tmp_path,
         {"app/llm.py": 'def ask(client):\n'
          '    return client.chat(model="qwen2.5-72b-instruct", messages=[])\n'},
     )
     rows = {
-        r["component_name"]: r["source"]
+        r["component_name"]: r
         for r in scan_to_devsecshield(tmp_path, level=4)["results"]
     }
-    assert rows["Alibaba"] == "alibaba"
+    assert "Alibaba" not in rows
+    assert rows["qwen2.5-72b-instruct"]["component_type"] == "local_model_file"
 
 
 def test_qwen_weights_from_the_hub_have_no_provider_node(

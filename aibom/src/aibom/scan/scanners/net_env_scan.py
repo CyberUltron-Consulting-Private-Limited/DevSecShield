@@ -312,15 +312,116 @@ def _arg_value(code: str, start: int) -> str:
     return code[start : start + 300].strip()
 
 
-def _config_model(code: str, value: str) -> str | None:
+_MODULE_CONST = re.compile(
+    r"""(?m)^(?:export\s+)?(?:(?:const|let|var)\s+)?(?P<name>[A-Za-z_]\w*)\s*"""
+    r"""(?::[^=\n]+)?=\s*['"](?P<value>[^'"\n{}]+)['"]\s*;?\s*$"""
+)
+_DEF = re.compile(
+    r"(?m)^[ \t]*(?:async\s+)?(?:def|function)\s+(?P<fn>[A-Za-z_]\w*)\s*"
+    r"\((?P<params>[^)]*)\)"
+)
+
+
+def _split_args(args: str) -> list[str]:
+    """Top-level comma-separated arguments of a (masked) argument text."""
+    out, depth, cur = [], 0, []
+    for ch in args:
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        if ch == "," and depth == 0:
+            out.append("".join(cur))
+            cur = []
+        else:
+            cur.append(ch)
+    out.append("".join(cur))
+    return [a.strip() for a in out]
+
+
+class ProjectIndex:
+    """What the repository names across files, for model arguments that are not
+    literals at the call (review 6063080163 of #498, R4-M3): module-level string
+    constants (``MODEL = "qwen2.5:7b"`` in cfg.py, imported where the call is) and
+    the string literals a wrapper is called with one hop away (``ask("mistral:7b")``
+    for ``def ask(m, q): return ollama.chat(model=m)``)."""
+
+    def __init__(self, files: list[tuple[str, str]]) -> None:
+        self.files = files
+        self.constants: dict[str, str] = {}
+        for _source, text in files:
+            code, _bare = mask(text, "py")
+            for m in _MODULE_CONST.finditer(code):
+                self.constants.setdefault(m.group("name"), m.group("value"))
+
+    def imported_constant(self, code: str, value: str) -> bool:
+        """``MODEL`` imported from another module of the repository (``from cfg
+        import MODEL``), or ``cfg.MODEL`` with ``import cfg``, that assigns it a
+        literal."""
+        name = value.rsplit(".", 1)[-1]
+        if name not in self.constants:
+            return False
+        if "." in value:
+            mod = value.rsplit(".", 1)[0]
+            return bool(re.search(rf"\bimport\s+[\w., ]*\b{re.escape(mod)}\b", code))
+        return bool(re.search(
+            rf"(?m)^\s*from\s+[\w.]+\s+import\s+[^\n]*\b{re.escape(name)}\b|"
+            rf"\bimport\s*\{{[^}}]*\b{re.escape(name)}\b", code))
+
+    def wrapper_called_with_literal(self, code: str, value: str, pos: int) -> bool:
+        """``value`` is a parameter of the function the call is in, and some call of
+        that function in the repository passes a string literal for it."""
+        defs = [d for d in _DEF.finditer(code) if d.start() < pos]
+        if not defs:
+            return False
+        d = defs[-1]
+        params = [
+            p.split(":")[0].split("=")[0].strip().lstrip("*")
+            for p in d.group("params").split(",")
+        ]
+        if value not in params:
+            return False
+        method = bool(params) and params[0] in ("self", "cls")
+        idx = params.index(value) - (1 if method else 0)
+        call = re.compile(rf"(?<![\w.]){re.escape(d.group('fn'))}\s*\(")
+        attr_call = re.compile(rf"\.{re.escape(d.group('fn'))}\s*\(")
+        for _source, text in self.files:
+            code2, bare2 = mask(text, "py")
+            for m in list(call.finditer(bare2)) + list(attr_call.finditer(bare2)):
+                head = bare2[bare2.rfind("\n", 0, m.start()) + 1 : m.start()]
+                if re.search(r"\b(?:def|function)\s*$", head):
+                    continue
+                args = call_arguments(bare2, m.end() - 1)
+                if args is None:
+                    continue
+                raw = _split_args(code2[m.end() : m.end() + len(args)])
+                kw = [a for a in raw if re.match(rf"{re.escape(value)}\s*=", a)]
+                pick = kw[0].split("=", 1)[1].strip() if kw else (
+                    raw[idx] if 0 <= idx < len(raw) and "=" not in raw[idx] else "")
+                if pick[:1] in "'\"" and pick[-1:] == pick[:1] and len(pick) > 2:
+                    return True
+        return False
+
+
+_INDEX: list[ProjectIndex] = []  # the index of the scan in progress
+
+
+def _config_model(code: str, value: str, pos: int = -1) -> str | None:
     """The configuration key a non-literal model argument reads (``M`` for
     ``os.environ["M"]``, ``settings.MODEL`` …), "" for another expression, or None
     when the model is in fact known: a string literal, an ``os.getenv(KEY,
     "<model>")`` default, or a variable the file assigns a literal to (the
     model-reference scanner reads those)."""
-    if not value or value[0] in "'\"`":
+    if not value:
+        return None
+    template = value[0] == "`" and "${" in value
+    if re.match(r"""(?:[rRbB]?[fF]|[fF][rR])['"]""", value) or template:
+        return ""  # an f-string / template literal: built at run time (review nit)
+    if value[0] in "'\"`":
         return None
     literals = _STRING.findall(value)
+    if literals and re.search(r"['\"]\s*\+|\+\s*['\"]", value):
+        return ""  # a concatenation ("gpt-" + version): built at run time
     env = _ENV_KEY.search(value)
     if len(literals) > 1 or (literals and not env):
         return None  # a literal default (or a literal model) is in the expression
@@ -329,6 +430,11 @@ def _config_model(code: str, value: str) -> str | None:
         rf"(?::[^=\n]+)?=\s*['\"`]", code
     ):
         return None
+    if _INDEX and not env and (
+        _INDEX[-1].imported_constant(code, value)
+        or (pos >= 0 and _INDEX[-1].wrapper_called_with_literal(code, value, pos))
+    ):
+        return None  # named elsewhere in the repository: the model-ref scan reads it
     if env:
         return env.group("key")
     return ""
@@ -353,7 +459,7 @@ def unidentified_calls(text: str, source: str) -> list[tuple[str, str, str]]:
             return ("", "")
         start = open_paren + 1 + m.end()
         value = _arg_value(code, start)
-        key = _config_model(code, value)
+        key = _config_model(code, value, open_paren)
         return None if key is None else (value, key)
 
     if _LANGCHAIN_IMPORT_RE.search(code):
@@ -467,8 +573,12 @@ _LITERAL_BASE = re.compile(
     r"""\b(?:base_url|api_base|baseURL|openai_api_base)['"]?\s*[=:]\s*['"]"""
     r"""(?P<url>https?://[^'"\s]+)['"]"""
 )
+# ``import os, openai`` names the SDK as much as ``import openai`` (review 6063080163
+# of #498, m6): every ``import\s+<sdk>`` also matches a comma-separated import list
+_IMPORT_LIST = r"import\s+(?:[\w.]+\s*(?:as\s+\w+\s*)?,\s*)*"
 _SDK_RES = [
-    (re.compile(imp, re.IGNORECASE), re.compile(call), label, vendor, endpoint)
+    (re.compile(imp.replace(r"import\s+", _IMPORT_LIST), re.IGNORECASE),
+     re.compile(call), label, vendor, endpoint)
     for imp, call, label, vendor, endpoint in _SDK_CLIENTS
 ]
 # A ``**kwargs`` / ``...spread`` argument: the base URL may be in it, so it is unknown
@@ -620,8 +730,32 @@ class NetEnvScanner(Scanner):
                     ctx.unreadable_notebooks.add(path.name)
             files.append((path, text, source))
         # OLLAMA_HOST and other endpoints set in env / compose files (M1)
-        env = env_values([(src, t) for p_, t, src in files
-                          if is_env_file(p_) or p_.suffix.lower() in (".yaml", ".yml")])
+        env = env_values([(src, t) for _p, t, src in files])
+        _INDEX.append(ProjectIndex(
+            [(src, t) for p_, t, src in files
+             if p_.suffix.lower() not in (".yaml", ".yml") and not is_env_file(p_)]))
+        try:
+            self._scan_files(ctx, files, env, seen, excluded, unnamed)
+        finally:
+            _INDEX.pop()
+        excluded -= seen
+        if excluded:
+            ctx.properties["aibom:services_excluded_test_example"] = str(len(excluded))
+        if not unnamed:
+            return
+        for model in unidentified_models(unnamed):
+            if not ctx.has_ref(model.bom_ref):
+                ctx.add_component(model)
+        unnamed_calls = [f"{call} in {source}" for _c, _r, call, source in unnamed]
+        if unnamed_calls:
+            # stated, never guessed: the library's default model applies
+            ctx.properties["aibom:model_unnamed_calls"] = str(len(unnamed_calls))
+            ctx.properties["aibom:model_unnamed_detail"] = "; ".join(unnamed_calls[:20])
+            ctx.properties["aibom:model_unnamed_classes"] = ",".join(
+                sorted({c for c, _r, _call, _s in unnamed}))
+
+    @staticmethod
+    def _scan_files(ctx, files, env, seen, excluded, unnamed) -> None:  # noqa: ANN001
         for path, text, source in files:
             not_app = is_test_path(path, ctx.root) or is_example_path(path, ctx.root)
             lang_source = source[: -len(".ipynb")] + ".py" if source.endswith(
@@ -646,19 +780,6 @@ class NetEnvScanner(Scanner):
                     continue
                 seen.add(comp.bom_ref)
                 ctx.add_component(comp)
-        excluded -= seen
-        if excluded:
-            ctx.properties["aibom:services_excluded_test_example"] = str(len(excluded))
-        if not unnamed:
-            return
-        for model in unidentified_models(unnamed):
-            if not ctx.has_ref(model.bom_ref):
-                ctx.add_component(model)
-        unnamed_calls = [f"{call} in {source}" for _c, _r, call, source in unnamed]
-        if unnamed_calls:
-            # stated, never guessed: the library's default model applies
-            ctx.properties["aibom:model_unnamed_calls"] = str(len(unnamed_calls))
-            ctx.properties["aibom:model_unnamed_detail"] = "; ".join(unnamed_calls[:20])
 
 
 def _default_client_called(
@@ -736,17 +857,54 @@ def ollama_cloud_service(source: str) -> CloudServiceComponent | EndpointCompone
     return comp
 
 
+_K8S_ENV = re.compile(
+    r"""-\s*name:\s*['"]?(?P<k>[A-Z_][A-Z0-9_]*)['"]?\s*\n\s*value:\s*['"]?"""
+    r"""(?P<v>[^\s'"#]+)"""
+)
+_CODE_ENV_SET = re.compile(
+    r"""os\.environ\s*\[\s*['"](?P<k>[A-Z_][A-Z0-9_]*)['"]\s*\]\s*=\s*['"](?P<v>[^'"]+)['"]|"""
+    r"""os\.environ\.setdefault\s*\(\s*['"](?P<k2>[A-Z_][A-Z0-9_]*)['"]\s*,\s*"""
+    r"""['"](?P<v2>[^'"]+)['"]|"""
+    r"""os\.putenv\s*\(\s*['"](?P<k3>[A-Z_][A-Z0-9_]*)['"]\s*,\s*['"](?P<v3>[^'"]+)['"]|"""
+    r"""process\.env\.(?P<k4>[A-Z_][A-Z0-9_]*)\s*=\s*['"](?P<v4>[^'"]+)['"]"""
+)
+_EXAMPLE_FILE = re.compile(
+    r"\.(?:example|sample|template|dist|tmpl)$|\.(?:example|sample|template)\.",
+    re.IGNORECASE,
+)
+EXAMPLE = "@example"  # env key suffix: a value from an example / template file
+
+
 def env_values(files: list[tuple[str, str]]) -> dict[str, str]:
-    """``NAME -> literal value`` from the repository's env / compose files."""
+    """``NAME -> literal value`` that configures the deployment: env and compose
+    files, Kubernetes / Helm ``env`` name / value pairs and ``values.yaml`` keys, and
+    in-code ``os.environ[NAME] = …`` / ``setdefault`` / ``putenv`` (review
+    6063080163 of #498, R4-M4). A value from an example / template file
+    (``.env.example``, ``.sample``, ``.template``) is not the deployment's: it is
+    kept as ``NAME@example``, a default at most."""
     out: dict[str, str] = {}
-    for _name, text in files:
+    for name, text in files:
+        example = bool(_EXAMPLE_FILE.search(name))
+        suffix = EXAMPLE if example else ""
+        if name.endswith((".py", ".js", ".ts", ".mjs", ".cjs", ".ipynb")):
+            for m in _CODE_ENV_SET.finditer(text):
+                k = m.group("k") or m.group("k2") or m.group("k3") or m.group("k4")
+                v = m.group("v") or m.group("v2") or m.group("v3") or m.group("v4")
+                out.setdefault(k + suffix, v)
+            continue
+        for m in _K8S_ENV.finditer(text):
+            out.setdefault(m.group("k") + suffix, m.group("v"))
         for m in _ENV_ASSIGN.finditer(text):
-            out.setdefault(m.group("k"), m.group("v"))
+            out.setdefault(m.group("k") + suffix, m.group("v"))
     return out
 
 
 def _ollama_server(
-    host_value: str | None, basis: str, source: str, env_name: str | None = None
+    host_value: str | None,
+    basis: str,
+    source: str,
+    env_name: str | None = None,
+    default: str | None = None,
 ) -> CloudServiceComponent | EndpointComponent:
     """The Ollama server a client talks to. ``host_value`` None: the endpoint is not
     known (a variable, an environment value the repository does not set): never the
@@ -761,6 +919,10 @@ def _ollama_server(
         comp.properties["service:endpoint_basis"] = basis
         if env_name:
             comp.properties["service:endpoint_env"] = env_name
+        if default:
+            # the fallback the code (or an example file) gives: a default, not the
+            # deployment's endpoint
+            comp.properties["service:endpoint_default"] = default
         return comp
     url = host_value if "://" in host_value else f"http://{host_value}"
     host, path = _split_url(url)
@@ -786,6 +948,12 @@ def _ollama_server(
     if env_name:
         comp.properties["service:endpoint_env"] = env_name
     return comp
+
+
+_OLLAMA_REST_URL = re.compile(
+    r"https?://(?:[^\s/'\"@]*@)?(?:(?P<host>[A-Za-z0-9._-]+):11434"
+    r"/api/(?:chat|generate|embed|embeddings|tags|pull|show)\b|(?P<bind>0\.0\.0\.0):11434)"
+)
 
 
 def _ollama_services(
@@ -830,6 +998,10 @@ def _ollama_services(
             if "OLLAMA_HOST" in env:
                 comp = _ollama_server(env["OLLAMA_HOST"], "env-file", source,
                                       "OLLAMA_HOST")
+            elif "OLLAMA_HOST" + EXAMPLE in env:
+                # only an example file sets it: configurable, its value a default
+                comp = _ollama_server(None, "example", source, "OLLAMA_HOST",
+                                      env["OLLAMA_HOST" + EXAMPLE])
             else:
                 comp = _ollama_server(_OLLAMA_DEFAULT, "sdk-default", source)
         elif value[:1] in "'\"`" and value[-1:] == value[:1]:
@@ -840,7 +1012,13 @@ def _ollama_services(
             if name and name in env:
                 comp = _ollama_server(env[name], "env-file", source, name)
             else:
-                comp = _ollama_server(None, "unknown", source, name)
+                # read from the environment at run time: unknown, its fallback
+                # (``getenv("OLLAMA_HOST", "http://localhost:11434")``) only a default
+                lit = _STRING.findall(value)
+                fallback = lit[-1][1:-1] if len(lit) > 1 or (lit and not ref) else None
+                if name and not fallback:
+                    fallback = env.get(name + EXAMPLE)
+                comp = _ollama_server(None, "unknown", source, name, fallback)
         out.setdefault(comp.bom_ref, comp)
     return list(out.values())
 
@@ -941,8 +1119,31 @@ def _services_in(
             out.append(comp)
     out.extend(_azure_services(code, bare, source))
     known = {c.bom_ref for c in out}
-    out.extend(c for c in _ollama_services(code, bare, source, env or {})
-               if c.bom_ref not in known)
+    ollama = _ollama_services(code, bare, source, env or {})
+    # an Ollama REST URL: port 11434 with its /api path (a remote server, or the
+    # 0.0.0.0 bind address) is an Ollama server (review 6063080163 of #498, m4)
+    for m in _OLLAMA_REST_URL.finditer(code):
+        host = (m.group("host") or m.group("bind")).lower()
+        if host in ("localhost", "127.0.0.1"):
+            continue  # the host patterns name the local one
+        ollama.append(_ollama_server(f"http://{host}:11434", "literal", source))
+    out.extend(c for c in ollama if c.bom_ref not in known)
+    # a URL that is only an Ollama client's fallback (``getenv("OLLAMA_HOST",
+    # "http://localhost:11434")``) is a default, never a second, local server
+    # (review 6063080163 of #498, R4-M4)
+    defaults = {
+        _split_url(d if "://" in d else f"http://{d}")[0].lower()
+        for c in ollama
+        if (d := (c.properties or {}).get("service:endpoint_default"))
+    }
+    if defaults:
+        out = [
+            c for c in out
+            if not (c.name == "Ollama (local)"
+                    and (c.properties or {}).get("discovery:host", "").lower()
+                    in defaults
+                    and (c.properties or {}).get("service:endpoint_basis") is None)
+        ]
     out.extend(_opaque_clients(code, bare, source))
     claimed_hosts = {
         (c.properties or {}).get("discovery:host", "").lower() for c in out
