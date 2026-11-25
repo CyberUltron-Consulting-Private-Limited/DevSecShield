@@ -408,7 +408,7 @@ def _index_valid(engine):
 
 
 # ------------------------------------------------------------------------------------------------ n1, n3
-_DIRECT = re.compile(r"""os\.environ(?:\.get)?\s*[\[(]\s*["']CBOM_TEST_PG_URL["']""")
+_DIRECT = re.compile(r"""environ(?:\.get)?\s*[\[(]\s*["']CBOM_TEST_PG_URL["']""")
 
 
 def test_every_pg_test_reads_the_url_through_the_guard():
