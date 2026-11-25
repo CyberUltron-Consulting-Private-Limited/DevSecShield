@@ -167,6 +167,10 @@ def _finding(comp: AIComponent, result: ScanResult) -> dict[str, Any]:
         # a finding in test, fixture or example code: Low, labelled, still listed
         # (cbom.code_context)
         "code_context": props.get("crypto:codeContext"),
+        # a settings value: its name, the crypto call that reads it, or low confidence
+        "config_binding": props.get("crypto:configBinding"),
+        "config_read_at": props.get("crypto:configReadAt"),
+        "confidence": props.get("crypto:confidence"),
         "finding_codes": codes,
         "description": _finding_description(comp, result),
         "location": props.get("crypto:source") or props.get("discovery:source") or "",
@@ -736,7 +740,7 @@ def _config_evidence(result: ScanResult) -> list[dict[str, Any]]:
         rows = json.loads(raw) if raw else []
     except ValueError:
         return []
-    extra = {"confidence": "low", "kind": "configuration"}
+    extra = {"confidence": "low", "kind": "mention"}
     return [{**r, **extra} for r in rows if isinstance(r, dict)]
 
 
@@ -795,6 +799,10 @@ def normalize_crypto(result: ScanResult, *, duration_of_scan: float) -> dict[str
         # algorithm names in settings no crypto call reads (PR #500 takeover):
         # low-confidence evidence, outside the inventory and every total
         "config_evidence": _config_evidence(result),
+        # every configuration mention found (the list above is capped)
+        "config_evidence_total": int(
+            (result.properties or {}).get("crypto:configEvidenceCount") or 0
+        ),
     }
     if isinstance(result, CbomScanResult):
         payload["cbom_posture"] = build_posture_block(result)

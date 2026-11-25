@@ -8,6 +8,7 @@ words. ``fixtures/cbom_d3_bank_scandata.json`` is the aibom adapter's output for
 from __future__ import annotations
 
 import io
+from urllib.parse import unquote
 import json
 import pathlib
 import types
@@ -92,9 +93,13 @@ def test_cap_keeps_securenote_out_of_critical():
 
 
 def test_sbom_and_ai_bom_pdfs_use_the_capped_headline():
-    for name in ("sbom_sca_pdf.py", "ai_bom_pdf.py", "cbom_pdf.py"):
+    for name in ("sbom_sca_pdf.py", "ai_bom_pdf.py"):
         src = (_REPO / "backend" / "utilities" / "pdf" / name).read_text()
         assert "risk_score_fn=compute_posture_risk_score" in src, name
+    # the CBOM headline prints the summary's posture score over the SCORED findings (test code excluded, review
+    # 6061095673), the same capped function through cbom_metrics.risk_posture
+    src = (_REPO / "backend" / "utilities" / "pdf" / "cbom_pdf.py").read_text()
+    assert 'risk_score_fn=lambda *_c: (risk["risk_score"], risk["risk_grade"], risk["risk_label"])' in src
 
 
 # ----------------------------------------------------------------------------- G-D3-6 broken today
@@ -247,7 +252,7 @@ def test_code_scan_vex_uses_bom_links_and_no_unjustified_not_affected(scan_data)
         assert v["analysis"]["state"] != "not_affected" or v["analysis"].get("justification")
         for a in v["affects"]:
             assert a["ref"].startswith(f"urn:cdx:{uuid}/"), a["ref"]
-            assert a["ref"].split("#", 1)[1] in comps
+            assert unquote(a["ref"].split("#", 1)[1]) in comps
 
 
 # ----------------------------------------------------------------------------- N8 verify input

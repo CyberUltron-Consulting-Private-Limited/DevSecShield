@@ -74,6 +74,7 @@ import {
 import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRollup";
 import { CertHygieneSection } from "@/components/cbom/certificates/CertHygiene";
 import { ScanCertificates } from "@/components/cbom/certificates/ScanCertificates";
+import { ConfigMentions, type ConfigMention } from "@/components/cbom/results/ConfigMentions";
 import { CodeChanges } from "@/components/cbom/sources/ChangesPanel";
 import { CodeWavesPanel } from "@/components/cbom/sources/WavesControls";
 import { CertInLanePosture } from "@/components/certin/CertInLanePosture";
@@ -951,6 +952,9 @@ export default function CbomResults({
                   QA N1). A Sources run keeps the estate view. */}
               {run ? <CertHygieneSection teamId={tid} /> : <ScanCertificates teamId={tid} rows={allRows} />}
             </div>
+          )}
+          {!run && (
+            <ConfigMentions mentions={(meta?.config_evidence as ConfigMention[] | undefined) ?? []} total={meta?.config_evidence_total as number | undefined} />
           )}
           <RbiCsfRollup
             rollup={meta?.rbi_csf_rollup as RbiCsfRollupData | undefined}

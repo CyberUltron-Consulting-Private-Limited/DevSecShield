@@ -60,10 +60,15 @@ def _keys(text: str, lang: str) -> tuple[set[str], list[dict]]:
         ("javascript", 'const KEY_CONFIGS = {\n  cipher: "AES-256-GCM",\n};\n'),
     ],
 )
-def test_settings_and_labels_are_configuration_evidence_not_assets(lang, text):
-    keys, ev = _keys(text, lang)
-    assert keys == set(), keys
-    assert ev and all(e["binding"] for e in ev), ev
+def test_settings_are_low_confidence_assets_and_labels_are_evidence(lang, text):
+    """Review 6061095673 (round 4): a settings value no crypto call is proven to
+    read is kept as a LOW-CONFIDENCE asset (never dropped); a label is a mention."""
+    ev: list[dict] = []
+    dets = detect_crypto(text, lang, config_evidence=ev)
+    if "kdf_engines" in text:
+        assert dets == [] and ev, (dets, ev)
+        return
+    assert dets and all(d.low_confidence and d.config_binding for d in dets), dets
 
 
 @pytest.mark.parametrize(
@@ -94,8 +99,6 @@ def test_settings_and_labels_are_configuration_evidence_not_assets(lang, text):
             'await crypto.subtle.encrypt(\n  { name: "AES-GCM", iv },\n  key, data);\n',
             "aes",
         ),
-        # no binding at all: left to the existing rules
-        ("python", 'if alg == "MD5":\n    pass\n', "md5"),
         (
             "javascript",
             "function f() {\n  const alg = 'md5';\n  return run(alg);\n}\n",
@@ -123,7 +126,7 @@ def test_locals_in_a_method_body_are_statements_not_settings(lang):
         "  }",
         "}",
     ]
-    assert _ConfigLiterals(lines, lang).unused_spans(2, lines[2]) == []
+    assert _ConfigLiterals(lines, lang).judge(2, lines[2]) == []
 
 
 def test_a_call_spelled_inside_a_string_is_no_call():
@@ -131,7 +134,10 @@ def test_a_call_spelled_inside_a_string_is_no_call():
     assert "scrypt" not in keys
 
 
-def test_scan_reports_configuration_evidence_outside_the_totals(tmp_path):
+def test_scan_keeps_unread_settings_as_low_confidence_assets(tmp_path):
+    """Review 6061095673 (round 4): settings no crypto call reads are low-confidence
+    assets naming their setting, not dropped; the BOM lists no configuration
+    evidence for them and stays free of the raw evidence blob."""
     out = _scan(
         tmp_path,
         {
@@ -142,21 +148,15 @@ def test_scan_reports_configuration_evidence_outside_the_totals(tmp_path):
             '    val cipher: String = "AES-256-GCM",\n)\n',
         },
     )
-    titles = {r["title"] for r in out["results"]}
-    assert titles == {"SHA-256"}, titles
-    ev = out["config_evidence"]
-    assert {(e["location"], e["binding"]) for e in ev} == {
+    rows = {(r["title"], r["location"]): r for r in out["results"]}
+    assert rows[("SHA-256", "server.py")]["confidence"] != "low"
+    low = [r for r in out["results"] if r["confidence"] == "low"]
+    assert {(r["location"], r["config_binding"]) for r in low} == {
         ("server.py", "cipher"),
         ("app/KeyProfile.kt", "cipher"),
     }
-    assert all(e["confidence"] == "low" and e["kind"] == "configuration" for e in ev)
-    props = {
-        p["name"]: p["value"]
-        for p in out["cbom_json"]["metadata"].get("properties", [])
-    }
-    assert props.get("crypto:configEvidenceCount") == "2"
+    props = [p["name"] for p in out["cbom_json"]["metadata"].get("properties", [])]
     assert "crypto:configEvidence" not in props
-    assert not any("AES" in c["name"] for c in out["cbom_json"]["components"])
 
 
 # ----------------------------------------------------------------------------- test
@@ -243,10 +243,11 @@ _PY_FIELDS = [
 
 
 @pytest.mark.parametrize("text", _PY_FIELDS)
-def test_python_class_body_field_defaults_are_configuration_evidence(text):
-    keys, ev = _keys(text, "python")
-    assert keys == set(), keys
-    assert ev, "kept as configuration evidence"
+def test_python_class_body_field_defaults_are_low_confidence_settings(text):
+    """Review 6061095673 (round 4): a class-body field default no crypto call is
+    proven to read stays an asset, at low confidence, naming its field."""
+    dets = detect_crypto(text, "python")
+    assert all(d.low_confidence and d.config_binding for d in dets), dets
 
 
 @pytest.mark.parametrize(

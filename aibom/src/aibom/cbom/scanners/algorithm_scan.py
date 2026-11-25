@@ -28,7 +28,12 @@ from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any
 
-from aibom.cbom.detect import _strip_line_comment, detect_crypto, strip_noncode
+from aibom.cbom.detect import (
+    _strip_line_comment,
+    crypto_reads,
+    detect_crypto,
+    strip_noncode,
+)
 from aibom.cbom.files import FileWalk, file_walk
 from aibom.cbom.library_versions import resolve_library_versions
 from aibom.cbom.project import ProjectIndex, project_index
@@ -119,11 +124,18 @@ def _display_name(
 class _Asset:
     __slots__ = ("key", "name", "key_size", "mode", "curve", "padding",
                  "operation", "parameter", "info", "location", "library",
-                 "lines", "own_lines", "derived_from", "inner_digest", "purposes", "inferred")
+                 "lines", "own_lines", "derived_from", "inner_digest", "purposes",
+                 "inferred", "config_binding", "config_read_at", "low_confidence")
 
     def __init__(self, key, name, key_size, mode, curve, padding, operation,
                  parameter, info, location, library=None):
         self.inferred: bool | None = None  # every sighting inferred from configuration (see Detection.inferred)
+        # a settings value (Detection.config_binding): its name, the crypto call
+        # that reads it, and whether every sighting is an unproven setting (low
+        # confidence)
+        self.config_binding: str | None = None
+        self.config_read_at: str | None = None
+        self.low_confidence: bool | None = None
         self.lines: list[int] = []
         self.own_lines = 0  # lines where the asset is used on its own (not only as a composite's parameter)
         self.derived_from: str | None = None  # display name of the composite (same file) it is a parameter of
@@ -159,6 +171,33 @@ CONFIG_EVIDENCE_PROP = "crypto:configEvidence"
 CONFIG_EVIDENCE_MAX = 200
 
 
+_READ_LANGS = frozenset({"python", "java", "javascript"})
+
+
+def _project_reads(walk: FileWalk) -> dict[str, dict[str, str]]:
+    """Every name a crypto call reads anywhere in the project -> its first reader,
+    as ``path:line`` (:func:`aibom.cbom.detect.crypto_reads`): a settings value
+    declared in one file and read by ``Cipher.getInstance`` / ``hashlib.new`` /
+    ``createCipheriv`` in another is a proven asset (review 6061095673)."""
+    # per language: a Kotlin read proves no Python setting
+    out: dict[str, dict[str, str]] = {}
+    for path in _iter_source_files(walk):
+        lang = source_language(path)
+        if lang not in _READ_LANGS:
+            continue
+        text = walk.read_text(path)
+        if text is None:
+            continue
+        lines = [
+            _strip_line_comment(ln, lang).strip()
+            for ln in strip_noncode(text).split("\n")
+        ]
+        rel = walk.rel(path)
+        for name, line in crypto_reads(lines).items():
+            out.setdefault(lang, {}).setdefault(name, f"{rel}:{line}")
+    return out
+
+
 def _detect_assets(
     root: Path, walk: FileWalk | None = None, project: ProjectIndex | None = None,
     config_evidence: list[dict[str, Any]] | None = None,
@@ -172,6 +211,7 @@ def _detect_assets(
     """
     walk = walk or FileWalk(root)
     seen: dict[tuple[str, str], _Asset] = {}
+    reads = _project_reads(walk)
     for path in _iter_source_files(walk):
         lang = source_language(path)
         rel = walk.rel(path)
@@ -183,7 +223,9 @@ def _detect_assets(
         at_line: dict[tuple[int, str], str] = {}  # (line, key) -> display name, to find a composite
         inner: list[tuple[_Asset, int, str, str | None]] = []
         found: list[dict[str, Any]] = []
-        dets = detect_crypto(text, lang, external, config_evidence=found)
+        dets = detect_crypto(
+            text, lang, external, config_evidence=found, project_reads=reads.get(lang)
+        )
         if config_evidence is not None:
             config_evidence.extend({"location": rel, **e} for e in found)
         for det in dets:
@@ -206,6 +248,14 @@ def _detect_assets(
             asset = seen[ident]
             asset.lines.append(det.line_no)
             asset.inferred = det.inferred if asset.inferred is None else (asset.inferred and det.inferred)
+            low = det.low_confidence
+            asset.low_confidence = (
+                low if asset.low_confidence is None else asset.low_confidence and low
+            )
+            asset.config_binding = asset.config_binding or det.config_binding
+            if det.config_read_at and not asset.config_read_at:
+                read = det.config_read_at
+                asset.config_read_at = f"{rel}:{read}" if read.isdigit() else read
             at_line.setdefault((det.line_no, det.key), name)
             if det.inner_of:
                 inner.append((asset, det.line_no, det.inner_of, det.inner_role))
@@ -463,6 +513,17 @@ def _context_props(asset: _Asset) -> dict[str, str]:
     if asset.purposes and all(asset.purposes):
         props["crypto:nonSecurityUse"] = "true"
         props["crypto:purpose"] = sorted({p for p in asset.purposes if p})[0]
+    if asset.config_binding:
+        # a settings value (PR #500 review 6061095673): its name and its reader
+        props["crypto:configBinding"] = asset.config_binding
+        if asset.config_read_at:
+            props["crypto:configReadAt"] = asset.config_read_at
+    if asset.low_confidence:
+        props["crypto:confidence"] = "low"
+        props["crypto:resolution"] = (
+            "a settings value no crypto call in the project is proven to read: "
+            "kept as an asset so nothing is lost, at low confidence"
+        )
     if asset.inferred:
         props["crypto:confidence"] = "medium"
         props["crypto:resolution"] = ("inferred (needs review): a field default or the module's one configured "
@@ -509,6 +570,7 @@ class CryptoAlgorithmScanner(Scanner):
             ctx.properties[CONFIG_EVIDENCE_PROP] = json.dumps(
                 config_evidence[:CONFIG_EVIDENCE_MAX], sort_keys=True
             )
+            ctx.properties["crypto:configEvidenceCount"] = str(len(config_evidence))
         for asset in assets:
             # The AST scanner (order 8) owns Python algorithm detection with
             # argument binding; defer to any ref it already emitted so the regex

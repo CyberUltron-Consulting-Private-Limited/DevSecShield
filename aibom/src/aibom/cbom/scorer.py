@@ -53,8 +53,27 @@ def score_crypto(result: ScanResult) -> ScanResult:
     ``component_severity`` / ``flag_count``.
     """
     # the CBOM keeps its own flag-weight scale: the AI BOM posture score (#487) does
-    # not change CBOM scores
-    return score_result(result, str(_CBOM_WEIGHTS_PATH), posture=False)
+    # not change CBOM scores. Findings in test, fixture or example code are listed but
+    # weigh nothing (PR #500 review 6061095673): their components' flags are left out
+    # of every sum, and their stacked severity is low.
+    test_refs = {
+        c.bom_ref
+        for c in result.components
+        if (c.properties or {}).get("crypto:codeContext") == "test"
+    }
+    if not test_refs:
+        return score_result(result, str(_CBOM_WEIGHTS_PATH), posture=False)
+    flags = result.flags
+    result.flags = [f for f in flags if f.target not in test_refs]
+    try:
+        score_result(result, str(_CBOM_WEIGHTS_PATH), posture=False)
+    finally:
+        result.flags = flags
+    result.scores["flag_count"] = len(flags)
+    severity = result.scores.setdefault("component_severity", {})
+    for ref in test_refs & {f.target for f in flags}:
+        severity[ref] = "low"
+    return result
 
 
 _SEVERITIES = ("critical", "high", "medium", "low")
@@ -72,6 +91,8 @@ def finding_severity_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
         if not isinstance(row, dict):
             continue
         codes = [c for c in row.get("finding_codes") or [] if isinstance(c, str) and c]
+        if row.get("code_context") == "test":
+            continue  # listed, labelled "test code", never scored
         if (
             "finding_codes" in row
             and not codes

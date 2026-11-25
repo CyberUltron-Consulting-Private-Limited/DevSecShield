@@ -1106,14 +1106,19 @@ def emit_cyclonedx(result: ScanResult) -> dict[str, Any]:
     _add(metadata["component"], "version", result.subject.version)
 
     bom_props = dict(result.properties)
-    # configuration evidence belongs to the run object (normalize), not the BOM:
-    # the metadata states only its count
+    # configuration mentions (an algorithm named in a label, a comparison, an Enum
+    # member ...; not counted): the count, and one ``crypto:configMention`` property
+    # per listed mention (CycloneDX properties may repeat a name)
     evidence = bom_props.pop("crypto:configEvidence", None)
+    mentions: list[dict[str, Any]] = []
     if evidence:
         with contextlib.suppress(ValueError, TypeError):
-            bom_props["crypto:configEvidenceCount"] = str(len(json.loads(evidence)))
+            mentions = [m for m in json.loads(evidence) if isinstance(m, dict)]
     bom_props.setdefault("regulatory:disclaimer", disclaimer_of(result))
-    metadata["properties"] = _properties_list(bom_props)
+    metadata["properties"] = _properties_list(bom_props) + [
+        {"name": "crypto:configMention", "value": json.dumps(m, sort_keys=True)}
+        for m in mentions
+    ]
 
     # C9 crypto dependency graph: index the algorithm assets once so certificate/
     # protocol/material assets resolve their *Ref / cryptoRefArray links. Only a

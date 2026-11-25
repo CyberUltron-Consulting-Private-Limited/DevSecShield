@@ -158,6 +158,13 @@ class Detection:
     # The algorithm is inferred, not read: ``Cipher.getInstance(<String parameter>)`` bound to the only cipher
     # transformation configured for the module (``defined_at`` names that configuration line).
     inferred: bool = False
+    # A settings value (a dict / object property, a record or class field default):
+    # the setting's name; ``config_read_at`` names the crypto call that reads it
+    # (``path:line``, or ``line`` in the same file); a setting no crypto call is
+    # proven to read is kept as a low-confidence asset (PR #500 review 6061095673).
+    config_binding: str | None = None
+    config_read_at: str | None = None
+    low_confidence: bool = False
 
 
 # --------------------------------------------------------------------------- #
@@ -1213,27 +1220,65 @@ def _literal_key_size(key: str, line: str, explicit: int | None) -> int | None:
 
 
 # --------------------------------------------------------------------------- #
-# Configuration literals (PR #500 takeover of staging QA Q2-02). A string literal
-# is evidence of algorithm USE only when it flows into a crypto API: an argument of
-# a call, the value of a name / key a crypto call in the file reads
-# (``ALGO = "AES/GCM/NoPadding"`` ... ``Cipher.getInstance(ALGO)``), or the value
-# of a key a crypto library reads (``algorithm``, ``alg``, ``ciphers``,
-# ``digestmod``; WebCrypto ``name`` / ``hash`` / ``namedCurve`` in JS). An app's
-# own setting (``"cipher": "AES-256-GCM"``, a Kotlin data-class default
-# ``val cipher: String = "AES-256-GCM"``) or a display label
-# (``["PBKDF2-HMAC-SHA256 (Legacy Decrypt)"]``) names an algorithm without using
-# it: the literal lane does not inventory it; the scan keeps it as low-confidence
-# configuration evidence (``config_evidence``), outside every total. IBM
-# sonar-cryptography / CBOMkit likewise detect API calls, not bare strings.
+# Configuration literals (PR #500 takeover; review 6061095673). A string literal
+# that names an algorithm is judged by its shape:
+#
+# * a SETTING (a dict / object property, a record or class field default, an
+#   argument of the file's own settings record) is never dropped: it is an asset.
+#   When a crypto call anywhere in the project reads the setting's name
+#   (``Cipher.getInstance(cfg.spec)``, ``hashlib.new(CONFIG['digest'])``) the
+#   asset names that call (``config_read_at``); when no read is proven it is kept
+#   as a low-confidence asset, so recall never falls below the literal lane's;
+# * a MENTION (a label or message, a comparison, argparse ``choices``, a
+#   ``case`` / ``when`` label, a TypeScript union member, an Enum member) names
+#   an algorithm without passing it anywhere: configuration evidence, not an
+#   asset, unless the Enum member / choice is read by a crypto call;
+# * anything else (a call argument, a statement constant, an allow- or deny-list)
+#   keeps the rules it had.
+#
+# Crypto calls are recognised by identifier tokens (``createCipheriv`` -> create,
+# cipheriv; never a substring: ``assign`` is no ``sign``).
 # --------------------------------------------------------------------------- #
 _CONFIG_LANGS = frozenset({_PY, _JAVA, _JS})
-_CRYPTO_CALLEE = re.compile(
-    r"crypt|cipher|hash|digest|kdf|derive|sign|verify|getinstance|hmac|\bmac\b"
-    r"|jwt|jws|jwe|ssl|tls|keygen|keypair|keyfactory|keyspec|secretkey|aes|rsa"
-    r"|ecdsa|ecdh|scrypt|pbkdf|argon|bcrypt|fernet|subtle|cryptography|hashlib"
-    r"|openssl",
-    re.I,
+_CRYPTO_TOKENS = frozenset({
+    "crypt", "crypto", "cryptography", "encrypt", "decrypt", "encryptor",
+    "decryptor", "cipher", "ciphers", "cipheriv", "decipheriv", "hash", "hashes",
+    "hashlib", "hmac", "mac", "digest", "kdf", "derive", "pbkdf2", "pbkdf", "scrypt",
+    "argon2", "bcrypt", "sign", "signer", "signature", "verify", "verifier", "jwt",
+    "jws", "jwe", "jose", "ssl", "tls", "keygen", "keypair", "keyfactory", "keyspec",
+    "secretkey", "secretkeyspec", "keygenerator", "keypairgenerator", "aes", "rsa",
+    "ecdsa", "ecdh", "fernet", "subtle", "openssl", "getinstance", "messagedigest",
+    "pyjwt", "nacl", "sodium",
+})
+_SEGMENT_ONLY = frozenset({"crypto", "cryptography"})
+_DECL_LINE = re.compile(
+    r"^\s*(?:@\w+\s+)*(?:(?:data|private|public|protected|internal|open|abstract|"
+    r"static|final|async|export|override)\s+)*(?:class|fun|def|function|record|enum)\b"
 )
+_TOKEN_SPLIT = re.compile(r"[A-Z]+(?=[A-Z][a-z0-9])|[A-Z]?[a-z0-9]+|[A-Z]+")
+
+
+def _is_crypto_callee(chain: str | None) -> bool:
+    """Whether a callee chain names a crypto API, by identifier tokens: each dotted /
+    underscored segment, its camelCase words and adjacent word pairs."""
+    if not chain:
+        return False
+    for seg in re.split(r"[._\s]+", chain):
+        if not seg:
+            continue
+        low = seg.lower()
+        if low in _CRYPTO_TOKENS:
+            return True
+        words = [w.lower() for w in _TOKEN_SPLIT.findall(seg)]
+        # "crypto" names a crypto API only as a whole segment (``crypto.subtle``),
+        # not as a word of an app's own type (``CryptoCfg(...)``)
+        if any(w in _CRYPTO_TOKENS and w not in _SEGMENT_ONLY for w in words):
+            return True
+        if any(a + b in _CRYPTO_TOKENS for a, b in zip(words, words[1:], strict=False)):
+            return True
+    return False
+
+
 _LIBRARY_CONFIG_KEYS = frozenset({
     "alg", "algorithm", "algorithms", "jwt_algorithm", "signing_algorithm",
     "hash_algorithm", "hashalg", "digestmod", "hashfunc", "ciphers",
@@ -1252,18 +1297,33 @@ _BINDING = re.compile(
     r"""\s*(?::\s*[\w.<>?\[\], ]+?\s*)?(?:(?<![=!<>])=(?![=>])|:(?!:))\s*$"""
 )
 _WORD_ID = re.compile(r"[A-Za-z_]\w*")
+_READ_NAME = re.compile(r"(?<![\w.])(?:[A-Za-z_]\w*\s*\.\s*)*([A-Za-z_]\w*)")
 _ASSIGN_LHS = re.compile(
     r"^\s*(?:(?:val|var|const|let|final|private|static|public)\s+)*"
     r"[\w.\[\]\"', ]+?(?::\s*[\w.<>?\[\], ]+?)?\s*(?<![=!<>+*/-])=(?![=>])"
 )
 _CALL_CHAIN = re.compile(r"[A-Za-z_][\w.]*\s*\(")
-_NOT_A_SETTING = re.compile(r"\s*(?:return|yield|throw|raise|assert|case)\b")
+_NOT_A_SETTING = re.compile(r"\s*(?:return|yield|throw|raise|assert)\b")
+_CASE_LABEL = re.compile(
+    r"^\s*case\b"
+    r"|^\s*[\"'`][^\"'`]*[\"'`]\s*(?:,\s*[\"'`][^\"'`]*[\"'`]\s*)*->"
+)
+_TS_TYPE = re.compile(r"^\s*(?:export\s+)?type\s+([A-Za-z_]\w*)(?:<[^>]*>)?\s*=")
+_COMPARE_BEFORE = re.compile(r"([A-Za-z_][\w.\[\]'\"]*)?\s*(?:===|!==|==|!=|<>)\s*$")
+_COMPARE_AFTER = re.compile(
+    r"^\s*(?:(?:===|!==|==|!=)\s*([A-Za-z_][\w.]*)?|\.(?:equals|equalsIgnoreCase|contentEquals)\s*\()"
+)
+_UNION_BAR = re.compile(r"(?:^|[^|])\|\s*$")
+_UNION_AFTER = re.compile(r"^\s*\|(?!\|)")
 _Frame = tuple[str, bool, "str | None"]  # bracket, declaration / block, key / callee
+_ENUM_BRACE = re.compile(r"\benum\b[^{;]*$")
+_ENUM_KEY = "__enum__"
 # A record type the file declares (Kotlin ``data class``, Java ``record``, a Python
 # ``@dataclass`` / NamedTuple / pydantic model): constructing one fills app settings.
 _RECORD_DECL = re.compile(
     r"\b(?:data\s+class|record)\s+([A-Z]\w*)\s*[(<]"
-    r"|\bclass\s+([A-Z]\w*)\s*\((?:[\w.]*\.)?(?:NamedTuple|BaseModel|TypedDict)\)"
+    r"|\bclass\s+([A-Z]\w*)\s*\((?:[\w.]*\.)?(?:NamedTuple|BaseModel|TypedDict"
+    r"|BaseSettings)\)"
 )
 _DATACLASS_DECO = re.compile(r"^\s*@(?:dataclasses\.)?dataclass\b")
 _PY_CLASS = re.compile(r"^\s*class\s+([A-Z]\w*)\b")
@@ -1271,45 +1331,75 @@ _CALLEE = re.compile(r"([A-Za-z_][\w.]*)\s*$")
 _EXPR_BRACE = re.compile(r"(?:[=:(,\[?]|\breturn|=>)\s*$")
 _NOT_CALLEES = frozenset({
     "if", "for", "while", "switch", "catch", "return", "in", "and", "or", "not",
-    "await", "yield", "function", "lambda", "elif",
+    "await", "yield", "function", "lambda", "elif", "when", "match",
 })
 
 
-def _crypto_refs(lines: list[str]) -> set[str]:
-    """Lower-cased names on any line of the file that calls a crypto API (its
-    arguments, a comprehension's source, an attribute or a subscript key read there:
-    ``Cipher.getInstance(ALGO)`` -> ``algo``, ``derive(conf["kdf"])`` -> ``kdf``)."""
-    refs: set[str] = set()
-    for line in lines:
+def crypto_reads(lines: list[str]) -> dict[str, int]:
+    """Lower-cased names a crypto call reads on each line of a file, with the first
+    line (1-based) that reads it: the call's arguments, a comprehension's source, an
+    attribute or a subscript key (``Cipher.getInstance(cfg.spec)`` -> ``cfg``,
+    ``spec``; ``hashlib.new(CONFIG['digest'])`` -> ``config``, ``digest``). Not the
+    assigned name (``cipher = Fernet(k)``) nor a callee / receiver."""
+    reads: dict[str, int] = {}
+    for n, line in enumerate(lines, start=1):
         if "(" not in line or len(line) > _MAX_STRING_SCAN:
             continue
-        if not any(_CRYPTO_CALLEE.search(c) for c, _a in split_calls(line)):
+        if _DECL_LINE.match(line):
+            line = _after_params(line)  # a declaration's parameter list is no call
+        if not any(_is_crypto_callee(c) for c, _a in split_calls(_blank_strings(line))):
             continue
-        # not the assigned name (``cipher = Fernet(k)``) nor a callee / receiver
-        # (``cipher.doFinal(x)``): only what the call reads
         code = _ASSIGN_LHS.sub("", _blank_strings(line), count=1)
         code = _CALL_CHAIN.sub("(", code)
-        refs.update(w.lower() for w in _WORD_ID.findall(code))
+        # a dotted read names its attribute (``cfg.spec`` -> spec), not its object
+        # (``Cipher.ENCRYPT_MODE`` reads no setting called "cipher")
+        names = [m.group(1).lower() for m in _READ_NAME.finditer(code)]
         for lit in _STR_LIT.finditer(_ASSIGN_LHS.sub("", line, count=1)):
             body = lit.group(0)[1:-1]
             if re.fullmatch(r"[A-Za-z_][\w.-]*", body):
-                refs.add(body.lower())
-    return refs
+                names.append(body.lower())
+        for name in names:
+            reads.setdefault(name, n)
+    return reads
+
+
+def _after_params(line: str) -> str:
+    """A declaration line from just after its parameter list (a one-line body
+    ``function h(d) { return crypto.createHash(cfg.digest) }`` keeps its calls)."""
+    code = _blank_strings(line)
+    start = code.find("(")
+    depth = 0
+    for i in range(max(start, 0), len(code)):
+        if code[i] == "(":
+            depth += 1
+        elif code[i] == ")":
+            depth -= 1
+            if depth == 0:
+                return " " * (i + 1) + line[i + 1:]
+    return ""
+
+
+def _crypto_refs(lines: list[str]) -> set[str]:
+    return set(crypto_reads(lines))
 
 
 def _innermost_call(stack: list[_Frame]) -> str | None:
     return next((b for ch, decl, b in reversed(stack) if ch == "(" and not decl), None)
 
 
-_PY_CLASS_LINE = re.compile(r"^class\s+[A-Za-z_]\w*")
+_PY_CLASS_LINE = re.compile(r"^class\s+[A-Za-z_]\w*(\s*\(([^)]*)\))?")
+_PY_ENUM_BASE = re.compile(r"\b(?:Enum|IntEnum|StrEnum|Flag|IntFlag)\b")
 _PY_FIELD = re.compile(r"^([A-Za-z_]\w*)\s*(?::[^=]*)?(?<![=!<>])=(?!=)")
 
 
-def _class_fields(raw: list[str], stack_at: list[list[_Frame]]) -> dict[int, str]:
-    """Line index -> field name, for each ``name[: type] = ...`` line directly in a
-    Python class body (not in a method). Indentation decides the body."""
-    out: dict[int, str] = {}
-    classes: list[list[int | None]] = []  # [class indent, body indent]
+def _class_fields(
+    raw: list[str], stack_at: list[list[_Frame]]
+) -> dict[int, tuple[str, bool]]:
+    """Line index -> (field name, in an Enum), for each ``name[: type] = ...`` line
+    directly in a Python class body (not in a method). Indentation decides the
+    body."""
+    out: dict[int, tuple[str, bool]] = {}
+    classes: list[list[Any]] = []  # [class indent, body indent, is an Enum]
     for idx, line in enumerate(raw):
         text = line.strip()
         if not text or text.startswith(("#", "@")) or stack_at[idx]:
@@ -1322,10 +1412,36 @@ def _class_fields(raw: list[str], stack_at: list[list[_Frame]]) -> dict[int, str
         if classes and indent == classes[-1][1]:
             m = _PY_FIELD.match(text)
             if m:
-                out[idx] = m.group(1).lower()
-        if _PY_CLASS_LINE.match(text):
-            classes.append([indent, None])
+                out[idx] = (m.group(1).lower(), bool(classes[-1][2]))
+        cls = _PY_CLASS_LINE.match(text)
+        if cls:
+            enum = bool(cls.group(2) and _PY_ENUM_BASE.search(cls.group(2)))
+            classes.append([indent, None, enum])
     return out
+
+
+def py_class_constants(raw: list[str]) -> dict[str, str]:
+    """``NAME -> quoted literal`` of Python class attributes set once to a plain
+    string literal (``ALG = "HS256"``), so ``self.ALG`` / ``cls.ALG`` / ``Cls.ALG``
+    can be read as that literal."""
+    flat = [ln.strip() for ln in raw]
+    stack_at: list[list[_Frame]] = []
+    depth: list[_Frame] = []
+    for line in flat:
+        stack_at.append(list(depth))
+        if len(line) <= _MAX_STRING_SCAN:
+            _ConfigLiterals._walk(line, _blank_strings(line), depth, len(line))
+    seen: dict[str, set[str]] = {}
+    for idx in _class_fields(raw, stack_at):
+        m = _PY_CONST.match(flat[idx])
+        if m:
+            seen.setdefault(m.group(1), set()).add(m.group(2))
+    return {n: next(iter(v)) for n, v in seen.items() if len(v) == 1}
+
+
+_PY_CONST = re.compile(
+    r"""^([A-Za-z_]\w*)\s*(?::[^=]*)?=\s*((["'])[^"'\\]{1,80}\3)\s*$"""
+)
 
 
 # Code carried in a Python string (a JS snippet, a shell line) or pasted with its
@@ -1349,10 +1465,18 @@ def _py_embedded_code(body: str) -> bool:
     )
 
 
-def _py_escaped_code(line: str) -> bool:
-    """A line with a backslash-escaped quote outside any string literal: text copied
-    out of a string, not Python."""
-    return "\\" in _blank_strings(line) and bool(re.search(r"""\\["']""", line))
+def py_escaped_span(line: str) -> tuple[int, int] | None:
+    """The span of text pasted with its string escapes (``\\"cipher\\": \\"AES\\"``):
+    from the first to the last backslash-escaped quote OUTSIDE every string literal.
+    A trailing line-continuation backslash is no escape, and an escaped quote inside
+    a literal (``b"k=\\"v\\""``) is the literal's own."""
+    code = _blank_strings(line).rstrip()
+    if code.endswith("\\"):
+        code = code[:-1]
+    hits = [m.start() for m in re.finditer(r"""\\["']""", code)]
+    if not hits:
+        return None
+    return hits[0], hits[-1] + 2
 
 
 def _record_types(lines: list[str]) -> set[str]:
@@ -1376,14 +1500,35 @@ def _binding_before(text: str) -> str | None:
     return (m.group(1) or m.group(2) or "").lower() or None
 
 
+_ADD_ARGUMENT = re.compile(
+    r"""add_argument\(\s*(?:["']-[\w-]*["']\s*,\s*)?["']--?([\w-]+)["']"""
+)
+_CHOICES = re.compile(r"\bchoices\s*=\s*[\[(]?\s*$")
+
+
+def _dest(line: str) -> str | None:
+    """The argparse destination of an ``add_argument("--hash-algo", ...)`` line."""
+    m = _ADD_ARGUMENT.search(line)
+    return m.group(1).replace("-", "_").lower() if m else None
+
+
+SETTING = "setting"
+MENTION = "mention"
+
+
 class _ConfigLiterals:
-    """Which string literals of a file are settings or labels, not uses (above)."""
+    """How each string literal of a file is judged (above)."""
 
     def __init__(
-        self, lines: list[str], lang: str, raw: list[str] | None = None
+        self,
+        lines: list[str],
+        lang: str,
+        raw: list[str] | None = None,
+        project_reads: Mapping[str, str] | None = None,
     ) -> None:
         self.lang = lang
-        self.refs = _crypto_refs(lines)
+        self.reads = crypto_reads(lines)
+        self.project_reads: Mapping[str, str] = project_reads or {}
         js_keys = _JS_LIBRARY_CONFIG_KEYS if lang == _JS else frozenset()
         self.keys = _LIBRARY_CONFIG_KEYS | js_keys
         self.records = _record_types(lines)
@@ -1398,6 +1543,20 @@ class _ConfigLiterals:
             _class_fields(raw, self.stack_at) if lang == _PY and raw else {}
         )
 
+    def read_at(self, binding: str | None) -> str | None:
+        """Where a crypto call reads ``binding``: ``"<line>"`` in this file, else
+        ``"<path>:<line>"`` elsewhere in the project, else None."""
+        if not binding:
+            return None
+        if binding in self.reads:
+            return str(self.reads[binding])
+        return self.project_reads.get(binding)
+
+    def _flows(self, binding: str | None) -> bool:
+        if not binding:
+            return False
+        return binding in self.keys or self.read_at(binding) is not None
+
     @staticmethod
     def _walk(raw: str, code: str, stack: list[_Frame], upto: int) -> None:
         for i, ch in enumerate(code[:upto]):
@@ -1409,6 +1568,8 @@ class _ConfigLiterals:
                     # a grouping paren (``(function () { ... })()``, ``x = (a, b)``)
                     # passes nothing to a call
                     decl = decl or key is None or key in _NOT_CALLEES
+                elif ch == "{" and _ENUM_BRACE.search(code[:i]):
+                    key, decl = _ENUM_KEY, True  # an enum body
                 else:
                     key = _binding_before(raw[:i])
                     # a brace after ``)`` / a name / ``else`` / ``->`` opens a block
@@ -1421,27 +1582,13 @@ class _ConfigLiterals:
 
     def _record_setting(self, stack: list[_Frame]) -> bool:
         """Whether the innermost call is the constructor of a record type this file
-        declares (not a crypto API: its name names none)."""
+        declares (not a crypto API)."""
         callee = _innermost_call(stack)
-        return bool(
-            callee and callee in self.records and not _CRYPTO_CALLEE.search(callee)
-        )
+        return bool(callee and callee in self.records and not _is_crypto_callee(callee))
 
-    def unused_spans(self, line_idx: int, line: str) -> list[tuple[int, int, str]]:
-        """``(start, end, binding)`` of each literal on ``line`` that names a setting
-        or a label, not a use. Two shapes only, so allow-lists, deny-lists and
-        constants keep the rules they have:
-
-        * a label: a literal with whitespace inside a list, set, dict or parameter
-          list (the Python lane; Kotlin / Java and JS / TS labels are blanked by
-          ``blank_labels``);
-        * a scalar setting: the value of a dict key / object property or of a
-          declared parameter's default whose key no crypto call in the file reads and
-          no crypto library reads.
-
-        A plain statement (``ALGO = "AES"``) and a list / set element are never
-        judged here.
-        """
+    def judge(self, line_idx: int, line: str) -> list[tuple[int, int, str, str]]:
+        """``(start, end, binding, SETTING | MENTION)`` for the literals of ``line``
+        that are settings or mentions (see above); other literals are not listed."""
         if (
             self.lang not in _CONFIG_LANGS
             or len(line) > _MAX_STRING_SCAN
@@ -1449,54 +1596,91 @@ class _ConfigLiterals:
         ):
             return []
         statement = bool(_NOT_A_SETTING.match(line))
+        case_label = bool(_CASE_LABEL.match(line))
+        ts_type = _TS_TYPE.match(line) if self.lang == _JS else None
         code = _blank_strings(line)
-        out: list[tuple[int, int, str]] = []
+        out: list[tuple[int, int, str, str]] = []
         field = self.class_fields.get(line_idx)
         for lit in _STR_LIT.finditer(line):
             stack = list(self.stack_at[line_idx])
             self._walk(line, code, stack, lit.start())
+            callee = _innermost_call(stack)
+            in_crypto_call = any(
+                _is_crypto_callee(b) for ch, d, b in stack if ch == "(" and not d
+            )
+            before, after = code[:lit.start()], code[lit.end():]
             if field is not None:
-                # a class-body field default (dataclass, pydantic, attrs, NamedTuple,
-                # a class attribute): a setting, unless a crypto call reads the field
-                # or the literal is a crypto call's own argument
-                callee = _innermost_call(stack)
-                if field not in self.refs and field not in self.keys and not (
-                    callee and _CRYPTO_CALLEE.search(callee)
-                ):
-                    out.append((lit.start(), lit.end(), field))
+                name, enum = field
+                if in_crypto_call:
+                    continue
+                if enum:  # an Enum member: a mention, unless a crypto call reads it
+                    if not self._flows(name):
+                        out.append((lit.start(), lit.end(), name, MENTION))
+                    continue
+                out.append((lit.start(), lit.end(), name, SETTING))
                 continue
+            if in_crypto_call:
+                continue  # inside a crypto call's arguments: it flows into the call
             if self.lang == _PY and _is_label(lit.group(0)[1:-1]):
-                # a label or message (whitespace in it) anywhere but a crypto call's
-                # own argument: ``{"backend": "AES-256-GCM AEAD (...)"}``,
-                # ``return ok, data, f"{alias} (AES-256-GCM)"``
-                callee = _innermost_call(stack)
-                if not (callee and _CRYPTO_CALLEE.search(callee)):
-                    outer = next((b for _c, _d, b in reversed(stack) if b), None)
-                    out.append((lit.start(), lit.end(), outer or "label"))
+                # a label or message (whitespace in it): ``{"backend": "AES-256 ..."}``
+                outer = next((b for _c, _d, b in reversed(stack) if b), None)
+                out.append((lit.start(), lit.end(), outer or "label", MENTION))
+                continue
+            cmp_before = _COMPARE_BEFORE.search(before)
+            cmp_after = _COMPARE_AFTER.match(after)
+            if cmp_before or cmp_after:
+                other = (cmp_before and cmp_before.group(1)) or (
+                    cmp_after and cmp_after.group(1)
+                )
+                out.append((lit.start(), lit.end(), (other or "comparison").lower(),
+                            MENTION))
+                continue
+            if case_label and re.match(r"^\s*case\b[^:]*$", before):
+                out.append((lit.start(), lit.end(), "case", MENTION))
+                continue
+            if case_label and "->" in after:
+                out.append((lit.start(), lit.end(), "when", MENTION))
+                continue
+            if ts_type or (
+                self.lang == _JS
+                and (_UNION_BAR.search(before) or _UNION_AFTER.match(after))
+            ):
+                name = ts_type.group(1).lower() if ts_type else "type"
+                out.append((lit.start(), lit.end(), name, MENTION))
+                continue
+            enum_frame = any(b == _ENUM_KEY for _c, _d, b in stack)
+            if enum_frame and callee and callee[:1].isupper():
+                # an enum constant's argument (``DES("DES/ECB")``)
+                if not self._flows(callee.lower()):
+                    out.append((lit.start(), lit.end(), callee.lower(), MENTION))
+                continue
+            container = next(
+                (b for c, _d, b in reversed(stack) if c in "[{(" and b), None
+            )
+            if container == "choices" or _CHOICES.search(before):
+                dest = _dest(line) or "choices"
+                if not self._flows(dest):
+                    out.append((lit.start(), lit.end(), dest, MENTION))
                 continue
             if not stack or statement:
                 continue  # a statement, not a setting inside a container
             calls = [b for ch, decl, b in stack if ch == "(" and not decl]
-            if any(b and _CRYPTO_CALLEE.search(b) for b in calls):
-                continue  # inside a crypto call's arguments: it flows into the call
             direct = stack[-1][0] == "(" and not stack[-1][1]
             if direct and self._record_setting(stack):
                 # an argument of the file's own settings record (``KeyProfile(...,
-                # "AES-256-GCM", ...)``): fills a setting, calls no crypto API
-                out.append((lit.start(), lit.end(), f"{calls[-1]}()".lower()))
+                # "AES-256-GCM", ...)``)
+                out.append((lit.start(), lit.end(), f"{calls[-1]}".lower(), SETTING))
                 continue
             if direct:
                 continue  # a direct argument of a call: the call may use it
-            before = code[:lit.start()]
             cut = max(before.rfind(c) for c in "([{,") + 1 if before else 0
             own = _binding_before(line[cut:lit.start()])
             top = stack[-1]
             scalar = own is not None and (
                 (top[0] == "{" and not top[1]) or (top[0] == "(" and top[1])
             )
-            if not scalar or own in self.refs or own in self.keys:
-                continue
-            out.append((lit.start(), lit.end(), own or ""))
+            if scalar:
+                out.append((lit.start(), lit.end(), own or "", SETTING))
         return out
 
 
@@ -1739,7 +1923,7 @@ def _string_constants(code: str) -> dict[str, str]:
     for m in (*_JAVA_STR_DECL.finditer(code), *_KT_STR_DECL.finditer(code)):
         values.setdefault(m.group(1), set()).add(m.group(2))
     if not values:
-        return {}
+        return _spring_defaults(code, {})
     aliases = {m.group(1): m.group(2) for m in _JAVA_ALIAS_DECL.finditer(code)}
     # One pass each (not one regex per name): declarations of a String / val / var
     # named X (incl. parameters ``String X`` / Kotlin ``X: String``) and writes ``X =``.
@@ -1755,7 +1939,26 @@ def _string_constants(code: str) -> dict[str, str]:
         target = target.rsplit(".", 1)[-1]
         if name not in out and target in out and single(name):
             out[name] = out[target]
+    return _spring_defaults(code, out)
+
+
+def _spring_defaults(code: str, out: dict[str, str]) -> dict[str, str]:
+    """Spring ``@Value("${crypto.alg:DES/ECB/PKCS5Padding}") private String alg;``:
+    the property's default is the field's value unless the deployment overrides it
+    (review 6061095673); a field written anywhere in the file is not provable."""
+    for m in _SPRING_VALUE_DEFAULT.finditer(code):
+        default, name = m.group(1).strip(), m.group(2) or m.group(3)
+        written = re.search(rf"(?<![\w.]){re.escape(name)}\s*=(?!=)", code)
+        if default and name not in out and not written:
+            out[name] = default
     return out
+
+
+_SPRING_VALUE_DEFAULT = re.compile(
+    r'@Value\(\s*"\\?\$\{[^:}"]+:([^}"]{1,80})\}"\s*\)\s*'
+    r"(?:(?:private|protected|public|final|static|lateinit|internal)\s+)*"
+    r"(?:String\s+([A-Za-z_]\w*)\s*;|(?:var|val)\s+([A-Za-z_]\w*)\s*:\s*String)"
+)
 
 
 _JAVA_FIELD_DEFAULT = re.compile(
@@ -2538,11 +2741,40 @@ def _substitute_python_constants(
     return used
 
 
+def _tag_settings(
+    per_line: dict[str, Detection],
+    settings: list[tuple[int, int, str]],
+    lit_line: str,
+    pats_by_key: Mapping[str, list[re.Pattern[str]]],
+    config: _ConfigLiterals,
+) -> None:
+    """A detection the line names only inside a settings value carries the
+    setting's name, and either the crypto call that reads it or low confidence."""
+    rest = lit_line
+    for start, end, _b in settings:
+        rest = rest[:start + 1] + " " * (end - start - 2) + rest[end - 1:]
+    for det in per_line.values():
+        pats = pats_by_key.get(det.key.split("-")[0], []) + pats_by_key.get(det.key, [])
+        if det.receiver_bound or not pats or any(p.search(rest) for p in pats):
+            continue  # named by a call, or outside the settings values
+        for start, end, binding in settings:
+            body = lit_line[start:end]
+            if any(p.search(body) for p in pats):
+                det.config_binding = binding
+                read = config.read_at(binding)
+                if read is None and binding in config.keys:
+                    read = "library-key"
+                det.config_read_at = read
+                det.low_confidence = read is None
+                break
+
+
 def detect_crypto(
     text: str,
     lang: str,
     external: Mapping[str, Any] | None = None,
     config_evidence: list[dict[str, Any]] | None = None,
+    project_reads: Mapping[str, str] | None = None,
 ) -> list[Detection]:
     """Detect crypto usage in one source file's ``text`` (of language ``lang``).
 
@@ -2556,7 +2788,10 @@ def detect_crypto(
 
     ``config_evidence``, when given, receives one
     ``{"line", "algorithm", "binding", "value"}`` per configuration literal that
-    names an algorithm no crypto call reads (``_ConfigLiterals``): not an asset.
+    names an algorithm without using it (a label, a comparison, a case label, an
+    Enum member: ``_ConfigLiterals``): not an asset. ``project_reads`` maps the names
+    crypto calls read in OTHER project files to ``path:line`` (``crypto_reads``), so
+    a setting read elsewhere is a proven asset.
     """
     stripped = strip_noncode(text)
     # Split on "\n" only: splitlines() also breaks on \f, \v, \x1c-\x1e, \x85, U+2028/9 and would shift
@@ -2578,11 +2813,30 @@ def detect_crypto(
     jwt_file = bool(_JWT_FILE.search(stripped)) and lang in (_PY, _JS, _JAVA)
     keyword_lines = _keyword_list_lines(work_lines, lang) | _policy_list_lines(work_lines, lang)
     config = (
-        _ConfigLiterals([ln.strip() for ln in work_lines], lang, work_lines)
+        _ConfigLiterals(
+            [ln.strip() for ln in work_lines], lang, work_lines, project_reads
+        )
         if lang in _CONFIG_LANGS
         else None
     )
+    if lang == _PY:
+        # ``self.ALG`` / ``cls.ALG`` / ``Cls.ALG`` read a class attribute set to a
+        # literal: the call that reads it sees the literal (``jwt.encode(...,
+        # algorithm=self.ALG)``); the reads above were taken before this fold
+        consts = py_class_constants(work_lines)
+        if consts:
+            names = "|".join(map(re.escape, consts))
+            attr = re.compile(r"\b(?:self|cls|[A-Z]\w*)\.(" + names + r")\b")
+            work_lines = [
+                ln
+                if _PY_CONST.match(ln.strip())
+                else attr.sub(lambda m: consts[m.group(1)], ln)
+                for ln in work_lines
+            ]
     pats = (*LITERAL_PATTERNS, *LITERAL_BY_LANG.get(lang, ()))
+    pats_by_key: dict[str, list[re.Pattern[str]]] = {}
+    for k, pat in pats:
+        pats_by_key.setdefault(k, []).append(pat)
 
     def _evidence(line_no: int, text: str, binding: str) -> None:
         if config_evidence is None or not text.strip():
@@ -2603,9 +2857,12 @@ def detect_crypto(
         if line_no in keyword_lines:
             continue  # an element of a non-crypto keyword table, or of a deny-list
         if lang == _PY and len(line) <= _MAX_STRING_SCAN:
-            if _py_escaped_code(line):
-                _evidence(line_no, line, "escaped-code")
-                continue  # escaped text pasted as code: no call, no use
+            esc = py_escaped_span(line)
+            if esc is not None:
+                # text pasted with its string escapes: no call, no use; only that
+                # span is skipped (a real call on the line stays)
+                _evidence(line_no, line[esc[0]:esc[1]], "escaped-code")
+                line = line[:esc[0]] + " " * (esc[1] - esc[0]) + line[esc[1]:]
             embedded = [
                 m for m in _STR_LIT.finditer(line) if _py_embedded_code(m.group(0))
             ]
@@ -2642,12 +2899,24 @@ def detect_crypto(
         # algorithm without using it: blank it for this lane only (API strings such as "AES/GCM/NoPadding" have
         # no spaces and stay).
         lit_line = blank_labels(blank_prose(line, lang), lang)
+        settings: list[tuple[int, int, str]] = []
         if config is not None:
-            for start, end, binding in config.unused_spans(line_no - 1, line):
+            for start, end, binding, kind in config.judge(line_no - 1, line):
+                if kind == SETTING:
+                    settings.append((start, end, binding))
+                    continue
                 if lit_line[start + 1:end - 1].strip():
                     _evidence(line_no, line[start + 1:end - 1], binding)
                 blank = " " * (end - start - 2)
                 lit_line = lit_line[:start + 1] + blank + lit_line[end - 1:]
+                # an Enum member / enum constant is named like the algorithm too
+                # (``MD5 = "md5"``, ``MD5("MD5")``): its name is no use either
+                lit_line = re.sub(
+                    rf"(?i)\b{re.escape(binding)}\b(?=\s*(?:[=(]|:\s*\w+\s*=))",
+                    lambda m: " " * len(m.group(0)),
+                    lit_line,
+                    count=1,
+                ) if re.fullmatch(r"\w+", binding) else lit_line
         if lang == _C and "_set_cipher_list" in lit_line:
             # CB-28: an OpenSSL cipher-list string is a TLS suite policy (the
             # protocol lane reads it, with ``!RC4`` / ``-3DES`` as removals), not a
@@ -2695,6 +2964,8 @@ def detect_crypto(
 
         _merge_sized_into_coarse(per_line)
         _mark_inner(per_line, line)
+        if settings and config is not None:
+            _tag_settings(per_line, settings, lit_line, pats_by_key, config)
         for d in substituted.get(line_no, ()):
             keys = _value_keys(d.value, lang)
             for det in per_line.values():

@@ -33,12 +33,17 @@ export function WaveBadge({ item }: { item: CbomRemediationItem | undefined }) {
   if (!item || item.wave == null) return <span className="text-xs text-zinc-400">—</span>;
   const a = item.assignment;
   return (
-    <span className="inline-flex flex-col gap-0.5" data-testid={`wave-${item.asset_key}`}>
+    <span className="inline-flex min-w-0 max-w-full flex-col items-start gap-0.5" data-testid={`wave-${item.asset_key}`}>
+      {/* "Wave N" in the badge; "suggested" on its own line under it, so the badge stays narrow enough for a
+          390 px phone (PR #500 review 6061095673: "Wave 2 (suggested)" was 133 px wide in a 112 px column) */}
       <StatusBadge tone={WAVE_TONE[item.wave] ?? "zinc"} title={item.wave_source === "suggested" ? "Suggested by the rules" : "Assigned"}>
-        Wave {item.wave}{item.wave_source === "suggested" ? " (suggested)" : ""}
+        Wave {item.wave}
       </StatusBadge>
+      {item.wave_source === "suggested" && (
+        <span className="text-[11px] leading-tight text-zinc-500" data-testid={`wave-suggested-${item.asset_key}`}>suggested</span>
+      )}
       {(a?.owner || a?.target_date) && (
-        <span className="text-[11px] text-zinc-500">{[a?.owner, a?.target_date, a?.status ? STATUS_LABEL[a.status] : null].filter(Boolean).join(" · ")}</span>
+        <span className="text-[11px] text-zinc-500 break-words">{[a?.owner, a?.target_date, a?.status ? STATUS_LABEL[a.status] : null].filter(Boolean).join(" · ")}</span>
       )}
     </span>
   );

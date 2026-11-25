@@ -310,8 +310,12 @@ def grade_props(q_grades: Mapping[str | None, int], *, model_version: str | None
 
 
 def bom_link(serial: str, version: int | str, ref: str) -> str:
-    """A CycloneDX 1.6 BOM-Link to ``ref`` in another BOM: ``urn:cdx:<serial uuid>/<version>#<ref>``."""
-    return f"urn:cdx:{str(serial).removeprefix('urn:uuid:')}/{version}#{ref}"
+    """A CycloneDX 1.6 BOM-Link to ``ref`` in another BOM: ``urn:cdx:<serial uuid>/<version>#<ref>``, the fragment
+    percent-encoded (RFC 3986 section 3.5; review 6061095673), as the SBOM VEX writes it (``cert_in.vex``). Refs of the
+    usual alphabet (letters, digits, ``-._~``) read the same either way."""
+    from urllib.parse import quote
+
+    return f"urn:cdx:{str(serial).removeprefix('urn:uuid:')}/{version}#{quote(str(ref), safe='')}"
 
 
 # ----------------------------------------------------------------------------- drift-resolved findings

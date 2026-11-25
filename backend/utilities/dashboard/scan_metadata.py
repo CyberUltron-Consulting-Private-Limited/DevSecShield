@@ -362,6 +362,13 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             "cbom_distributions": cbom_distributions,
             "cbom_compliance": cbom_compliance,
             "cbom_scores": cbom_scores,
+            # what the engine read as a mention, not a use (a label, a comparison, an Enum member): listed under
+            # "Configuration mentions (not counted)" on the results page and in the PDF appendix (capped list + total)
+            "config_evidence": (scan.scan_data.get("config_evidence")
+                                if isinstance(scan.scan_data, dict) else None) or [],
+            "config_evidence_total": int((scan.scan_data.get("config_evidence_total") or 0)
+                                         if isinstance(scan.scan_data, dict) else 0)
+            or len((scan.scan_data.get("config_evidence") if isinstance(scan.scan_data, dict) else None) or []),
             "cbom_graph": cbom_graph,
             "cbom_graph_compact": cbom_graph_compact,
             "cbom_graph_expanded": cbom_graph_expanded,

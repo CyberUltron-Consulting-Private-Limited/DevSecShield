@@ -113,6 +113,10 @@ class CodeRowSummary:
         self.rows = 0
         self.findings = 0
         self.severity = {s: 0 for s in SEVERITIES}
+        # the findings the risk score counts: test, fixture and example code is listed but not scored (PR #500
+        # review 6061095673: six test files must not move the grade from B to D)
+        self.scored = {s: 0 for s in SEVERITIES}
+        self.findings_in_test_code = 0
         self.algorithm_types: dict[str, int] = defaultdict(int)
         self.strengths = {"weak": 0, "moderate": 0, "strong": 0, "quantum_safe": 0}
         # the results table's Quantum column: Quantum-safe / Broken today / Quantum-vulnerable (one rule)
@@ -160,6 +164,10 @@ class CodeRowSummary:
                 continue  # clean inventory: listed above, never a finding
             self.findings += 1
             self.severity[severity] += 1
+            if row.get("code_context") != "test":
+                self.scored[severity] += 1
+            else:
+                self.findings_in_test_code += 1
             for value in (row.get("owasp_top_10") or {}).values():
                 self.owasp[value] += 1
             for value in (row.get("compliance_controls") or {}).values():
@@ -202,8 +210,8 @@ class CodeRowSummary:
 
     @property
     def risk(self) -> dict[str, Any]:
-        """``risk_posture`` of these findings: the one D3 risk score."""
-        return risk_posture(self.severity)
+        """``risk_posture`` of these findings (test code excluded): the one D3 risk score."""
+        return risk_posture(self.scored)
 
     def severity_distribution(self) -> dict[str, int]:
         """Findings by severity, plus the inventory rows under ``informational`` (never in a severity)."""

@@ -21,7 +21,6 @@ from backend.utilities.pdf.report_branding import (
     append_executive_summary,
     append_findings_catalog,
     build_finding_section,
-    compute_posture_risk_score,
     enum_label,
     count_label,
     escape_html,
@@ -33,6 +32,7 @@ from backend.utilities.pdf.report_branding import (
     mapping_rows,
     severity_color,
     split_scan_payload,
+    styled_data_table,
 )
 
 # Kept for callers that import it; the report itself uses the app-wide scale in cbom_metrics.IMPACT_RISK.
@@ -146,6 +146,41 @@ def advisory_text(raw: Any) -> str | None:
     return text
 
 
+# How the D3 risk score is computed (PR #500 review 6061095673): printed under the summary.
+RISK_METHOD_TEXT = (
+    "Risk score: 4 x (10 per Critical + 5 per High + 2 per Medium + 1 per Low finding), at most 100, capped by "
+    "the worst severity found (no Critical: at most 69; no Critical or High: at most 49; Low only: at most 29). "
+    "Findings in test, fixture or example code are listed and labelled \"test code\" but not counted in the "
+    "score. Configuration mentions (an algorithm named in a label, a comparison, a case label or an Enum member) "
+    "are listed in the appendix and not counted."
+)
+CONFIG_MENTIONS_SHOWN = 50
+
+
+def append_config_mentions(story: List[Any], payload: Any, styles: Any) -> None:
+    """Appendix "Configuration mentions (not counted)": what the scan read as a mention, not a use."""
+    rows = payload.get("config_evidence") if isinstance(payload, dict) else None
+    if not isinstance(rows, list) or not rows:
+        return
+    total = int(payload.get("config_evidence_total") or len(rows))
+    story.append(PageBreak())
+    story.append(Paragraph("Configuration mentions (not counted)", styles["title"]))
+    shown = [r for r in rows if isinstance(r, dict)][:CONFIG_MENTIONS_SHOWN]
+    story.append(Paragraph(escape_html(
+        f"{total} place(s) name an algorithm without using it (a label, a comparison, a case label, an Enum "
+        f"member, code held in a string). They are not inventory and not counted; the first {len(shown)} are "
+        "listed."), styles["muted"]))
+    table = [
+        [Paragraph(escape_html(f"{r.get('location') or ''}:{r.get('line') or ''}"), styles["mono_cell"]),
+         escape_html(str(r.get("algorithm") or "")),
+         escape_html(str(r.get("binding") or "")),
+         Paragraph(escape_html(str(r.get("value") or "")[:80]), styles["table_cell"])]
+        for r in shown
+    ]
+    story.append(styled_data_table(["Location", "Algorithm", "Named as", "Text"], table, styles=styles,
+                                   col_widths=[2.2 * inch, 1.0 * inch, 1.2 * inch, 2.6 * inch]))
+
+
 def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = None, *, ctx: Optional[ReportContext] = None) -> str:
     """
     Generate a CBOM scan results PDF.
@@ -222,6 +257,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                 ["Quantum readiness", readiness_text],
                 ["Weak algorithms", str(summary.weak)],
                 ["Risk score", risk_text],
+                ["Findings in test code (listed, not scored)", str(summary.findings_in_test_code)],
             ],
             [4.0 * inch, 1.5 * inch],
         )
@@ -265,8 +301,9 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         extra_tables=extra_tables,
         project_name="CBOM Findings",
         scan_time=format_scan_duration(duration),
-        # the headline is the same engine function as the summary rows above and the results page's KPI
-        risk_score_fn=compute_posture_risk_score,
+        # the headline is the summary rows' number (the engine's posture function over the scored findings: test
+        # code excluded), as the results page's KPI and the API
+        risk_score_fn=lambda *_c: (risk["risk_score"], risk["risk_grade"], risk["risk_label"]),
         meta_chips=[
             ("Scan type", "CBOM"),
             ("Total findings", str(total)),
@@ -275,6 +312,9 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         ],
         ctx=ctx,
       )
+    if ctx.has("summary"):
+        summary_part.append(Spacer(1, 0.12 * inch))
+        summary_part.append(Paragraph(escape_html(RISK_METHOD_TEXT), styles["muted"]))
     notes = scan_notes(raw if raw else scan_results)
     if notes and ctx.has("notes"):  # the import / coverage notes the results page shows above the table
         title, summary_line, lines = notes
@@ -368,6 +408,9 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     if ctx.has("compliance"):
         appendix_payload = raw if raw else (scan_results if isinstance(scan_results, dict) else {})
         append_bom_compliance_sections(story, appendix_payload, styles)
+    if ctx.has("details"):
+        append_config_mentions(story, raw if raw else (scan_results if isinstance(scan_results, dict) else {}),
+                               styles)
 
     doc.build(
         story,

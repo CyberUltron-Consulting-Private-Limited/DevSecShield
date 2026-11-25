@@ -2139,6 +2139,9 @@ export interface CbomScanMetadata {
   cbom_distributions?: Record<string, unknown> | null
   cbom_compliance?: Record<string, unknown> | null
   cbom_scores?: Record<string, unknown> | null
+  /** algorithm names the engine read as mentions, not uses (capped list) and their total (PR #500 review 6061095673) */
+  config_evidence?: Array<Record<string, unknown>> | null
+  config_evidence_total?: number | null
   // Normalized crypto dependency graph (nodes + edges), the peer of the AIBOM
   // lane's ai_bom_graph (I1). Pre-joined so the results-page dependency-graph
   // (F1) never re-walks the CycloneDX dependsOn/cryptoRefArray structure.
