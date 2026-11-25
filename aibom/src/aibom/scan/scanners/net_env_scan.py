@@ -35,8 +35,13 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from aibom.model.component import CloudServiceComponent, EndpointComponent
+from aibom.model.component import (
+    CloudServiceComponent,
+    EndpointComponent,
+    ModelComponent,
+)
 from aibom.scan.parsers.code_text import call_arguments, language_of, mask
+from aibom.scan.parsers.licenses import license_choice
 from aibom.scan.path_roles import is_env_file, is_example_path, is_test_path
 from aibom.scan.registry import ScanContext, Scanner, register
 from aibom.scan.safe_files import read_text, walk_files
@@ -256,6 +261,49 @@ _MODEL_KWARG = re.compile(
 )
 
 
+# wrapper class -> (vendor, task): who serves the default model and what it does
+_UNNAMED_VENDOR = (
+    (re.compile(r"Azure"), "Microsoft"), (re.compile(r"Bedrock"), "Amazon"),
+    (re.compile(r"OpenAI"), "OpenAI"), (re.compile(r"Anthropic"), "Anthropic"),
+    (re.compile(r"Google"), "Google"), (re.compile(r"Groq"), "Groq"),
+    (re.compile(r"Mistral"), "Mistral"), (re.compile(r"Cohere"), "Cohere"),
+    (re.compile(r"Ollama"), "local"),
+)
+# a hosted vendor's API models are all used under its terms, whichever is the default
+_HOSTED_TERMS = frozenset({"OpenAI", "Anthropic", "Google", "Cohere", "Microsoft"})
+
+
+def unidentified_model(call: str, source: str) -> ModelComponent:
+    """The low-confidence model entry for a wrapper built with no model argument
+    (``ChatOpenAI()`` in app.py): the application uses a model, which one is not
+    identified (the library's default applies). Its name says so; the evidence is the
+    call. The checks read ``model:identified = false`` as "needs information", never
+    as a pass or as "no AI model" (#498 round 3)."""
+    cls = call.rstrip("()")
+    vendor = next((v for pat, v in _UNNAMED_VENDOR if pat.search(cls)), "unknown")
+    task = "text-embedding" if "Embeddings" in cls else "chat/completion"
+    slug = re.sub(r"[^a-z0-9]+", "-", f"{cls}-{source}".lower()).strip("-")
+    comp = ModelComponent(
+        bom_ref=f"modelref-unidentified-{slug}",
+        name=f"unidentified model ({cls} default)",
+        publisher=None if vendor in ("unknown", "local") else vendor,
+        licenses=[license_choice("LicenseRef-proprietary")]
+        if vendor in _HOSTED_TERMS
+        else None,
+        properties={
+            "model:reference_type": "usage",
+            "model:identified": "false",
+            "model:unidentified_reason": "library default model applies",
+            "discovery:source": source,
+            "discovery:method": "sdk-client-default-model",
+            "discovery:confidence": "low",
+            "discovery:snippet": f"{call} in {source}",
+        },
+    )
+    comp.model_card.task = task
+    return comp
+
+
 def unnamed_model_calls(text: str, source: str) -> list[str]:
     """``["ChatOpenAI()", …]``: LangChain model wrappers the file constructs with no
     model argument (readable arguments only; ``**kwargs`` / spread may name one)."""
@@ -452,6 +500,9 @@ class NetEnvScanner(Scanner):
             if not not_app:
                 for call in unnamed_model_calls(text, source):
                     unnamed.append(f"{call} in {source}")
+                    model = unidentified_model(call, source)
+                    if not ctx.has_ref(model.bom_ref):
+                        ctx.add_component(model)
             for comp in _services_in(text, source):
                 if not not_app:
                     ctx.service_files.setdefault(comp.bom_ref, set()).add(source)

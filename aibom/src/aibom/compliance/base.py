@@ -61,6 +61,9 @@ __all__ = [
     "vendor_accountability",
     "models",
     "clinical_models",
+    "unidentified_models",
+    "needs_identification",
+    "UNIDENTIFIED_NOTE",
     "datasets",
     "frameworks",
     "services",
@@ -260,6 +263,42 @@ def models(r: ScanResult) -> list[ModelComponent]:
         for c in r.components
         if isinstance(c, ModelComponent) and not is_model_mention(c)
     ]
+
+
+UNIDENTIFIED_NOTE = (
+    "AI model use detected; model not identified (library default applies)"
+)
+
+
+def unidentified_models(r: ScanResult) -> list[ModelComponent]:
+    """Models in use whose identity is unknown: a client built with no model argument
+    (``ChatOpenAI()``) runs the library's default model (``model:identified`` =
+    ``false``, recorded by the net-env scanner; #498 round 3)."""
+    return [
+        m for m in models(r) if (m.properties or {}).get("model:identified") == "false"
+    ]
+
+
+def needs_identification(r: ScanResult, cr: CheckResult) -> CheckResult:
+    """A PASS that vouches for an unidentified model cannot stand: nothing about the
+    model is known, so the requirement needs information (attestable), never a pass.
+    A FAIL whose every failing model is unidentified fails only because the model is
+    not known: it needs information too. A FAIL on an identified model stays a FAIL."""
+    if cr.verdict not in ("pass", "fail"):
+        return cr
+    unknown = {m.bom_ref: m for m in unidentified_models(r)}
+    hit = [ref for ref in cr.refs if ref in unknown]
+    if not hit or (cr.verdict == "fail" and len(hit) != len(cr.refs)):
+        return cr
+    calls = "; ".join(
+        (unknown[ref].properties or {}).get("discovery:snippet", unknown[ref].name)
+        for ref in hit
+    )
+    return NOT_EVIDENCEABLE(
+        f"{UNIDENTIFIED_NOTE}: {calls}. Name the model to evidence this requirement "
+        f"for it (otherwise: {cr.evidence})",
+        list(cr.refs),
+    )
 
 
 def clinical_models(r: ScanResult) -> list[ModelComponent]:

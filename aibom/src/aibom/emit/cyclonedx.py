@@ -238,6 +238,38 @@ def _emit_model(comp: ModelComponent) -> dict[str, Any]:
         merged.update(comp.properties)
     if merged:
         out["properties"] = _properties_list(merged)
+    evidence = _unidentified_evidence(comp.properties or {})
+    if evidence:
+        out["evidence"] = evidence
+    return out
+
+
+def _unidentified_evidence(props: dict[str, str]) -> dict[str, Any] | None:
+    """CycloneDX 1.6 ``evidence`` for a model the code uses without naming it
+    (``ChatOpenAI()``: ``model:identified`` = ``false``, #498 round 3): the name is a
+    placeholder, so its identity confidence is low, and the call is the evidence."""
+    if props.get("model:identified") != "false":
+        return None
+    call = props.get("discovery:snippet", "")
+    library = props.get("model:default_from_library")
+    value = f"{call}: no model argument; the library default model applies" + (
+        f" ({library})" if library else ""
+    )
+    out: dict[str, Any] = {
+        "identity": [
+            {
+                "field": "name",
+                "confidence": 0.1,
+                "methods": [
+                    {"technique": "source-code-analysis", "confidence": 0.1,
+                     "value": value}
+                ],
+            }
+        ]
+    }
+    src = props.get("discovery:source", "")
+    if _repo_relative(src):
+        out["occurrences"] = [{"location": src}]
     return out
 
 

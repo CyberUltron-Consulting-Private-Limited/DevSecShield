@@ -61,10 +61,17 @@ def test_the_pdf_states_model_calls_that_name_no_model(page, tmp_path):
         "requirements.txt": "langchain==0.0.184\nopenai==0.27.6\n",
     })
     body, base = get(payload)
-    assert body["dashboard"]["card_data"]["total_models"] == 0
+    # the two unidentified model entries are models in use: page, PDF and checks agree
+    assert body["dashboard"]["card_data"]["total_models"] == 2
+    certin = body["scan_metadata"]["ai_bom_compliance"]["cert_in_aibom"]
+    assert certin["out_of_scope"] == 0 and certin["pass"] == 0
     text = PROFILE._pdf_text(http.get(f"{base}/export", headers=AUTH).content)
     assert "Model calls naming no model (library default applies, model not identified)" in text
     assert "2 (langchain 0.0.184): ChatOpenAI() in app.py; OpenAIEmbeddings() in app.py" in text
+    assert "Models in use 2" in text
+    assert "unidentified model (ChatOpenAI default)" in text
+    assert "no AI models detected" not in text
+    assert "AI model use detected; model not identified (library default applies)" in text
 
 
 def test_a_mixed_licence_ollama_row_is_no_unknown_library(page, tmp_path):

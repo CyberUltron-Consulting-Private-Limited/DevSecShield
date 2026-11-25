@@ -15,6 +15,7 @@ from aibom.compliance.base import (
     CheckResult,
     applicability_for,
     checks_for,
+    needs_identification,
 )
 from aibom.emit._disclaimer import disclaimer_of
 from aibom.model.result import ScanResult
@@ -84,7 +85,9 @@ def run_framework(
         if oos_reason is not None:
             cr = CheckResult("out_of_scope", oos_reason)
         else:
-            cr = check(result, requirement)
+            # a pass that vouches for an unidentified model needs information (#498
+            # round 3: ChatOpenAI() with no model read "T10-Model-Name pass")
+            cr = needs_identification(result, check(result, requirement))
             if cr.verdict == "not_bom_evidenceable" and requirement.id in evidence:
                 cr = CheckResult(
                     "pass_with_evidence",

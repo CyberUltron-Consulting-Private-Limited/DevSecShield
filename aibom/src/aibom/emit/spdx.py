@@ -140,6 +140,11 @@ def _new(spdx_type: str, spdx_id: str, **props: Any) -> dict[str, Any]:
 
 # A model the application does not use (a catalog / doc / test mention) is kept
 # with this note rather than dropped (review of #487 M1).
+# a model the code uses without naming it (#498 round 3)
+_UNIDENTIFIED_COMMENT = (
+    "Model in use, not identified: {} names no model, so the library's default "
+    "model applies (low confidence)."
+)
 _MENTION_COMMENT = {
     "catalog": "Model named in a catalog, document or example file; not used by the "
     "scanned application.",
@@ -185,7 +190,11 @@ def _ai_package(
         "ai_AIPackage",
         sid,
         name=comp.name,
-        comment=_MENTION_COMMENT.get(rtype or ""),
+        comment=_UNIDENTIFIED_COMMENT.format(
+            (comp.properties or {}).get("discovery:snippet", "")
+        )
+        if (comp.properties or {}).get("model:identified") == "false"
+        else _MENTION_COMMENT.get(rtype or ""),
         suppliedBy=supplier,
         software_packageVersion=comp.version,
         # the Hub purl (pkg:huggingface/<org>/<name>), as CycloneDX carries it

@@ -37,13 +37,20 @@ class UnnamedModels(Scanner):
             for c in ctx.components
             if c.kind == "framework" and (c.name or "").lower().startswith("langchain")
         )
-        if not libs:
-            ctx.properties["aibom:model_unnamed_library"] = "langchain (not declared)"
-            return
-        ctx.properties["aibom:model_unnamed_library"] = ", ".join(
-            f"{name} {version}" if version else f"{name} (version not pinned)"
-            for name, version in libs
+        library = (
+            ", ".join(
+                f"{name} {version}" if version else f"{name} (version not pinned)"
+                for name, version in libs
+            )
+            if libs
+            else "langchain (not declared)"
         )
+        ctx.properties["aibom:model_unnamed_library"] = library
+        # the unidentified model entries carry the library that decides the default
+        for comp in ctx.components:
+            props = comp.properties or {}
+            if comp.kind == "model" and props.get("model:identified") == "false":
+                comp.properties = {**props, "model:default_from_library": library}
 
 
 __all__ = ["UnnamedModels"]

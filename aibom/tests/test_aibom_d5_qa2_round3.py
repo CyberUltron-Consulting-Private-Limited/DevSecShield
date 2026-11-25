@@ -393,12 +393,67 @@ def test_hub_ids_in_notebook_code_cells_are_read(tmp_path) -> None:
     assert "md/only" not in models  # a markdown cell is not code
 
 
-def test_langchain_calls_with_no_model_are_stated_not_guessed(tmp_path) -> None:
+def test_langchain_calls_with_no_model_are_unidentified_models_with_evidence(tmp_path) -> None:
     result = _scan(tmp_path, {"app.py": _ASK_PDFS, "requirements.txt": "langchain==0.0.184\nopenai==0.27.6\n"})
-    assert not [c for c in result.components if c.kind == "model" and c.properties.get("model:reference_type") != "catalog"]
     assert result.properties["aibom:model_unnamed_calls"] == "2"
     assert result.properties["aibom:model_unnamed_detail"] == "OpenAIEmbeddings() in app.py; ChatOpenAI() in app.py"
     assert result.properties["aibom:model_unnamed_library"] == "langchain 0.0.184"
+    unknown = {
+        c.name: c for c in result.components
+        if c.kind == "model" and c.properties.get("model:identified") == "false"
+    }
+    assert set(unknown) == {"unidentified model (ChatOpenAI default)", "unidentified model (OpenAIEmbeddings default)"}
+    chat = unknown["unidentified model (ChatOpenAI default)"]
+    assert chat.properties["model:reference_type"] == "usage"  # counted: the app uses a model
+    assert chat.properties["discovery:confidence"] == "low"
+    assert chat.properties["model:default_from_library"] == "langchain 0.0.184"
+    assert chat.model_card.task == "chat/completion"
+    assert unknown["unidentified model (OpenAIEmbeddings default)"].model_card.task == "text-embedding"
+    assert _served(result, "unidentified model (ChatOpenAI default)") == ["OpenAI API"]
+
+
+def test_the_cyclonedx_entry_carries_low_confidence_identity_evidence(tmp_path) -> None:
+    from aibom.emit.cyclonedx import emit_and_validate
+
+    result = _scan(tmp_path, {"app.py": _ASK_PDFS, "requirements.txt": "langchain==0.0.184\nopenai==0.27.6\n"})
+    bom = emit_and_validate(result)  # schema-valid CycloneDX 1.6
+    (chat,) = [c for c in bom["components"] if c["name"] == "unidentified model (ChatOpenAI default)"]
+    assert chat["type"] == "machine-learning-model"
+    (identity,) = chat["evidence"]["identity"]
+    assert identity["field"] == "name" and identity["confidence"] == 0.1
+    assert identity["methods"][0]["technique"] == "source-code-analysis"
+    assert identity["methods"][0]["value"] == (
+        "ChatOpenAI() in app.py: no model argument; the library default model applies (langchain 0.0.184)")
+    assert chat["evidence"]["occurrences"] == [{"location": "app.py"}]
+
+
+def test_checks_read_unidentified_model_use_as_needs_information(tmp_path) -> None:
+    from aibom.compliance import run_all
+
+    result = _scan(tmp_path, {"app.py": _ASK_PDFS, "requirements.txt": "langchain==0.0.184\nopenai==0.27.6\n"})
+    run_all(result)
+    for fw in ("cert_in_aibom", "sebi_cscrf_aibom", "rbi_free_ai", "eu_ai_act_annexIV", "nist_rmf"):
+        report = result.compliance[fw]
+        assert report["out_of_scope"] == 0, fw  # never "no AI models detected"
+        assert report["pass"] == 0 and report["fail"] == 0, fw  # nothing vouched for an unknown model
+    name = {q["id"]: q for q in result.compliance["cert_in_aibom"]["requirements"]}["T10-Model-Name"]
+    assert name["verdict"] == "not_bom_evidenceable" and name["attestable"]
+    assert name["evidence"].startswith(
+        "AI model use detected; model not identified (library default applies): ChatOpenAI() in app.py")
+
+
+def test_a_real_failure_on_a_named_model_stays_a_failure(tmp_path) -> None:
+    from aibom.compliance import run_all
+
+    result = _scan(tmp_path, {"app.py": (
+        "from langchain_openai import ChatOpenAI\n"
+        "default = ChatOpenAI()\n"
+        'named = ChatOpenAI(model="gpt-4o-mini")\n'
+    )})
+    run_all(result)
+    version = {q["id"]: q for q in result.compliance["cert_in_aibom"]["requirements"]}["T10-Model-Version"]
+    # gpt-4o-mini has no version either: a real gap on a named model is still a FAIL
+    assert version["verdict"] == "fail"
 
 
 def test_a_langchain_call_that_names_its_model_is_not_unnamed(tmp_path) -> None:
