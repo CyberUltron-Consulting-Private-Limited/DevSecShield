@@ -484,14 +484,17 @@ def record_run(session: Session, run: CbomCollectionRun, now: _dt.datetime, *,
     # before the store is read, driven by the stored observations' own rows (a source whose latest job failed too).
     # The deploy migration moved every team (``identity_migration.migrate_all``) and marked it with the highest job it
     # covered: only rows of later jobs (an older worker's write during a rolling deploy) are looked at here, one read.
+    # Review 6060766322 m1: only during that window. Once the scheduler closed it (``identity_migration.close_due``,
+    # after its last pass), no writer of the old identity is left: one primary-key read, no pass over the certificates.
     if write.previous:
         from backend.utilities.cbom_sources import identity_migration
 
-        mark = identity_migration.mark_of(session, team_id)
-        for k, v in identity_migration.migrate_team(session, team_id, refs=sorted(write.previous),
-                                                    since_job=mark or 0, lock=False).items():
-            if k != "sources":
-                write.identity_moves[k] = write.identity_moves.get(k, 0) + v
+        since = identity_migration.pending_since(session, team_id)
+        if since is not None:
+            for k, v in identity_migration.migrate_team(session, team_id, refs=sorted(write.previous),
+                                                        since_job=since, lock=False).items():
+                if k != "sources":
+                    write.identity_moves[k] = write.identity_moves.get(k, 0) + v
     marks = {"sources": time.perf_counter()}
 
     # 1. what the run read: rows of its successful collections, keyed across sources

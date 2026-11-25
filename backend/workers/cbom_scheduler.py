@@ -48,6 +48,13 @@ def tick(engine, now=None, *, summaries: bool = True) -> dict[str, Any]:
                 out["identity_keys"] = backfill_due(engine, now)
             except Exception as exc:  # noqa: BLE001 - the next tick retries; a run's own write moves its sources
                 log("identity key backfill FAILED", ref=new_ref(), error=type(exc).__name__)
+            try:  # review 6060766322 m1: once the rolling deploy is over, a last pass per team closes its window and
+                # every later store write skips the identity re-key step (estate.record_run step 0b)
+                from backend.utilities.cbom_sources.identity_migration import close_due
+
+                out["identity_window"] = close_due(engine, now)
+            except Exception as exc:  # noqa: BLE001 - the next tick retries; until then step 0b keeps running
+                log("identity window close FAILED", ref=new_ref(), error=type(exc).__name__)
             out["drift_runs"] = DRIFT.record_pending_drift(engine, now)
             try:  # CB-20/CB-32: a store that missed a run (deferred by a request with a cold key index, or a failed write)
                 from backend.utilities.cbom_sources.estate import repair_due
