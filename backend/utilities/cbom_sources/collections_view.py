@@ -813,7 +813,8 @@ def resolve(code_observations: Iterable[tuple[int, _dt.datetime, str]], rows: It
 def dedup_counts(rows: Iterable[SourcesRow], resolution: Resolution) -> dict[str, int]:
     """How "latest observation wins" (``resolve``) counted the rows of current collections, each bucket counted
     (SOW audit A-09, review 6038529822 B1): ``same_source_places`` (a certificate one source read at another place),
-    ``cross_source`` (a certificate another source also read; the other source's observation is counted),
+    ``cross_source`` (an asset another source also read: a certificate, or a resource ``resource_identity`` keys; the
+    kept observation is counted),
     ``to_code`` (a certificate a code scan saw at the same time or later; the code row is counted), and
     ``estate_repeats`` (current Sources occurrences of one estate asset beyond the first: one endpoint two probes
     read, ``asset_keys.distinct_assets``, the estate store's own key)."""
