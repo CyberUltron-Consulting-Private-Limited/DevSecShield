@@ -1279,7 +1279,8 @@ def test_pqc_timeline_rows_follow_the_final_ir_8547():
     assert "FIPS 205" in fips[0].milestone
     assert fips[0].when == "Aug 2024"
     assert fips[0].status == "Final"
-    cnsa = [r for r in rows if text.CNSA_2_0_SENTENCE in r.milestone]
+    cnsa = [r for r in rows if text.CNSA_2_0_TIMETABLE in r.milestone]
+    assert not any(text.CNSA_2_0_SENTENCE in r.milestone for r in rows), "one date per category: not printed"
     assert len(cnsa) == 1
     assert text.CNSA_VERIFY_NOTE in cnsa[0].milestone
     footnote = text.PQC_TIMELINE_FOOTNOTE

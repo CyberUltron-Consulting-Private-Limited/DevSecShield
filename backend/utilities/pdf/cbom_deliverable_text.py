@@ -520,7 +520,7 @@ class TimelineRow:
 
 
 # Product text: the engine's own sentences (aibom/src/aibom/cbom/pqc.py _CNSA_TIMELINE and
-# _TIMELINE).  The CNSA sentence is printed; the NIST sentence over-simplifies (it names
+# _TIMELINE).  Neither is printed (CNSA_2_0_TIMETABLE below is); the NIST sentence over-simplifies (it names
 # RSA/ECC/DH without the 112-bit distinction) so it is NOT printed (decision D-06) and is kept
 # only so a contract test notices if the engine's wording ever changes.
 CNSA_2_0_SENTENCE = (
@@ -531,8 +531,14 @@ PINNED_ENGINE_NIST_TIMELINE = (
     "NIST deprecates RSA/ECC/DH after 2030 and disallows them from 2035 "
     "(NIST SP 1800-38 / IR 8547)"
 )
-# Secondary sources disagree on CNSA 2.0 details, so the engine's compressed sentence is
-# printed with a verification note.
+# The engine's compressed CNSA sentence gives one date per category, but CNSA 2.0 gives two (support and prefer by,
+# then exclusively use by), so it is NOT printed either (review 6057476173 m3): it stays pinned for the contract test.
+# Source: NSA CNSA 2.0 FAQ (Sept 2022, updated Dec 2024) transition timetable, and NSM-10 for the 2035 goal.
+CNSA_2_0_TIMETABLE = (  # one table cell: pdf_text keeps 300 characters, the verify note included
+    "CNSA 2.0, prefer by / exclusively by: software/firmware signing 2025/2030; browsers, servers, cloud 2025/2033; "
+    "networking equipment 2026/2030; operating systems 2027/2033; niche equipment 2030/2033; custom and legacy by "
+    "2033; all NSS by 2035"
+)
 CNSA_VERIFY_NOTE = "Verify against the NSA advisory before submission."
 
 def pqc_timeline_rows() -> tuple[TimelineRow, ...]:
@@ -575,7 +581,7 @@ def pqc_timeline_rows() -> tuple[TimelineRow, ...]:
         # Source: NSA CNSA 2.0 advisory, national security systems transition: https://media.defense.gov/2025/May/30/2003728741/-1/-1/0/CSA_CNSA_2.0_ALGORITHMS.PDF
         TimelineRow(
             when="2025 to 2035",
-            milestone=f"{CNSA_2_0_SENTENCE}. {CNSA_VERIFY_NOTE}",
+            milestone=f"{CNSA_2_0_TIMETABLE}. {CNSA_VERIFY_NOTE}",
             status="Advisory",
             source="NSA CNSA 2.0 advisory",
             url=URL_CNSA_2_0,
@@ -600,10 +606,10 @@ PQC_NO_VULNERABLE_TITLE = "No quantum-vulnerable assets"
 PQC_NO_VULNERABLE_TEXT = (
     "No quantum-vulnerable public-key algorithms were found in the current scans."
 )
-PQC_NO_VULNERABLE_CODE_TITLE = "No quantum-vulnerable algorithms in the code scans"
+PQC_NO_VULNERABLE_CODE_TITLE = "Code scans: no quantum-vulnerable public-key algorithm to plan"
 PQC_NO_VULNERABLE_CODE_TEXT = (
-    "The code scans' algorithm inventory has no quantum-vulnerable public-key algorithm. The "
-    "collected infrastructure has {count}: they are listed in the next section."
+    "Every quantum-vulnerable public-key asset of this roadmap ({count}) was found in the collected "
+    "infrastructure and is listed in the next section; the code scans' algorithm inventory has none."
 )
 # Product text: primitives and target families (aibom/src/aibom/cbom/pqc.py PQC_MIGRATION_TARGETS)
 # Source: CycloneDX 1.6 cryptographic primitive enumeration: https://cyclonedx.org/docs/1.6/json/
@@ -1285,6 +1291,7 @@ __all__ = [
     "CERT_FINDING_CODES",
     "CERT_SCAN_FLAG_DIFFERS",
     "CNSA_2_0_SENTENCE",
+    "CNSA_2_0_TIMETABLE",
     "CNSA_VERIFY_NOTE",
     "CONTROL_LABELS",
     "DATA_WINDOW_NONE",

@@ -55,7 +55,7 @@ from dataclasses import dataclass
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.styles import ParagraphStyle
-from reportlab.platypus import Flowable, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import Flowable, KeepTogether, Paragraph, Spacer, Table, TableStyle
 
 from backend.utilities.dashboard.cbom_team_rollup import (
     ASSET_ALGORITHM,
@@ -941,7 +941,6 @@ def _summary_paragraphs(view: TeamCbomView, posture: PostureGrade) -> list[str]:
     line = configuration_posture_line(view)
     if line is not None:
         paragraphs.append(line)
-    paragraphs.append(population.reconciliation_line(view))
     removed = removed_collections(view)
     if removed:  # staging QA2 Q1-01: the deleted sources are named, never counted
         names = ", ".join(c.label for c in sorted(removed, key=lambda c: c.label.casefold())[:5])
@@ -1003,6 +1002,10 @@ def _summary_section(view: TeamCbomView, posture: PostureGrade, styles: Styles, 
     story: list[Flowable] = [*section_heading(H_SUMMARY, styles), first, _gap(), second, _gap(8)]
     for text in _summary_paragraphs(view, posture):
         story += [_para(text, styles), _gap(4)]
+    # the population reconciliation every CBOM document prints, as its numbered steps (review 6038529822 m5)
+    story += [KeepTogether([_para(population.RECON_TITLE, styles, "box_title"),
+                            *(_para(step, styles, "muted", limit=1200)
+                              for step in population.reconciliation_steps(view))]), _gap(4)]
     return [*story, *_trend_block(view, styles)]
 
 
@@ -1068,7 +1071,7 @@ def _quantum_section(view: TeamCbomView, styles: Styles, w: float):
     strip = kpi_strip(
         [
             ("Readiness", _pct_or_na(view), "share of gradeable asset occurrences"),
-            ("Quantum-vulnerable", str(view.pqc_vulnerable), "public-key occurrences to migrate"),
+            ("Quantum-vulnerable", str(view.pqc_vulnerable), "occurrences with a quantum-vulnerable verdict"),
             ("Quantum-safe", str(view.pqc_safe), f"of which {view.pqc_hybrid} hybrid"),
             ("Not gradeable", str(view.pqc_ungraded), "excluded from readiness"),
         ],
@@ -1087,8 +1090,8 @@ def _quantum_section(view: TeamCbomView, styles: Styles, w: float):
     story += [_para(QGRADE_LEAD.format(total=total, mosca=authored.mosca_basis_text(view)), styles), _gap(3),
               dense_table(["Quantum risk grade", "Assets"], rows, [400, 140])]
     meaning = authored.mosca_meaning_text(view)  # X, Y, Z, the rule and the defaults' sources (#497 m2)
-    if meaning:
-        story += [_gap(3), _para(meaning, styles, "muted")]
+    if meaning:  # one block: the definition reads whole, never split over a page break by the page chrome
+        story += [_gap(3), KeepTogether([_para(meaning, styles, "muted")])]
     reasons = q0_reason_text(view)
     if reasons:
         story += [_gap(3), _para(reasons, styles, "muted")]
@@ -1230,10 +1233,58 @@ def _remediation_section(view: TeamCbomView, styles: Styles):
     ]
 
 
+PQC_PLAN_LEAD = (
+    "Every current asset with a quantum-vulnerable verdict ({total}, as in section 3). The {planned} public-key "
+    "assets the PQC Migration Roadmap (D13) plans are grouped by the post-quantum target their use calls for: key "
+    "establishment moves to {kem}, signatures, certificates and signing keys to {sig} (national security systems "
+    "under CNSA 2.0: {kem5} and {sig5}); a code-scan algorithm keeps the target its scan recorded. The rows below "
+    "the planned total are not public-key migrations."
+)
+
+
+def pqc_plan_rows(view: TeamCbomView) -> tuple[list[list[str]], int, int] | None:
+    """Section 7 on D13's population (review 6038529822 M3): the code-scan algorithms by target, the collected
+    public-key assets by function (``waves.roadmap_extras``' ``by_usage``), the planned total (= D13's card), then
+    the symmetric or hash assets and those with no algorithm recorded (``waves.plan_exclusion``), apart. None for a
+    view without the roadmap's population."""
+    q = population.quantum_counts(view)
+    pop = (view.remediation or {}).get("population") if isinstance(view.remediation, dict) else None
+    if q is None or not isinstance(pop, dict):
+        return None
+    code = [a for a in population.quantum_vulnerable_assets(view)
+            if not a.source_key.startswith("sources:") and a.asset_type == ASSET_ALGORITHM]
+    rows = [[g["target"], population.USAGE_LABELS[g["usage"]], "code-scan " + _kinds_text(g["kinds"]),
+             str(g["occurrences"]), str(g["sources"])] for g in population.target_groups(code)]
+    for usage, slot in sorted((pop.get("by_usage") or {}).items(), key=lambda kv: (-kv[1]["assets"], kv[0] or "")):
+        target = population.pq_target_for(usage)
+        rows.append([target["target_text"] if target else "not derivable", target["usage_label"] if target else "",
+                     "collected", str(slot["assets"]), str(len(slot.get("sources") or ()))])
+    rows.append(["Planned public-key migrations (as D13)", "", "", str(q["planned"]), ""])
+    if q["symmetric"]:
+        rows.append(["Symmetric or hash (not a public-key migration)", "Grover: a 256-bit key is the answer",
+                     "collected", str(q["symmetric"]), ""])
+    if q["no_algorithm"]:
+        rows.append(["No algorithm recorded", "No function or target can be derived", "collected",
+                     str(q["no_algorithm"]), ""])
+    if q["code_other"]:
+        rows.append(["Code-scan certificate or key rows", "", "code-scan", str(q["code_other"]), ""])
+    rows.append(["Total with a quantum-vulnerable verdict", "", "", str(q["occurrences"]), ""])
+    return rows, q["planned"], q["occurrences"]
+
+
 def _pqc_section(view: TeamCbomView, styles: Styles):
     story: list[Flowable] = [*section_heading(H_PQC, styles, min_space=330)]
+    planned = None if view.is_empty else pqc_plan_rows(view)
     if view.is_empty:
         story.append(_para(NO_DATA_NOTE, styles, "muted"))
+    elif planned is not None:
+        rows, count, total = planned
+        lead = PQC_PLAN_LEAD.format(
+            total=total, planned=count, kem=population.pq_target(population.USAGE_KEM),
+            sig=population.pq_target(population.USAGE_SIGNATURE), kem5=population.pq_target(population.USAGE_KEM, 5),
+            sig5=population.pq_target(population.USAGE_SIGNATURE, 5))
+        story += [_para(lead, styles), _gap(3),
+                  dense_table(["Target", "Use", "What", "Occurrences", "Sources"], rows, [126, 170, 128, 56, 44])]
     else:
         groups = population.pqc_target_groups(view)
         if groups:

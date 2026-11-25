@@ -446,7 +446,10 @@ def test_timeline_strings_equal_the_engine_source_text():
 
 def test_the_printed_timeline_carries_the_cnsa_sentence_and_the_final_nist_rows():
     printed = " ".join(row.milestone for row in authored.PQC_TIMELINE_ROWS)
-    assert authored.CNSA_2_0_SENTENCE in printed
+    # CNSA 2.0 has two dates per category (prefer by, exclusively by): the authored timetable is printed, the engine's
+    # one-date sentence is not (review 6057476173 m3)
+    assert authored.CNSA_2_0_TIMETABLE in printed and authored.CNSA_2_0_SENTENCE not in printed
+    assert "software/firmware signing 2025/2030" in authored.CNSA_2_0_TIMETABLE
     assert authored.PINNED_ENGINE_NIST_TIMELINE not in printed, "over-simplified engine wording"
     nist_rows = [row for row in authored.PQC_TIMELINE_ROWS if "8547" in row.source]
     # FIX-A3: NIST IR 8547 is final (27 Oct 2026); the status comes from the knowledge base

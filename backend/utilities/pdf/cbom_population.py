@@ -218,56 +218,36 @@ def _removed_note(summary: Mapping[str, Any]) -> str:
 
 def reconciliation_steps(view: TeamCbomView) -> list[str]:
     """The reconciliation as arithmetic, one step per line: run assets -> occurrences -> distinct register assets ->
-    Q-grade split (SOW audit A-09, review M6)."""
-    c = reconciliation_counts(view)
-    steps = []
-    if current_collections(view):
-        n = len(current_collections(view))
-        steps.append(
-            f"1. The latest collections of the {_plural(n, 'CBOM Sources source')} list {c['collected']} "
-            f"asset{'' if c['collected'] == 1 else 's'} (the runs' asset lists). Minus {c['counted_once']} "
-            f"observation{'' if c['counted_once'] == 1 else 's'} of an asset another source also observed (a "
-            "certificate seen by two sources is one asset, counted once from its latest observation) = "
-            f"{c['sources_occurrences']} occurrence{'' if c['sources_occurrences'] == 1 else 's'} in CBOM Sources "
-            "collections.")
-    code_line = (f"{len(steps) + 1}. Code scans: {_plural(c['code_occurrences'], 'occurrence')}"
-                 + (f" (after {_plural(c['code_certs_superseded'], 'certificate')} also observed by a Sources "
-                    "collection, counted there)" if c["code_certs_superseded"] else "")
-                 + f". Total: {_plural(c['occurrences'], 'asset occurrence')} in this document.")
-    steps.append(code_line)
-    if c["register"] is not None:
-        total = int(c["register"]["total"])
-        steps.append(
-            f"{len(steps) + 1}. The quantum risk register (D12) holds {_plural(total, 'distinct asset')}: the Sources "
-            "occurrences, each estate asset once (an asset observed by several sources or runs is one asset); "
-            f"code-scan rows are not held. Grades: {grade_split_text(c['register'])}."
-            + _removed_note(c["register"]))
-    else:
-        steps.append(f"{len(steps) + 1}. The quantum risk register (D12) was not loaded for this document.")
-    steps.append(f"{len(steps) + 1}. The estate CBOM (D11) lists one component per distinct asset plus the "
-                 "certificate part components (signature algorithm, public key) that certificates reference, which "
-                 "are not assets.")
-    return steps
+    SOW classes (SOW audit A-09, staging QA2 M4). The ONE block every document and the dashboard print
+    (``cbom_sources.reconciliation``), plus the estate CBOM's component count."""
+    import backend.utilities.cbom_sources.reconciliation as RECON
+
+    out = RECON.lines(RECON.from_view(view))
+    out.append(f"{len(out) + 1}. The estate CBOM (D11) lists one component per distinct asset plus the certificate "
+               "part components (signature algorithm, public key) that certificates reference, which are not assets.")
+    return out
 
 
 def reconciliation_line(view: TeamCbomView) -> str:
-    """How the occurrence count, the distinct-asset count and the BOM component count relate (one paragraph)."""
-    c = reconciliation_counts(view)
-    line = (f"Population reconciliation: {_plural(c['occurrences'], 'asset occurrence')} "
-            f"({c['code_occurrences']} in code scans, {c['sources_occurrences']} in CBOM Sources collections; an "
-            "asset that two sources observe is one occurrence in each, except a certificate, which is counted once)")
-    if getattr(view, "collections", None) and c["counted_once"]:
-        line += (f"; the collections' asset lists hold {c['collected']}, of which {c['counted_once']} "
-                 f"{'is' if c['counted_once'] == 1 else 'are'} counted once across sources")
-    if c["register"] is not None:
-        total = int(c["register"]["total"])
-        line += (f"; {_plural(total, 'distinct asset')} in the quantum risk register (D12), where an asset observed "
-                 f"by several sources or runs is one asset and code-scan rows are not held "
-                 f"({grade_split_text(c['register'])})")
-    else:
-        line += "; the quantum risk register (D12) was not loaded for this document"
-    return line + ("; the estate CBOM (D11) lists one component per distinct asset plus the certificate part "
-                   "components (signature algorithm, public key) that certificates reference, which are not assets.")
+    """The same block as one paragraph (D14's summary)."""
+    return f"{RECON_TITLE}: " + " ".join(reconciliation_steps(view))
+
+
+RECON_TITLE = "Population reconciliation"
+
+
+def quantum_counts(view: TeamCbomView) -> dict[str, int] | None:
+    """D13's population (``cbom_sources.reconciliation.quantum_counts``), for documents that print it (D14 §7)."""
+    import backend.utilities.cbom_sources.reconciliation as RECON
+
+    return RECON.quantum_counts(view)
+
+
+def pq_target_for(usage: str | None) -> dict[str, Any] | None:
+    """The knowledge base's NIST post-quantum target row of a function (``pqc_targets.target_for``)."""
+    import backend.utilities.cbom_sources.pqc_targets as PQT
+
+    return PQT.target_for(usage)
 
 
 # ------------------------------------------------------------------------------------------------ PQC targets
@@ -323,11 +303,16 @@ def quantum_vulnerable_assets(view: TeamCbomView) -> list[AssetAgg]:
 
 
 def pqc_target_groups(view: TeamCbomView) -> list[dict[str, Any]]:
+    """``target_groups`` over every current quantum-vulnerable asset of the view."""
+    return target_groups(quantum_vulnerable_assets(view))
+
+
+def target_groups(assets: list[AssetAgg]) -> list[dict[str, Any]]:
     """Every current quantum-vulnerable asset grouped by its migration target (usage-based; the scan's recorded
     target for a code-scan algorithm that has one): ``{"target", "usage", "occurrences", "sources", "kinds"}``, most
     occurrences first. The occurrences add up to ``view.pqc_vulnerable``."""
     groups: dict[tuple[str, str], list[AssetAgg]] = {}
-    for asset in quantum_vulnerable_assets(view):
+    for asset in assets:
         usage = asset_usage(asset)
         recorded = asset.pqc_migration_target if asset.asset_type == ASSET_ALGORITHM else None
         target = recorded or pq_target(usage) or USAGE_LABELS[USAGE_UNKNOWN]
@@ -353,4 +338,4 @@ __all__ = ["KINDS", "KIND_LABELS", "KIND_LAYER", "LAYERS", "LAYER_LABELS", "LAYE
            "USAGE_LABELS", "asset_identity", "asset_kind", "asset_usage", "collections_by_key",
            "current_assets_by_source", "grade_split_text", "kind_counts", "layer_label", "layer_rows", "pq_target",
            "pqc_target_groups", "quantum_vulnerable_assets", "reconciliation_counts", "reconciliation_line",
-           "reconciliation_steps", "source_layer", "source_metadata"]
+           "reconciliation_steps", "source_layer", "source_metadata", "target_groups"]
