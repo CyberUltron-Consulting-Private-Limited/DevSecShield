@@ -221,9 +221,10 @@ def steps(pop: Population) -> list[dict[str, Any]]:
         rest = [f"{q['symmetric']} symmetric or hash", f"{q['no_algorithm']} with no algorithm recorded"]
         if q["code_other"]:
             rest.append(f"{q['code_other']} code-scan certificate or key row{'' if q['code_other'] == 1 else 's'}")
-        # each part counted: the collected rows by their function (waves.plan_exclusion), the code rows by type
-        gap_q = q["occurrences"] - (q["code_planned"] + q["code_other"] + q["sources"])
-        gap_q += q["sources"] - (q["sources_planned"] + q["symmetric"] + q["no_algorithm"])
+        # each part counted: the collected rows by their function (waves.plan_exclusion), the code rows by type. The
+        # two closures are checked apart, so a surplus in one never hides a shortfall in the other
+        gap_split = q["occurrences"] - (q["code_planned"] + q["code_other"] + q["sources"])
+        gap_kind = q["sources"] - (q["sources_planned"] + q["symmetric"] + q["no_algorithm"])
         add("quantum", q["occurrences"],
             f"Quantum-vulnerable: {_n(q['occurrences'], 'occurrence')} carry a quantum-vulnerable verdict (the "
             f"dashboard card and the readiness figure) = {q['planned']} public-key assets the PQC Migration Roadmap "
@@ -231,7 +232,8 @@ def steps(pop: Population) -> list[dict[str, Any]]:
             + (f" The register counts each estate asset once: {register_numbers(pop.register)[SC.BROKEN]} "
                f"quantum-broken and {register_numbers(pop.register)[SC.DEPRECATED]} deprecated."
                if pop.register is not None else "")
-            + _unexplained("quantum-vulnerable", gap_q))
+            + _unexplained("quantum-vulnerable occurrences to code and collected assets", gap_split)
+            + _unexplained("collected quantum-vulnerable assets to planned, symmetric and no algorithm", gap_kind))
     return out
 
 

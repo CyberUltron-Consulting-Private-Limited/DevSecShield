@@ -814,3 +814,51 @@ def test_review_m5_the_symmetric_class_rule(asset_type, algorithm, qv, facts, ex
     got = P.classify_pqc({"asset_type": asset_type, "algorithm": algorithm, "quantum_vulnerable": qv, "facts": facts})
     assert got == expected
     assert P.CLASS_BASIS[got[1]][0] == got[0]
+
+
+# ============================================================================ follow-up of review 6038529822 (B1, M5)
+def test_b1_the_quantum_step_reports_each_closure_apart():
+    """The quantum-vulnerable step closes twice (occurrences = code + collected; collected = planned + symmetric + no
+    algorithm). A surplus in one closure must not hide a shortfall in the other: before, the two gaps were summed, so
+    +1 and -1 printed no "Unexplained difference" at all."""
+    quantum = {"occurrences": 6, "code_planned": 1, "code_other": 0, "sources": 4,  # 6 vs 1 + 4: +1
+               "sources_planned": 3, "symmetric": 1, "no_algorithm": 1, "planned": 4}  # 4 vs 3 + 1 + 1: -1
+    pop = RECON.Population(collections=0, collected=0, sources_occurrences=0, code_occurrences=0, occurrences=0,
+                           quantum=quantum)
+    text = next(s["text"] for s in RECON.steps(pop) if s["key"] == "quantum")
+    assert "Unexplained difference +1" in text and "Unexplained difference -1" in text, text
+    closed = RECON.Population(collections=0, collected=0, sources_occurrences=0, code_occurrences=0, occurrences=0,
+                              quantum={**quantum, "occurrences": 5, "sources_planned": 2})
+    assert "Unexplained" not in next(s["text"] for s in RECON.steps(closed) if s["key"] == "quantum")
+
+
+def test_review_m5_drift_readiness_and_the_cbom_export_read_the_symmetric_rule(tmp_path):
+    """M5 is one fact: a symmetric key a collector marked quantum-vulnerable is not. Drift's readiness (the drift
+    report) and the signed CycloneDX export read the stored verdict directly before this fix, so AES-256 counted as
+    vulnerable in drift's readiness and the export said ``zs:quantum_vulnerable`` true and quantum level 0 for it,
+    next to its quantum-safe class."""
+    from backend.utilities.cbom_sources import drift as D
+    from backend.utilities.cbom_sources import inventory as INV
+    from backend.utilities.cbom_sources import posture as P
+
+    w, run = _parity_team(tmp_path)
+    with Session(w.engine) as s:
+        rows = list(s.exec(select(CbomCollectedAsset).where(CbomCollectedAsset.run_id == run)).all())
+        symmetric = [r for r in rows if r.name in ("aes-128", "aes-256", "hmac", "default")]
+        assert len(symmetric) == 4 and all(r.quantum_vulnerable is True for r in symmetric)  # as the collector said
+        views = D.node_views(rows, "src", reclassify=False)
+        judged = [v for v in views.values() if v.judged]
+        vulnerable = sum(1 for v in judged if v.extra.get("pqc_class") == "quantum-vulnerable")
+        assert sum(1 for v in judged if v.quantum_vulnerable is True) == vulnerable  # the class and the verdict agree
+        unknown = sum(1 for v in views.values() if not v.judged and v.extra.get("pqc_class") == "unknown")
+        assert D.readiness(views) == P.readiness_pct(vulnerable, len(judged), unknown)
+        doc = INV.cyclonedx(s, s.get(CbomCollectionRun, run), dt.datetime(2026, 11, 20, 9))  # noqa: DTZ001
+    by_name = {c.get("name"): c for c in doc["components"]}
+    for name in ("aes-256", "hmac", "default"):
+        comp = by_name[name]
+        props = {p["name"]: p["value"] for p in comp.get("properties", [])}
+        assert props["zs:quantum_vulnerable"] == "false", (name, props)
+        level = ((comp.get("cryptoProperties") or {}).get("algorithmProperties") or {}).get("nistQuantumSecurityLevel")
+        assert level != 0, (name, level)
+    signer = {p["name"]: p["value"] for p in by_name["signer"].get("properties", [])}
+    assert signer["zs:quantum_vulnerable"] == "true"  # a public-key verdict is kept as stored

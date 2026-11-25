@@ -827,7 +827,10 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
     ref = f"zs-asset-{row.id}"
     pqc = POSTURE.graded_class(row, list(view["finding_codes"]), elsewhere=elsewhere)
     # one "unknown" per document (OB-7): a verdict-less row reads unknown only when its class is unknown
-    qv_text = str(row.quantum_vulnerable).lower() if row.quantum_vulnerable is not None else (
+    # the verdict the class and the grade read (review 6038529822 M5): a symmetric cipher, MAC or hash a collector
+    # marked quantum-vulnerable is not, so the document never says "true" (or quantum level 0) next to quantum-safe
+    verdict = POSTURE.stored_verdict(row)
+    qv_text = str(verdict).lower() if verdict is not None else (
         "unknown" if pqc[0] == "unknown" else "not-applicable")
     props = [
         {"name": "zs:location", "value": row.location},
@@ -914,14 +917,14 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
             "parameterSetIdentifier": str(row.key_size) if row.key_size else None,
             "mode": (mode if mode in _CDX_MODES else "other") if mode else None,
             # CycloneDX allows the quantum level only on algorithms: 0 means a quantum computer breaks it
-            "nistQuantumSecurityLevel": 0 if row.quantum_vulnerable is True else None,
+            "nistQuantumSecurityLevel": 0 if verdict is True else None,
         }.items() if v is not None and v != ""}
         # D11 / A-14: the OID and quantum level from algid (the single source of algorithm identities)
         known = algid_identity(row.algorithm or name)
         if "oid" in known:
             crypto["oid"] = known["oid"]
         level = known.get("nistQuantumSecurityLevel")
-        if level is not None and not (level == 0 and row.quantum_vulnerable is False):  # the row's own verdict wins
+        if level is not None and not (level == 0 and verdict is False):  # the row's own verdict wins
             crypto["algorithmProperties"].setdefault("nistQuantumSecurityLevel", level)
         if "parameterSetIdentifier" in known:
             crypto["algorithmProperties"].setdefault("parameterSetIdentifier", known["parameterSetIdentifier"])

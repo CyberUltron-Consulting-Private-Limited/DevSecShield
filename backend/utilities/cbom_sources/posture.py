@@ -354,10 +354,11 @@ def symmetric_key(asset_type: str, algorithm: Any, facts: Mapping[str, Any] | No
     return None
 
 
-def stored_verdict(row: Any) -> bool | None:
+def stored_verdict(row: Any, *, quantum_vulnerable: Any = _ROW) -> bool | None:
     """The stored quantum verdict as every count reads it: a symmetric cipher, MAC or hash (``symmetric_key``) a
-    collector marked quantum-vulnerable is not (review 6038529822 M5); anything else as stored."""
-    qv = _get(row, "quantum_vulnerable")
+    collector marked quantum-vulnerable is not (review 6038529822 M5); anything else as stored. ``quantum_vulnerable``
+    stands in for the stored verdict when a caller re-judged the row (drift's ``reclassify``)."""
+    qv = _get(row, "quantum_vulnerable") if quantum_vulnerable is _ROW else quantum_vulnerable
     if qv is True:
         facts = _get(row, "facts")
         if symmetric_key(str(_get(row, "asset_type") or ""), _get(row, "algorithm"),
