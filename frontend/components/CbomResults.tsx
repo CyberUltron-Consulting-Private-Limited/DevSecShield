@@ -73,7 +73,6 @@ import {
 } from "@/components/cbom/CbomCryptoCharts";
 import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRollup";
 import { CertHygieneSection } from "@/components/cbom/certificates/CertHygiene";
-import { bindingCompliance, ComplianceApplicabilityContext, type ComplianceApplicability } from "@/components/compliance/teamApplicability";
 import { CodeChanges } from "@/components/cbom/sources/ChangesPanel";
 import { CodeWavesPanel } from "@/components/cbom/sources/WavesControls";
 import { CertInLanePosture } from "@/components/certin/CertInLanePosture";
@@ -87,6 +86,7 @@ import { useDialogNav } from "@/components/cbom/results/useDialogNav";
 import { InfoTipDrawerProvider } from "@/components/ui/info-tip-drawer";
 import { ComplianceMappingSection } from "@/components/cbom/results/ComplianceSummary";
 import { buildComplianceSummary, runDrillFilters, type DrillTarget } from "@/components/cbom/results/complianceSummary";
+import { bindingCompliance, ComplianceApplicabilityContext, type ComplianceApplicability } from "@/components/compliance/teamApplicability";
 import { RunFindingDialog } from "@/components/cbom/results/RunFindingDialog";
 import { ColumnChooser, useColumnPrefs } from "@/components/cbom/results/ColumnChooser";
 import { FINDING_DIALOG_BODY, FINDING_DIALOG_CONTENT, FINDING_DIALOG_FULLSCREEN_SM, rowOpenProps, SCAN_TABLE_COLUMNS, STICKY_ACTIONS } from "@/components/cbom/results/findingTable";
