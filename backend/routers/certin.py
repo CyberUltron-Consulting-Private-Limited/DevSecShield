@@ -37,6 +37,7 @@ from backend.get_db import get_db
 from backend.new_models import Scan, scan_types
 from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
 from backend.utilities.cbom_sources import bom_signing as SIGN
+from backend.utilities.compliance import served_artifacts as ARTIFACTS
 from backend.utilities.compliance import served_bom as SERVED
 from backend.utilities.compliance.certin_attest import (
     compliance_key_for,
@@ -456,6 +457,47 @@ async def download_scan_bom(
         **PRIVATE, "Content-Disposition": f'attachment; filename="cbom-cyclonedx-{scan_id}.cdx.xml"', **scope, **signed})
 
 
+async def _artifact_response(team_id: int, scan_id: int, artifact: str, authorization: str | None) -> Response:
+    """The AI BOM's stored SPDX 3.0 / SARIF 2.1.0 file (``served_artifacts``) with a detached ES256 signature over the
+    exact bytes (``X-ZS-Signature``, as for the CBOM XML; D5 / review 6036875286). Verify it with
+    ``zs_bom_verify.py detached FILE FILE.sig`` (the pack carries the ``.sig``), or send the file and the header's base64
+    value to ``POST /signature/verify``, which binds it to the scan by its bytes (``_own_artifact``)."""
+    from backend.utilities.cbom_sources import cdx_xml
+
+    engine = get_db()
+    user = await get_user_from_header_or_raise_exception(engine, authorization)
+    check_if_user_is_in_team(user.id, team_id, engine)
+    scan = _load_success_scan(engine, team_id, "ai_bom", scan_id)
+    body = ARTIFACTS.stored_artifact(scan.scan_data, artifact)
+    if body is None:
+        raise HTTPException(status_code=409, detail=f"No {ARTIFACTS.ARTIFACTS[artifact][3]} is stored for this scan")
+    signed = SIGN.signature_headers(hashlib.sha256(body).digest())
+    scope = {} if signed["X-ZS-Signature"] == "unsigned" else {"X-ZS-Signature-Scope": cdx_xml.SIGNATURE_SCOPE}
+    return Response(body, media_type=ARTIFACTS.ARTIFACTS[artifact][1], headers={
+        **PRIVATE, **signed, **scope,
+        "Content-Disposition": f'attachment; filename="{ARTIFACTS.file_name(scan_id, artifact)}"'})
+
+
+@router.get("/{team_id}/ai_bom/scan/{scan_id}/spdx", dependencies=[Depends(read_limiter), access.team("scan.read")])
+async def download_ai_bom_spdx(
+    team_id: int,
+    scan_id: int,
+    Authorization: Annotated[str | None, Header()] = None,
+):
+    """The AI BOM scan's SPDX 3.0.1 JSON-LD document, as stored, signed detached."""
+    return await _artifact_response(team_id, scan_id, "spdx", Authorization)
+
+
+@router.get("/{team_id}/ai_bom/scan/{scan_id}/sarif", dependencies=[Depends(read_limiter), access.team("scan.read")])
+async def download_ai_bom_sarif(
+    team_id: int,
+    scan_id: int,
+    Authorization: Annotated[str | None, Header()] = None,
+):
+    """The AI BOM scan's SARIF 2.1.0 log, as stored, signed detached."""
+    return await _artifact_response(team_id, scan_id, "sarif", Authorization)
+
+
 def _signed_bom_bytes(bom: dict, *, indent: int | None = None) -> bytes:
     """The stored BOM as served: with an embedded JSF ES256 signature (``bom_signing``; D11 / G-X-3) when the
     deployment has a key, else as stored. The stored ``bom_signature`` HMAC still verifies it (``cert_in/sign.py``
@@ -489,7 +531,9 @@ async def verify_scan_bom_signature(
 
     ``valid`` is true only when the signature is this deployment's AND the file is this scan's (D4): the
     ``zs:scan_id``, ``zs:scan_type`` and ``zs:team_id`` the server stamped on the BOM / VEX, or the pack manifest's
-    ``subject`` (kind, scan id, team), never a serial number alone (review 6029745818 N1). ``signed_by_deployment``
+    ``subject`` (kind, scan id, team), never a serial number alone (review 6029745818 N1); an AI BOM's SPDX / SARIF
+    file, which carries no such stamp, by being this scan's own stored file byte for byte (review 6038801363 m-1).
+    ``signed_by_deployment``
     says the first alone (a file of another scan or team is ``valid: false`` with ``signed_by_deployment: true``).
     JSON that is not I-JSON (duplicate member names, NaN, out-of-range numbers), far denser than any BOM, or carrying a
     malformed signature member is 400 (a body that is not JSON at all is ``valid: false``, as before); one over 64 MB
@@ -528,6 +572,20 @@ def _malformed(reason: str) -> HTTPException:
     return HTTPException(status_code=400, detail=f"Not verified: {reason}")
 
 
+def _own_artifact(scan_type: str, data: dict, sha256_hex: str) -> str | None:
+    """``ai_bom-spdx`` / ``ai_bom-sarif`` when ``sha256_hex`` is that of this scan's own stored SPDX / SARIF file as
+    GET /spdx and /sarif serve it, else None. Those files carry no ``zs:`` subject stamp (the stored documents stay
+    unchanged and SHACL-valid), so the binding of N1 is the scan's own bytes: another scan's or team's file has other
+    bytes (review 6038801363 m-1). The route loaded ``data`` for this team's scan only."""
+    if scan_type != "ai_bom":
+        return None
+    for artifact in ARTIFACTS.ARTIFACTS:
+        body = ARTIFACTS.stored_artifact(data, artifact)
+        if body is not None and hashlib.sha256(body).hexdigest() == sha256_hex:
+            return f"ai_bom-{artifact}"
+    return None
+
+
 def _verify_scan_file(scan_type: str, scan_id: int, data: dict, upload: Any, sent_b64: str | None, *,
                       team_id: int) -> dict:
     import base64
@@ -564,6 +622,12 @@ def _verify_scan_file(scan_type: str, scan_id: int, data: dict, upload: Any, sen
                     return {**out, "method": "detached ES256", "valid": False, "reason": str(exc)}
                 if not checked["valid"]:
                     return {**out, "method": "detached ES256", **checked, "signed_by_deployment": False}
+                own = _own_artifact(scan_type, data, out["sha256"])
+                if own:  # an AI BOM's SPDX / SARIF carries no zs: stamp: its bytes are the scan's own stored file
+                    return {**out, "method": "detached ES256", **checked, "signed_by_deployment": True, "bound": True,
+                            "file_subject": {"scan_id": scan_id, "scan_type": scan_type, "team_id": team_id,
+                                             "kind": own},
+                            "valid": True}
                 return bound(checked, SIGN.file_subject(fh, upload.size), "detached ES256")
             try:
                 doc = BV.loads_file(fh)
@@ -689,6 +753,11 @@ def _pack_members(scan_type: str, scan_id: int, team_id: int, data: dict, bom: d
                 files.append(("bom.cdx.xml", cdx_xml.to_xml(bom)))
             except Exception as e:  # never fail the pack over the XML copy
                 console.print(f"evidence-pack XML skipped: {e.__class__.__name__}", style="yellow")
+    if scan_type == "ai_bom":  # D5: the SPDX 3.0 and SARIF files as GET /spdx and /sarif serve them, signed detached
+        for artifact, member in (("spdx", "bom.spdx.json"), ("sarif", "bom.sarif")):
+            body = ARTIFACTS.stored_artifact(data, artifact)
+            if body is not None:
+                files.append((member, body))
     if isinstance(data.get("vex_json"), dict):  # D7: signed inside (JSF) and detached, like the BOM
         files.append(("vex.json", _signed_bom_bytes(_served_vex(scan_type, scan_id, team_id, data["vex_json"], bom),
                                                      indent=2)))
@@ -712,7 +781,8 @@ def _pack_members(scan_type: str, scan_id: int, team_id: int, data: dict, bom: d
     try:
         files += SIGN.pack_files(files, subject={"kind": f"{scan_type}-scan", "scan_id": scan_id, "team_id": team_id,
                                                  "bom_serial": (bom or {}).get("serialNumber")},
-                                 detached_for=[n for n, _b in files if n.startswith("bom.cdx.") or n == "vex.json"])
+                                 detached_for=[n for n, _b in files if n.startswith(("bom.cdx.", "bom.spdx.", "bom.sarif"))
+                                               or n == "vex.json"])
     except SIGN.SigningUnavailable as exc:  # say so in the pack (review 6029745818 minor 4); the reason names no value
         files.append(("UNSIGNED.txt", SIGN.unsigned_note(str(exc)).encode("utf-8")))
     return files

@@ -4,6 +4,7 @@
 import api from "@/utils/interceptors"
 import { showErrorToast } from "@/utils/error-handler"
 import { saveBlob } from "@/utils/download"
+import { downloadServedBom } from "@/utils/api/bomDownload"
 import type { CbomAssetDetail, CbomRunPosture } from "@/utils/backend_api"
 import type { AgilityDetail, AgilityPosture, QExplain, QGradeFields, QPosture } from "@/components/cbom/grade/model"
 import type { StandardRow } from "@/components/cbom/standards/model"
@@ -67,8 +68,7 @@ export type CbomAssetDetailWithExposure = Omit<CbomAssetDetail, "library"> & {
  * covers the JSON form. */
 export async function downloadCbomScanBom(teamId: string | number, scanId: string | number, format: CycloneDxFormat) {
   try {
-    const response = await api.get(`/${teamId}/cbom/scan/${scanId}/bom`, { params: { format }, responseType: "blob" })
-    saveBlob(response.data as Blob, `cbom-cyclonedx-${scanId}.cdx.${format}`)
+    return await downloadServedBom(teamId, "cbom", scanId, format)  // the server's bytes and file name
   } catch (error) {
     showErrorToast(error, `Failed to download the CycloneDX ${format.toUpperCase()}`)
     throw error
