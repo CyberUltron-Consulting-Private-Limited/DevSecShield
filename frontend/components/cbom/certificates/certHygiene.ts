@@ -6,6 +6,14 @@ import api from "@/utils/interceptors";
 
 export const HYGIENE_FLAGS = ["unmanaged", "prober_only", "orphaned", "no_owner", "expired_served", "stale"] as const;
 export type HygieneFlag = (typeof HYGIENE_FLAGS)[number];
+// The flags offered as filter chips. "stale" stays in the API's vocabulary but is never set: the list holds each
+// source's latest collection, the D8 rule, so no listed certificate can be "not seen lately" (review 6039899144 M5).
+export const SHOWN_FLAGS = HYGIENE_FLAGS.filter((f) => f !== "stale");
+// What the list holds, printed under it (replaces the old "Not seen lately" footnote, review 6039899144 M5).
+export const LIST_BASIS_NOTE =
+  "Lists the certificates in the code scans and in each source's latest collection, the rule the Certificate Estate " +
+  "Register (D8) uses. A certificate no longer collected is reported by drift; a newer collection that read nothing " +
+  "does not replace a source's last read.";
 
 export const FLAG_LABEL: Record<HygieneFlag, string> = {
   unmanaged: "Unmanaged",

@@ -147,13 +147,17 @@ def test_formula_like_cells_are_neutralised():
 
 
 def test_the_list_is_the_d8_list_when_a_source_reads_nothing_later(api, estate):
-    """Staging QA Q3-04: the list is ``cert_estate.unique_certificates`` (D8's), not the estate store: a certificate
-    only a source's older collection held is in neither (the drift report states it), so nothing listed is stale."""
+    """Staging QA Q3-04: the list is ``cert_estate.unique_certificates`` (D8's), not the estate store, so nothing
+    listed is stale.  Review 6039899144 M4: a newer collection that read nothing (the file collector's three failed
+    runs, outcome "failed", no rows) never replaces the source's last real read, so its certificates stay in both
+    (before: they left the list and D8, 4 -> 2)."""
     from backend.utilities.cbom_sources.cert_estate import unique_certificates
     from backend.utilities.dashboard.cbom_team_rollup import load_core_view
     from sqlmodel import Session
 
     engine, hdr = estate["engine"], estate["hdr"]
+    HYG.clear_cache()
+    before = _list(api, all="true")
     for n in range(2, 5):  # three more runs: the probe sees its endpoints; the file collector reads nothing
         _run(api, f"hyg-run-{n:04d}")
         for _ in range(2):
@@ -168,8 +172,9 @@ def test_the_list_is_the_d8_list_when_a_source_reads_nothing_later(api, estate):
     body = _list(api, all="true")
     with Session(engine) as session:
         d8 = unique_certificates(load_core_view(session, 1))
-    assert body["counts"]["certificates"] == len(d8) == 2
-    assert set(_by_subject(body)) == {"CN=a.lab", "CN=old.lab"} == {c.subject for c in d8.certificates}
+    assert body["counts"]["certificates"] == len(d8) == before["counts"]["certificates"] == 4
+    assert set(_by_subject(body)) == set(_by_subject(before)) == {c.subject for c in d8.certificates}
+    assert {"CN=a.lab", "CN=old.lab"} <= set(_by_subject(body))
     assert body["counts"]["by_flag"]["stale"] == 0
 
 

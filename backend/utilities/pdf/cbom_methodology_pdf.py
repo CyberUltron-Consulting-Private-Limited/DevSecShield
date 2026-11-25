@@ -69,6 +69,7 @@ from backend.utilities.dashboard.cbom_team_rollup import (
     FrameworkPool,
     ScanFacts,
     TeamCbomView,
+    newer_attempt_note,
 )
 from backend.utilities.pdf import cbom_deliverable_text as authored
 from backend.utilities.pdf import cbom_methodology_text as method
@@ -1017,7 +1018,8 @@ def _collection_row(collection: Any) -> list[object]:
         collection.source_name or collection.label,
         spec.label if spec else (collection.source_kind or "Deleted source"),
         f"{spec.layer} {spec.method}" if spec else _DASH,
-        fmt_date_utc(collection.observed_at),
+        # a newer attempt that read nothing did not replace this collection (review 6039899144 M4): say so
+        fmt_date_utc(collection.observed_at) + (f" ({note})" if (note := newer_attempt_note(collection)) else ""),
         str(int(collection.asset_count or 0)),
         str(int(collection.endpoints_probed or 0)),
     ]

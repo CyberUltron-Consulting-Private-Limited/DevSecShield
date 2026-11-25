@@ -7,7 +7,8 @@ import { useState } from "react";
 import {
   FLAG_LABEL,
   FLAG_TONE,
-  HYGIENE_FLAGS,
+  LIST_BASIS_NOTE,
+  SHOWN_FLAGS,
   downloadHygieneCsv,
   expiryText,
   flagLabel,
@@ -30,7 +31,7 @@ export function FlagChip({ flag, title }: { flag: string; title?: string }) {
   );
 }
 
-/** The flag counts as filter buttons (every flag listed, 0 included). */
+/** The flag counts as filter buttons (every flag that can be set, 0 included). */
 export function HygieneSummary({ page, active, onPick }: {
   page: Pick<HygienePage, "counts" | "flags">;
   active: HygieneFlag | null;
@@ -43,7 +44,7 @@ export function HygieneSummary({ page, active, onPick }: {
               onClick={() => onPick?.(null)}>
         Flagged {page.counts.flagged} of {page.counts.certificates}
       </button>
-      {HYGIENE_FLAGS.map((f) => (
+      {SHOWN_FLAGS.map((f) => (
         <button key={f} type="button" aria-pressed={active === f} title={page.flags[f]}
                 className={`${BTN} ${active === f ? "border-blue-500" : ""}`} onClick={() => onPick?.(active === f ? null : f)}
                 data-testid={`cert-hygiene-flag-${f}`} data-count={page.counts.by_flag[f] ?? 0}>
@@ -52,6 +53,11 @@ export function HygieneSummary({ page, active, onPick }: {
       ))}
     </div>
   );
+}
+
+/** What the list holds (the D8 rule), shown under it. */
+export function ListBasisNote() {
+  return <p className="text-xs text-zinc-500 dark:text-zinc-400" data-testid="cert-hygiene-basis">{LIST_BASIS_NOTE}</p>;
 }
 
 function Observations({ cert }: { cert: HygieneCert }) {
@@ -161,9 +167,7 @@ export function CertHygieneSection({ teamId }: { teamId: number }) {
               {query.isFetchingNextPage ? "Loading…" : `Load more (${items.length} of ${first.total})`}
             </button>
           )}
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            &quot;Not seen lately&quot; = not read for {first.stale_runs} or more collections of the sources that knew it.
-          </p>
+          <ListBasisNote />
         </>
       )}
     </section>

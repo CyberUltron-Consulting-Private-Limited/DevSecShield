@@ -278,6 +278,12 @@ def node_items(session: Session, team_id: int, run: CbomCollectionRun, *,
     query = select(CbomCollectedAsset).where(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run.id)
     if asset_ids is not None:
         query = query.where(CbomCollectedAsset.id.in_(list(asset_ids)))  # type: ignore[union-attr]
+    else:
+        # the whole run: one item per resource, the rows the run's assets API lists (review 6039899144 B1: the waves
+        # and the run's tickets planned both jobs' rows, 458 for 229).  Ids a caller names are its own choice.
+        from backend.utilities.cbom_sources import resource_identity as RI
+
+        query = query.where(RI.kept_clause(RI.run_fold(session, team_id, int(run.id or 0))))
     from backend.utilities.cbom_sources.classify import shown
 
     items = []

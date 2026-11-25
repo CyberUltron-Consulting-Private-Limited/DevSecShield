@@ -319,8 +319,18 @@ def test_b_only_when_forward_secrecy_is_not_supported_at_all():
     assert none.letter == "B" and any("no forward secrecy" in c for c in none.caps)
 
 
-def test_ssl3_caps_at_b_and_ssl3_as_the_best_protocol_fails():
-    assert _g(["SSLv3", "TLSv1.2", "TLSv1.3"], {"TLSv1.2": [GCM12], "TLSv1.3": [AES13]}).letter == "B"
+def test_ssl3_with_cbc_caps_at_c_and_ssl3_as_the_best_protocol_fails():
+    """SSL Labs Server Rating Guide 2009g: "Cap to C if vulnerable to POODLE" (SSL 3 with a CBC suite is, by
+    construction, CVE-2014-3566); 2009h: "Cap to B if SSL 3 is supported" (without CBC); 2009i: SSL 3 as the best
+    protocol fails (review 6039899144 M3: this test said B for SSL 3 + CBC)."""
+    cbc = _g(["SSLv3", "TLSv1.2", "TLSv1.3"], {"SSLv3": ["TLS_RSA_WITH_AES_128_CBC_SHA"], "TLSv1.2": [GCM12],
+                                               "TLSv1.3": [AES13]})
+    assert cbc.letter == "C" and "SSL 3 offered with a CBC suite (POODLE)" in cbc.caps
+    unknown = _g(["SSLv3", "TLSv1.2", "TLSv1.3"], {"TLSv1.2": [GCM12], "TLSv1.3": [AES13]})
+    assert unknown.letter == "C" and any("taken as CBC" in c for c in unknown.caps)
+    rc4 = _g(["SSLv3", "TLSv1.2", "TLSv1.3"], {"SSLv3": ["TLS_RSA_WITH_RC4_128_SHA"], "TLSv1.2": [GCM12],
+                                               "TLSv1.3": [AES13]})
+    assert rc4.letter == "B" and "SSL 3 offered" in rc4.caps and not any("POODLE" in c for c in rc4.caps)
     assert _g(["SSLv3"], {"SSLv3": ["TLS_RSA_WITH_AES_128_CBC_SHA"]}).letter == "F"
 
 
@@ -372,6 +382,15 @@ def test_rubric_documents_every_divergence():
     text = " ".join(rule for _part, rule in NE.RUBRIC)
     for needle in ("Heartbleed", "ROBOT", "HSTS", "trust store", "SNI", "reference browsers"):
         assert needle in text
+    # review 6039899144 M3 / m2: the POODLE cap is a Cap C row, the static RSA warning is labelled a product rule,
+    # and the TLS 1.3-only and under-112-bit departures from 2009j / 2009n are Divergence rows; no literal backticks
+    rules = dict(NE.RUBRIC)
+    assert "POODLE (2009g)" in rules["Cap C"] and "SSL 3 offered (2009h)" in rules["Cap B"]
+    assert "2009e" not in rules["A-"] and "product rule" in rules["A-"]
+    divergences = " ".join(rule for part, rule in NE.RUBRIC if part == "Divergence")
+    assert "Product rule, not in the guide: static RSA" in divergences
+    assert "only TLS 1.3 is not capped at C" in divergences and "under 112 bits" in divergences
+    assert "`" not in text
 
 
 # ------------------------------------------------------------------------------------------------ Q3-05 grade in the run API

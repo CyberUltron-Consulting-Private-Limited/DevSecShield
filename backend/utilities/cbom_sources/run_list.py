@@ -109,16 +109,45 @@ def _empty_counts() -> dict[str, Any]:
             "asset_count": 0, "endpoints_probed": 0}
 
 
-def asset_counts(session: Session, team_id: int, run_ids: Iterable[int]) -> dict[int, int]:
-    """THE asset count of each run (issue #159, Rule P): every stored row of the run, ``coverage`` rows included, the
-    number the CBOM Scans table, Review & Run (``GET /runs``) and the run's assets API (``total`` / ``all_total`` of
-    the unfiltered list) show. One grouped query; a run of another team (or with no rows) counts 0."""
+def folded_out(session: Session, team_id: int, run_ids: Iterable[int]) -> list[int]:
+    """The row ids of these runs that another job of the same run also read (``resource_identity.run_fold``: one
+    resource counted once, staging QA Q3-01), so every run surface counts the rows the run's assets API lists (Rule P,
+    review 6039899144 B1: the Scans table and ``GET /runs`` said 458 where the list and the posture said 229).  One
+    grouped query finds the runs with two or more jobs; only those are folded (a run with one job reads no rows)."""
+    from backend.utilities.cbom_sources import resource_identity as RI
+
+    ids = sorted({int(i) for i in run_ids})
+    if not ids:
+        return []
+    multi = session.exec(select(CbomCollectionJob.run_id).where(
+        CbomCollectionJob.team_id == team_id, CbomCollectionJob.run_id.in_(ids))  # type: ignore[union-attr]
+        .group_by(CbomCollectionJob.run_id).having(func.count() > 1)).all()
+    out: list[int] = []
+    for run_id in sorted(int(r) for r in multi if r is not None):
+        out.extend(RI.run_fold(session, team_id, run_id).dropped_ids)
+    return out
+
+
+def _kept(dropped: list[int]) -> Any:
+    from sqlalchemy import true
+
+    return CbomCollectedAsset.id.notin_(dropped) if dropped else true()  # type: ignore[union-attr]
+
+
+def asset_counts(session: Session, team_id: int, run_ids: Iterable[int],
+                 dropped: list[int] | None = None) -> dict[int, int]:
+    """THE asset count of each run (issue #159, Rule P): every stored row of the run, ``coverage`` rows included, a
+    resource two jobs of the run read counted once (``folded_out``), the number the CBOM Scans table, Review & Run
+    (``GET /runs``) and the run's assets API (``total`` / ``all_total`` of the unfiltered list) show. One grouped
+    query; a run of another team (or with no rows) counts 0."""
     ids = sorted({int(i) for i in run_ids})
     out = {i: 0 for i in ids}
     if not ids:
         return out
+    dropped = folded_out(session, team_id, ids) if dropped is None else dropped
     query = (select(CbomCollectedAsset.run_id, func.count())
-             .where(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id.in_(ids))  # type: ignore[union-attr]
+             .where(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id.in_(ids),  # type: ignore[union-attr]
+                    _kept(dropped))
              .group_by(CbomCollectedAsset.run_id))
     for run_id, count in session.exec(query).all():
         out[int(run_id)] = int(count or 0)
@@ -133,13 +162,15 @@ def grouped_counts(session: Session, team_id: int, run_ids: Iterable[int]) -> di
     out: dict[int, dict[str, Any]] = {i: _empty_counts() for i in ids}
     if not ids:
         return out
-    for run_id, count in asset_counts(session, team_id, ids).items():
+    dropped = folded_out(session, team_id, ids)  # one resource counted once, as the run's list (B1)
+    for run_id, count in asset_counts(session, team_id, ids).items():  # the one count function (issue #159)
         out[run_id]["asset_count"] = count
     net = case((CbomCollectedAsset.asset_type.in_(sorted(NETWORK_TYPES)), 1), else_=0)  # type: ignore[union-attr]
     cov = case((CbomCollectedAsset.asset_type == COVERAGE, 1), else_=0)
     query = (select(CbomCollectedAsset.run_id, CbomCollectedAsset.impact, CbomCollectedAsset.quantum_vulnerable, net,
                     cov, func.count())
-             .where(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id.in_(ids))  # type: ignore[union-attr]
+             .where(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id.in_(ids),  # type: ignore[union-attr]
+                    _kept(dropped))
              .group_by(CbomCollectedAsset.run_id, CbomCollectedAsset.impact, CbomCollectedAsset.quantum_vulnerable, net,
                        cov))
     for run_id, impact, qv, is_net, is_cov, count in session.exec(query).all():
@@ -369,7 +400,7 @@ def clear_cache() -> None:
     _COUNTS.clear()
 
 
-__all__ = ["ASSIGNMENT_TO_FINDING", "COUNTS_BASIS", "LIST_LIMIT", "RUN_TO_UNIFIED", "asset_counts", "clear_cache",
+__all__ = ["ASSIGNMENT_TO_FINDING", "COUNTS_BASIS", "LIST_LIMIT", "RUN_TO_UNIFIED", "asset_counts", "clear_cache", "folded_out",
            "finding_status",
            "grouped_counts", "list_run_rows", "list_runs_for_scan_list", "log_line", "runs_for_scan_list", "run_row", "unified_run_status"]
 

@@ -422,10 +422,11 @@ def register(
     noun: str = "rows",
     cap: int = MAX_ROWS,
     more: str = "",
+    cell_limit: int = 300,
 ) -> list[Flowable]:
     """A register table.  Above ``cap`` rows only the first ``cap`` are printed, after a note giving the exact number
     left out (shown + omitted == rows, plus the view's own cut for a VIEW_CAPPED_REGISTERS key); ``more`` says where
-    the full list is."""
+    the full list is.  ``cell_limit``: characters a cell keeps (``dense_table``; a rubric of rules needs more)."""
     body = [list(row) for row in rows]
     limit = max(1, int(cap))
     dropped = (
@@ -445,7 +446,7 @@ def register(
                 styles,
             )
         )
-    flow.append(dense_table(headers, body, fit_widths(weights, width), manual_cols=manual))
+    flow.append(dense_table(headers, body, fit_widths(weights, width), manual_cols=manual, cell_limit=cell_limit))
     return flow
 
 

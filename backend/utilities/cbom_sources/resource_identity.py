@@ -31,6 +31,9 @@ Pure functions plus ``run_fold`` (one light query per run; imports ``sqlmodel`` 
 """
 from __future__ import annotations
 
+import re
+import threading
+from collections import OrderedDict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -43,23 +46,123 @@ _NOT_FOLDED = _CERTS | frozenset({"crypto_library", "process_library", "coverage
 _ENDPOINTS = frozenset({"tls_endpoint", "ssh_endpoint", "ike_endpoint", "ot_endpoint", "database_tls"})
 
 
+# a GCP resource name is ``projects/<project>/<collection>/...`` (cloud.google.com/apis/design/resource_names); a
+# relative file path such as ``projects/billing/key.pem`` is not one (review 6039899144 M2)
+_GCP_NAME = re.compile(r"^projects/[^/\s#]+/(?:locations|secrets|global|regions|zones|serviceAccounts|keyRings)/")
+_GCP_FULL = re.compile(r"^//[a-z0-9.-]+\.googleapis\.com/")  # a full resource name (//storage.googleapis.com/...)
+# Azure resource ids start at the root (``/subscriptions/<id>/...``); Key Vault / Managed HSM object ids are URLs on
+# the vault's own host, per cloud (learn.microsoft.com/azure/key-vault/general/about-keys-secrets-certificates)
+_AZURE_VAULT_HOSTS = (".vault.azure.net", ".vault.azure.cn", ".vault.usgovcloudapi.net", ".vault.microsoftazure.de",
+                      ".managedhsm.azure.net", ".managedhsm.azure.cn", ".managedhsm.usgovcloudapi.net")
+
+
 def cloud_resource_id(location: Any) -> bool:
-    """A location that is a provider's own resource id (unique across accounts and sources)."""
+    """A location that is a provider's own resource id (unique across accounts and sources).  Every pattern is
+    anchored at the start: a file path that merely contains ``/subscriptions/`` or ``.vault.azure.net`` is a path on
+    its host, never a cloud id (review 6039899144 M2: two hosts holding ``/srv/billing/subscriptions/key.pem``)."""
     where = str(location or "").strip()
     if not where:
         return False
-    return (where.startswith(("arn:aws", "arn:aws-cn:", "arn:aws-us-gov:", "projects/", "//", "oci://", "ocid1.",
-                              "https://www.googleapis.com/", "https://compute.googleapis.com/"))
-            or "/subscriptions/" in where or ".vault.azure.net" in where)
+    if where.startswith(("arn:aws:", "arn:aws-cn:", "arn:aws-us-gov:", "arn:aws-iso:", "arn:aws-iso-b:",
+                         "oci://", "ocid1.", "https://www.googleapis.com/", "https://compute.googleapis.com/",
+                         "/subscriptions/")):
+        return True
+    if _GCP_NAME.match(where) or _GCP_FULL.match(where):
+        return True
+    if where.startswith("https://"):
+        host = where[len("https://"):].split("/", 1)[0].split(":", 1)[0].casefold()
+        return host.endswith(_AZURE_VAULT_HOSTS)
+    return False
+
+
+# ----------------------------------------------------------------------------- network scope (review 6039899144 M2)
+# A name or address that is only unique inside one network: two scan nodes in two sites can both reach a different
+# "10.0.0.5:22", and two hosts can both report "localhost".  Such a key carries the scope of the job that read it.
+#   * loopback (127.0.0.0/8, ::1, "localhost", "*.localhost": RFC 6761 s6.3) is one machine: the collecting node;
+#   * private / shared / link-local / unique-local addresses (RFC 1918, RFC 6598, RFC 3927, RFC 4193: every address
+#     ``ipaddress`` says is not global) and names resolved by the local network only (a single label, "*.local"
+#     mDNS RFC 6762, "*.home.arpa" RFC 8375, "*.internal" ICANN 2024, "*.localdomain") are one network: the node's
+#     segment, else the node, else the source.
+_LOCAL_SUFFIXES = (".local", ".home.arpa", ".internal", ".localdomain", ".lan")
+_HOSTNAME = re.compile(r"[a-z0-9_-]+(?:\.[a-z0-9_-]+)*")
+
+
+def host_scope(host: Any) -> str:
+    """"machine", "network" or "" (globally unique: a public address or a fully qualified DNS name)."""
+    import ipaddress
+
+    name = str(host or "").strip().strip("[]").rstrip(".").casefold()
+    if not name:
+        return ""
+    try:
+        ip = ipaddress.ip_address(name.split("%", 1)[0])
+    except ValueError:
+        ip = None
+    if ip is not None:
+        if ip.is_loopback or ip.is_unspecified:
+            return "machine"
+        return "" if ip.is_global else "network"
+    if not _HOSTNAME.fullmatch(name):
+        return ""  # not a host name (a cloud account label "aws:4444...", a source's display name): as before
+    if name == "localhost" or name.endswith(".localhost"):
+        return "machine"
+    if "." not in name or name.endswith(_LOCAL_SUFFIXES):
+        return "network"
+    return ""
+
+
+def split_endpoint(base: str) -> tuple[str, str]:
+    """``("host", ":port")`` of a ``host:port`` / ``[v6]:port`` location (the port part "" when there is none)."""
+    text = str(base or "").strip()
+    if text.startswith("["):
+        host, _, rest = text[1:].partition("]")
+        return host, rest
+    if text.count(":") == 1:
+        host, _, port = text.partition(":")
+        return host, f":{port}"
+    return text, ""  # a bare host, or an IPv6 address without brackets (no port to split off)
+
+
+def scope_suffix(host: Any, *, network: str = "", machine: str = "") -> str:
+    """``"@<scope>"`` for a host that is not globally unique (``host_scope``), "" otherwise or when the caller gave no
+    scope (a unit test of the bare key)."""
+    kind = host_scope(host)
+    if kind == "machine":
+        chosen = machine or network
+    elif kind == "network":
+        chosen = network or machine
+    else:
+        return ""
+    return f"@{chosen}" if chosen else ""
+
+
+def endpoint_identity(location: Any, facts: Mapping[str, Any] | None = None, target: Any = None, *,
+                      network: str = "", machine: str = "") -> str:
+    """``host:port`` (the host case-folded: DNS names are case-insensitive, RFC 4343) plus ``/sni`` when the probe
+    sent a server name other than the host itself, plus the job's scope for a host that is not globally unique.
+    The SNI is compared with the HOST exactly (review 6039899144 M1: a substring test made ``api.example.com:443``
+    with SNI ``example.com`` the same endpoint as with no SNI)."""
+    base = str(location or "").split("#", 1)[0].strip() or str(target or "").strip()
+    host, port = split_endpoint(base)
+    host_cf = host.casefold().rstrip(".")
+    shown = f"[{host_cf}]{port}" if ":" in host_cf else f"{host_cf}{port}"
+    data = facts if isinstance(facts, Mapping) else {}
+    sni = str(data.get("sni") or data.get("server_name") or "").strip().casefold().rstrip(".")
+    suffix = f"/{sni}" if sni and sni != host_cf else ""
+    return shown + suffix + scope_suffix(host_cf, network=network, machine=machine)
 
 
 def resource_identity(asset_type: Any, target: Any, location: Any, facts: Mapping[str, Any] | None = None, *,
-                      certificates: bool = False) -> str | None:
+                      certificates: bool = False, network: str = "", machine: str = "") -> str | None:
     """The cross-source identity of one collected asset, or None when it can only be identified within its source.
 
     ``certificates``: also a certificate whose location is a cloud resource id (an ACM certificate ARN).  The team
     view leaves certificates to ``asset_keys`` (CB-21, serial / fingerprint); one run has no such correlation, so its
-    fold keys a cloud certificate by its ARN."""
+    fold keys a cloud certificate by its ARN.
+
+    ``network`` / ``machine``: the scope of the job that read the asset (``job_scope``), added to a key whose host is
+    only unique inside one network or one machine (``host_scope``), so two sites' "10.0.0.5:22" or two hosts'
+    "localhost" stay two resources."""
     kind = str(asset_type or "")
     where = str(location or "").strip()
     if certificates and kind in _CERTS and cloud_resource_id(where):
@@ -67,14 +170,34 @@ def resource_identity(asset_type: Any, target: Any, location: Any, facts: Mappin
     if not kind or kind in _NOT_FOLDED or not where:
         return None
     if cloud_resource_id(where):
-        return f"{PREFIX}{kind}|{where}"
+        return f"{PREFIX}{kind}|{where}"  # ARNs and resource ids keep their case (an S3 bucket key is case-sensitive)
     if kind in _ENDPOINTS:
-        base = where.split("#", 1)[0]
-        data = facts if isinstance(facts, Mapping) else {}
-        sni = str(data.get("sni") or data.get("server_name") or "").strip()
-        return f"{PREFIX}{kind}|{base}" + (f"/{sni}" if sni and sni not in base else "")
-    host = str(target or "").strip()
-    return f"{PREFIX}{kind}|{host}|{where}" if host else None
+        return f"{PREFIX}{kind}|" + endpoint_identity(where, facts, target, network=network, machine=machine)
+    host = str(target or "").strip().casefold().rstrip(".")
+    if not host:
+        return None
+    return f"{PREFIX}{kind}|{host}{scope_suffix(host, network=network, machine=machine)}|{where}"
+
+
+def job_scope(job: Any, node: Any = None, source_ref: str = "") -> tuple[str, str]:
+    """``(network, machine)`` scope of one collect job.
+
+    * network: the scan node's segment, the product's declared network boundary (the snapshot the run took, else the
+      job's segment, else the node's current one); scan nodes without a segment share the team's default network
+      (``segment:``), as nothing says they are apart; a job no node ran (a cloud, Kubernetes, CA or key-manager API
+      read) is run by the platform itself: ``platform``;
+    * machine: the scan node that ran the job (``node:<id>``), else ``platform``.
+    ``source_ref`` is unused (kept for callers)."""
+    params = getattr(job, "params", None)
+    snap = params.get("metadata") if isinstance(params, Mapping) else None
+    segment = (snap.get("node_segment") if isinstance(snap, Mapping) else None) or getattr(job, "node_segment", None) \
+        or (getattr(node, "segment", None) if node is not None else None)
+    segment = str(segment or "").strip().casefold()
+    node_id = getattr(job, "node_id", None)
+    machine = f"node:{node_id}" if node_id else "platform"
+    if segment:
+        return f"segment:{segment}", machine
+    return ("segment:" if node_id else "platform"), machine
 
 
 @dataclass(frozen=True)
@@ -154,9 +277,24 @@ class RunFold:
 
 
 
+# finished folds, in process (review 6039899144 m5: the fold was recomputed on every request; at 50k rows with 25k
+# folded page 1 of the run list took 5.9 s against 4.1 s unfolded).  The key is everything the fold reads: the run's
+# row count and newest row id (a row written since is a new key) and, per job, whether its source still exists, its
+# name and when it finished (a deleted or renamed source re-ranks or relabels).  Bounded, least recently used out.
+_CACHE_SIZE = 16
+_cache: OrderedDict[tuple, RunFold] = OrderedDict()
+_cache_lock = threading.Lock()
+
+
+def clear_cache() -> None:
+    with _cache_lock:
+        _cache.clear()
+
+
 def run_fold(session: Any, team_id: int, run_id: int) -> RunFold:
     """The fold of one run's rows (``resource_identity``, newest job kept), from one query of light columns (facts
-    only for TLS endpoints, for their SNI).  A run with fewer than two jobs has nothing to fold (no row query)."""
+    only for TLS endpoints, for their SNI).  A run with fewer than two jobs has nothing to fold (no row query).
+    Computed once per process for the same rows and jobs (``_cache``), and once per request (``session.info``)."""
     from sqlalchemy import func
     from sqlmodel import select
 
@@ -165,37 +303,70 @@ def run_fold(session: Any, team_id: int, run_id: int) -> RunFold:
     memo = getattr(session, "info", None)
     count, newest = session.exec(select(func.count(), func.max(CbomCollectedAsset.id)).where(
         CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run_id)).one()
-    # one request computes it once (list, totals, facets); a row written since is a new key
     key = ("cbom.run_fold", int(team_id), int(run_id), int(count or 0), int(newest or 0))
     if isinstance(memo, dict) and key in memo:
         return memo[key]
-    found = _run_fold(session, team_id, run_id)
+    context = _jobs_context(session, team_id, run_id)
+    if len(context) < 2:
+        found = RunFold()
+    else:
+        full = (_database(session), *key, tuple(sorted((job_id, *rest) for job_id, rest in context.items())))
+        with _cache_lock:
+            found = _cache.get(full)
+            if found is not None:
+                _cache.move_to_end(full)
+        if found is None:
+            found = _run_fold(session, team_id, run_id, context)
+            with _cache_lock:
+                _cache[full] = found
+                while len(_cache) > _CACHE_SIZE:
+                    _cache.popitem(last=False)
     if isinstance(memo, dict):
         memo[key] = found
     return found
 
 
-def _run_fold(session: Any, team_id: int, run_id: int) -> RunFold:
+def _database(session: Any) -> str:
+    """Which database the rows come from (one per process in production; a test's own SQLite file otherwise)."""
+    try:
+        return str(session.get_bind().url)
+    except Exception:  # a session without a bind (a stub): its own object
+        return f"session:{id(session)}"
+
+
+def _jobs_context(session: Any, team_id: int, run_id: int) -> dict[int, tuple]:
+    """Per job of the run: (source exists, finished (naive UTC), source name, network scope, machine scope); an
+    empty tuple per job for a run with fewer than two jobs (nothing to fold, nothing else read)."""
     from sqlmodel import select
 
     from backend.new_models import (
-        CbomCollectedAsset,
         CbomCollectionJob,
         CbomCollectionSource,
+        CbomScanNode,
     )
     from backend.utilities.cbom_sources import identity as ID
 
     jobs = session.exec(select(CbomCollectionJob).where(CbomCollectionJob.team_id == team_id,
                                                         CbomCollectionJob.run_id == run_id)).all()
     if len(jobs) < 2:
-        return RunFold()
+        return {int(j.id): () for j in jobs if j.id is not None}
     sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
         CbomCollectionSource.team_id == team_id)).all()}
-    info: dict[int, tuple[bool, Any, str]] = {}
+    nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
+    out: dict[int, tuple] = {}
     for job in jobs:
         source = sources.get(job.source_id or 0)
-        info[int(job.id)] = (source is not None, job.finished_at or job.created_at,
-                             str(ID.job_source_name(job, source) or ""))
+        network, machine = job_scope(job, nodes.get(job.node_id or 0), ID.job_source_ref(job, source))
+        out[int(job.id)] = (source is not None, _sortable(job.finished_at or job.created_at),
+                            str(ID.job_source_name(job, source) or ""), network, machine)
+    return out
+
+
+def _run_fold(session: Any, team_id: int, run_id: int, context: Mapping[int, tuple]) -> RunFold:
+    from sqlmodel import select
+
+    from backend.new_models import CbomCollectedAsset
+
     cols = (CbomCollectedAsset.id, CbomCollectedAsset.job_id, CbomCollectedAsset.asset_type, CbomCollectedAsset.target,
             CbomCollectedAsset.location, CbomCollectedAsset.quantum_vulnerable)
     scope = (CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run_id,
@@ -207,12 +378,14 @@ def _run_fold(session: Any, team_id: int, run_id: int) -> RunFold:
         query = select(*cols, CbomCollectedAsset.facts) if with_facts else select(*cols)
         for rec in session.exec(query.where(*scope, kind_clause)).all():
             aid, job_id, kind, target, location, qv = rec[:6]
-            key = resource_identity(kind, target, location, rec[6] if with_facts else None, certificates=True)
-            if key is None or job_id is None:
+            if job_id is None:
                 continue
-            live, at, label = info.get(int(job_id), (False, None, ""))
-            observed.append(Observation(int(aid), str(job_id), key, live, qv is not None, _sortable(at), int(job_id),
-                                        label))
+            live, at, label, network, machine = context.get(int(job_id)) or (False, _sortable(None), "", "", "")
+            key = resource_identity(kind, target, location, rec[6] if with_facts else None, certificates=True,
+                                    network=network, machine=machine)
+            if key is None:
+                continue
+            observed.append(Observation(int(aid), str(job_id), key, live, qv is not None, at, int(job_id), label))
     found = fold(observed)
     return RunFold(dropped={int(k): int(v) for k, v in found.dropped.items()},
                    also_seen={int(k): v for k, v in found.also_seen.items()})
@@ -243,10 +416,16 @@ __all__ = [
     "Observation",
     "RunFold",
     "also_seen_text",
+    "clear_cache",
     "cloud_resource_id",
     "fold",
     "kept_clause",
     "rank",
+    "endpoint_identity",
+    "host_scope",
+    "job_scope",
     "resource_identity",
     "run_fold",
+    "scope_suffix",
+    "split_endpoint",
 ]

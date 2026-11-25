@@ -71,6 +71,7 @@ from backend.utilities.dashboard.cbom_team_rollup import (
     ExpiryBand,
     TeamCbomView,
     classify_expiry,
+    newer_attempt_note,
 )
 from backend.utilities.cbom_sources.cert_estate import (
     WEAK_CERT_CODES,
@@ -829,19 +830,25 @@ def _bullets(items: Sequence[str], styles: Styles) -> list[Flowable]:
     return [Paragraph(pdf_text(item, limit=700), style, bulletText=_BULLET) for item in items]
 
 
-def _scope_note(estate: EstateResult) -> str:
+def _scope_note(estate: EstateResult, view: TeamCbomView | None = None) -> str:
     """What the unique set leaves out, and where the full detail is (the CSV has every column untruncated)."""
     parts = ["The CSV export of this register has one row per certificate in the same order with the full "
              "thumbprint, serial, subject alternative names and every location.",
-             "The certificate hygiene list (orphaned / unmanaged) counts the Sources estate store, which also keeps "
-             "certificates not seen in a source's latest collection and leaves out code-scan certificates, so its "
-             "count can differ from this one; both use the same thumbprint identity."]
+             # staging QA Q3-04: the hygiene list is this list (cert_hygiene.build reads the same team view)
+             "The certificate hygiene list (orphaned / unmanaged) lists the same certificates: the code scans' and "
+             "each source's latest collection, with the same thumbprint identity; a certificate no source collects "
+             "any more is reported by drift."]
     if estate.deleted_only:
         parts.append(f"{count_phrase(estate.deleted_only)} seen only by deleted sources "
                      f"{'is' if estate.deleted_only == 1 else 'are'} not listed.")
     if estate.bundles_skipped:
         parts.append(f"{estate.bundles_skipped} trust-store bundle file row{'s' if estate.bundles_skipped != 1 else ''} "
                      "(a file of CA roots, not one certificate) not counted.")
+    # review 6039899144 M4: a newer attempt that read nothing never empties a source; its last real read is listed
+    for collection in (view.collections if view is not None else ()):
+        note = newer_attempt_note(collection)
+        if note:
+            parts.append(f"{collection.label}: {note}; the certificates of that last read are listed.")
     return " ".join(parts)
 
 
@@ -895,7 +902,7 @@ def _body(view: TeamCbomView, max_rows: int) -> Callable[[Styles, float], list[F
             as_of=as_of_text,
             differs=authored.CERT_SCAN_FLAG_DIFFERS,
         )
-        story.append(Paragraph(pdf_text(f"{lead} {intro} {_scope_note(estate)}", limit=1400), styles["muted"]))
+        story.append(Paragraph(pdf_text(f"{lead} {intro} {_scope_note(estate, view)}", limit=2400), styles["muted"]))
         story.append(register_table(shown, width, as_of=view.as_of))
         if len(rows) > len(shown):
             story.append(Spacer(1, 4))

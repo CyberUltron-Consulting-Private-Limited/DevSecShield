@@ -584,14 +584,19 @@ def _seen(observed: NE.Observed) -> str:
     return observed.source + also
 
 
+RUBRIC_CELL_LIMIT = 700
+
+
 def _grade_rubric(styles: Styles, width: float) -> list[Flowable]:
     return [
         *section_heading("TLS grade rubric", styles),
         common.note("Each probed TLS endpoint gets a letter computed only from what the probe observed, modelled on "
                     "the Qualys SSL Labs SSL Server Rating Guide. It is informative: it ranks endpoints for "
                     "remediation and does not replace a live verification.", styles),
+        # a rule is never cut (review 6039899144 m1: Cap B and the trust Divergence row lost their last words at
+        # 300 characters); RUBRIC_CELL_LIMIT holds the longest rule (test_rubric_rows_are_never_cut)
         *common.register(("Part", "Rule"), [list(row) for row in NE.RUBRIC], (140, 580), width, styles,
-                         noun="rubric rows"),
+                         noun="rubric rows", cell_limit=RUBRIC_CELL_LIMIT),
     ]
 
 

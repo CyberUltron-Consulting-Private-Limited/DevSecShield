@@ -213,10 +213,16 @@ def _service_scope(service: str, region: str, account: str) -> list[str] | None:
     }.get(service)
 
 
+# a coverage row that a permission newer than the customer's reader stack would close (the row names the action):
+# the asset is listed and only an added fact is missing, so it is shown but never makes the target partial
+TEMPLATE_UPDATE = "template_update"
+
+
 class _GapTally:
     """Passes every asset on and counts what the coverage gaps left unread, which makes a target partial: not the
     ``by_choice`` rows (an option left off) nor the ``not_reported`` ones (a state in which AWS reports nothing, e.g.
-    a key's rotation while it is pending deletion: known and stable, but still hidden from drift).  A row that lists
+    a key's rotation while it is pending deletion: known and stable, but still hidden from drift), nor the
+    ``TEMPLATE_UPDATE`` ones (a fact a newer reader template allows, review 6039899144 m4).  A row that lists
     several items counts each (``not_read_count``).  ``codes`` counts them by service and error code for the log."""
 
     def __init__(self, emit: Emit):
@@ -225,7 +231,8 @@ class _GapTally:
 
     def __call__(self, asset: dict[str, Any]) -> None:
         facts = asset.get("facts") or {}
-        if asset.get("type") == "coverage" and not facts.get("by_choice") and facts.get("status") != "not_reported":
+        if asset.get("type") == "coverage" and not facts.get("by_choice") and facts.get("status") != "not_reported" \
+                and not facts.get(TEMPLATE_UPDATE):
             count = facts.get("not_read_count")
             # 0: a row that only follows from others already counted (custom key stores behind unread keys)
             count = count if isinstance(count, int) and not isinstance(count, bool) and count >= 0 else 1
@@ -1007,8 +1014,20 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
                 asset["facts"].update(_acm_body(pem) if body_status == "ok" else
                                       {"certificate_read": str(pem or body_status)[:60]})
             emit(asset)
-        items.flush(emit, {"metadata": ("certificate", False),
-                           "body": ("certificate body (SHA-256 thumbprint)", True)})
+        def body_gap(asset: dict[str, Any]) -> None:
+            # review 6039899144 m4: a reader stack from before this template has no acm:GetCertificate.  Every
+            # certificate is still listed and described; only its thumbprint is missing, so the denial is shown (the
+            # row says to update the stack) but does not make the run partial (``_GapTally``: TEMPLATE_UPDATE)
+            facts = asset.get("facts") or {}
+            if asset.get("type") == "coverage" and "#body" in str(asset.get("location") or "") \
+                    and facts.get("status") == "denied":
+                facts[TEMPLATE_UPDATE] = "acm:GetCertificate"
+                facts["detail"] = (f"{facts.get('detail') or 'denied'}; the reader stack predates the read-only "
+                                   "acm:GetCertificate allow: update it to the current template")[:300]
+            emit(asset)
+
+        items.flush(body_gap, {"metadata": ("certificate", False),
+                               "body": ("certificate body (SHA-256 thumbprint)", True)})
         if page_error:
             emit(_gap(label, f"{prefix}certificate#list", f"acm certificates in {region}",
                       "throttled" if page_error in _THROTTLE else ("denied" if page_error in _DENIED else "error"),

@@ -395,8 +395,9 @@ def _grade(versions, suites, **kw):
 
 @pytest.mark.parametrize("versions,suites,leaf,expected", [
     (["TLSv1.3"], {"TLSv1.3": ["TLS_AES_256_GCM_SHA384"]}, None, "A"),
-    # SSL Labs 2009h: SSL 3 supported caps at B (staging QA Q3-06; it was C)
-    (["SSLv3", "TLSv1.2"], {"TLSv1.2": ["TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"]}, None, "B"),
+    # SSL Labs 2009g: SSL 3 whose suites are not recorded is taken as CBC, i.e. POODLE: C (review 6039899144 M3
+    # restores this row; 2009h's B is for SSL 3 without a CBC suite)
+    (["SSLv3", "TLSv1.2"], {"TLSv1.2": ["TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"]}, None, "C"),
     (["TLSv1.2"], {"TLSv1.2": ["TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384", "TLS_RSA_WITH_NULL_SHA256"]}, None, "F"),
     (["TLSv1.2"], {"TLSv1.2": ["TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA", "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"]},
      None, "C"),

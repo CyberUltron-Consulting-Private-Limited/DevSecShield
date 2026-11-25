@@ -72,6 +72,14 @@ class Collection:
     metadata: dict[str, Any] = field(default_factory=dict, compare=False, repr=False)
     # how the collection was made (``collection_info``: method, window, credential reference by name only); D1 prints it
     info: dict[str, Any] = field(default_factory=dict, compare=False, repr=False)
+    # where its job read from (``resource_identity.job_scope``): a private address or a single-label name it reports
+    # is one resource only within this network (the scan node's segment) or machine (the node), review 6039899144 M2
+    network_scope: str = field(default="", compare=False, repr=False)
+    machine_scope: str = field(default="", compare=False, repr=False)
+    # a newer attempt of this source that read nothing (``latest_collections``): its job id and when it finished; the
+    # documents say "newest collection read nothing on <date>; last read <date>" (review 6039899144 M4)
+    newer_attempt_job_id: int | None = field(default=None, compare=False, repr=False)
+    newer_attempt_at: _dt.datetime | None = field(default=None, compare=False, repr=False)
 
     @property
     def label(self) -> str:
@@ -227,8 +235,22 @@ def node_row(asset: Any, collection: Collection, view: Mapping[str, Any]) -> dic
 
 
 # ----------------------------------------------------------------------------- loading (the one DB read)
-def latest_jobs(session: Any, team_id: int, *, limit: int = 2_000) -> list[Any]:
-    """The newest successful collect job of each source (newest first)."""
+def read_nothing(job: Any) -> bool:
+    """A collect job that finished "success" but read nothing: ``jobs`` gives it the ``failed`` outcome exactly when
+    it stored no row other than coverage rows (every target skipped, refused or unreachable), and refunds it.  The
+    refund rule (``jobs.complete``) and OSCAL (``integrations.oscal``: "nothing read") already treat it as no
+    collection; so do the documents (review 6039899144 M4)."""
+    return getattr(job, "status", None) == "success" and getattr(job, "outcome", None) == "failed"
+
+
+def latest_collections(session: Any, team_id: int, *, limit: int = 2_000) -> list[tuple[Any, Any]]:
+    """``(job, newer)`` per source, newest first: ``job`` is the source's newest successful collect job that read
+    something, ``newer`` the newest attempt after it that read nothing (``read_nothing``), else None.
+
+    A newer attempt that read nothing never replaces the source's last real collection: before review 6039899144 M4
+    one failed run with zero assets dropped every certificate of the source from D8 and the certificate hygiene list
+    (15 -> 0).  A source whose every job read nothing keeps its newest one (``newer`` None), so D1 / D2 still name it
+    with what it read: nothing."""
     from sqlmodel import select
 
     from backend.new_models import CbomCollectionJob, CbomCollectionSource
@@ -236,15 +258,31 @@ def latest_jobs(session: Any, team_id: int, *, limit: int = 2_000) -> list[Any]:
 
     sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
         CbomCollectionSource.team_id == team_id)).all()}
-    latest: dict[str, Any] = {}
+    usable: dict[str, Any] = {}
+    empty: dict[str, Any] = {}  # the newest attempt that read nothing, per source, until a usable one is found
+    order: list[str] = []
     for job in session.exec(select(CbomCollectionJob).where(
             CbomCollectionJob.team_id == team_id, CbomCollectionJob.kind == "collect",
             CbomCollectionJob.status == "success", CbomCollectionJob.run_id.is_not(None))  # type: ignore[union-attr]
             .order_by(CbomCollectionJob.finished_at.desc().nulls_last(),  # type: ignore[union-attr]
                       CbomCollectionJob.id.desc())  # type: ignore[union-attr]
             .limit(limit)).all():
-        latest.setdefault(ID.job_source_ref(job, sources.get(job.source_id or 0)), job)
-    return list(latest.values())
+        ref = ID.job_source_ref(job, sources.get(job.source_id or 0))
+        if ref in usable:
+            continue
+        if ref not in order:
+            order.append(ref)
+        if read_nothing(job):
+            empty.setdefault(ref, job)
+            continue
+        usable[ref] = job
+    return [(usable[ref], empty.get(ref)) if ref in usable else (empty[ref], None) for ref in order]
+
+
+def latest_jobs(session: Any, team_id: int, *, limit: int = 2_000) -> list[Any]:
+    """The latest collection of each source (``latest_collections``: the newest successful collect job that read
+    something, else its newest one), newest first."""
+    return [job for job, _newer in latest_collections(session, team_id, limit=limit)]
 
 
 @dataclass
@@ -334,9 +372,14 @@ def load_sources_result(session: Any, team_id: int, now: _dt.datetime | None = N
     today = _aware(now or _dt.datetime.now(UTC)).replace(tzinfo=None)  # classify works in naive UTC
     sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
         CbomCollectionSource.team_id == team_id)).all()}
+    from backend.new_models import CbomScanNode
+    from backend.utilities.cbom_sources.resource_identity import job_scope
+
+    nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
     out = SourcesResult()
-    for job in latest_jobs(session, team_id):
+    for job, newer in latest_collections(session, team_id):
         source = sources.get(job.source_id or 0)
+        network, machine = job_scope(job, nodes.get(job.node_id or 0), ID.job_source_ref(job, source))
         assets = [a for a in session.exec(select(CbomCollectedAsset).where(
             CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.job_id == job.id,
             CbomCollectedAsset.attempt == job.attempts).order_by(CbomCollectedAsset.id)).all()
@@ -346,7 +389,10 @@ def load_sources_result(session: Any, team_id: int, now: _dt.datetime | None = N
             source_name=ID.job_source_name(job, source), source_kind=(source.kind if source is not None else ""),
             observed_at=_aware(job.finished_at or job.created_at), asset_count=len(assets),
             endpoints_probed=sum(1 for a in assets if a.asset_type in NETWORK_TYPES),
-            metadata=_source_metadata(source, job), info=collection_info(session, source, job))
+            metadata=_source_metadata(source, job), info=collection_info(session, source, job),
+            network_scope=network, machine_scope=machine,
+            newer_attempt_job_id=int(newer.id) if newer is not None else None,
+            newer_attempt_at=_aware(newer.finished_at or newer.created_at) if newer is not None else None)
         out.collections.append(collection)
         for asset in assets:
             # its identity in its own source; link_certificates gives certificates their cross-source asset key
@@ -442,7 +488,8 @@ def link_resources(rows: list[SourcesRow]) -> int:
             continue
         if not item.identity.startswith("node|"):
             continue  # a certificate's cross-source key (link_certificates) or a hand-made identity
-        key = resource_identity(item.node_type, item.target, item.row.get("location"), item.facts)
+        key = resource_identity(item.node_type, item.target, item.row.get("location"), item.facts,
+                                network=item.collection.network_scope, machine=item.collection.machine_scope)
         if key is None:
             continue
         own = (item.collection.key, key)
@@ -605,7 +652,9 @@ __all__ = [
     "cert_identity",
     "code_cert_identities",
     "code_row_identity",
+    "latest_collections",
     "latest_jobs",
+    "read_nothing",
     "link_certificates",
     "link_resources",
     "load_sources_result",

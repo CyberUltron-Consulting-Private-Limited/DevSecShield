@@ -672,6 +672,23 @@ class CollectionAgg:
     metadata: Mapping[str, Any] = field(default_factory=dict, compare=False, repr=False)
     # how the collection was made (``collections_view.collection_info``: method, window, credential reference by name)
     info: Mapping[str, Any] = field(default_factory=dict, compare=False, repr=False)
+    # a newer attempt of the source that read nothing (``collections_view.latest_collections``, review 6039899144 M4):
+    # this collection stays the source's latest; the documents say so (``newer_attempt_note``)
+    newer_attempt_job_id: int | None = field(default=None, compare=False, repr=False)
+    newer_attempt_at: datetime | None = field(default=None, compare=False, repr=False)
+
+
+def newer_attempt_note(collection: Any) -> str:
+    """"newest collection read nothing on 2026-11-24; last read 2026-11-20" for a collection a newer, empty attempt
+    did not replace (review 6039899144 M4), else ""."""
+    newer = getattr(collection, "newer_attempt_at", None)
+    if newer is None:
+        return ""
+    def day(moment: Any) -> str:  # YYYY-MM-DD in UTC, as every document dates a collection (fmt_date_utc)
+        found = _utc(moment)
+        return found.date().isoformat() if found is not None else "an unknown date"
+
+    return f"newest collection read nothing on {day(newer)}; last read {day(collection.observed_at)}"
 
 
 # ---------------------------------------------------------------------------------------------
@@ -3349,7 +3366,9 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
                                  run_id=int(c.run_id), job_id=int(c.job_id), observed_at=_utc(c.observed_at) or _EPOCH,
                                  asset_count=int(c.asset_count), endpoints_probed=int(c.endpoints_probed),
                                  metadata=dict(getattr(c, "metadata", None) or {}),
-                                 info=dict(getattr(c, "info", None) or {}))
+                                 info=dict(getattr(c, "info", None) or {}),
+                                 newer_attempt_job_id=getattr(c, "newer_attempt_job_id", None),
+                                 newer_attempt_at=_utc(getattr(c, "newer_attempt_at", None)))
             for c in collections}
     # 1. code certificates with a cross-scope identity; latest observation wins
     code_ident: dict[str, str] = {}
@@ -3506,7 +3525,11 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
                                                                 resolution.sources_rows, aggs)
     # 6. basis and fingerprint: a collection is a completed CBOM result
     count = len(aggs)
-    stamps = ",".join(f"{a.job_id}:{a.observed_at.isoformat()}" for a in sorted(aggs.values(), key=lambda a: a.job_id))
+    # a newer attempt that read nothing is printed (``newer_attempt_note``), so it moves the fingerprint; without one
+    # the stamp is unchanged
+    stamps = ",".join(f"{a.job_id}:{a.observed_at.isoformat()}"
+                      + (f"/empty:{a.newer_attempt_job_id}" if a.newer_attempt_job_id is not None else "")
+                      for a in sorted(aggs.values(), key=lambda a: a.job_id))
     digest = hashlib.sha256(f"{view.fingerprint}|sources|{stamps}".encode("utf-8", "replace")).hexdigest()[:12]
     seen = [a.observed_at for a in aggs.values()]
     merged = replace(
@@ -3729,6 +3752,7 @@ __all__ = [
     "load_core_view",
     "load_team_cbom_view",
     "merge_collections",
+    "newer_attempt_note",
     "sanitize_repo_url",
     "source_key_for",
 ]

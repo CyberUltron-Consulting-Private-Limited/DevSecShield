@@ -1010,8 +1010,12 @@ def _document(session: Session, run: CbomCollectionRun, now: _dt.datetime
     """The run's CycloneDX document in three parts, for writing it piece by piece: the head (every key before
     ``components``), the components (made one at a time: the assets, one ``zs-asset-<id>`` component each, then the
     certificate parts they reference) and the vulnerabilities (call it once the components are consumed)."""
+    # one component per resource (review 6039899144 B1): the rows the run's assets API lists, so zs:asset_count,
+    # zs:run_asset_count and the class counts describe the same assets; a dropped row's stable key resolves to the
+    # component kept for it (``_vex_inputs``)
+    fold = RI.run_fold(session, run.team_id, int(run.id or 0))
     rows = session.exec(select(CbomCollectedAsset).where(CbomCollectedAsset.team_id == run.team_id,
-                                                         CbomCollectedAsset.run_id == run.id)
+                                                         CbomCollectedAsset.run_id == run.id, RI.kept_clause(fold))
                         .order_by(CbomCollectedAsset.id).limit(EXPORT_CAP + 1)).all()
     truncated = len(rows) > EXPORT_CAP
     rows = rows[:EXPORT_CAP]
@@ -1113,7 +1117,7 @@ def _document(session: Session, run: CbomCollectionRun, now: _dt.datetime
         yield from parts.components()
 
     return head, components(), lambda: vulnerabilities(
-        list(rows), views, **_vex_inputs(session, run, rows, views, jobs, grading, now), drift_truncated=drift_cut)
+        list(rows), views, **_vex_inputs(session, run, rows, views, jobs, grading, now, fold), drift_truncated=drift_cut)
 
 
 def _business_properties(session: Session, team_id: int, jobs: list[CbomCollectionJob]
@@ -1146,7 +1150,8 @@ def export_identity(session: Session, run: CbomCollectionRun, now: _dt.datetime)
     later run's drift-resolved finding whose asset is gone."""
     today = now if now.tzinfo is None else now.astimezone(_dt.timezone.utc).replace(tzinfo=None)
     scope = select(CbomCollectedAsset).where(CbomCollectedAsset.team_id == run.team_id,
-                                             CbomCollectedAsset.run_id == run.id)
+                                             CbomCollectedAsset.run_id == run.id,
+                                             RI.kept_clause(RI.run_fold(session, run.team_id, int(run.id or 0))))
     judged_on = today.date().isoformat() if changed_today(session, scope, today) else None
     digest = QG.load_context(session, team_id=run.team_id, run_id=run.id).digest  # the serial keys the grade inputs
     return export_serial(run.id or 0, crypto_kb.version(), judged_on, POSTURE.PQC_CLASS_MODEL,
@@ -1156,7 +1161,7 @@ def export_identity(session: Session, run: CbomCollectionRun, now: _dt.datetime)
 
 def _vex_inputs(session: Session, run: CbomCollectionRun, rows: list[CbomCollectedAsset],
                 views: dict[int, dict[str, Any]], jobs: list[CbomCollectionJob], grading: Any,
-                now: _dt.datetime) -> dict[str, Any]:
+                now: _dt.datetime, fold: RI.RunFold | None = None) -> dict[str, Any]:
     """What the VEX analysis reads besides the rows (CB-22): each row's Q-grade (``qgrade``, the run API's grade; only
     asked for rows with a quantum-only code), the run's drift-resolved findings with the bom-ref of each asset still
     listed (by the stable key drift records, ``identity``) and a BOM-Link into the baseline export for each asset that
@@ -1188,6 +1193,14 @@ def _vex_inputs(session: Session, run: CbomCollectionRun, rows: list[CbomCollect
         for row in rows:
             if row.job_id in by_job:
                 ref_of.setdefault(ID.stable_key("node", by_job[row.job_id], ID.node_identity(row)), f"zs-asset-{row.id}")
+        if fold is not None and fold.dropped:
+            # a finding drift recorded under the other source's key is the component kept for that resource
+            for row in session.exec(select(CbomCollectedAsset).where(
+                    CbomCollectedAsset.team_id == run.team_id, CbomCollectedAsset.run_id == run.id,
+                    CbomCollectedAsset.id.in_(fold.dropped_ids))).all():  # type: ignore[union-attr]
+                if row.job_id in by_job:
+                    ref_of.setdefault(ID.stable_key("node", by_job[row.job_id], ID.node_identity(row)),
+                                      f"zs-asset-{fold.dropped[int(row.id or 0)]}")
     return {"grade_of": grade_of, "resolved": resolved, "ref_of": ref_of, "link_of": link_of,
             "grade_meta": {"model_version": QG.GRADE_MODEL_VERSION, "inputs_digest": grading.digest}}
 

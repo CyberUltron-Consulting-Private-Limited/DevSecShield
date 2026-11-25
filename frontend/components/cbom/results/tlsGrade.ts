@@ -8,8 +8,13 @@ export function tlsGradeText(grade: CbomTlsGrade | null | undefined): string {
   return grade.score == null ? grade.grade : `${grade.grade} · score ${grade.score}`;
 }
 
-/** Every reason the grade is below A+ (the caps, trust and name issues, then the warnings), one line. */
+/** Every reason the grade is below A+ (the caps, trust and name issues, then the warnings), de-duplicated. */
+export function tlsGradeReasonList(grade: CbomTlsGrade | null | undefined): string[] {
+  if (!grade) return [];
+  return Array.from(new Set([...(grade.caps ?? []), ...(grade.warnings ?? [])]));
+}
+
+/** The same reasons on one line (the grade's tooltip). */
 export function tlsGradeReasons(grade: CbomTlsGrade | null | undefined): string {
-  if (!grade) return "";
-  return Array.from(new Set([...(grade.caps ?? []), ...(grade.warnings ?? [])])).join("; ");
+  return tlsGradeReasonList(grade).join("; ");
 }

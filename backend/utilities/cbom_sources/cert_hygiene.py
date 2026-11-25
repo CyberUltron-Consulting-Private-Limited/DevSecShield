@@ -44,7 +44,9 @@ FLAG_TEXT = {
     "orphaned": "Served by no endpoint the team probes",
     "no_owner": "No source that read it names an owner or an application",
     "expired_served": "Expired and still served",
-    "stale": "Not seen for several collections of the sources that knew it",
+    # never set (review 6039899144 M5): kept so an API filter on it still answers, with an empty list
+    "stale": "Never set: the list holds each source's latest collection (the D8 rule); a certificate no longer "
+             "collected is reported by drift",
 }
 MANAGING_KINDS = frozenset({"ca_connector", "key_manager", "idp"})
 MANAGING_AWS = frozenset({"acm", "acm-pca"})

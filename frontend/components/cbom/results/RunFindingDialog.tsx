@@ -58,7 +58,7 @@ import {
 } from "./findingDialogModel";
 import { FINDING_DIALOG_BODY, FINDING_DIALOG_CONTENT, FINDING_DIALOG_FULLSCREEN_SM } from "./findingTable";
 import { FINDING_STATUS_LABEL, FINDING_STATUSES, dialogItem, findingChips, findingStatusOf } from "./model";
-import { tlsGradeReasons, tlsGradeText } from "./tlsGrade";
+import { tlsGradeReasonList, tlsGradeReasons, tlsGradeText } from "./tlsGrade";
 import { assetName, AsOfRunNote, CollectedFacts } from "./RunFindingsTable";
 
 export type { DialogNav } from "./dialogNav";
@@ -374,6 +374,17 @@ export function RunFindingDialog({ teamId, runId, subject, jobs, waveOf, onClose
                                   : <p className="text-sm">{item.ticket_key}</p>}
                               </Fact>
                             )}
+                          </div>
+                        )}
+
+                        {/* review 6039899144 m6: the grade's reasons are printed, not only in a tooltip a touch screen cannot open */}
+                        {item && tlsGradeReasonList(item.tls_grade).length > 0 && (
+                          <div className="rounded-md border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300"
+                               data-testid="run-finding-tls-reasons">
+                            <p className="font-medium text-zinc-800 dark:text-zinc-200">Why the TLS grade is below A+</p>
+                            <ul className="mt-1 list-disc pl-4 space-y-0.5 break-words">
+                              {tlsGradeReasonList(item.tls_grade).map((reason) => <li key={reason}>{reason}</li>)}
+                            </ul>
                           </div>
                         )}
 

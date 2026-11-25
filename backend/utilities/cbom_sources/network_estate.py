@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from backend.utilities.cbom_sources.cert_estate import inputs_of, is_deleted, thumbprint
@@ -70,14 +70,16 @@ RUBRIC = (
     ("Cap F", ("SSL 2 offered; SSL 3 the best protocol offered; a NULL, EXPORT or anonymous suite accepted; only RC4 "
               "suites; certificate RSA key < 1024 bits; key exchange < 1024 bits; an MD5 or MD2 signature in the "
               "served chain.")),
-    ("Cap C", ("No TLS 1.2 or TLS 1.3; RC4 accepted with TLS 1.1 or later; 3DES or another 64-bit block cipher "
-              "accepted with TLS 1.1 or later.")),
-    ("Cap B", ("SSL 3 offered; TLS 1.0 or 1.1 offered; RC4 accepted (TLS 1.0 or SSL 3 only); no forward secrecy at all "
-              "(no ECDHE, DHE or TLS 1.3 suite); no AEAD suite; certificate RSA key < 2048 or EC key < 224 bits; a "
-              "finite-field DH group < 2048 bits; an incomplete chain (the server does not send an intermediate); key "
-              "exchange not recorded.")),
-    ("A-", ("An A with a warning: TLS 1.3 not offered (2009r); static RSA key exchange accepted next to forward-secret "
-           "suites (2009e warning); the HTTP service's HSTS header absent or invalid (2009r, when the probe read it).")),
+    ("Cap C", ("SSL 3 offered with a CBC suite, or with suites not recorded: POODLE (2009g); no TLS 1.2 (2009j; a TLS "
+              "1.3-only server is not capped, see Divergence); RC4 accepted with TLS 1.1 or later (2009j); 3DES or "
+              "another 64-bit block cipher accepted with TLS 1.1 or later (2009n).")),
+    ("Cap B", ("SSL 3 offered (2009h); TLS 1.0 or 1.1 offered; RC4 accepted with TLS 1.0 or SSL 3 only (2009i); no "
+              "forward-secret suite accepted (2009p); no AEAD suite (2009p); certificate RSA key < 2048 or EC key < "
+              "224 bits; a finite-field DH group < 2048 bits (2009j); an incomplete chain (2009i); key exchange not "
+              "recorded.")),
+    ("A-", ("An A with a warning: TLS 1.3 not offered (2009r); the HTTP service's HSTS header absent or invalid "
+           "(2009r, when the probe read it); static RSA key exchange accepted next to forward-secret suites (a "
+           "product rule, see Divergence).")),
     ("A+", ("An A with no warning, TLS 1.3 offered and an HSTS max-age of at least 180 days (2009e), and no SHA-1 "
            "signature in the chain (2009f).")),
     ("M", ("Certificate name mismatch: the probe connected with a server name (SNI) that the leaf certificate's "
@@ -91,7 +93,7 @@ RUBRIC = (
     ("Divergence", ("Not tested, so never a cap: Heartbleed, ROBOT, POODLE (TLS), DROWN, Ticketbleed, CVE-2014-0224, "
                    "CVE-2016-2107, the 2019 padding oracles, insecure renegotiation, CRIME, a Debian weak key, RSA "
                    "exponent 1 and HPKP (the scan node sends handshakes only, SOW 7.2).")),
-    ("Divergence", ("HSTS is read only when the probe records it (``hsts_max_age``); a TLS endpoint without that reading "
+    ("Divergence", ("HSTS is read only when the probe records it (hsts_max_age); a TLS endpoint without that reading "
                    "is neither A+ nor capped to A- for HSTS, and a non-HTTP service (SMTP, LDAPS, a database) is never "
                    "judged on HSTS.")),
     ("Divergence", ("Trust is judged against the scan node's own system trust store (a private CA is 'not trusted'), and "
@@ -103,6 +105,14 @@ RUBRIC = (
     ("Divergence", ("Forward secrecy and AEAD are judged on the suites the server accepts, not on what the SSL Labs "
                    "reference browsers negotiate: 'no forward secrecy' means no forward-secret suite is accepted at "
                    "all.")),
+    ("Divergence", ("Product rule, not in the guide: static RSA key exchange accepted next to forward-secret suites is "
+                   "a warning (an A becomes A-), because a client that picks it gets no forward secrecy (Mozilla "
+                   "Server Side TLS: no static RSA in the Intermediate or Modern configurations).")),
+    ("Divergence", ("A server that offers only TLS 1.3 is not capped at C for lacking TLS 1.2: 2009j (May 2015) predates "
+                   "TLS 1.3 (RFC 8446, 2018), and TLS 1.3 alone is Mozilla's Modern configuration.")),
+    ("Divergence", ("2009n's explicit penalty for suites under 112 bits has no size in the guide, so no cap of its own: "
+                   "such suites are capped by the rules above (single DES by the 64-bit block rule, 40-bit EXPORT and "
+                   "NULL at F) and score 0 or 20 in cipher strength.")),
 )
 
 
@@ -380,6 +390,17 @@ def grade_tls(facts: Mapping[str, Any], as_of: Any = None, chain: Sequence[Any] 
             cap("C", "3DES or another 64-bit block cipher accepted with TLS 1.1 or later")
         else:
             cap("B", "3DES or another 64-bit block cipher accepted (TLS 1.0 or SSL 3 only)")
+    # SSL 3 (review 6039899144 M3).  SSL Labs Server Rating Guide 2009g (15 Oct 2014): "Cap to C if vulnerable to
+    # POODLE"; 2009h (30 Oct 2014): "Cap to B if SSL 3 is supported".  POODLE (CVE-2014-3566) is the SSL 3 CBC padding
+    # oracle: SSL 3 with any CBC suite is vulnerable by construction (RFC 7568 s1 deprecates SSL 3 for it), so the
+    # handshake data shows it and it is not an untested vulnerability.  Every SSL 3 block cipher is CBC; only RC4
+    # (capped by its own rule) and NULL (F) are not.  SSL 3 suites the probe did not list are taken as CBC.
+    if "SSLv3" in offered and offered[-1] != "SSLv3":
+        ssl3 = [n.upper() for n in suites.get("SSLv3", [])] if suites else []
+        cbc = [n for n in ssl3 if "RC4" not in n and _suite_bits(n) != 0]
+        if cbc or not ssl3:
+            cap("C", "SSL 3 offered with a CBC suite (POODLE)" if cbc
+                else "SSL 3 offered, its suites not recorded (taken as CBC: POODLE)")
     # B
     if "SSLv3" in offered and offered[-1] != "SSLv3":
         cap("B", "SSL 3 offered")
@@ -501,12 +522,30 @@ def _rows(view: Any, node_types: Iterable[str]) -> tuple[list[Any], int]:
 
 
 def endpoint_key(item: Any) -> str:
-    """``host:port`` (the location without its ``#fragment``), plus ``/sni`` when the probe sent one."""
+    """``host:port`` as the probe recorded it (the location without its ``#fragment``), plus ``/sni`` when the probe
+    sent a server name other than the host: what D7 prints and looks the chain up by.  The SNI is compared with the
+    host exactly, case-insensitively (review 6039899144 M1: ``sni not in base`` was a substring test)."""
+    from backend.utilities.cbom_sources.resource_identity import split_endpoint
+
     location = str(item.row.get("location") or "") if isinstance(item.row, Mapping) else ""
     base = location.split("#", 1)[0] or str(getattr(item, "target", "") or "")
     facts = item.facts if isinstance(item.facts, Mapping) else {}
     sni = str(facts.get("sni") or facts.get("server_name") or "").strip()
-    return f"{base}/{sni}" if sni and sni not in base else base
+    host = split_endpoint(base)[0].casefold().rstrip(".")
+    return f"{base}/{sni}" if sni and sni.casefold().rstrip(".") != host else base
+
+
+def endpoint_group(item: Any) -> str:
+    """Which rows are ONE endpoint: ``resource_identity.endpoint_identity`` (host case-folded, SNI compared exactly,
+    and the collection's network scope for a private address or a single-label name), the rule the run fold and the
+    team view's ``link_resources`` use (review 6039899144 M1, M2, m7)."""
+    from backend.utilities.cbom_sources.resource_identity import endpoint_identity
+
+    location = str(item.row.get("location") or "") if isinstance(item.row, Mapping) else ""
+    collection = getattr(item, "collection", None)
+    return endpoint_identity(location, item.facts if isinstance(item.facts, Mapping) else {},
+                             getattr(item, "target", None), network=str(getattr(collection, "network_scope", "") or ""),
+                             machine=str(getattr(collection, "machine_scope", "") or ""))
 
 
 @dataclass(frozen=True)
@@ -536,18 +575,49 @@ class Observed:
         return str(row.get("impact") or "")
 
 
-def dedupe(items: Sequence[Any], key=endpoint_key) -> list[Observed]:
+def dedupe(items: Sequence[Any], key=None) -> list[Observed]:
+    """One ``Observed`` per group of rows, the newest kept.  Default (endpoints): grouped by ``endpoint_group``, keyed
+    and printed by the kept row's ``endpoint_key``; a ``key`` given groups and keys by it."""
+    group, shown = (endpoint_group, endpoint_key) if key is None else (key, key)
     groups: dict[str, list[Any]] = {}
     for item in items:
-        groups.setdefault(key(item), []).append(item)
+        groups.setdefault(group(item), []).append(item)
     out = []
-    for k, members in groups.items():
+    for members in groups.values():
         members = sorted(members, key=lambda i: (i.collection.observed_at, i.collection.job_id), reverse=True)
         others = tuple(dict.fromkeys(m.collection.label for m in members[1:] if m.collection.label
                                      != members[0].collection.label))
-        out.append(Observed(k, members[0], others))
+        out.append(Observed(shown(members[0]), members[0], others))
+    if key is None:
+        # two endpoints with one printed address are two networks' hosts (``endpoint_group`` keeps them apart): name
+        # the scope so the rows and their fact ids stay distinct
+        printed: dict[str, int] = {}
+        for observed in out:
+            printed[observed.key] = printed.get(observed.key, 0) + 1
+        out = [replace(o, key=f"{o.key} ({_scope_label(o.item)})") if printed[o.key] > 1 else o for o in out]
     out.sort(key=lambda o: _sort_key(o.key))
     return out
+
+
+def _scope_label(item: Any) -> str:
+    """"segment dc2" / "node 7" / the source name: where a private endpoint was read (``Collection.network_scope``)."""
+    collection = getattr(item, "collection", None)
+    scope = str(getattr(collection, "network_scope", "") or "")
+    kind, _sep, value = scope.partition(":")
+    if kind in ("segment", "node") and value:
+        return f"{kind} {value}"
+    return str(getattr(collection, "label", "") or scope or "unscoped")
+
+
+def chain_key(location: Any, item: Any) -> str:
+    """The ``chain_index`` key of a row: its ``host:port`` plus the scope of a private host (two sites' "10.0.0.5:443"
+    present two different chains, review 6039899144 M2)."""
+    from backend.utilities.cbom_sources.resource_identity import scope_suffix, split_endpoint
+
+    base = str(location or "").split("#", 1)[0]
+    collection = getattr(item, "collection", None)
+    return base + scope_suffix(split_endpoint(base)[0], network=str(getattr(collection, "network_scope", "") or ""),
+                               machine=str(getattr(collection, "machine_scope", "") or ""))
 
 
 def _sort_key(key: str) -> tuple:
@@ -601,7 +671,7 @@ def chain_index(certs: Sequence[Any]) -> dict[str, tuple[ChainCert, ...]]:
         match = _CHAIN.search(location)
         if not match:
             continue
-        slots = found.setdefault(location.split("#", 1)[0], {})
+        slots = found.setdefault(chain_key(location, item), {})
         index = int(match.group(1))
         if index in slots:
             continue  # the first row read for this position wins (rows come newest collection first per source)
@@ -629,7 +699,8 @@ def tls_endpoints(view: Any) -> tuple[list[TlsEndpoint], int]:
         complete = facts.get("cipher_suites_complete") if isinstance(facts.get("cipher_suites_complete"), Mapping) \
             else {}
         enumeration = facts.get("enumeration") if isinstance(facts.get("enumeration"), Mapping) else {}
-        chain = chains.get(observed.key.split("/", 1)[0], ())
+        row = observed.item.row if isinstance(observed.item.row, Mapping) else {}
+        chain = chains.get(chain_key(row.get("location") or getattr(observed.item, "target", ""), observed.item), ())
         out.append(TlsEndpoint(
             observed=observed, service=service, starttls=service.startswith(STARTTLS_PREFIX),
             grade=grade_tls(facts, getattr(view, "as_of", None), chain), suites=accepted_suites(facts),
@@ -848,6 +919,6 @@ def opcua_summary(observed: Observed) -> dict[str, str]:
 
 __all__ = ["chain_index", "chain_issues", "kx_score", "weak_by_name", "APPLIANCE_KINDS", "GRADE_BANDS", "GRADE_MODEL",
            "PROTOCOL_SCORE", "RUBRIC", "ChainCert", "Grade", "Observed",
-           "TlsEndpoint", "accepted_suites", "appliance_configs", "appliance_settings", "dedupe", "endpoint_key",
+           "TlsEndpoint", "accepted_suites", "appliance_configs", "appliance_settings", "dedupe", "endpoint_group", "endpoint_key",
            "grade_tls", "ike_endpoints", "ike_summary", "norm_group", "opcua_summary", "ot_endpoints",
            "ssh_algorithms", "ssh_endpoints", "ssh_host_keys", "ssh_pq_kex", "tls_endpoints", "tls_net"]
