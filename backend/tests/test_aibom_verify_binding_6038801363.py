@@ -128,6 +128,8 @@ def test_the_scans_own_file_with_a_forged_signature_does_not_verify(two_teams, a
     out = _verify(http, base, body, _forged(forgery, body, signature, other_signature))
     assert out["valid"] is False, out
     assert out.get("bound") is not True and out.get("signed_by_deployment") is not True, out
+    if forgery != "no header":  # a signature was sent: the response says it is not the deployment's (review 6039705173)
+        assert out["signed_by_deployment"] is False and out["method"] == "detached ES256", out
     assert "file_subject" not in out, out
     assert _verify(http, base, body, signature)["valid"] is True  # control: the real signature binds
 

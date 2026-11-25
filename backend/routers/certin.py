@@ -576,8 +576,9 @@ def _own_artifact(scan_type: str, data: dict, sha256_hex: str) -> str | None:
     """``ai_bom-spdx`` / ``ai_bom-sarif`` when ``sha256_hex`` is that of this scan's own stored SPDX / SARIF file as
     GET /spdx and /sarif serve it, else None. Those files carry no ``zs:`` subject stamp (the stored documents stay
     unchanged and SHACL-valid), so the binding of N1 is byte equality with this scan's stored file (review 6038801363
-    m-1), and nothing more: another scan whose file is byte-identical (same inputs in the same second) binds too,
-    which is harmless since the content is the same. The route loaded ``data`` for this team's scan only, and calls
+    m-1), and nothing more: another scan whose file is byte-identical binds too (same inputs in the same second, or
+    a document built without ``generated_at``, which carries ``PINNED_TIMESTAMP``), which is harmless since the
+    content is the same. The route loaded ``data`` for this team's scan only, and calls
     this only after the detached signature has verified (review 6039705173: the bytes never stand in for it)."""
     if scan_type != "ai_bom":
         return None
