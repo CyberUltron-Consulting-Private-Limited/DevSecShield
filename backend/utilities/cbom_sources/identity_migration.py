@@ -26,7 +26,13 @@ When: at deploy, in the database migration (``q109certkey001``, ``migrate_all``)
 each team in its own savepoint, marked done with the highest job id it covered. Fallbacks, both idempotent:
 ``backfill_due`` (the scheduler: a team the migration could not move) and ``estate.record_run`` (``migrate_team`` for
 the written sources, only for rows newer than the team's mark: an older worker's write during a rolling deploy).
-The downgrade moves every key back (``reverse``) and clears the marks.
+Review 6060766322 m1: that last one only during the rolling-deploy window (``window()``, 24 h by default); then the
+scheduler's ``close_due`` makes one last pass per team and writes its ``CLOSED`` row, after which a store write reads
+that row and nothing else (``pending_since``). The downgrade moves every key back (``reverse``) and clears the marks
+and the CLOSED rows.
+
+A merge (review 6060766322 m2 / nit) closes the open Q0 item of the asset merged away when it is not carried over
+(``model_change``, as the estate hook does), and drops a link the new key already holds instead of copying it.
 
 The identity rule is FROZEN here (``node_identity`` / ``legacy_node_identity``), so the migration computes the same
 keys whatever a later release does to ``identity``; ``test_cbom_identity_qa2`` pins it equal to the live rule. It
@@ -43,6 +49,8 @@ from typing import Any
 
 BATCH = 500
 MARK = "identity_migration_qa2:team:"  # cbomopscounter name prefix; value: the highest job id the move covered
+CLOSED = "identity_migration_qa2:closed:"  # the team's rolling-deploy window is closed (``close_due``); value: its mark
+WINDOW_HOURS = 24.0  # ``window()``: CBOM_IDENTITY_WINDOW_HOURS overrides
 _DONE: set[int] = set()  # teams this process saw done (no query per tick once everything moved)
 
 
@@ -293,6 +301,7 @@ def _move_observations(session: Any, team_id: int, rows: list[dict[str, Any]]) -
 
     from backend.new_models import (CbomEstateAsset, CbomEstateLink, CbomEstateObservation, CbomQ0Gap,
                                     CbomRiskRegister)
+    from backend.utilities.cbom_sources.common import utcnow
 
     eo, ea = CbomEstateObservation.__table__, CbomEstateAsset.__table__
     rr, el, gq = CbomRiskRegister.__table__, CbomEstateLink.__table__, CbomQ0Gap.__table__
@@ -375,6 +384,17 @@ def _move_observations(session: Any, team_id: int, rows: list[dict[str, Any]]) -
         session.execute(sa.update(ea).values(first_seen_at=s_t.c.at, first_seen_run_id=s_t.c.run).where(
             s_t.c.new == ea.c.asset_key, ea.c.team_id == team_id))
         s_t.drop(session.connection())
+    # links (review 6060766322 nit): a link the new key already holds, or that an earlier old key of the same merge
+    # brings, is dropped rather than moved, so a merge never leaves two identical links (uq_cbomestatelink_link)
+    el2, a2 = el.alias("el2"), a_t.alias("a2")
+    same = sa.and_(el2.c.team_id == team_id, el2.c.kind == el.c.kind, el2.c.scan_id == el.c.scan_id,
+                   el2.c.component == el.c.component)
+    twin = sa.select(el2.c.id).where(same, sa.or_(
+        el2.c.asset_key == a_t.c.new,
+        sa.and_(el2.c.id < el.c.id, el2.c.asset_key.in_(sa.select(a2.c.old).where(
+            a2.c.new == a_t.c.new, a2.c.act.in_(joined)).correlate(a_t))))).correlate(el, a_t)
+    session.execute(sa.delete(el).where(el.c.team_id == team_id, sa.exists(sa.select(a_t.c.old).where(
+        a_t.c.old == el.c.asset_key, a_t.c.act.in_(joined), sa.exists(twin)).correlate(el))))
     session.execute(sa.update(el).values(asset_key=a_t.c.new).where(
         a_t.c.old == el.c.asset_key, el.c.team_id == team_id, a_t.c.act.in_(joined)))
     rr2 = rr.alias("rr2")
@@ -389,6 +409,12 @@ def _move_observations(session: Any, team_id: int, rows: list[dict[str, Any]]) -
             g2.c.team_id == team_id, g2.c.item_kind == gq.c.item_kind, g2.c.closed_at.is_(None),
             g2.c.item_key == prefix + a_t.c.new))))
     merged = sa.select(a_t.c.old).where(a_t.c.act == "merge")
+    # review 6060766322 m2: an asset merged away whose open Q0 item was not carried over (the new key already had
+    # one, or another old key of the merge carried its own) closes now, as the estate hook closes a moved key's item
+    # (``model_change``: a re-identification, recorded, not forwarded), so D12 counts it as closed with no further run
+    session.execute(sa.update(gq).values(closed_at=utcnow(), close_cause="model_change", closed_grade=None).where(
+        gq.c.team_id == team_id, gq.c.item_kind == "asset", gq.c.closed_at.is_(None),
+        gq.c.item_key.in_(sa.select(prefix + a_t.c.old).where(a_t.c.act == "merge"))))
     session.execute(sa.delete(rr).where(rr.c.team_id == team_id, rr.c.item_key.in_(merged)))
     session.execute(sa.delete(ea).where(ea.c.team_id == team_id, ea.c.asset_key.in_(merged)))
     for table in (o_t, a_t):
@@ -416,6 +442,78 @@ def mark_of(session: Any, team_id: int) -> int | None:
 
     row = session.get(CbomOpsCounter, f"{MARK}{team_id}")
     return None if row is None else int(row.value or 0)
+
+
+def pending_since(session: Any, team_id: int) -> int | None:
+    """What ``estate.record_run`` step 0b still has to look at for the team: the job id after which rows may carry the
+    old identity (the team's mark; 0 when the team was never moved), or None once its rolling-deploy window is closed
+    (``close_due``: no older-release writer remains and the rows it wrote moved), so a steady-state store write costs
+    one primary-key read instead of re-reading every certificate it holds (review 6060766322 m1)."""
+    import sqlalchemy as sa
+
+    from backend.new_models import CbomOpsCounter
+
+    oc = CbomOpsCounter.__table__
+    held = dict(session.execute(sa.select(oc.c.name, oc.c.value).where(
+        oc.c.name.in_((f"{MARK}{team_id}", f"{CLOSED}{team_id}")))).all())
+    if f"{CLOSED}{team_id}" in held:
+        return None
+    return int(held.get(f"{MARK}{team_id}") or 0)
+
+
+def window() -> Any:
+    """How long after a team's move an older-release process may still write rows under the old identity (the rolling
+    deploy): ``CBOM_IDENTITY_WINDOW_HOURS`` (default 24; a rolling deploy replaces every process within minutes)."""
+    import datetime as _dt
+    import os
+
+    try:
+        hours = float(os.environ.get("CBOM_IDENTITY_WINDOW_HOURS", "") or WINDOW_HOURS)
+    except ValueError:
+        hours = WINDOW_HOURS
+    return _dt.timedelta(hours=max(0.0, hours))
+
+
+def close_due(engine: Any, now: Any = None, *, teams: int = 20) -> dict[str, int]:
+    """Close the rolling-deploy window of every team moved more than ``window()`` ago (the scheduler, each tick):
+    under the team's source locks, one last pass over the rows written after its mark (an older worker's write to a
+    source nobody wrote since), then the ``CLOSED`` row, in one transaction. From then on ``record_run`` skips step 0b.
+    Idempotent and safe in two processes (the locks; the CLOSED row is written once). Returns what it did."""
+    import sqlalchemy as sa
+    from sqlmodel import Session
+
+    from backend.new_models import CbomOpsCounter
+    from backend.utilities.cbom_sources.common import log, utcnow
+
+    now = now or utcnow()
+    out = {"teams": 0, "failed": 0, "estate": 0, "assignments": 0}
+    oc = CbomOpsCounter.__table__
+    with Session(engine) as session:
+        rows = session.execute(sa.select(oc.c.name, oc.c.value, oc.c.updated_at).where(
+            oc.c.name.like("identity_migration_qa2:%"))).all()
+    closed = {n[len(CLOSED):] for n, _v, _at in rows if n.startswith(CLOSED)}
+    limit = now - window()
+    due = sorted((int(n[len(MARK):]), int(v or 0)) for n, v, at in rows
+                 if n.startswith(MARK) and n[len(MARK):] not in closed and (at is None or at <= limit))
+    for team_id, mark in due[:teams]:
+        started = time.monotonic()
+        try:
+            with Session(engine) as session:
+                found = migrate_team(session, team_id, since_job=mark, lock=True)
+                if session.get(CbomOpsCounter, f"{CLOSED}{team_id}") is None:
+                    session.add(CbomOpsCounter(name=f"{CLOSED}{team_id}", value=mark, updated_at=now))
+                session.commit()
+        except Exception as exc:  # noqa: BLE001 - the next tick retries; until then step 0b keeps running
+            out["failed"] += 1
+            log("identity window close FAILED", team=team_id, error=_fail_text(exc))
+            continue
+        out["teams"] += 1
+        out["estate"] += found["estate"]
+        out["assignments"] += found["assignments"]
+        log("identity window closed", team=team_id, since_job=mark, estate=found["estate"],
+            observations=found["observations"], assignments=found["assignments"],
+            ms=int((time.monotonic() - started) * 1000))
+    return out
 
 
 def _fail_text(exc: BaseException) -> str:
@@ -494,7 +592,7 @@ def migrate_all(connection: Any, now: Any = None, *, reverse: bool = False) -> d
             with Session(bind=connection) as session:  # joins the savepoint: its commit releases only its own
                 found = migrate_team(session, team_id, reverse=reverse, lock=True)
                 session.commit()
-            connection.execute(sa.delete(oc).where(oc.c.name == f"{MARK}{team_id}"))
+            connection.execute(sa.delete(oc).where(oc.c.name.in_((f"{MARK}{team_id}", f"{CLOSED}{team_id}"))))
             if not reverse:
                 connection.execute(sa.insert(oc).values(name=f"{MARK}{team_id}", value=high,
                                                         updated_at=now or utcnow()))
@@ -516,5 +614,6 @@ def migrate_all(connection: Any, now: Any = None, *, reverse: bool = False) -> d
 
 LOCK_TIMEOUT = "30s"  # a store write still holding a source (an older worker) never stalls the deploy longer
 
-__all__ = ["LOCK_TIMEOUT", "MARK", "backfill_due", "backfill_team", "canonical_dn", "keys_of", "legacy_node_identity",
-           "mark_of", "migrate_all", "migrate_team", "node_identity", "remap"]
+__all__ = ["CLOSED", "LOCK_TIMEOUT", "MARK", "backfill_due", "backfill_team", "canonical_dn", "close_due", "keys_of",
+           "legacy_node_identity", "mark_of", "migrate_all", "migrate_team", "node_identity", "pending_since", "remap",
+           "window"]

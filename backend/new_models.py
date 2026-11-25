@@ -1003,7 +1003,10 @@ class CbomEstateLink(SQLModel, table=True):
     code scan holds (CB-21 certificate link keys). Rebuilt when the team's scans or estate change (fingerprint in
     ``CbomEstateLinkState``), never per request."""
     __tablename__ = "cbomestatelink"
-    __table_args__ = (_SaIndex("ix_cbomestatelink_team_key", "team_id", "asset_key"),)
+    __table_args__ = (_SaIndex("ix_cbomestatelink_team_key", "team_id", "asset_key"),
+                      # one link per (asset, scan, component): a q109 merge can no longer leave two (q110linkuq001)
+                      _SaIndex("uq_cbomestatelink_link", "team_id", "asset_key", "kind", "scan_id", "component",
+                               unique=True))
     id: int | None = Field(default=None, primary_key=True)
     team_id: int = Field(foreign_key="team.id")
     asset_key: str = Field(max_length=64)

@@ -149,6 +149,17 @@ class Grader:
             self._ctx[key] = ctx
         return self._ctx[key]
 
+    def prefetch(self, rows: Iterable[CbomCollectedAsset]) -> None:
+        """Read what ``grade`` would ask the database per row (the read-elsewhere rule's verdict rows) for all of
+        ``rows`` at once, a constant number of statements per run (q109 follow-up)."""
+        by_run: dict[int | None, list[CbomCollectedAsset]] = {}
+        for row in rows:
+            by_run.setdefault(row.run_id, []).append(row)
+        for run_rows in by_run.values():
+            elsewhere = getattr(self._context(run_rows[0]), "elsewhere", None)
+            if elsewhere is not None and hasattr(elsewhere, "prefetch"):
+                elsewhere.prefetch(run_rows)
+
     def grade(self, row: CbomCollectedAsset) -> _Graded:
         from backend.utilities.cbom_sources import heatmap as HEAT
         from backend.utilities.cbom_sources import posture as P
@@ -288,6 +299,7 @@ def refresh(session: Session, team_id: int, keys: Iterable[str], now: _dt.dateti
         for ids_part in _chunks(sorted({o["asset_id"] for _k, obs, _d in due for o in obs})):
             rows.update({r.id: r for r in session.exec(select(CbomCollectedAsset).where(
                 CbomCollectedAsset.id.in_(list(ids_part)))).all()})  # type: ignore[union-attr]
+        grader.prefetch(rows.values())  # one read per run for the batch, not one per graded row
         for key, obs, digest in due:
             before = stored.get(key)
             asset = assets[key]
@@ -604,6 +616,7 @@ def add_detail(session: Session, team_id: int, items: list[dict[str, Any]], now:
     contexts: dict[tuple, dict[str, Any]] = {}
     m = inputs.mosca
     grader = Grader(session, team_id, inputs, now)  # the grade's own context per run: its read-elsewhere rule (m1)
+    grader.prefetch(rows.values())  # the read-elsewhere rule's rows for the whole page at once (q109 follow-up)
     for item in items:
         row = rows.get(pick.get(item["item_key"], -1))
         out: dict[str, Any] = {k: None for k in DETAIL_FIELDS}
