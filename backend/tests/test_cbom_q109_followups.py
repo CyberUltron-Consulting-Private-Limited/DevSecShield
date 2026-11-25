@@ -383,7 +383,9 @@ def test_the_migration_chain_has_one_head():
     from alembic.script import ScriptDirectory
 
     script = ScriptDirectory(str(_REPO_ROOT / "prod_database_migrations/migrations"))
-    assert script.get_heads() == ["q110linkuq001"]
+    # PR #499 chains q111remgroup001 (the remediation group-key backfill) after q110: still one head
+    assert script.get_heads() == ["q111remgroup001"]
+    assert script.get_revision("q111remgroup001").down_revision == "q110linkuq001"
     assert script.get_revision("q110linkuq001").down_revision == "q109certkey001"
 
 

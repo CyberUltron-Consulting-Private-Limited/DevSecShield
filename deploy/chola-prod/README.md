@@ -226,6 +226,8 @@ variable before any rollout that keeps the old release running for more than a d
 `CONCURRENTLY` (`q102hist001`, `q110linkuq001`) wait for older transactions; `q110linkuq001` gives up after 3 x 60 s:
 end the idle-in-transaction sessions and deploy again (deploy/staging/README.md, "Migrations that build an index
 CONCURRENTLY").
+Worst-case total wait for `q110linkuq001`: about 3.5 minutes (3 attempts x 60 s `lock_timeout` plus 2 x 10 s
+pauses between them = 200 s, plus dropping each failed attempt's invalid index).
 
 ### Images from a CI run
 

@@ -308,6 +308,8 @@ that waits for it. `q110linkuq001` waits at most 60 s per attempt (`lock_timeout
 invalid index a failed attempt leaves; if the one-shot still fails on it, find the old sessions
 (`SELECT pid, state, xact_start, query FROM pg_stat_activity WHERE state LIKE 'idle in transaction%' ORDER BY
 xact_start`), end them (`pg_terminate_backend(pid)`) and run the deploy again: the migration is retry-safe.
+Worst-case total wait for `q110linkuq001`: about 3.5 minutes (3 attempts x 60 s `lock_timeout` plus 2 x 10 s
+pauses between them = 200 s, plus dropping each failed attempt's invalid index).
 
 ## Rollback
 
