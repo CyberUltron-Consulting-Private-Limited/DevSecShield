@@ -275,15 +275,16 @@ def node_items(session: Session, team_id: int, run: CbomCollectionRun, *,
     sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
         CbomCollectionSource.team_id == team_id)).all()}
     nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
+    from backend.utilities.cbom_sources import resource_identity as RI
+
+    fold = RI.run_fold(session, team_id, int(run.id or 0))
     query = select(CbomCollectedAsset).where(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run.id)
     if asset_ids is not None:
         query = query.where(CbomCollectedAsset.id.in_(list(asset_ids)))  # type: ignore[union-attr]
     else:
         # the whole run: one item per resource, the rows the run's assets API lists (review 6039899144 B1: the waves
         # and the run's tickets planned both jobs' rows, 458 for 229).  Ids a caller names are its own choice.
-        from backend.utilities.cbom_sources import resource_identity as RI
-
-        query = query.where(RI.kept_clause(RI.run_fold(session, team_id, int(run.id or 0))))
+        query = query.where(RI.kept_clause(fold))
     from backend.utilities.cbom_sources.classify import shown
 
     items = []
@@ -317,8 +318,41 @@ def node_items(session: Session, team_id: int, run: CbomCollectionRun, *,
     first = node_first_seen(session, team_id, ((i["source_ref"], i["asset_key"]) for i in items))
     for item in items:
         item["first_seen_on"] = _earliest(first.get(item["asset_key"]), item["first_seen_on"])
-    return _with_assignment(items, _assignments(session, team_id, (i["asset_key"] for i in items)),
-                            fix_windows(session, team_id), as_of)
+    aliases = _fold_aliases(session, team_id, run, fold, items, jobs, sources)
+    found = _assignments(session, team_id, [*(i["asset_key"] for i in items),
+                                            *(k for keys in aliases.values() for k in keys)])
+    for item in items:
+        # review 6058574998 F2: the plan and the Jira ticket follow the RESOURCE.  When another source's copy of it
+        # (a row this run folded into this one) holds the assignment, that key is the item's key: its plan shows, and
+        # "Create tickets" finds its ticket instead of opening a second issue for the same resource
+        others = aliases.get(int(item["asset_id"]), ())
+        item["alias_keys"] = list(others)
+        if item["asset_key"] not in found:
+            held = [k for k in others if k in found]
+            if held:
+                item["asset_key"] = next((k for k in held if found[k].ticket_key), held[0])
+    return _with_assignment(items, found, fix_windows(session, team_id), as_of)
+
+
+def _fold_aliases(session: Session, team_id: int, run: CbomCollectionRun, fold: Any, items: list[dict[str, Any]],
+                  jobs: dict[Any, Any], sources: dict[Any, Any]) -> dict[int, tuple[str, ...]]:
+    """Kept row id -> the remediation keys of the rows of this run folded into it (other sources' copies of the same
+    resource, ``resource_identity.run_fold``), oldest source first.  One query, only for the items listed."""
+    wanted = {int(i["asset_id"]) for i in items}
+    dropped = [d for d, kept in fold.dropped.items() if kept in wanted]
+    if not dropped:
+        return {}
+    out: dict[int, list[tuple[int, str]]] = {}
+    for start in range(0, len(dropped), 500):
+        for row in session.exec(select(CbomCollectedAsset).where(
+                CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run.id,
+                CbomCollectedAsset.id.in_(dropped[start:start + 500]))).all():  # type: ignore[union-attr]
+            job = jobs.get(row.job_id)
+            src = sources.get((job.source_id if job else None) or 0)
+            ref = ID.job_source_ref(job, src) if job else f"source-{row.source_id}"
+            out.setdefault(fold.dropped[int(row.id or 0)], []).append(
+                (int(job.source_id or 0) if job else 0, ID.stable_key("node", ref, ID.node_identity(row))))
+    return {kept: tuple(dict.fromkeys(k for _s, k in sorted(keys))) for kept, keys in out.items()}
 
 
 # ----------------------------------------------------------------------------- code scans

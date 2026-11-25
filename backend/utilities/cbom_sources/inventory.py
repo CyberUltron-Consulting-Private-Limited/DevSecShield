@@ -24,7 +24,7 @@ from backend.utilities.cbom_sources import qgrade as QG
 from backend.utilities.cbom_sources import qgrade_store as QSTORE
 from backend.utilities.cbom_sources import resource_identity as RI
 from backend.utilities.cbom_sources.classify import DATED_TYPES, classify, shown
-from backend.utilities.cbom_sources.common import iso_z
+from backend.utilities.cbom_sources.common import enrichment_only, iso_z
 # CB-06: per-component provenance, PQC class and algorithm families for the export
 from backend.utilities.cbom_sources import provenance as PROV
 from backend.utilities.cbom_sources.classify import family, quantum_vulnerable, standards_of
@@ -233,7 +233,8 @@ def job_reads(session: Session, jobs: list[CbomCollectionJob]) -> dict[int, tupl
             .where(CbomCollectedAsset.job_id.in_(list(attempts)),  # type: ignore[attr-defined]
                    CbomCollectedAsset.asset_type == "coverage")).all():
         facts = facts if isinstance(facts, dict) else {}
-        if attempts.get(job_id) != attempt or str(facts.get("status") or "") in NOT_GAPS or facts.get("by_choice"):
+        if attempts.get(job_id) != attempt or str(facts.get("status") or "") in NOT_GAPS or facts.get("by_choice") \
+                or enrichment_only(facts):  # a listed asset missing one added fact is a note, not a gap (F3)
             continue
         places.setdefault(job_id, set()).add((str(target or ""), str(location or "").split("#", 1)[0]))
     return {job_id: (read.get(job_id, 0), len(places.get(job_id, ()))) for job_id in attempts}
@@ -949,7 +950,7 @@ def coverage_gaps(rows: list[CbomCollectedAsset], names: dict[int, str], job_nam
     """The run's coverage rows as document gaps: ``zs:coverage_gap_count`` (all of them) and one ``zs:coverage_gap``
     per row (at most ``COVERAGE_GAP_CAP``), whose value is compact JSON: ``ref`` (``zs-asset-<id>``, the id the asset
     API lists the row under), source, target, location, check, status, detail, scope, incomplete, by_choice, finding,
-    and the row's provenance (``provenance.NAMES`` without the ``zs:`` prefix; job_id and attempt as numbers)."""
+    ``enrichment_only`` (only when set: a note, not an unread scope) and the row's provenance (``provenance.NAMES`` without the ``zs:`` prefix; job_id and attempt as numbers)."""
     out = [{"name": "zs:coverage_gap_count", "value": str(len(rows))}] if rows else []
     for row in rows[:COVERAGE_GAP_CAP]:
         facts = row.facts if isinstance(row.facts, dict) else {}
@@ -959,6 +960,8 @@ def coverage_gaps(rows: list[CbomCollectedAsset], names: dict[int, str], job_nam
             "status": _text(facts.get("status"), 64), "detail": _text(facts.get("detail"), 512),
             "scope": _names(facts.get("scope"))[:20], "incomplete": facts.get("incomplete") is True,
             "by_choice": facts.get("by_choice") is True, "finding": row.finding,
+            # a note, not a gap: the asset is listed, one added fact was not read (review 6058574998 F3)
+            **({"enrichment_only": True} if enrichment_only(facts) else {}),
         }
         for key, value in PROV.values(row, provs.get(row.job_id)).items():
             gap[key[3:]] = int(value) if key in ("zs:job_id", "zs:attempt") and value.isdigit() else value

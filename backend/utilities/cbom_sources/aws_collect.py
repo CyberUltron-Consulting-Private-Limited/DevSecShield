@@ -25,7 +25,7 @@ from typing import Any, Callable
 
 from backend.utilities.cbom_sources import algid, algid_tables
 from backend.utilities.cbom_sources.aws_validate import _boto, _code
-from backend.utilities.cbom_sources.common import log, new_ref
+from backend.utilities.cbom_sources.common import ENRICHMENT_ONLY, enrichment_only, log, new_ref
 from backend.utilities.cbom_sources.idp_collect import saml_assets_from_xml
 from backend.utilities.cbom_sources.kinds import aws_account_id
 from backend.utilities.cbom_sources.lab_mode import LAB_MODE, own_account_decision
@@ -222,7 +222,8 @@ class _GapTally:
     """Passes every asset on and counts what the coverage gaps left unread, which makes a target partial: not the
     ``by_choice`` rows (an option left off) nor the ``not_reported`` ones (a state in which AWS reports nothing, e.g.
     a key's rotation while it is pending deletion: known and stable, but still hidden from drift), nor the
-    ``TEMPLATE_UPDATE`` ones (a fact a newer reader template allows, review 6039899144 m4).  A row that lists
+    ``ENRICHMENT_ONLY`` ones (a listed asset missing one added fact, e.g. a thumbprint a newer reader template allows:
+    review 6039899144 m4, 6058574998 F3).  A row that lists
     several items counts each (``not_read_count``).  ``codes`` counts them by service and error code for the log."""
 
     def __init__(self, emit: Emit):
@@ -232,7 +233,7 @@ class _GapTally:
     def __call__(self, asset: dict[str, Any]) -> None:
         facts = asset.get("facts") or {}
         if asset.get("type") == "coverage" and not facts.get("by_choice") and facts.get("status") != "not_reported" \
-                and not facts.get(TEMPLATE_UPDATE):
+                and not enrichment_only(facts):
             count = facts.get("not_read_count")
             # 0: a row that only follows from others already counted (custom key stores behind unread keys)
             count = count if isinstance(count, int) and not isinstance(count, bool) and count >= 0 else 1
@@ -1015,15 +1016,18 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
                                       {"certificate_read": str(pem or body_status)[:60]})
             emit(asset)
         def body_gap(asset: dict[str, Any]) -> None:
-            # review 6039899144 m4: a reader stack from before this template has no acm:GetCertificate.  Every
-            # certificate is still listed and described; only its thumbprint is missing, so the denial is shown (the
-            # row says to update the stack) but does not make the run partial (``_GapTally``: TEMPLATE_UPDATE)
+            # Every certificate is listed and described; a body that could not be read costs only its thumbprint, so
+            # the row is a note (ENRICHMENT_ONLY), never a gap, whatever the error (review 6058574998 F3: AWS documents
+            # only RequestInProgressException for a certificate not yet issued, which ACM_WITH_BODY never asks; an
+            # undocumented error for an INACTIVE or REVOKED body is a note too).  A denial means the reader stack
+            # predates the read-only acm:GetCertificate allow (review 6039899144 m4): the row says to update it.
             facts = asset.get("facts") or {}
-            if asset.get("type") == "coverage" and "#body" in str(asset.get("location") or "") \
-                    and facts.get("status") == "denied":
-                facts[TEMPLATE_UPDATE] = "acm:GetCertificate"
-                facts["detail"] = (f"{facts.get('detail') or 'denied'}; the reader stack predates the read-only "
-                                   "acm:GetCertificate allow: update it to the current template")[:300]
+            if asset.get("type") == "coverage" and "#body" in str(asset.get("location") or ""):
+                facts[ENRICHMENT_ONLY] = "certificate body (SHA-256 thumbprint)"
+                if facts.get("status") == "denied":
+                    facts[TEMPLATE_UPDATE] = "acm:GetCertificate"
+                    facts["detail"] = (f"{facts.get('detail') or 'denied'}; the reader stack predates the read-only "
+                                       "acm:GetCertificate allow: update it to the current template")[:300]
             emit(asset)
 
         items.flush(body_gap, {"metadata": ("certificate", False),

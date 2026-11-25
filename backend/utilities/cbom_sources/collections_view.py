@@ -80,6 +80,9 @@ class Collection:
     # documents say "newest collection read nothing on <date>; last read <date>" (review 6039899144 M4)
     newer_attempt_job_id: int | None = field(default=None, compare=False, repr=False)
     newer_attempt_at: _dt.datetime | None = field(default=None, compare=False, repr=False)
+    # CbomCollectionSource.id (0 when not known): the stable preference between two sources that read one resource,
+    # the oldest kept (``_rank``, review 6058574998 F2)
+    source_id: int = field(default=0, compare=False, repr=False)
 
     @property
     def label(self) -> str:
@@ -251,6 +254,9 @@ def latest_collections(session: Any, team_id: int, *, limit: int = 2_000) -> lis
     one failed run with zero assets dropped every certificate of the source from D8 and the certificate hygiene list
     (15 -> 0).  A source whose every job read nothing keeps its newest one (``newer`` None), so D1 / D2 still name it
     with what it read: nothing."""
+    from types import SimpleNamespace
+
+    from sqlalchemy import or_
     from sqlmodel import select
 
     from backend.new_models import CbomCollectionJob, CbomCollectionSource
@@ -261,12 +267,14 @@ def latest_collections(session: Any, team_id: int, *, limit: int = 2_000) -> lis
     usable: dict[str, Any] = {}
     empty: dict[str, Any] = {}  # the newest attempt that read nothing, per source, until a usable one is found
     order: list[str] = []
+    seen = 0
     for job in session.exec(select(CbomCollectionJob).where(
             CbomCollectionJob.team_id == team_id, CbomCollectionJob.kind == "collect",
             CbomCollectionJob.status == "success", CbomCollectionJob.run_id.is_not(None))  # type: ignore[union-attr]
             .order_by(CbomCollectionJob.finished_at.desc().nulls_last(),  # type: ignore[union-attr]
                       CbomCollectionJob.id.desc())  # type: ignore[union-attr]
             .limit(limit)).all():
+        seen += 1
         ref = ID.job_source_ref(job, sources.get(job.source_id or 0))
         if ref in usable:
             continue
@@ -276,7 +284,32 @@ def latest_collections(session: Any, team_id: int, *, limit: int = 2_000) -> lis
             empty.setdefault(ref, job)
             continue
         usable[ref] = job
-    return [(usable[ref], empty.get(ref)) if ref in usable else (empty[ref], None) for ref in order]
+    # review 6058574998 F7: the window is shared by every job, so a source whose recent attempts all read nothing (an
+    # hourly schedule failing for weeks) or that ran long ago can have its last real read outside it.  Each existing
+    # source without a real read in the window is asked for its own newest one (one indexed query per such source,
+    # usually none); a deleted source is history and keeps what the window holds.
+    found = 0
+    for source in sources.values():
+        ref = ID.job_source_ref(SimpleNamespace(params={}, source_id=source.id, id=0), source)
+        if ref in usable or (ref not in empty and seen < limit):
+            continue  # a real read in the window, or none anywhere (the window held every job and none of this one)
+        job = session.exec(select(CbomCollectionJob).where(
+            CbomCollectionJob.team_id == team_id, CbomCollectionJob.source_id == source.id,
+            CbomCollectionJob.kind == "collect", CbomCollectionJob.status == "success",
+            CbomCollectionJob.run_id.is_not(None),  # type: ignore[union-attr]
+            or_(CbomCollectionJob.outcome.is_(None), CbomCollectionJob.outcome != "failed"))  # type: ignore[union-attr]
+            .order_by(CbomCollectionJob.finished_at.desc().nulls_last(),  # type: ignore[union-attr]
+                      CbomCollectionJob.id.desc()).limit(1)).first()  # type: ignore[union-attr]
+        if job is None or ID.job_source_ref(job, source) != ref:
+            continue
+        found += 1
+        usable[ref] = job
+        if ref not in order:
+            order.append(ref)
+    out = [(usable[ref], empty.get(ref)) if ref in usable else (empty[ref], None) for ref in order]
+    if found:  # newest first, as the window gives them
+        out.sort(key=lambda pair: (_aware(pair[0].finished_at or pair[0].created_at), pair[0].id or 0), reverse=True)
+    return out
 
 
 def latest_jobs(session: Any, team_id: int, *, limit: int = 2_000) -> list[Any]:
@@ -390,7 +423,7 @@ def load_sources_result(session: Any, team_id: int, now: _dt.datetime | None = N
             observed_at=_aware(job.finished_at or job.created_at), asset_count=len(assets),
             endpoints_probed=sum(1 for a in assets if a.asset_type in NETWORK_TYPES),
             metadata=_source_metadata(source, job), info=collection_info(session, source, job),
-            network_scope=network, machine_scope=machine,
+            network_scope=network, machine_scope=machine, source_id=int(source.id or 0) if source is not None else 0,
             newer_attempt_job_id=int(newer.id) if newer is not None else None,
             newer_attempt_at=_aware(newer.finished_at or newer.created_at) if newer is not None else None)
         out.collections.append(collection)
@@ -489,7 +522,8 @@ def link_resources(rows: list[SourcesRow]) -> int:
         if not item.identity.startswith("node|"):
             continue  # a certificate's cross-source key (link_certificates) or a hand-made identity
         key = resource_identity(item.node_type, item.target, item.row.get("location"), item.facts,
-                                network=item.collection.network_scope, machine=item.collection.machine_scope)
+                                network=item.collection.network_scope, machine=item.collection.machine_scope,
+                                cluster=item.collection.source_ref)
         if key is None:
             continue
         own = (item.collection.key, key)
@@ -507,9 +541,13 @@ def link_resources(rows: list[SourcesRow]) -> int:
 
 def _rank(item: SourcesRow) -> tuple:
     """The observation kept for an identity (``resource_identity.rank``): a source that still exists before a deleted
-    one, then an observation with a quantum verdict, then the newer collection, then the higher job id."""
+    one, then an observation with a quantum verdict, then, for a resource, the oldest source (a stable preference:
+    review 6058574998 F2), then the newer collection, then the higher job id."""
+    # the stable preference holds for resources (``resource_identity`` keys); a certificate correlated across sources
+    # (CB-21) keeps "latest observation wins": its newest read is the one whose validity and chain are printed
+    source_id = int(getattr(item.collection, "source_id", 0) or 0) if item.identity.startswith("res|") else 0
     return (not is_deleted_source(item.collection), item.row.get("quantum_safe") is not None,
-            item.collection.observed_at, item.collection.job_id)
+            -source_id if source_id else 0, item.collection.observed_at, item.collection.job_id)
 
 
 # ----------------------------------------------------------------------------- latest observation wins
@@ -625,6 +663,14 @@ def resolve(code_observations: Iterable[tuple[int, _dt.datetime, str]], rows: It
             item.also_seen = tuple(dict.fromkeys(m.collection.label for m in others
                                                  if m.collection.label != item.collection.label))
             item.also_seen_keys = tuple(dict.fromkeys(m.collection.key for m in others))
+        # the remediation state follows the resource, whichever source's row is kept (review 6058574998 F2): a plan
+        # set on another source's copy of it stays visible
+        if item.row.get("remediation_status", "open") == "open":
+            for m in sorted(group, key=_rank, reverse=True):
+                status = m.row.get("remediation_status")
+                if m is not item and status and status != "open":
+                    item.row["remediation_status"] = status
+                    break
     kept: list[SourcesRow] = []
     winners_at: dict[str, _dt.datetime] = {}
     for ident, item in best.items():

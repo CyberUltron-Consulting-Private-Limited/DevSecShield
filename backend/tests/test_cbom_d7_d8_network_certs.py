@@ -146,8 +146,11 @@ def engine():
                 s.add(src)
                 s.flush()
                 src_id = src.id
+            # every network source of this lab runs on the lab's scan-node segment: a private address two of them
+            # probe is one endpoint only inside one declared network (review 6058574998 F5: a node-less job is scoped
+            # by its own source, so before this the two lab sources merged 10.0.0.10:443 only by accident)
             job = CbomCollectionJob(team_id=1, run_id=run.id, source_id=src_id if src_id else 9999, kind="collect",
-                                    status="success", attempts=1,
+                                    status="success", attempts=1, node_segment="lab",
                                     finished_at=(NOW - dt.timedelta(hours=hours_ago)).replace(tzinfo=None),
                                     params={"source_uid": f"uid-{name}", "source_name": name})
             s.add(job)

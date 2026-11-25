@@ -113,9 +113,10 @@ def _capped(rows: list[list[Any]], noun: str, styles: Styles,
 
 
 def _table(headers: tuple[str, ...], rows: list[list[Any]], weights: tuple[float, ...], width: float, styles: Styles,
-           noun: str) -> list[Flowable]:
+           noun: str, cell_limit: int = 300, max_cell_height: float = 180) -> list[Flowable]:
     shown, notes = _capped(rows, noun, styles)
-    return [*notes, *common.register(headers, shown, weights, width, styles, noun=noun)]
+    return [*notes, *common.register(headers, shown, weights, width, styles, noun=noun, cell_limit=cell_limit,
+                                     max_cell_height=max_cell_height)]
 
 
 _SOURCES_RENDERED = frozenset({"tls_endpoint", "ssh_service"})  # kinds this document reads from the rows themselves
@@ -585,6 +586,8 @@ def _seen(observed: NE.Observed) -> str:
 
 
 RUBRIC_CELL_LIMIT = 700
+GRADES_CELL_LIMIT = 1500  # "Caps and trust" (one reason per rubric rule) and "Source" (the reader and every "also")
+GRADES_CELL_HEIGHT = 400.0  # points: a whole legacy endpoint row, below the 504-point landscape frame with its header
 
 
 def _grade_rubric(styles: Styles, width: float) -> list[Flowable]:
@@ -615,7 +618,11 @@ def _grades(model: _Model, styles: Styles, width: float) -> list[Flowable]:
         *section_heading("TLS endpoint grades", styles),
         *_table(("Endpoint", "Service", "Grade", "Score", "Caps and trust", "Negotiated", "Cipher",
                           "Groups", "Suite enumeration", "Source"), rows,
-                         (90, 50, 50, 30, 130, 45, 100, 60, 90, 75), width, styles, "graded endpoints"),
+                         (90, 50, 50, 30, 130, 45, 100, 60, 90, 75), width, styles, "graded endpoints",
+                         # every cap, trust issue and warning, and every source, printed whole (review 6058574998
+                         # F4: a legacy appliance's 528 characters ended in "..."); the grade has at most one reason
+                         # per rubric rule, so the rubric's own bound holds for the cell
+                         cell_limit=GRADES_CELL_LIMIT, max_cell_height=GRADES_CELL_HEIGHT),
     ]
 
 

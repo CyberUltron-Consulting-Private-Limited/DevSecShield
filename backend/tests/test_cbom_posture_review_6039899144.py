@@ -171,7 +171,7 @@ def test_cloud_resource_ids_are_anchored():
 
 
 @pytest.mark.parametrize("host,scope", [
-    ("10.0.0.5", "network"), ("192.168.1.1", "network"), ("100.64.0.9", "network"), ("fe80::1", "network"),
+    ("10.0.0.5", "network"), ("192.168.1.1", "network"), ("100.64.0.9", "network"), ("fe80::1", "machine"),
     ("fd00::5", "network"), ("web01", "network"), ("printer.local", "network"), ("db.corp.internal", "network"),
     ("127.0.0.1", "machine"), ("::1", "machine"), ("localhost", "machine"), ("LOCALHOST", "machine"),
     ("8.8.8.8", ""), ("api.example.com", ""), ("aws:444455556666", ""), ("Lab network", ""),

@@ -72,7 +72,7 @@ RUBRIC = (
               "served chain.")),
     ("Cap C", ("SSL 3 offered with a CBC suite, or with suites not recorded: POODLE (2009g); no TLS 1.2 (2009j; a TLS "
               "1.3-only server is not capped, see Divergence); RC4 accepted with TLS 1.1 or later (2009j); 3DES or "
-              "another 64-bit block cipher accepted with TLS 1.1 or later (2009n).")),
+              "another 64-bit block cipher (DES, IDEA, RC2) accepted with TLS 1.1 or later (2009n).")),
     ("Cap B", ("SSL 3 offered (2009h); TLS 1.0 or 1.1 offered; RC4 accepted with TLS 1.0 or SSL 3 only (2009i); no "
               "forward-secret suite accepted (2009p); no AEAD suite (2009p); certificate RSA key < 2048 or EC key < "
               "224 bits; a finite-field DH group < 2048 bits (2009j); an incomplete chain (2009i); key exchange not "
@@ -113,6 +113,11 @@ RUBRIC = (
     ("Divergence", ("2009n's explicit penalty for suites under 112 bits has no size in the guide, so no cap of its own: "
                    "such suites are capped by the rules above (single DES by the 64-bit block rule, 40-bit EXPORT and "
                    "NULL at F) and score 0 or 20 in cipher strength.")),
+    ("Divergence", ("An endpoint is identified by the address the probe used: one probed once by DNS name and once by IP "
+                   "address is two rows, and an internal name that resolves to different private addresses in two "
+                   "sites is one row per scan-node segment only when it is a single label or a local name (.local, "
+                   ".internal, .svc ...); a fully qualified split-horizon name is one row. A private, link-local or "
+                   "loopback address is one endpoint per scan-node segment (else per scan node, else per source).")),
 )
 
 
@@ -233,12 +238,18 @@ def kx_score(bits: int | None) -> int:
     return 20 if bits < 512 else 40 if bits < 1024 else 80 if bits < 2048 else 90 if bits < 4096 else 100
 
 
+def _block64(upper: str) -> bool:
+    """A 64-bit block cipher (SWEET32, CVE-2016-2183): DES, 3DES, IDEA and RC2.  IDEA keys are 128 bits but its block
+    is 64 (RFC 5469 retires IDEA and DES from TLS for it), so the key size alone missed it (review 6058574998 F6)."""
+    return _suite_bits(upper) in (56, 112) or "IDEA" in upper or "RC2" in upper
+
+
 _WEAK_RULES = (  # (reason, test on the upper-case IANA / OpenSSL suite name); the grade caps read the same list
     ("NULL cipher", lambda n: _suite_bits(n) == 0),
     ("EXPORT", lambda n: "EXPORT" in n or "EXP-" in n),
     ("anonymous key exchange", lambda n: "_ANON_" in n or n.startswith(("ADH", "AECDH"))),
     ("RC4", lambda n: "RC4" in n),
-    ("64-bit block (DES / 3DES)", lambda n: _suite_bits(n) in (56, 112)),
+    ("64-bit block (DES / 3DES / IDEA)", lambda n: _block64(n)),
 )
 
 
@@ -308,12 +319,25 @@ def _names_cover(name: str, leaf: Mapping[str, Any]) -> bool | None:
 
 
 def _hsts_seconds(facts: Mapping[str, Any]) -> int | None:
+    """The HSTS max-age the probe read: seconds, 0 for no header, ``HSTS_INVALID`` for a value that is not a
+    non-negative whole number (SSL Labs 2009r: "HSTS disabled or invalid" is a warning, review 6058574998 F6: a
+    malformed value was "not recorded"), None when the probe did not read it."""
     raw = facts.get("hsts_max_age")
     if raw is None and isinstance(facts.get("hsts"), Mapping):
         raw = facts["hsts"].get("max_age")
     if raw is None and facts.get("hsts") is False:
         return 0
-    return raw if isinstance(raw, int) and not isinstance(raw, bool) else None
+    if raw is None:
+        return None
+    if isinstance(raw, bool):
+        return HSTS_INVALID
+    if isinstance(raw, int):
+        return raw if raw >= 0 else HSTS_INVALID
+    text = str(raw).strip()
+    return int(text) if text.isdigit() else HSTS_INVALID
+
+
+HSTS_INVALID = -1
 
 
 _HTTP_SERVICES = frozenset({"tls", "https", "http"})
@@ -340,7 +364,9 @@ def grade_tls(facts: Mapping[str, Any], as_of: Any = None, chain: Sequence[Any] 
     leaf_bits = _int(leaf.get("key_size"))
     weak = facts.get("weak_ciphers_accepted") if isinstance(facts.get("weak_ciphers_accepted"), Mapping) else {}
     upper = [n.upper() for n in names]
-    has_fs = any("ECDHE" in n or "DHE" in n or n.startswith(("TLS_AES_", "TLS_CHACHA20_")) for n in upper)
+    # forward secrecy: an (EC)DHE suite, its OpenSSL alias EDH- (EDH-RSA-DES-CBC3-SHA, review 6058574998 F6), or TLS 1.3
+    has_fs = any("ECDHE" in n or "DHE" in n or re.search(r"(^|[_-])EDH[_-]", n)
+                 or n.startswith(("TLS_AES_", "TLS_CHACHA20_")) for n in upper)
     static_rsa = bool(weak.get("static_rsa")) or any(re.match(r"TLS_RSA_WITH", n) for n in names)
     kx = _kx_bits(facts, static_rsa and not has_fs, leaf_bits)
     bits = [_suite_bits(n) for n in names]
@@ -385,8 +411,8 @@ def grade_tls(facts: Mapping[str, Any], as_of: Any = None, chain: Sequence[Any] 
             cap("C", "RC4 accepted with TLS 1.1 or later")
         else:
             cap("B", "RC4 accepted")
-    if "64-bit block (DES / 3DES)" in by_reason:
-        if any(_suite_bits(n) in (56, 112) for n in modern_names):
+    if "64-bit block (DES / 3DES / IDEA)" in by_reason:
+        if any(_block64(n) for n in modern_names):
             cap("C", "3DES or another 64-bit block cipher accepted with TLS 1.1 or later")
         else:
             cap("B", "3DES or another 64-bit block cipher accepted (TLS 1.0 or SSL 3 only)")
@@ -425,7 +451,9 @@ def grade_tls(facts: Mapping[str, Any], as_of: Any = None, chain: Sequence[Any] 
     hsts = _hsts_seconds(facts) if service in _HTTP_SERVICES else None
     if "TLSv1.3" not in offered:
         warnings.append("TLS 1.3 not offered")
-    if hsts is not None and hsts <= 0:
+    if hsts == HSTS_INVALID:
+        warnings.append("HSTS max-age invalid")
+    elif hsts is not None and hsts <= 0:
         warnings.append("HSTS not set")
     if letter == "A" and warnings:
         letter = "A-"
