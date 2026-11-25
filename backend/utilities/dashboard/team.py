@@ -25,10 +25,9 @@ def _to_date_key(d) -> str | None:
     return None
 
 def _partial_ai_bom_scans(scans: list) -> int:
-    from backend.utilities.pdf.aibom_posture import scan_data_partial
+    from backend.utilities.pdf.aibom_posture import partial_ai_bom_scan
 
-    return sum(1 for s in scans if s.scan_type == "ai_bom" and (s.scan_status or "").lower() == "success"
-               and scan_data_partial(s.scan_data))
+    return sum(1 for s in scans if s.scan_type == "ai_bom" and partial_ai_bom_scan(s))
 
 
 def generate_team_dashboard_data(team_id: int, engine: Engine) -> dict:

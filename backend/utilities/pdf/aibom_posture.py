@@ -147,5 +147,17 @@ def scan_data_partial(scan_data: Any) -> bool:
     return is_partial(scan_data.get("ai_bom_scores"), scan_data.get("ai_bom_json"))
 
 
-__all__ = ["current_scores", "engine_posture", "is_partial", "posture_risk", "scan_completeness", "scan_data_partial",
-           "scanners_not_finished"]
+def scan_succeeded(scan: Any) -> bool:
+    """A stored scan row finished successfully, whatever the case of its ``scan_status`` (review 6065595627 of #498,
+    m5: the team tile lowercased it, the list and the AI BOM dashboard compared it exactly)."""
+    return str(getattr(scan, "scan_status", None) or "").lower() == "success"
+
+
+def partial_ai_bom_scan(scan: Any) -> bool:
+    """A successful AI BOM scan a scanner did not finish: the one rule the scan list, the team AI BOM dashboard and
+    the team tile use."""
+    return scan_succeeded(scan) and scan_data_partial(getattr(scan, "scan_data", None))
+
+
+__all__ = ["current_scores", "engine_posture", "is_partial", "partial_ai_bom_scan", "posture_risk",
+           "scan_completeness", "scan_data_partial", "scan_succeeded", "scanners_not_finished"]

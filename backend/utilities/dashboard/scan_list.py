@@ -1891,7 +1891,7 @@ def _ai_bom_results(scan: Scan) -> list:
 
 def generate_ai_bom_dashboard_data(scans: list[Scan]) -> dict:
     """Aggregate AI-BOM dashboard data across all scans for the scan-list page."""
-    from backend.utilities.pdf.aibom_posture import scan_data_partial
+    from backend.utilities.pdf.aibom_posture import partial_ai_bom_scan, scan_succeeded
 
     severity_distribution = {"critical": 0, "high": 0, "medium": 0, "low": 0}
     asset_type_distribution: dict[str, int] = defaultdict(int)
@@ -1917,9 +1917,9 @@ def generate_ai_bom_dashboard_data(scans: list[Scan]) -> dict:
     assets_with_license_and_card = 0
 
     for scan in scans:
-        if scan.scan_status != "success":
+        if not scan_succeeded(scan):  # any case (review 6065595627 of #498, m5)
             continue
-        if scan_data_partial(scan.scan_data):
+        if partial_ai_bom_scan(scan):
             partial_scan_ids.append(scan.id)
         results = _ai_bom_results(scan)
         if not results:
@@ -2057,7 +2057,7 @@ def generate_ai_bom_dashboard_data(scans: list[Scan]) -> dict:
     total_ignored = 0
     all_findings_count = 0
     for scan in scans:
-        if scan.scan_status != "success":
+        if not scan_succeeded(scan):  # any case (review 6065595627 of #498, m5)
             continue
         findings = get_findings_for_scan_id(scan_id=scan.id)
         all_findings.extend(findings)

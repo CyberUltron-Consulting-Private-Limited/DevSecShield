@@ -492,7 +492,10 @@ def return_ai_bom_list_item(scan : Scan) -> dict:
     total_critical , total_high , total_medium , total_low , average_risk_score  = 0,0,0,0,0
     total_high_risk_assets , total_models = 0, 0
     model_keys: set = set()
-    if scan.scan_data and scan.scan_data != {} and "results" in scan.scan_data and scan.scan_status == "success":
+    from backend.utilities.pdf.aibom_posture import scan_succeeded
+
+    # the status is read as the dashboards read it (review 6065595627 of #498, m5)
+    if scan.scan_data and scan.scan_data != {} and "results" in scan.scan_data and scan_succeeded(scan):
         for asset in scan.scan_data["results"]:
             impact = (asset.get("impact") or "").lower()
             if impact == "critical":
@@ -559,11 +562,11 @@ def return_ai_bom_list_item(scan : Scan) -> dict:
 
 def _ai_bom_completeness(scan: Scan) -> str | None:
     """"partial" or "complete" for a successful AI BOM scan, None otherwise."""
-    if scan.scan_status != "success" or not isinstance(scan.scan_data, dict):
-        return None
-    from backend.utilities.pdf.aibom_posture import scan_data_partial
+    from backend.utilities.pdf.aibom_posture import partial_ai_bom_scan, scan_succeeded
 
-    return "partial" if scan_data_partial(scan.scan_data) else "complete"
+    if not scan_succeeded(scan) or not isinstance(scan.scan_data, dict):
+        return None
+    return "partial" if partial_ai_bom_scan(scan) else "complete"
 
 
 # Kept at the end of the file so the functions above keep their line numbers (the (i) tips cite them).
