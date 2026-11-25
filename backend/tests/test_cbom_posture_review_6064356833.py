@@ -49,15 +49,30 @@ from backend.utilities.cbom_sources import resource_identity as RI  # noqa: E402
 VERSIONS = _REPO_ROOT / "prod_database_migrations/migrations/versions"
 
 
+def _test_database_name(name: str) -> str:
+    """The database these tests may drop tables in: ``name`` itself when it says "test", else ``<name>_cbom_test``."""
+    return name if "test" in name.lower() else f"{name}_cbom_test"
+
+
 def pg_test_url() -> str | None:
-    """``CBOM_TEST_PG_URL``, only when its database name says it is a test database: these tests drop every table."""
+    """A URL for ``CBOM_TEST_PG_URL``'s server whose database name contains "test" (these tests drop every table):
+    the configured database when its name says so, else a database of its own, created once on that server (review
+    6064356833 note: never the configured database itself)."""
     url = os.environ.get("CBOM_TEST_PG_URL")
     if not url:
         return None
-    name = sa.engine.make_url(url).database or ""
-    if "test" not in name.lower():
-        raise RuntimeError(f"refusing to drop tables in {name!r}: CBOM_TEST_PG_URL must name a database with 'test'")
-    return url
+    parsed = sa.engine.make_url(url)
+    target = _test_database_name(parsed.database or "postgres")
+    if target == parsed.database:
+        return url
+    admin = create_engine(url, isolation_level="AUTOCOMMIT")
+    try:
+        with admin.connect() as conn:
+            if not conn.execute(sa.text("SELECT 1 FROM pg_database WHERE datname = :n"), {"n": target}).scalar():
+                conn.execute(sa.text(f'CREATE DATABASE "{target}"'))
+    finally:
+        admin.dispose()
+    return parsed.set(database=target).render_as_string(hide_password=False)
 
 
 @pytest.fixture()
@@ -395,7 +410,8 @@ def test_q110_retries_until_the_transaction_ends_and_leaves_a_valid_index(pg):
                                     "WHERE NOT i.indisvalid")).scalar() == 0
 
 
-def test_pg_test_url_refuses_a_database_not_named_test(monkeypatch):
-    monkeypatch.setenv("CBOM_TEST_PG_URL", "postgresql://u@localhost/prod")
-    with pytest.raises(RuntimeError, match="refusing"):
-        pg_test_url()
+def test_the_pg_tests_never_drop_tables_in_a_database_not_named_test():
+    assert _test_database_name("cbom") == "cbom_cbom_test" and _test_database_name("cbom_test") == "cbom_test"
+    url = pg_test_url()
+    if url is not None:  # with CBOM_TEST_PG_URL set: the URL handed to the fixtures names a test database
+        assert "test" in (sa.engine.make_url(url).database or "")
