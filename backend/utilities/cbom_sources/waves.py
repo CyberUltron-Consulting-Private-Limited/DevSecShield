@@ -318,41 +318,90 @@ def node_items(session: Session, team_id: int, run: CbomCollectionRun, *,
     first = node_first_seen(session, team_id, ((i["source_ref"], i["asset_key"]) for i in items))
     for item in items:
         item["first_seen_on"] = _earliest(first.get(item["asset_key"]), item["first_seen_on"])
-    aliases = _fold_aliases(session, team_id, run, fold, items, jobs, sources)
-    found = _assignments(session, team_id, [*(i["asset_key"] for i in items),
-                                            *(k for keys in aliases.values() for k in keys)])
+    resolved = resolve_run(session, team_id, run, only={int(i["asset_id"]) for i in items}, fold=fold)
+    found: dict[str, CbomRemediationAssignment] = {}
     for item in items:
-        # review 6058574998 F2: the plan and the Jira ticket follow the RESOURCE.  When another source's copy of it
-        # (a row this run folded into this one) holds the assignment, that key is the item's key: its plan shows, and
-        # "Create tickets" finds its ticket instead of opening a second issue for the same resource
-        others = aliases.get(int(item["asset_id"]), ())
-        item["alias_keys"] = list(others)
-        if item["asset_key"] not in found:
-            held = [k for k in others if k in found]
-            if held:
-                item["asset_key"] = next((k for k in held if found[k].ticket_key), held[0])
-    return _with_assignment(items, found, fix_windows(session, team_id), as_of)
+        # review 6060688856 M1-M4: the plan, status and ticket are the RESOURCE's (``remediation_group.resolve`` over
+        # its group key and every copy's key), whichever source's row "latest observation wins" shows; a change is
+        # written to ``asset_key`` (the primary's key, else the group key)
+        r = resolved.get(int(item["asset_id"]))
+        if r is None:
+            continue
+        item["own_key"], item["asset_key"] = item["asset_key"], r.key
+        item["group_key"], item["alias_keys"] = r.group, [k for k in r.keys if k != r.key]
+        if r.assignment is not None:
+            found[r.key] = r.assignment
+    out = _with_assignment(items, found, fix_windows(session, team_id), as_of)
+    for item in out:
+        r = resolved.get(int(item["asset_id"]))
+        if r is not None and r.ticket is not None and item.get("assignment") is not None:
+            item["assignment"]["ticket_key"], item["assignment"]["ticket_url"] = r.ticket_key, r.ticket_url
+    return out
 
 
-def _fold_aliases(session: Session, team_id: int, run: CbomCollectionRun, fold: Any, items: list[dict[str, Any]],
-                  jobs: dict[Any, Any], sources: dict[Any, Any]) -> dict[int, tuple[str, ...]]:
-    """Kept row id -> the remediation keys of the rows of this run folded into it (other sources' copies of the same
-    resource, ``resource_identity.run_fold``), oldest source first.  One query, only for the items listed."""
-    wanted = {int(i["asset_id"]) for i in items}
-    dropped = [d for d, kept in fold.dropped.items() if kept in wanted]
-    if not dropped:
-        return {}
-    out: dict[int, list[tuple[int, str]]] = {}
-    for start in range(0, len(dropped), 500):
-        for row in session.exec(select(CbomCollectedAsset).where(
-                CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run.id,
-                CbomCollectedAsset.id.in_(dropped[start:start + 500]))).all():  # type: ignore[union-attr]
-            job = jobs.get(row.job_id)
-            src = sources.get((job.source_id if job else None) or 0)
-            ref = ID.job_source_ref(job, src) if job else f"source-{row.source_id}"
-            out.setdefault(fold.dropped[int(row.id or 0)], []).append(
-                (int(job.source_id or 0) if job else 0, ID.stable_key("node", ref, ID.node_identity(row))))
-    return {kept: tuple(dict.fromkeys(k for _s, k in sorted(keys))) for kept, keys in out.items()}
+def resolve_run(session: Session, team_id: int, run: CbomCollectionRun, *, only: set[int] | None = None,
+                fold: Any = None) -> dict[int, Any]:
+    """``row id -> remediation_group.Resolved`` for the run's kept rows (``only``: these ids): each resource's
+    assignment over its group key and the source-scoped keys of every copy this run read (the kept row and the rows
+    ``resource_identity.run_fold`` folded into it).  Light columns; facts only where an identity reads them
+    (certificates' subjects, TLS endpoints' SNI).  The one resolution ``node_items`` and the run list's status filter
+    (``run_assets._status_clause``) use (review 6060688856 M3)."""
+    from types import SimpleNamespace
+
+    from backend.utilities.cbom_sources import remediation_group as RG
+    from backend.utilities.cbom_sources import resource_identity as RI
+
+    fold = fold if fold is not None else RI.run_fold(session, team_id, int(run.id or 0))
+    jobs = {j.id: j for j in session.exec(select(CbomCollectionJob).where(
+        CbomCollectionJob.team_id == team_id, CbomCollectionJob.run_id == run.id)).all()}
+    sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
+        CbomCollectionSource.team_id == team_id)).all()}
+    nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
+    context: dict[Any, tuple[str, str, str]] = {}
+    for job_id, job in jobs.items():
+        src = sources.get(job.source_id or 0)
+        ref = ID.job_source_ref(job, src)
+        context[job_id] = (ref, *RI.job_scope(job, nodes.get(job.node_id or 0), ref))
+    wanted = None if only is None else set(only) | {d for d, k in fold.dropped.items() if k in only}
+    cols = (CbomCollectedAsset.id, CbomCollectedAsset.job_id, CbomCollectedAsset.source_id, CbomCollectedAsset.asset_key,
+            CbomCollectedAsset.asset_type, CbomCollectedAsset.cdx_type, CbomCollectedAsset.target,
+            CbomCollectedAsset.location)
+    with_facts = sa.or_(CbomCollectedAsset.cdx_type == ID.CERT_CDX, CbomCollectedAsset.asset_type.in_(  # type: ignore
+        ("certificate", "k8s_certificate", "tls_endpoint")))
+    scope = [CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run.id,
+             CbomCollectedAsset.asset_type != "coverage"]
+    own: dict[int, str] = {}
+    group: dict[int, str | None] = {}
+    for facts_too in (False, True):
+        query = select(*cols, CbomCollectedAsset.facts).where(*scope, with_facts) if facts_too else \
+            select(*cols).where(*scope, ~with_facts)
+        if wanted is not None:
+            ids = sorted(wanted)
+            parts = [ids[i:i + 500] for i in range(0, len(ids), 500)] or [[]]
+        else:
+            parts = [None]
+        for part in parts:
+            q = query if part is None else query.where(CbomCollectedAsset.id.in_(part))  # type: ignore[union-attr]
+            for rec in session.exec(q).all():
+                aid, job_id, source_id, asset_key, kind, cdx, target, location = rec[:8]
+                facts = (rec[8] if facts_too else None) or {}
+                ref, network, machine = context.get(job_id, (f"source-{source_id}", "", ""))
+                row = SimpleNamespace(asset_key=asset_key, asset_type=kind, cdx_type=cdx, target=target,
+                                      location=location, facts=facts)
+                own[int(aid)] = ID.stable_key("node", ref, ID.node_identity(row))
+                group[int(aid)] = RG.row_group_key(kind, target, location, facts, network=network, machine=machine,
+                                                   cluster=ref)
+    members: dict[int, list[int]] = {}
+    for aid in own:
+        kept = fold.dropped.get(aid, aid)
+        members.setdefault(kept, []).append(aid)
+    found = _assignments(session, team_id, [*own.values(), *(g for g in group.values() if g)])
+    out: dict[int, Any] = {}
+    for kept, ids in members.items():
+        if kept not in own or (only is not None and kept not in only):
+            continue
+        out[kept] = RG.resolve(found, [group.get(i) for i in ids], [own[i] for i in ids], own[kept])
+    return out
 
 
 # ----------------------------------------------------------------------------- code scans

@@ -679,7 +679,9 @@ def test_results_agree_with_the_enriched_run_assets(api, world):
     assert findings["findings_total"] == actions["total_findings"] == out["dashboard"]["card_data"][
         "total_crypto_vulnerabilities"]
     cached = RR._CACHE[rid].computed.finding_keys
-    assert {i["asset_key"] for i in findings["items"]} == {k.hex() for k in cached}
+    # the cache counts findings by each shown row's own key; the list's ``asset_key`` is where a plan is written (the
+    # resource's group key, review 6060688856 M1/M2), and its wave entry names the row's own key
+    assert {i["wave"]["own_key"] for i in findings["items"]} == {k.hex() for k in cached}
     target = findings["items"][0]
     r = api("PUT", "/1/cbom/remediation", json={"run_id": rid, "items": [{"asset_key": target["asset_key"],
                                                                            "status": "done"}]})

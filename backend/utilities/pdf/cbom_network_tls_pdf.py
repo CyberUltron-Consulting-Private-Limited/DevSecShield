@@ -585,7 +585,7 @@ def _seen(observed: NE.Observed) -> str:
     return observed.source + also
 
 
-RUBRIC_CELL_LIMIT = 700
+RUBRIC_CELL_LIMIT = 900
 GRADES_CELL_LIMIT = 1500  # "Caps and trust" (one reason per rubric rule) and "Source" (the reader and every "also")
 GRADES_CELL_HEIGHT = 400.0  # points: a whole legacy endpoint row, below the 504-point landscape frame with its header
 

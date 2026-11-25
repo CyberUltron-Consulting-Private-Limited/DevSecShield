@@ -100,9 +100,9 @@ def _list(session, run_id, **kw):
     return INV.list_assets(session, team_id=1, run_id=run_id, page_size=1000, **kw)
 
 
-def test_run_fold_keeps_the_oldest_source_and_names_the_other(engine):
-    """Review 6058574998 F2: the kept row is the OLDEST source's (stgqa-aws-ap-south-1, created first), whichever job
-    finished last, so the resource's remediation key does not flip from run to run."""
+def test_run_fold_keeps_the_newest_job_and_names_the_other(engine):
+    """Latest observation wins (review 6060688856 M1 restores it after 6058574998 F2); the remediation key no longer
+    depends on the kept row (``remediation_group``)."""
     from backend.utilities.cbom_sources import resource_identity as RI
 
     run_id = _store(engine)
@@ -111,8 +111,8 @@ def test_run_fold_keeps_the_oldest_source_and_names_the_other(engine):
         assert len(fold.dropped) == sum(UNIQUE.values()) == 229  # ACM certificates too: one ARN, one certificate
         kept = {r.id: r for r in s.exec(__import__("sqlmodel").select(CbomCollectedAsset)).all()}
         jobs = {kept[k].job_id for k in fold.dropped.values()}
-        assert len(jobs) == 1  # every kept row is one job's: the oldest source's
-        assert set(fold.also_seen.values()) == {("aws-pca-test",)}
+        assert len(jobs) == 1  # every kept row is the newer job's
+        assert set(fold.also_seen.values()) == {("stgqa-aws-ap-south-1",)}
 
 
 def test_run_assets_list_each_resource_once(engine):
@@ -125,7 +125,7 @@ def test_run_assets_list_each_resource_once(engine):
         assert out["facets"]["type"]["kms_key"] == 19 and out["facets"]["type"]["storage_encryption"] == 65
         assert out["folded"] == 229
         kms = next(i for i in out["items"] if i["type"] == "kms_key")
-        assert kms["source_name"] == "stgqa-aws-ap-south-1" and kms["also_seen"] == ["aws-pca-test"]  # oldest kept
+        assert kms["source_name"] == "aws-pca-test" and kms["also_seen"] == ["stgqa-aws-ap-south-1"]  # newest kept
 
 
 def test_run_posture_counts_equal_the_run_list(engine):

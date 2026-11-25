@@ -951,7 +951,12 @@ def coverage_gaps(rows: list[CbomCollectedAsset], names: dict[int, str], job_nam
     per row (at most ``COVERAGE_GAP_CAP``), whose value is compact JSON: ``ref`` (``zs-asset-<id>``, the id the asset
     API lists the row under), source, target, location, check, status, detail, scope, incomplete, by_choice, finding,
     ``enrichment_only`` (only when set: a note, not an unread scope) and the row's provenance (``provenance.NAMES`` without the ``zs:`` prefix; job_id and attempt as numbers)."""
-    out = [{"name": "zs:coverage_gap_count", "value": str(len(rows))}] if rows else []
+    # a note (``enrichment_only``: a listed asset missing one added fact) is not a gap: counted apart, as the job badge,
+    # Q0 and drift count it (review 6060688856 m1); each row is still listed with its flag
+    notes = sum(1 for row in rows if enrichment_only(row.facts))
+    out = [{"name": "zs:coverage_gap_count", "value": str(len(rows) - notes)}] if rows else []
+    if notes:
+        out.append({"name": "zs:coverage_note_count", "value": str(notes)})
     for row in rows[:COVERAGE_GAP_CAP]:
         facts = row.facts if isinstance(row.facts, dict) else {}
         gap: dict[str, Any] = {

@@ -153,17 +153,21 @@ def _two_runs(engine) -> tuple[int, int, int, int]:
         return runs[0], runs[1], int(a.id), int(b.id)
 
 
-def test_the_kept_row_and_its_key_do_not_flip_with_the_finish_order(engine):
+def test_the_remediation_key_does_not_flip_with_the_finish_order(engine):
+    """The kept row follows the newest read (review 6060688856 M1); the key a plan or ticket is written to is the
+    resource's group key, whichever row is shown."""
     from backend.utilities.cbom_sources import waves as WAVES
 
-    first, second, a_id, _b = _two_runs(engine)
+    first, second, _a, _b = _two_runs(engine)
     with Session(engine) as s:
-        keys = []
+        keys, shown = [], []
         for run_id in (first, second):
             items = WAVES.node_items(s, 1, s.get(CbomCollectionRun, run_id))
             assert len(items) == 229
-            assert {i["source_name"] for i in items} == {"role A (oldest)"}  # before: B in run 1, A in run 2
+            shown.append({i["source_name"] for i in items})
             keys.append({i["label"]: i["asset_key"] for i in items if i["type"] == "kms_key"})
+            assert all(i["asset_key"] == i["group_key"] for i in items if i["type"] == "kms_key")
+        assert shown == [{"role B"}, {"role A (oldest)"}]  # the newest read of each run is shown
         assert keys[0] == keys[1]
 
 
@@ -183,8 +187,8 @@ def test_a_plan_on_another_sources_copy_follows_the_resource(engine):
         s.commit()
         item = next(i for i in WAVES.node_items(s, 1, s.get(CbomCollectionRun, second))
                     if i["type"] == "kms_key" and i["label"] == ID.node_label(row))
-        assert item["source_name"] == "role A (oldest)"
-        assert item["asset_key"] == b_key and b_key in item["alias_keys"]
+        assert item["source_name"] == "role A (oldest)"  # run 2: A finished last
+        assert item["asset_key"] == b_key  # the plan's own key: a change edits that record
         assert item["assignment"]["status"] == "in_progress" and item["assignment"]["ticket_key"] == "SEC-7"
 
 

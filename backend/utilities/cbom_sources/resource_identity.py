@@ -234,7 +234,9 @@ def job_scope(job: Any, node: Any = None, source_ref: str = "") -> tuple[str, st
 
     * network: the scan node's segment, the product's declared network boundary (the snapshot the run took, else the
       job's segment, else the node's current one); else the node (two unsegmented nodes are never one network, even
-      in one lab: nothing says they are); else the source (a job no node ran);
+      in one lab: nothing says they are); else the source (a job no node ran).  Consequence (review 6060688856 m2):
+      an SSH collector on scan node N and the host agent of "web1" (its own node A) read "web1" in two scopes when
+      neither node has a segment, so their reads stay two hosts; giving both nodes one segment correlates them;
     * machine: the scan node that ran the job, else the source."""
     params = getattr(job, "params", None)
     snap = params.get("metadata") if isinstance(params, Mapping) else None
@@ -258,9 +260,6 @@ class Observation:
     observed_at: Any  # comparable (a datetime)
     job_id: int
     label: str  # the source name printed in "also seen"
-    # a stable preference between sources (review 6058574998 F2): higher wins, before recency.  The fold uses minus
-    # the source id, so the oldest live source keeps a resource run after run whichever job finished last
-    preference: int = 0
 
 
 @dataclass
@@ -274,11 +273,11 @@ class Fold:
 
 
 def rank(item: Observation) -> tuple:
-    """Kept first: a source that still exists, then an observation with a quantum verdict, then the stable source
-    preference (the oldest source: review 6058574998 F2, the kept row, its remediation key, its tickets and the D6
-    "Source" cell no longer flip with the order two jobs finished in), then the newer collection, then the higher job
-    id (recency only orders the reads of one source)."""
-    return (item.live, item.judged, item.preference, item.observed_at, item.job_id)
+    """Kept first: a source that still exists, then an observation with a quantum verdict, then the newer
+    collection, then the higher job id: latest observation wins, for every kind (certificates included), the rule
+    ``collections_view._rank`` applies too (review 6060688856 M1, n2).  The plan and the ticket do not follow the kept
+    row: they are the resource's (``remediation_group``)."""
+    return (item.live, item.judged, item.observed_at, item.job_id)
 
 
 def fold(observations: Iterable[Observation]) -> Fold:
@@ -387,7 +386,7 @@ def _database(session: Any) -> str:
 
 def _jobs_context(session: Any, team_id: int, run_id: int) -> dict[int, tuple]:
     """Per job of the run: (source exists, finished (naive UTC), source name, network scope, machine scope, source
-    ref, source preference); an
+    ref); an
     empty tuple per job for a run with fewer than two jobs (nothing to fold, nothing else read)."""
     from sqlmodel import select
 
@@ -411,8 +410,7 @@ def _jobs_context(session: Any, team_id: int, run_id: int) -> dict[int, tuple]:
         ref = ID.job_source_ref(job, source)
         network, machine = job_scope(job, nodes.get(job.node_id or 0), ref)
         out[int(job.id)] = (source is not None, _sortable(job.finished_at or job.created_at),
-                            str(ID.job_source_name(job, source) or ""), network, machine, ref,
-                            -int(job.source_id or 0) if source is not None else 0)
+                            str(ID.job_source_name(job, source) or ""), network, machine, ref)
     return out
 
 
@@ -434,14 +432,13 @@ def _run_fold(session: Any, team_id: int, run_id: int, context: Mapping[int, tup
             aid, job_id, kind, target, location, qv = rec[:6]
             if job_id is None:
                 continue
-            live, at, label, network, machine, ref, preference = context.get(int(job_id)) or (
-                False, _sortable(None), "", "", "", "", 0)
+            live, at, label, network, machine, ref = context.get(int(job_id)) or (
+                False, _sortable(None), "", "", "", "")
             key = resource_identity(kind, target, location, rec[6] if with_facts else None, certificates=True,
                                     network=network, machine=machine, cluster=ref)
             if key is None:
                 continue
-            observed.append(Observation(int(aid), str(job_id), key, live, qv is not None, at, int(job_id), label,
-                                        preference))
+            observed.append(Observation(int(aid), str(job_id), key, live, qv is not None, at, int(job_id), label))
     found = fold(observed)
     return RunFold(dropped={int(k): int(v) for k, v in found.dropped.items()},
                    also_seen={int(k): v for k, v in found.also_seen.items()})

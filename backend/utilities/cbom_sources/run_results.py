@@ -681,9 +681,18 @@ def _finding_fix(code: str) -> dict[str, Any]:
 
 
 # ----------------------------------------------------------------------------- live remediation join
-def _remediation(session: Session, team_id: int, finding_keys: dict[bytes, int]) -> tuple[dict, dict]:
+def _remediation(session: Session, team_id: int, finding_keys: dict[bytes, int],
+                 run: CbomCollectionRun | None = None) -> tuple[dict, dict]:
+    """The live remediation buckets.  A finding's status is its RESOURCE's (``waves.resolve_run``: the group key and
+    every copy's key, ``remediation_group``), the status the run list and waves show (review 6060688856 M4); a key
+    the run no longer resolves (none in practice) falls back to its own assignment."""
     status: dict[bytes, str] = {}
-    keys = [k.hex() for k in finding_keys]
+    if run is not None:
+        from backend.utilities.cbom_sources import waves as WAVES
+
+        for r in WAVES.resolve_run(session, team_id, run).values():
+            status[bytes.fromhex(r.own)] = r.status or "open"
+    keys = [k.hex() for k in finding_keys if k not in status]
     for start in range(0, len(keys), 500):
         for key, value in session.exec(select(CbomRemediationAssignment.asset_key, CbomRemediationAssignment.status)
                                        .where(CbomRemediationAssignment.team_id == team_id,
@@ -874,7 +883,7 @@ def run_results(session: Session, run: CbomCollectionRun, *, team_id: int, risk_
             else:
                 computed = _timed_compute(session, run, team_id, risk_model, now, digest, cause)
                 _store(rid, _Entry(key=key, digest=digest, computed=computed, live=True, at=_monotonic()))
-    actions, metrics = _remediation(session, team_id, computed.finding_keys)  # never cached
+    actions, metrics = _remediation(session, team_id, computed.finding_keys, run)  # never cached
     certs = computed.certificates
     return {
         "run": run_detail,

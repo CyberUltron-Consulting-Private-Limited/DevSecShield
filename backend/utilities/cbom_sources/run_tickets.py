@@ -286,11 +286,16 @@ def _finish(engine, team_id: int, asset_key: str, claim: str, user_id: int, *, k
 def _jira_issue(url: str, token: str, email: str, project: str, issue_type: str, item: dict[str, Any],
                 detail: dict[str, Any], run_id: int, search_first: bool) -> tuple[str, bool]:
     """(issue key, found by search). No database session is open here."""
-    label = label_for(item["asset_key"])
+    # one label per RESOURCE (its group key, else its own key), so a retry or another run finds the same issue
+    # whichever source's row is shown (review 6060688856 M2); a search also reads the labels of the resource's
+    # other keys, which issues made before this rule carry
+    label = label_for(item.get("group_key") or item["asset_key"])
     if search_first:
-        found = JIRA.find_issue_by_label(url, token, label, jira_email=email)
-        if found:
-            return found, True
+        others = [item.get("own_key"), item["asset_key"], *(item.get("alias_keys") or ())]
+        for candidate in dict.fromkeys([label, *(label_for(k) for k in others if k)]):
+            found = JIRA.find_issue_by_label(url, token, candidate, jira_email=email)
+            if found:
+                return found, True
     summary, description = ticket_text(run_id, item, detail)
     answer = JIRA.create_issue_in_project(jira_url=url, jira_token=token, summary=summary, description=description,
                                           jira_email=email, issue_type=issue_type, labels=[label],
@@ -346,6 +351,12 @@ def create_tickets(engine, team_id: int, user_id: int, run_id: int, body: Ticket
         if time.monotonic() - started > budget:  # no new Jira call after the budget: the user retries the rest
             out["deferred"].append({"asset_id": asset_id, "asset_key": item["asset_key"], "reason": OUT_OF_TIME})
             continue
+        held = item.get("assignment") or {}
+        if held.get("ticket_key"):
+            # review 6060688856 M2: the resource already has a ticket on one of its keys (``remediation_group``):
+            # never a second issue, even when the key a plan is written to holds no ticket
+            out["existing"].append(ref(asset_id, item, held.get("ticket_key"), held.get("ticket_url")))
+            continue
         try:
             outcome, claim, search_first, row = _claim(engine, team_id, item, user_id, _utcnow())
         except Exception as exc:  # noqa: BLE001 - one asset's failure never loses the others
@@ -399,25 +410,23 @@ def create_tickets(engine, team_id: int, user_id: int, run_id: int, body: Ticket
 # ----------------------------------------------------------------------------- list fields
 def add_ticket_fields(session: Session, team_id: int, run: CbomCollectionRun, items: list[dict[str, Any]]) -> None:
     """``ticket_key`` / ``ticket_url`` on each run asset list item (None when the asset has no ticket). Reads the
-    assignment the enriched list already carries (``item["wave"]["assignment"]``); items without one are looked up by
-    their ``asset_key``, and items without a key (an older list) by the stable key of the page's assets."""
-    by_id: dict[int, str] = {}
+    assignment the enriched list already carries (``item["wave"]["assignment"]``, resolved for the resource); the
+    other items are resolved the same way (``waves.resolve_run``: the resource's group key and every copy's key,
+    review 6060688856 M4), never by their own key alone."""
+    missing: list[int] = []
     for item in items:
         assignment = (item.get("wave") or {}).get("assignment") if isinstance(item.get("wave"), dict) else None
         if isinstance(assignment, dict) and "ticket_key" in assignment:
             item["ticket_key"], item["ticket_url"] = assignment.get("ticket_key"), assignment.get("ticket_url")
-        elif item.get("asset_key"):
-            by_id[item["id"]] = item["asset_key"]
-    missing = [i["id"] for i in items if "ticket_key" not in i and not i.get("asset_key") and i.get("type") != "coverage"]
-    if missing:
-        by_id.update({i["asset_id"]: i["asset_key"] for i in WAVES.node_items(session, team_id, run, asset_ids=missing)})
-    found = WAVES._assignments(session, team_id, set(by_id.values())) if by_id else {}
+        elif item.get("type") != "coverage" and item.get("id") is not None:
+            missing.append(int(item["id"]))
+    resolved = WAVES.resolve_run(session, team_id, run, only=set(missing)) if missing else {}
     for item in items:
         if "ticket_key" in item:
             continue
-        a = found.get(by_id.get(item["id"]) or "")
-        item["ticket_key"] = a.ticket_key if a is not None else None
-        item["ticket_url"] = a.ticket_url if a is not None else None
+        r = resolved.get(int(item["id"])) if item.get("id") is not None else None
+        item["ticket_key"] = r.ticket_key if r is not None else None
+        item["ticket_url"] = r.ticket_url if r is not None else None
 
 
 # ----------------------------------------------------------------------------- remediation metrics

@@ -760,9 +760,9 @@ def test_d7_prints_a_listener_two_sources_collected_once_and_names_both(seeded_v
     register = [r for r in weak if "Location" in r and r["Endpoint"] == "ComplianceShield-LB:443"]
     assert len(register) == 1
     where = re.sub(r"\s+", " ", register[0]["Location"])
-    # the oldest source keeps the resource whichever role finished last (review 6058574998 F2: the kept row, its
-    # remediation key and this cell no longer flip from run to run), and the other source is named
-    assert "AWS prod (also: AWS prod (second role))" in where
+    # the newest read wins (the second role, 4 h ago: review 6060688856 M1, a stale source never hides a fresh read;
+    # the plan and ticket are the resource's, remediation_group) and the other source is named
+    assert "AWS prod (second role) (also: AWS prod)" in where
     # both sources stay in the D7 source table: each holds evidence printed here
     assert [s.label for s in scoped.posture.sources] == [
         "AWS prod", "AWS prod (second role)", "Lab network"]

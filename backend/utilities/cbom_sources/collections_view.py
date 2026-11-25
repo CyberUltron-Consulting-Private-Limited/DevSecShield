@@ -80,9 +80,6 @@ class Collection:
     # documents say "newest collection read nothing on <date>; last read <date>" (review 6039899144 M4)
     newer_attempt_job_id: int | None = field(default=None, compare=False, repr=False)
     newer_attempt_at: _dt.datetime | None = field(default=None, compare=False, repr=False)
-    # CbomCollectionSource.id (0 when not known): the stable preference between two sources that read one resource,
-    # the oldest kept (``_rank``, review 6058574998 F2)
-    source_id: int = field(default=0, compare=False, repr=False)
 
     @property
     def label(self) -> str:
@@ -395,7 +392,6 @@ def load_sources_result(session: Any, team_id: int, now: _dt.datetime | None = N
     from backend.new_models import (
         CbomCollectedAsset,
         CbomCollectionSource,
-        CbomRemediationAssignment,
     )
     from backend.utilities.cbom_sources import clause_evidence as CE
     from backend.utilities.cbom_sources import crypto_kb
@@ -423,7 +419,7 @@ def load_sources_result(session: Any, team_id: int, now: _dt.datetime | None = N
             observed_at=_aware(job.finished_at or job.created_at), asset_count=len(assets),
             endpoints_probed=sum(1 for a in assets if a.asset_type in NETWORK_TYPES),
             metadata=_source_metadata(source, job), info=collection_info(session, source, job),
-            network_scope=network, machine_scope=machine, source_id=int(source.id or 0) if source is not None else 0,
+            network_scope=network, machine_scope=machine,
             newer_attempt_job_id=int(newer.id) if newer is not None else None,
             newer_attempt_at=_aware(newer.finished_at or newer.created_at) if newer is not None else None)
         out.collections.append(collection)
@@ -438,20 +434,44 @@ def load_sources_result(session: Any, team_id: int, now: _dt.datetime | None = N
                                        asset_key=ID.stable_key("node", collection.source_ref, own),
                                        clause_evidence=CE.evidence_by_code(asset, rule_codes) if rule_codes else {},
                                        standards_parts=_parts(asset), code_impacts=code_impacts(view)))
-    # the remediation status a finding has on the Sources pages (waves): open / in_progress / done / accepted_risk
-    keys = list(dict.fromkeys(item.asset_key for item in out.rows))
-    status: dict[str, str] = {}
+    link_certificates(out.rows)
+    link_resources(out.rows)
+    remediation_statuses(session, team_id, out.rows)
+    out.collections.sort(key=lambda c: (c.source_name.casefold(), c.source_ref))
+    return out
+
+
+def remediation_statuses(session: Any, team_id: int, rows: list[SourcesRow]) -> None:
+    """Each row's ``remediation_status`` (open / in_progress / done / accepted_risk): the assignment of its RESOURCE,
+    ``remediation_group.resolve`` over the group key and every copy's key of the rows that share its identity, the
+    rule waves and the run list use too (review 6060688856 M4).  Every copy gets the same status, so the row
+    "latest observation wins" keeps carries it whichever source that is."""
+    from sqlmodel import select
+
+    from backend.new_models import CbomRemediationAssignment
+    from backend.utilities.cbom_sources import remediation_group as RG
+
+    groups: dict[str, list[SourcesRow]] = {}
+    group_keys: dict[str, set[str]] = {}
+    for item in rows:
+        groups.setdefault(item.identity, []).append(item)
+        gk = RG.row_group_key(item.node_type, item.target, item.row.get("location"), item.facts,
+                              network=item.collection.network_scope, machine=item.collection.machine_scope,
+                              cluster=item.collection.source_ref)
+        if gk:
+            group_keys.setdefault(item.identity, set()).add(gk)
+    keys = list(dict.fromkeys([*(item.asset_key for item in rows), *(k for ks in group_keys.values() for k in ks)]))
+    found: dict[str, Any] = {}
     for start in range(0, len(keys), 500):
         for a in session.exec(select(CbomRemediationAssignment).where(
                 CbomRemediationAssignment.team_id == team_id,
                 CbomRemediationAssignment.asset_key.in_(keys[start:start + 500]))).all():  # type: ignore[attr-defined]
-            status[a.asset_key] = a.status or "open"
-    for item in out.rows:
-        item.row["remediation_status"] = status.get(item.asset_key, "open")
-    link_certificates(out.rows)
-    link_resources(out.rows)
-    out.collections.sort(key=lambda c: (c.source_name.casefold(), c.source_ref))
-    return out
+            found[a.asset_key] = a
+    for ident, members in groups.items():
+        own = members[0].asset_key
+        resolved = RG.resolve(found, sorted(group_keys.get(ident, ())), [m.asset_key for m in members], own)
+        for item in members:
+            item.row["remediation_status"] = resolved.status or "open"
 
 
 def _source_metadata(source: Any, job: Any) -> dict[str, Any]:
@@ -540,14 +560,12 @@ def link_resources(rows: list[SourcesRow]) -> int:
 
 
 def _rank(item: SourcesRow) -> tuple:
-    """The observation kept for an identity (``resource_identity.rank``): a source that still exists before a deleted
-    one, then an observation with a quantum verdict, then, for a resource, the oldest source (a stable preference:
-    review 6058574998 F2), then the newer collection, then the higher job id."""
-    # the stable preference holds for resources (``resource_identity`` keys); a certificate correlated across sources
-    # (CB-21) keeps "latest observation wins": its newest read is the one whose validity and chain are printed
-    source_id = int(getattr(item.collection, "source_id", 0) or 0) if item.identity.startswith("res|") else 0
+    """The observation kept for an identity (``resource_identity.rank``, the same rule): a source that still exists
+    before a deleted one, then an observation with a quantum verdict, then the newer collection, then the higher job
+    id.  Latest observation wins, so a stale source never hides a fresh read (review 6060688856 M1); the plan and the
+    ticket are the resource's, whichever row is kept (``remediation_group``)."""
     return (not is_deleted_source(item.collection), item.row.get("quantum_safe") is not None,
-            -source_id if source_id else 0, item.collection.observed_at, item.collection.job_id)
+            item.collection.observed_at, item.collection.job_id)
 
 
 # ----------------------------------------------------------------------------- latest observation wins
@@ -663,14 +681,6 @@ def resolve(code_observations: Iterable[tuple[int, _dt.datetime, str]], rows: It
             item.also_seen = tuple(dict.fromkeys(m.collection.label for m in others
                                                  if m.collection.label != item.collection.label))
             item.also_seen_keys = tuple(dict.fromkeys(m.collection.key for m in others))
-        # the remediation state follows the resource, whichever source's row is kept (review 6058574998 F2): a plan
-        # set on another source's copy of it stays visible
-        if item.row.get("remediation_status", "open") == "open":
-            for m in sorted(group, key=_rank, reverse=True):
-                status = m.row.get("remediation_status")
-                if m is not item and status and status != "open":
-                    item.row["remediation_status"] = status
-                    break
     kept: list[SourcesRow] = []
     winners_at: dict[str, _dt.datetime] = {}
     for ident, item in best.items():
@@ -703,6 +713,7 @@ __all__ = [
     "read_nothing",
     "link_certificates",
     "link_resources",
+    "remediation_statuses",
     "load_sources_result",
     "node_row",
     "origin_label",

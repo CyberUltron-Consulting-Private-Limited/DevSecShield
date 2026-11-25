@@ -307,12 +307,14 @@ def run_asset_keys(session: Session, team_id: int, run: CbomCollectionRun) -> di
 
 def _status_clause(session: Session, team_id: int, run: CbomCollectionRun, status: str):
     started = time.perf_counter()
-    keys = run_asset_keys(session, team_id, run)
-    found = WAVES._assignments(session, team_id, keys.values())
-    bucket = {aid: finding_status(found[key].status if key in found else None) for aid, key in keys.items()}
+    # the resource's assignment (``waves.resolve_run``: group key and every copy's key), the status the row shows
+    # (review 6060688856 M3: the filter bucketed rows by their own key and disagreed with the table and waves)
+    resolved = WAVES.resolve_run(session, team_id, run)
+    bucket = {aid: finding_status(r.status) for aid, r in resolved.items()}
     # the cost of this path grows with the run (PR-2's stored keys replace it): one line per request
-    log_line(f"cbom run assets status_filter team={team_id} run={run.id} status={status} keys={len(keys)} "
-             f"planned={len(found)} ms={int((time.perf_counter() - started) * 1000)}")
+    log_line(f"cbom run assets status_filter team={team_id} run={run.id} status={status} keys={len(resolved)} "
+             f"planned={sum(1 for r in resolved.values() if r.assignment is not None)} "
+             f"ms={int((time.perf_counter() - started) * 1000)}")
     if status == "not_started":  # the common case: exclude the (few) planned assets instead of listing every id
         others = [aid for aid, value in bucket.items() if value != "not_started"]
         clause = CbomCollectedAsset.asset_type != COVERAGE

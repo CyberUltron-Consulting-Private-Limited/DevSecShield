@@ -117,7 +117,10 @@ RUBRIC = (
                    "address is two rows, and an internal name that resolves to different private addresses in two "
                    "sites is one row per scan-node segment only when it is a single label or a local name (.local, "
                    ".internal, .svc ...); a fully qualified split-horizon name is one row. A private, link-local or "
-                   "loopback address is one endpoint per scan-node segment (else per scan node, else per source).")),
+                   "loopback address is one endpoint per scan-node segment (else per scan node, else per source). The same "
+                   "holds for a host known by a single-label name: an SSH collector on one scan node and a host agent "
+                   "on that host (its own node) correlate only when both nodes share a segment; without segments their "
+                   "reads of 'web1' stay two hosts.")),
 )
 
 
@@ -333,8 +336,12 @@ def _hsts_seconds(facts: Mapping[str, Any]) -> int | None:
         return HSTS_INVALID
     if isinstance(raw, int):
         return raw if raw >= 0 else HSTS_INVALID
+    if isinstance(raw, float):  # a JSON number that is whole (31536000.0) is that number
+        return int(raw) if raw.is_integer() and raw >= 0 else HSTS_INVALID
     text = str(raw).strip()
-    return int(text) if text.isdigit() else HSTS_INVALID
+    # ASCII digits only: "²".isdigit() is True but int("²") raises (review 6060688856 n1); RFC 6797 s6.1.1 max-age is
+    # delta-seconds, 1*DIGIT, i.e. ASCII
+    return int(text) if text.isascii() and text.isdigit() else HSTS_INVALID
 
 
 HSTS_INVALID = -1
