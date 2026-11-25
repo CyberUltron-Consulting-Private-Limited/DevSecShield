@@ -514,6 +514,36 @@ class JudgedElsewhere:
             self._cache[key] = [(j, i) for j, i in self._session.exec(query.order_by(CbomCollectedAsset.id)).all()]
         return self._cache[key]
 
+    def prefetch(self, rows: Iterable[Any], *, batch: int = 500) -> int:
+        """Read the verdict rows of many keys at once (set-based: one statement per ``batch`` locations), so grading
+        N rows asks the database a constant number of times instead of once per row (q109 follow-up: the first store
+        write after the identity migration re-graded 10,000 unread certificates with one query each, ~7 ms apiece).
+        Only rows that can reach the rule (no stored verdict) are looked up; the answers are exactly ``_judged``'s:
+        same team, run, asset type, target (None and "" alike) and location, a verdict, in id order. Returns the keys
+        read."""
+        if self._known is not None or self._session is None or self._run_id is None:
+            return 0
+        wanted = {sibling_key(r) for r in rows
+                  if _get(r, "quantum_vulnerable") is None and _get(r, "asset_type") != "coverage"}
+        wanted -= set(self._cache)
+        if not wanted:
+            return 0
+        found: dict[tuple[str, str, str], list[tuple[int | None, int]]] = {k: [] for k in wanted}
+        locations = sorted({loc for _t, _g, loc in wanted})
+        for start in range(0, len(locations), batch):
+            query = select(CbomCollectedAsset.job_id, CbomCollectedAsset.id, CbomCollectedAsset.asset_type,
+                           CbomCollectedAsset.target, CbomCollectedAsset.location).where(
+                CbomCollectedAsset.team_id == self._team_id, CbomCollectedAsset.run_id == self._run_id,
+                CbomCollectedAsset.location.in_(locations[start:start + batch]),  # type: ignore[attr-defined]
+                CbomCollectedAsset.quantum_vulnerable.is_not(None))  # type: ignore[union-attr]
+            for job_id, row_id, a_type, target, location in self._session.exec(query).all():
+                key = (str(a_type or ""), str(target or ""), str(location or ""))
+                if key in found:
+                    found[key].append((job_id, row_id))
+        for key, hits in found.items():
+            self._cache[key] = sorted(hits, key=lambda h: h[1])
+        return len(found)
+
     def __call__(self, row: Any) -> int | None:
         job_id = _get(row, "job_id")
         for other_job, other_id in self._judged(sibling_key(row)):

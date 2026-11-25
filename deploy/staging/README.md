@@ -285,6 +285,30 @@ and requires the resulting `POST /send_code`):
 python3 scripts/deploy/staging_browser_check.py --frontend-url https://<FRONTEND_HOST> --api-url https://<API_HOST>
 ```
 
+## Certificate identity re-key window (`CBOM_IDENTITY_WINDOW_HOURS`)
+
+The certificate identity migration (`q109certkey001`) moves every team's stored keys at deploy. For
+`CBOM_IDENTITY_WINDOW_HOURS` after that (`backend.env`; default 24, clamped to 1..720 hours; a non-number, `inf`, `NaN`
+or a negative value is refused, the default used and one log line `identity window setting REFUSED` written), each
+store write also re-keys rows that a process of the OLDER release wrote under the old identity. Then the scheduler
+makes one last pass per team (`identity window closed` in the log) and later writes skip that step (it cost 2-3 s per
+run at 20,000 certificates).
+
+A compose deploy runs the `migrate` one-shot first and recreates every container, so no older-release process is
+left once it finishes. If one did write after the window closed, that team would show a duplicate asset (the old key
+`removed`, the new key `present`) and the old key's open Q0 item closed as `observation` (counted as a gap the team
+closed), with a new item on the new key; accepted risks stay on the new key. Before a long or staggered rollout
+(old and new releases side by side for more than a day), raise the variable on the new release.
+
+## Migrations that build an index CONCURRENTLY
+
+`q102hist001` and `q110linkuq001` build their index `CONCURRENTLY` (writes are not blocked). Such a build waits for
+every transaction older than it, so an idle-in-transaction connection holds the `migrate` one-shot, and everything
+that waits for it. `q110linkuq001` waits at most 60 s per attempt (`lock_timeout`), three attempts, dropping the
+invalid index a failed attempt leaves; if the one-shot still fails on it, find the old sessions
+(`SELECT pid, state, xact_start, query FROM pg_stat_activity WHERE state LIKE 'idle in transaction%' ORDER BY
+xact_start`), end them (`pg_terminate_backend(pid)`) and run the deploy again: the migration is retry-safe.
+
 ## Rollback
 
 ```sh
@@ -341,8 +365,8 @@ optional for the backend: `CBOM_NODE_IMAGE_REF` (see "Scan node downloads").
 `backend.env` (backend-image containers only): `JWT_SECRET_KEY`, `JWT_REFRESH_SECRET_KEY`, `ENCRYPTION_KEY`,
 `CERTIN_HMAC_SECRET`, `CORS_ORIGINS`, `CBOM_PUBLIC_APP_URL`, mail (`SMTP_*`, `MAIL_FROM` or `TENANT_ID`,
 `CLIENT_ID`, `CLIENT_SECRET`, `EMAIL_SENDER`), `CBOM_AWS_*`, `CBOM_AI_*` (see "AI remediation"), `CBOM_CT_DISCOVERY`
-(see "Certificate Transparency discovery on staging"; not a secret), `CBOM_IDP_ALLOWED_PRIVATE`, `CBOM_EXTRA_CA_FILE`;
-the full list is `backend/.env.example`.
+(see "Certificate Transparency discovery on staging"; not a secret), `CBOM_IDP_ALLOWED_PRIVATE`, `CBOM_EXTRA_CA_FILE`,
+`CBOM_IDENTITY_WINDOW_HOURS` (see "Certificate identity re-key window"); the full list is `backend/.env.example`.
 
 ## AWS collection on staging (lab mode)
 
