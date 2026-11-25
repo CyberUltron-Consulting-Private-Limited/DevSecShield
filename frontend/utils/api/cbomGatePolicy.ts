@@ -106,3 +106,21 @@ export function cleanException(e: GateException): GateException {
 export function boundedLocation(glob: string): boolean {
   return glob.replace(/\\/g, "/").split("/").some((seg) => seg !== "" && seg !== "." && seg !== ".." && !/[*?[\]!]/.test(seg))
 }
+
+/** The preset a policy's rules equal (its name and exceptions aside), else null ("custom"): the gate page's preset
+ * dropdown starts there, so after saving a CNSA 2.0 policy it still reads CNSA 2.0 (staging QA2 m9). */
+export function matchingPreset(policy: GatePolicy | null | undefined, presets: Record<string, GatePolicy>): string | null {
+  if (!policy) return null
+  const rules = (p: GatePolicy) => JSON.stringify({
+    block_codes: [...(p.block_codes ?? [])].sort(),
+    banned_algorithms: [...(p.banned_algorithms ?? [])].map((a) => a.toUpperCase()).sort(),
+    min_key_bits: KEY_FAMILIES.map((f) => Number(p.min_key_bits?.[f])),
+    quantum_vulnerable: p.quantum_vulnerable,
+    deprecated: p.deprecated,
+  })
+  const mine = rules(policy)
+  for (const [key, preset] of Object.entries(presets)) {
+    if (rules(preset) === mine) return key
+  }
+  return null
+}

@@ -25,11 +25,14 @@ the common table helpers, which sanitise and escape it.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from typing import Any
 
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.platypus import Flowable, Paragraph, Spacer
 
+import backend.utilities.cbom_sources.reconciliation as RECON
+import backend.utilities.cbom_sources.sow_class as SC
 from backend.utilities.dashboard.cbom_team_rollup import TeamCbomView
 from backend.utilities.pdf.cbom_deliverable_common import (
     Styles,
@@ -78,7 +81,34 @@ def _summary(reg: dict[str, Any], width: float) -> list[Flowable]:
               ("No grade", str(q.get("none", 0)),
                "no public-key cryptography (disallowed items are graded)"),
               ("Still to re-grade", str(s.get("pending_regrade", 0)), "after an input or model change")]
-    return [kpi_strip(cards, width, max_per_row=8)]
+    out: list[Flowable] = [kpi_strip(cards, width, max_per_row=8)]
+    classes = s.get("sow_classes")
+    if isinstance(classes, dict):
+        tone = {SC.BROKEN: "high", SC.DEPRECATED: "critical", SC.WEAKENED: "medium", SC.SAFE: "low",
+                SC.UNKNOWN: "unknown", SC.NOT_APPLICABLE: ""}
+        sow = [(c[:1].upper() + c[1:], str(int(classes.get(c, 0) or 0)), SC.MEANING[c], *((tone[c],) if tone[c] else ()))
+               for c in (SC.DEPRECATED, SC.BROKEN, SC.WEAKENED, SC.SAFE, SC.UNKNOWN, SC.NOT_APPLICABLE)]
+        out += [Spacer(1, 4), kpi_strip(sow, width, max_per_row=6)]
+    return out
+
+
+# Product text: the SOW classification (SOW 3.2 step 4) and how grades compare (staging QA2 M3 / m6)
+SOW_CLASS_NOTE = (
+    "SOW class (SOW section 3.2 step 4), the same label in this document and in the register CSV (column sow_class): "
+    "deprecated: NIST SP 800-131A disallows the algorithm or key today (RSA or DSA below what SP 800-131A allows, DES "
+    "and Triple DES, RC4, MD5, SHA-1 signatures, an IKE policy with DES or Triple DES), whatever else holds; "
+    "quantum-broken: a quantum computer breaks it (Shor: public-key algorithms only); weakened: a quantum computer "
+    "weakens it (Grover: a symmetric key of 128 bits or less, such as AES-128); quantum-safe: post-quantum, hybrid, or a "
+    "symmetric key of 192 bits or more, a MAC or a hash (AES-256, HMAC-SHA-256); unknown: Q0, it could not be assessed; "
+    "not applicable: no public-key cryptography to grade. A deprecated asset that a quantum computer also breaks (RSA-1024, an IKE policy with "
+    "Triple DES and a classical Diffie-Hellman group) reads \"deprecated; also quantum-broken\" (CSV column "
+    "also_quantum_broken). The class comes from the asset's grade, so a class and a grade never disagree.")
+GRADE_COMPARE_NOTE = (
+    "How grades compare: an asset is graded by its role and exposure first, then by its key. A disallowed key is never "
+    "graded better than a quantum-vulnerable key in the same role and exposure: RSA-1024 and RSA-2048 are both Q1 when "
+    "internet-facing or a trust anchor (a CA, whose key every certificate it signs depends on), both Q2 when their "
+    "exposure is unknown or internal. So an RSA-1024 server key of unknown exposure (Q2) ranks below an RSA-2048 CA "
+    "(Q1): the CA's role decides, and the RSA-1024 key still reads \"deprecated\" in its SOW class.")
 
 
 # What X, Y and Z mean and where each default comes from (``qgrade.MOSCA_DEFINITION``, served in the register report:
@@ -195,12 +225,47 @@ def reason_line(open_by_reason: dict[str, int]) -> str:
 
 
 def gap_item(gap: dict[str, Any]) -> str:
-    """A Q0 gap's item: the Mosca inputs gap (one item for every asset it leaves ungraded) in words, else its title."""
+    """A Q0 gap's item: the Mosca inputs gap (one item for every asset it leaves ungraded) in words, else its title
+    and, for an unread scope, the check that was not read (a subscription's key vault, its SQL servers ...), so two
+    gaps of one target are told apart (staging QA2 m4)."""
     if gap.get("item_kind") == "inputs" and gap.get("item_key") == "inputs:mosca":
         n = int((gap.get("detail") or {}).get("count") or 0)
         return (f"Mosca X, Y or Z not set ({n} quantum-vulnerable asset{'' if n == 1 else 's'} left ungraded)"
                 if n > 0 else "Mosca X, Y or Z not set")
-    return gap.get("title") or ""
+    detail = gap.get("detail") if isinstance(gap.get("detail"), dict) else {}
+    check = str(detail.get("check") or "").strip()
+    title = str(gap.get("title") or "")
+    return f"{title}\n{check}" if check and check != "target" and check not in title else title
+
+
+def gap_why(gap: dict[str, Any]) -> str:
+    """Why the gap is open: its sub-reason, else what the collector reported (status and detail, shortened)."""
+    sub = str(gap.get("sub_reason") or "").replace("_", " ")
+    if sub:
+        return sub
+    detail = gap.get("detail") if isinstance(gap.get("detail"), dict) else {}
+    status = str(detail.get("status") or "").replace("_", " ")
+    text = " ".join(str(detail.get("detail") or "").split())
+    why = ": ".join(x for x in (status, text) if x)
+    return why if len(why) <= 160 else why[:157] + "..."
+
+
+def gap_rows(gaps: list[dict[str, Any]]) -> list[list[Any]]:
+    """One row per distinct gap; identical rows (same reason, why, kind, item and source) fold into one with a count,
+    the oldest opening and the largest age."""
+    rows: dict[tuple, list[Any]] = {}
+    for g in gaps:
+        key = (gap_reason(g["reason"]), gap_why(g), g["item_kind"], gap_item(g), g.get("source_name") or "")
+        opened, age = (g.get("opened_at") or "")[:10], int(g.get("age_days", 0) or 0)
+        if key in rows:
+            row = rows[key]
+            row[5] = min(row[5], opened) if row[5] and opened else (row[5] or opened)
+            row[6] = max(row[6], age)
+            row[7] += 1
+        else:
+            rows[key] = [*key, opened, age, 1]
+    return [[r[0], r[1], r[2], r[3] + (f"\n(\u00d7{r[7]} identical gaps)" if r[7] > 1 else ""), r[4], r[5],
+             f"{r[6]} d"] for r in rows.values()]
 
 
 def _heatmap(reg: dict[str, Any], styles: Styles, width: float) -> list[Flowable]:
@@ -261,11 +326,9 @@ def _q0(reg: dict[str, Any], styles: Styles, width: float) -> list[Flowable]:
     if not gaps:
         return [_note("No open Q0 gap.", styles)]
     out: list[Flowable] = [_note(reason_line(open_by_reason), styles), Spacer(1, 4)]
-    rows = [[gap_reason(g["reason"]), str(g.get("sub_reason") or "").replace("_", " "), g["item_kind"], gap_item(g),
-             g.get("source_name"),
-             (g.get("opened_at") or "")[:10], f"{g.get('age_days', 0)} d"] for g in gaps]
-    out.append(dense_table(["Reason", "Why", "Kind", "Item", "Source", "Opened", "Age"], rows,
-                           [90, 100, 55, width - 90 - 100 - 55 - 110 - 70 - 40, 110, 70, 40]))
+    widths = [86, 150, 44, width - 86 - 150 - 44 - 110 - 60 - 36, 110, 60, 36]
+    rows = [[row[0], *(breakable(cell, w) for cell, w in zip(row[1:], widths[1:]))] for row in gap_rows(gaps)]
+    out.append(dense_table(["Reason", "Why", "Kind", "Item", "Source", "Opened", "Age"], rows, widths))
     if total > len(gaps):
         out.append(_note(f"{total - len(gaps)} further open Q0 gaps are omitted here; the Q0 gap list holds every "
                          "row.", styles))
@@ -274,32 +337,89 @@ def _q0(reg: dict[str, Any], styles: Styles, width: float) -> list[Flowable]:
 
 def trend_weeks(weeks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """The weeks the trend prints: from the first week with a gap open, opened or closed (weeks before the
-    engagement had no gap and would only print zeros); the numbers are the API's, never recomputed."""
+    engagement had no gap and would only print zeros) or with a grade-model re-grade (its "grade model changed" mark,
+    review 6057476173 M2); the numbers are the API's, never recomputed."""
     for i, w in enumerate(weeks):
-        if w.get("total") or w.get("q0_gaps_opened") or w.get("q0_gaps_open_at_week_end"):
+        if w.get("total") or w.get("q0_gaps_opened") or w.get("q0_gaps_open_at_week_end") or w.get("model_changes") \
+                or w.get("model_regraded"):
             return weeks[i:]
     return []
+
+
+def _model_mark(week: Mapping[str, Any]) -> str:
+    """The week's "grade model changed" mark: the register rows the new model moved to another grade or reason, and
+    the Q0 items it closed (neither counted as closed by the team)."""
+    parts = []
+    if week.get("model_regraded"):
+        parts.append(f"{week['model_regraded']} register row{'' if week['model_regraded'] == 1 else 's'} moved to "
+                     "another grade")
+    if week.get("model_changes"):
+        parts.append(f"{week['model_changes']} re-graded, not counted as closed")
+    return "grade model changed: " + "; ".join(parts)
 
 
 def _trend(reg: dict[str, Any], styles: Styles, width: float) -> list[Flowable]:
     weeks = trend_weeks(reg["summary"].get("closures_by_week") or [])
     if not weeks:
-        return [_note("No Q0 gap opened or closed in the last 12 weeks.", styles)]
+        return [_note("No Q0 gap opened or closed and no grade-model re-grade in the last 12 weeks.", styles)]
     rows = [[w["week"], w.get("q0_gaps_opened", ""), w["total"], w.get("q0_gaps_open_at_week_end", ""),
              ", ".join([*(f"{k} {v}" for k, v in sorted((w.get("by_cause") or {}).items())),
-                        *([f"grade model changed: {w['model_changes']} re-graded, not counted as closed"]
-                          if w.get("model_changes") else [])])] for w in weeks]
+                        *([_model_mark(w)] if w.get("model_changes") or w.get("model_regraded") else [])])]
+            for w in weeks]
     return [_note("Quantum gaps opened / closed per week: Q0 (unknown) gaps opened and closed each week (Monday to "
                   "Sunday, UTC) and the Q0 gaps still open at the end of the week, from the gap lifecycle the runs "
                   "recorded. This is the one weekly closure series of this register; it counts Q0 gaps, not drift "
                   "findings. A gap the grade model itself resolved (a new model version re-graded it) is not counted "
-                  "as closed; its week is marked \"grade model changed\".", styles), Spacer(1, 3),
+                  "as closed; its week is marked \"grade model changed\" with the register rows the new model "
+                  "re-graded to another grade or reason.", styles), Spacer(1, 3),
             dense_table(["Week of", "Q0 gaps opened", "Q0 gaps closed", "Q0 gaps open at week end",
                          "Closed by cause"], rows, [80, 70, 70, 100, width - 320])]
 
 
-_ASSET_HEADERS = ["Grade", "Asset", "Type", "PQC class", "Algorithm", "Exposure",
+_ASSET_HEADERS = ["Grade", "Asset", "Type", "SOW class", "Algorithm", "Exposure",
                   "FIPS 203/204/205 / CNSA 2.0 / SP 800-131A", "Fix class", "NIST PQ target", "Inputs used", "Owner"]
+# Column widths (points, landscape frame 720): the Asset column takes what the others leave (staging QA2 m8: at 66 pt
+# team 1's register ran to 235 pages of 2-4 rows each)
+_ASSET_FIXED = [48, 0, 50, 58, 64, 40, 72, 44, 80, 56, 78]
+
+
+def inputs_compact(i: dict[str, Any]) -> str:
+    """The Mosca inputs of a row in one short line ("X 7, Y 5, Z 9 (defaults)"; review 6038529822 m1: the long form
+    wrapped over four lines and cut the register's rows per page by a third). The section's note says what a
+    default is."""
+    if i.get("data_lifetime_years") is None:
+        return ""
+    text = str(i.get("grade_inputs") or "")
+    if text.startswith("not used"):
+        return "not used"
+    head = f"X {i['data_lifetime_years']}, Y {i.get('migration_years')}, Z {i.get('crqc_years')}"
+    if text.startswith("default assumptions"):
+        assumed = text.split(":", 1)[1].strip() if ":" in text else ""
+        return f"{head} (default {assumed})" if assumed and assumed != "X, Y, Z" else f"{head} (defaults)"
+    return head
+
+
+def sow_cell(i: dict[str, Any]) -> str:
+    """The SOW class as the CSV's ``sow_class`` and ``also_quantum_broken`` columns hold it."""
+    label = str(i.get("sow_class") or "")
+    if not label:
+        return "\u2014"
+    return SC.text(label, i.get("also_quantum_broken") == "yes").replace("; ", "\n")
+
+
+def verdicts_cell(i: dict[str, Any]) -> str:
+    """FIPS 203/204/205 / CNSA 2.0 / SP 800-131A in one line where they fit (the header names the order)."""
+    return " / ".join(status_word(i.get(k)) for k, _short in _STANDARD_SHORT)
+
+
+def assets_title(reg: dict[str, Any] | None) -> str:
+    """Section F's title: every asset, or the first rows of how many and how many are omitted (staging QA2 m3)."""
+    items = (reg or {}).get("assets") or []
+    total = int((reg or {}).get("assets_total") or len(items))
+    if total > len(items):
+        return (f"F. Assets with their grade: the first {len(items):,} of {total:,} rows, worst first "
+                f"({total - len(items):,} omitted; the register CSV holds every row)")
+    return "F. Every asset with its grade"
 
 
 def _assets(reg: dict[str, Any], styles: Styles, width: float) -> list[Flowable]:
@@ -310,17 +430,17 @@ def _assets(reg: dict[str, Any], styles: Styles, width: float) -> list[Flowable]
     rows = []
     for i in items:
         algorithm = " ".join(str(x) for x in (i.get("algorithm"), i.get("key_size")) if x not in (None, ""))
-        verdicts = "\n".join(f"{short}: {status_word(i.get(k))}" for k, short in _STANDARD_SHORT)
         rows.append([_chip(i["q_grade"]), i.get("label") or i["item_key"], i.get("asset_type"),
-                     class_word(i.get("pqc_class")), algorithm, i.get("exposure"), verdicts,
-                     str(i.get("fix_class") or "").replace("_", " "), i.get("nist_pq_target"), inputs_cell(i),
+                     sow_cell(i), algorithm, i.get("exposure"), verdicts_cell(i),
+                     str(i.get("fix_class") or "").replace("_", " "), i.get("nist_pq_target"), inputs_compact(i),
                      i.get("owner")])
-    fixed = [48, 0, 52, 72, 60, 42, 92, 54, 90, 80, 64]
+    fixed = list(_ASSET_FIXED)
     fixed[1] = width - sum(fixed)
     rows = [[row[0], *(breakable(cell, w) for cell, w in zip(row[1:], fixed[1:]))] for row in rows]
     out: list[Flowable] = [
         _note("Every register row, worst grade first, with the columns of the register CSV (the CSV is the full "
               "per-asset list).", styles), Spacer(1, 3), dense_table(_ASSET_HEADERS, rows, fixed)]
+    out[0:0] = [_note(SOW_CLASS_NOTE, styles, limit=1400), Spacer(1, 3)]
     if total > len(items):
         out.append(_note(f"{total - len(items)} further assets are omitted here; the register CSV holds every row.",
                          styles))
@@ -365,7 +485,8 @@ def build_body(view: TeamCbomView, styles: Styles, width: float) -> list[Flowabl
     if assumed:
         out += [Spacer(1, 4), _note(assumed, styles)]
     out += [Spacer(1, 4), _note(mosca_definition(reg), styles, limit=1200),
-            Spacer(1, 2), _note(NO_GRADE_NOTE, styles)]
+            Spacer(1, 2), _note(NO_GRADE_NOTE, styles), Spacer(1, 2), _note(GRADE_COMPARE_NOTE, styles, limit=900)]
+    out += [Spacer(1, 4), *reconciliation_block(view, styles)]
     if not (reg.get("summary") or {}).get("total"):
         out += [Spacer(1, 6), _note(EMPTY, styles)]
     out += section_heading("B. Heat-map: algorithm family x source (worst known grade; Q0 counted apart)", styles)
@@ -376,10 +497,17 @@ def build_body(view: TeamCbomView, styles: Styles, width: float) -> list[Flowabl
     out += _q0(reg, styles, width)
     out += section_heading("E. Quantum gaps opened / closed per week", styles)
     out += _trend(reg, styles, width)
-    out += section_heading("F. Every asset with its grade", styles)
+    out += section_heading(assets_title(reg), styles)
     out += _assets(reg, styles, width)
     out += _removed(reg, styles, width)
     return out
+
+
+def reconciliation_block(view: TeamCbomView, styles: Styles) -> list[Flowable]:
+    """The population reconciliation every CBOM document prints (``cbom_sources.reconciliation``)."""
+    lines = RECON.lines(RECON.from_view(view))
+    return [Paragraph(pdf_text(f"{RECON.TITLE}", limit=60), styles["box_title"]),
+            *(_note(line, styles, limit=1200) for line in lines)]
 
 
 def build_pdf(view: TeamCbomView, *, ctx: Any = None) -> bytes:
@@ -394,4 +522,5 @@ def build_pdf(view: TeamCbomView, *, ctx: Any = None) -> bytes:
                           basis_extra=[f"Grade model: {model}"] if model else None)
 
 
-__all__ = ["NUMBER", "REPORT_KEY", "SLUG", "TITLE", "build_body", "build_pdf", "grade_text"]
+__all__ = ["NUMBER", "REPORT_KEY", "SLUG", "TITLE", "assets_title", "build_body", "build_pdf", "gap_item", "gap_rows",
+           "grade_text", "reconciliation_block", "sow_cell"]

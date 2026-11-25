@@ -233,6 +233,9 @@ def _policy(path: Path) -> tuple[set[str], tuple[str, ...]]:
     backend += ("backend.utilities.cbom_sources.cert_estate", "backend.utilities.cbom_sources.network_estate")
     # QA Q3-10: the one table of TLS cipher-suite names (IANA and OpenSSL spellings): pure data, no AI
     backend += ("backend.utilities.cbom_sources.tls_suites",)
+    # staging QA2 M3/M4: the SOW class of a register row (from its stored grade) and the one population
+    # reconciliation every CBOM document prints: pure arithmetic over the view and the register summary, no AI
+    backend += ("backend.utilities.cbom_sources.sow_class", "backend.utilities.cbom_sources.reconciliation")
     if path.parent == _ROUTERS:
         roots |= {"fastapi", "starlette", "sqlmodel", "sqlalchemy", "rich"}
         backend += (

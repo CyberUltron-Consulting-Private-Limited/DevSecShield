@@ -346,6 +346,9 @@ class AssetAgg:
     # two sources reading one AWS account observe the same parameter; a certificate's link key), so the board report
     # lists an asset once among its material risks (review M7b). None for code-scan rows.
     asset_key: str | None = field(default=None, compare=False, repr=False)
+    # the other places a de-duplicated certificate was read ("source location"; review 6038529822 m6: D13 lists
+    # every place, not only the one counted)
+    also_at: tuple[str, ...] = field(default=(), compare=False, repr=False)
 
 
 @dataclass
@@ -811,7 +814,14 @@ class TeamCbomView:
         (``vendors``) and, for D14, the previous issue's Document ID. Any change there gives another digest, so two
         documents with different content never share an ID. A view without any of them (a fold of scans only, as the
         tests build) keeps ``fingerprint`` itself, and so does the default profile: its documents are the same."""
-        content = _document_content(self)
+        return self.digest_for(None)
+
+    def digest_for(self, number: int | None) -> str:
+        """``document_digest`` of SOW deliverable ``number`` (D1 ... D14): only the parts that document prints, so a
+        change that shows in another document never gives this one a new ID (staging QA2 m2: team 2's D12 and D13
+        changed ID with identical content, because D2's live run count and D10's vendor statuses, which move with
+        the clock, were in every document's digest). ``None``: every part (the team-wide fingerprint header)."""
+        content = _document_content(self, number)
         if not content:
             return self.fingerprint
         text = json.dumps(content, sort_keys=True, separators=(",", ":"), default=str)
@@ -834,8 +844,21 @@ class TeamCbomView:
         return "mixed"
 
 
-def _document_content(view: TeamCbomView) -> dict[str, Any]:
-    """What a document prints beyond the scans: only the parts that differ from an empty / default view."""
+# the parts of the digest one document alone prints (SOW deliverable number): D2 the live collection set-up, D10 the
+# vendor attestation register, D14 the trend against its previous issue (staging QA2 m2)
+_ONLY_IN = {"methodology": 2, "vendors": 10, "previous_issue": 14, "remediation": 13}
+
+
+def _document_content(view: TeamCbomView, number: int | None = None) -> dict[str, Any]:
+    """What a document prints beyond the scans: only the parts that differ from an empty / default view; with
+    ``number``, without the parts only another document prints (``_ONLY_IN``)."""
+    out = _all_document_content(view)
+    if number is None:
+        return out
+    return {k: v for k, v in out.items() if _ONLY_IN.get(k, number) == number}
+
+
+def _all_document_content(view: TeamCbomView) -> dict[str, Any]:
     out: dict[str, Any] = {}
     profile = view.regulatory_profile
     if profile is not None:
@@ -859,6 +882,14 @@ def _document_content(view: TeamCbomView) -> dict[str, Any]:
         out["methodology"] = view.methodology
     if view.vendors:
         out["vendors"] = [dict(v) for v in view.vendors]
+    # D13 prints the team's remediation plan: its fix windows (the fix-by dates), the assignments (wave, owner, status,
+    # target date) and its population counts (review 6038529822 M4)
+    rem = view.remediation if isinstance(view.remediation, dict) else None
+    if rem:
+        pop = rem.get("population") if isinstance(rem.get("population"), dict) else {}
+        out["remediation"] = {"fix_windows": rem.get("fix_windows"), "assignments": rem.get("assignments_digest"),
+                              "population": {k: pop.get(k) for k in ("sources", "sources_planned", "symmetric",
+                                                                      "no_algorithm")}}
     # D14 prints a trend against the previous issue: an ID names one trend (review 2 m5)
     if isinstance(view.previous_issue, dict) and view.previous_issue.get("document_id"):
         out["previous_issue"] = str(view.previous_issue["document_id"])
@@ -1181,6 +1212,13 @@ def _asset_type_of(row: Mapping[str, Any]) -> str:
     if legacy in _UNTYPED_BY_DESIGN:
         return ASSET_OTHER
     return _LEGACY_ASSET_TYPE.get(legacy, ASSET_ALGORITHM)
+
+
+def asset_identity(row: Mapping[str, Any]) -> tuple[str, str]:
+    """``(asset_type, ident)`` of a ``results[]`` row: the identity ``_asset_from_row`` gives its ``AssetAgg`` within
+    one source (the dashboard counts one row per identity, as the documents do)."""
+    title = _text(row.get("title")) or _text(row.get("algorithm_name")) or "(unnamed)"
+    return _asset_type_of(row), _text(row.get("bom_ref")) or f"{_slug(title)}#{_text(row.get('location')) or ''}"
 
 
 def _untyped(row: Mapping[str, Any]) -> bool:
@@ -3398,7 +3436,8 @@ def removed_collections(view: Any) -> tuple[Any, ...]:
     return tuple(c for c in (getattr(view, "collections", ()) or ()) if is_deleted_source(c))
 
 
-def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequence[Any]) -> TeamCbomView:
+def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequence[Any], *,
+                      counts_only: bool = False) -> TeamCbomView:
     """Fold each CBOM Sources source's latest completed collection into a code-scan view.  PURE.
 
     ``rows`` / ``collections`` are ``collections_view.SourcesRow`` / ``Collection`` (rows in the results[]
@@ -3454,6 +3493,13 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
     components: list[tuple[CollectionAgg, dict[str, Any]]] = []
     products_seen: set[tuple[str, str, str, str]] = set()
     shells: dict[str, ScanFacts] = {}  # one per collection (50k rows: built once, not per row)
+    kept_ids = {id(item) for item in resolution.sources_rows}
+    other_places: dict[str, list[str]] = {}
+    for item in rows:
+        if id(item) not in kept_ids:
+            where = " ".join(x for x in (getattr(item.collection, "source_name", ""), str(item.row.get("location") or ""))
+                             if x)
+            other_places.setdefault(item.identity, []).append(where)
     for item in resolution.sources_rows:
         agg = aggs[item.collection.key]
         shell = shells.get(agg.key)
@@ -3467,6 +3513,7 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
         asset.clause_evidence = getattr(item, "clause_evidence", None) or None
         asset.node_type = getattr(item, "node_type", None) or None
         asset.asset_key = _cross_source_key(str(getattr(item, "identity", "") or ""))
+        asset.also_at = tuple(dict.fromkeys(other_places.get(item.identity, ())))[:MAX_LOCATIONS]
         assets.append(asset)
         if asset.asset_type == ASSET_CERTIFICATE:
             f = item.facts if isinstance(item.facts, Mapping) else {}
@@ -3490,7 +3537,9 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
                 scan_count=1 + sum(c.scan_count for c in earlier), scan_ids=(), latest_scan_id=None))
         # a deleted source's last collection (source_kind "") is never current posture evidence: no posture fact and
         # so no posture source row (D6 / D7 / D9 print "Left out" from ``collections`` instead)
-        posture_evidence = not is_deleted_source(agg)
+        # ``counts_only`` (the CBOM dashboard, review 6038529822 m4): the assets and headline counts only, no posture
+        # facts, library components or compliance pools (the dashboard reads none of them)
+        posture_evidence = not is_deleted_source(agg) and not counts_only
         if item.node_type == "tls_endpoint":
             if posture_evidence:
                 facts_of.setdefault(agg.key, []).append(_probed_tls_fact(item, agg, asset))
@@ -3574,8 +3623,8 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
         posture = replace(posture, state=state, sources=tuple(rows_all), facts=tuple(facts_all),
                           counts=_posture_counts(facts_all, assessed_scans))
     # 5. compliance: each collection's CNSA 2.0 / FIPS 140-3 verdicts (CB-16), pooled with the code scans'
-    frameworks, requirements, pooled = _pool_sources_compliance(view.frameworks, view.requirements,
-                                                                resolution.sources_rows, aggs)
+    frameworks, requirements, pooled = (view.frameworks, view.requirements, 0) if counts_only else \
+        _pool_sources_compliance(view.frameworks, view.requirements, resolution.sources_rows, aggs)
     # 6. basis and fingerprint: a collection is a completed CBOM result
     count = len(aggs)
     # a newer attempt that read nothing is printed (``newer_attempt_note``), so it moves the fingerprint; without one
@@ -3600,7 +3649,11 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
     merged.regulatory_profile = view.regulatory_profile
     merged.grade_inputs = view.grade_inputs
     merged.previous_issue = view.previous_issue
-    merged.cross_scope = {**view.cross_scope, "code_certs_superseded": len(dropped_certs)}
+    # the counted buckets of the population reconciliation (review 6038529822 B1): each from its own source
+    from backend.utilities.cbom_sources.collections_view import dedup_counts
+
+    merged.cross_scope = {**view.cross_scope, "code_certs_superseded": len(dropped_certs),
+                          **dedup_counts(rows, resolution)}
     return merged
 
 
@@ -3741,6 +3794,9 @@ def _load_extras(session: Any, team_id: int, moment: datetime, view: TeamCbomVie
 
 
 __all__ = [
+    "asset_identity",
+    "current_collections",
+    "removed_collections",
     "ASSET_ALGORITHM",
     "ASSET_CERTIFICATE",
     "ASSET_MATERIAL",

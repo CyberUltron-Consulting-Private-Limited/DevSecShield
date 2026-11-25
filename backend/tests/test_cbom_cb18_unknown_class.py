@@ -213,10 +213,12 @@ def test_every_surface_shows_the_same_class(api, world):
 
 def test_export_past_the_cap_keeps_the_runs_unknown_count(api, world, monkeypatch):
     """EC-8: the first rows by id fill the cap; the unknown rows after it are still counted in the metadata."""
-    rsa = [_asset("certificate", f"/etc/ssl/rsa{i}.pem", facts=RSA_CERT, algorithm="RSA", key_size=2048)
-           for i in range(3)]
-    odd = [_asset("certificate", f"/etc/ssl/odd{i}.pem", facts=UNKNOWN_OID_CERT, algorithm="1.3.9999.6.4.13")
-           for i in range(2)]
+    # five different certificates (review 6038529822 M1: the posture counts one certificate read at several places
+    # once, so identical facts at three paths would be one asset)
+    rsa = [_asset("certificate", f"/etc/ssl/rsa{i}.pem", facts={**RSA_CERT, "subject": f"CN=rsa{i}"}, algorithm="RSA",
+                  key_size=2048) for i in range(3)]
+    odd = [_asset("certificate", f"/etc/ssl/odd{i}.pem", facts={**UNKNOWN_OID_CERT, "subject": f"CN=odd{i}"},
+                  algorithm="1.3.9999.6.4.13") for i in range(2)]
     w = RG.seed(world[0], sources=[{"name": "S-cap", "assets": rsa + odd}])
     monkeypatch.setattr(INV, "EXPORT_CAP", 3)
     doc = _export(world[0], w["run"])

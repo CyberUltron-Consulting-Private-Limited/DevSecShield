@@ -17,6 +17,7 @@
 """
 from __future__ import annotations
 
+import base64
 import datetime as _dt
 import functools
 import json
@@ -37,6 +38,9 @@ from backend.utilities.integrations.webhook import post_signed
 OSCAL_VERSION = "1.2.3"
 _DATA = Path(__file__).resolve().parent / "data"
 SCHEMA_FILE = _DATA / "oscal_assessment-results_schema_v1.2.3.json"
+# the usnistgov/OSCAL v1.2.3 release asset oscal_assessment-plan_schema.json (sha256 ea687b9d...d23ea2): the plan each
+# document imports (``import-ap``) is validated against it too (staging QA2 m14, audit D-S3-1)
+PLAN_SCHEMA_FILE = _DATA / "oscal_assessment-plan_schema_v1.2.3.json"
 CONTROLS_FILE = _DATA / "nist_sp800_53_r5_controls.json"
 NS = "https://zeroshield.ai/ns/oscal"
 _UUID_NS = uuid.uuid5(uuid.NAMESPACE_URL, "https://zeroshield.ai/ns/oscal/cbom")
@@ -74,12 +78,12 @@ def catalog() -> dict[str, dict[str, Any]]:
     return {c["id"]: c for c in data["controls"]}
 
 
-@functools.lru_cache(maxsize=1)
-def _validator():
+@functools.lru_cache(maxsize=2)
+def _validator(schema_file: Path = SCHEMA_FILE):
     import jsonschema
     import regex
 
-    schema = json.loads(SCHEMA_FILE.read_text())
+    schema = json.loads(schema_file.read_text())
 
     def pattern(validator, patrn, instance, _schema):
         if validator.is_type(instance, "string") and not regex.search(patrn, instance):
@@ -92,6 +96,12 @@ def _validator():
 def validate(doc: dict[str, Any], limit: int = 20) -> list[str]:
     """Schema errors (empty when the document is valid OSCAL 1.2.3 assessment results)."""
     errors = sorted(_validator().iter_errors(doc), key=lambda e: list(e.absolute_path))
+    return [f"{'/'.join(str(p) for p in e.absolute_path) or '(root)'}: {e.message}" for e in errors[:limit]]
+
+
+def validate_plan(doc: dict[str, Any], limit: int = 20) -> list[str]:
+    """Schema errors of an assessment plan (empty when it is valid OSCAL 1.2.3)."""
+    errors = sorted(_validator(PLAN_SCHEMA_FILE).iter_errors(doc), key=lambda e: list(e.absolute_path))
     return [f"{'/'.join(str(p) for p in e.absolute_path) or '(root)'}: {e.message}" for e in errors[:limit]]
 
 
@@ -259,6 +269,29 @@ def assessment_results(*, team_id: int, anchor: str, title: str, namespace: str,
                                       "on was not recorded for the assets behind them (" + "; ".join(needs)
                                       + "). Verify which algorithm they use.")
             findings.append(finding)
+    # risks (staging QA2 m14, audit D-S3-1): one open risk per finding code, built from its findings: the assets
+    # behind it, the worst impact, the observations; each finding of the code relates to it
+    risks = []
+    for code in sorted(by_code):
+        e = entry(namespace, code) or {}
+        worst = min((i for _o, i in by_code[code] if i), key=lambda i: _IMPACT_RANK.get(i, 9), default=None)
+        risk_uuid = _uuid(team_id, anchor, "risk", code)
+        n = len(by_code[code])
+        risks.append({
+            "uuid": risk_uuid,
+            "title": _text(f"{code}: {e.get('title') or code}", code)[:250],
+            "description": _text(e.get("description"), f"ZeroShield CBOM finding {code}"),
+            "statement": _text(f"{n} cryptographic asset{'' if n == 1 else 's'} of this assessment carr"
+                               f"{'ies' if n == 1 else 'y'} {code}" + (f"; the worst impact is {worst}" if worst else "")
+                               + ". " + _text(e.get("remediation") or e.get("fix"), "See the finding's references."),
+                               code),
+            "props": _props(("finding-code", code), ("severity", worst), ("assets", n)),
+            "status": "open",
+            "related-observations": [{"observation-uuid": o} for o, _i in by_code[code]],
+        })
+        for finding in findings:
+            if any(p.get("name") == "finding-code" and p.get("value") == code for p in finding.get("props") or []):
+                finding["related-risks"] = [{"risk-uuid": risk_uuid}]
     all_controls = sorted({c for cs in COMPLIANCE_TO_CONTROLS.values() for c in cs} & set(known))
     not_read, partly_read = list(dict.fromkeys(not_read)), list(partly_read)
     gaps = []
@@ -287,21 +320,73 @@ def assessment_results(*, team_id: int, anchor: str, title: str, namespace: str,
         result["local-definitions"] = {"inventory-items": items}
     if observations:
         result["observations"] = observations
+    if risks:
+        result["risks"] = risks
     if findings:
         result["findings"] = findings
     if truncated:
         result["remarks"] = f"Only the first {MAX_OBSERVATIONS} assets with findings are included."
+    plan = assessment_plan(team_id=team_id, anchor=anchor, title=title, description=description,
+                           controls=all_controls, subjects=items, kb_version=kb_version, at=start or end)
+    problems = validate_plan(plan)
+    if problems:
+        raise RuntimeError(f"OSCAL assessment plan schema validation failed: {problems[0][:200]}")
+    plan_resource = _uuid(team_id, anchor, "plan-resource")
     return {"assessment-results": {
         "uuid": _uuid(team_id, anchor, "document"),
         "metadata": {"title": title, "last-modified": _ts(utcnow()), "version": anchor, "oscal-version": OSCAL_VERSION,
                      "props": _props(("kb-version", kb_version), ("generator", "ZeroShield DevSecShield CBOM"),
                                      ("generator-build", build_sha()), ("engine-version", engine_version),
                                      ("controls-catalog", "NIST SP 800-53 Rev. 5.2.0"))},
-        "import-ap": {"href": "urn:zeroshield:cbom:assessment-plan",
-                      "remarks": "No separate assessment plan: the scope is the sources of this collection run or the "
-                                 "repository of this code scan."},
+        # a real plan (staging QA2 m14): generated with the document, embedded in its back-matter and referenced by
+        # its resource uuid, so a GRC tool resolves it without a second download
+        "import-ap": {"href": f"#{plan_resource}",
+                      "remarks": "The assessment plan this result follows is embedded in back-matter (OSCAL 1.2.3 "
+                                 "assessment plan, schema-validated): the sources of this collection run or the "
+                                 "repository of this code scan, and the controls the checks are mapped to."},
         "results": [result],
+        "back-matter": {"resources": [{
+            "uuid": plan_resource, "title": f"Assessment plan: {title}"[:250],
+            "description": "OSCAL 1.2.3 assessment plan (JSON, base64) of this assessment.",
+            "base64": {"filename": f"zeroshield-cbom-{anchor}-assessment-plan.json".replace(" ", "-")[:200],
+                       "media-type": "application/json",
+                       "value": base64.b64encode(json.dumps(plan, separators=(",", ":"), ensure_ascii=False)
+                                                 .encode("utf-8")).decode("ascii")}}]},
     }}
+
+
+def assessment_plan(*, team_id: int, anchor: str, title: str, description: str, controls: list[str],
+                    subjects: list[dict[str, Any]], kb_version: str | None,
+                    at: _dt.datetime | None = None) -> dict[str, Any]:
+    """The OSCAL 1.2.3 assessment plan of one assessment: what is assessed (the run's sources or the scan's repository:
+    the system, described in the plan's own back-matter, since no system security plan is imported), the controls the
+    automated checks review, and one task (the automated cryptographic checks). Pure."""
+    system = _uuid(team_id, anchor, "plan-system")
+    plan: dict[str, Any] = {
+        "uuid": _uuid(team_id, anchor, "plan"),
+        # the plan is as old as the assessment (its start): the document stays byte-stable for one run (evidence pack)
+        "metadata": {"title": f"Assessment plan: {title}"[:250], "last-modified": _ts(at), "version": anchor,
+                     "oscal-version": OSCAL_VERSION,
+                     "props": _props(("kb-version", kb_version), ("generator", "ZeroShield DevSecShield CBOM"))},
+        "import-ssp": {"href": f"#{system}",
+                       "remarks": "No system security plan is imported: the system under assessment is the scope "
+                                  "described in the back-matter resource this reference names."},
+        "reviewed-controls": {
+            "description": "NIST SP 800-53 Rev. 5 controls the ZeroShield CBOM knowledge base maps its cryptographic "
+                           "checks to; automated checks only.",
+            "control-selections": [{"include-controls": [{"control-id": c} for c in controls]}]},
+        "assessment-subjects": [{"type": "inventory-item", "description": "Every cryptographic asset the assessment "
+                                 "reads in its scope (the result lists those with a finding).",
+                                 "include-all": {}}],
+        "tasks": [{"uuid": _uuid(team_id, anchor, "plan-task"), "type": "action",
+                   "title": "Automated cryptographic checks",
+                   "description": "Collect the cryptographic inventory of the scope and check every asset against "
+                                  "the knowledge base's rules (CERT-In, RBI, SEBI CSCRF, NIST SP 800-131A, CNSA 2.0)."}],
+        "back-matter": {"resources": [{"uuid": system, "title": f"System under assessment: {title}"[:250],
+                                       "description": _text(description, title),
+                                       "props": _props(("assets-with-findings", len(subjects)))}]},
+    }
+    return {"assessment-plan": plan}
 
 
 # ----------------------------------------------------------------------------- run / scan

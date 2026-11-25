@@ -12,7 +12,7 @@ import re
 import uuid
 from typing import Any, BinaryIO, Callable, Iterator
 
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, bindparam, func, or_
 from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionRun, CbomCollectionSource
@@ -69,9 +69,26 @@ def changed_today(session: Session, scope, now: _dt.datetime) -> dict[int, dict[
     return {aid: view for aid, view in views.items() if view["as_of_run"]}
 
 
+_ID_CHUNK = 5_000
+
+
+def _ids_in(ids: list[int], role: str):
+    """``id IN (...)`` over any number of asset ids without one bind parameter per id (review 6060527885 m1: PostgreSQL
+    caps a statement at 65,535 parameters, SQLite at its compile-time limit): one expanding parameter per chunk of
+    ``_ID_CHUNK``, its integers rendered as literals at execution, OR-ed together. The parameter names depend only on
+    ``role`` and the chunk's position (review 6061787002: stable names, so SQLAlchemy's compiled cache hits)."""
+    parts = [CbomCollectedAsset.id.in_(  # type: ignore[union-attr]
+        bindparam(f"zs_{role}_ids_{n}", value=[int(i) for i in ids[start:start + _ID_CHUNK]], expanding=True,
+                  literal_execute=True))
+        for n, start in enumerate(range(0, len(ids), _ID_CHUNK))]
+    return parts[0] if len(parts) == 1 else or_(*parts)
+
+
 def _filtered(query, *, asset_type: str | None, impact: str | None, quantum: bool | None, text: str | None,
-              source_id: int | None, changed: dict[int, dict[str, Any]] | None = None):
+              source_id: int | None, changed: dict[int, dict[str, Any]] | None = None,
+              corrected: dict[int, tuple[Any, Any, Any]] | None = None):
     changed = changed or {}
+    corrected = corrected or {}
     if asset_type:
         query = query.where(CbomCollectedAsset.asset_type == asset_type)
     if impact:
@@ -84,7 +101,14 @@ def _filtered(query, *, asset_type: str | None, impact: str | None, quantum: boo
                 stored = or_(stored, CbomCollectedAsset.id.in_(today))  # type: ignore[union-attr]
         query = query.where(stored)
     if quantum is not None:
-        query = query.where(CbomCollectedAsset.quantum_vulnerable == quantum)
+        # the verdict the badge shows (``posture.stored_verdict``, review 6057476173 M1): a stored verdict the class
+        # rule corrects (a symmetric key) is filtered by its corrected value
+        away = sorted(a for a, (_r, old, _new) in corrected.items() if old is quantum)
+        into = sorted(a for a, (_r, _old, new) in corrected.items() if new is quantum)
+        stored = CbomCollectedAsset.quantum_vulnerable == quantum
+        if away:
+            stored = and_(stored, ~_ids_in(away, "away"))
+        query = query.where(or_(stored, _ids_in(into, "into")) if into else stored)
     if source_id:
         query = query.where(CbomCollectedAsset.source_id == source_id)
     if text:
@@ -111,7 +135,8 @@ def public_asset(row: CbomCollectedAsset, source_names: dict[int, str], job_name
         "source_id": row.source_id,
         "source_name": source_names.get(row.source_id or 0) or (job_names or {}).get(row.job_id),
         "target": row.target, "location": row.location, "name": row.name, "algorithm": row.algorithm,
-        "key_size": row.key_size, "protocol": row.protocol, "quantum_vulnerable": row.quantum_vulnerable,
+        # the corrected verdict (``posture.stored_verdict``): the Vulnerable badge agrees with ``pqc_class``
+        "key_size": row.key_size, "protocol": row.protocol, "quantum_vulnerable": POSTURE.stored_verdict(row),
         "impact": view["impact"], "finding": view["finding"], "finding_codes": view["finding_codes"],
         "as_of_run": view["as_of_run"],
         "q_grade": grade.get("q_grade"), "q_label": grade.get("q_label"), "q_reason": grade.get("q_reason"),
@@ -144,8 +169,9 @@ def list_assets(session: Session, *, team_id: int, run_id: int | None = None, jo
     if job_id is not None:
         base = base.where(CbomCollectedAsset.job_id == job_id)
     changed = changed_today(session, base, now)
+    corrected = POSTURE.scope_corrections(session, team_id, run_id=run_id, job_id=job_id)
     filtered = _filtered(base, asset_type=asset_type, impact=impact, quantum=quantum, text=text, source_id=source_id,
-                         changed=changed)
+                         changed=changed, corrected=corrected)
     if refine is not None:  # CB-38: a caller's extra filter (run_assets: findings view, status), given today's view
         filtered = refine(filtered, changed)
     total = int(session.exec(select(func.count()).select_from(filtered.subquery())).one())
@@ -171,6 +197,9 @@ def list_assets(session: Session, *, team_id: int, run_id: int | None = None, jo
         by_impact[a_impact or "none"] = by_impact.get(a_impact or "none", 0) + count
         if a_qv:
             quantum_count += count
+    # the quantum chip counts the corrected verdict, as the badge and the filter read it
+    quantum_count += sum(1 for _r, old, new in corrected.values() if new is True) - sum(
+        1 for _r, old, new in corrected.values() if old is True)
     for view in changed.values():  # the impact chips count today's verdicts, as the list shows them
         before, after = view["as_of_run"]["impact"] or "none", view["impact"] or "none"
         by_impact[before] = by_impact.get(before, 0) - 1
@@ -835,7 +864,10 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
     ref = f"zs-asset-{row.id}"
     pqc = POSTURE.graded_class(row, list(view["finding_codes"]), elsewhere=elsewhere)
     # one "unknown" per document (OB-7): a verdict-less row reads unknown only when its class is unknown
-    qv_text = str(row.quantum_vulnerable).lower() if row.quantum_vulnerable is not None else (
+    # the verdict the class and the grade read (review 6038529822 M5): a symmetric cipher, MAC or hash a collector
+    # marked quantum-vulnerable is not, so the document never says "true" (or quantum level 0) next to quantum-safe
+    verdict = POSTURE.stored_verdict(row)
+    qv_text = str(verdict).lower() if verdict is not None else (
         "unknown" if pqc[0] == "unknown" else "not-applicable")
     props = [
         {"name": "zs:location", "value": row.location},
@@ -922,14 +954,14 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
             "parameterSetIdentifier": str(row.key_size) if row.key_size else None,
             "mode": (mode if mode in _CDX_MODES else "other") if mode else None,
             # CycloneDX allows the quantum level only on algorithms: 0 means a quantum computer breaks it
-            "nistQuantumSecurityLevel": 0 if row.quantum_vulnerable is True else None,
+            "nistQuantumSecurityLevel": 0 if verdict is True else None,
         }.items() if v is not None and v != ""}
         # D11 / A-14: the OID and quantum level from algid (the single source of algorithm identities)
         known = algid_identity(row.algorithm or name)
         if "oid" in known:
             crypto["oid"] = known["oid"]
         level = known.get("nistQuantumSecurityLevel")
-        if level is not None and not (level == 0 and row.quantum_vulnerable is False):  # the row's own verdict wins
+        if level is not None and not (level == 0 and verdict is False):  # the row's own verdict wins
             crypto["algorithmProperties"].setdefault("nistQuantumSecurityLevel", level)
         if "parameterSetIdentifier" in known:
             crypto["algorithmProperties"].setdefault("parameterSetIdentifier", known["parameterSetIdentifier"])

@@ -139,7 +139,8 @@ def node_views(rows: Iterable[CbomCollectedAsset], source_ref: str, *, reclassif
     """Views of one collect job's assets; ``reclassify`` re-judges them with the current classifier (as of each
     asset's own collection time, so certificate expiry is still "as of the run")."""
     from backend.utilities.cbom_sources.classify import classify
-    from backend.utilities.cbom_sources.posture import JUDGED_CLASSES, classify_pqc
+    from backend.utilities.cbom_sources import qgrade as QG
+    from backend.utilities.cbom_sources.posture import JUDGED_CLASSES, classify_pqc, stored_verdict
 
     out: dict[str, View] = {}
     for row in rows:
@@ -159,6 +160,13 @@ def node_views(rows: Iterable[CbomCollectedAsset], source_ref: str, *, reclassif
         # the one class function, on the (re-judged) verdict; per job, so no read-elsewhere rule here: an unknown
         # row and a not-applicable one are both outside the readiness denominator, so readiness is the same
         cls, basis = classify_pqc(row, sorted(clean), quantum_vulnerable=qv)
+        # the class every surface shows (``posture.graded_class``): SP 800-131A disallowed with no public-key class is
+        # "deprecated", outside readiness (review 6057476173 B1)
+        graded = QG.graded_pqc_class(cls, row)
+        cls, basis = (graded, "sp800_131a_disallowed") if graded != cls else (cls, basis)
+        # the verdict every count reads (review 6038529822 M5): a symmetric cipher, MAC or hash a collector marked
+        # quantum-vulnerable is not, so drift's readiness equals the posture card's and the team view's
+        qv = stored_verdict(row, quantum_vulnerable=qv)
         cert = ID.is_certificate(row)
         _merge(out, View(
             identity=ident, key=ID.stable_key("node", source_ref, ident), label=ID.node_label(row),

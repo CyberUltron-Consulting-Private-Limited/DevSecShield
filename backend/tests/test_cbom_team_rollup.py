@@ -2327,8 +2327,9 @@ FROZEN_FIELDS = {
         "not_valid_after security_strength_bits risk_score quantum_vulnerable quantum_safe hybrid "
         "nist_quantum_security_level pqc_migration_target pqc_migration_roadmap tier current "
         # row_kind / node_type: FIX-A3 (D1 counts libraries and encryption settings, never "other"; not compared)
+        # also_at: review 6038529822 m6 (the other places a de-duplicated certificate was read; not compared)
         "first_seen last_seen scan_count scan_ids latest_scan_id broken_today collector_codes clause_evidence "
-        "row_kind node_type asset_key"
+        "row_kind node_type asset_key also_at"
     ),
     "CertAgg": (
         "key identity_strong name file_names subject_cn issuer_cn not_before not_after "
