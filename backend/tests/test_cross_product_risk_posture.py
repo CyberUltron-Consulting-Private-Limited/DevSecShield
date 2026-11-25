@@ -18,9 +18,6 @@ from types import SimpleNamespace
 
 import pytest
 
-_TESTS = Path(__file__).resolve().parent
-sys.path.insert(0, str(_TESTS))
-
 from backend.utilities.dashboard import risk_scale
 from backend.utilities.dashboard import scan as scan_mod
 from backend.utilities.dashboard import scan_list as scan_list_mod
@@ -31,6 +28,10 @@ from backend.utilities.db.scan_list_item import (
     return_sbom_sca_list_item,
 )
 from backend.utilities.pdf.aibom_posture import posture_risk
+
+_TESTS = Path(__file__).resolve().parent
+if str(_TESTS) not in sys.path:  # test_pdf_export_smoke and support.pdf_text, imported by the PDF tests
+    sys.path.insert(0, str(_TESTS))
 
 CREATED = dt.datetime(2026, 11, 25, 9, 30, tzinfo=dt.timezone.utc)
 OWNER = SimpleNamespace(email="o@example.test", first_name="O", last_name="Wner")
