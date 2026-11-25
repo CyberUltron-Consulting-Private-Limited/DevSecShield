@@ -57,8 +57,9 @@ Q109 = "q109certkey001_cert_identity_keys"
 Q110 = "q110linkuq001_estate_link_unique"
 
 
-def _step_tx(engine, name: str, direction: str) -> None:
-    """As alembic's ``env.py`` runs a revision (``begin_transaction``), so ``autocommit_block`` works on PostgreSQL."""
+def _step_tx(engine, name: str, direction: str, module=None) -> None:
+    """As alembic's ``env.py`` runs a revision (``begin_transaction``), so ``autocommit_block`` works on PostgreSQL.
+    ``module``: an already loaded (patched) revision module."""
     from alembic.migration import MigrationContext
     from alembic.operations import Operations
 
@@ -68,9 +69,19 @@ def _step_tx(engine, name: str, direction: str) -> None:
         ctx = MigrationContext.configure(conn)
         with ctx.begin_transaction():
             with Operations.context(ctx):
-                getattr(_migration(name), direction)()
+                getattr(module or _migration(name), direction)()
         if conn.in_transaction():  # SQLite (no transactional DDL): what alembic's run commits
             conn.commit()
+
+
+@pytest.fixture(autouse=True)
+def _fresh_process_state():
+    """The per-process state of the window close (back-off, warned settings) starts empty in every test."""
+    M._CLOSE_FAILS.clear() if hasattr(M, "_CLOSE_FAILS") else None
+    M._WARNED.clear() if hasattr(M, "_WARNED") else None
+    yield
+    M._CLOSE_FAILS.clear() if hasattr(M, "_CLOSE_FAILS") else None
+    M._WARNED.clear() if hasattr(M, "_WARNED") else None
 
 
 class Statements:
@@ -403,3 +414,163 @@ def test_q110_retries_after_an_interrupted_concurrent_build(deployed: World):
         assert conn.execute(sa.text("SELECT i.indisvalid FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid "
                                     "WHERE c.relname = 'uq_cbomestatelink_link'")).scalar() is True
         assert conn.execute(sa.text("SELECT count(*) FROM cbomestatelink")).scalar() == 1
+
+
+# ----------------------------------------------------------------------------- #504 review 6062542062
+def test_the_window_setting_is_documented_where_operators_set_cbom_settings():
+    """Minor 1: the setting, what an older writer after the window does, and that compose deploys recreate every
+    container, in the env examples and the staging and chola-prod READMEs; the CONCURRENTLY runbook note."""
+    for rel in ("deploy/staging/backend.env.example", "deploy/local/.env.example", "backend/.env.example",
+                "deploy/staging/README.md", "deploy/chola-prod/README.md"):
+        text = (_REPO_ROOT / rel).read_text()
+        assert "CBOM_IDENTITY_WINDOW_HOURS" in text, rel
+        flat = " ".join(text.split())
+        assert "removed" in flat and "observation" in flat and "recreate" in flat, rel
+    staging = (_REPO_ROOT / "deploy/staging/README.md").read_text()
+    assert "## Migrations that build an index CONCURRENTLY" in staging and "idle in transaction" in staging
+
+
+@pytest.mark.parametrize("raw, hours", [("", 24), ("48", 48), ("0.1", 1), ("0", 1), ("1e12", 720), ("721", 720),
+                                         ("inf", 24), ("-inf", 24), ("nan", 24), ("-5", 24), ("abc", 24)])
+def test_the_window_is_clamped_and_bad_values_are_refused(monkeypatch, raw, hours):
+    """Minor 2: ``inf`` (or anything above ~2.4e10 h) overflowed ``timedelta`` and made every tick fail."""
+    monkeypatch.setenv("CBOM_IDENTITY_WINDOW_HOURS", raw)
+    assert M.window() == dt.timedelta(hours=hours)
+
+
+def test_a_refused_window_setting_is_logged_once_and_close_due_still_works(deployed: World, monkeypatch, capsys):
+    monkeypatch.setenv("CBOM_IDENTITY_WINDOW_HOURS", "inf")
+    with Session(deployed.engine) as s:
+        s.add(CbomOpsCounter(name=f"{M.MARK}1", value=0, updated_at=NOW - dt.timedelta(days=2)))
+        s.commit()
+    outs = [M.close_due(deployed.engine, NOW) for _ in range(3)]
+    assert [o["teams"] for o in outs] == [1, 0, 0] and not any(o["failed"] for o in outs)
+    assert capsys.readouterr().out.count("identity window setting REFUSED") == 1
+
+
+def _marks(world: World, teams, *, age=dt.timedelta(days=2)) -> None:
+    with Session(world.engine) as s:
+        for t in teams:
+            s.add(CbomOpsCounter(name=f"{M.MARK}{t}", value=0, updated_at=NOW - age))
+        s.commit()
+
+
+def _closed(world: World) -> set[int]:
+    with Session(world.engine) as s:
+        return {int(c.name[len(M.CLOSED):]) for c in s.exec(select(CbomOpsCounter)) if c.name.startswith(M.CLOSED)}
+
+
+def test_teams_that_keep_failing_do_not_starve_the_teams_after_them(deployed: World, monkeypatch):
+    """Nit: ``due[:20]`` by team id retried the same 20 failing teams every tick, so team 21 never closed. A failed
+    team backs off (1, 2, 4 ... 60 minutes) and the others go first meanwhile; it is retried once its back-off ends."""
+    _marks(deployed, range(1, 22))
+    real = M.migrate_team
+
+    def fails(session, team_id, **kw):
+        if team_id <= 20:
+            raise RuntimeError("source locked by an older worker")
+        return real(session, team_id, **kw)
+
+    monkeypatch.setattr(M, "migrate_team", fails)
+    first = M.close_due(deployed.engine, NOW)
+    assert first["failed"] == 20 and first["teams"] == 0
+    second = M.close_due(deployed.engine, NOW + dt.timedelta(seconds=30))  # the next tick
+    assert second["teams"] == 1 and _closed(deployed) == {21}
+    monkeypatch.setattr(M, "migrate_team", real)  # the older worker is gone: after the back-off they all close
+    assert M.close_due(deployed.engine, NOW + dt.timedelta(seconds=60))["teams"] == 20
+    assert _closed(deployed) == set(range(1, 22))
+
+
+def test_when_two_schedulers_close_a_team_only_the_one_that_wrote_closed_reports_it(deployed: World, monkeypatch):
+    """Nit: the closer that lost the race (the other committed CLOSED while this one ran its pass) reported the team
+    too. It now writes CLOSED itself or reports nothing."""
+    _marks(deployed, [1])
+    real = M.migrate_team
+
+    def other_scheduler_wins(session, team_id, **kw):
+        found = real(session, team_id, **kw)
+        with Session(deployed.engine) as other:
+            other.add(CbomOpsCounter(name=f"{M.CLOSED}{team_id}", value=0, updated_at=NOW))
+            other.commit()
+        return found
+
+    monkeypatch.setattr(M, "migrate_team", other_scheduler_wins)
+    out = M.close_due(deployed.engine, NOW)
+    assert out["teams"] == 0 and out["failed"] == 0 and _closed(deployed) == {1}
+
+
+def test_two_racing_schedulers_report_the_team_once(deployed: World):
+    import threading
+
+    world = deployed
+    world.source("network", "prober")
+    _marks(world, [1])
+    barrier, outs = threading.Barrier(2), []
+
+    def closer():
+        barrier.wait()
+        try:
+            outs.append(M.close_due(world.engine, NOW))
+        except Exception as exc:  # noqa: BLE001
+            outs.append({"teams": 0, "error": repr(exc)})
+
+    threads = [threading.Thread(target=closer) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(60)
+    assert sum(o["teams"] for o in outs) == 1 and _closed(world) == {1}
+
+
+def test_q110_labels_an_operator_removed_assets_item_removed(deployed: World):
+    """Info: an orphan estate item whose register row is still there was removed by a store write without hooks (the
+    ``estate backfill`` operator path): ``removed``; one with no register row was merged away by q109:
+    ``model_change``."""
+    from backend.new_models import CbomRiskRegister
+
+    world = deployed
+    with Session(world.engine) as s:
+        s.add(_gap("cert:merged-away"))
+        s.add(_gap("cert:backfilled-away"))
+        s.add(CbomRiskRegister(team_id=1, item_key="cert:backfilled-away", q_reason="unknown_verdict", q_grade="Q0",
+                               q_rank=5, model_version="m", inputs_digest="i", grade_digest="g", updated_at=NOW))
+        s.commit()
+    _step_tx(world.engine, Q110, "upgrade")
+    with Session(world.engine) as s:
+        causes = {g.item_key: g.close_cause for g in s.exec(select(CbomQ0Gap))}
+    assert causes == {"asset:cert:merged-away": "model_change", "asset:cert:backfilled-away": "removed"}
+
+
+@pytest.mark.skipif(not os.environ.get("CBOM_TEST_PG_URL"), reason="set CBOM_TEST_PG_URL")
+def test_q110_gives_up_on_an_idle_transaction_after_its_lock_timeout_and_retries(deployed: World, monkeypatch):
+    """Nit: the CONCURRENTLY build waits for every older transaction. Each attempt now waits at most
+    ``LOCK_TIMEOUT``; after ``ATTEMPTS`` it raises (no invalid index left), and the deploy run again builds it."""
+    from test_cbom_identity_qa2 import _migration
+
+    world = deployed
+    if world.engine.dialect.name != "postgresql":
+        pytest.skip("PostgreSQL only")
+    with world.engine.begin() as conn:
+        conn.execute(sa.text("DROP INDEX uq_cbomestatelink_link"))
+    module = _migration(Q110)
+    monkeypatch.setattr(module, "LOCK_TIMEOUT", "1s")
+    monkeypatch.setattr(module, "RETRY_SECONDS", 0)
+    idle = world.engine.connect()
+    idle.execute(sa.text("INSERT INTO cbomestatelink (team_id, asset_key, kind, scan_id, component, match) "  # a writer
+                         "VALUES (1, 'k', 'sbom', 1, 'c', 'name')"))  # of the table, idle in its transaction
+    try:
+        started = dt.datetime.now()
+        with pytest.raises(sa.exc.OperationalError):
+            _step_tx(world.engine, Q110, "upgrade", module)
+        assert (dt.datetime.now() - started).total_seconds() < 30
+        with world.engine.connect() as conn:  # never a valid index built over the writer's transaction: none, or
+            assert conn.execute(sa.text(  # an INVALID one the next run drops
+                "SELECT i.indisvalid FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid "
+                "WHERE c.relname = 'uq_cbomestatelink_link'")).scalar() in (None, False)
+    finally:
+        idle.rollback()
+        idle.close()
+    _step_tx(world.engine, Q110, "upgrade", module)
+    with world.engine.connect() as conn:
+        assert conn.execute(sa.text("SELECT i.indisvalid FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid "
+                                    "WHERE c.relname = 'uq_cbomestatelink_link'")).scalar() is True
