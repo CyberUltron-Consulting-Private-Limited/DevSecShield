@@ -91,10 +91,14 @@ const unnamedBom = {
     ],
   },
 };
-assert.equal(unnamedModelHint(unnamedBom), "2 calls name no model: library default (langchain 0.0.184)");
+assert.equal(unnamedModelHint(unnamedBom), "2 calls name no model: library default or configuration (langchain 0.0.184)");
+// #498 round 4: the dashboard's split when the card carries it, and a strict count
+assert.equal(unnamedModelHint(unnamedBom, { total: 3, unidentified: 2 }), "1 identified + 2 not identified (langchain 0.0.184)");
+assert.equal(unnamedModelHint({ metadata: { properties: [{ name: "aibom:model_unnamed_calls", value: "2abc" }] } }), null);
+assert.equal(unnamedModelHint(PLAIN_BOM, { total: 2, unidentified: 0 }), null);
 assert.equal(
   unnamedModelHint({ metadata: { properties: [{ name: "aibom:model_unnamed_calls", value: "1" }] } }),
-  "1 call names no model: library default",
+  "1 call names no model: library default or configuration",
 );
 assert.equal(unnamedModelHint(PLAIN_BOM), null);
 assert.equal(unnamedModelHint(undefined), null);

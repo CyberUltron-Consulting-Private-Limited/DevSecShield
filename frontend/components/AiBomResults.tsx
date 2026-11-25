@@ -846,7 +846,8 @@ export default function AiBomResults({
                   { label: "AI Assets", value: cardData.total_ai_assets, icon: Bot, color: "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400" },
                   { label: "Models", value: cardData.total_models, icon: Bot, color: "bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400",
                     // ChatOpenAI() with no model runs the library default: said, never a silent 0 (#498 round 3)
-                    hint: unnamedModelHint(meta?.ai_bom_json as Record<string, unknown> | undefined) ?? undefined,
+                    hint: unnamedModelHint(meta?.ai_bom_json as Record<string, unknown> | undefined, {
+                      total: cardData.total_models, unidentified: cardData.total_unidentified_models }) ?? undefined,
                     testId: "aibom-unnamed-model-hint" },
                   { label: "Datasets", value: cardData.total_datasets, icon: Database, color: "bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400" },
                   { label: "External Providers", value: cardData.total_external_providers, icon: Cloud, color: "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400" },

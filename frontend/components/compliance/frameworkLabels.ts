@@ -81,7 +81,7 @@ export const FRAMEWORK_GROUPS_AIBOM_WITH_INDIA: FrameworkGroup[] = [
   { id: "all", label: "All", keys: [] },
   {
     id: "india",
-    label: "India / CERT-In / SEBI",
+    label: "India / CERT-In / RBI / SEBI",
     keys: ["cert_in_aibom", "rbi_free_ai", "sebi_cscrf_aibom"],
   },
 ];
@@ -133,13 +133,21 @@ const INDIA_REGULATORS: [string, RegExp][] = [
   ["SEBI", /^sebi_cscrf_/],
 ];
 
+/** The India chip's suffix when the team declared no regulatory profile: nothing is filtered, so the chip names every
+ * Indian framework the scan computed, not the ones that bind the team (review 6062066749 nit). */
+export const PROFILE_NOT_SET_SUFFIX = " (profile not set)";
+
 /**
  * The preset chips for the frameworks a page actually shows (#498 round 3). The "india" chip keeps only its keys that
  * are present, and is named after their regulators: a bank's AI BOM, whose SEBI CSCRF report the team profile drops,
  * reads "India / CERT-In / RBI", never "… / SEBI". With no India framework left the chip is dropped. Other chips are
  * unchanged. ``present`` = the framework keys of the compliance object the matrix receives.
  */
-export function groupsForFrameworks(groups: FrameworkGroup[], present: Iterable<string>): FrameworkGroup[] {
+export function groupsForFrameworks(
+  groups: FrameworkGroup[],
+  present: Iterable<string>,
+  suffix = "",
+): FrameworkGroup[] {
   const have = new Set(present);
   const out: FrameworkGroup[] = [];
   for (const g of groups) {
@@ -150,7 +158,7 @@ export function groupsForFrameworks(groups: FrameworkGroup[], present: Iterable<
     const keys = g.keys.filter((k) => have.has(k));
     if (keys.length === 0) continue;
     const names = INDIA_REGULATORS.filter(([, re]) => keys.some((k) => re.test(k))).map(([name]) => name);
-    out.push({ ...g, keys, label: ["India", ...names].join(" / ") });
+    out.push({ ...g, keys, label: ["India", ...names].join(" / ") + suffix });
   }
   return out;
 }

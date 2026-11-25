@@ -64,7 +64,11 @@ import {
   type Compliance,
   type FrameworkGroup,
 } from "@/components/compliance/ComplianceMatrix";
-import { FRAMEWORK_GROUPS_AIBOM_WITH_INDIA, groupsForFrameworks } from "@/components/compliance/frameworkLabels";
+import {
+  FRAMEWORK_GROUPS_AIBOM_WITH_INDIA,
+  groupsForFrameworks,
+  PROFILE_NOT_SET_SUFFIX,
+} from "@/components/compliance/frameworkLabels";
 import {
   buildModelCandidates,
   fillModelCardRows,
@@ -150,6 +154,7 @@ export function ComplianceCoverage({
   defaultGroup = "all",
   onAttest,
   hideOutOfScope = false,
+  profileSet = true,
 }: {
   compliance?: Compliance;
   groups?: FrameworkGroup[];
@@ -157,6 +162,8 @@ export function ComplianceCoverage({
   onAttest?: AttestHandler;
   /** Hide frameworks that do not apply at all (every requirement out of scope). */
   hideOutOfScope?: boolean;
+  /** False when the team declared no regulatory profile: the India chip says it is not filtered. */
+  profileSet?: boolean;
 }) {
   // the India chip names only the regulators whose frameworks this AI BOM shows: the compliance reaching here is the
   // team's binding set (server ai_bom_applicability), so a bank SEBI does not regulate reads "India / CERT-In / RBI"
@@ -170,7 +177,7 @@ export function ComplianceCoverage({
       enableAttestation
       onAttest={onAttest}
       hideOutOfScope={hideOutOfScope}
-      groups={groupsForFrameworks(groups, keys)}
+      groups={groupsForFrameworks(groups, keys, profileSet ? "" : PROFILE_NOT_SET_SUFFIX)}
       defaultGroup={defaultGroup}
       className="col-span-full"
     />
@@ -708,7 +715,12 @@ export function AiBomVisualizations({
         )}
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <ComplianceCoverage compliance={compliance} onAttest={onAttest} hideOutOfScope />
+        <ComplianceCoverage
+          compliance={compliance}
+          onAttest={onAttest}
+          hideOutOfScope
+          profileSet={!applicability || Boolean(applicability.regulatory_profile)}
+        />
         <DependencyGraph
           graph={graph}
           graphCompact={graphCompact}

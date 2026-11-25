@@ -11,6 +11,7 @@ import {
   FRAMEWORK_GROUPS_AIBOM_WITH_INDIA,
   FRAMEWORK_GROUPS_CBOM_WITH_INDIA,
   groupsForFrameworks,
+  PROFILE_NOT_SET_SUFFIX,
 } from "./frameworkLabels";
 
 const india = (groups: { id: string; label: string; keys: string[] }[]) => groups.find((g) => g.id === "india");
@@ -42,7 +43,17 @@ assert.equal(india(cbom)?.label, "India / CERT-In");
 const here = path.dirname(new URL(import.meta.url).pathname);
 assert.match(
   fs.readFileSync(path.join(here, "../ai-bom/AiBomVisualizations.tsx"), "utf8"),
-  /groups=\{groupsForFrameworks\(groups, keys\)\}/,
+  /groups=\{groupsForFrameworks\(groups, keys, profileSet \? "" : PROFILE_NOT_SET_SUFFIX\)\}/,
+);
+
+// review 6062066749 nits: the static AI BOM chip names its three regulators; with no profile the chip says so
+assert.equal(india(FRAMEWORK_GROUPS_AIBOM_WITH_INDIA)?.label, "India / CERT-In / RBI / SEBI");
+const unset = groupsForFrameworks(FRAMEWORK_GROUPS_AIBOM_WITH_INDIA, ["rbi_free_ai", "cert_in_aibom", "sebi_cscrf_aibom"],
+  PROFILE_NOT_SET_SUFFIX);
+assert.equal(india(unset)?.label, "India / CERT-In / RBI / SEBI (profile not set)");
+assert.match(
+  fs.readFileSync(path.join(here, "../ai-bom/AiBomVisualizations.tsx"), "utf8"),
+  /profileSet=\{!applicability \|\| Boolean\(applicability\.regulatory_profile\)\}/,
 );
 
 console.log("frameworkLabels tests passed");

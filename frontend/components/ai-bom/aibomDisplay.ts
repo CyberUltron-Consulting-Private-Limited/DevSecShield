@@ -65,18 +65,32 @@ export function applicabilityNote(applicability: AiBomApplicability | null | und
 /** The Models tile's note for model calls that name no model (engine ``aibom:model_unnamed_*``, #498 round 3):
  * ``ChatOpenAI()`` runs the library's default model, which depends on the installed release, so the page says so
  * instead of silently showing fewer models. ``null`` when every call names its model. */
-export function unnamedModelHint(aiBomJson: Json | null | undefined): string | null {
+export function unnamedModelHint(
+  aiBomJson: Json | null | undefined,
+  models?: { total?: unknown; unidentified?: unknown },
+): string | null {
   const meta = aiBomJson?.metadata as Json | undefined;
   const props = Array.isArray(meta?.properties) ? (meta?.properties as Json[]) : [];
   const value = (name: string) => {
     const v = props.find((p) => p?.name === name)?.value;
     return typeof v === "string" ? v : "";
   };
-  const n = Number.parseInt(value("aibom:model_unnamed_calls"), 10);
-  if (!Number.isFinite(n) || n <= 0) return null;
+  // strict: "2abc" is no count (review 6062066749 nit)
+  const count = (v: unknown): number | null => {
+    const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
+    return Number.isInteger(n) && n >= 0 ? n : null;
+  };
   const library = value("aibom:model_unnamed_library");
+  const total = count(models?.total);
+  const unidentified = count(models?.unidentified);
+  if (total !== null && unidentified !== null && unidentified > 0) {
+    // the dashboard's split (#498 round 4, m1): "1 identified + 2 not identified"
+    return `${total - unidentified} identified + ${unidentified} not identified${library ? ` (${library})` : ""}`;
+  }
+  const n = count(value("aibom:model_unnamed_calls"));
+  if (n === null || n === 0) return null;
   const calls = n === 1 ? "1 call names no model" : `${n} calls name no model`;
-  return `${calls}: library default${library ? ` (${library})` : ""}`;
+  return `${calls}: library default or configuration${library ? ` (${library})` : ""}`;
 }
 
 const MAX_LABEL = 24;

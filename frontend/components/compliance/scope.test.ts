@@ -40,7 +40,8 @@ const matrix = fs.readFileSync(path.join(here, "ComplianceMatrix.tsx"), "utf8");
 assert.match(matrix, /hideOutOfScope\s*\?\s*[^:]*appliesAtAll/);
 const aibom = fs.readFileSync(path.join(here, "..", "ai-bom", "AiBomVisualizations.tsx"), "utf8");
 assert.match(aibom, /<ComplianceMatrix[\s\S]*?hideOutOfScope=\{hideOutOfScope\}[\s\S]*?\/>/);
-assert.match(aibom, /<ComplianceCoverage compliance=\{compliance\} onAttest=\{onAttest\} hideOutOfScope \/>/);
+// the AI BOM wrapper asks (#498 round 4 adds its profileSet prop on its own lines)
+assert.match(aibom, /<ComplianceCoverage\s+compliance=\{compliance\}\s+onAttest=\{onAttest\}\s+hideOutOfScope\s/);
 const sbom = fs.readFileSync(path.join(here, "..", "SbomResults.tsx"), "utf8");
 assert.doesNotMatch(sbom.split("<ComplianceCoverage")[1].split("/>")[0], /hideOutOfScope/); // SBOM unchanged
 

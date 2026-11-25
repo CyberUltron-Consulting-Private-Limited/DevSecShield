@@ -2665,6 +2665,8 @@ export interface AiBomScanDashboardData {
     total_unlicensed_assets: number
     /** Library licences the offline manifest did not resolve (unknown / partial, not unlicensed); absent: older backend */
     total_licence_unknown_assets?: number
+    /** Models the code uses without naming them (ChatOpenAI(), a model from configuration): #498 round 4 */
+    total_unidentified_models?: number
     governance_readiness_score: number
     average_risk_score: number
   }

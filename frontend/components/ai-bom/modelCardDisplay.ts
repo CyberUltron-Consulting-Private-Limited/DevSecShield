@@ -33,6 +33,8 @@ export type DefaultPick = {
 
 const INVENTORY_TYPES = new Set([
   "local_model_file",
+  // a model a self-hosted server runs (an Ollama tag; #498 round 4)
+  "self_hosted_model",
   "huggingface_model",
   "embedding_model",
 ]);
