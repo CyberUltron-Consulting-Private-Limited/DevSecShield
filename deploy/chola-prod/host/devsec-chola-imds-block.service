@@ -1,0 +1,16 @@
+# Installed as /etc/systemd/system/devsec-chola-imds-block.service by `remote.sh imds-block`
+# (deploy/chola-prod/README.md, "Instance metadata (IMDS)"). Starts with Docker (WantedBy) and after it (After), and is
+# restarted with it (PartOf): `systemctl restart docker` and every reboot put the rule back. Docker's ExecStartPre
+# drop-in runs the same script before dockerd starts, so containers that come back on their own never get a window.
+[Unit]
+Description=DevSecShield Chola: Docker containers may not reach the EC2 instance metadata service
+After=docker.service
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/devsec-chola-imds-block
+
+[Install]
+WantedBy=docker.service multi-user.target
