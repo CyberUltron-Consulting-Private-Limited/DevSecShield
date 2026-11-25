@@ -404,6 +404,27 @@ _HF_ORG_VENDOR = {
 }
 
 
+# An org-less (legacy) Hub id (``bert-base-uncased``, ``gpt2``), accepted only with
+# strong context (review 6062066749 of #498, m4): the first argument of
+# ``.from_pretrained(`` / ``SentenceTransformer(`` / ``CrossEncoder(``, or the
+# ``model=`` of ``pipeline(``; a model-shaped name (a digit or a hyphen), never a path.
+_HF_BARE_REF = re.compile(
+    r"""(?:\.from_pretrained|\bSentenceTransformer|\bCrossEncoder)\s*\(\s*"""
+    r"""['"](?P<id>[A-Za-z][\w.-]{1,95})['"]|"""
+    r"""\bpipeline\s*\((?:[^()'"]|'[^'\n]*'|"[^"\n]*"){0,200}?\bmodel\s*=\s*"""
+    r"""['"](?P<id2>[A-Za-z][\w.-]{1,95})['"]"""
+)
+
+
+def _bare_hub_ok(name: str) -> bool:
+    return bool(
+        re.search(r"[\d-]", name)
+        and not _HF_FILE.search(name)
+        and name.lower() not in _HF_NOT_ORG
+        and ".." not in name
+    )
+
+
 def hf_vendor(org: str) -> str:
     """The publisher of a Hub model from its organisation (the org itself when it is
     not a known maker's alias)."""
@@ -433,6 +454,18 @@ def find_hf_repo_ids(text: str, lang: str | None = None) -> dict[str, str]:
         seen.add(hub_id.lower())
         family = find_model_refs(name)
         found[hub_id] = next(iter(family.values())) if family else hf_vendor(org)
+    for m in _HF_BARE_REF.finditer(text):
+        name = m.group("id") or m.group("id2")
+        pos = m.start("id") if m.group("id") else m.start("id2")
+        if masked is not None and (
+            masked[0][pos] != text[pos] or masked[1][m.start()] != text[m.start()]
+        ):
+            continue
+        if not _bare_hub_ok(name) or name.lower() in seen:
+            continue
+        seen.add(name.lower())
+        family = find_model_refs(name)
+        found[name] = next(iter(family.values())) if family else "HuggingFace"
     return found
 
 
@@ -440,6 +473,8 @@ def hf_purl(hub_id: str) -> str:
     """The package URL of a Hub model (purl type ``huggingface``: namespace = the
     organisation, name = the repository, both case-sensitive)."""
     org, _, name = hub_id.partition("/")
+    if not name:  # an org-less (legacy) id
+        return f"pkg:huggingface/{org}"
     return f"pkg:huggingface/{org}/{name}"
 
 

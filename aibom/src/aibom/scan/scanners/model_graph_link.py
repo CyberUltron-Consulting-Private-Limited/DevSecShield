@@ -37,7 +37,10 @@ from aibom.model.component import (
 )
 from aibom.model.result import REL_DEPENDS_ON, REL_SERVED_BY
 from aibom.scan.registry import ScanContext, Scanner, register
-from aibom.scan.scanners.net_env_scan import PROVIDER_KEY
+from aibom.scan.scanners.net_env_scan import (
+    OLLAMA_CLOUD_REF as _OLLAMA_CLOUD_REF,
+)
+from aibom.scan.scanners.net_env_scan import PROVIDER_KEY, ollama_cloud_service
 
 # Vendor -> candidate SDK/framework package names (normalized, first match wins).
 _VENDOR_SDK: dict[str, tuple[str, ...]] = {
@@ -87,6 +90,34 @@ _BEDROCK_REF = "cloud_service-bedrock-runtime"
 # hosted API model such as gpt-4o or Claude).
 _LOCAL_SERVERS = ("ollama",)
 _PROPRIETARY = "LicenseRef-proprietary"
+
+
+def _service_key(comp: AIComponent) -> str:
+    props = comp.properties or {}
+    return props.get("service:platform") or (
+        "gateway" if props.get("service:kind") == "gateway"
+        else PROVIDER_KEY.get(comp.name, "")
+    )
+
+
+def _resolve_hint(ctx: ScanContext, hint: str | None) -> tuple[str, str] | None:
+    """``(provider key, service ref)`` of the service a call-site hint names:
+    ``host:<host>`` (the client's literal base URL) or ``env:<NAME>`` (its base URL
+    read from the environment); None otherwise."""
+    if not hint or ":" not in hint or hint.split(":", 1)[0] not in ("host", "env"):
+        return None
+    kind, value = hint.split(":", 1)
+    for comp in ctx.components:
+        if comp.kind not in ("cloud_service", "endpoint"):
+            continue
+        props = comp.properties or {}
+        if (kind == "host" and props.get("discovery:host", "").lower() == value) or (
+            kind == "env" and props.get("service:endpoint_env") == value
+        ):
+            key = _service_key(comp)
+            if key:
+                return key, comp.bom_ref
+    return None
 
 
 def _open_weights(model: AIComponent) -> bool:
@@ -139,15 +170,21 @@ class ModelGraphLinker(Scanner):
         services: dict[str, str] = {}
         # application file -> [(provider key, service ref)] of the services it calls
         by_file: dict[str, list[tuple[str, str]]] = {}
+        all_by_key: dict[str, list[str]] = {}
         for comp in ctx.components:
             if comp.kind not in ("cloud_service", "endpoint"):
                 continue
             props = comp.properties or {}
-            key = "gateway" if props.get("service:kind") == "gateway" else (
-                PROVIDER_KEY.get(comp.name, ""))
+            # a model server names its platform ("ollama", "ollama-cloud"); a gateway
+            # (a literal or unreadable base URL on an unknown host) is "gateway"
+            key = props.get("service:platform") or (
+                "gateway" if props.get("service:kind") == "gateway"
+                else PROVIDER_KEY.get(comp.name, "")
+            )
             if not key:
                 continue
             services.setdefault(key, comp.bom_ref)
+            all_by_key.setdefault(key, []).append(comp.bom_ref)
             files = ctx.service_files.get(comp.bom_ref) or {
                 props.get("discovery:source", "")
             }
@@ -161,6 +198,20 @@ class ModelGraphLinker(Scanner):
             if model.bom_ref in already_linked:
                 continue  # a card already wired this model — don't second-guess it
 
+            served_via = props.get("model:served_via")
+            if served_via:
+                # an Ollama tag (review 6062066749 of #498, M2): served by the Ollama
+                # server its call uses, never by the maker's API or a vendor node
+                exact = _resolve_hint(ctx, hint)
+                if exact is not None and exact[0] in ("ollama", "ollama-cloud"):
+                    # the client the call is made on names its Ollama server
+                    ctx.add_edge(model.bom_ref, REL_SERVED_BY, exact[1])
+                    model.properties = {**props, "model:provider": exact[0]}
+                    continue
+                self._link_served_via(
+                    ctx, model, props, served_via, by_file, all_by_key, frameworks
+                )
+                continue
             vendor = (model.publisher or "").strip()
             hub = bool(props.get("model:hub_id"))
             candidates = _HUB_LOADERS if hub else _VENDOR_SDK.get(vendor, ())
@@ -208,6 +259,38 @@ class ModelGraphLinker(Scanner):
             ctx.add_edge(model.bom_ref, REL_SERVED_BY, vendor_nodes[vendor])
 
     @staticmethod
+    def _link_served_via(
+        ctx: ScanContext,
+        model: AIComponent,
+        props: dict,
+        served_via: str,
+        by_file: dict[str, list[tuple[str, str]]],
+        all_by_key: dict[str, list[str]],
+        frameworks: dict[str, str],
+    ) -> None:
+        """Link an Ollama-tag model: the Ollama service of its own file, else the one
+        Ollama service of the repository (an Ollama tag is Ollama-served by
+        construction), else for a ``-cloud`` tag Ollama Cloud; else no service."""
+        model.properties = props
+        for lib in ("ollama", "langchain-ollama"):
+            if lib in frameworks:
+                ctx.add_edge(model.bom_ref, REL_DEPENDS_ON, frameworks[lib])
+                break
+        same = [r for k, r in by_file.get(props.get("discovery:source", ""), [])
+                if k == served_via]
+        refs = same or (all_by_key.get(served_via, []) if len(
+            set(all_by_key.get(served_via, []))) == 1 else [])
+        if not refs and served_via == "ollama-cloud":
+            if not ctx.has_ref(_OLLAMA_CLOUD_REF):
+                source = props.get("discovery:source", "")
+                ctx.add_component(ollama_cloud_service(source))
+            refs = [_OLLAMA_CLOUD_REF]
+            all_by_key.setdefault(served_via, []).append(_OLLAMA_CLOUD_REF)
+        if refs:
+            ctx.add_edge(model.bom_ref, REL_SERVED_BY, refs[0])
+            model.properties = {**props, "model:provider": served_via}
+
+    @staticmethod
     def _gateway(
         ctx: ScanContext,
         model: AIComponent,
@@ -242,6 +325,10 @@ class ModelGraphLinker(Scanner):
                 services["bedrock"] = _BEDROCK_REF
             return "bedrock", services["bedrock"]
         open_weights = _open_weights(model)
+        exact = _resolve_hint(ctx, hint)
+        if exact is not None and (open_weights or exact[0] not in _LOCAL_SERVERS):
+            # the client object the call is made on names this endpoint
+            return exact
         if hint and hint in services and (open_weights or hint not in _LOCAL_SERVERS):
             # a nearby "ollama" names no server for a hosted model (gpt-4o, Claude)
             return hint, services[hint]
@@ -257,11 +344,15 @@ class ModelGraphLinker(Scanner):
             return hosted[0] if hosted else ("", None)
         own = _VENDOR_API.get(vendor)
         able = _SERVES.get(vendor, ())
-        same_file = by_file.get(props.get("discovery:source", ""), [])
-        if open_weights:
-            # the model's own file calls a local model server: it runs the weights
+        source_file = props.get("discovery:source", "")
+        same_file = by_file.get(source_file, [])
+        if open_weights and all(k in _LOCAL_SERVERS for k, _r in same_file):
+            # the model's own file calls only a local model server: it runs the
+            # weights. A file that also builds another client (a gateway, an endpoint
+            # the scan could not read) proves nothing: no local link (review
+            # 6062066749 of #498, M1)
             server = next(((k, r) for k, r in same_file if k in _LOCAL_SERVERS), None)
-            if server is not None:
+            if server is not None and source_file not in ctx.opaque_client_files:
                 return server
         local = [
             (k, r)
@@ -272,10 +363,8 @@ class ModelGraphLinker(Scanner):
             return next(((k, r) for k, r in local if k == own), local[0])
         if own and own in services:
             return own, services[own]
-        if open_weights:
-            servers = [k for k in _LOCAL_SERVERS if k in services]
-            if servers:
-                return servers[0], services[servers[0]]
+        # never a local server repo-wide: another file's Ollama says nothing about
+        # where this file's model runs (review 6062066749 of #498, M1)
         others = [k for k in able if k in services]
         if len(others) == 1:
             return others[0], services[others[0]]

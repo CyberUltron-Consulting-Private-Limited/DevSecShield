@@ -294,8 +294,17 @@ def needs_identification(r: ScanResult, cr: CheckResult) -> CheckResult:
         (unknown[ref].properties or {}).get("discovery:snippet", unknown[ref].name)
         for ref in hit
     )
+    reasons = sorted({
+        r.strip()
+        for ref in hit
+        for r in (unknown[ref].properties or {})
+        .get("model:unidentified_reason", "library default applies")
+        .replace("library default model applies", "library default applies")
+        .split(";")
+    })
+    note = f"AI model use detected; model not identified ({', '.join(reasons)})"
     return NOT_EVIDENCEABLE(
-        f"{UNIDENTIFIED_NOTE}: {calls}. Name the model to evidence this requirement "
+        f"{note}: {calls}. Name the model to evidence this requirement "
         f"for it (otherwise: {cr.evidence})",
         list(cr.refs),
     )

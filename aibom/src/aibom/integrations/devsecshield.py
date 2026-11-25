@@ -61,6 +61,12 @@ from aibom.scan.pipeline import scan_repo
 # closest umbrella, external_provider (a discovered external AI surface).
 # AIComponentType for a self-hosted model server (worker enums.AIComponentType)
 LOCAL_MODEL_SERVER = "local_model_server"
+# a model server the organisation runs elsewhere (a remote / self-hosted Ollama, or one
+# whose endpoint the scan could not read): not this machine, not a hosted vendor
+SELF_HOSTED_MODEL_SERVER = "self_hosted_model_server"
+# a model run by a self-hosted model server (an Ollama tag): no weight file in the
+# repository, no hosted vendor product (review 6062066749 of #498, m6)
+SELF_HOSTED_MODEL = "self_hosted_model"
 _SERVICE_KINDS = ("service", "cloud_service", "endpoint")
 _KIND_TO_AI_TYPE = {
     # a model the scan saw served by a provider is external_provider (see
@@ -251,11 +257,32 @@ def _component_type(
     ``local_model_file`` (QA round 2, Q2-06; first noted on #487)."""
     if kind == "model" and comp is not None and _provider_served(comp, result):
         return "external_provider"
+    if kind == "model" and comp is not None and _self_hosted_model(comp, result):
+        return SELF_HOSTED_MODEL
     if kind in _SERVICE_KINDS and comp is not None and _is_local_server(comp):
         # a self-hosted model server on the machine (Ollama on localhost): inside
         # the trust boundary, never an external provider (#498 round 3 follow-up)
         return LOCAL_MODEL_SERVER
+    if kind in _SERVICE_KINDS and comp is not None and _is_model_server(comp):
+        return SELF_HOSTED_MODEL_SERVER
     return _KIND_TO_AI_TYPE.get(kind, "external_provider")
+
+
+def _is_model_server(comp: AIComponent) -> bool:
+    return (comp.properties or {}).get("service:kind") == "model_server"
+
+
+def _self_hosted_model(comp: AIComponent, result: ScanResult | None) -> bool:
+    """A model an Ollama call names (``model:served_via`` ollama), or one served by a
+    model server: run by a self-hosted server, never a weight file in the repo."""
+    if (comp.properties or {}).get("model:served_via") == "ollama":
+        return True
+    if result is None:
+        return False
+    return any(
+        _is_model_server(svc) or _is_local_server(svc)
+        for svc in result.neighbors(comp.bom_ref, REL_SERVED_BY)
+    )
 
 
 def _is_local_server(comp: AIComponent) -> bool:
@@ -352,7 +379,15 @@ LICENSE_UNKNOWN = "NOASSERTION"
 
 def _finding_license(comp: AIComponent, result: ScanResult | None = None) -> str:
     """Concrete license label for a finding row."""
-    if (comp.kind or "").lower() in _SERVICE_KINDS and _is_local_server(comp):
+    props = comp.properties or {}
+    if (comp.kind or "").lower() in _SERVICE_KINDS and (
+        _is_local_server(comp)
+        or _is_model_server(comp)
+        or props.get("service:kind") == "gateway"
+    ):
+        # a model server or a gateway runs other makers' models: the served models'
+        # shared open-weights licence, else NOASSERTION, never a provider's terms
+        # (review 6062066749 of #498, m5)
         return _served_model_licence(comp, result)
     declared = _license_str(getattr(comp, "licenses", None))
     if declared and declared.strip().lower() not in ("unknown", "none", "null"):
@@ -499,6 +534,15 @@ def _finding_from_component(comp: AIComponent, result: ScanResult) -> dict[str, 
         "component_type": _component_type(comp.kind, comp, result),
         # the engine kind: a provider-served model is still a model (model counts)
         "component_kind": comp.kind,
+        # a model the code uses without naming it (ChatOpenAI(), a model from
+        # configuration): False; any other model True; not a model None. The views
+        # count unidentified models per scan, never merged across repositories
+        # (review 6062066749 of #498, m1)
+        "model_identified": (
+            (comp.properties or {}).get("model:identified") != "false"
+            if comp.kind == "model"
+            else None
+        ),
         # populated model-card fields (None if absent) — the dashboard's
         # governance-readiness score credits models that carry BOTH a license + card.
         "model_card": _card_summary(comp),

@@ -53,6 +53,9 @@ def _external(services: list) -> list:
         for s in services
         if (s.properties or {}).get("service:trust_zone") != "local"
         and (s.properties or {}).get("provider:kind") != "model_provider"
+        # a self-hosted model server (a remote Ollama) runs open weights; it is no
+        # provider's hosted product (review 6062066749 of #498, M2)
+        and (s.properties or {}).get("service:kind") != "model_server"
     ]
 
 

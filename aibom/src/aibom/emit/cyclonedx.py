@@ -251,9 +251,10 @@ def _unidentified_evidence(props: dict[str, str]) -> dict[str, Any] | None:
     if props.get("model:identified") != "false":
         return None
     call = props.get("discovery:snippet", "")
+    reason = props.get("model:unidentified_reason", "library default model applies")
     library = props.get("model:default_from_library")
-    value = f"{call}: no model argument; the library default model applies" + (
-        f" ({library})" if library else ""
+    value = f"{call}: {reason}" + (
+        f" ({library})" if library and "library default" in reason else ""
     )
     out: dict[str, Any] = {
         "identity": [
@@ -267,9 +268,11 @@ def _unidentified_evidence(props: dict[str, str]) -> dict[str, Any] | None:
             }
         ]
     }
-    src = props.get("discovery:source", "")
-    if _repo_relative(src):
-        out["occurrences"] = [{"location": src}]
+    sources = (props.get("discovery:sources") or props.get("discovery:source", ""))
+    locations = [s for s in sources.split(",") if _repo_relative(s)]
+    if locations:
+        # every call site of the unidentified model (review 6062066749 of #498, m1)
+        out["occurrences"] = [{"location": s} for s in locations]
     return out
 
 

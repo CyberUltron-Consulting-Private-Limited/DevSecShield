@@ -296,8 +296,8 @@ def test_ollama_sdk_with_no_host_is_the_local_server(tmp_path) -> None:
     assert server.properties["service:endpoint"] == "http://127.0.0.1:11434"
     assert server.properties["service:trust_zone"] == "local"
     # open weights run on the local server, never on an endpoint-less "Meta" / "Google" vendor node
-    assert _served(result, "llama3.1") == ["Ollama (local)"]
-    assert _served(result, "gemma2") == ["Ollama (local)"]
+    assert _served(result, "llama3.1:8b") == ["Ollama (local)"]
+    assert _served(result, "gemma2:9b") == ["Ollama (local)"]
     assert not [c for c in result.components if c.name in ("Meta", "Google")]
 
 
@@ -307,20 +307,21 @@ def test_ollama_rows_are_local_serving_with_open_weights_licences(tmp_path) -> N
     assert server["component_type"] == "local_model_server"
     # two different model licences behind it: not asserted as one, never proprietary
     assert server["license"] == "NOASSERTION"
-    assert rows["llama3.1"]["component_type"] == "local_model_file"
-    assert rows["llama3.1"]["license"] == "LicenseRef-llama-community"
-    assert rows["gemma2"]["license"] == "LicenseRef-Gemma-Terms-of-Use"
+    # an Ollama tag is the model's id; run by the server, no file (round 4, m6)
+    assert rows["llama3.1:8b"]["component_type"] == "self_hosted_model"
+    assert rows["llama3.1:8b"]["license"] == "LicenseRef-llama-community"
+    assert rows["gemma2:9b"]["license"] == "LicenseRef-Gemma-Terms-of-Use"
     assert rows["ollama"]["license"] == "MIT"  # the client library (PyPI)
 
 
 def test_an_ollama_server_with_one_model_carries_that_licence(tmp_path) -> None:
     rows = _rows(tmp_path, {"app.py": (
         'URL = "http://localhost:11434/api/generate"\n'
-        'def ask(q, http):\n    return http.post(URL, json={"model": "mistral-7b-instruct", "prompt": q})\n'
+        'def ask(q, http):\n    return http.post(URL, json={"model": "mistral:7b", "prompt": q})\n'
     )})
     assert rows["Ollama (local)"]["component_type"] == "local_model_server"
     assert rows["Ollama (local)"]["license"] == "Apache-2.0"
-    assert rows["mistral-7b-instruct"]["license"] == "Apache-2.0"
+    assert rows["mistral:7b"]["license"] == "Apache-2.0"
 
 
 def test_a_hosted_model_is_never_served_by_ollama(tmp_path) -> None:
@@ -330,7 +331,7 @@ def test_a_hosted_model_is_never_served_by_ollama(tmp_path) -> None:
         'r = client.chat.completions.create(model="gpt-4o", messages=[])\n'
     )})
     assert _served(result, "gpt-4o") == ["OpenAI API"]
-    assert _served(result, "llama3.1") == ["Ollama (local)"]
+    assert _served(result, "llama3.1:8b") == ["Ollama (local)"]
 
 
 def test_an_ollama_client_given_a_variable_host_claims_no_default(tmp_path) -> None:
@@ -402,14 +403,14 @@ def test_langchain_calls_with_no_model_are_unidentified_models_with_evidence(tmp
         c.name: c for c in result.components
         if c.kind == "model" and c.properties.get("model:identified") == "false"
     }
-    assert set(unknown) == {"unidentified model (ChatOpenAI default)", "unidentified model (OpenAIEmbeddings default)"}
-    chat = unknown["unidentified model (ChatOpenAI default)"]
+    assert set(unknown) == {"unidentified model (ChatOpenAI)", "unidentified model (OpenAIEmbeddings)"}
+    chat = unknown["unidentified model (ChatOpenAI)"]
     assert chat.properties["model:reference_type"] == "usage"  # counted: the app uses a model
     assert chat.properties["discovery:confidence"] == "low"
     assert chat.properties["model:default_from_library"] == "langchain 0.0.184"
     assert chat.model_card.task == "chat/completion"
-    assert unknown["unidentified model (OpenAIEmbeddings default)"].model_card.task == "text-embedding"
-    assert _served(result, "unidentified model (ChatOpenAI default)") == ["OpenAI API"]
+    assert unknown["unidentified model (OpenAIEmbeddings)"].model_card.task == "text-embedding"
+    assert _served(result, "unidentified model (ChatOpenAI)") == ["OpenAI API"]
 
 
 def test_the_cyclonedx_entry_carries_low_confidence_identity_evidence(tmp_path) -> None:
@@ -417,13 +418,13 @@ def test_the_cyclonedx_entry_carries_low_confidence_identity_evidence(tmp_path) 
 
     result = _scan(tmp_path, {"app.py": _ASK_PDFS, "requirements.txt": "langchain==0.0.184\nopenai==0.27.6\n"})
     bom = emit_and_validate(result)  # schema-valid CycloneDX 1.6
-    (chat,) = [c for c in bom["components"] if c["name"] == "unidentified model (ChatOpenAI default)"]
+    (chat,) = [c for c in bom["components"] if c["name"] == "unidentified model (ChatOpenAI)"]
     assert chat["type"] == "machine-learning-model"
     (identity,) = chat["evidence"]["identity"]
     assert identity["field"] == "name" and identity["confidence"] == 0.1
     assert identity["methods"][0]["technique"] == "source-code-analysis"
     assert identity["methods"][0]["value"] == (
-        "ChatOpenAI() in app.py: no model argument; the library default model applies (langchain 0.0.184)")
+        "ChatOpenAI() in app.py: library default model applies (langchain 0.0.184)")
     assert chat["evidence"]["occurrences"] == [{"location": "app.py"}]
 
 

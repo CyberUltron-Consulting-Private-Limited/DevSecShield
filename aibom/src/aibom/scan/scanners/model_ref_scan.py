@@ -21,8 +21,8 @@ from typing import Any
 
 from aibom.model.component import ModelCard, ModelComponent, PedigreeAncestor
 from aibom.scan.parsers import model_kb
-from aibom.scan.parsers.code_imports import notebook_code
-from aibom.scan.parsers.code_text import language_of
+from aibom.scan.parsers.code_imports import notebook_text
+from aibom.scan.parsers.code_text import call_arguments, language_of, mask
 from aibom.scan.parsers.licenses import license_choice
 from aibom.scan.parsers.model_refs import (
     find_hf_repo_ids,
@@ -30,6 +30,7 @@ from aibom.scan.parsers.model_refs import (
     hf_purl,
     parse_bedrock_id,
 )
+from aibom.scan.parsers.ollama_tags import find_ollama_tags, is_cloud_tag, ollama_family
 from aibom.scan.path_roles import (
     evidence_rank,
     is_doc_path,
@@ -163,6 +164,59 @@ _LITERAL_BASE_HINT = re.compile(
 )
 
 
+_RECEIVER_CALL = re.compile(r"\b(?P<var>[A-Za-z_]\w*)(?:\.\w+)+\s*\(")
+_URL_HOST = re.compile(r"""['"]https?://(?:[^\s/'"@]*@)?(?P<host>[^\s/'"?#]+)""")
+_ENV_NAME = re.compile(
+    r"""(?:os\.environ(?:\.get)?\s*[\[(]|getenv\s*\()\s*['"](?P<a>[A-Z_][A-Z0-9_]*)"""
+    r"""|process\.env\.(?P<b>[A-Z_][A-Z0-9_]*)"""
+)
+_BASE_KW = re.compile(
+    r"\b(?:base_url|api_base|baseURL|openai_api_base|anthropic_api_url|host|"
+    r"azure_endpoint)\s*[=:]"
+)
+
+
+def _client_hint(text: str, idx: int) -> str | None:
+    """Call-site scope (review 6062066749 of #498, M1): the client object whose call
+    holds the reference at ``idx`` (``client.chat.completions.create(model=…)``),
+    resolved to the endpoint its constructor names: ``host:<host[:port]>`` for a
+    literal base URL, ``env:<NAME>`` for one read from the environment, ``ollama``
+    for an Ollama client; None when the call is not on a client the file builds."""
+    _code, bare = mask(text, "py")
+    for m in _RECEIVER_CALL.finditer(bare, max(0, idx - 2000), idx):
+        args = call_arguments(bare, m.end() - 1)
+        if args is None or not (m.end() <= idx <= m.end() + len(args)):
+            continue
+        var = m.group("var")
+        ctor = re.search(
+            rf"(?m)^\s*{re.escape(var)}\s*=\s*(?:await\s+)?(?:new\s+)?"
+            rf"(?P<cls>[\w.]+)\s*\(",
+            bare,
+        )
+        if ctor is None:
+            continue
+        cargs = call_arguments(bare, ctor.end() - 1)
+        if cargs is None:
+            return None
+        span = text[ctor.end() : ctor.end() + len(cargs)]
+        cls = ctor.group("cls")
+        is_ollama = "ollama" in cls.lower() or (
+            cls.endswith("Client")
+            and re.search(r"\bfrom\s+ollama\b|\bimport\s+[\w., ]*ollama\b", text)
+        )
+        positional = is_ollama and cargs.strip() and "=" not in cargs.split(",", 1)[0]
+        if not _BASE_KW.search(cargs) and not positional:
+            return "ollama" if is_ollama else None
+        url = _URL_HOST.search(span)
+        if url:
+            return f"host:{url.group('host').lower()}"
+        env = _ENV_NAME.search(span)
+        if env:
+            return f"env:{env.group('a') or env.group('b')}"
+        return "ollama" if is_ollama else None
+    return None
+
+
 def _gateway_hint(text: str, name: str) -> str | None:
     """The gateway named nearest a reference, within its code block, or None."""
     # the reference itself, never the same text inside a longer id
@@ -173,6 +227,9 @@ def _gateway_hint(text: str, name: str) -> str | None:
     if found is None:
         return None
     idx = found.start()
+    client = _client_hint(text, idx)
+    if client is not None:
+        return client
     lines = text[: idx + len(name)].splitlines()
     for back, line in enumerate(reversed(lines[-_HINT_LINES:])):
         if back == 0:
@@ -249,7 +306,10 @@ class ModelRefScanner(Scanner):
             if path.suffix.lower() == ".ipynb":
                 # a notebook's code cells are Python source (the JSON escapes every
                 # quote, so Hub ids and comments are read from the cells themselves)
-                text, lang = notebook_code(text), "py"
+                text, readable = notebook_text(text)
+                lang = "py"
+                if not readable:
+                    ctx.unreadable_notebooks.add(path.name)
             # name -> (vendor, reference_type)
             refs = dict(find_model_refs_ctx(text, lang))
             # Hugging Face Hub ids the code loads: the family name the dictionary
@@ -258,7 +318,7 @@ class ModelRefScanner(Scanner):
             hub_of: dict[str, str] = {}
             known = {n.lower(): n for n in refs}
             for hub_id, hub_vendor in find_hf_repo_ids(text, lang).items():
-                tail = hub_id.split("/", 1)[1]
+                tail = hub_id.split("/")[-1]
                 name = known.get(hub_id.lower()) or known.get(tail.lower())
                 if name is None:
                     name = hub_id
@@ -266,6 +326,18 @@ class ModelRefScanner(Scanner):
                 else:
                     refs[name] = (refs[name][0], "usage")
                 hub_of[name] = hub_id
+            # Ollama library tags in Ollama calls (review 6062066749 of #498, M2):
+            # open weights the Ollama server runs, never the maker's hosted product.
+            # The tag (``mistral:7b``) is the model's id; a family-dictionary hit on
+            # the same name (``gpt-oss`` → OpenAI) is replaced by it.
+            ollama_of: dict[str, str] = {}
+            for tag in find_ollama_tags(text, lang or "py") if lang else []:
+                base = tag.split(":", 1)[0].lower()
+                for other in [n for n in refs if n.lower() in (base, tag.lower())]:
+                    del refs[other]
+                vendor_t, _lic, _task = ollama_family(tag)
+                refs[tag] = (vendor_t or "", "usage")
+                ollama_of[tag] = "ollama-cloud" if is_cloud_tag(tag) else "ollama"
             for name, (vendor, rtype) in refs.items():
                 kind = role or rtype
                 low = name.lower()
@@ -279,7 +351,9 @@ class ModelRefScanner(Scanner):
                                  "source": source, "rank": rank,
                                  "gateway": _gateway_hint(text, name),
                                  "hub": hub_of.get(name)
-                                 or (entry or {}).get("hub")}
+                                 or (entry or {}).get("hub"),
+                                 "ollama": ollama_of.get(name)
+                                 or (entry or {}).get("ollama")}
                 elif hub_of.get(name) and not entry.get("hub"):
                     entry["hub"] = hub_of[name]
         for kind in ("catalog", "test"):
@@ -299,6 +373,7 @@ class ModelRefScanner(Scanner):
             kb = model_kb.lookup(name)
             card_fields = kb if kb is not None else {}
             hub = entry.get("hub")
+            served_via = entry.get("ollama")
             # License: KB (model-specific) wins, else the vendor map. A Hub model's
             # licence is its own card's (open weights): the vendor's hosted-model
             # terms never apply to it (``openai/whisper-large-v3`` is no proprietary
@@ -306,7 +381,19 @@ class ModelRefScanner(Scanner):
             spdx = (kb.get("license") if kb else None) or (
                 None if hub else _MODEL_LICENSE_BY_VENDOR.get(vendor)
             )
+            if served_via:
+                # an Ollama tag: the open-weights licence of its family (a hosted
+                # vendor's terms never apply), else the KB's when it is not a hosted
+                # product's, else unknown
+                # (an unknown family stays unknown: ``tinyllama`` is no Llama-licensed
+                # model although the dictionary's "llama" token is in its name)
+                _vendor_t, spdx, task_t = ollama_family(name)
+                card_fields = {"task": task_t}
             props = {"model:reference_type": rtype, "discovery:source": source}
+            if served_via:
+                # read by the linker: served by the Ollama server the call uses
+                props["model:served_via"] = served_via
+                props["model:weights"] = "open"
             if hub:
                 # read by the model-graph linker: a Hub model is loaded from the Hub
                 # and run by the application (never "served by" its maker's API)
@@ -323,7 +410,7 @@ class ModelRefScanner(Scanner):
             comp = ModelComponent(
                 bom_ref=bom_ref,
                 name=name,
-                publisher=vendor,
+                publisher=vendor or None,
                 licenses=[license_choice(spdx)] if spdx else None,
                 purl=hf_purl(hub) if hub else None,
                 # usage = the code loads/calls it; catalog = listed in a

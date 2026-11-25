@@ -33,6 +33,11 @@ class ScanContext:
         # service bom_ref -> every application file that calls it (net-env). Scan
         # bookkeeping for the model-graph linker; never emitted.
         self.service_files: dict[str, set[str]] = {}
+        # notebooks that are not valid JSON notebooks (read as raw text; warned)
+        self.unreadable_notebooks: set[str] = set()
+        # application files that build an AI client whose endpoint the scan could
+        # not read (an env / variable base URL): no local server is inferred there
+        self.opaque_client_files: set[str] = set()
 
     # --- mutation helpers (the scanner-facing API) ---------------------- #
 

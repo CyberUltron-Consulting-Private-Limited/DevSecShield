@@ -49,9 +49,22 @@ def scan_repo(
         raise NotADirectoryError(f"scan target is not a directory: {root}")
 
     ctx = ScanContext(root)
+    errors: list[str] = []
     for scanner in ordered_scanners():
         if scanner.level <= level and scanner.matches(root):
-            scanner.scan(ctx)
+            try:
+                scanner.scan(ctx)
+            except Exception as exc:  # noqa: BLE001 - one scanner never aborts a scan
+                # the BOM is still produced, and says which scanner did not finish
+                # (review 6062066749 of #498, M3: one corrupt notebook failed the scan)
+                errors.append(f"{scanner.name}: {type(exc).__name__}")
+    if errors:
+        ctx.properties["aibom:scanner_errors"] = "; ".join(errors)
+    if ctx.unreadable_notebooks:
+        # read as raw text (JSON escapes undone), and said so in the BOM
+        ctx.properties["aibom:notebooks_unreadable"] = ", ".join(
+            sorted(ctx.unreadable_notebooks)
+        )
 
     if allowlist is not None:
         # Shadow-AI diff is a finalize step: it EMITS flags (lane-clean), the

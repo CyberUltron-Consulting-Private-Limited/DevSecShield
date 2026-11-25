@@ -80,6 +80,22 @@ _LICENSE_MAP: dict[str, str] = {
     # PyPI JSON, 25 Nov 2026 (#498 round 3, AI-library audit): license_expression,
     # else the license field / classifier of the current release
     "pyannote-audio": "MIT",  # 4.1.1 license_expression MIT
+    "whisperx": "BSD-2-Clause",  # 3.8.6 license BSD-2-Clause (review 6062066749 m3)
+    # LangChain partner packages (PyPI, 25 Nov 2026: license MIT / MIT License
+    # classifier): langchain-openai 1.8.5, -anthropic 1.7.12, -community 0.4.2,
+    # -core 1.8.4, -text-splitters 1.2.0, -google-genai 4.5.2, -aws 1.10.0,
+    # -ollama 1.2.0, -mistralai 1.2.0, -groq 1.2.1, -huggingface 1.3.0, -cohere
+    # 0.6.0; langgraph 1.2.24 license_expression MIT
+    "langchain-openai": "MIT",
+    "langchain-anthropic": "MIT",
+    "langchain-text-splitters": "MIT",
+    "langchain-google-genai": "MIT",
+    "langchain-aws": "MIT",
+    "langchain-ollama": "MIT",
+    "langchain-mistralai": "MIT",
+    "langchain-groq": "MIT",
+    "langchain-huggingface": "MIT",
+    "langchain-cohere": "MIT",
     "openai-whisper": "MIT",  # 20250625 license MIT
     "faster-whisper": "MIT",  # 1.2.1 MIT License classifier
     "ctranslate2": "MIT",  # 4.9.1 license MIT

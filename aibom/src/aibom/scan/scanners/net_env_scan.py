@@ -40,6 +40,7 @@ from aibom.model.component import (
     EndpointComponent,
     ModelComponent,
 )
+from aibom.scan.parsers.code_imports import notebook_text
 from aibom.scan.parsers.code_text import call_arguments, language_of, mask
 from aibom.scan.parsers.licenses import license_choice
 from aibom.scan.path_roles import is_env_file, is_example_path, is_test_path
@@ -228,7 +229,7 @@ _LANGCHAIN_BEDROCK = re.compile(
 # host is that local endpoint (#498 round 3 follow-up: an ``ollama.chat(...)`` app
 # had no Ollama node, so its models read as external vendor services).
 _OLLAMA_IMPORT = re.compile(
-    r"""(?:^|\n)\s*(?:import\s+ollama\b|from\s+ollama\b)|"""
+    r"""(?:^|\n)\s*(?:import\s+(?:[\w.]+\s*,\s*)*ollama\b|from\s+ollama\b)|"""
     r"""from\s+['"]ollama(?:/browser)?['"]|require\(\s*['"]ollama['"]\s*\)""",
     re.IGNORECASE,
 )
@@ -271,61 +272,175 @@ _UNNAMED_VENDOR = (
 )
 # a hosted vendor's API models are all used under its terms, whichever is the default
 _HOSTED_TERMS = frozenset({"OpenAI", "Anthropic", "Google", "Cohere", "Microsoft"})
+# direct SDK calls whose model is an argument: (call regex, client label, import regex)
+_SDK_MODEL_CALLS: tuple[tuple[re.Pattern[str], str, re.Pattern[str]], ...] = (
+    (re.compile(
+        r"\.(?:chat\.completions|completions|responses|embeddings)\.create\s*\("),
+     "OpenAI", re.compile(r"""\bopenai\b""")),
+    (re.compile(r"\.messages\.(?:create|stream)\s*\("), "Anthropic",
+     re.compile(r"""\banthropic\b|@anthropic-ai/sdk""")),
+    (re.compile(r"\bollama\.(?:chat|generate|embed|embeddings)\s*\("), "Ollama",
+     re.compile(r"""\bollama\b""")),
+)
+_MODEL_VALUE = re.compile(
+    r"\b(?:model|model_name|modelName|model_id|deployment_name|azure_deployment|"
+    r"deploymentName)\s*[=:]\s*"
+)
+_ENV_KEY = re.compile(
+    r"""(?:os\.environ(?:\.get)?\s*[\[(]|os\.getenv\s*\(|getenv\s*\(|"""
+    r"""process\.env\.|settings\.|config\.|cfg\.)\s*['"]?(?P<key>[A-Za-z_][\w.]*)"""
+)
+_STRING = re.compile(r"""['"][^'"\n]*['"]""")
+_REASON_DEFAULT = "library default model applies"
+_REASON_CONFIG = "model from configuration"
 
 
-def unidentified_model(call: str, source: str) -> ModelComponent:
-    """The low-confidence model entry for a wrapper built with no model argument
-    (``ChatOpenAI()`` in app.py): the application uses a model, which one is not
-    identified (the library's default applies). Its name says so; the evidence is the
-    call. The checks read ``model:identified = false`` as "needs information", never
-    as a pass or as "no AI model" (#498 round 3)."""
-    cls = call.rstrip("()")
-    vendor = next((v for pat, v in _UNNAMED_VENDOR if pat.search(cls)), "unknown")
-    task = "text-embedding" if "Embeddings" in cls else "chat/completion"
-    slug = re.sub(r"[^a-z0-9]+", "-", f"{cls}-{source}".lower()).strip("-")
-    comp = ModelComponent(
-        bom_ref=f"modelref-unidentified-{slug}",
-        name=f"unidentified model ({cls} default)",
-        publisher=None if vendor in ("unknown", "local") else vendor,
-        licenses=[license_choice("LicenseRef-proprietary")]
-        if vendor in _HOSTED_TERMS
-        else None,
-        properties={
-            "model:reference_type": "usage",
-            "model:identified": "false",
-            "model:unidentified_reason": "library default model applies",
-            "discovery:source": source,
-            "discovery:method": "sdk-client-default-model",
-            "discovery:confidence": "low",
-            "discovery:snippet": f"{call} in {source}",
-        },
-    )
-    comp.model_card.task = task
-    return comp
+def _arg_value(code: str, start: int) -> str:
+    """The argument expression starting at ``start`` (to the next top-level comma
+    or the closing parenthesis), trimmed."""
+    depth = 0
+    for k in range(start, min(len(code), start + 300)):
+        ch = code[k]
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            if depth == 0:
+                return code[start:k].strip()
+            depth -= 1
+        elif ch == "," and depth == 0:
+            return code[start:k].strip()
+    return code[start : start + 300].strip()
+
+
+def _config_model(code: str, value: str) -> str | None:
+    """The configuration key a non-literal model argument reads (``M`` for
+    ``os.environ["M"]``, ``settings.MODEL`` …), "" for another expression, or None
+    when the model is in fact known: a string literal, an ``os.getenv(KEY,
+    "<model>")`` default, or a variable the file assigns a literal to (the
+    model-reference scanner reads those)."""
+    if not value or value[0] in "'\"`":
+        return None
+    literals = _STRING.findall(value)
+    env = _ENV_KEY.search(value)
+    if len(literals) > 1 or (literals and not env):
+        return None  # a literal default (or a literal model) is in the expression
+    if re.fullmatch(r"[A-Za-z_]\w*", value) and re.search(
+        rf"(?m)^\s*(?:(?:export\s+)?(?:const|let|var)\s+)?{re.escape(value)}\s*"
+        rf"(?::[^=\n]+)?=\s*['\"`]", code
+    ):
+        return None
+    if env:
+        return env.group("key")
+    return ""
+
+
+def unidentified_calls(text: str, source: str) -> list[tuple[str, str, str]]:
+    """``[(client class, reason, call text)]``: model clients the file uses without
+    naming the model: a LangChain wrapper built with no model argument (the
+    library's default model applies), or any model argument that is not a literal
+    (``ChatOpenAI(model=os.environ["M"])``, ``client.chat.completions.create(
+    model=settings.MODEL)``: the model comes from configuration; review 6062066749
+    of #498, M4). Readable arguments only; ``**kwargs`` / spread may name one."""
+    code, bare = mask(text, language_of(source))
+    out: list[tuple[str, str, str]] = []
+
+    def model_arg(open_paren: int) -> tuple[str, str] | None:
+        args = call_arguments(bare, open_paren)
+        if args is None or _SPREAD.search(args):
+            return None
+        m = _MODEL_VALUE.search(args)
+        if m is None:
+            return ("", "")
+        start = open_paren + 1 + m.end()
+        value = _arg_value(code, start)
+        key = _config_model(code, value)
+        return None if key is None else (value, key)
+
+    if _LANGCHAIN_IMPORT_RE.search(code):
+        for m in _LANGCHAIN_MODEL_CLASSES.finditer(bare):
+            head = bare[bare.rfind("\n", 0, m.start()) + 1 : m.start()]
+            if _DEFINITION.search(head):
+                continue
+            cls = m.group("cls")
+            got = model_arg(m.end() - 1)
+            if got is None:
+                continue
+            value, key = got
+            if not value:
+                args = call_arguments(bare, m.end() - 1) or ""
+                first = args.split(",", 1)[0].strip()
+                if first and "=" not in first and ":" not in first:
+                    continue  # a positional first argument may be the model
+                out.append((cls, _REASON_DEFAULT, f"{cls}()"))
+            else:
+                out.append((cls, _REASON_CONFIG, f"{cls}(model={value[:60]})"))
+    for call_re, cls, imp in _SDK_MODEL_CALLS:
+        if not imp.search(code):
+            continue
+        for m in call_re.finditer(bare):
+            got = model_arg(m.end() - 1)
+            if got is None or not got[0]:
+                continue  # no model argument: not a model call the scan can judge
+            value, _key = got
+            label = "chat" if cls == "Ollama" else "create"
+            out.append((cls, _REASON_CONFIG, f"{cls} {label}(model={value[:60]})"))
+    return out
 
 
 def unnamed_model_calls(text: str, source: str) -> list[str]:
-    """``["ChatOpenAI()", …]``: LangChain model wrappers the file constructs with no
-    model argument (readable arguments only; ``**kwargs`` / spread may name one)."""
-    code, bare = mask(text, language_of(source))
-    if not _LANGCHAIN_IMPORT_RE.search(code):
-        return []
-    out: list[str] = []
-    for m in _LANGCHAIN_MODEL_CLASSES.finditer(bare):
-        head = bare[bare.rfind("\n", 0, m.start()) + 1 : m.start()]
-        if _DEFINITION.search(head):
-            continue
-        args = call_arguments(bare, m.end() - 1)
-        if args is None or _SPREAD.search(args) or _MODEL_KWARG.search(args):
-            continue
-        if args.strip():
-            # a positional first argument may be the model; not "unnamed" then
-            first = args.split(",", 1)[0].strip()
-            if first and "=" not in first and ":" not in first:
-                continue
-        out.append(f"{m.group('cls')}()")
+    """The calls of :func:`unidentified_calls` (``"ChatOpenAI()"``)."""
+    return [call for _cls, _reason, call in unidentified_calls(text, source)]
+
+
+def unidentified_models(
+    calls: list[tuple[str, str, str, str]], library: dict[str, str] | None = None
+) -> list[ModelComponent]:
+    """One low-confidence model entry per client class in the scan (review
+    6062066749 of #498, m1): ``unidentified model (ChatOpenAI)``, with every call
+    site as evidence. ``calls`` = ``[(class, reason, call text, source file)]``. The
+    checks read ``model:identified = false`` as "needs information", never as a
+    pass or as "no AI model"."""
+    by_cls: dict[str, list[tuple[str, str, str]]] = {}
+    for cls, reason, call, source in calls:
+        by_cls.setdefault(cls, []).append((reason, call, source))
+    out: list[ModelComponent] = []
+    for cls in sorted(by_cls):
+        sites = by_cls[cls]
+        vendor = next((v for pat, v in _UNNAMED_VENDOR if pat.search(cls)), "unknown")
+        reasons = sorted({r for r, _c, _s in sites})
+        sources = sorted({s for _r, _c, s in sites})
+        keys = sorted({
+            k.group("key") for _r, c, _s in sites if (k := _ENV_KEY.search(c))
+        })
+        props = {
+            "model:reference_type": "usage",
+            "model:identified": "false",
+            "model:unidentified_reason": "; ".join(reasons),
+            "discovery:source": sites[0][2],
+            "discovery:sources": ",".join(sources),
+            "discovery:method": "model-not-named",
+            "discovery:confidence": "low",
+            "discovery:snippet": "; ".join(f"{c} in {s}" for _r, c, s in sites[:20]),
+        }
+        if keys:
+            props["model:config_keys"] = ",".join(keys)
+        if vendor == "local":
+            props["model:served_via"] = "ollama"
+        comp = ModelComponent(
+            bom_ref="modelref-unidentified-" + re.sub(r"[^a-z0-9]+", "-", cls.lower()),
+            name=f"unidentified model ({cls})",
+            publisher=None if vendor in ("unknown", "local") else vendor,
+            licenses=[license_choice("LicenseRef-proprietary")]
+            if vendor in _HOSTED_TERMS
+            else None,
+            properties=props,
+        )
+        comp.model_card.task = "text-embedding" if "Embeddings" in cls else (
+            "chat/completion")
+        out.append(comp)
     return out
-_OLLAMA_HOST_ARG = re.compile(r"\b(?:host|base_url|baseUrl)\s*[=:]")
+
+
 # Azure OpenAI: always Azure (never the OpenAI API); the endpoint is the literal
 # ``azure_endpoint`` when there is one, else unknown, with the environment variable
 # that holds it recorded (review 6037909737 of #498, M2)
@@ -391,9 +506,9 @@ _HOST_RES = [
 # JS / TS route and module files too: a Next.js route calling an SDK is a .tsx / .mjs
 # file (review 6037909737 of #498, m5)
 _SUFFIXES = {".env", ".py", ".ts", ".js", ".tsx", ".jsx", ".mjs", ".cjs", ".mts",
-             ".cts",
+             ".cts", ".ipynb",
              ".yaml", ".yml", ".toml", ".sh", ".cfg"}
-_LOOPBACK = ("localhost", "127.0.0.1")
+_LOOPBACK = ("localhost", "127.0.0.1", "0.0.0.0", "[::1]")
 # An API version path segment: v1, v2, v1beta, v1alpha2, v2preview, 2023-05-15. Only
 # the real version words may follow the number, so a key-shaped segment such as
 # ``v2abcdefFAKEghij123`` is not taken for a version (second review of #487, m-a).
@@ -487,7 +602,9 @@ class NetEnvScanner(Scanner):
     def scan(self, ctx: ScanContext) -> None:
         seen: set[str] = set()
         excluded: set[str] = set()  # refs named only in test / example files
-        unnamed: list[str] = []  # model wrappers built with no model argument
+        # model clients that name no model: (class, reason, call, file)
+        unnamed: list[tuple[str, str, str, str]] = []
+        files: list[tuple[Path, str, str]] = []
         for path in _scan_files(ctx.root):
             text = read_text(path)
             if text is None:
@@ -496,14 +613,30 @@ class NetEnvScanner(Scanner):
                 source = path.relative_to(ctx.root).as_posix()
             except ValueError:
                 source = path.name
+            if path.suffix.lower() == ".ipynb":
+                # a notebook's code cells (review 6062066749 of #498, m4)
+                text, readable = notebook_text(text)
+                if not readable:
+                    ctx.unreadable_notebooks.add(path.name)
+            files.append((path, text, source))
+        # OLLAMA_HOST and other endpoints set in env / compose files (M1)
+        env = env_values([(src, t) for p_, t, src in files
+                          if is_env_file(p_) or p_.suffix.lower() in (".yaml", ".yml")])
+        for path, text, source in files:
             not_app = is_test_path(path, ctx.root) or is_example_path(path, ctx.root)
+            lang_source = source[: -len(".ipynb")] + ".py" if source.endswith(
+                ".ipynb") else source
             if not not_app:
-                for call in unnamed_model_calls(text, source):
-                    unnamed.append(f"{call} in {source}")
-                    model = unidentified_model(call, source)
-                    if not ctx.has_ref(model.bom_ref):
-                        ctx.add_component(model)
-            for comp in _services_in(text, source):
+                for cls, reason, call in unidentified_calls(text, lang_source):
+                    unnamed.append((cls, reason, call, source))
+            found = _services_in(text, lang_source, env)
+            for comp in found:
+                comp.properties["discovery:source"] = source
+                if comp.properties.get("service:endpoint_basis") == "unknown" and (
+                    comp.properties.get("service:kind") == "gateway"
+                ) and not not_app:
+                    ctx.opaque_client_files.add(source)
+            for comp in found:
                 if not not_app:
                     ctx.service_files.setdefault(comp.bom_ref, set()).add(source)
                 if comp.bom_ref in seen or ctx.has_ref(comp.bom_ref):
@@ -516,10 +649,16 @@ class NetEnvScanner(Scanner):
         excluded -= seen
         if excluded:
             ctx.properties["aibom:services_excluded_test_example"] = str(len(excluded))
-        if unnamed:
+        if not unnamed:
+            return
+        for model in unidentified_models(unnamed):
+            if not ctx.has_ref(model.bom_ref):
+                ctx.add_component(model)
+        unnamed_calls = [f"{call} in {source}" for _c, _r, call, source in unnamed]
+        if unnamed_calls:
             # stated, never guessed: the library's default model applies
-            ctx.properties["aibom:model_unnamed_calls"] = str(len(unnamed))
-            ctx.properties["aibom:model_unnamed_detail"] = "; ".join(unnamed[:20])
+            ctx.properties["aibom:model_unnamed_calls"] = str(len(unnamed_calls))
+            ctx.properties["aibom:model_unnamed_detail"] = "; ".join(unnamed_calls[:20])
 
 
 def _default_client_called(
@@ -572,30 +711,180 @@ def _azure_services(
     return out
 
 
-def _ollama_default(
-    code: str, bare: str, source: str
+OLLAMA_CLOUD_REF = "cloud_service-ollama-com"
+_OLLAMA_CLOUD_HOSTS = ("ollama.com", "www.ollama.com")
+_POSITIONAL_HOST_CTOR = re.compile(r"(?:ollama\.)?(?:Async)?Client\s*\($")
+_HOST_KWARG = re.compile(r"\b(?:host|base_url|baseUrl)\s*[=:]\s*")
+_LOOPBACK_HOSTS = ("localhost", "127.0.0.1", "0.0.0.0", "[::1]", "::1")
+_ENV_REF = re.compile(
+    r"""(?:os\.environ(?:\.get)?\s*[\[(]|os\.getenv\s*\(|getenv\s*\()\s*['"]"""
+    r"""(?P<a>[A-Z_][A-Z0-9_]*)['"]|process\.env\.(?P<b>[A-Z_][A-Z0-9_]*)"""
+)
+_ENV_ASSIGN = re.compile(
+    r"""(?m)^\s*(?:export\s+|-\s+)?(?P<k>[A-Z_][A-Z0-9_]*)\s*[=:]\s*['"]?"""
+    r"""(?P<v>[^\s'"#]+)"""
+)
+
+
+def ollama_cloud_service(source: str) -> CloudServiceComponent | EndpointComponent:
+    """Ollama's hosted service (ollama.com: ``-cloud`` tags, or a client whose host
+    is ollama.com): outside the trust boundary."""
+    comp = _component("cloud_service", "Ollama Cloud", "Ollama", True,
+                      "https://ollama.com", source)
+    comp.properties["service:platform"] = "ollama-cloud"
+    comp.properties["discovery:method"] = "sdk-client"
+    return comp
+
+
+def env_values(files: list[tuple[str, str]]) -> dict[str, str]:
+    """``NAME -> literal value`` from the repository's env / compose files."""
+    out: dict[str, str] = {}
+    for _name, text in files:
+        for m in _ENV_ASSIGN.finditer(text):
+            out.setdefault(m.group("k"), m.group("v"))
+    return out
+
+
+def _ollama_server(
+    host_value: str | None, basis: str, source: str, env_name: str | None = None
+) -> CloudServiceComponent | EndpointComponent:
+    """The Ollama server a client talks to. ``host_value`` None: the endpoint is not
+    known (a variable, an environment value the repository does not set): never the
+    local default (review 6062066749 of #498, M1)."""
+    if host_value is None:
+        comp = _component("endpoint", "Ollama server (endpoint unknown)", "self-hosted",
+                          None, None, source,
+                          host=f"ollama-{(env_name or 'unknown').lower()}")
+        comp.properties["service:trust_zone"] = "unknown"
+        comp.properties["service:kind"] = "model_server"
+        comp.properties["service:platform"] = "ollama"
+        comp.properties["service:endpoint_basis"] = basis
+        if env_name:
+            comp.properties["service:endpoint_env"] = env_name
+        return comp
+    url = host_value if "://" in host_value else f"http://{host_value}"
+    host, path = _split_url(url)
+    if ":" not in host.rsplit("]", 1)[-1]:
+        host = f"{host}:{443 if url.startswith('https') else 11434}"
+    bare_host = host.rsplit(":", 1)[0].strip("[]").lower()
+    if bare_host in _OLLAMA_CLOUD_HOSTS:
+        return ollama_cloud_service(source)
+    scheme = url.split("://", 1)[0].lower()
+    endpoint = base_url(scheme, host, None)
+    if bare_host in ("localhost", "127.0.0.1", "0.0.0.0", "::1"):
+        comp = _component("endpoint", "Ollama (local)", "local", False, endpoint,
+                          source)
+        comp.properties["service:trust_zone"] = "local"
+    else:
+        # a self-hosted / remote Ollama: a model server of its own, not this machine
+        comp = _component("endpoint", f"Ollama server ({host.lower()})", "self-hosted",
+                          None, endpoint, source)
+        comp.properties["service:trust_zone"] = "external"
+    comp.properties["service:kind"] = "model_server"
+    comp.properties["service:platform"] = "ollama"
+    comp.properties["service:endpoint_basis"] = basis
+    if env_name:
+        comp.properties["service:endpoint_env"] = env_name
+    return comp
+
+
+def _ollama_services(
+    code: str, bare: str, source: str, env: dict[str, str]
 ) -> list[CloudServiceComponent | EndpointComponent]:
-    """The Ollama server at its SDK default, for a file that calls the Ollama SDK
-    (or LangChain's Ollama wrappers) without naming a host. A host given in a
-    variable or the environment is not known, so nothing is claimed for it."""
-    calls = list(_OLLAMA_CALL.finditer(bare)) if _OLLAMA_IMPORT.search(code) else []
-    if _OLLAMA_FROM_CLIENT.search(code):
-        calls += list(_OLLAMA_BARE_CLIENT.finditer(bare))
+    """The Ollama servers a file's Ollama clients talk to (review 6062066749 of #498,
+    M1). The host is read from a positional first argument of ``Client`` /
+    ``AsyncClient``, a ``host=`` / ``base_url=`` / ``baseUrl:`` argument, or, for a
+    client given none, ``OLLAMA_HOST`` (which ollama-python reads): from the
+    repository's env files when set there, else the SDK default 127.0.0.1:11434. A
+    host held in a variable or an environment value the repository does not set is
+    "endpoint unknown", never local."""
+    calls: list[re.Match[str]] = []
+    if _OLLAMA_IMPORT.search(code):
+        calls += list(_OLLAMA_CALL.finditer(bare))
+        if _OLLAMA_FROM_CLIENT.search(code):
+            calls += list(_OLLAMA_BARE_CLIENT.finditer(bare))
     if _LANGCHAIN_IMPORT_RE.search(code):
         calls += list(_LANGCHAIN_OLLAMA.finditer(bare))
-    for m in calls:
+    out: dict[str, CloudServiceComponent | EndpointComponent] = {}
+    for m in sorted(calls, key=lambda x: x.start()):
         head = bare[bare.rfind("\n", 0, m.start()) + 1 : m.start()]
         if _DEFINITION.search(head):
             continue
-        args = call_arguments(bare, m.end() - 1)
-        if args is None or _SPREAD.search(args) or _OLLAMA_HOST_ARG.search(args):
+        open_paren = m.end() - 1
+        args = call_arguments(bare, open_paren)
+        if args is None or _SPREAD.search(args):
+            comp = _ollama_server(None, "unknown", source)
+            out.setdefault(comp.bom_ref, comp)
             continue
-        comp = _component("endpoint", "Ollama (local)", "local", False,
-                          _OLLAMA_DEFAULT, source)
-        comp.properties["discovery:method"] = "sdk-client"
-        comp.properties["service:endpoint_basis"] = "sdk-default"
-        return [comp]
-    return []
+        value: str | None = None
+        kw = _HOST_KWARG.search(args)
+        if kw is not None:
+            value = _arg_value(code, open_paren + 1 + kw.end())
+        elif _POSITIONAL_HOST_CTOR.search(bare[m.start() : m.end()]) and args.strip():
+            first = args.split(",", 1)[0]
+            if "=" not in first:
+                lead = len(first) - len(first.lstrip())
+                value = _arg_value(code, open_paren + 1 + lead)
+        if value is None:
+            # no host given: ollama-python reads OLLAMA_HOST, else 127.0.0.1:11434
+            if "OLLAMA_HOST" in env:
+                comp = _ollama_server(env["OLLAMA_HOST"], "env-file", source,
+                                      "OLLAMA_HOST")
+            else:
+                comp = _ollama_server(_OLLAMA_DEFAULT, "sdk-default", source)
+        elif value[:1] in "'\"`" and value[-1:] == value[:1]:
+            comp = _ollama_server(value[1:-1], "literal", source)
+        else:
+            ref = _ENV_REF.search(value)
+            name = (ref.group("a") or ref.group("b")) if ref else None
+            if name and name in env:
+                comp = _ollama_server(env[name], "env-file", source, name)
+            else:
+                comp = _ollama_server(None, "unknown", source, name)
+        out.setdefault(comp.bom_ref, comp)
+    return list(out.values())
+
+
+def _opaque_clients(
+    code: str, bare: str, source: str
+) -> list[CloudServiceComponent | EndpointComponent]:
+    """OpenAI-compatible clients whose base URL the scan cannot read
+    (``OpenAI(base_url=os.environ["TOGETHER_URL"])``, ``OpenAI(**cfg)``): a
+    processor whose endpoint is unknown. It stays a potentially external service, so
+    the vendor checks (RBI FREE-AI 19-1, NIST GV-2) assess it, and no local server
+    is inferred for the file (review 6062066749 of #498, M1)."""
+    out: dict[str, CloudServiceComponent | EndpointComponent] = {}
+    for imp, call, label, _vendor, _endpoint in _SDK_RES:
+        if label not in ("OpenAI API", "Anthropic API") or not imp.search(code):
+            continue
+        for m in call.finditer(bare):
+            head = bare[bare.rfind("\n", 0, m.start()) + 1 : m.start()]
+            if _DEFINITION.search(head):
+                continue
+            args = call_arguments(bare, m.end() - 1)
+            if args is not None and not _SPREAD.search(args) and not _OTHER_BASE.search(
+                args
+            ):
+                continue  # the vendor's default endpoint
+            span = code[m.end() : m.end() + len(args)] if args is not None else ""
+            if _LITERAL_BASE.search(span):
+                continue  # a literal gateway URL: the gateway service names it
+            if (args is None or _SPREAD.search(args)) and _LITERAL_BASE.search(code):
+                continue  # ``OpenAI(**cfg)`` with the literal base URL in the file
+            ref = _ENV_REF.search(span)
+            name = (ref.group("a") or ref.group("b")) if ref else None
+            label_ = f"AI endpoint ({name or 'endpoint unknown'})"
+            comp = _component("cloud_service", label_,
+                              f"{label.split()[0]}-compatible endpoint", True, None,
+                              source, host=f"ai-endpoint-{(name or 'unknown').lower()}")
+            comp.properties["service:kind"] = "gateway"
+            comp.properties["service:trust_zone"] = "unknown"
+            comp.properties["service:endpoint_basis"] = "unknown"
+            comp.properties["discovery:method"] = "sdk-client"
+            if name:
+                comp.properties["service:endpoint_env"] = name
+            out.setdefault(comp.bom_ref, comp)
+    return list(out.values())
 
 
 def _split_url(url: str) -> tuple[str, str | None]:
@@ -630,7 +919,7 @@ def _gateway_services(
 
 
 def _services_in(
-    text: str, source: str
+    text: str, source: str, env: dict[str, str] | None = None
 ) -> list[CloudServiceComponent | EndpointComponent]:
     """The AI services one file names, longer / more specific hosts first: once a
     span is claimed by api-inference.huggingface.co it is not also the generic Hub."""
@@ -651,8 +940,10 @@ def _services_in(
             comp.properties["service:endpoint_basis"] = "sdk-default"
             out.append(comp)
     out.extend(_azure_services(code, bare, source))
-    if not any(c.name == "Ollama (local)" for c in out):
-        out.extend(_ollama_default(code, bare, source))
+    known = {c.bom_ref for c in out}
+    out.extend(c for c in _ollama_services(code, bare, source, env or {})
+               if c.bom_ref not in known)
+    out.extend(_opaque_clients(code, bare, source))
     claimed_hosts = {
         (c.properties or {}).get("discovery:host", "").lower() for c in out
     } - {""}

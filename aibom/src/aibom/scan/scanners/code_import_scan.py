@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from aibom.scan.parsers.code_imports import find_ai_imports
+from aibom.scan.parsers.code_imports import find_ai_imports, notebook_text
 from aibom.scan.parsers.license_resolver import normalize_pkg, unknown_licence_message
 from aibom.scan.parsers.requirements import _component_for
 from aibom.scan.registry import ScanContext, Scanner, register
@@ -42,7 +42,11 @@ class CodeImportScanner(Scanner):
             text = read_text(path)
             if text is None:
                 continue
-            names |= find_ai_imports(text, notebook=path.suffix.lower() == ".ipynb")
+            if path.suffix.lower() == ".ipynb":
+                text, readable = notebook_text(text)
+                if not readable:
+                    ctx.unreadable_notebooks.add(path.name)
+            names |= find_ai_imports(text)
         # a manifest may spell the package differently (``pyannote.audio`` for the
         # import's ``pyannote-audio``; PEP 503 treats ``-`` ``_`` ``.`` alike): the
         # manifest's component is the same library, never a second one (#498 round 3)

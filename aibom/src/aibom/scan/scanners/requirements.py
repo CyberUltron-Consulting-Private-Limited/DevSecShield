@@ -19,7 +19,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from aibom.scan.parsers.ai_libraries import classify
-from aibom.scan.parsers.license_resolver import unknown_licence_message
+from aibom.scan.parsers.license_resolver import normalize_pkg, unknown_licence_message
 from aibom.scan.parsers.requirements import parse_pyproject, parse_requirements
 from aibom.scan.registry import ScanContext, Scanner, register
 from aibom.scan.safe_files import is_regular_file, walk_files
@@ -55,9 +55,13 @@ class RequirementsScanner(Scanner):
         seen: set[str] = set()
         excluded = {"dev": 0, "other": 0}
         for framework in frameworks:
-            if framework.bom_ref in seen:  # de-dup across manifests
+            # de-dup across manifests by the PEP 503 name: requirements.txt
+            # ``pyannote.audio`` and pyproject ``pyannote-audio`` are one library
+            # (review 6062066749 of #498, m2)
+            key = normalize_pkg(framework.name)
+            if key in seen:
                 continue
-            seen.add(framework.bom_ref)
+            seen.add(key)
             # Only AI/ML libraries are AI components. Test/lint tools and ordinary
             # runtime dependencies (web, database, cache) are SBOM inventory; they
             # are counted on the BOM, never classed as ML frameworks.

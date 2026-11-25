@@ -34,6 +34,8 @@ _AI_COMPONENT_TYPE = {
     # a self-hosted model server (Ollama on localhost): worker enums.AIComponentType
     # LOCAL_MODEL_SERVER (#498 round 3)
     "local_model_server",
+    # a remote / self-hosted model server and the models it runs (#498 round 4)
+    "self_hosted_model_server", "self_hosted_model",
 }
 _MODEL_PROVIDER = {
     "openai", "anthropic", "bedrock", "vertex", "cohere", "mistral",
@@ -57,6 +59,8 @@ _FINDING_FIELDS = {
     # additive (QA round 2): the engine kind (a provider-served model is still a
     # model) and whether the licence was resolved
     "component_kind", "license_status",
+    # additive (#498 round 4): False for a model the code uses without naming it
+    "model_identified",
 }
 _LOCKED_KEYS = {"results", "ai_bom_json", "ai_bom_compliance", "duration_of_scan"}
 _ADDITIVE_KEYS = {"ai_bom_spdx", "ai_bom_sarif", "ai_bom_graph", "ai_bom_scores"}
