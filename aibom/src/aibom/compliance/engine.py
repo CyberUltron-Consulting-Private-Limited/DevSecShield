@@ -97,7 +97,11 @@ def run_framework(
                     f"attested: {evidence[requirement.id]}",
                     cr.refs,
                 )
-        if incomplete and cr.verdict in ("pass", "fail", "pass_with_evidence"):
+        if incomplete:
+            # every verdict, not only pass / fail: "na", "needs information" and
+            # "out of scope" may change too once the scanner runs (review 6065595627
+            # of #498, nit: FREEAI-19-1 read "no externally-served models" while
+            # net-env had failed)
             cr = CheckResult(cr.verdict, f"{cr.evidence} ({incomplete})", cr.refs)
         counts[cr.verdict] = counts.get(cr.verdict, 0) + 1
         requirements.append(

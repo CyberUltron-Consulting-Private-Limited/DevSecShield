@@ -75,6 +75,18 @@ def is_env_file(path: Path) -> bool:
     return bool(_ENV_FILE.match(path.name))
 
 
+# ``.env.example``, ``.env.sample``, ``env.template``, ``.env.dist``: documents the
+# settings, never the deployment's values (review 6065595627 of #498, R6-M1)
+_ENV_TEMPLATE = re.compile(
+    r"(?:^|[._-])(?:example|sample|template|dist|tmpl)(?:[._-]|$)", re.IGNORECASE
+)
+
+
+def is_env_template(path: Path) -> bool:
+    """An environment file that is a template of the real one (``.env.example``)."""
+    return is_env_file(path) and bool(_ENV_TEMPLATE.search(path.name))
+
+
 def is_test_path(path: Path, root: Path) -> bool:
     """A test file or a file under a test directory (relative to the scan root)."""
     return bool(_TEST_FILE.match(path.name)) or any(
@@ -107,6 +119,7 @@ __all__ = [
     "evidence_rank",
     "is_doc_path",
     "is_env_file",
+    "is_env_template",
     "is_example_path",
     "is_test_path",
 ]

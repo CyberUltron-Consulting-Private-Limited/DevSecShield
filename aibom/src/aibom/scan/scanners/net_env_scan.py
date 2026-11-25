@@ -43,7 +43,18 @@ from aibom.model.component import (
 from aibom.scan.parsers.code_imports import notebook_text
 from aibom.scan.parsers.code_text import call_arguments, language_of, mask
 from aibom.scan.parsers.licenses import license_choice
-from aibom.scan.path_roles import is_env_file, is_example_path, is_test_path
+from aibom.scan.parsers.model_lookup import (
+    ProjectLiterals,
+    follow,
+    is_model_name,
+    looks_like_lookup,
+)
+from aibom.scan.path_roles import (
+    is_env_file,
+    is_env_template,
+    is_example_path,
+    is_test_path,
+)
 from aibom.scan.registry import ScanContext, Scanner, register
 from aibom.scan.safe_files import read_text, walk_files
 
@@ -348,6 +359,9 @@ class ProjectIndex:
 
     def __init__(self, files: list[tuple[str, str]]) -> None:
         self.files = files
+        # module-level dicts / constants and settings classes (review 6065595627
+        # of #498, R6-M2)
+        self.literals = ProjectLiterals(files)
         self.constants: dict[str, str] = {}
         for _source, text in files:
             code, _bare = mask(text, "py")
@@ -409,9 +423,12 @@ _INDEX: list[ProjectIndex] = []  # the index of the scan in progress
 def _config_model(code: str, value: str, pos: int = -1) -> str | None:
     """The configuration key a non-literal model argument reads (``M`` for
     ``os.environ["M"]``, ``settings.MODEL`` …), "" for another expression, or None
-    when the model is in fact known: a string literal, an ``os.getenv(KEY,
-    "<model>")`` default, or a variable the file assigns a literal to (the
-    model-reference scanner reads those)."""
+    when the model is in fact known: a string literal, a default that names a model
+    (``os.getenv(KEY, "<model>")``, an argparse ``default=``), a variable the file
+    assigns a literal to (the model-reference scanner reads those), or a lookup the
+    project's literals resolve (``OPTIONS["fast"]``, ``settings.llm_model``; a dynamic
+    key's candidates are listed by the model-reference scan: review 6065595627 of
+    #498, R6-M2)."""
     if not value:
         return None
     template = value[0] == "`" and "${" in value
@@ -422,14 +439,25 @@ def _config_model(code: str, value: str, pos: int = -1) -> str | None:
     literals = _STRING.findall(value)
     if literals and re.search(r"['\"]\s*\+|\+\s*['\"]", value):
         return ""  # a concatenation ("gpt-" + version): built at run time
-    env = _ENV_KEY.search(value)
-    if len(literals) > 1 or (literals and not env):
-        return None  # a literal default (or a literal model) is in the expression
+    target = follow(value, code)
+    if target != value:
+        # ``M = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")`` then ``model=M``: the
+        # assignment decides, so the default and the call are one model (m1)
+        return _config_model(code, target, pos)
     if re.fullmatch(r"[A-Za-z_]\w*", value) and re.search(
         rf"(?m)^\s*(?:(?:export\s+)?(?:const|let|var)\s+)?{re.escape(value)}\s*"
         rf"(?::[^=\n]+)?=\s*['\"`]", code
     ):
+        return None  # a variable the file assigns a literal to
+    if _INDEX and looks_like_lookup(value) and _INDEX[-1].literals.resolve(value, code):
         return None
+    env = _ENV_KEY.search(value)
+    # a literal in the expression names the model only when it IS a model name (a
+    # dict key ``CFG["m"]`` or ``cfg.get("m")`` does not)
+    if any(is_model_name(lit[1:-1]) for lit in literals):
+        return None
+    if _argparse_default(code, value):
+        return None  # ``args.model`` with ``add_argument("--model", default=…)``
     if _INDEX and not env and (
         _INDEX[-1].imported_constant(code, value)
         or (pos >= 0 and _INDEX[-1].wrapper_called_with_literal(code, value, pos))
@@ -438,6 +466,63 @@ def _config_model(code: str, value: str, pos: int = -1) -> str | None:
     if env:
         return env.group("key")
     return ""
+
+
+_ADD_ARGUMENT = re.compile(r"\.add_argument\s*\(")
+
+
+def _argparse_default(code: str, value: str) -> bool:
+    """``args.model`` / ``a.model_name`` is an argparse option the file declares
+    with a literal model ``default=`` (``add_argument("--model-name", default=…)``):
+    the default and the call are one model (review 6065595627 of #498, m1)."""
+    m = re.fullmatch(r"[A-Za-z_]\w*\.(?P<dest>[A-Za-z_]\w*)", value.strip())
+    if m is None:
+        return False
+    dest = m.group("dest")
+    _code, bare = mask(code, "py")
+    for call in _ADD_ARGUMENT.finditer(bare):
+        args = call_arguments(bare, call.end() - 1)
+        if args is None:
+            continue
+        span = code[call.end() : call.end() + len(args)]
+        names = re.findall(r"""['"](-{1,2}[\w-]+)['"]""", span)
+        dests = re.findall(r"""\bdest\s*=\s*['"](\w+)['"]""", span)
+        longs = [n for n in names if n.startswith("--")] or names
+        own = dests[0] if dests else (longs[0].lstrip("-").replace("-", "_")
+                                       if longs else "")
+        if own != dest:
+            continue
+        default = re.search(r"""\bdefault\s*=\s*['"]([^'"]+)['"]""", span)
+        return bool(default and is_model_name(default.group(1)))
+    return False
+
+
+def _model_value(code: str, bare: str, open_paren: int) -> str | None:
+    """The model argument's expression; "" with no model argument; None when the
+    arguments cannot be read or a ``**kwargs`` / spread may name the model."""
+    args = call_arguments(bare, open_paren)
+    if args is None or _SPREAD.search(args):
+        return None
+    m = _MODEL_VALUE.search(args)
+    if m is None:
+        return ""
+    return _arg_value(code, open_paren + 1 + m.end())
+
+
+def _model_calls(code: str, bare: str):  # noqa: ANN202 - a generator of tuples
+    """``(client class, call match, model expression)`` for each model client call
+    of a file: LangChain wrappers and direct SDK calls (see :func:`_model_value`)."""
+    if _LANGCHAIN_IMPORT_RE.search(code):
+        for m in _LANGCHAIN_MODEL_CLASSES.finditer(bare):
+            head = bare[bare.rfind("\n", 0, m.start()) + 1 : m.start()]
+            if _DEFINITION.search(head):
+                continue
+            yield m.group("cls"), m, _model_value(code, bare, m.end() - 1)
+    for call_re, cls, imp in _SDK_MODEL_CALLS:
+        if not imp.search(code):
+            continue
+        for m in call_re.finditer(bare):
+            yield cls, m, _model_value(code, bare, m.end() - 1)
 
 
 def unidentified_calls(text: str, source: str) -> list[tuple[str, str, str]]:
@@ -449,47 +534,53 @@ def unidentified_calls(text: str, source: str) -> list[tuple[str, str, str]]:
     of #498, M4). Readable arguments only; ``**kwargs`` / spread may name one."""
     code, bare = mask(text, language_of(source))
     out: list[tuple[str, str, str]] = []
-
-    def model_arg(open_paren: int) -> tuple[str, str] | None:
-        args = call_arguments(bare, open_paren)
-        if args is None or _SPREAD.search(args):
-            return None
-        m = _MODEL_VALUE.search(args)
-        if m is None:
-            return ("", "")
-        start = open_paren + 1 + m.end()
-        value = _arg_value(code, start)
-        key = _config_model(code, value, open_paren)
-        return None if key is None else (value, key)
-
-    if _LANGCHAIN_IMPORT_RE.search(code):
-        for m in _LANGCHAIN_MODEL_CLASSES.finditer(bare):
-            head = bare[bare.rfind("\n", 0, m.start()) + 1 : m.start()]
-            if _DEFINITION.search(head):
-                continue
-            cls = m.group("cls")
-            got = model_arg(m.end() - 1)
-            if got is None:
-                continue
-            value, key = got
-            if not value:
+    for cls, m, value in _model_calls(code, bare):
+        if value is None:
+            continue
+        if not value:
+            if cls not in _SDK_LIBRARY_CLASSES:
                 args = call_arguments(bare, m.end() - 1) or ""
                 first = args.split(",", 1)[0].strip()
                 if first and "=" not in first and ":" not in first:
                     continue  # a positional first argument may be the model
                 out.append((cls, _REASON_DEFAULT, f"{cls}()"))
-            else:
-                out.append((cls, _REASON_CONFIG, f"{cls}(model={value[:60]})"))
-    for call_re, cls, imp in _SDK_MODEL_CALLS:
-        if not imp.search(code):
+            continue  # an SDK call with no model argument: not one the scan can judge
+        if _config_model(code, value, m.end() - 1) is None:
             continue
-        for m in call_re.finditer(bare):
-            got = model_arg(m.end() - 1)
-            if got is None or not got[0]:
-                continue  # no model argument: not a model call the scan can judge
-            value, _key = got
+        if cls in _SDK_LIBRARY_CLASSES:
             label = "chat" if cls == "Ollama" else "create"
             out.append((cls, _REASON_CONFIG, f"{cls} {label}(model={value[:60]})"))
+        else:
+            out.append((cls, _REASON_CONFIG, f"{cls}(model={value[:60]})"))
+    return out
+
+
+_SDK_LIBRARY_CLASSES = frozenset(cls for _re, cls, _imp in _SDK_MODEL_CALLS)
+
+
+def lookup_model_calls(
+    text: str, source: str, literals: ProjectLiterals
+) -> list[tuple[str, list[str], bool, str]]:
+    """``[(client class, model names, exact, call text)]``: model calls whose model
+    argument is a lookup the project's literals resolve (review 6065595627 of #498,
+    R6-M2): ``OPTIONS["fast"]`` gives its value (exact); ``OPTIONS[choice]`` gives
+    every model the dict holds (candidates). The model-reference scan records them
+    as models in use of that call; :func:`_config_model` then adds no unidentified
+    model for the same call."""
+    code, bare = mask(text, language_of(source))
+    out: list[tuple[str, list[str], bool, str]] = []
+    for cls, m, value in _model_calls(code, bare):
+        if not value:
+            continue
+        target = follow(value, code)
+        if not looks_like_lookup(target):
+            continue
+        got = literals.resolve(target, code)
+        if got is None:
+            continue
+        callee = re.search(r"[\w.]+$", code[: m.end() - 1])
+        head = callee.group(0) if callee else cls
+        out.append((cls, got[0], got[1], f"{head}(model={value[:60]})"))
     return out
 
 
@@ -731,13 +822,19 @@ class NetEnvScanner(Scanner):
             files.append((path, text, source))
         # OLLAMA_HOST and other endpoints set in env / compose files (M1)
         env = env_values([(src, t) for _p, t, src in files], ctx.root.name)
-        _INDEX.append(ProjectIndex(
+        index = ProjectIndex(
             [(src, t) for p_, t, src in files
-             if p_.suffix.lower() not in (".yaml", ".yml") and not is_env_file(p_)]))
+             if p_.suffix.lower() not in (".yaml", ".yml") and not is_env_file(p_)])
+        # lookups resolve against application code only (not tests or examples)
+        index.literals = ProjectLiterals([
+            (src, t) for p_, t, src in files
+            if not (is_test_path(p_, ctx.root) or is_example_path(p_, ctx.root))])
+        _INDEX.append(index)
         try:
             self._scan_files(ctx, files, env, seen, excluded, unnamed)
         finally:
             _INDEX.pop()
+        _merge_ollama_rows(ctx)
         excluded -= seen
         if excluded:
             ctx.properties["aibom:services_excluded_test_example"] = str(len(excluded))
@@ -757,7 +854,10 @@ class NetEnvScanner(Scanner):
     @staticmethod
     def _scan_files(ctx, files, env, seen, excluded, unnamed) -> None:  # noqa: ANN001
         for path, text, source in files:
-            not_app = is_test_path(path, ctx.root) or is_example_path(path, ctx.root)
+            # an env template (``.env.example``) documents settings: never a service
+            # row of its own (review 6065595627 of #498, R6-M1)
+            not_app = (is_test_path(path, ctx.root) or is_example_path(path, ctx.root)
+                       or is_env_template(path))
             lang_source = source[: -len(".ipynb")] + ".py" if source.endswith(
                 ".ipynb") else source
             if not not_app:
@@ -780,6 +880,57 @@ class NetEnvScanner(Scanner):
                     continue
                 seen.add(comp.bom_ref)
                 ctx.add_component(comp)
+
+
+def _merge_ollama_rows(ctx: ScanContext) -> None:
+    """One row per Ollama server (review 6065595627 of #498, m3).
+
+    * The compose ``ollama/ollama`` container the application reaches by its service
+      name (``OLLAMA_HOST: http://ollama:11434``) IS that server: the container row
+      is folded into the server row, which keeps the image and the runtime licence.
+    * When the deployment sets OLLAMA_HOST to different hosts, a host-only row that a
+      config file's value produced (``127.0.0.1:11434`` in a manifest) is no server
+      the application is known to use: the "endpoint unknown" row lists it."""
+    comps = ctx.components
+    servers = [c for c in comps if c.kind in ("endpoint", "cloud_service") and (
+        (c.properties or {}).get("service:platform") == "ollama"
+        or PROVIDER_KEY.get(c.name) == "ollama")]
+    drop: set[str] = set()
+    for box in [c for c in comps if c.kind == "container"
+                and (c.properties or {}).get("service:platform") == "ollama"]:
+        name = (box.properties or {}).get("discovery:compose_service", "").lower()
+        if not name:
+            continue
+        for server in servers:
+            host = (server.properties or {}).get("discovery:host", "").lower()
+            if host.rsplit(":", 1)[0] == name:
+                server.properties = {
+                    **(server.properties or {}),
+                    "discovery:image": (box.properties or {}).get(
+                        "discovery:image", ""),
+                    "discovery:compose_service": name,
+                }
+                if box.licenses and not server.licenses:
+                    server.licenses = box.licenses
+                drop.add(box.bom_ref)
+                break
+    candidates = {
+        _split_url(v.strip())[0].lower()
+        for c in servers
+        if (c.properties or {}).get("service:endpoint_basis") == "conflicting"
+        for v in (c.properties or {}).get("service:endpoint_candidates", "").split(",")
+        if v.strip()
+    }
+    for server in servers:
+        props = server.properties or {}
+        source = props.get("discovery:source", "")
+        if (candidates and props.get("service:endpoint_basis") is None
+                and props.get("discovery:host", "").lower() in candidates
+                and source.lower().endswith((".yaml", ".yml", ".env"))
+                and not ctx.service_files.get(server.bom_ref, set()) - {source}):
+            drop.add(server.bom_ref)
+    if drop:
+        ctx.components[:] = [c for c in comps if c.bom_ref not in drop]
 
 
 def _default_client_called(
@@ -1162,6 +1313,135 @@ def _ollama_services(
     return list(out.values())
 
 
+# LiteLLM routes a call by the model's provider prefix (docs.litellm.ai/docs/providers):
+# ``ollama/<tag>`` / ``ollama_chat/<tag>`` go to an Ollama server, ``api_base`` when
+# given, else ``OLLAMA_API_BASE``, else LiteLLM's default http://localhost:11434; a
+# hosted prefix goes to that provider's API (review 6065595627 of #498, m2).
+_LITELLM_IMPORT = re.compile(r"(?:^|\n)\s*(?:import\s+(?:[\w.]+\s*,\s*)*litellm\b|"
+                             r"from\s+litellm\b)")
+_LITELLM_CALL = re.compile(
+    r"(?<![\w.])(?:litellm\.)?a?(?:completion|embedding|text_completion|"
+    r"image_generation|transcription|responses)\s*\("
+)
+_LITELLM_MODEL = re.compile(
+    r"""\bmodel\s*=\s*['"](?P<prov>[\w-]+)/(?P<rest>[^'"\s]+)['"]"""
+)
+_LITELLM_DEFAULT_OLLAMA = "http://localhost:11434"
+#: LiteLLM provider prefix -> the hosted service it calls (label in ``_HOSTS``)
+_LITELLM_HOSTED: dict[str, tuple[str, str, str]] = {
+    "openai": ("OpenAI API", "OpenAI", "https://api.openai.com/v1"),
+    "anthropic": ("Anthropic API", "Anthropic", "https://api.anthropic.com"),
+    "gemini": ("Google Gemini API", "Google", "https://generativelanguage.googleapis.com"),
+    "mistral": ("Mistral API", "Mistral", "https://api.mistral.ai"),
+    "groq": ("Groq API", "Groq", "https://api.groq.com"),
+    "together_ai": ("Together AI API", "Together AI", "https://api.together.xyz"),
+    "deepseek": ("DeepSeek API", "DeepSeek", "https://api.deepseek.com"),
+    "cohere": ("Cohere API", "Cohere", "https://api.cohere.com"),
+    "cohere_chat": ("Cohere API", "Cohere", "https://api.cohere.com"),
+    "xai": ("xAI API", "xAI", "https://api.x.ai"),
+    "openrouter": ("OpenRouter API", "OpenRouter", "https://openrouter.ai"),
+}
+
+
+def _litellm_route(
+    prov: str, api_base: str | None, env: dict[str, str], source: str,
+    api_base_env: str | None = None,
+) -> CloudServiceComponent | EndpointComponent | None:
+    """The service one LiteLLM route calls (see the comment above)."""
+    prov = prov.lower()
+    if prov in ("ollama", "ollama_chat"):
+        if api_base:
+            # the Ollama server itself, never an OpenAI-compatible gateway
+            return _ollama_server(api_base, "literal", source)
+        if api_base_env:
+            if api_base_env in env:
+                return _ollama_server(env[api_base_env], "env-file", source,
+                                      api_base_env)
+            return _ollama_server(None, "unknown", source, api_base_env)
+        if "OLLAMA_API_BASE" in env:
+            return _ollama_server(env["OLLAMA_API_BASE"], "env-file", source,
+                                  "OLLAMA_API_BASE")
+        comp = _ollama_server(_LITELLM_DEFAULT_OLLAMA, "litellm-default", source)
+        return comp
+    hosted = _LITELLM_HOSTED.get(prov)
+    if hosted is None or api_base or api_base_env:
+        return None  # another base URL: the gateway / endpoint rules name it
+    label, vendor, endpoint = hosted
+    comp = _component("cloud_service", label, vendor, True, endpoint, source)
+    comp.properties["discovery:method"] = "litellm-route"
+    comp.properties["service:endpoint_basis"] = "sdk-default"
+    return comp
+
+
+def _litellm_services(
+    code: str, bare: str, source: str, env: dict[str, str]
+) -> list[CloudServiceComponent | EndpointComponent]:
+    """The services LiteLLM calls in a file route to (``litellm.completion(model=
+    "ollama/llama3:8b", api_base=…)``)."""
+    out: list[CloudServiceComponent | EndpointComponent] = []
+    if not _LITELLM_IMPORT.search(code):
+        return out
+    for m in _LITELLM_CALL.finditer(bare):
+        head = bare[bare.rfind("\n", 0, m.start()) + 1 : m.start()]
+        if _DEFINITION.search(head):
+            continue
+        args_bare = call_arguments(bare, m.end() - 1)
+        if args_bare is None:
+            continue
+        span = code[m.end() : m.end() + len(args_bare)]
+        route = _LITELLM_MODEL.search(span)
+        if route is None:
+            continue
+        base = re.search(r"""\b(?:api_base|base_url)\s*=\s*(?P<v>[^,\n)]+)""", span)
+        literal = env_name = None
+        if base:
+            value = base.group("v").strip()
+            if value[:1] in "'\"" and value[-1:] == value[:1]:
+                literal = value[1:-1]
+            else:
+                ref = _ENV_REF.search(value)
+                env_name = (ref.group("a") or ref.group("b")) if ref else "unknown"
+        comp = _litellm_route(route.group("prov"), literal, env, source, env_name)
+        if comp is not None:
+            out.append(comp)
+    return out
+
+
+def litellm_proxy_services(
+    text: str, source: str, env: dict[str, str]
+) -> list[CloudServiceComponent | EndpointComponent]:
+    """The services a LiteLLM proxy ``config.yaml`` routes its ``model_list`` to."""
+    if "model_list" not in text or "litellm_params" not in text:
+        return []
+    import yaml
+
+    try:
+        docs = list(yaml.safe_load_all(text))
+    except (yaml.YAMLError, ValueError, RecursionError):
+        return []
+    out: list[CloudServiceComponent | EndpointComponent] = []
+    for doc in docs:
+        entries = doc.get("model_list") if isinstance(doc, dict) else None
+        for entry in entries if isinstance(entries, list) else []:
+            params = entry.get("litellm_params") if isinstance(entry, dict) else None
+            if not isinstance(params, dict):
+                continue
+            model = params.get("model")
+            if not isinstance(model, str) or "/" not in model:
+                continue
+            base = params.get("api_base") or params.get("base_url")
+            literal = env_name = None
+            if isinstance(base, str) and base.startswith("os.environ/"):
+                env_name = base.split("/", 1)[1]  # LiteLLM's env reference syntax
+            elif isinstance(base, str) and base:
+                literal = base
+            comp = _litellm_route(
+                model.split("/", 1)[0], literal, env, source, env_name)
+            if comp is not None:
+                out.append(comp)
+    return out
+
+
 def _opaque_clients(
     code: str, bare: str, source: str
 ) -> list[CloudServiceComponent | EndpointComponent]:
@@ -1266,7 +1546,13 @@ def _services_in(
         if host in ("localhost", "127.0.0.1"):
             continue  # the host patterns name the local one
         ollama.append(_ollama_server(f"http://{host}:11434", "literal", source))
-    out.extend(c for c in ollama if c.bom_ref not in known)
+    ollama.extend(_litellm_services(code, bare, source, env or {}))
+    if source.lower().endswith((".yaml", ".yml")):
+        ollama.extend(litellm_proxy_services(text, source, env or {}))
+    for comp in ollama:
+        if comp.bom_ref not in known:
+            out.append(comp)
+            known.add(comp.bom_ref)
     # a URL that is only an Ollama client's fallback (``getenv("OLLAMA_HOST",
     # "http://localhost:11434")``) is a default, never a second, local server
     # (review 6063080163 of #498, R4-M4)

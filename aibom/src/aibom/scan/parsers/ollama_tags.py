@@ -145,6 +145,10 @@ _LITELLM_ROUTE = re.compile(
     r"""['"]ollama(?:_chat)?/(?P<tag>[a-z0-9][\w.-]*(?::[\w.-]+)?)['"]""",
     re.IGNORECASE,
 )
+_YAML_ROUTE = re.compile(
+    r"""(?im)^[ \t]*(?:-[ \t]+)?model:[ \t]*['"]?ollama(?:_chat)?/"""
+    r"""(?P<tag>[a-z0-9][\w.-]*(?::[\w.-]+)?)['"]?[ \t]*(?:#.*)?$"""
+)
 _JSON_MODEL = re.compile(r"""['"]model['"]\s*:\s*['"](?P<tag>[^'"\s]+)['"]""")
 
 
@@ -199,6 +203,9 @@ def find_ollama_tags(text: str, lang: str = "py") -> list[str]:
     # LiteLLM's Ollama provider: model="ollama/llama3:8b" / "ollama_chat/…"
     # (review 6063929550 of #498, m5)
     found += [m.group("tag") for m in _LITELLM_ROUTE.finditer(code)]
+    # a LiteLLM proxy config.yaml ``model: ollama/phi3:mini`` (review 6065595627 of
+    # #498, m2)
+    found += [m.group("tag") for m in _YAML_ROUTE.finditer(code)]
     out: list[str] = []
     for tag in found:
         if _TAG.match(tag) and tag.lower() not in {t.lower() for t in out}:
@@ -216,16 +223,54 @@ _TAG_PART = re.compile(
     r"(?:[-_.][\w.]+)*$",
     re.IGNORECASE,
 )
-# What tells the scan the repository uses Ollama at all (an SDK import / call, a
-# LangChain wrapper, the REST API, OLLAMA_HOST, the container image, a LiteLLM
-# ``ollama/`` route)
-_OLLAMA_EVIDENCE = re.compile(
-    r"""\bimport\s+(?:[\w.]+\s*,\s*)*ollama\b|\bfrom\s+ollama\b|['"]ollama['"]|"""
-    r"""\bollama\.\w+\s*\(|ChatOllama|OllamaLLM|OllamaEmbeddings|langchain[_-]ollama|"""
-    r"""/api/(?:chat|generate|embed)\b|:11434\b|\bOLLAMA_HOST\b|ollama/ollama|"""
-    r"""['"]ollama(?:_chat)?/[\w.-]+:""",
-    re.IGNORECASE,
+# What tells the scan the repository uses Ollama at all: real code or deployment use
+# only (review 6065595627 of #498, R6-M1). In application source: the SDK imported
+# (``import ollama``, ``from 'ollama'``), a LangChain Ollama class or package, a
+# LiteLLM ``ollama/`` route, an Ollama URL (``:11434``) or a REST call to the API
+# (``/api/chat`` in a file that names Ollama outside a plain string). In deployment
+# files: the ``ollama/ollama`` image or a LiteLLM proxy ``ollama/`` route. The caller
+# reads only application files (no docs, tests, examples or env templates) and adds
+# OLLAMA_HOST set in the application's real environment. A README line, a test's
+# import, ``PROVIDERS = ["openai", "ollama"]`` or a manifest dependency never counted
+# on its own.
+_EV_LANGCHAIN = re.compile(
+    r"\b(?:ChatOllama|OllamaLLM|OllamaEmbeddings)\b|\blangchain[_-]ollama\b|"
+    r"@langchain/ollama|langchain_community\.(?:llms|chat_models|embeddings)\.ollama"
 )
+_EV_ROUTE = re.compile(r"""['"`]ollama(?:_chat)?/[\w.:-]+['"`]""")
+_EV_URL = re.compile(r"""['"`]https?://[^'"`\s]*:11434\b""")
+_EV_REST = re.compile(r"/api/(?:chat|generate|embed|embeddings|tags|pull|show)\b")
+_EV_IMAGE = re.compile(
+    r"""(?im)^\s*(?:-\s*)?image:\s*['"]?(?:[\w.-]+(?::\d+)?/)?ollama/ollama\b|"""
+    r"""^\s*FROM\s+(?:--\S+\s+)*(?:[\w.-]+(?::\d+)?/)?ollama/ollama\b"""
+)
+_EV_YAML_ROUTE = re.compile(r"""(?m)^\s*(?:-\s*)?model:\s*['"]?ollama(?:_chat)?/""")
+
+
+def ollama_code_evidence(text: str, lang: str = "py") -> bool:
+    """Whether application source uses Ollama (see the comment above)."""
+    code, bare = mask(text, lang)
+    if lang == "py":
+        for a, b in _docstring_spans(code):  # prose, not code
+            code = code[:a] + " " * (b - a) + code[b:]
+            bare = bare[:a] + " " * (b - a) + bare[b:]
+    if (_OLLAMA_IMPORT.search(code) or _EV_LANGCHAIN.search(bare)
+            or _EV_ROUTE.search(code) or _EV_URL.search(code)):
+        return True
+    # a REST call: the API path in a file that names Ollama in code (an identifier
+    # such as OLLAMA_URL, the OLLAMA_HOST variable or the port), not in a plain string
+    return bool(_EV_REST.search(code)) and bool(
+        re.search(r"ollama", bare, re.IGNORECASE) or "OLLAMA_HOST" in code
+        or ":11434" in code
+    )
+
+
+def ollama_deploy_evidence(text: str) -> bool:
+    """Whether a compose / Kubernetes / Dockerfile / LiteLLM proxy file runs or routes
+    to Ollama: the ``ollama/ollama`` image or an ``ollama/`` model route."""
+    return bool(_EV_IMAGE.search(text) or _EV_YAML_ROUTE.search(text))
+
+
 # a key / cache / log argument (``r.set("mistral:7b", 1)``) is never a model
 _KEY_CALL = re.compile(
     r"\.(?:set|get|setex|setnx|incr|incrby|decr|hget|hset|hincrby|delete|expire|exists|"
@@ -233,11 +278,6 @@ _KEY_CALL = re.compile(
 )
 _ASSIGN_TARGET = re.compile(r"(?P<name>[A-Za-z_][\w.]*)\s*(?::[^=\n]+)?=\s*$")
 _MODELISH = re.compile(r"model|llm|chat|embed|gen|complet|default|ollama|tag", re.I)
-
-
-def has_ollama_evidence(text: str) -> bool:
-    """Whether a file shows the repository uses Ollama (see ``_OLLAMA_EVIDENCE``)."""
-    return bool(_OLLAMA_EVIDENCE.search(text))
 
 
 def valid_tag(tag: str) -> bool:
@@ -353,7 +393,8 @@ def _keep(out: dict[str, tuple[str, str]], tag: str, kind: str) -> None:
 
 __all__ = [
     "find_ollama_tag_literals",
-    "has_ollama_evidence",
+    "ollama_code_evidence",
+    "ollama_deploy_evidence",
     "valid_tag",
     "find_ollama_tags",
     "is_cloud_tag",

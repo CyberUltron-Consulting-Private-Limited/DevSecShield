@@ -24,6 +24,7 @@ from aibom.scan.parsers import model_kb
 from aibom.scan.parsers.code_imports import notebook_text
 from aibom.scan.parsers.code_text import call_arguments, language_of, mask
 from aibom.scan.parsers.licenses import license_choice
+from aibom.scan.parsers.model_lookup import ProjectLiterals
 from aibom.scan.parsers.model_refs import (
     find_hf_repo_ids,
     find_model_refs_ctx,
@@ -33,8 +34,9 @@ from aibom.scan.parsers.model_refs import (
 from aibom.scan.parsers.ollama_tags import (
     find_ollama_tag_literals,
     find_ollama_tags,
-    has_ollama_evidence,
     is_cloud_tag,
+    ollama_code_evidence,
+    ollama_deploy_evidence,
     ollama_family,
     valid_tag,
 )
@@ -42,6 +44,7 @@ from aibom.scan.path_roles import (
     evidence_rank,
     is_doc_path,
     is_env_file,
+    is_env_template,
     is_example_path,
     is_test_path,
 )
@@ -281,6 +284,58 @@ def _walk(root: Path) -> Iterator[Path]:
     )
 
 
+def _application_file(path: Path, root: Path) -> bool:
+    """Not a test, a doc, an example / sample file or an env template."""
+    return not (is_test_path(path, root) or is_doc_path(path)
+                or is_example_path(path, root) or is_env_template(path))
+
+
+def repo_uses_ollama(root: Path) -> bool:
+    """Whether the application uses Ollama: real code or deployment use only (review
+    6065595627 of #498, R6-M1). Application source that imports the SDK, uses a
+    LangChain / LiteLLM Ollama class or route, or calls the REST API; a compose /
+    Kubernetes / Dockerfile that runs ``ollama/ollama`` or a LiteLLM proxy route;
+    OLLAMA_HOST in the application's real environment (``.env``, its own workload's
+    ``env``). Docs, tests, examples, env templates, a plain "ollama" string and a
+    declared-but-never-imported dependency (package.json and requirements alike) are
+    not evidence."""
+    from aibom.scan.scanners.net_env_scan import CONFLICT, env_values
+
+    configs: list[tuple[str, str]] = []
+    dockerfiles = walk_files(root, _SKIP_DIRS, lambda p: p.name.lower().startswith(
+        "dockerfile") or p.name.lower().endswith(".dockerfile"))
+    for path in [*_walk(root), *dockerfiles]:
+        if not _application_file(path, root):
+            continue
+        text = read_text(path, _MAX_BYTES)
+        if text is None:
+            continue
+        suffix = path.suffix.lower()
+        if suffix == ".ipynb":
+            if ollama_code_evidence(notebook_text(text)[0], "py"):
+                return True
+        elif suffix in _CODE_EVIDENCE:
+            if ollama_code_evidence(text, language_of(path.name)):
+                return True
+        elif (suffix in (".yaml", ".yml") or path in dockerfiles) and (
+            ollama_deploy_evidence(text)
+        ):
+            return True
+        if is_env_file(path) or suffix in (".yaml", ".yml"):
+            try:
+                configs.append((path.relative_to(root).as_posix(), text))
+            except ValueError:
+                configs.append((path.name, text))
+    env = env_values(configs, root.name)
+    return "OLLAMA_HOST" in env or "OLLAMA_HOST" + CONFLICT in env
+
+
+#: the client classes of Ollama calls (net-env ``_SDK_MODEL_CALLS`` and LangChain)
+_OLLAMA_CLASSES = frozenset({"Ollama", "ChatOllama", "OllamaLLM", "OllamaEmbeddings"})
+#: source files read for Ollama code evidence
+_CODE_EVIDENCE = frozenset({".py", ".pyi", *_JS_SOURCE})
+
+
 @register
 class ModelRefScanner(Scanner):
     name = "model-ref"
@@ -300,11 +355,11 @@ class ModelRefScanner(Scanner):
         loose_tags: set[str] = set()
         # does the repository use Ollama at all (an SDK import / call, a LangChain
         # wrapper, the REST API, OLLAMA_HOST, the container image, a LiteLLM route)?
-        uses_ollama = any(
-            has_ollama_evidence(t)
-            for t in (read_text(p, _MAX_BYTES) for p in _walk(ctx.root))
-            if t is not None
-        )
+        uses_ollama = repo_uses_ollama(ctx.root)
+        # module-level dicts / constants and settings classes of the application, for
+        # models chosen by a lookup (review 6065595627 of #498, R6-M2)
+        literals = ProjectLiterals.from_root(
+            ctx.root, keep=lambda p: _application_file(p, ctx.root))
         for path in _walk(ctx.root):
             # None: a link, not a regular file, or over the limit
             text = read_text(path, _MAX_BYTES)
@@ -345,12 +400,45 @@ class ModelRefScanner(Scanner):
                 else:
                     refs[name] = (refs[name][0], "usage")
                 hub_of[name] = hub_id
+            # a model chosen by a lookup (``ollama.chat(model=OPTIONS["fast"])``,
+            # ``ChatOpenAI(model=CFG["m"])``): the value the project's literals give,
+            # or, for a key known only at run time, every model the dict holds as a
+            # low-confidence candidate of that call (review 6065595627 of #498, R6-M2)
+            looked: dict[str, tuple[bool, str]] = {}  # name -> (candidate, call)
+            looked_tags: list[str] = []
+            suffix = path.suffix.lower()
+            if role is None and (suffix in _CODE_EVIDENCE or suffix == ".ipynb"):
+                from aibom.scan.scanners.net_env_scan import lookup_model_calls
+
+                direct = {n.lower() for n, (_v, t) in refs.items() if t == "usage"}
+                calls = lookup_model_calls(
+                    text, "notebook.py" if suffix == ".ipynb" else path.name, literals)
+                for cls, names, exact, call in calls:
+                    ollama_call = cls in _OLLAMA_CLASSES
+                    for value in names:
+                        if ollama_call or (valid_tag(value) and uses_ollama):
+                            found = {value: ("", "usage")}
+                            looked_tags.append(value)
+                        else:
+                            found = find_model_refs_ctx(f'model="{value}"\n', "py")
+                        for name, (vendor, _t) in found.items():
+                            if name.lower() in direct:
+                                continue  # named literally in this file too
+                            if name not in looked_tags:
+                                refs[name] = (vendor, "usage")
+                            was = looked.get(name.lower())
+                            looked[name.lower()] = (
+                                (not exact) and (was is None or was[0]),
+                                (was[1] + "; " if was else "") + f"{call} in {source}",
+                            )
             # Ollama library tags in Ollama calls (review 6062066749 of #498, M2):
             # open weights the Ollama server runs, never the maker's hosted product.
             # The tag (``mistral:7b``) is the model's id; a family-dictionary hit on
             # the same name (``gpt-oss`` → OpenAI) is replaced by it.
             ollama_of: dict[str, str] = {}
             in_call = find_ollama_tags(text, lang or "py") if lang else []
+            in_call += [t for t in looked_tags
+                        if t.lower() not in {c.lower() for c in in_call}]
             # a ``family:size`` literal outside an Ollama call (a constant, a
             # wrapper's argument) is an Ollama tag too, at low confidence (review
             # 6063080163 of #498, R4-M3)
@@ -367,9 +455,14 @@ class ModelRefScanner(Scanner):
             ]
             loose = [t for t, k in loose_found if k == "usage" and uses_ollama]
             listed = [t for t, k in loose_found if t not in loose]
+            # a bare alias the code names itself (``gemma3n``) is a model of its own
+            # next to its tagged forms (``gemma3n:e4b``): only a dictionary hit on the
+            # tag's own text is replaced (review 6065595627 of #498, m4)
+            named = {t.lower() for t in in_call + loose + listed}
             for tag in in_call + loose + listed:
                 base = tag.split(":", 1)[0].lower()
-                for other in [n for n in refs if n.lower() in (base, tag.lower())]:
+                for other in [n for n in refs if n.lower() == tag.lower() or (
+                        n.lower() == base and base not in named)]:
                     del refs[other]
                 vendor_t, _lic, _task = ollama_family(tag)
                 if tag in listed:
@@ -382,13 +475,23 @@ class ModelRefScanner(Scanner):
             for name, (vendor, rtype) in refs.items():
                 kind = role or rtype
                 low = name.lower()
-                entry = seen.get(low)
+                # ``gemma3n:latest`` is the bare alias ``gemma3n`` (Ollama's own
+                # default tag): one model, named as the code names it bare (m4)
+                skey = low.removesuffix(":latest")
+                entry = seen.get(skey)
+                if entry is not None and entry["name"].lower().endswith(
+                    ":latest"
+                ) and not low.endswith(":latest"):
+                    entry["name"] = name
                 if entry is None or _TYPE_RANK[kind] < _TYPE_RANK[entry["type"]] or (
                     kind == entry["type"] == "usage" and rank < entry["rank"]
                 ):
                     # usage evidenced by application code outranks configuration
                     # (m11): discovery:source names the strongest evidence
-                    seen[low] = {"name": name, "vendor": vendor, "type": kind,
+                    bare_kept = entry is not None and low.endswith(":latest") and (
+                        not entry["name"].lower().endswith(":latest"))
+                    seen[skey] = {"name": entry["name"] if bare_kept else name,
+                                  "vendor": vendor, "type": kind,
                                  "source": source, "rank": rank,
                                  "gateway": _gateway_hint(text, name),
                                  "hub": hub_of.get(name)
@@ -397,9 +500,20 @@ class ModelRefScanner(Scanner):
                                  or (entry or {}).get("ollama"),
                                  "loose": low in loose_tags and not (
                                      entry and entry.get("ollama")
-                                     and not entry.get("loose"))}
+                                     and not entry.get("loose")),
+                                 "lookup": looked.get(low) if kind == "usage" else None}
+                    if entry is not None and entry.get("lookup") and seen[skey][
+                        "lookup"
+                    ] is None and kind == entry["type"] == "usage":
+                        # usage named literally elsewhere: no candidate any more
+                        seen[skey]["lookup"] = (False, entry["lookup"][1])
                 elif hub_of.get(name) and not entry.get("hub"):
                     entry["hub"] = hub_of[name]
+                elif kind == entry["type"] == "usage":
+                    mine = looked.get(low) if role is None else None
+                    if entry.get("lookup") and (mine is None or not mine[0]):
+                        # a literal use or an exact lookup elsewhere: not a candidate
+                        entry["lookup"] = (False, entry["lookup"][1])
         for kind in ("catalog", "test"):
             n = sum(1 for v in seen.values() if v["type"] == kind)
             if n:
@@ -441,6 +555,15 @@ class ModelRefScanner(Scanner):
                 if entry.get("loose"):
                     # named outside an Ollama call: the tag syntax is the evidence
                     props["discovery:confidence"] = "low"
+            lookup = entry.get("lookup")
+            if lookup:
+                # chosen by a lookup at the call (R6-M2): the call is the evidence; a
+                # dynamic key makes each value of the dict a candidate
+                props["discovery:method"] = "config-lookup"
+                props["discovery:snippet"] = lookup[1][:500]
+                if lookup[0]:
+                    props["discovery:confidence"] = "low"
+                    props["model:selection"] = "candidate"
             if hub:
                 # read by the model-graph linker: a Hub model is loaded from the Hub
                 # and run by the application (never "served by" its maker's API)

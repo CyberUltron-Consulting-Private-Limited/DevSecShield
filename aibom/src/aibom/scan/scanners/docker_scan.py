@@ -57,6 +57,27 @@ def _compose_files(root: Path) -> list[Path]:
     )
 
 
+def _compose_services(text: str) -> dict[str, str]:
+    """``image -> compose service name`` of a compose file ({} for a Dockerfile or
+    a file that does not parse)."""
+    if "services:" not in text:
+        return {}
+    import yaml
+
+    try:
+        doc = yaml.safe_load(text)
+    except (yaml.YAMLError, ValueError, RecursionError):
+        return {}
+    services = doc.get("services") if isinstance(doc, dict) else None
+    if not isinstance(services, dict):
+        return {}
+    return {
+        str(svc["image"]): str(name)
+        for name, svc in services.items()
+        if isinstance(svc, dict) and isinstance(svc.get("image"), str)
+    }
+
+
 @register
 class DockerScanner(Scanner):
     name = "docker"
@@ -69,7 +90,9 @@ class DockerScanner(Scanner):
     def scan(self, ctx: ScanContext) -> None:
         seen: set[str] = set()
         for path in _compose_files(ctx.root):
-            for image in _IMAGE_RE.findall(read_text(path) or ""):
+            text = read_text(path) or ""
+            service_of = _compose_services(text)
+            for image in _IMAGE_RE.findall(text):
                 low = image.lower()
                 for needle, (kind, label) in _RUNTIMES.items():
                     if needle in low:
@@ -87,6 +110,11 @@ class DockerScanner(Scanner):
                             # 6063080163 of #498, m8)
                             props["service:kind"] = "model_server"
                             props["service:platform"] = _MODEL_SERVERS[needle]
+                            if image in service_of:
+                                # the compose service name is the host the app
+                                # reaches it by: net-env merges the two rows
+                                # (review 6065595627 of #498, m3)
+                                props["discovery:compose_service"] = service_of[image]
                         comp = (
                             VectorStoreComponent(
                                 bom_ref=ref, name=label, properties=props
