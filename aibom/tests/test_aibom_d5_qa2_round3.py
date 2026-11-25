@@ -266,3 +266,144 @@ def test_spdx_and_the_rows_carry_the_hub_identity_and_unknown_licence(tmp_path) 
     assert rows["pyannote/speaker-diarization-3.1"]["license"] == "NOASSERTION"
     assert rows["pyannote/speaker-diarization-3.1"]["license_status"] == "unknown"
     assert rows["openai/whisper-large-v3"]["license"] == "Apache-2.0"
+
+
+# ===================================================== round 3 follow-up (coordinator)
+
+_OLLAMA_APP = '''import ollama
+
+def chat(q):
+    return ollama.chat(model="llama3.1:8b", messages=[{"role": "user", "content": q}])
+
+def code(q):
+    return ollama.generate(model="gemma2:9b", prompt=q)
+'''
+
+
+def _rows(tmp_path, files: dict[str, str]) -> dict:
+    from aibom.integrations.devsecshield import scan_to_devsecshield
+
+    for rel, body in files.items():
+        p = tmp_path / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(body)
+    return {r["component_name"]: r for r in scan_to_devsecshield(tmp_path, level=4)["results"]}
+
+
+def test_ollama_sdk_with_no_host_is_the_local_server(tmp_path) -> None:
+    result = _scan(tmp_path, {"app.py": _OLLAMA_APP, "requirements.txt": "ollama==0.4.4\n"})
+    (server,) = [c for c in result.components if c.name == "Ollama (local)"]
+    assert server.properties["service:endpoint"] == "http://127.0.0.1:11434"
+    assert server.properties["service:trust_zone"] == "local"
+    # open weights run on the local server, never on an endpoint-less "Meta" / "Google" vendor node
+    assert _served(result, "llama3.1") == ["Ollama (local)"]
+    assert _served(result, "gemma2") == ["Ollama (local)"]
+    assert not [c for c in result.components if c.name in ("Meta", "Google")]
+
+
+def test_ollama_rows_are_local_serving_with_open_weights_licences(tmp_path) -> None:
+    rows = _rows(tmp_path, {"app.py": _OLLAMA_APP, "requirements.txt": "ollama==0.4.4\n"})
+    server = rows["Ollama (local)"]
+    assert server["component_type"] == "local_model_server"
+    # two different model licences behind it: not asserted as one, never proprietary
+    assert server["license"] == "NOASSERTION"
+    assert rows["llama3.1"]["component_type"] == "local_model_file"
+    assert rows["llama3.1"]["license"] == "LicenseRef-llama-community"
+    assert rows["gemma2"]["license"] == "LicenseRef-Gemma-Terms-of-Use"
+    assert rows["ollama"]["license"] == "MIT"  # the client library (PyPI)
+
+
+def test_an_ollama_server_with_one_model_carries_that_licence(tmp_path) -> None:
+    rows = _rows(tmp_path, {"app.py": (
+        'URL = "http://localhost:11434/api/generate"\n'
+        'def ask(q, http):\n    return http.post(URL, json={"model": "mistral-7b-instruct", "prompt": q})\n'
+    )})
+    assert rows["Ollama (local)"]["component_type"] == "local_model_server"
+    assert rows["Ollama (local)"]["license"] == "Apache-2.0"
+    assert rows["mistral-7b-instruct"]["license"] == "Apache-2.0"
+
+
+def test_a_hosted_model_is_never_served_by_ollama(tmp_path) -> None:
+    result = _scan(tmp_path, {"app.py": (
+        "import ollama\nfrom openai import OpenAI\nclient = OpenAI()\n"
+        'local = ollama.chat(model="llama3.1:8b", messages=[])\n'
+        'r = client.chat.completions.create(model="gpt-4o", messages=[])\n'
+    )})
+    assert _served(result, "gpt-4o") == ["OpenAI API"]
+    assert _served(result, "llama3.1") == ["Ollama (local)"]
+
+
+def test_an_ollama_client_given_a_variable_host_claims_no_default(tmp_path) -> None:
+    result = _scan(tmp_path, {"app.py": (
+        "import os, ollama\nc = ollama.Client(host=os.environ['OLLAMA_HOST'])\n"
+        'r = c.chat(model="llama3.1:8b", messages=[])\n'
+    )})
+    assert not [c for c in result.components if c.name == "Ollama (local)"]
+
+
+def test_speech_libraries_are_ai_libraries_with_licences(tmp_path) -> None:
+    from aibom.scan.parsers.ai_libraries import classify
+    from aibom.scan.parsers.license_resolver import resolve_license
+
+    expected = {
+        "pyannote.audio": "MIT", "openai-whisper": "MIT", "faster-whisper": "MIT",
+        "ctranslate2": "MIT", "vllm": "Apache-2.0", "llama-cpp-python": "MIT",
+        "ollama": "MIT", "sentence-transformers": "Apache-2.0",
+        "diffusers": "Apache-2.0", "peft": "Apache-2.0", "accelerate": "Apache-2.0",
+        "bitsandbytes": "MIT", "onnxruntime": "MIT", "tensorrt": "LicenseRef-proprietary",
+        "ultralytics": "AGPL-3.0-or-later", "timm": "Apache-2.0", "spacy": "MIT",
+        "gensim": "LGPL-2.1-only",
+    }
+    for package, spdx in expected.items():
+        assert classify(package) == "ai", package
+        assert resolve_license(package) == spdx, package
+    result = _scan(tmp_path, {
+        "cli.py": _WHISPER,
+        "requirements.txt": "transformers==4.44.0\npyannote.audio==3.1.1\nfaster-whisper==1.0.3\n",
+    })
+    libs = {c.name: c for c in result.components if c.kind == "framework"}
+    assert _licence(libs["pyannote.audio"]) == "MIT"
+    assert _licence(libs["faster-whisper"]) == "MIT"
+    # the diarization pipeline is loaded by pyannote.audio, Whisper by transformers
+    diar = _models(result)["pyannote/speaker-diarization-3.1"]
+    by_ref = {c.bom_ref: c.name for c in result.components}
+    deps = {by_ref[e.dst] for e in result.edges if e.src == diar.bom_ref and e.rel == REL_DEPENDS_ON}
+    assert deps == {"pyannote.audio"}
+
+
+def test_hub_ids_in_notebook_code_cells_are_read(tmp_path) -> None:
+    import json
+
+    nb = {
+        "cells": [
+            {"cell_type": "markdown", "source": ["Uses `AutoModel.from_pretrained(\"md/only\")` in prose."]},
+            {"cell_type": "code", "source": [
+                "from transformers import pipeline\n",
+                "pipe = pipeline(\"automatic-speech-recognition\", model=\"openai/whisper-large-v3\")\n",
+                "# old = pipeline(model=\"distil-whisper/distil-large-v2\")\n",
+            ]},
+        ],
+        "metadata": {}, "nbformat": 4, "nbformat_minor": 5,
+    }
+    result = _scan(tmp_path, {"transcribe.ipynb": json.dumps(nb, indent=1)})
+    models = _models(result)
+    assert models["openai/whisper-large-v3"].properties["model:reference_type"] == "usage"
+    assert models["openai/whisper-large-v3"].purl == "pkg:huggingface/openai/whisper-large-v3"
+    assert "distil-whisper/distil-large-v2" not in models  # commented out in the cell
+    assert "md/only" not in models  # a markdown cell is not code
+
+
+def test_langchain_calls_with_no_model_are_stated_not_guessed(tmp_path) -> None:
+    result = _scan(tmp_path, {"app.py": _ASK_PDFS, "requirements.txt": "langchain==0.0.184\nopenai==0.27.6\n"})
+    assert not [c for c in result.components if c.kind == "model" and c.properties.get("model:reference_type") != "catalog"]
+    assert result.properties["aibom:model_unnamed_calls"] == "2"
+    assert result.properties["aibom:model_unnamed_detail"] == "OpenAIEmbeddings() in app.py; ChatOpenAI() in app.py"
+    assert result.properties["aibom:model_unnamed_library"] == "langchain 0.0.184"
+
+
+def test_a_langchain_call_that_names_its_model_is_not_unnamed(tmp_path) -> None:
+    result = _scan(tmp_path, {"app.py": (
+        "from langchain_openai import ChatOpenAI\nfrom openai import OpenAI\n"
+        'llm = ChatOpenAI(model="gpt-4o-mini")\nraw = OpenAI()\ncfg = ChatOpenAI(**KW)\n'
+    )})
+    assert "aibom:model_unnamed_calls" not in result.properties

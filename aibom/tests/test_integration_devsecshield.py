@@ -31,6 +31,9 @@ _IMPACT = {"Low", "Medium", "High", "Critical"}
 _AI_COMPONENT_TYPE = {
     "local_model_file", "external_provider", "huggingface_model", "ml_framework",
     "ai_framework", "dataset", "prompt_asset", "embedding_model",
+    # a self-hosted model server (Ollama on localhost): worker enums.AIComponentType
+    # LOCAL_MODEL_SERVER (#498 round 3)
+    "local_model_server",
 }
 _MODEL_PROVIDER = {
     "openai", "anthropic", "bedrock", "vertex", "cohere", "mistral",

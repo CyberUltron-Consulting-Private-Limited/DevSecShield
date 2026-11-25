@@ -21,6 +21,7 @@ from typing import Any
 
 from aibom.model.component import ModelCard, ModelComponent, PedigreeAncestor
 from aibom.scan.parsers import model_kb
+from aibom.scan.parsers.code_imports import notebook_code
 from aibom.scan.parsers.code_text import language_of
 from aibom.scan.parsers.licenses import license_choice
 from aibom.scan.parsers.model_refs import (
@@ -191,7 +192,7 @@ def _gateway_hint(text: str, name: str) -> str | None:
 
 # Source files whose comments are read as comments (a reference there is a
 # mention, never usage): Python and ``#``-comment configuration, JavaScript /
-# TypeScript. Markdown, JSON and notebooks are not masked.
+# TypeScript; a notebook's code cells. Markdown and JSON are not masked.
 _HASH_COMMENT = {".py", ".pyi", ".yaml", ".yml", ".toml", ".env", ".sh", ".cfg"}
 _JS_SOURCE = {".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"}
 
@@ -245,6 +246,10 @@ class ModelRefScanner(Scanner):
                 source = path.name
             rank = evidence_rank(path)
             lang = _source_lang(path)
+            if path.suffix.lower() == ".ipynb":
+                # a notebook's code cells are Python source (the JSON escapes every
+                # quote, so Hub ids and comments are read from the cells themselves)
+                text, lang = notebook_code(text), "py"
             # name -> (vendor, reference_type)
             refs = dict(find_model_refs_ctx(text, lang))
             # Hugging Face Hub ids the code loads: the family name the dictionary

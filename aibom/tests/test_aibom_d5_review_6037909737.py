@@ -389,7 +389,8 @@ def test_unknown_library_licences_are_stated_in_aggregate(tmp_path) -> None:
         tmp_path,
         {
             "requirements.txt": "instructor==1.0\nlitellm==1.50\n"
-            "dspy-ai==2.5\nguidance==0.1\noutlines==0.1\nvllm==0.6\n"
+            # mlx-lm: not in the offline manifest (vllm was, until #498 round 3)
+            "dspy-ai==2.5\nguidance==0.1\noutlines==0.1\nmlx-lm==0.6\n"
         },
     )
     result = scan_repo(root, level=4)

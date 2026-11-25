@@ -125,6 +125,9 @@ _RAW: list[tuple[str, str, bool]] = [
     (rf"command-(?:r(?:-plus)?|light|nightly)(?:-{_SEG})*", "Cohere", False),
     # Mistral
     (rf"(?:mistral|mixtral|codestral)-[a-z0-9]{_TAIL}", "Mistral", False),
+    # Google Gemma open weights (gemma2, gemma-2-9b-it, gemma3, codegemma-7b): a
+    # version digit is required, so the word "gemma" alone is not a model
+    (rf"(?:code)?gemma-?\d{_TAIL}", "Google", False),
     # Meta Llama
     (rf"(?:code)?llama-?[234]{_TAIL}", "Meta", False),
     # AWS Bedrock first-party models (Titan / Nova), incl. "amazon." purl prefix

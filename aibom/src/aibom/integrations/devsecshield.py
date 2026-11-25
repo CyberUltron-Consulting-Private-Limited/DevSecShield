@@ -59,6 +59,9 @@ from aibom.scan.pipeline import scan_repo
 
 # component.kind -> AIComponentType value. Unknown kinds fall back to the
 # closest umbrella, external_provider (a discovered external AI surface).
+# AIComponentType for a self-hosted model server (worker enums.AIComponentType)
+LOCAL_MODEL_SERVER = "local_model_server"
+_SERVICE_KINDS = ("service", "cloud_service", "endpoint")
 _KIND_TO_AI_TYPE = {
     # a model the scan saw served by a provider is external_provider (see
     # _component_type); a model with no serving service, and a weight file, are local
@@ -248,7 +251,36 @@ def _component_type(
     ``local_model_file`` (QA round 2, Q2-06; first noted on #487)."""
     if kind == "model" and comp is not None and _provider_served(comp, result):
         return "external_provider"
+    if kind in _SERVICE_KINDS and comp is not None and _is_local_server(comp):
+        # a self-hosted model server on the machine (Ollama on localhost): inside
+        # the trust boundary, never an external provider (#498 round 3 follow-up)
+        return LOCAL_MODEL_SERVER
     return _KIND_TO_AI_TYPE.get(kind, "external_provider")
+
+
+def _is_local_server(comp: AIComponent) -> bool:
+    return (comp.properties or {}).get("service:trust_zone") == "local"
+
+
+def _served_model_licence(comp: AIComponent, result: ScanResult | None) -> str:
+    """A local model server's row licence: the open-weights licence of the models it
+    serves when they share one, else NOASSERTION. Never a provider's terms: nothing
+    is used under a hosted provider's terms on a self-hosted server."""
+    if result is None:
+        return LICENSE_UNKNOWN
+    served = [
+        e.src for e in result.edges if e.rel == REL_SERVED_BY and e.dst == comp.bom_ref
+    ]
+    by_ref = {c.bom_ref: c for c in result.components}
+    licences = {
+        _license_str(getattr(by_ref.get(ref), "licenses", None)) or "" for ref in served
+    }
+    licences.discard("")
+    if len(licences) == 1:
+        (only,) = licences
+        if only != "LicenseRef-proprietary":
+            return only
+    return LICENSE_UNKNOWN
 
 
 def _provider_served(comp: AIComponent, result: ScanResult | None) -> bool:
@@ -318,8 +350,10 @@ _ARTIFACT_SUFFIXES = (".bin", ".safetensors", ".gguf", ".pt", ".pth", ".onnx")
 LICENSE_UNKNOWN = "NOASSERTION"
 
 
-def _finding_license(comp: AIComponent) -> str:
-    """Concrete license label for a finding row (never unknown / None)."""
+def _finding_license(comp: AIComponent, result: ScanResult | None = None) -> str:
+    """Concrete license label for a finding row."""
+    if (comp.kind or "").lower() in _SERVICE_KINDS and _is_local_server(comp):
+        return _served_model_licence(comp, result)
     declared = _license_str(getattr(comp, "licenses", None))
     if declared and declared.strip().lower() not in ("unknown", "none", "null"):
         return declared.strip()
@@ -448,7 +482,7 @@ def _finding_from_component(comp: AIComponent, result: ScanResult) -> dict[str, 
         risk_category = _DEFAULT_RISK
         suggested_fix = _DEFAULT_FIX
         description = _inventory_description(comp)
-    license_label = _finding_license(comp)
+    license_label = _finding_license(comp, result)
     return {
         "title": comp.name,
         "description": description,

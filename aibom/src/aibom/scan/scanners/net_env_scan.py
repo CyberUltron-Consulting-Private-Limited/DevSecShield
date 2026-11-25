@@ -217,6 +217,67 @@ _LANGCHAIN_BEDROCK = re.compile(
     r"(?<!\w)(?:new\s+)?(?:ChatBedrock(?:Converse)?|BedrockChat|BedrockLLM|"
     r"BedrockEmbeddings|Bedrock)\s*\("
 )
+# Ollama: a local model server. Its SDK (Python ``ollama``, JS ``ollama``) and
+# LangChain's Ollama wrappers default to http://127.0.0.1:11434 (ollama-python
+# ``_parse_host``: host 127.0.0.1, port 11434). A file that calls it and names no
+# host is that local endpoint (#498 round 3 follow-up: an ``ollama.chat(...)`` app
+# had no Ollama node, so its models read as external vendor services).
+_OLLAMA_IMPORT = re.compile(
+    r"""(?:^|\n)\s*(?:import\s+ollama\b|from\s+ollama\b)|"""
+    r"""from\s+['"]ollama(?:/browser)?['"]|require\(\s*['"]ollama['"]\s*\)""",
+    re.IGNORECASE,
+)
+_OLLAMA_CALL = re.compile(
+    r"\bollama\.(?:chat|generate|embed|embeddings|Client|AsyncClient)\s*\(|"
+    r"(?<!\w)new\s+Ollama\s*\("
+)
+_OLLAMA_FROM_CLIENT = re.compile(
+    r"(?:^|\n)\s*from\s+ollama\s+import\s+[^\n]*\b(?:Async)?Client\b"
+)
+_OLLAMA_BARE_CLIENT = re.compile(r"(?<![\w.])(?:Async)?Client\s*\(")
+_LANGCHAIN_OLLAMA = re.compile(
+    r"(?<!\w)(?:new\s+)?(?:ChatOllama|OllamaLLM|OllamaEmbeddings|Ollama)\s*\("
+)
+_OLLAMA_DEFAULT = "http://127.0.0.1:11434"
+# LangChain model wrappers whose MODEL is a constructor argument: one built with no
+# model argument runs the library's default model, which depends on the installed
+# version, so the BOM states the call instead of guessing a model (#498 round 3:
+# ask-multiple-pdfs' ``ChatOpenAI()`` / ``OpenAIEmbeddings()`` read as "0 models").
+_LANGCHAIN_MODEL_CLASSES = re.compile(
+    r"(?<![\w.])(?:new\s+)?(?P<cls>ChatOpenAI|OpenAIEmbeddings|AzureChatOpenAI|"
+    r"AzureOpenAIEmbeddings|ChatAnthropic|ChatGoogleGenerativeAI|"
+    r"GoogleGenerativeAIEmbeddings|ChatGroq|ChatMistralAI|MistralAIEmbeddings|"
+    r"ChatCohere|CohereEmbeddings|ChatBedrock(?:Converse)?|BedrockLLM|"
+    r"BedrockEmbeddings|ChatOllama|OllamaLLM|OllamaEmbeddings)\s*\("
+)
+_MODEL_KWARG = re.compile(
+    r"\b(?:model|model_name|modelName|model_id|deployment_name|azure_deployment|"
+    r"deploymentName)\s*[=:]"
+)
+
+
+def unnamed_model_calls(text: str, source: str) -> list[str]:
+    """``["ChatOpenAI()", …]``: LangChain model wrappers the file constructs with no
+    model argument (readable arguments only; ``**kwargs`` / spread may name one)."""
+    code, bare = mask(text, language_of(source))
+    if not _LANGCHAIN_IMPORT_RE.search(code):
+        return []
+    out: list[str] = []
+    for m in _LANGCHAIN_MODEL_CLASSES.finditer(bare):
+        head = bare[bare.rfind("\n", 0, m.start()) + 1 : m.start()]
+        if _DEFINITION.search(head):
+            continue
+        args = call_arguments(bare, m.end() - 1)
+        if args is None or _SPREAD.search(args) or _MODEL_KWARG.search(args):
+            continue
+        if args.strip():
+            # a positional first argument may be the model; not "unnamed" then
+            first = args.split(",", 1)[0].strip()
+            if first and "=" not in first and ":" not in first:
+                continue
+        out.append(f"{m.group('cls')}()")
+    return out
+_OLLAMA_HOST_ARG = re.compile(r"\b(?:host|base_url|baseUrl)\s*[=:]")
 # Azure OpenAI: always Azure (never the OpenAI API); the endpoint is the literal
 # ``azure_endpoint`` when there is one, else unknown, with the environment variable
 # that holds it recorded (review 6037909737 of #498, M2)
@@ -378,6 +439,7 @@ class NetEnvScanner(Scanner):
     def scan(self, ctx: ScanContext) -> None:
         seen: set[str] = set()
         excluded: set[str] = set()  # refs named only in test / example files
+        unnamed: list[str] = []  # model wrappers built with no model argument
         for path in _scan_files(ctx.root):
             text = read_text(path)
             if text is None:
@@ -387,6 +449,9 @@ class NetEnvScanner(Scanner):
             except ValueError:
                 source = path.name
             not_app = is_test_path(path, ctx.root) or is_example_path(path, ctx.root)
+            if not not_app:
+                for call in unnamed_model_calls(text, source):
+                    unnamed.append(f"{call} in {source}")
             for comp in _services_in(text, source):
                 if not not_app:
                     ctx.service_files.setdefault(comp.bom_ref, set()).add(source)
@@ -400,6 +465,10 @@ class NetEnvScanner(Scanner):
         excluded -= seen
         if excluded:
             ctx.properties["aibom:services_excluded_test_example"] = str(len(excluded))
+        if unnamed:
+            # stated, never guessed: the library's default model applies
+            ctx.properties["aibom:model_unnamed_calls"] = str(len(unnamed))
+            ctx.properties["aibom:model_unnamed_detail"] = "; ".join(unnamed[:20])
 
 
 def _default_client_called(
@@ -450,6 +519,32 @@ def _azure_services(
         comp.properties["discovery:method"] = "sdk-client"
         out.append(comp)
     return out
+
+
+def _ollama_default(
+    code: str, bare: str, source: str
+) -> list[CloudServiceComponent | EndpointComponent]:
+    """The Ollama server at its SDK default, for a file that calls the Ollama SDK
+    (or LangChain's Ollama wrappers) without naming a host. A host given in a
+    variable or the environment is not known, so nothing is claimed for it."""
+    calls = list(_OLLAMA_CALL.finditer(bare)) if _OLLAMA_IMPORT.search(code) else []
+    if _OLLAMA_FROM_CLIENT.search(code):
+        calls += list(_OLLAMA_BARE_CLIENT.finditer(bare))
+    if _LANGCHAIN_IMPORT_RE.search(code):
+        calls += list(_LANGCHAIN_OLLAMA.finditer(bare))
+    for m in calls:
+        head = bare[bare.rfind("\n", 0, m.start()) + 1 : m.start()]
+        if _DEFINITION.search(head):
+            continue
+        args = call_arguments(bare, m.end() - 1)
+        if args is None or _SPREAD.search(args) or _OLLAMA_HOST_ARG.search(args):
+            continue
+        comp = _component("endpoint", "Ollama (local)", "local", False,
+                          _OLLAMA_DEFAULT, source)
+        comp.properties["discovery:method"] = "sdk-client"
+        comp.properties["service:endpoint_basis"] = "sdk-default"
+        return [comp]
+    return []
 
 
 def _split_url(url: str) -> tuple[str, str | None]:
@@ -505,6 +600,8 @@ def _services_in(
             comp.properties["service:endpoint_basis"] = "sdk-default"
             out.append(comp)
     out.extend(_azure_services(code, bare, source))
+    if not any(c.name == "Ollama (local)" for c in out):
+        out.extend(_ollama_default(code, bare, source))
     claimed_hosts = {
         (c.properties or {}).get("discovery:host", "").lower() for c in out
     } - {""}

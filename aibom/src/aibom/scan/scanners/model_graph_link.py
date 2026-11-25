@@ -83,6 +83,21 @@ _SERVES: dict[str, tuple[str, ...]] = {
     "Alibaba": ("bedrock",),
 }
 _BEDROCK_REF = "cloud_service-bedrock-runtime"
+# A local model server runs open weights only (Ollama pulls weights; it serves no
+# hosted API model such as gpt-4o or Claude).
+_LOCAL_SERVERS = ("ollama",)
+_PROPRIETARY = "LicenseRef-proprietary"
+
+
+def _open_weights(model: AIComponent) -> bool:
+    """Whether the model is not known to be a hosted, proprietary-terms model: a
+    local server can serve it (#498 round 3 follow-up: llama3.1 and gemma2 called
+    through Ollama were "served by" endpoint-less Meta / Google vendor nodes)."""
+    for choice in model.licenses or []:
+        lic = choice.get("license") if isinstance(choice, dict) else None
+        if isinstance(lic, dict) and _PROPRIETARY in (lic.get("id"), lic.get("name")):
+            return False
+    return True
 _SLUG = re.compile(r"[^a-z0-9]+")
 
 
@@ -148,12 +163,15 @@ class ModelGraphLinker(Scanner):
 
             vendor = (model.publisher or "").strip()
             hub = bool(props.get("model:hub_id"))
+            candidates = _HUB_LOADERS if hub else _VENDOR_SDK.get(vendor, ())
+            if hub:
+                # the org's own library first: pyannote/… is loaded by pyannote.audio
+                org = str(props.get("model:hub_id", "")).split("/", 1)[0].lower()
+                candidates = tuple(
+                    sorted(candidates, key=lambda s: not s.startswith(org))
+                )
             sdk_ref = next(
-                (
-                    frameworks[s]
-                    for s in (_HUB_LOADERS if hub else _VENDOR_SDK.get(vendor, ()))
-                    if s in frameworks
-                ),
+                (frameworks[s] for s in candidates if s in frameworks),
                 None,
             )
             if sdk_ref is not None:
@@ -223,7 +241,9 @@ class ModelGraphLinker(Scanner):
                 )
                 services["bedrock"] = _BEDROCK_REF
             return "bedrock", services["bedrock"]
-        if hint and hint in services:
+        open_weights = _open_weights(model)
+        if hint and hint in services and (open_weights or hint not in _LOCAL_SERVERS):
+            # a nearby "ollama" names no server for a hosted model (gpt-4o, Claude)
             return hint, services[hint]
         if props.get("model:hub_id"):
             # open weights from the Hub: served only by a gateway or the Hugging Face
@@ -237,15 +257,25 @@ class ModelGraphLinker(Scanner):
             return hosted[0] if hosted else ("", None)
         own = _VENDOR_API.get(vendor)
         able = _SERVES.get(vendor, ())
+        same_file = by_file.get(props.get("discovery:source", ""), [])
+        if open_weights:
+            # the model's own file calls a local model server: it runs the weights
+            server = next(((k, r) for k, r in same_file if k in _LOCAL_SERVERS), None)
+            if server is not None:
+                return server
         local = [
             (k, r)
-            for k, r in by_file.get(props.get("discovery:source", ""), [])
+            for k, r in same_file
             if k == own or k in able or k == "gateway"
         ]
         if local:
             return next(((k, r) for k, r in local if k == own), local[0])
         if own and own in services:
             return own, services[own]
+        if open_weights:
+            servers = [k for k in _LOCAL_SERVERS if k in services]
+            if servers:
+                return servers[0], services[servers[0]]
         others = [k for k in able if k in services]
         if len(others) == 1:
             return others[0], services[others[0]]

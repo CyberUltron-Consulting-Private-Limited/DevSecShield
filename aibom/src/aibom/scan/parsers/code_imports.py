@@ -38,6 +38,12 @@ AI_IMPORTS: dict[str, str] = {
     "peft": "peft", "accelerate": "accelerate", "vllm": "vllm",
     "diffusers": "diffusers", "onnxruntime": "onnxruntime", "spacy": "spacy",
     "span_marker": "span-marker",
+    # speech and vision model libraries (#498 round 3 audit)
+    "pyannote": "pyannote-audio", "whisper": "openai-whisper",
+    "faster_whisper": "faster-whisper", "whisperx": "whisperx",
+    "ctranslate2": "ctranslate2", "bitsandbytes": "bitsandbytes",
+    "ultralytics": "ultralytics", "timm": "timm", "gensim": "gensim",
+    "tensorrt": "tensorrt",
     # vector stores
     "chromadb": "chromadb", "qdrant_client": "qdrant", "pinecone": "pinecone",
     "weaviate": "weaviate", "faiss": "faiss", "pymilvus": "milvus",
@@ -64,7 +70,7 @@ def _canon_for(module: str) -> str | None:
     return AI_IMPORTS.get(parts[0])
 
 
-def _notebook_code(text: str) -> str:
+def notebook_code(text: str) -> str:
     """Concatenate the source of every code cell in a .ipynb document."""
     try:
         nb = json.loads(text)
@@ -81,7 +87,7 @@ def _notebook_code(text: str) -> str:
 def find_ai_imports(text: str, *, notebook: bool = False) -> set[str]:
     """Canonical AI component names imported in ``text`` (notebook cells if set)."""
     if notebook:
-        text = _notebook_code(text)
+        text = notebook_code(text)
     found: set[str] = set()
     for m in _IMPORT_RE.finditer(text):
         module = m.group(1) or m.group(2) or ""
@@ -91,4 +97,4 @@ def find_ai_imports(text: str, *, notebook: bool = False) -> set[str]:
     return found
 
 
-__all__ = ["AI_IMPORTS", "find_ai_imports"]
+__all__ = ["AI_IMPORTS", "find_ai_imports", "notebook_code"]

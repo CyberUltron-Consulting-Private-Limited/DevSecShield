@@ -17,6 +17,7 @@ from aibom.scan.scanners import (  # noqa: F401
     net_env_scan,
     requirements,
     secret_scan,
+    unnamed_models,
 )
 
 __all__ = [
@@ -28,6 +29,7 @@ __all__ = [
     "model_graph_link",
     "model_considerations",
     "licence_coverage",
+    "unnamed_models",
     "secret_scan",
     "docker_scan",
     "net_env_scan",

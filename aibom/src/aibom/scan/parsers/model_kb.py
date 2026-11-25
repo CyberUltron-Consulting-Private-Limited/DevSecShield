@@ -118,6 +118,19 @@ _KB: tuple[tuple[str, dict], ...] = (
             "whisper-large",
         )
     ),
+    # ── Google Gemma open weights: the Gemma Terms of Use (ai.google.dev/gemma/terms),
+    # not Google's hosted-API terms and not an OSI licence ──
+    (
+        "gemma",
+        {
+            "approach_type": "self-supervised",
+            "task": "chat/completion",
+            "architecture_family": "transformer",
+            "model_architecture": "Gemma",
+            "license": "LicenseRef-Gemma-Terms-of-Use",
+            "lineage": [],
+        },
+    ),
     # ── proprietary, hosted ──
     (
         "gpt-4",
