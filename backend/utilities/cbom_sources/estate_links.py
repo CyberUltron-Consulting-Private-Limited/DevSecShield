@@ -258,6 +258,19 @@ def build_links(session: Session, team_id: int) -> list[dict[str, Any]]:
     return links
 
 
+def unique_links(links: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One link per (asset key, kind, scan, component), the first (best) match kept: what ``uq_cbomestatelink_link``
+    holds the table to (review 6060766322 nit)."""
+    seen: set[tuple[Any, ...]] = set()
+    out = []
+    for link in links:
+        ident = (link["asset_key"], link["kind"], link["scan_id"], link["component"])
+        if ident not in seen:
+            seen.add(ident)
+            out.append(link)
+    return out
+
+
 def refresh(session: Session, team_id: int, *, force: bool = False) -> bool:
     """Rebuild the team's stored links when their inputs changed (compare-and-set on the fingerprint, so concurrent
     readers rebuild once). Returns True when it rebuilt. The caller commits."""
@@ -280,7 +293,7 @@ def refresh(session: Session, team_id: int, *, force: bool = False) -> bool:
                           .values(fingerprint=fp, refreshed_at=now)).rowcount
     if won != 1:
         return False  # another request is rebuilding the same inputs
-    links = build_links(session, team_id)
+    links = unique_links(build_links(session, team_id))
     lt = CbomEstateLink.__table__
     session.execute(sa.delete(lt).where(lt.c.team_id == team_id))
     for chunk in _chunks(links, 1000):
