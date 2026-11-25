@@ -462,7 +462,8 @@ async def download_scan_bom(
 async def _artifact_response(team_id: int, scan_id: int, artifact: str, authorization: str | None) -> Response:
     """The AI BOM's stored SPDX 3.0 / SARIF 2.1.0 file (``served_artifacts``) with a detached ES256 signature over the
     exact bytes (``X-ZS-Signature``, as for the CBOM XML; D5 / review 6036875286). Verify it with
-    ``zs_bom_verify.py detached FILE FILE.sig`` (the pack carries the ``.sig``) or the header's base64 value."""
+    ``zs_bom_verify.py detached FILE FILE.sig`` (the pack carries the ``.sig``), or send the file and the header's base64
+    value to ``POST /signature/verify``, which binds it to the scan by its bytes (``_own_artifact``)."""
     from backend.utilities.cbom_sources import cdx_xml
 
     engine = get_db()
@@ -532,8 +533,10 @@ async def verify_scan_bom_signature(
 
     ``valid`` is true only when the signature is this deployment's AND the file is this scan's (D4): the
     ``zs:scan_id``, ``zs:scan_type`` and ``zs:team_id`` the server stamped on the BOM / VEX, or the pack manifest's
-    ``subject`` (kind, scan id, team), never a serial number alone (review 6029745818 N1). ``signed_by_deployment``
-    says the first alone (a file of another scan or team is ``valid: false`` with ``signed_by_deployment: true``).
+    ``subject`` (kind, scan id, team), never a serial number alone (review 6029745818 N1); an AI BOM's SPDX / SARIF
+    file, which carries no such stamp, by byte equality with this scan's stored file (review 6038801363 m-1), checked
+    only after its signature verifies. ``signed_by_deployment`` says the first alone (a file of another scan or team
+    is ``valid: false`` with ``signed_by_deployment: true``).
     JSON that is not I-JSON (duplicate member names, NaN, out-of-range numbers), far denser than any BOM, or carrying a
     malformed signature member is 400 (a body that is not JSON at all is ``valid: false``, as before); one over 64 MB
     is 413. Offline checks need only the key at ``GET /{team}/bom-signing-keys``."""
@@ -569,6 +572,23 @@ SUBJECT_KEYS = ("serial", "scan_id", "scan_type", "team_id", "run_id", "kind", "
 def _malformed(reason: str) -> HTTPException:
     """400 for a body no signature can be checked over (D1, minor 1); the detail is the reason, shown as is."""
     return HTTPException(status_code=400, detail=f"Not verified: {reason}")
+
+
+def _own_artifact(scan_type: str, data: dict, sha256_hex: str) -> str | None:
+    """``ai_bom-spdx`` / ``ai_bom-sarif`` when ``sha256_hex`` is that of this scan's own stored SPDX / SARIF file as
+    GET /spdx and /sarif serve it, else None. Those files carry no ``zs:`` subject stamp (the stored documents stay
+    unchanged and SHACL-valid), so the binding of N1 is byte equality with this scan's stored file (review 6038801363
+    m-1), and nothing more: another scan whose file is byte-identical binds too (same inputs in the same second, or
+    a document built without ``generated_at``, which carries ``PINNED_TIMESTAMP``), which is harmless since the
+    content is the same. The route loaded ``data`` for this team's scan only, and calls
+    this only after the detached signature has verified (review 6039705173: the bytes never stand in for it)."""
+    if scan_type != "ai_bom":
+        return None
+    for artifact in ARTIFACTS.ARTIFACTS:
+        body = ARTIFACTS.stored_artifact(data, artifact)
+        if body is not None and hashlib.sha256(body).hexdigest() == sha256_hex:
+            return f"ai_bom-{artifact}"
+    return None
 
 
 def _verify_scan_file(scan_type: str, scan_id: int, data: dict, upload: Any, sent_b64: str | None, *,
@@ -607,6 +627,12 @@ def _verify_scan_file(scan_type: str, scan_id: int, data: dict, upload: Any, sen
                     return {**out, "method": "detached ES256", "valid": False, "reason": str(exc)}
                 if not checked["valid"]:
                     return {**out, "method": "detached ES256", **checked, "signed_by_deployment": False}
+                own = _own_artifact(scan_type, data, out["sha256"])
+                if own:  # an AI BOM's SPDX / SARIF carries no zs: stamp: its bytes are the scan's own stored file
+                    return {**out, "method": "detached ES256", **checked, "signed_by_deployment": True, "bound": True,
+                            "file_subject": {"scan_id": scan_id, "scan_type": scan_type, "team_id": team_id,
+                                             "kind": own},
+                            "valid": True}
                 return bound(checked, SIGN.file_subject(fh, upload.size), "detached ES256")
             try:
                 doc = BV.loads_file(fh)

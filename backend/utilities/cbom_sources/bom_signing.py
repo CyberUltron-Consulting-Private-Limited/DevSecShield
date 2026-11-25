@@ -609,7 +609,10 @@ Files
   manifest.json                        SHA-256 and size of every other file of the pack
   manifest.json.sig, SHA256SUMS.sig    detached DER signatures (openssl format) of manifest.json and SHA256SUMS
   *.cdx.xml.sig, *.cdx.json.sig, vex.json.sig   detached signatures of the BOM and VEX files (exact bytes)
+  bom.spdx.json.sig, bom.sarif.sig     detached signatures of an AI BOM pack's SPDX and SARIF files (exact bytes)
   *.cdx.json, vex.json                 CycloneDX JSON with an embedded JSF signature (JCS / RFC 8785, ES256)
+  bom.spdx.json, bom.sarif             an AI BOM pack's SPDX 3.0.1 JSON-LD and SARIF 2.1.0 files, as the scan's
+                                       /spdx and /sarif downloads serve them (signed detached only)
   verify/zs_bom_verify.py              a verifier (Python 3.8+, standard library; uses the 'cryptography'
                                        package when installed, else the openssl command line)
 
@@ -629,7 +632,10 @@ Files
      openssl dgst -sha256 -verify ~/zeroshield-bom-key.pem -signature SHA256SUMS.sig SHA256SUMS
      sha256sum -c SHA256SUMS
      openssl dgst -sha256 -verify ~/zeroshield-bom-key.pem -signature manifest.json.sig manifest.json
+   CBOM packs only (the CycloneDX XML copy of the BOM):
      openssl dgst -sha256 -verify ~/zeroshield-bom-key.pem -signature bom.cdx.xml.sig bom.cdx.xml
+   AI BOM packs only (the SPDX 3.0.1 file; the SARIF file likewise, with bom.sarif.sig and bom.sarif):
+     openssl dgst -sha256 -verify ~/zeroshield-bom-key.pem -signature bom.spdx.json.sig bom.spdx.json
    Each openssl line prints "Verified OK". sha256sum -c also refuses a pack whose zip held two entries of one name:
    the verifier rejects such a pack outright, since unzip tools disagree on which entry is the file.
 
