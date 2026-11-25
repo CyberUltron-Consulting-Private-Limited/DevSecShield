@@ -111,9 +111,9 @@ const TEXT = {
     why: "Lets you compare scans by overall severity.",
     example: "1 High and 1 Low finding: (7.5 + 2.5) / 2 = 5.",
   },
-  // src: frontend/utils/riskPosture.ts:40-56, frontend/app/[team_id]/sbom_sca/page.tsx:120-122,828, frontend/app/[team_id]/dast/page.tsx:122-124,764, frontend/app/[team_id]/sast/page.tsx:108-110,1270, frontend/app/[team_id]/llm/page.tsx:120-122,764, frontend/app/[team_id]/iac/page.tsx:128-135,838, frontend/app/[team_id]/ai_bom/page.tsx:114-121,719, backend/utilities/dashboard/risk_scale.py:16-17 — grade-band tiers on the 0-100 lists, 0-10 tiers on the lists that still show a decimal; a null score matches no tier
+  // src: frontend/utils/riskPosture.ts:40-56, frontend/app/[team_id]/sbom_sca/page.tsx:120-122,828, frontend/app/[team_id]/dast/page.tsx:122-124,764, frontend/app/[team_id]/llm/page.tsx:120-122,764, frontend/app/[team_id]/iac/page.tsx:128-135,838, frontend/app/[team_id]/ai_bom/page.tsx:114-121,719, backend/utilities/dashboard/risk_scale.py:16-17 — grade-band tiers on the 0-100 lists, 0-10 tiers on the lists that still show a decimal; a null score matches no tier
   "scan.filter.risk": {
-    what: "Shows only scans whose Risk score is in a tier. A score shown with a grade (56 · D: SBOM, DAST, SAST, LLM) is 0-100 and the tiers are grades: Critical = F (70+), High = D (50–69), Medium = C or B (15–49), Low = A (under 15). A decimal score (7.5) is 0-10: Critical 9+, High 7–9, Medium 5–7, Low under 5. A scan without a score (a dash) is hidden by any tier.",
+    what: "Shows only scans whose Risk score is in a tier. A score shown with a grade (56 · D: SBOM, DAST, LLM) is 0-100 and the tiers are grades: Critical = F (70+), High = D (50–69), Medium = C or B (15–49), Low = A (under 15). A decimal score (7.5) is 0-10: Critical 9+, High 7–9, Medium 5–7, Low under 5. A scan without a score (a dash) is hidden by any tier.",
     why: "Focuses the list on the riskiest scans.",
     example: "On the SBOM list, High keeps a scan scored 69 · D (15 High vulnerabilities) and hides one scored 80 · F (2 Critical).",
   },

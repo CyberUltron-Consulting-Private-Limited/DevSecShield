@@ -171,11 +171,11 @@ const TEXT = {
     why: "Narrows the list to one code source.",
     example: "Choose Zip file to list only scans of uploaded archives.",
   },
-  // src: frontend/app/[team_id]/sast/page.tsx:108-116,1280, frontend/app/[team_id]/sast/page.tsx:99-106,1280 — tiers on the 0-10 per-scan risk score; scans without findings drop out
+  // src: frontend/utils/riskPosture.ts:40-56, frontend/app/[team_id]/sast/page.tsx:101-110,1260 — grade-band tiers on the row's 0-100 risk_posture; scans without a score drop out
   "sast.filter.risk": {
-    what: "Shows only scans whose risk score (0 to 10) is in a tier: Critical 9 or more, High 7 to 9, Medium 5 to 7, Low under 5. Scans without findings have no score and are hidden by any tier.",
+    what: "Shows only scans whose risk score (0 to 100, the score with its grade on each row) is in a tier: Critical = grade F (70 or more), High = D (50–69), Medium = C or B (15–49), Low = A (under 15). Scans without a score (a dash) are hidden by any tier.",
     why: "Focuses the list on the riskiest scans.",
-    example: "High keeps a scan scored 7.5 and hides one scored 9.2.",
+    example: "High keeps a scan scored 69 · D (15 High findings) and hides one scored 80 · F (2 Critical).",
   },
   // src: frontend/app/[team_id]/sast/page.tsx:1158-1173 — sorts the loaded rows
   "sast.filter.sort": {
