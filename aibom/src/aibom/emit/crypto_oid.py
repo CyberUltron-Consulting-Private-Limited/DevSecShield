@@ -103,6 +103,37 @@ _ML_DSA_OID = {
 }
 
 
+# --------------------------------------------------------------------------- #
+# MACs and password KDFs whose name pins one registered identifier: HMAC with a
+# named SHA-1/SHA-2 digest (RSA PKCS #5 v2.1, RFC 8018 Appendix B.1.2), PBKDF2
+# (id-PBKDF2, RFC 8018 Appendix A.2: the PRF is a parameter, not part of the OID)
+# and scrypt (id-scrypt, RFC 7914 section 7). A bare HMAC (digest unknown), Argon2
+# (RFC 9106 assigns no OID) and HKDF without a digest stay unresolved.
+# --------------------------------------------------------------------------- #
+_HMAC_OID: tuple[tuple[str, str], ...] = (
+    ("SHA512", "1.2.840.113549.2.11"),
+    ("SHA384", "1.2.840.113549.2.10"),
+    ("SHA256", "1.2.840.113549.2.9"),
+    ("SHA224", "1.2.840.113549.2.8"),
+    ("SHA1", "1.2.840.113549.2.7"),
+)
+_PBKDF2_OID = "1.2.840.113549.1.5.12"
+_SCRYPT_OID = "1.3.6.1.4.1.11591.4.11"
+
+
+def _mac_kdf_oid(up: str) -> str | None:
+    if up.startswith("PBKDF2"):
+        return _PBKDF2_OID
+    if up == "SCRYPT":
+        return _SCRYPT_OID
+    if up.startswith("HMAC"):  # an exact name only: HMAC-SHA3-256 matches none
+        flat = up.replace("-", "").replace("_", "")
+        for tok, oid in _HMAC_OID:
+            if flat in (f"HMAC{tok}", f"HMACWITH{tok}"):
+                return oid
+    return None
+
+
 def _digest_oid(up: str) -> str | None:
     for tok, oid in _HASH_OID:
         if tok in up:
@@ -158,6 +189,15 @@ def algorithm_oid(
             return _ML_KEM_OID[pset]
         if ("ML-DSA" in up or "MLDSA" in up or "DILITHIUM" in up) and pset in _ML_DSA_OID:
             return _ML_DSA_OID[pset]
+
+    # MACs and KDFs first: "HMAC-SHA256" / "PBKDF2-HMAC-SHA256" name a digest, but
+    # their identity is the MAC's / KDF's own OID, never the digest's.
+    if primitive in ("mac", "kdf", None):
+        mk = _mac_kdf_oid(up)
+        if mk:
+            return mk
+        if primitive in ("mac", "kdf"):
+            return None
 
     # Hashes (also covers HMAC-less digests; matched before RSA-family tokens so
     # a composite name like "SHA256withRSA" is not mis-read as a bare hash — the

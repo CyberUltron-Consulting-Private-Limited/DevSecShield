@@ -125,10 +125,35 @@ def density_problem(containers: int, commas: int, size: int) -> str | None:
     return None
 
 
-# A \\uD800-\\uDBFF escape not followed by a \\uDC00-\\uDFFF one, or the second without the first (RFC 7493 section 2.1).
-_LONE_SURROGATE = re.compile(
-    r"\\u[dD][89abAB][0-9a-fA-F]{2}(?!\\u[dD][c-fC-F][0-9a-fA-F]{2})"
-    r"|(?<!\\u[dD][89abAB][0-9a-fA-F]{2})\\u[dD][c-fC-F][0-9a-fA-F]{2}")
+# A surrogate escape (\\uD800-\\uDFFF) in the text: only then can a parsed string hold a lone surrogate. Whether one is
+# lone is judged on the parsed strings (``_lone_surrogate``), not on the text, where "C:\\\\uD800" is an escaped
+# backslash and the letters uD800, not an escape (RFC 7493 section 2.1).
+_SURROGATE_ESCAPE = re.compile(r"\\u[dD][89a-fA-F][0-9a-fA-F]{2}")
+_SURROGATE = re.compile("[\ud800-\udfff]")
+
+
+def _lone_surrogate(value: Any) -> Optional[str]:
+    """The first lone surrogate in a parsed document's strings (values and member names), as ``\\uXXXX``."""
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, str):
+            hit = _SURROGATE.search(item)
+            if hit:
+                return f"\\u{ord(hit.group(0)):04x}"
+        elif isinstance(item, dict):
+            stack.extend(item.keys())
+            stack.extend(item.values())
+        elif isinstance(item, list):
+            stack.extend(item)
+    return None
+
+
+def _not_utf8(exc: UnicodeDecodeError) -> "NotJSON":
+    """A body that is not UTF-8, in words (not Python's codec message)."""
+    bad = exc.object[exc.start:exc.start + 1].hex() if isinstance(exc.object, (bytes, bytearray)) else ""
+    return NotJSON(f"not JSON: the file is not UTF-8 text (invalid byte 0x{bad} at offset {exc.start}); "
+                   "a BOM is UTF-8 JSON (RFC 8259 section 8.1)")
 
 
 def loads(data: "bytes | str") -> Any:
@@ -141,15 +166,19 @@ def loads(data: "bytes | str") -> Any:
             density_problem(data.count(b"{") + data.count(b"["), data.count(b","), len(data))
         if dense:  # counted on what was given: a refused body is never decoded or parsed
             raise InputError(dense)
-        text = data.decode("utf-8") if isinstance(data, (bytes, bytearray)) else data
-        if "\\u" in text:
-            lone = _LONE_SURROGATE.search(text)
+        try:
+            text = data.decode("utf-8") if isinstance(data, (bytes, bytearray)) else data
+        except UnicodeDecodeError as exc:
+            raise _not_utf8(exc) from None
+        doc = json.loads(text, object_pairs_hook=_no_duplicates, parse_constant=_no_constant, parse_float=_finite,
+                         parse_int=_bounded_int)
+        if _SURROGATE_ESCAPE.search(text):
+            lone = _lone_surrogate(doc)
             if lone:  # Python reads it, no UTF-8 encoder writes it (staging QA N8: a raw codec error came back)
-                raise InputError(f"the escape {lone.group(0)} is a lone UTF-16 surrogate, not a Unicode character: "
+                raise InputError(f"the escape {lone} is a lone UTF-16 surrogate, not a Unicode character: "
                                  "not I-JSON (RFC 7493), refused")
-        return json.loads(text, object_pairs_hook=_no_duplicates, parse_constant=_no_constant, parse_float=_finite,
-                          parse_int=_bounded_int)
-    except InputError:
+        return doc
+    except (InputError, NotJSON):
         raise
     except RecursionError:
         raise InputError("the JSON is nested too deeply") from None
@@ -164,7 +193,7 @@ def loads_file(fh: Any) -> Any:
     try:
         text = fh.read().decode("utf-8")  # the bytes object is released as soon as it is decoded
     except UnicodeDecodeError as exc:
-        raise NotJSON(f"not JSON: {str(exc)[:200]}") from None
+        raise _not_utf8(exc) from None
     # A UTF-8 byte-order mark before the JSON (a file saved by a Windows editor) is not part of the document: it is
     # skipped, as RFC 8259 section 8.1 allows a parser to. The embedded signature covers the canonical JSON (RFC 8785),
     # which the mark is not part of, so the genuine file still verifies (staging QA N8); ``sha256`` stays the digest

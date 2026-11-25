@@ -142,7 +142,7 @@ export interface CbomDistributions {
     readiness_basis?: CbomReadinessBasis | null;
     /** hybrid-KEX (classical + PQC) algorithm count (F2) */
     hybrid?: number;
-    /** NIST quantum-security-level histogram (0 = vulnerable, 1-5 = safe cat) */
+    /** NIST quantum-security-level histogram (0 = no category met: quantum-vulnerable or broken today, 1-5 = category) */
     nist_level_distribution?: Record<string, number>;
     /** one row per quantum-vulnerable algorithm — the F2 list + roadmap source */
     migration?: PqcMigrationRow[];

@@ -301,11 +301,12 @@ def _pqc_readiness(
     """PQC readiness over algorithm assets: quantum-vulnerable vs quantum-safe.
 
     Carries the C7 grading surface for the PQC gauge / roadmap panel (F2):
-    hybrid-KEX count, the NIST quantum-security-level histogram (0 = vulnerable,
-    1-5 = quantum-safe category), and one ``migration`` row per quantum-vulnerable
-    algorithm (its sized PQC target) for the quantum-vulnerable list + roadmap.
+    hybrid-KEX count, the NIST quantum-security-level histogram (0 = no category met:
+    quantum-vulnerable or broken today, 1-5 = quantum-safe category), and one
+    ``migration`` row per quantum-vulnerable algorithm (its sized PQC target) for
+    the quantum-vulnerable list + roadmap.
     """
-    vulnerable = safe = hybrid = 0
+    vulnerable = safe = broken = hybrid = 0
     level_dist: dict[str, int] = {}
     for c in assets:
         props = c.properties or {}
@@ -313,6 +314,11 @@ def _pqc_readiness(
             continue
         if props.get("crypto:quantumVulnerable") == "true":
             vulnerable += 1
+        elif any(_weakens(f) for f in result.flags_for(c.bom_ref)):
+            # broken today (MD5, SHA-1, DES, RC4 ...): judged, and not quantum-safe, as
+            # the results page, the PDF and the scan list count it (staging QA G-D3-6;
+            # the row's ``weak`` and the backend's cbom_metrics.code_row_broken_today)
+            broken += 1
         elif (
             props.get("crypto:primitive") == "unknown"
             and "crypto:quantumVulnerable" not in props
@@ -325,11 +331,12 @@ def _pqc_readiness(
         level = props.get("crypto:nistQuantumSecurityLevel")
         if level is not None:
             level_dist[level] = level_dist.get(level, 0) + 1
-    graded = vulnerable + safe
+    graded = vulnerable + safe + broken
     readiness = round(safe / graded * 100, 1) if graded else None
     return {
         "quantum_vulnerable": vulnerable,
         "quantum_safe": safe,
+        "broken_today": broken,
         "hybrid": hybrid,
         "readiness_pct": readiness,
         "nist_level_distribution": dict(sorted(level_dist.items())),

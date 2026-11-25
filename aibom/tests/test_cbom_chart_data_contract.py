@@ -187,8 +187,11 @@ def test_pqc_carries_hybrid_and_nist_level_histogram() -> None:
     assert "hybrid" in pqc and isinstance(pqc["hybrid"], int)
     hist = pqc["nist_level_distribution"]
     assert isinstance(hist, dict) and hist, "NIST-level histogram blank"
-    # level-0 == the two quantum-vulnerable RSA keys on the fixture
-    assert int(hist.get("0", 0)) == pqc["quantum_vulnerable"]
+    # level 0 == no NIST category met: the quantum-vulnerable keys plus the
+    # algorithms broken today (MD5, SHA-1, DES ...; PR #500 takeover, G-D3-6); a
+    # strong cipher in a weak mode (AES-ECB) is broken today but keeps its level
+    assert (pqc["quantum_vulnerable"] <= int(hist.get("0", 0))
+            <= pqc["quantum_vulnerable"] + pqc["broken_today"])
 
 
 def test_pqc_migration_rows_present_for_every_vulnerable_algorithm() -> None:
