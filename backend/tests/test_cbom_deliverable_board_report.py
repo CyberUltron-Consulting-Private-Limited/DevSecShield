@@ -622,7 +622,9 @@ def test_executive_sentences_carry_the_live_numbers(sec):
     text = joined(sec[H1])
     assert "7 sources and 8 completed scans" in text
     assert "69 cryptographic asset occurrences" in text
-    assert "Findings were raised on 31 of them: Critical 1, High 25, Medium 5, Low 0." in text
+    # staging QA2 Q1-07: one wording for the two counts (this fixture holds no asset twice)
+    assert ("Findings were raised on 31 of them: 31 distinct issue assets (31 occurrences); occurrences by impact: "
+            "Critical 1, High 25, Medium 5, Low 0.") in text
     assert "Posture grade F (Critical risk, score 100 of 100)" in text
     assert "not a regulatory rating" in text
     assert "Quantum readiness is 63.9%: 5 of 36 gradeable asset occurrences (algorithms, keys, certificates" in text
@@ -673,7 +675,7 @@ def test_material_risks_helper_orders_like_the_plan(view, raw):
 
 def test_material_risks_note_counts_the_issue_assets(sec):
     text = joined(sec[H2])
-    assert "Top 10 of 31 issue assets" in text
+    assert "Top 10 of 31 distinct issue assets (31 occurrences)" in text  # staging QA2 Q1-07
 
 
 def test_material_risks_exclude_non_current_and_inventory_only_assets():
@@ -692,7 +694,7 @@ def test_material_risks_stop_at_ten_and_report_the_rest():
     view = run_fold([synth(1, full_blob(rows))])
     assert len(board.material_risks(view)) == 10
     text = joined(split_sections(clean_lines(build_pdf(view)))[H2])
-    assert "Top 10 of 25 issue assets" in text
+    assert "Top 10 of 25 distinct issue assets (25 occurrences)" in text  # staging QA2 Q1-07
 
 
 # =============================================================================================

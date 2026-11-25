@@ -31,10 +31,12 @@ from backend.utilities.cbom_sources.common import iso_z, log
 
 FORMAT = "zeroshield-cbom-run-drift/1"
 TOP = 25  # items per list in the PDF and in drift.json (the counts are always complete)
-LISTS = ("added", "removed", "changed", "opened", "resolved", "not_read")
+LISTS = ("added", "removed", "changed", "opened", "resolved", "not_read", "collector_changes")
 COUNTS = ("added", "removed", "changed", "opened", "resolved", "not_read", "excluded", "entered_scope",
-          "collector_changes", "rule_changes", "compared_sources", "not_compared_sources")
-_ITEM_FIELDS = ("key", "label", "type", "source_name", "code", "impact", "q_grade", "location", "reason")
+          "collector_changes", "rule_changes", "compared_sources", "not_compared_sources",
+          *(f"not_compared_{code}" for code in DRIFT.NOT_COMPARED_CODES))
+_ITEM_FIELDS = ("key", "label", "type", "source_name", "code", "impact", "q_grade", "location", "reason",
+                "direction", "label_before")
 Q0_EVENT_SCAN = 5_000  # q0_closed events of this run read (filtered in SQL to the run's own)
 
 

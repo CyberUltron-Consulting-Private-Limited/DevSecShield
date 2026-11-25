@@ -81,9 +81,9 @@ const TEXT = {
   },
   // src: frontend/components/cbom/sources/ReviewRunTab.tsx:449 — run number
   "cbsrc.rr.col.run": {
-    what: "The run's number, unique within ZeroShield.",
-    why: "Reports and exports name the run by this number.",
-    example: "#42, the run started on 13 Nov.",
+    what: "The run's number, unique within ZeroShield, and under it what started the run: a person (Manual) or a schedule, named.",
+    why: "Reports and exports name the run by this number; a scheduled run is compared with the previous comparable run for drift (S4).",
+    example: "#42, Scheduled: Daily drift check.",
   },
   // src: frontend/components/cbom/sources/ReviewRunTab.tsx:450 — when the run was created
   "cbsrc.rr.col.started": {
@@ -175,7 +175,7 @@ const TEXT = {
   // src: frontend/components/cbom/sources/GradeInputsCard.tsx:3-4, frontend/components/cbom/sources/GradeInputsCard.tsx:29-70 — Mosca X/Y/Z, per-source data lifetime, Q0 gaps; recorded at Start
   "cbsrc.rr.grade_inputs": {
     what: "What the next run's quantum risk grades use, recorded when you start it: the team's Mosca X, Y and Z, each source's own data lifetime (its X), and the evidence Q0 gaps. Later changes apply to new runs only.",
-    why: "Without X, Y and Z, quantum-vulnerable assets grade as Unknown, and the record lets an old run's grade be explained later.",
+    why: "Without X, Y and Z the grades rest on documented default Mosca assumptions, and the record lets an old run's grade be explained later.",
     example: "X 10, Y 3, Z 12; Core banking DB keeps data 25 y; 2 Q0 gaps.",
   },
   // src: backend/utilities/cbom_sources/regulated_entity.py:24-35, frontend/components/cbom/sources/regulatedEntity.ts:9-21 — the seven entity types RBI issued 2026 cybersecurity directions for, plus other; NBFC by default

@@ -1753,13 +1753,18 @@ def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None, *, team
         SourcesResult,
         code_cert_identities,
         code_row_identity,
+        current_only,
         resolve,
     )
 
-    sources = sources if isinstance(sources, SourcesResult) else SourcesResult()
+    found = sources if isinstance(sources, SourcesResult) else SourcesResult()
     team = team_id if team_id is not None else next(
         (s.team_id for s in scans if getattr(s, "team_id", None) is not None), 0)
-    view = RECON.team_view(int(team), scans, sources, now)
+    # the documents' roll-up: it drops a deleted source's rows itself and keeps its collection as "removed from scope",
+    # so the dashboard's block names it as D1 / D12 / D14 do
+    view = RECON.team_view(int(team), scans, found, now)
+    # every other count here: a deleted source's last collection is never current population (staging QA2 Q1-01)
+    sources = current_only(found)
     rows_of = rollup_code_rows(scans, view)
     counted = [scan for scan in scans if scan.id in rows_of]
     summary = CodeRowSummary()

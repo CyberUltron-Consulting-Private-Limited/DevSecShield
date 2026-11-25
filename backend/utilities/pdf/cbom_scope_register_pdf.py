@@ -64,6 +64,7 @@ from backend.utilities.dashboard.cbom_team_rollup import (
     ScanFacts,
     SourceAgg,
     TeamCbomView,
+    removed_collections,
     sanitize_repo_url,
 )
 from backend.utilities.pdf import cbom_deliverable_text as authored
@@ -154,6 +155,14 @@ _COLLECTION_INTRO = (
     "How each CBOM Sources source was collected: the method, the window its latest collection ran in (UTC) and "
     "the credential it used, named by reference only; no secret value is held in or printed by this register."
 )
+_REMOVED_INTRO = (
+    "Removed from scope: CBOM Sources sources deleted since their last collection. Their last collections are listed "
+    "for the record only; none of their assets is counted in any total of this register, the board report (D14) or "
+    "the posture documents. The quantum risk register (D12) keeps an asset only they read as not read (\"source "
+    "deleted\"), with its last grade."
+)
+_REMOVED_HEADERS = ("#", "Source (deleted)", "Last run", "Last collected (UTC)", "Assets listed", "Counted")
+_REMOVED_WIDTHS = (14, 196, 60, 110, 80, 80)
 _COLLECTION_HEADERS = ("#", "Source", "Run", "Method", "Collection window (UTC)", "Credential reference")
 _COLLECTION_WIDTHS = (14, 96, 32, 118, 96, 184)
 _LAYER_INTRO = (
@@ -217,9 +226,9 @@ _SOURCE_HEADERS = (
     "Layer",
     "Assets",
 )
-_SOURCE_WIDTHS = (14, 96, 96, 28, 50, 54, 92, 42, 28, 40)
+_SOURCE_WIDTHS = (14, 96, 84, 28, 50, 54, 92, 42, 40, 40)  # Layer fits "to confirm" on one line (QA2 Q1-16)
 _METADATA_HEADERS = ("#", "Source", "Layer", *(label for _key, label in population.METADATA_COLUMNS))
-_METADATA_WIDTHS = (14, 118, 30, 82, 66, 62, 50, 54, 64)
+_METADATA_WIDTHS = (14, 108, 40, 82, 66, 62, 50, 54, 64)  # Layer fits "to confirm" (QA2 Q1-16)
 _LAYER_WIDTHS_BASE = (150, 40, 44)
 _BASIS_WIDTHS = (440, 100)
 _EXCLUDED_HEADERS = ("Scan", "Title", "Source", "Created", "Status", "Reason")
@@ -342,12 +351,28 @@ def _section_boundary(styles: Styles, width: float) -> list[Flowable]:
 # ---------------------------------------------------------------------------------------------
 # B. Sources assessed
 # ---------------------------------------------------------------------------------------------
-def _attempt_parts(source: SourceAgg) -> tuple[str, str, str]:
-    """``(chip text, chip tone, detail)`` for a source's most recent attempt (plan 4.5)."""
+def _sources_attempt_parts(source: SourceAgg) -> tuple[str, str, str]:
+    """A CBOM Sources source's latest attempt from its job history (staging QA2 Q1-02): "FAILED run #53
+    (auth_failed)", or "NOT COMPLETED run #55 (waiting)"; the figures stay those of its latest successful run."""
     current_id, attempt_id = _num(source.current_scan_id), _num(source.last_attempt_scan_id)
     if attempt_id == current_id:
-        noun = "run" if source.kind == "sources" else "scan"  # a CBOM Sources collection belongs to a run
-        return "SUCCESS", "low", f"{noun} #{current_id}"
+        return "SUCCESS", "low", f"run #{current_id}"
+    status = str(source.last_attempt_status or "").strip().lower()
+    reason = f" ({source.last_attempt_reason})" if source.last_attempt_reason else ""
+    detail = (f"run #{attempt_id}{reason}, {fmt_date_utc(source.last_attempt_at)}; figures reflect run "
+              f"#{current_id} of {fmt_date_utc(source.last_scanned)}")
+    if status == STATUS_FAILURE:
+        return "FAILED", "critical", detail
+    return "NOT COMPLETED", "medium", detail
+
+
+def _attempt_parts(source: SourceAgg) -> tuple[str, str, str]:
+    """``(chip text, chip tone, detail)`` for a source's most recent attempt (plan 4.5)."""
+    if source.kind == "sources":  # a CBOM Sources collection belongs to a run
+        return _sources_attempt_parts(source)
+    current_id, attempt_id = _num(source.current_scan_id), _num(source.last_attempt_scan_id)
+    if attempt_id == current_id:
+        return "SUCCESS", "low", f"scan #{current_id}"
     status = str(source.last_attempt_status or "").strip().lower()
     attempt_date = fmt_date_utc(source.last_attempt_at)
     current_date = fmt_date_utc(source.last_scanned)
@@ -462,7 +487,22 @@ def _section_sources(view: TeamCbomView, styles: Styles, width: float) -> list[F
             _para(_COLLECTION_INTRO, styles["dense_muted"]),
             dense_table(_COLLECTION_HEADERS, collected, _scaled(_COLLECTION_WIDTHS, width)),
         ]
-    return story
+    return story + _removed_from_scope(view, styles, width)
+
+
+def removed_rows(view: TeamCbomView) -> list[list[str]]:
+    """One row per deleted source's last collection (``cbom_team_rollup.removed_collections``), outside every total."""
+    found = sorted(removed_collections(view), key=lambda c: (str(c.label).casefold(), c.key))
+    return [[str(i), c.label or c.key, f"#{_num(c.run_id)}", fmt_date_utc(c.observed_at), str(_num(c.asset_count)),
+             "No"] for i, c in enumerate(found[: max(0, MAX_SOURCE_ROWS)], start=1)]
+
+
+def _removed_from_scope(view: TeamCbomView, styles: Styles, width: float) -> list[Flowable]:
+    rows = removed_rows(view)
+    if not rows:
+        return []
+    return [Spacer(1, 8), *_sub_with_room("Removed from scope", styles), _para(_REMOVED_INTRO, styles["dense_muted"]),
+            dense_table(_REMOVED_HEADERS, rows, _scaled(_REMOVED_WIDTHS, width))]
 
 
 # ---------------------------------------------------------------------------------------------
@@ -582,7 +622,7 @@ def _by_source_table(view: TeamCbomView, shown: Sequence[SourceAgg], width: floa
         impact_totals = [sum(col) for col in zip(*(impact_counts(s) for s in sources), strict=True)]
         rows.append(["", "All sources", "", *(str(n) for n in kind_totals), str(sum(kind_totals)),
                      *(str(n) for n in impact_totals)])
-    fixed = [26.0] + [34.0] * len(kinds) + [32.0] + [32.0] * len(levels)
+    fixed = [40.0] + [32.0] * len(kinds) + [32.0] + [30.0] * len(levels)  # Layer fits "to confirm" (QA2 Q1-16)
     widths = [14.0, 540.0 - 14.0 - sum(fixed), *fixed]
     return dense_table(headers, rows, _scaled(widths, width))
 

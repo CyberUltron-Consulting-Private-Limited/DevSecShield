@@ -1,0 +1,37 @@
+#!/bin/bash
+# devsec-chola-imds-block - Docker containers on this host may not reach the EC2 instance metadata service (IMDS).
+# Installed as /usr/local/sbin/devsec-chola-imds-block by `remote.sh imds-block` (deploy/chola-prod/README.md,
+# "Instance metadata (IMDS)"); run by devsec-chola-imds-block.service after every Docker start and by Docker's own
+# ExecStartPre (drop-in docker.service.d/devsec-chola-imds-block.conf), so the rule is in place before any container
+# with a restart policy comes back after a reboot.
+#
+# The instance keeps HttpPutResponseHopLimit 2 (infra's setting): a container's IMDSv2 token PUT would get through,
+# and the instance role reads every devsec-chola/prod/* secret. Traffic from containers to the metadata address is
+# forwarded through the host, so the FORWARD chain sees it; Docker jumps from FORWARD to DOCKER-USER first and never
+# flushes DOCKER-USER. The host's own traffic (the AWS CLI here: ECR, S3, Secrets Manager with the instance role) goes
+# through OUTPUT and is not touched. IPv6 (fd00:ec2::254) is blocked too when /etc/default/devsec-chola-imds-block says
+# IPV6=enabled (the instance's HttpProtocolIpv6). Idempotent: run it any number of times.
+set -euo pipefail
+COMMENT=devsec-chola-imds
+IPV6=disabled
+CONF=${DEVSEC_CHOLA_IMDS_CONF:-/etc/default/devsec-chola-imds-block} # the variable: tests only
+if [ -r "${CONF}" ]; then
+  # only this one setting is read; the file is not sourced
+  v="$(sed -n -E 's/^IPV6=(enabled|disabled)$/\1/p' "${CONF}" | tail -n 1)"
+  IPV6=${v:-disabled}
+fi
+
+block() { # <iptables|ip6tables> <metadata address/prefix>
+  local t=$1 dst=$2
+  "${t}" -w -n -L DOCKER-USER >/dev/null 2>&1 || "${t}" -w -N DOCKER-USER
+  # Docker adds this jump itself when it starts (first in FORWARD); here it covers a run before Docker and an IPv6
+  # table Docker does not manage. A second copy of the jump is harmless.
+  "${t}" -w -C FORWARD -j DOCKER-USER 2>/dev/null || "${t}" -w -I FORWARD 1 -j DOCKER-USER
+  "${t}" -w -C DOCKER-USER -d "${dst}" -m comment --comment "${COMMENT}" -j DROP 2>/dev/null ||
+    "${t}" -w -I DOCKER-USER 1 -d "${dst}" -m comment --comment "${COMMENT}" -j DROP
+}
+
+block iptables 169.254.169.254/32
+if [ "${IPV6}" = enabled ]; then block ip6tables fd00:ec2::254/128; fi
+if [ "${IPV6}" = enabled ]; then fam="IPv4 and IPv6"; else fam="IPv4"; fi
+echo "devsec-chola-imds-block: containers cannot reach the instance metadata service (${fam})"

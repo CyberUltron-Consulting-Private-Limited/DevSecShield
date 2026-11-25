@@ -13,8 +13,10 @@ Rules (WP10 / plan C2):
   either. Everything outside the gaps still drifts normally. This also covers the gaps a customer chose (an option
   left off: ``by_choice``), which keep the job ``ok``. ``not_supported`` / ``not_installed`` rows say what a target
   does not have, not what was missed, and hide nothing.
-* Identity is stable (``identity``): source uid + asset key; certificates by (target, location, subject, issuer), so a
-  renewal is "changed (renewed)"; code-scan rows by a line-independent key within ``repository@branch``.
+* Identity is stable (``identity``): source uid + asset key; certificates by (target, location, subject, issuer) with
+  normalised DNs, a cloud certificate by (target, its resource id), so a renewal is "changed (renewed)" and a label
+  the collector now spells differently is a ``collector_changes`` entry (code ``label``), never removed + added;
+  code-scan rows by a line-independent key within ``repository@branch``.
 * Version-aware: a run records the knowledge-base and classifier versions that judged it. When the two sides differ,
   both sides are RE-CLASSIFIED with the current rules (the classifier is deterministic and every input is stored), so
   the lists show what changed in the estate; what changed only because a rule changed is listed apart as
@@ -374,6 +376,9 @@ def compare(before: Mapping[str, View], after: Mapping[str, View], gaps: Iterabl
             or (b.not_after and a.not_after and a.not_after > b.not_after))
         if fields:
             changed.append({**a.public(), "changes": fields, "renewed": renewed})
+        if b.label != a.label:  # the same asset, named differently by the collector: not drift (QA2 Q1-09)
+            collector_changes.append({**a.public(), "code": "label", "direction": "renamed by the collector",
+                                      "label_change": "collector change", "label_before": b.label})
         for code in sorted(a.codes - b.codes):
             opened.append({**a.public(), "code": code})
         vanished = sorted(b.codes - a.codes)
@@ -894,6 +899,31 @@ def grade_rule_changes(before: Mapping[str, View], after: Mapping[str, View], *,
     return out
 
 
+# why a source of either run is not compared (``run_diff`` per source ``reason_code``; the counts ``not_compared_<code>``)
+NOT_COMPARED_CODES = ("outside_scope", "first_collection", "outside_baseline_scope", "incomplete")
+
+
+def _first_successes(session: Session, jobs: list[CbomCollectionJob]) -> dict[int, int]:
+    """source id -> its first successful collect job, for the sources a comparison's later run alone holds (one query)."""
+    ids = sorted({int(j.source_id) for j in jobs if j.source_id is not None})
+    if not ids:
+        return {}
+    team_id = jobs[0].team_id
+    return {int(sid): int(first) for sid, first in session.exec(
+        select(CbomCollectionJob.source_id, func.min(CbomCollectionJob.id)).where(
+            CbomCollectionJob.team_id == team_id, CbomCollectionJob.source_id.in_(ids),  # type: ignore[union-attr]
+            CbomCollectionJob.kind == "collect", CbomCollectionJob.status == "success")
+        .group_by(CbomCollectionJob.source_id)).all()}
+
+
+def _collected_before(job: CbomCollectionJob, first_success: dict[int, int]) -> bool:
+    """Whether the job's source has an earlier successful collection (else this run is its first)."""
+    if job.source_id is None:
+        return True  # a deleted source: never called "first"
+    first = first_success.get(int(job.source_id))
+    return first is not None and first < int(job.id or 0)
+
+
 def run_diff(session: Session, run: CbomCollectionRun, base: CbomCollectionRun) -> dict[str, Any]:
     """Compare ``base`` (before) with ``run`` (after), source by source; only sources complete in both are compared.
     Quantum risk grades (CB-19 PR-3): both sides are graded with the current model and the later run's inputs before
@@ -923,17 +953,28 @@ def run_diff(session: Session, run: CbomCollectionRun, base: CbomCollectionRun) 
     before_all: dict[str, View] = {}
     after_all: dict[str, View] = {}
     rejudged_any, carried_unread = reclassify, 0
+    first_success = _first_successes(session, [j for r, j in sides["after"].items() if r not in sides["before"]])
     for ref in sorted(set(sides["before"]) | set(sides["after"]), key=lambda r: names.get(r, r)):
         b_job, a_job = sides["before"].get(ref), sides["after"].get(ref)
         entry: dict[str, Any] = {"source_ref": ref, "name": names.get(ref), "status": "not_compared", "reason": None}
         if b_job is None or a_job is None:
-            entry["reason"] = f"not collected in run #{(base if b_job is None else run).id}"
+            # staging QA2 Q1-14: "outside this run's scope" and "collected only once" are different answers
+            if a_job is None:
+                entry.update(reason=f"outside this run's scope: run #{run.id} did not collect it",
+                             reason_code="outside_scope")
+            elif not _collected_before(a_job, first_success):
+                entry.update(reason=f"collected only once: run #{run.id} is its first collection",
+                             reason_code="first_collection")
+            else:
+                entry.update(reason=f"outside the baseline's scope: run #{base.id} did not collect it",
+                             reason_code="outside_baseline_scope")
             per_source.append(entry)
             continue
         ok_b, why_b = job_comparable(b_job)
         ok_a, why_a = job_comparable(a_job)
         if not (ok_b and ok_a):
             entry["reason"] = (f"run #{base.id}: {why_b}" if not ok_b else f"run #{run.id}: {why_a}")
+            entry["reason_code"] = "incomplete"
             per_source.append(entry)
             continue
         # the before side is the last known state (the same baseline the drift events use, DA-2a)
@@ -986,7 +1027,9 @@ def run_diff(session: Session, run: CbomCollectionRun, base: CbomCollectionRun) 
                      **{f"q0_{k}": n for k, n in q0_counts(totals["changed"], totals["added"],
                                                             totals["removed"]).items()},
                      "compared_sources": sum(1 for s in per_source if s["status"] == "compared"),
-                     "not_compared_sources": sum(1 for s in per_source if s["status"] != "compared")}
+                     "not_compared_sources": sum(1 for s in per_source if s["status"] != "compared"),
+                     **{f"not_compared_{code}": sum(1 for s in per_source if s.get("reason_code") == code)
+                        for code in NOT_COMPARED_CODES}}
     rb, ra = readiness(before_all), readiness(after_all)
     out["readiness"] = {"before": rb, "after": ra,
                         "delta": None if rb is None or ra is None else round(ra - rb, 1),

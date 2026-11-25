@@ -47,6 +47,7 @@ from backend.utilities.dashboard.cbom_team_rollup import (  # noqa: E402
     fold_scans,
 )
 from backend.utilities.pdf import cbom_deliverable_text as authored  # noqa: E402
+from backend.utilities.pdf import cbom_kb_text as kb_text  # noqa: E402
 from backend.utilities.pdf import cbom_methodology_pdf as methodology  # noqa: E402
 from backend.utilities.pdf import cbom_methodology_text as method_text  # noqa: E402
 from backend.utilities.pdf.cbom_deliverable_common import get_deliverable_styles  # noqa: E402
@@ -440,8 +441,9 @@ def test_live_kpi_cards(text):
         "Scans included 8 of 9 successful scans",
         "Crypto assets 69 current occurrences",
         "Unique certificates 14 de-duplicated across sources",
-        "Frameworks 13 pooled over 6 sources",
-        "Requirements 109 tracked across frameworks",
+        # staging QA2 Q1-04: the frameworks (and their requirements) that bind the default NBFC profile
+        "Frameworks 7 pooled over 6 sources",
+        "Requirements 74 tracked across the frameworks that apply",
     ):
         assert card in one, card
 
@@ -449,9 +451,9 @@ def test_live_kpi_cards(text):
 def test_assets_by_type_table_reconciles_with_appendix_b(text):
     one = section(text, 1)
     assert (
-        # the two WP3a advisory library rows have no crypto assetType: they print as "Other"
-        "Current asset occurrences by type Asset type Occurrences Algorithm 36 Certificate 17 "
-        "Protocol 2 Related crypto material 12 Other 2 Total 69" in one
+        # staging QA2 Q1-05: the Scope Baseline's (D1) kinds and numbers, no longer CycloneDX types
+        "Current asset occurrences by kind Asset kind (as D1) Occurrences Algorithms 36 Certificates 17 "
+        "Keys and secrets 12 Protocols and endpoints 2 Libraries 2 Encryption settings 0 Total 69" in one
     )
     # 17 certificate occurrences but 14 unique certificates: the note explains the difference
     assert norm(methodology.ASSET_TABLE_NOTE) in one
@@ -542,23 +544,32 @@ def test_pooled_table_lists_thirteen_frameworks_in_engine_order_with_oracle_numb
         "Pooled over 6 of 7 sources whose latest scan is full-fidelity; 1 legacy-format source "
         "is excluded because it carries no compliance results." in six
     )
+    # staging QA2 Q1-04: the frameworks that bind the team's profile (the default NBFC) are tabled, the others named
     positions = []
+    hidden = six.split("Not applicable and not shown: ")[1].split(". Regulated entity")[0]
     for label, (passed, failed, nbe, oos, coverage) in POOLED.items():
         row = f"{label} {passed} 0 {failed} {nbe} {oos} {coverage} 6"
-        assert row in six, row
-        positions.append(six.index(row))
-    assert positions == sorted(positions)
+        if _binds(label):
+            assert row in six, row
+            positions.append(six.index(row))
+        else:
+            assert row not in six and label in hidden, label
+    assert positions == sorted(positions) and len(positions) == 7
+
+
+def _binds(label: str) -> bool:
+    key = next(k for k, v in authored.FRAMEWORK_LABELS.items() if v == label)
+    return kb_text.framework_binds(key, fold())
 
 
 def test_pooled_table_tri_state_totals_equal_the_sum_of_the_oracle_rows(text):
     six = section(text, 11)
-    passed = sum(row[0] for row in POOLED.values())
-    failed = sum(row[1] for row in POOLED.values())
-    nbe = sum(row[2] for row in POOLED.values())
-    oos = sum(row[3] for row in POOLED.values())
-    assert (passed, failed, nbe, oos) == (289, 49, 207, 109)
+    assert tuple(sum(row[i] for row in POOLED.values()) for i in range(4)) == (289, 49, 207, 109)
     # 109 requirements evaluated in each of the 6 pooled scans
-    assert passed + failed + nbe + oos == 109 * 6
+    assert sum(sum(row[:4]) for row in POOLED.values()) == 109 * 6
+    # staging QA2 Q1-04: the total covers the frameworks the table shows (those that bind the profile)
+    shown = [row for label, row in POOLED.items() if _binds(label)]
+    passed, failed, nbe, oos = (sum(row[i] for row in shown) for i in range(4))
     assert f"All frameworks {passed} 0 {failed} {nbe} {oos} \u2014 \u2014" in six
 
 
@@ -825,7 +836,7 @@ def test_empty_team_states_no_live_figures_and_shows_the_banner():
     )
     assert "This edition reflects" not in one
     assert "Sources 0 assessed in this edition" in one
-    assert "Frameworks 13 no results pooled" in one
+    assert "Frameworks 7 no results pooled" in one  # QA2 Q1-04: the frameworks that bind the profile
     assert "No source has been assessed yet." in section(everything, 7)
     assert "Low risk" not in everything
     six = section(everything, 11)
@@ -833,7 +844,7 @@ def test_empty_team_states_no_live_figures_and_shows_the_banner():
         "No compliance results are pooled: no source has a latest scan that is full-fidelity."
         in six
     )
-    assert "BSI TR-02102 \u2014 \u2014 \u2014 \u2014 \u2014 \u2014 \u2014" in six
+    assert "CNSA 2.0 \u2014 \u2014 \u2014 \u2014 \u2014 \u2014 \u2014" in six  # BSI does not bind an NBFC (Q1-04)
     assert "All frameworks 0 0 0 0 0 \u2014 \u2014" in six
     assert "No entries" in appendix(everything)
 
@@ -893,7 +904,7 @@ def test_single_scan_team_uses_singular_wording():
     )
     assert "Evidence is drawn from 1 source: 1 repository." in section(everything, 7)
     assert "Pooled over 1 of 1 source whose latest scan is full-fidelity." in section(everything, 11)
-    assert "Frameworks 13 pooled over 1 source" in one
+    assert "Frameworks 7 pooled over 1 source" in one  # QA2 Q1-04: the frameworks that bind the profile
 
 
 def test_attested_requirements_show_pass_with_evidence_and_coverage_as_given(view):
@@ -912,7 +923,8 @@ def test_attested_requirements_show_pass_with_evidence_and_coverage_as_given(vie
 
 def test_not_applicable_requirements_are_disclosed_when_present(view):
     pools = list(view.frameworks)
-    pools[2] = dataclasses.replace(pools[2], na=3)
+    index = next(i for i, p in enumerate(pools) if kb_text.framework_binds(p.framework, view))  # a shown row (Q1-04)
+    pools[index] = dataclasses.replace(pools[index], na=3)
     edited = dataclasses.replace(view, frameworks=tuple(pools))
     six = section(body_text(build_pdf(edited)), 11)
     assert "3 requirements marked not applicable are excluded from every column." in six
@@ -928,7 +940,7 @@ def test_unknown_framework_keys_are_appended_after_the_registered_thirteen(view)
     six = section(everything, 11)
     assert "zz future fw 1 0 1 0 0 50.0% 6" in six
     assert six.index("SEBI CSCRF (CBOM)") < six.index("zz future fw")
-    assert "Frameworks 14 pooled over 6 sources" in section(everything, 1)
+    assert "Frameworks 8 pooled over 6 sources" in section(everything, 1)  # the 7 that bind an NBFC + the unknown
 
 
 def test_source_kinds_are_counted_in_the_evidence_sentence(view):

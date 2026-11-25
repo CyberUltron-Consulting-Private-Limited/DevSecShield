@@ -110,14 +110,22 @@ def from_view(view: Any) -> Population:
         quantum=quantum_counts(view))
 
 
+def _total(value: Any) -> int:
+    """``removed_from_scope`` as the register summary gives it (``{"total", "q_grades"}``, #497) or a bare count."""
+    if isinstance(value, Mapping):
+        return int(value.get("total") or 0)
+    return int(value or 0)
+
+
 def register_numbers(summary: Mapping[str, Any]) -> dict[str, int]:
     grades = summary.get("q_grades") if isinstance(summary.get("q_grades"), Mapping) else {}
     classes = summary.get("sow_classes") if isinstance(summary.get("sow_classes"), Mapping) else {}
     presence = summary.get("presence") if isinstance(summary.get("presence"), Mapping) else {}
     out = {"total": int(summary.get("total") or 0), "present": int(presence.get("present", 0) or 0),
            "not_present": int(presence.get("not_read", 0) or 0) + int(presence.get("removed", 0) or 0),
+           "removed_from_scope": _total(summary.get("removed_from_scope")),
+           # present rows a deleted source graded that no later run has settled yet (in the total, not in the view)
            "present_removed": int(summary.get("present_removed_sources", 0) or 0),
-           "removed_from_scope": int(summary.get("removed_from_scope", 0) or 0),
            # deprecated rows a quantum computer also breaks (a Triple DES key with no verdict is not one, m4)
            "deprecated_broken": int(summary.get("deprecated_quantum_broken", 0) or 0),
            "graded": sum(int(grades.get(g, 0) or 0) for g in ("Q1", "Q2", "Q3", "Q4")),
@@ -199,13 +207,14 @@ def steps(pop: Population) -> list[dict[str, Any]]:
             text += (f" plus {_n(r['not_present'], 'register asset')} no latest collection holds (not read or "
                      "removed, kept with their last grade)")
         if r["present_removed"]:
-            text += f" plus {_n(r['present_removed'], 'register asset')} last read by a removed source"
+            text += (f" plus {_n(r['present_removed'], 'register asset')} a deleted source read last, kept until the "
+                     "next run settles it")
         # the register's rows that only a deleted source read are outside its total (the summary leaves them out); a
         # removed source's occurrences still in the view are subtracted above, so the chain needs no other term
         text += f" = {_n(r['total'], 'distinct asset')} in the Quantum Risk Register (D12)."
-        if r["removed_from_scope"]:
-            text += (f" Removed from scope: {_n(r['removed_from_scope'], 'register asset')} only a deleted source "
-                     "read, outside every total.")
+        if r["removed_from_scope"]:  # #497's wording, the same sentence D12 section G heads
+            text += (f" Not counted: {_n(r['removed_from_scope'], 'asset')} only deleted sources read (removed from "
+                     "scope, D12 section G).")
         text += _unexplained("register", r["total"] - expected)
         add("register", r["total"], text)
         grades = pop.register.get("q_grades") if isinstance(pop.register.get("q_grades"), Mapping) else {}

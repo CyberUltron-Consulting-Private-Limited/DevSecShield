@@ -917,7 +917,9 @@ def basis_scans_line(view: TeamCbomView) -> str:
         not_completed=count(EXCLUDED_NOT_COMPLETED),
         no_data=count(EXCLUDED_NO_DATA),
     )
-    collections = len(view.collections or ())
+    from backend.utilities.dashboard.cbom_team_rollup import current_collections
+
+    collections = len(current_collections(view))  # a deleted source's collection is not counted (QA2 Q1-01)
     if collections == 1:
         line += authored.BASIS_SCANS_COLLECTION_ONE
     elif collections:

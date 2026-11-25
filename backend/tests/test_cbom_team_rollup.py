@@ -2312,7 +2312,9 @@ FROZEN_FIELDS = {
     "SourceAgg": (
         "key label kind repo_url branch scan_ids scan_count first_scanned last_scanned "
         "current_scan_id current_tier current_fidelity last_attempt_scan_id "
-        "last_attempt_status last_attempt_at asset_counts impact_counts library_count"
+        "last_attempt_status last_attempt_at asset_counts impact_counts library_count "
+        # last_attempt_reason: staging QA2 Q1-02 (a Sources source's failed latest attempt, "auth_failed")
+        "last_attempt_reason"
     ),
     "AssetAgg": (
         "source_key source_label asset_type ident title location impact finding_codes bom_ref "

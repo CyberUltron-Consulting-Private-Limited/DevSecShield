@@ -384,11 +384,12 @@ def test_b1_every_bucket_is_counted_on_the_realistic_team(tmp_path):
     assert (pop.collections, pop.collected, pop.removed_collections, pop.removed_assets) == (5, 12, 1, 3)
     assert (pop.same_source_places, pop.cross_source, pop.to_code) == (1, 1, 0)  # master/msdb; ACM + Kubernetes
     assert (pop.sources_occurrences, pop.code_occurrences, pop.estate_repeats) == (10, 3, 1)
-    assert r["present_removed"] == 3  # the deleted source's keys the register still holds as present
+    # #497 on dev: the roll-up counts none of the deleted source's occurrences, so the collection is outside every
+    # total (m4: the sentence says so only then); the register leaves its keys out and says how many
+    assert pop.removed_counted == 0
+    assert r["present_removed"] == 3  # the deleted source's keys the register holds until a run settles them
     text = " ".join(RECON.lines(pop))
-    # m4 (review 6057476173): not "outside every total" while this view still counts them (until #497)
-    assert ("Removed from scope: 1 collection of deleted sources with 3 assets. This view still counts 3 occurrences "
-            "of them; the steps below take them out.") in text
+    assert "Removed from scope: 1 collection of deleted sources with 3 assets, outside every total." in text
     assert "1 observation of a certificate the same source read at another place" in text
     assert "1 observation of a certificate another source also read" in text
     assert "Unexplained" not in text and "counted from a code-scan observation instead" not in text
@@ -796,11 +797,11 @@ def test_b1_assets_only_a_deleted_source_read_are_removed_from_the_register_tota
     w.finalise(w.run({aws: {"rows": []}}))  # any later run settles the deleted source's keys
     with Session(w.engine) as s:
         summary = REG.summary(s, 1, now.replace(tzinfo=None))
-    assert summary["removed_from_scope"] == 3
+    assert summary["removed_from_scope"]["total"] == 3
     assert summary["total"] == sum(summary["q_grades"].values()) == sum(summary["sow_classes"].values())
     view = load_team_cbom_view(w.engine, 1, now=now)
     text = " ".join(RECON.lines(RECON.from_view(view)))
-    assert "Removed from scope: 3 register assets only a deleted source read, outside every total." in text
+    assert "Not counted: 3 assets only deleted sources read (removed from scope, D12 section G)." in text
     assert "Unexplained" not in text, text
 
 

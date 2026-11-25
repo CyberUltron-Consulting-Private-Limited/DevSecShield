@@ -744,6 +744,52 @@ def list_register(session: Session, team_id: int, filters: dict[str, Any], *, af
             "next_after": encode_after(rows[-1].q_rank, rows[-1].item_key) if more and rows else None}
 
 
+REMOVED_ITEMS_MAX = 200  # rows of the D12 "Removed from scope" table (the counts are always complete)
+
+
+def _removed_condition(team_id: int) -> Any:
+    """Register rows whose estate asset only deleted sources still hold: every observation not ``removed`` is
+    ``not_read`` with reason "source deleted" (``estate.SOURCE_DELETED``), and there is at least one. Staging QA2
+    Q1-01 / #497 review M2: they are history, never current population (the roll-up's ``is_deleted_source`` rule)."""
+    from backend.new_models import CbomEstateObservation
+    from backend.utilities.cbom_sources.estate import SOURCE_DELETED
+
+    eo = CbomEstateObservation.__table__
+    own = sa.and_(eo.c.team_id == _RT.c.team_id, eo.c.asset_key == _RT.c.item_key)
+    deleted = sa.and_(eo.c.presence == "not_read", eo.c.presence_reason == SOURCE_DELETED)
+    return sa.and_(_RT.c.team_id == team_id, _RT.c.presence != "removed",
+                   sa.exists(sa.select(eo.c.id).where(own, deleted)),
+                   ~sa.exists(sa.select(eo.c.id).where(own, eo.c.presence != "removed", ~deleted)))
+
+
+def removed_groups(session: Session, team_id: int) -> list[tuple[Any, Any, Any, Any, int]]:
+    """``(q_grade, q_reason, family, source_ref, n)`` of the register rows only deleted sources read (#497 review
+    6057627810 M3): every figure of D12 (total, grades, Q0 reasons, families, default Mosca count, heat-map) leaves
+    them out by subtracting these groups, so the large tallies keep reading the trigger-kept summary."""
+    return [(g, r, f, s, int(n)) for g, r, f, s, n in session.execute(
+        sa.select(_RT.c.q_grade, _RT.c.q_reason, _RT.c.family, _RT.c.source_ref, sa.func.count())
+        .where(_removed_condition(team_id))
+        .group_by(_RT.c.q_grade, _RT.c.q_reason, _RT.c.family, _RT.c.source_ref)).all()]
+
+
+def removed_from_scope(session: Session, team_id: int, *, items: int = 0) -> dict[str, Any]:
+    """``{"total", "q_grades", "items"}``: the register rows of assets only deleted sources read (``items``: up to
+    that many rows, worst first). ``summary`` leaves them out of ``total`` and ``q_grades``."""
+    from backend.utilities.cbom_sources import qgrade as QG
+
+    groups = removed_groups(session, team_id)
+    grades: dict[Any, int] = {}
+    for grade, _reason, _fam, _ref, n in groups:
+        grades[grade] = grades.get(grade, 0) + n
+    out: dict[str, Any] = {"total": int(sum(grades.values())), "groups": groups,
+                           "q_grades": {g or "none": int(grades.get(g, 0)) for g in (*QG.GRADES, None)}, "items": []}
+    if items and out["total"]:
+        out["items"] = [public_row(r) for r in session.execute(sa.select(_RT).where(_removed_condition(team_id))
+                                                               .order_by(_RT.c.q_rank, _RT.c.item_key)
+                                                               .limit(items)).all()]
+    return out
+
+
 def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 12) -> dict[str, Any]:
     from backend.new_models import CbomQ0Gap
     from backend.utilities.cbom_sources import estate as E
@@ -759,11 +805,7 @@ def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 1
     families: dict[str, dict[str, int]] = {}
     presence_counts = {"present": 0, "not_read": 0, "removed": 0}
     live = 0
-    # rows whose estate asset only a deleted source read (estate presence not_read, reason "source deleted") are
-    # removed from scope: outside the total, the grades and the classes, counted apart (Rule P with D1 / D14, which
-    # count current collections only; #497 review)
-    removed = _removed_groups(session, team_id)
-    groups = _minus(SUMMARY.register_groups(session, team_id), removed)
+    groups = SUMMARY.register_groups(session, team_id)
     for grade, reason, fam, presence, n in groups:
         live += int(n) if presence != "removed" else 0
         presence_counts[presence] = presence_counts.get(presence, 0) + int(n)
@@ -813,10 +855,27 @@ def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 1
             week_end = _dt.datetime.fromisoformat(monday) + _dt.timedelta(weeks=1)
             if opened_at < week_end and (closed_at is None or closed_at >= week_end):
                 open_end[monday] += 1
+    # #497 review M2 (Rule P): the assets only deleted sources read are not current population; D1, D12 and D14 print
+    # this total, so they are left out here and returned apart (D12's "Removed from scope" table)
+    removed = removed_from_scope(session, team_id)
+    for grade, reason, fam, _ref, n in removed["groups"]:  # #497 review 6057627810 M3: every tally, not only grades
+        grades[grade] = max(int(grades.get(grade, 0)) - n, 0)
+        if grade == "Q0" and reason in q0_reasons:
+            q0_reasons[reason] = max(q0_reasons[reason] - n, 0)
+        bucket = families.get(fam or "Other")
+        if bucket is not None and (grade or "none") in bucket:
+            bucket[grade or "none"] = max(bucket[grade or "none"] - n, 0)
+    q0_reasons = {k: v for k, v in q0_reasons.items() if v}
+    # the SOW classes and the presence split of the same population (the reconciliation's step 3 and 4)
+    groups = _without(groups, removed["groups"])
+    for presence, n in _removed_presence(session, team_id).items():
+        presence_counts[presence] = max(presence_counts.get(presence, 0) - n, 0)
+    families = {f: {g: n for g, n in b.items() if n} for f, b in families.items() if any(b.values())}
     total = sum(int(v) for v in grades.values())
     anchors_disallowed = SC.anchor_disallowed_count(session, team_id)
     return {
         "total": total, "q_grades": {g or "none": int(grades.get(g, 0)) for g in (*QG.GRADES, None)},
+        "removed_from_scope": {"total": removed["total"], "q_grades": removed["q_grades"]},
         "q0_reasons": {k: int(v) for k, v in sorted(q0_reasons.items())},
         # SOW 3.2 step 4 (staging QA2 M3/M4): rows per SOW class (``sow_class.counts``, the CSV's ``sow_class``) and
         # per presence (present in a latest collection, not read, removed: the population reconciliation)
@@ -824,9 +883,6 @@ def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 1
         # of the deprecated rows, those a quantum computer also breaks (the CSV's also_quantum_broken)
         "deprecated_quantum_broken": SC.deprecated_also_broken(groups, anchors_disallowed),
         "presence": presence_counts,
-        "removed_from_scope": sum(int(r[4]) for r in removed),
-        # present rows whose grade comes from a deleted source's last collection: removed from scope, outside the
-        # reconciliation's totals (review 6038529822 B1)
         "present_removed_sources": _present_removed(session, team_id),
         "q0_gaps_open": {k: int(v) for k, v in sorted(gaps_open.items())},
         "families": dict(sorted(families.items())),
@@ -837,60 +893,71 @@ def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 1
                               "model_changes": model_weeks.get(w, 0),
                               "model_regraded": regraded_weeks.get(w, 0)}
                              for w, c in sorted(weekly.items())],
-        "default_assumptions": default_assumptions(session, team_id),
+        "default_assumptions": default_assumptions(session, team_id, removed=removed["groups"]),
         "pending_regrade": pending(session, team_id, graded_live=live), "estate": E.stale_status(session, team_id),
         "model_version": QG.GRADE_MODEL_VERSION, "server_time": iso_z(now),
     }
 
 
-def _removed_groups(session: Session, team_id: int) -> list[tuple]:
-    """``register_groups``' shape over the rows removed from scope (their estate asset is not read because the only
-    source that read it was deleted, ``estate.SOURCE_DELETED``)."""
-    from backend.utilities.cbom_sources.estate import SOURCE_DELETED
-
-    ea = CbomEstateAsset.__table__  # type: ignore[attr-defined]
-    q = sa.select(_RT.c.q_grade, _RT.c.q_reason, _RT.c.family, _RT.c.presence, sa.func.count()).select_from(
-        _RT.join(ea, sa.and_(ea.c.team_id == _RT.c.team_id, ea.c.asset_key == _RT.c.item_key))).where(
-        _RT.c.team_id == team_id, ea.c.presence == "not_read",
-        ea.c.presence_reason.like(f"%{SOURCE_DELETED}")).group_by(
-        _RT.c.q_grade, _RT.c.q_reason, _RT.c.family, _RT.c.presence)
-    return [(r[0] or None, r[1], r[2] or None, r[3], int(r[4])) for r in session.execute(q).all()]
-
-
-def _minus(groups: list[tuple], removed: list[tuple]) -> list[tuple]:
+def _without(groups: list[tuple], removed: list[tuple]) -> list[tuple]:
+    """``register_groups``' ``(grade, reason, family, presence, n)`` minus ``removed_groups``' rows (matched on grade,
+    reason and family): the SOW-class counts and the presence split read the same population as the total (#497)."""
     take: dict[tuple, int] = {}
-    for g, r, f, p, n in removed:
-        take[(g, r, f, p)] = take.get((g, r, f, p), 0) + int(n)
+    for g, r, f, _ref, n in removed:
+        take[(g or None, r, f or None)] = take.get((g or None, r, f or None), 0) + int(n)
     out = []
     for g, r, f, p, n in groups:
-        left = int(n) - take.pop((g, r, f, p), 0)
-        if left > 0:
-            out.append((g, r, f, p, left))
+        k = (g or None, r, f or None)
+        cut = min(int(n), take.get(k, 0))
+        if cut:
+            take[k] -= cut
+        if int(n) - cut > 0:
+            out.append((g, r, f, p, int(n) - cut))
     return out
 
 
 def _present_removed(session: Session, team_id: int) -> int:
+    """Register rows still ``present`` whose grade comes from a deleted source's last collection and that no later
+    run has settled yet (so ``removed_from_scope`` does not hold them): in the register's total, not in the team view
+    (the roll-up drops a deleted source's rows). The reconciliation names them, so its chain closes."""
     live = sa.select(CbomCollectionSource.source_uid).where(CbomCollectionSource.team_id == team_id,
                                                             CbomCollectionSource.source_uid.is_not(None))  # type: ignore[union-attr]
     return int(session.execute(sa.select(sa.func.count()).select_from(_RT).where(
         _RT.c.team_id == team_id, _RT.c.presence == "present", _RT.c.source_ref.is_not(None),
-        _RT.c.source_ref.not_in(live))).scalar_one())
+        _RT.c.source_ref.not_in(live), ~_removed_condition(team_id))).scalar_one())
 
 
-def default_assumptions(session: Session, team_id: int, inputs: TeamInputs | None = None) -> dict[str, Any]:
+def _removed_presence(session: Session, team_id: int) -> dict[str, int]:
+    """The presence of the register rows ``removed_from_scope`` leaves out (the reconciliation's presence split)."""
+    return {str(p): int(n) for p, n in session.execute(sa.select(_RT.c.presence, sa.func.count()).where(
+        _removed_condition(team_id)).group_by(_RT.c.presence)).all()}
+
+
+def default_assumptions(session: Session, team_id: int, inputs: TeamInputs | None = None, *,
+                        removed: list[tuple[Any, Any, Any, Any, int]] | None = None) -> dict[str, Any]:
     """SOW D12: how many register rows were graded on a default Mosca input (X, Y or Z the team / source has not
     set; ``qgrade.effective_mosca``), which inputs, and the defaults' text. A row reads Mosca only when its reason is
-    a ``qv_*`` one (quantum-vulnerable, or a classical fallback)."""
+    a ``qv_*`` one (quantum-vulnerable, or a classical fallback). Rows only deleted sources read are left out (#497
+    review 6057627810 M3; ``removed``: ``removed_groups``, read here when not given). ``definition`` / ``horizon``: what
+    X, Y and Z are and the default values this year, which D2 and D14 print beside the count (m2)."""
     from backend.utilities.cbom_sources import qgrade as QG
 
     inputs = inputs or team_inputs(session, team_id)
     m = inputs.mosca
     by_ref = {(v.get("uid") or ""): v for v in inputs.by_source.values()}
+    gone: dict[str, int] = {}
+    for _grade, reason, _fam, ref, n in (removed_groups(session, team_id) if removed is None else removed):
+        if str(reason or "").startswith("qv_"):
+            gone[ref or ""] = gone.get(ref or "", 0) + n
+    year = int(inputs.year or utcnow().year)
     counts: dict[str, int] = {}
     count = 0
     for ref, n in session.execute(sa.select(_RT.c.source_ref, sa.func.count()).where(
             _RT.c.team_id == team_id, _RT.c.q_reason.like("qv\\_%", escape="\\"), _RT.c.presence != "removed")
             .group_by(_RT.c.source_ref)).all():
+        n = int(n) - gone.get(ref or "", 0)
+        if n <= 0:
+            continue
         src = by_ref.get(ref or "") or {}
         assumed = QG.effective_mosca(src.get("x"), m["x"], m["y"], m["z"], src.get("criticality"), inputs.year)[4]
         if assumed:
@@ -898,7 +965,9 @@ def default_assumptions(session: Session, team_id: int, inputs: TeamInputs | Non
             for k in assumed:
                 counts[k] = counts.get(k, 0) + int(n)
     return {"count": count, "inputs": {k: counts[k] for k in "xyz" if k in counts},
-            "team_mosca": m, "defaults": QG.DEFAULTS_TEXT}
+            "team_mosca": m, "defaults": QG.DEFAULTS_TEXT, "definition": QG.MOSCA_DEFINITION,
+            "horizon": {"x": QG.DEFAULT_X, "y": QG.DEFAULT_Y, "z": QG.default_z(year), "year": year,
+                        "z_year": QG.DEFAULT_Z_YEAR}}
 
 
 HEATMAP_ROWS = 15
@@ -914,6 +983,13 @@ def heatmap(session: Session, team_id: int, *, rows: int = HEATMAP_ROWS, columns
     raw = session.execute(sa.select(_RT.c.family, _RT.c.source_ref, sa.func.max(_RT.c.source_name), _RT.c.q_grade,
                                     sa.func.count()).where(_RT.c.team_id == team_id)
                           .group_by(_RT.c.family, _RT.c.source_ref, _RT.c.q_grade)).all()
+    # #497 review 6057627810 M3: rows only deleted sources read are no cell, no row and no column of the map
+    gone: dict[tuple[Any, Any, Any], int] = {}
+    for grade, _reason, fam, ref, n in removed_groups(session, team_id):
+        gone[(fam, ref, grade)] = gone.get((fam, ref, grade), 0) + n
+    if gone:
+        raw = [(fam, ref, name, grade, int(n) - gone.get((fam, ref, grade), 0)) for fam, ref, name, grade, n in raw]
+        raw = [r for r in raw if r[4] > 0]
     names: dict[str, str | None] = {}
     fam_n: dict[str, int] = {}
     src_n: dict[str, int] = {}
@@ -973,7 +1049,16 @@ def report(session: Session, team_id: int, now: _dt.datetime) -> dict[str, Any]:
     gaps = session.exec(select(CbomQ0Gap).where(CbomQ0Gap.team_id == team_id, CbomQ0Gap.closed_at.is_(None))  # type: ignore[union-attr]
                         .order_by(CbomQ0Gap.reason, CbomQ0Gap.opened_at, CbomQ0Gap.id).limit(REPORT_Q0)).all()
     every = list_register(session, team_id, {}, after=None, limit=REPORT_ALL, detail=True, now=now)
+    # #497 review M2: an asset only deleted sources read is listed under "Removed from scope", outside every table
+    # and total of the document (the summary leaves it out of ``total`` / ``q_grades``)
+    removed = removed_from_scope(session, team_id, items=REMOVED_ITEMS_MAX)
+    gone = {r["item_key"] for r in removed["items"]}
+    for page, less in ((top, removed["q_grades"].get("Q1", 0)), (every, removed["total"])):
+        page["items"] = [r for r in page["items"] if r["item_key"] not in gone]
+        if page["total"] is not None:
+            page["total"] = max(int(page["total"]) - int(less), 0)
     return {"summary": summary(session, team_id, now), "heatmap": heatmap(session, team_id),
+            "removed_from_scope": removed,
             "top_q1": top["items"], "top_q1_total": top["total"],
             "q0_gaps": [public_gap(g, now) for g in gaps],
             # SOW D12 "every asset with its grade": worst first, the same rows and columns as the CSV
