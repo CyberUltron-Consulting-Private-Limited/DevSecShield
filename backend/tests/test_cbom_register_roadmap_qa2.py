@@ -22,6 +22,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import sqlalchemy as sa
 from sqlmodel import Session, select
 
 _BACKEND = Path(__file__).resolve().parents[1]
@@ -385,7 +386,9 @@ def test_b1_every_bucket_is_counted_on_the_realistic_team(tmp_path):
     assert (pop.sources_occurrences, pop.code_occurrences, pop.estate_repeats) == (10, 3, 1)
     assert r["present_removed"] == 3  # the deleted source's keys the register still holds as present
     text = " ".join(RECON.lines(pop))
-    assert "Removed from scope: 1 collection of deleted sources with 3 assets, outside every total." in text
+    # m4 (review 6057476173): not "outside every total" while this view still counts them (until #497)
+    assert ("Removed from scope: 1 collection of deleted sources with 3 assets. This view still counts 3 occurrences "
+            "of them; the steps below take them out.") in text
     assert "1 observation of a certificate the same source read at another place" in text
     assert "1 observation of a certificate another source also read" in text
     assert "Unexplained" not in text and "counted from a code-scan observation instead" not in text
@@ -754,22 +757,31 @@ def test_review_m5_the_model_change_regrades_symmetric_rows_without_counting_clo
 
     w, _run = _parity_team(tmp_path)
     with Session(w.engine) as s:  # the register as the previous model left it: symmetric keys Q2 quantum-vulnerable
-        s.execute(REG._RT.update().where(REG._RT.c.team_id == 1, REG._RT.c.label.like("aes-%")).values(
+        symmetric = sa.or_(*(REG._RT.c.label.like(f"{n}%") for n in ("aes-128", "aes-256", "hmac", "default")))
+        s.execute(REG._RT.update().where(REG._RT.c.team_id == 1, symmetric).values(
             model_version="qg-1+previous", q_grade="Q2", q_rank=2, q_reason="qv_exceeds_exposure_unknown"))
         s.commit()
     at = dt.datetime(2026, 11, 25, 9)  # noqa: DTZ001
     with Session(w.engine) as s:
         out = REG.regrade_team(s, 1, at)
         s.commit()
-        assert out["model"] == 2
+        assert out["model"] == 4
         items = {i["label"].split(" · ")[0]: i for i in REG.list_register(s, 1, {}, after=None, limit=50)["items"]}
         assert (items["aes-128"]["q_grade"], items["aes-128"]["q_reason"]) == ("Q3", "grover_weakened")
         assert items["aes-256"]["q_grade"] == "Q4"
         assert s.exec(select(CbomDriftEvent)).all() == [] or all(
             e.kind != "q0_closed" for e in s.exec(select(CbomDriftEvent)).all())
         assert DR.weekly_drift(s, 1, at)[-1]["q0_closed"] == 0
-        week = next(x for x in REG.summary(s, 1, at)["closures_by_week"] if x["week"] == "2026-11-23")
+        summary = REG.summary(s, 1, at)
+        week = next(x for x in summary["closures_by_week"] if x["week"] == "2026-11-23")
     assert week["total"] == 0 and week["by_cause"] == {}
+    # review 6057476173 M2: the week IS marked, although no Q0 gap opened or closed (4 rows moved Q2 -> Q3 / Q4); on
+    # b376a964 model_changes stayed 0 and D12 printed no mark
+    assert week["model_regraded"] == 4 and week["model_changes"] == 0
+    weeks = RPDF.trend_weeks(summary["closures_by_week"])
+    assert weeks and weeks[-1]["week"] == "2026-11-23"
+    cell = "grade model changed: 4 register rows moved to another grade"
+    assert any(cell in str(getattr(f, "_cellvalues", "")) for f in RPDF._trend({"summary": summary}, common.get_deliverable_styles(), 500))
 
 
 def test_b1_assets_only_a_deleted_source_read_are_removed_from_the_register_totals(tmp_path):
@@ -862,3 +874,141 @@ def test_review_m5_drift_readiness_and_the_cbom_export_read_the_symmetric_rule(t
         assert level != 0, (name, level)
     signer = {p["name"]: p["value"] for p in by_name["signer"].get("properties", [])}
     assert signer["zs:quantum_vulnerable"] == "true"  # a public-key verdict is kept as stored
+
+
+# ============================================================================ review 6057476173 (round 2)
+def _disallowed_team(tmp_path):
+    """One AWS run: DES, RC4, MD5 and Triple DES keys a collector marked quantum-vulnerable (with weak-algorithm
+    codes), an AES-256 key marked quantum-vulnerable, and an RSA-2048 signing key."""
+    w = World(_sqlite(tmp_path / "disallowed.db"))
+    aws = w.source("aws_account", "aws-prod")
+
+    def key(arn, name, alg, codes, typ="managed_key", facts=None):
+        return {"type": typ, "target": arn, "location": "kms", "name": name, "algorithm": alg, "qv": True,
+                "impact": "High", "codes": list(codes), "facts": facts or {}}
+
+    weak = ("WEAK_CIPHER", "QUANTUM_VULNERABLE")
+    run = w.run({aws: {"rows": [key("arn:k/1", "des", "DES", weak), key("arn:k/2", "rc4", "RC4", weak),
+                                key("arn:k/3", "md5", "MD5", ("WEAK_HASH", "QUANTUM_VULNERABLE")),
+                                key("arn:k/4", "tdes", "DES-EDE3", weak),
+                                key("arn:k/5", "aes-256", "AES", ("QUANTUM_VULNERABLE",), facts={"key_size": 256}),
+                                key("arn:k/6", "signer", "RSA_2048", ("QUANTUM_VULNERABLE",), "kms_key",
+                                    {"key_spec": "RSA_2048", "key_usage": "SIGN_VERIFY"})]}})
+    w.finalise(run)
+    return w, run
+
+
+def test_round2_b1_disallowed_symmetric_keys_are_deprecated_and_outside_readiness_everywhere(tmp_path, monkeypatch):
+    """B1: DES, RC4, MD5 and Triple DES with a collector QV verdict are SP 800-131A disallowed: class "deprecated",
+    outside readiness, on every surface. On b376a964 the run posture read them weakened / quantum-safe (ready: 80 %)
+    while the team view read them broken today (16.7 %), and the register printed MD5 pqc_class quantum-safe next to
+    sow_class deprecated."""
+    from backend.routers import cbom_sources as R
+    from backend.utilities.cbom_sources.collections_view import load_sources_result
+    from backend.utilities.dashboard import scan_list
+
+    w, run = _disallowed_team(tmp_path)
+    now = dt.datetime(2026, 11, 20, 9, tzinfo=UTC)
+    post = R._run_posture(w.engine, 1, run)["posture"]
+    view = load_team_cbom_view(w.engine, 1, now=now)
+    monkeypatch.setattr(scan_list, "get_findings_for_scan_id", lambda **_kw: [])
+    with Session(w.engine) as s:
+        card = scan_list.generate_cbom_dashboard_data([], load_sources_result(s, 1, now), team_id=1, now=now)["card_data"]
+        items = REG.list_register(s, 1, {}, after=None, limit=50, detail=True,
+                                  now=dt.datetime(2026, 11, 20))["items"]  # noqa: DTZ001
+    assert post["pqc_classes"]["deprecated"] == 4 and post["pqc_classes"]["quantum-vulnerable"] == 1
+    assert post["pqc_classes"]["quantum-safe"] == 1 and post["pqc_classes"]["grover-weakened"] == 0
+    assert post["pqc_readiness_pct"] == view.readiness_pct == card["quantum_readiness_score"] == 50.0
+    assert view.pqc_vulnerable == card["total_quantum_vulnerable"] == 1  # the RSA key only
+    assert "50.0%" in _text("board-executive-report", view)  # D14 prints the readiness
+    assert "1 occurrence carries a quantum-vulnerable verdict" in _text("scope-baseline-register", view)  # D1 block
+    by = {i["label"].split(" · ")[0]: i for i in items}
+    for name in ("des", "rc4", "md5", "tdes"):
+        assert by[name]["sow_class"] == "deprecated" and by[name]["pqc_class"] == "deprecated", by[name]
+    assert by["md5"]["pqc_class"] != "quantum-safe"
+    assert not any(i["sow_class"] == "deprecated" and i["pqc_class"] in ("quantum-safe", "grover-weakened")
+                   for i in items)
+
+
+def test_round2_m1_every_run_surface_counts_three_quantum_vulnerable(tmp_path):
+    """M1: the Scans table column, the run asset list (badge, chip, filter), the remediation waves / tickets and the
+    asset detail read the corrected verdict, as the run posture does: 3 quantum-vulnerable assets on the parity seed
+    (the certificate once, the RSA key, the endpoint). On b376a964 the list and the Scans column said 8."""
+    from backend.routers import cbom_sources as R
+    from backend.utilities.cbom_sources import inventory as INV
+    from backend.utilities.cbom_sources import posture as P
+    from backend.utilities.cbom_sources import run_list as RL
+
+    w, run = _parity_team(tmp_path)
+    post = R._run_posture(w.engine, 1, run)["posture"]
+    assert post["pqc_classes"]["quantum-vulnerable"] == 3
+    with Session(w.engine) as s:
+        column = RL.grouped_counts(s, 1, [run])[run]["risk_data"]["total_quantum_vulnerable"]
+        listed = INV.list_assets(s, team_id=1, run_id=run, quantum=True, page_size=200)
+        everything = INV.list_assets(s, team_id=1, run_id=run, page_size=200)
+        items = W.node_items(s, 1, s.get(CbomCollectionRun, run))
+        aes = s.exec(select(CbomCollectedAsset).where(CbomCollectedAsset.run_id == run,
+                                                      CbomCollectedAsset.name == "aes-256")).one()
+        detail = P.asset_detail(aes, None, session=s)
+    # the certificate's two places are two rows of the run (the posture counts it once, ``asset_rows`` twice)
+    rows = post["asset_rows"] - post["assets"] + 3
+    assert column == rows
+    assert listed["total"] == rows and listed["facets"]["quantum_vulnerable"] == rows
+    assert everything["facets"]["quantum_vulnerable"] == rows
+    badges = {i["name"]: i["quantum_vulnerable"] for i in everything["items"]}
+    for name in ("aes-128", "aes-256", "hmac", "default"):
+        assert badges[name] is False, (name, badges[name])
+    assert sum(1 for i in items if i["quantum_vulnerable"] is True) == rows
+    assert not any(i["quantum_vulnerable"] for i in items if i["label"].split(" · ")[0] in ("aes-128", "aes-256"))
+    assert detail["quantum_vulnerable"] is False
+
+
+@pytest.mark.parametrize("algorithm, expected", [
+    ("HS256", "mac"), ("HS512", "mac"), ("PBKDF2", "kdf"), ("HKDF-SHA256", "kdf"), ("scrypt", "kdf"),
+    ("Argon2id", "kdf"), ("bcrypt", "kdf"), ("KMAC256", "mac"), ("ARIA-256", "cipher"), ("Twofish", "cipher"),
+    ("Serpent", "cipher"), ("ChaCha20-Poly1305", "cipher"), ("Camellia-256", "cipher"), ("SHA-256", "hash"),
+    # public-key names are never symmetric, also JOSE's
+    ("RS256", None), ("ES384", None), ("PS512", None), ("EdDSA", None), ("SHA256withRSA", None), ("RSA_2048", None),
+])
+def test_round2_m2_symmetric_detection_is_by_primitive_class(algorithm, expected):
+    from backend.utilities.cbom_sources import posture as P
+
+    assert P.symmetric_class(algorithm) == expected
+    got = P.classify_pqc({"asset_type": "jwt_key", "algorithm": algorithm, "quantum_vulnerable": True, "facts": {}})
+    assert (got[0] != "quantum-vulnerable") is (expected is not None), got
+
+
+def test_round2_m3_cnsa_dates_are_both_printed():
+    from backend.utilities.pdf import cbom_deliverable_text as T
+
+    assert "(CNSA 2.0: prefer by 2025, exclusively by 2030)" in roadmap.code_signing_line()
+    row = next(r for r in T.pqc_timeline_rows() if "CNSA" in r.milestone)
+    for part in ("prefer by / exclusively by", "software/firmware signing 2025/2030",
+                 "browsers, servers, cloud 2025/2033", "networking equipment 2026/2030", "operating systems 2027/2033",
+                 "niche equipment 2030/2033", "all NSS by 2035"):
+        assert part in row.milestone, part
+    assert T.CNSA_2_0_SENTENCE not in row.milestone
+
+
+def test_round2_m4_reconciliation_wording(tmp_path):
+    """m4: "outside every total" is printed only when the view counts none of the removed sources' occurrences, and
+    the quantum step's deprecated figure counts only rows a quantum computer also breaks (a Triple DES key with no
+    verdict is deprecated, not quantum-broken)."""
+    still = RECON.Population(collections=1, collected=2, sources_occurrences=2, code_occurrences=0, occurrences=5,
+                             removed_collections=1, removed_assets=3, removed_counted=3)
+    text = next(s["text"] for s in RECON.steps(still) if s["key"] == "removed")
+    assert "outside every total" not in text and "still counts 3 occurrences" in text
+    gone = RECON.Population(collections=1, collected=2, sources_occurrences=2, code_occurrences=0, occurrences=2,
+                            removed_collections=1, removed_assets=3)
+    assert "outside every total" in next(s["text"] for s in RECON.steps(gone) if s["key"] == "removed")
+    w, _run = _parity_team(tmp_path)
+    view = load_team_cbom_view(w.engine, 1, now=dt.datetime(2026, 11, 20, 9, tzinfo=UTC))
+    summary = view.register["summary"]
+    assert summary["sow_classes"]["deprecated"] == 2  # the RSA-1024-style certificate and Triple DES
+    assert summary["deprecated_quantum_broken"] == 1  # Triple DES with no verdict is not quantum-broken
+    step = next(s["text"] for s in RECON.steps(RECON.from_view(view)) if s["key"] == "quantum")
+    assert "and 1 deprecated that a quantum computer also breaks" in step, step
+
+
+def test_round2_nit_weakened_meaning_names_ir_8547_and_cnsa():
+    assert "acceptable under NIST IR 8547, CNSA 2.0 requires AES-256" in SC.MEANING[SC.WEAKENED]

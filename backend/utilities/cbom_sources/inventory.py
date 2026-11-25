@@ -69,8 +69,10 @@ def changed_today(session: Session, scope, now: _dt.datetime) -> dict[int, dict[
 
 
 def _filtered(query, *, asset_type: str | None, impact: str | None, quantum: bool | None, text: str | None,
-              source_id: int | None, changed: dict[int, dict[str, Any]] | None = None):
+              source_id: int | None, changed: dict[int, dict[str, Any]] | None = None,
+              corrected: dict[int, tuple[Any, Any, Any]] | None = None):
     changed = changed or {}
+    corrected = corrected or {}
     if asset_type:
         query = query.where(CbomCollectedAsset.asset_type == asset_type)
     if impact:
@@ -83,7 +85,12 @@ def _filtered(query, *, asset_type: str | None, impact: str | None, quantum: boo
                 stored = or_(stored, CbomCollectedAsset.id.in_(today))  # type: ignore[union-attr]
         query = query.where(stored)
     if quantum is not None:
-        query = query.where(CbomCollectedAsset.quantum_vulnerable == quantum)
+        # the verdict the badge shows (``posture.stored_verdict``, review 6057476173 M1): a stored verdict the class
+        # rule corrects (a symmetric key) is filtered by its corrected value
+        stored = and_(CbomCollectedAsset.quantum_vulnerable == quantum,
+                      CbomCollectedAsset.id.notin_([a for a, (_r, old, new) in corrected.items() if old is quantum]))  # type: ignore[union-attr]
+        into = [a for a, (_r, _old, new) in corrected.items() if new is quantum]
+        query = query.where(or_(stored, CbomCollectedAsset.id.in_(into)) if into else stored)  # type: ignore[union-attr]
     if source_id:
         query = query.where(CbomCollectedAsset.source_id == source_id)
     if text:
@@ -110,7 +117,8 @@ def public_asset(row: CbomCollectedAsset, source_names: dict[int, str], job_name
         "source_id": row.source_id,
         "source_name": source_names.get(row.source_id or 0) or (job_names or {}).get(row.job_id),
         "target": row.target, "location": row.location, "name": row.name, "algorithm": row.algorithm,
-        "key_size": row.key_size, "protocol": row.protocol, "quantum_vulnerable": row.quantum_vulnerable,
+        # the corrected verdict (``posture.stored_verdict``): the Vulnerable badge agrees with ``pqc_class``
+        "key_size": row.key_size, "protocol": row.protocol, "quantum_vulnerable": POSTURE.stored_verdict(row),
         "impact": view["impact"], "finding": view["finding"], "finding_codes": view["finding_codes"],
         "as_of_run": view["as_of_run"],
         "q_grade": grade.get("q_grade"), "q_label": grade.get("q_label"), "q_reason": grade.get("q_reason"),
@@ -140,8 +148,14 @@ def list_assets(session: Session, *, team_id: int, run_id: int | None = None, jo
     if job_id is not None:
         base = base.where(CbomCollectedAsset.job_id == job_id)
     changed = changed_today(session, base, now)
+    scope_conditions = [CbomCollectedAsset.team_id == team_id]
+    if run_id is not None:
+        scope_conditions.append(CbomCollectedAsset.run_id == run_id)
+    if job_id is not None:
+        scope_conditions.append(CbomCollectedAsset.job_id == job_id)
+    corrected = POSTURE.verdict_corrections(session, *scope_conditions)
     filtered = _filtered(base, asset_type=asset_type, impact=impact, quantum=quantum, text=text, source_id=source_id,
-                         changed=changed)
+                         changed=changed, corrected=corrected)
     if refine is not None:  # CB-38: a caller's extra filter (run_assets: findings view, status), given today's view
         filtered = refine(filtered, changed)
     total = int(session.exec(select(func.count()).select_from(filtered.subquery())).one())
@@ -167,6 +181,9 @@ def list_assets(session: Session, *, team_id: int, run_id: int | None = None, jo
         by_impact[a_impact or "none"] = by_impact.get(a_impact or "none", 0) + count
         if a_qv:
             quantum_count += count
+    # the quantum chip counts the corrected verdict, as the badge and the filter read it
+    quantum_count += sum(1 for _r, old, new in corrected.values() if new is True) - sum(
+        1 for _r, old, new in corrected.values() if old is True)
     for view in changed.values():  # the impact chips count today's verdicts, as the list shows them
         before, after = view["as_of_run"]["impact"] or "none", view["impact"] or "none"
         by_impact[before] = by_impact.get(before, 0) - 1

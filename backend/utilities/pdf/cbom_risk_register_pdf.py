@@ -25,6 +25,7 @@ the common table helpers, which sanitise and escape it.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from typing import Any
 
 from reportlab.pdfbase.pdfmetrics import stringWidth
@@ -336,26 +337,41 @@ def _q0(reg: dict[str, Any], styles: Styles, width: float) -> list[Flowable]:
 
 def trend_weeks(weeks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """The weeks the trend prints: from the first week with a gap open, opened or closed (weeks before the
-    engagement had no gap and would only print zeros); the numbers are the API's, never recomputed."""
+    engagement had no gap and would only print zeros) or with a grade-model re-grade (its "grade model changed" mark,
+    review 6057476173 M2); the numbers are the API's, never recomputed."""
     for i, w in enumerate(weeks):
-        if w.get("total") or w.get("q0_gaps_opened") or w.get("q0_gaps_open_at_week_end"):
+        if w.get("total") or w.get("q0_gaps_opened") or w.get("q0_gaps_open_at_week_end") or w.get("model_changes") \
+                or w.get("model_regraded"):
             return weeks[i:]
     return []
+
+
+def _model_mark(week: Mapping[str, Any]) -> str:
+    """The week's "grade model changed" mark: the register rows the new model moved to another grade or reason, and
+    the Q0 items it closed (neither counted as closed by the team)."""
+    parts = []
+    if week.get("model_regraded"):
+        parts.append(f"{week['model_regraded']} register row{'' if week['model_regraded'] == 1 else 's'} moved to "
+                     "another grade")
+    if week.get("model_changes"):
+        parts.append(f"{week['model_changes']} re-graded, not counted as closed")
+    return "grade model changed: " + "; ".join(parts)
 
 
 def _trend(reg: dict[str, Any], styles: Styles, width: float) -> list[Flowable]:
     weeks = trend_weeks(reg["summary"].get("closures_by_week") or [])
     if not weeks:
-        return [_note("No Q0 gap opened or closed in the last 12 weeks.", styles)]
+        return [_note("No Q0 gap opened or closed and no grade-model re-grade in the last 12 weeks.", styles)]
     rows = [[w["week"], w.get("q0_gaps_opened", ""), w["total"], w.get("q0_gaps_open_at_week_end", ""),
              ", ".join([*(f"{k} {v}" for k, v in sorted((w.get("by_cause") or {}).items())),
-                        *([f"grade model changed: {w['model_changes']} re-graded, not counted as closed"]
-                          if w.get("model_changes") else [])])] for w in weeks]
+                        *([_model_mark(w)] if w.get("model_changes") or w.get("model_regraded") else [])])]
+            for w in weeks]
     return [_note("Quantum gaps opened / closed per week: Q0 (unknown) gaps opened and closed each week (Monday to "
                   "Sunday, UTC) and the Q0 gaps still open at the end of the week, from the gap lifecycle the runs "
                   "recorded. This is the one weekly closure series of this register; it counts Q0 gaps, not drift "
                   "findings. A gap the grade model itself resolved (a new model version re-graded it) is not counted "
-                  "as closed; its week is marked \"grade model changed\".", styles), Spacer(1, 3),
+                  "as closed; its week is marked \"grade model changed\" with the register rows the new model "
+                  "re-graded to another grade or reason.", styles), Spacer(1, 3),
             dense_table(["Week of", "Q0 gaps opened", "Q0 gaps closed", "Q0 gaps open at week end",
                          "Closed by cause"], rows, [80, 70, 70, 100, width - 320])]
 

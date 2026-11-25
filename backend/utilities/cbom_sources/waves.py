@@ -319,6 +319,7 @@ def node_items(session: Session, team_id: int, run: CbomCollectionRun, *,
         asset_exposure,
         hndl,
         job_metadata,
+        stored_verdict,
     )
 
     jobs = {j.id: j for j in session.exec(select(CbomCollectionJob).where(
@@ -345,16 +346,19 @@ def node_items(session: Session, team_id: int, run: CbomCollectionRun, *,
         exposure, _basis = asset_exposure(row.facts, row.target, row.location, override=meta["exposure"],
                                           node_segment=meta["segment"])
         codes = view["finding_codes"]
-        in_transit = hndl(row.asset_type, row.quantum_vulnerable)
+        # the verdict every count reads (review 6057476173 M1): a symmetric key is never planned as a post-quantum
+        # migration, as D13 counts it
+        qv = stored_verdict(row)
+        in_transit = hndl(row.asset_type, qv)
         snap = (job.params or {}).get("metadata") if job else None
         owner = (snap.get("owner") if isinstance(snap, dict) else None) or ((src.config or {}).get("owner") if src else None)
         items.append({
             "asset_id": row.id, "asset_key": ID.stable_key("node", ref, ID.node_identity(row)), "scope": "node",
             "source_ref": ref, "source_name": ID.job_source_name(job, src) if job else None,
             "label": ID.node_label(row), "type": row.asset_type, "impact": view["impact"], "finding_codes": codes,
-            "quantum_vulnerable": row.quantum_vulnerable, "exposure": exposure, "hndl": in_transit,
+            "quantum_vulnerable": qv, "exposure": exposure, "hndl": in_transit,
             "owner_hint": owner, **target_fields(row.asset_type, row.algorithm, row.facts),
-            "suggested_wave": suggested_wave(view["impact"], codes, row.quantum_vulnerable,
+            "suggested_wave": suggested_wave(view["impact"], codes, qv,
                                              internet=exposure == "internet", hndl=in_transit),
             # when it was first found: the estate's first_seen_at of its observation, else of its de-duplicated
             # identity, else the earliest stored observation of the same identity (below; never "this collection")

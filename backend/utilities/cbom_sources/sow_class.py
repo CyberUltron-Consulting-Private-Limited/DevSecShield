@@ -48,7 +48,8 @@ ANCHOR_REASONS = frozenset({"qv_exceeds_anchor", "qv_fallback_exceeds_anchor"})
 MEANING = {
     DEPRECATED: "NIST SP 800-131A disallows the algorithm or key today",
     BROKEN: "a quantum computer breaks it (Shor)",
-    WEAKENED: "a quantum computer weakens it (Grover): a symmetric key of 128 bits or less",
+    WEAKENED: ("a quantum computer weakens it (Grover): a symmetric key of 128 bits or less; acceptable under NIST IR "
+               "8547, CNSA 2.0 requires AES-256"),
     SAFE: "post-quantum, hybrid, or a symmetric key of 192 bits or more, a MAC or a hash",
     UNKNOWN: "Q0 Unknown: it could not be assessed (the reason says why)",
     NOT_APPLICABLE: "no public-key cryptography to grade",
@@ -109,6 +110,22 @@ def counts(groups: Iterable[tuple[str | None, str, Any, Any, int]],
     return out
 
 
+# the register families a quantum computer breaks (Shor): ``heatmap.algorithm_family``'s public-key ones
+PUBLIC_KEY_FAMILIES = frozenset({"RSA", "Elliptic curve", "EdDSA", "Diffie-Hellman", "DSA"})
+
+
+def deprecated_also_broken(groups: Iterable[tuple[str | None, str, Any, Any, int]], anchors_disallowed: int = 0) -> int:
+    """Of the deprecated register rows, those a quantum computer also breaks (``also_quantum_broken``): a ``qv_*``
+    reason, a public-key family (RSA-1024, DSA-1024), or a disallowed trust anchor. A deprecated Triple DES, DES, RC4
+    or MD5 row is not (review 6057476173 m4: the quantum-vulnerable step counts these only)."""
+    found = 0
+    for grade, reason, family, _presence, n in groups:
+        if sow_class(grade, reason) == DEPRECATED and (str(reason or "").startswith("qv_")
+                                                       or str(family or "") in PUBLIC_KEY_FAMILIES):
+            found += int(n)
+    return found + max(0, int(anchors_disallowed))
+
+
 def anchor_disallowed_count(session: Any, team_id: int) -> int:
     """Of the register's trust-anchor rows (``ANCHOR_REASONS``), how many the grade read as SP 800-131A disallowed:
     the stored row the grade came from (the observation of the row's ``source_ref``, as ``risk_register.add_detail``
@@ -155,4 +172,4 @@ def graded_total(classes: Mapping[str, int]) -> int:
 
 __all__ = ["ALSO_BROKEN", "ANCHOR_REASONS", "BROKEN", "CLASSES", "DEPRECATED", "DEPRECATED_REASONS", "GRADED_CLASSES",
            "MEANING", "NOT_APPLICABLE", "SAFE", "UNKNOWN", "WEAKENED", "also_quantum_broken", "anchor_disallowed_count",
-           "counts", "graded_total", "needs_disallowed", "sow_class", "summary_counts", "text"]
+           "PUBLIC_KEY_FAMILIES", "counts", "deprecated_also_broken", "graded_total", "needs_disallowed", "sow_class", "summary_counts", "text"]

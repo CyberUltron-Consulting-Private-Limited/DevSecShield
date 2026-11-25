@@ -594,11 +594,12 @@ def _timeline(styles: Styles, width: float, title: str) -> list[Flowable]:
 
 def code_signing_line() -> str:
     """The CNSA 2.0 target for software and firmware signing, from the knowledge base's one target table (staging QA2
-    m1): the 2025 milestone of the timeline names what replaces the signing keys."""
+    m1): what replaces the signing keys, with CNSA 2.0's two dates for software and firmware signing (review
+    6057476173 m3)."""
     target = PQT.target_for("code_signing")
     if not target:
         return ""
-    return (f"CNSA 2.0 target for {str(target['usage_label']).casefold()} (the 2025 milestone above): "
+    return (f"CNSA 2.0 target for {str(target['usage_label']).casefold()} (CNSA 2.0: prefer by 2025, exclusively by 2030): "
             f"{target['cnsa_target']} ({target['reference']}); the NIST target is {target['target_text']}.")
 
 

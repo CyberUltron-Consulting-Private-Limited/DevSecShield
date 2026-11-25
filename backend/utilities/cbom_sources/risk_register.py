@@ -35,6 +35,7 @@ from sqlmodel import Session, select
 
 from backend.new_models import (
     CbomCollectedAsset,
+    CbomCollectionAuditEvent,
     CbomCollectionSettings,
     CbomCollectionSource,
     CbomEstateAsset,
@@ -468,11 +469,42 @@ def regrade_team(session: Session, team_id: int, now: _dt.datetime, *, limit: in
         res = refresh(session, team_id, keys, now, inputs=inputs, force=True)
         out["graded"] += res.graded
         Q0.sync_assets(session, team_id, res.transitions, now, cause=cause)
+        if cause == "model_change":
+            _record_model_regrade(session, team_id, res.transitions, QG.GRADE_MODEL_VERSION)
     if any((by_model, by_inputs, missing)):
         # a batch that re-graded rows of another grade model closes the Mosca item as a model change (recorded, not
         # forwarded, not a gap the team closed); otherwise the cause follows the team's inputs (q0register.mosca_cause)
         Q0.sync_mosca(session, team_id, now, cause="model_change" if by_model else None)
         log("risk register re-graded", team=team_id, **out)
+    return out
+
+
+MODEL_REGRADE_ACTION = "register_model_regrade"
+
+
+def _record_model_regrade(session: Session, team_id: int, transitions: Sequence[Transition], model: str) -> int:
+    """Record, with its time, how many register rows a re-grade under a new grade model moved (another grade or
+    reason; review 6057476173 M2): D12 marks that week "grade model changed" even when no Q0 gap opens or closes (the
+    symmetric-key change moves Q2 rows to Q3 / Q4). One system audit row per batch; its items are counts and the model
+    version, never a value of the team's data (``CbomCollectionAuditEvent``'s documented exception)."""
+    moved = sum(1 for t in transitions if t.before is not None and t.after is not None and t.before != t.after)
+    if moved:
+        session.add(CbomCollectionAuditEvent(team_id=team_id, at=_dt.datetime.utcnow(), actor_type="system",
+                                             action=MODEL_REGRADE_ACTION, object_type="risk_register",
+                                             changed_fields=[f"moved={moved}", f"model_version={model[:32]}"]))
+    return moved
+
+
+def _model_regrades(session: Session, team_id: int, start: _dt.datetime, end: _dt.datetime) -> dict[str, int]:
+    """Register rows a grade-model re-grade moved, per week (Monday, ISO date) in ``[start, end)``."""
+    out: dict[str, int] = {}
+    for at, fields in session.exec(select(CbomCollectionAuditEvent.at, CbomCollectionAuditEvent.changed_fields).where(
+            CbomCollectionAuditEvent.team_id == team_id, CbomCollectionAuditEvent.action == MODEL_REGRADE_ACTION,
+            CbomCollectionAuditEvent.at >= start, CbomCollectionAuditEvent.at < end)).all():  # type: ignore[operator]
+        moved = next((int(f[6:]) for f in (fields or []) if isinstance(f, str) and f.startswith("moved=")
+                      and f[6:].isdigit()), 0)
+        monday = (at - _dt.timedelta(days=at.weekday())).date().isoformat()
+        out[monday] = out.get(monday, 0) + moved
     return out
 
 
@@ -758,6 +790,9 @@ def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 1
             continue
         bucket = weekly[monday]
         bucket[cause or "unknown"] = bucket.get(cause or "unknown", 0) + 1
+    # register rows a re-grade under a new grade model moved to another grade or reason (no Q0 gap needs to open or
+    # close for that, review 6057476173 M2): counted apart from the Q0 items the model closed, same week mark
+    regraded_weeks = _model_regrades(session, team_id, start, end)
     # SOW D12 Table 7 "gaps closed by week": with each week's openings and the gaps still open at its end, from the
     # gap lifecycle the runs wrote (opened_at / closed_at), so the series reads as a burn-down
     opened = {w: 0 for w in weekly}
@@ -773,12 +808,15 @@ def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 1
             if opened_at < week_end and (closed_at is None or closed_at >= week_end):
                 open_end[monday] += 1
     total = sum(int(v) for v in grades.values())
+    anchors_disallowed = SC.anchor_disallowed_count(session, team_id)
     return {
         "total": total, "q_grades": {g or "none": int(grades.get(g, 0)) for g in (*QG.GRADES, None)},
         "q0_reasons": {k: int(v) for k, v in sorted(q0_reasons.items())},
         # SOW 3.2 step 4 (staging QA2 M3/M4): rows per SOW class (``sow_class.counts``, the CSV's ``sow_class``) and
         # per presence (present in a latest collection, not read, removed: the population reconciliation)
-        "sow_classes": SC.summary_counts(session, team_id, groups),
+        "sow_classes": SC.counts(groups, anchors_disallowed),
+        # of the deprecated rows, those a quantum computer also breaks (the CSV's also_quantum_broken)
+        "deprecated_quantum_broken": SC.deprecated_also_broken(groups, anchors_disallowed),
         "presence": presence_counts,
         "removed_from_scope": sum(int(r[4]) for r in removed),
         # present rows whose grade comes from a deleted source's last collection: removed from scope, outside the
@@ -790,7 +828,8 @@ def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 1
         # run comparison, a different series): total = Q0 gaps closed, q0_gaps_opened, q0_gaps_open_at_week_end
         "closures_by_week": [{"week": w, "total": sum(c.values()), "by_cause": dict(sorted(c.items())),
                               "q0_gaps_opened": opened[w], "q0_gaps_open_at_week_end": open_end[w],
-                              "model_changes": model_weeks.get(w, 0)}
+                              "model_changes": model_weeks.get(w, 0),
+                              "model_regraded": regraded_weeks.get(w, 0)}
                              for w, c in sorted(weekly.items())],
         "default_assumptions": default_assumptions(session, team_id),
         "pending_regrade": pending(session, team_id, graded_live=live), "estate": E.stale_status(session, team_id),

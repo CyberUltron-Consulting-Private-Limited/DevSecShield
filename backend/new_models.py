@@ -761,7 +761,11 @@ class CbomCollectionAuditEvent(SQLModel, table=True):
     records an issue of the Board report (D14) for its trend, with ``name=value`` items of the figures the PDF itself
     prints (Document ID, as-of day, grade, score, counts), never a setting's value or a secret
     (``dashboard.cbom_board_issues``). It moves to a dedicated ``cbom_deliverable_issue`` table (team, number,
-    document_id unique) with the next migration (PR #485 review 2 m1)."""
+    document_id unique) with the next migration (PR #485 review 2 m1).
+
+    A second one: action ``register_model_regrade`` (actor ``system``, object ``risk_register``) records how many
+    register rows a re-grade under a new grade model moved, as ``moved=N`` and ``model_version=...``, so D12 marks that
+    week "grade model changed" (``risk_register._record_model_regrade``, PR #496 review 6057476173 M2)."""
     __tablename__ = "cbomcollectionauditevent"
     id: int | None = Field(default=None, primary_key=True)
     team_id: int = Field(foreign_key="team.id", index=True)

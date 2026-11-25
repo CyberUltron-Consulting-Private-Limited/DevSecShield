@@ -118,6 +118,8 @@ def register_numbers(summary: Mapping[str, Any]) -> dict[str, int]:
            "not_present": int(presence.get("not_read", 0) or 0) + int(presence.get("removed", 0) or 0),
            "present_removed": int(summary.get("present_removed_sources", 0) or 0),
            "removed_from_scope": int(summary.get("removed_from_scope", 0) or 0),
+           # deprecated rows a quantum computer also breaks (a Triple DES key with no verdict is not one, m4)
+           "deprecated_broken": int(summary.get("deprecated_quantum_broken", 0) or 0),
            "graded": sum(int(grades.get(g, 0) or 0) for g in ("Q1", "Q2", "Q3", "Q4")),
            "q0": int(grades.get("Q0", 0) or 0), "none": int(grades.get("none", 0) or 0)}
     for c in SC.CLASSES:
@@ -144,11 +146,13 @@ def steps(pop: Population) -> list[dict[str, Any]]:
             f"Run assets: the latest collections of the {_n(pop.collections, 'CBOM Sources source')} list "
             f"{_n(pop.collected, 'asset')} (the runs' asset lists).")
     if pop.removed_collections:
-        still = (f" This view still counts {_n(pop.removed_counted, 'occurrence')} of them."
-                 if pop.removed_counted else "")
+        # "outside every total" only when it is: while the roll-up still counts some of their occurrences (until
+        # #497), the line says how many and the steps below subtract them (review 6057476173 m4)
+        tail = (f". This view still counts {_n(pop.removed_counted, 'occurrence')} of them; the steps below take "
+                "them out." if pop.removed_counted else ", outside every total.")
         add("removed", pop.removed_assets,
             f"Removed from scope: {_n(pop.removed_collections, 'collection')} of deleted sources with "
-            f"{_n(pop.removed_assets, 'asset')}, outside every total.{still}")
+            f"{_n(pop.removed_assets, 'asset')}{tail}")
     parts = []
     if pop.same_source_places:
         parts.append(f"minus {_n(pop.same_source_places, 'observation')} of a certificate the same source read at "
@@ -226,11 +230,13 @@ def steps(pop: Population) -> list[dict[str, Any]]:
         gap_split = q["occurrences"] - (q["code_planned"] + q["code_other"] + q["sources"])
         gap_kind = q["sources"] - (q["sources_planned"] + q["symmetric"] + q["no_algorithm"])
         add("quantum", q["occurrences"],
-            f"Quantum-vulnerable: {_n(q['occurrences'], 'occurrence')} carry a quantum-vulnerable verdict (the "
+            f"Quantum-vulnerable: {_n(q['occurrences'], 'occurrence')} "
+            f"{'carries' if q['occurrences'] == 1 else 'carry'} a quantum-vulnerable verdict (the "
             f"dashboard card and the readiness figure) = {q['planned']} public-key assets the PQC Migration Roadmap "
             f"(D13) plans ({', '.join(parts_q)}) + " + " + ".join(rest) + ", which are not public-key migrations."
             + (f" The register counts each estate asset once: {register_numbers(pop.register)[SC.BROKEN]} "
-               f"quantum-broken and {register_numbers(pop.register)[SC.DEPRECATED]} deprecated."
+               f"quantum-broken and {register_numbers(pop.register)['deprecated_broken']} deprecated that a quantum "
+               "computer also breaks."
                if pop.register is not None else "")
             + _unexplained("quantum-vulnerable occurrences to code and collected assets", gap_split)
             + _unexplained("collected quantum-vulnerable assets to planned, symmetric and no algorithm", gap_kind))

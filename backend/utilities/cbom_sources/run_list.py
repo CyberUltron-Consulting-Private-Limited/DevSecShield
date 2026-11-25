@@ -157,6 +157,16 @@ def grouped_counts(session: Session, team_id: int, run_ids: Iterable[int]) -> di
             risk["total_informational"] += count
         if qv is True:
             risk["total_quantum_vulnerable"] += count
+    # the verdict every other surface counts (``posture.stored_verdict``: a symmetric key is never quantum-vulnerable,
+    # review 6057476173 M1): the stored column, corrected row by row where the class rule overrules it
+    from backend.utilities.cbom_sources.posture import verdict_corrections
+
+    for run_id, old, new in verdict_corrections(session, CbomCollectedAsset.team_id == team_id,
+                                                CbomCollectedAsset.run_id.in_(ids)).values():  # type: ignore[union-attr]
+        if old is True and new is not True:
+            out[int(run_id)]["risk_data"]["total_quantum_vulnerable"] -= 1
+        elif new is True and old is not True:
+            out[int(run_id)]["risk_data"]["total_quantum_vulnerable"] += 1
     return out
 
 
