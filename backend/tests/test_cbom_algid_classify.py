@@ -151,8 +151,10 @@ def test_lab_assets_through_views(api, world):  # noqa: F811  (the shared fixtur
         assert "QUANTUM_VULNERABLE" not in (row.finding_codes or []) or cls == "quantum-vulnerable", label
         assert P.asset_detail(row, None)["pqc_class"] == cls, label
         assert drift_class[label] == cls, label
-    assert posture["pqc_classes"]["hybrid"] == 2 and posture["pqc_classes"]["quantum-safe"] == 2
-    assert posture["pqc_classes"]["quantum-vulnerable"] == 2
+    # the two :4432 certificate rows are ONE certificate read at two places (the same lab certificate): the posture
+    # counts it once, as the team view does (review 6038529822 M1); the row count keeps both
+    assert posture["pqc_classes"]["hybrid"] == 2 and posture["pqc_classes"]["quantum-safe"] == 1
+    assert posture["pqc_classes"]["quantum-vulnerable"] == 2 and posture["asset_rows"] == 6
 
 
 # ----------------------------------------------------------------------------- T-B6 (+ CB-18 contradiction-3 ST-B)

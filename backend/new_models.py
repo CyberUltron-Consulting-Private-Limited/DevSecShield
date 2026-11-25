@@ -767,7 +767,11 @@ class CbomCollectionAuditEvent(SQLModel, table=True):
     records an issue of the Board report (D14) for its trend, with ``name=value`` items of the figures the PDF itself
     prints (Document ID, as-of day, grade, score, counts), never a setting's value or a secret
     (``dashboard.cbom_board_issues``). It moves to a dedicated ``cbom_deliverable_issue`` table (team, number,
-    document_id unique) with the next migration (PR #485 review 2 m1)."""
+    document_id unique) with the next migration (PR #485 review 2 m1).
+
+    A second one: action ``register_model_regrade`` (actor ``system``, object ``risk_register``) records how many
+    register rows a re-grade under a new grade model moved, as ``moved=N`` and ``model_version=...``, so D12 marks that
+    week "grade model changed" (``risk_register._record_model_regrade``, PR #496 review 6057476173 M2)."""
     __tablename__ = "cbomcollectionauditevent"
     id: int | None = Field(default=None, primary_key=True)
     team_id: int = Field(foreign_key="team.id", index=True)
@@ -1003,7 +1007,10 @@ class CbomEstateLink(SQLModel, table=True):
     code scan holds (CB-21 certificate link keys). Rebuilt when the team's scans or estate change (fingerprint in
     ``CbomEstateLinkState``), never per request."""
     __tablename__ = "cbomestatelink"
-    __table_args__ = (_SaIndex("ix_cbomestatelink_team_key", "team_id", "asset_key"),)
+    __table_args__ = (_SaIndex("ix_cbomestatelink_team_key", "team_id", "asset_key"),
+                      # one link per (asset, scan, component): a q109 merge can no longer leave two (q110linkuq001)
+                      _SaIndex("uq_cbomestatelink_link", "team_id", "asset_key", "kind", "scan_id", "component",
+                               unique=True))
     id: int | None = Field(default=None, primary_key=True)
     team_id: int = Field(foreign_key="team.id")
     asset_key: str = Field(max_length=64)

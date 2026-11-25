@@ -345,7 +345,7 @@ async def download_cbom_deliverable_csv(
             **PRIVATE,
             "Content-Disposition": f'attachment; filename="{filename}"',
             "X-Content-Type-Options": "nosniff",
-            "X-Cbom-Fingerprint": view.document_digest,  # the Document ID's digest (M1)
+            "X-Cbom-Fingerprint": view.digest_for(spec.number),  # the Document ID digest (M1, QA2 m2: per document)
         },
     )
 
@@ -440,7 +440,7 @@ async def download_cbom_deliverable(
         "X-Cbom-Scans-Included": str(view.included),
         "X-Cbom-Sources": str(len(view.sources)),
         "X-Cbom-Fidelity": view.fidelity_summary,
-        "X-Cbom-Fingerprint": view.document_digest,  # the Document ID's digest (M1)
+        "X-Cbom-Fingerprint": view.digest_for(spec.number),  # the Document ID digest (M1, QA2 m2: per document)
         "X-Cbom-Posture": _posture_header(view),
     }
     if ctx.branding.applied:

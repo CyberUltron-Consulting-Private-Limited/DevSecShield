@@ -213,15 +213,16 @@ def expected_fingerprint(scans: list[dict[str, Any]], included_ids: list[int]) -
     return hashlib.sha256(f"cbom-team-rollup|{stamped}".encode()).hexdigest()[:12]
 
 
-def expected_document_digest(fingerprint: str, engine: Any, team_id: int) -> str:
+def expected_document_digest(fingerprint: str, engine: Any, team_id: int, number: int | None = None) -> str:
     """The Document ID's digest (review M1), the documented formula: the data fingerprint above when the view prints
     nothing beyond its scans, else sha256(fingerprint + "|content|" + the content as canonical JSON)[:12], the content
-    being the team's regulatory profile, the source metadata, the register's grade inputs and grade counts."""
+    being the team's regulatory profile, the source metadata, the register's grade inputs and grade counts, and only
+    the parts document ``number`` prints (QA2 m2: D2's set-up, D10's vendors, D14's previous issue are their own)."""
     from backend.utilities.dashboard.cbom_team_rollup import _document_content, load_team_cbom_view
 
     view = load_team_cbom_view(engine, team_id, now=NOW)
     assert view.fingerprint == fingerprint  # the scans part still follows plan 4.8
-    content = _document_content(view)
+    content = _document_content(view, number)
     if not content:
         return fingerprint
     text = json.dumps(content, sort_keys=True, separators=(",", ":"), default=str)
@@ -387,7 +388,7 @@ def pdf_url(team_id: int, slug: str) -> str:
 def test_each_slug_returns_its_own_pdf_with_the_contract_headers(api, world, slug):
     scans = [s for s in world.fixture["scans"] if s["team_id"] == TEAM_ONE]
     fingerprint = expected_document_digest(expected_fingerprint(scans, [1, 2, 3, 4, 5, 6, 7, 8]), world.engine,
-                                           TEAM_ONE)
+                                           TEAM_ONE, DELIVERABLES[slug].number)
 
     response = api.get(pdf_url(TEAM_ONE, slug))
 
@@ -543,7 +544,7 @@ def test_the_legacy_scan_url_is_sanitised_and_its_fingerprint_follows_the_docume
     legacy = next(s for s in world.fixture["scans"] if s["id"] == 8)
     clone = {**legacy, "id": LEGACY_SCAN_ID}  # the seeded legacy-only team holds a copy of scan 8
     assert response.headers["x-cbom-fingerprint"] == expected_document_digest(
-        expected_fingerprint([clone], [LEGACY_SCAN_ID]), world.engine, TEAM_LEGACY
+        expected_fingerprint([clone], [LEGACY_SCAN_ID]), world.engine, TEAM_LEGACY, 1
     )
     text = squash(full_text(response.content))
     assert "github.com/e2e-demo/legacy-billing" in text, "the source must still be listed"

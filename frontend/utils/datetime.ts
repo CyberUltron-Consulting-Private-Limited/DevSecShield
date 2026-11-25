@@ -9,9 +9,15 @@ export const DISPLAY_TZ_LABEL = "IST" as const;
 export type DateInput = string | number | Date | null | undefined;
 
 /** Parse ISO / epoch / Date for display. Returns null if unusable. */
+// An ISO date-time without a zone ("2026-11-24T05:48:00"): the API's stored times are UTC, but `new Date()` reads
+// such a string as the browser's local time (staging QA2 m10: one moment shown as 05:48 and 11:18 IST).
+const NAIVE_ISO = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/;
+
 export function parseDisplayDate(input: DateInput): Date | null {
   if (input == null || input === "") return null;
-  const date = input instanceof Date ? input : new Date(input);
+  const date = input instanceof Date
+    ? input
+    : new Date(typeof input === "string" && NAIVE_ISO.test(input.trim()) ? `${input.trim().replace(" ", "T")}Z` : input);
   if (Number.isNaN(date.getTime())) return null;
   return date;
 }
