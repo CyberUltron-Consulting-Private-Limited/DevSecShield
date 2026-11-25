@@ -519,11 +519,18 @@ def disallowed_now(row: Any) -> bool:
 
 
 def graded_pqc_class(cls: str, row: Any, disallowed: bool | None = None) -> str:
-    """The class the grade reads: ``posture.classify_pqc``'s, except that a not-applicable asset whose algorithm
-    SP 800-131A disallows is ``deprecated`` (FORMULA_TEXT "class"; rules 24-25). ``disallowed``: the caller's
-    ``disallowed_now(row)`` when it has it."""
-    if cls != "not-applicable":
+    """The class the grade reads: ``posture.classify_pqc``'s, except that an asset whose algorithm SP 800-131A
+    disallows is ``deprecated`` when it has no public-key class: a not-applicable one (FORMULA_TEXT "class"; rules
+    24-25), or a symmetric cipher, MAC, hash or KDF the class function read as weakened or quantum-safe (DES, Triple
+    DES, RC4, MD5 a collector marked quantum-vulnerable or safe: review 6057476173 B1). A disallowed asset is outside
+    readiness, so it never reads "ready". ``disallowed``: the caller's ``disallowed_now(row)`` when it has it."""
+    if cls not in ("not-applicable", "grover-weakened", "quantum-safe"):
         return cls
+    if cls != "not-applicable":
+        facts = getattr(row, "facts", None)
+        if P.symmetric_key(str(getattr(row, "asset_type", "") or ""), getattr(row, "algorithm", None),
+                           facts if isinstance(facts, dict) else {}, getattr(row, "key_size", None)) is None:
+            return cls  # a post-quantum or hybrid asset keeps its class; only a symmetric one is "deprecated"
     return "deprecated" if (disallowed_now(row) if disallowed is None else disallowed) else cls
 
 

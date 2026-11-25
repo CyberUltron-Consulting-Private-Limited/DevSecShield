@@ -2270,6 +2270,8 @@ export interface CBOMListCardData {
 
 /** CBOM list dashboard from backend generate_cbom_dashboard_data */
 export interface CBOMDashboardData {
+  /** The population reconciliation the deliverables print (SOW audit A-09, QA2 M4); absent on older backends. */
+  population?: { title: string; steps: { key: string; value: number; text: string }[] } | null
   severity_distribution: { critical: number; high: number; medium: number; low: number }
   algorithm_type_distribution: Record<string, number>
   strength_distribution: Record<string, number>
@@ -4768,6 +4770,8 @@ export interface CbomAuditEvent {
     actor_type: "user" | "node" | "vendor" | "system"
     actor_id: number | null
     action: string
+    /** readable wording of a system action (e.g. "Risk register re-graded under a new grade model"); else the action */
+    label?: string
     object_type: string
     object_id: number | null
     changed_fields: string[]

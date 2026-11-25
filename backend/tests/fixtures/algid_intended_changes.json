@@ -14,7 +14,8 @@
  "kms-hmac-symmetric": "CB-33 PR-C (B9): an AWS KMS HMAC key (KeySpec HMAC_224..512, algid primitive mac) is a symmetric key: qv None -> False, posture quantum-safe, as node keys and Vault judge HMAC keys. DA §5.5 3; live CB-A1 run: the HMAC_256 lab key had no quantum verdict",
  "cb18-hybrid-identified-component": "Hybrid on purpose: a hybrid or composite identifier (composite ML-DSA certificates and keys, SSH ML-KEM/sntrup hybrid kex) whose post-quantum component algid names by a table row, or an IKE policy with an identified ML-KEM group next to a classical group (RFC 9370): quantum-safe -> hybrid. #109 release note 'show Quantum-safe until CB-18'; CB-18 EC-1, OA-CB04-1",
  "cb18-pq-component-unidentified": "A post-quantum identifier algid matched only by a marker or an arc prefix (no components, no table row: CRYSTALS-Kyber, Entrust arcs, rsa3072_dilithium2) is never counted as hybrid or safe: -> unknown. CB-18 EC-1 ('an unknown OID is never counted as safe')",
- "cb18-unread-is-unknown": "No verdict (qv None) on a certificate or key whose algorithm identifier algid does not know, or on a TLS endpoint whose key exchange was not read (no group, or a group that is no key exchange): unknown, never not-applicable. CB-18 N8/KF-10, SPEC §3.3, FP-6"
+ "cb18-unread-is-unknown": "No verdict (qv None) on a certificate or key whose algorithm identifier algid does not know, or on a TLS endpoint whose key exchange was not read (no group, or a group that is no key exchange): unknown, never not-applicable. CB-18 N8/KF-10, SPEC §3.3, FP-6",
+ "symmetric-grover": "A symmetric cipher, MAC or hash is never quantum-vulnerable (Shor applies to public-key algorithms only): a key of 128 bits or less is Grover-weakened, 192 bits or more, a MAC or a hash is quantum-safe (posture.symmetric_key; review 6038529822 M5; NIST IR 8547 keeps AES-128/192/256, and PQC security category 1 is defined relative to AES-128). Here: a managed AES-128 key the collector judged safe now reads Grover-weakened, as a 128-bit volume key already did"
 },
 "changes": {
   "cert|(NONE)": [[null, [], null, "not-applicable"], [null, [], null, "unknown"], "cb18-unread-is-unknown", null],
@@ -1380,7 +1381,13 @@
   "tls|sntrup761": [[false, [], null, "quantum-safe"], [false, [], null, "hybrid"], "tls-pq-group-evidence", "sntrup761"],
   "tls|sntrup761x25519-sha512": [[false, [], null, "quantum-safe"], [false, [], null, "hybrid"], "tls-pq-group-evidence", "sntrup761x25519-sha512"],
   "tls|sntrup761x25519-sha512@openssh.com": [[false, [], null, "quantum-safe"], [false, [], null, "hybrid"], "tls-pq-group-evidence", "sntrup761x25519-sha512@openssh.com"],
-  "tls|unsigned": [[null, [], null, "not-applicable"], [null, [], null, "unknown"], "cb18-unread-is-unknown", "unsigned"]
+  "tls|unsigned": [[null, [], null, "not-applicable"], [null, [], null, "unknown"], "cb18-unread-is-unknown", "unsigned"],
+  "managed|AES-128-CBC": [[false, [], null, "quantum-safe"], [false, [], null, "grover-weakened"], "symmetric-grover", null],
+  "managed|AES-128-CTR": [[false, [], null, "quantum-safe"], [false, [], null, "grover-weakened"], "symmetric-grover", null],
+  "managed|AES-128-GCM": [[false, [], null, "quantum-safe"], [false, [], null, "grover-weakened"], "symmetric-grover", null],
+  "managed|AES_128_CBC": [[false, [], null, "quantum-safe"], [false, [], null, "grover-weakened"], "symmetric-grover", null],
+  "managed|AES_128_CTR": [[false, [], null, "quantum-safe"], [false, [], null, "grover-weakened"], "symmetric-grover", null],
+  "managed|AES_128_GCM": [[false, [], null, "quantum-safe"], [false, [], null, "grover-weakened"], "symmetric-grover", null]
 },
 "oracles": {
   "1.2.156.10197.1.301": "OID 1.2.156.10197.1.301 = SM2: sources/curated.json classical_oids (RFC cited)",

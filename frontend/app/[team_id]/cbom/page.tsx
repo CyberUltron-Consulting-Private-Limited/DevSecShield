@@ -86,6 +86,7 @@ import { createOutageGate, listView } from "@/components/cbom/results/listErrors
 import { cbomResultsListKey, cbomSourcesKeys } from "@/components/cbom/sources/keys";
 import { AgilityBaselineSection } from "@/components/cbom/grade/AgilityBaseline";
 import { CertHygieneSection } from "@/components/cbom/certificates/CertHygiene";
+import PopulationReconciliation from "@/components/cbom/population/PopulationReconciliation";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -379,6 +380,9 @@ function CBOMScanListDashboard({ dashboardData }: { dashboardData: CBOMDashboard
           </CardContent>
         </Card>
       </div>
+
+      {/* Population reconciliation: the same block as D1, D12, D13 and D14 (QA2 M4) */}
+      <PopulationReconciliation block={dashboardData.population} />
 
       {/* Remediation Actions Required */}
       <Card className="border-zinc-200 dark:border-zinc-800">
