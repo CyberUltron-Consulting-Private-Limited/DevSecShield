@@ -273,19 +273,28 @@ def _reason_details(session: Session, team_id: int, by_id: dict[int, dict[str, A
             by_id[int(job_id)]["summary"] = (result or {}).get("summary") if isinstance(result, dict) else None
     if not waiting:
         return
-    from backend.new_models import CbomScanNode
-    from backend.utilities.cbom_sources.jobs import offline_wait_reason
+    from backend.new_models import CbomCollectionSettings, CbomScanNode
+    from backend.utilities.cbom_sources.jobs import (
+        job_waiting_reason,
+        offline_wait_reason,
+    )
     from backend.utilities.cbom_sources.planning import node_status
+    from backend.utilities.cbom_sources.run_status import WINDOW_WAIT
 
     jobs = session.exec(select(CbomCollectionJob).where(CbomCollectionJob.id.in_(waiting))).all()  # type: ignore[union-attr]
     node_ids = sorted({int(j.node_id) for j in jobs if j.node_id is not None})
     nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(
         CbomScanNode.team_id == team_id, CbomScanNode.id.in_(node_ids))).all()}  # type: ignore[union-attr]
+    settings = session.exec(select(CbomCollectionSettings).where(CbomCollectionSettings.team_id == team_id)).first()
     now = utcnow()
     for job in jobs:
         node = nodes.get(job.node_id)
         if node is not None and node_status(node, now) == "offline":
             by_id[int(job.id)]["waiting_reason"] = offline_wait_reason(job, node, now)
+        elif node is not None and settings is not None:  # QA2 Q1-12: held by the scan window, as the run detail says
+            source = session.get(CbomCollectionSource, job.source_id) if job.source_id else None
+            if job_waiting_reason(job, node, settings, now, source) == WINDOW_WAIT:
+                by_id[int(job.id)]["waiting_reason"] = WINDOW_WAIT
 
 
 def _owners(session: Session, user_ids: Iterable[int]) -> dict[int, tuple[str | None, str | None]]:

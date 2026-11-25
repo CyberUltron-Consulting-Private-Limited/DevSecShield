@@ -3,7 +3,11 @@
 // fields (posture.inputs_changed / grade_inputs / grade_inputs_now / q_changed_now / q_grades_now, asset.q_now).
 import assert from "node:assert/strict";
 
-import { distributionText, gradeNowText, inputsChangedText, inputsSourceText, moscaText } from "./inputs";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { distributionText, gradeNowText, inputsChangedText, inputsSourceText, MOSCA_DEFAULTS, moscaDefaultsText,
+  moscaText } from "./inputs";
 import { explainRows, GRADE_KEYS, type QExplain } from "./model";
 
 // grade keys by index (this module's contract test allows a key only next to its own risk word)
@@ -47,3 +51,18 @@ assert.deepEqual(explainRows(explain).find((r) => r.label === "Inputs"),
   { label: "Inputs", value: "Recorded when the run started", basis: "d1" });
 
 console.log("grade inputs tests passed");
+
+// staging QA round 2 (lane one, item 06): unset Mosca inputs are filled with the documented defaults (never "grade as Unknown")
+assert.equal(moscaDefaultsText({ x: 10, y: 5, z: 12 }), null);
+assert.equal(moscaDefaultsText({ x: null, y: null, z: null }),
+  "Not set: grades use default Mosca assumptions (X 7 years, 10 for a high or critical source; Y 5 years; Z the years " +
+  "left until 2035)");
+assert.match(moscaDefaultsText({ x: null, y: 5, z: 0 })!, /^X not set: grades use default Mosca assumptions/);
+assert.ok(!/Unknown/.test(moscaDefaultsText(null)!));
+const qgrade = readFileSync(join(__dirname, "../../../../backend/utilities/cbom_sources/qgrade.py"), "utf8");
+const pin = (name: string) => Number(new RegExp(`^${name} = (\\d+)`, "m").exec(qgrade)?.[1]);
+assert.deepEqual({ x: pin("DEFAULT_X"), xCritical: pin("DEFAULT_X_CRITICAL"), y: pin("DEFAULT_Y"), zYear: pin("DEFAULT_Z_YEAR") },
+  { ...MOSCA_DEFAULTS }, "the card's defaults are qgrade's");
+const card = readFileSync(join(__dirname, "../sources/GradeInputsCard.tsx"), "utf8");
+assert.ok(card.includes("moscaDefaultsText(mosca)") && !card.includes("grade as Unknown"), "the card says defaults are used");
+

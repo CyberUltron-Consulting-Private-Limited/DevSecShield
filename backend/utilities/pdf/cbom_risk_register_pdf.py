@@ -327,6 +327,33 @@ def _assets(reg: dict[str, Any], styles: Styles, width: float) -> list[Flowable]
     return out
 
 
+REMOVED_INTRO = (
+    "Removed from scope: assets that only CBOM Sources sources deleted since their last collection still hold (not "
+    "read, \"source deleted\"). They are listed for the record with their last grade; none of them is counted in any "
+    "total of this register, the Scope Baseline (D1) or the board report (D14)."
+)
+
+
+def _removed(reg: dict[str, Any], styles: Styles, width: float) -> list[Flowable]:
+    """#497 review M2: the register rows of assets only deleted sources read, outside every total (D1's wording)."""
+    found = reg.get("removed_from_scope") if isinstance(reg.get("removed_from_scope"), dict) else {}
+    total, items = int(found.get("total") or 0), list(found.get("items") or [])
+    if not total:
+        return []
+    rows = [[_chip(i.get("q_grade")), i.get("label") or i["item_key"], i.get("asset_type"), i.get("source_name"),
+             str(i.get("last_observed_at") or "")[:10], "No"] for i in items]
+    fixed = [48, 0, 90, 150, 80, 60]
+    fixed[1] = width - sum(fixed)
+    rows = [[row[0], *(breakable(cell, w) for cell, w in zip(row[1:], fixed[1:]))] for row in rows]
+    out: list[Flowable] = [*section_heading("G. Removed from scope", styles), _note(REMOVED_INTRO, styles),
+                           Spacer(1, 3),
+                           dense_table(["Last grade", "Asset", "Type", "Last read by (deleted)", "Last seen",
+                                        "Counted"], rows, fixed)]
+    if total > len(items):
+        out.append(_note(f"{total - len(items)} further removed assets are not listed here.", styles))
+    return out
+
+
 def build_body(view: TeamCbomView, styles: Styles, width: float) -> list[Flowable]:
     reg = view.register
     if reg is None:
@@ -351,6 +378,7 @@ def build_body(view: TeamCbomView, styles: Styles, width: float) -> list[Flowabl
     out += _trend(reg, styles, width)
     out += section_heading("F. Every asset with its grade", styles)
     out += _assets(reg, styles, width)
+    out += _removed(reg, styles, width)
     return out
 
 

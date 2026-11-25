@@ -548,7 +548,13 @@ class CbomCollectionJob(SQLModel, table=True):
     # (runs.queue_run) and is charged nothing (migration cb14credit001)
     __table_args__ = (_SaIndex("uq_cbomcollectionjob_open_collect", "source_id", unique=True,
                                postgresql_where=_sa_text("kind = 'collect' AND status IN ('pending', 'claimed')"),
-                               sqlite_where=_sa_text("kind = 'collect' AND status IN ('pending', 'claimed')")),)
+                               sqlite_where=_sa_text("kind = 'collect' AND status IN ('pending', 'claimed')")),
+                      # staging QA2 Q1-02 (#497 review M3, migration q102hist001): each source's collection history
+                      # (``collections_view.collection_history``) from the index, not a scan of every job's params
+                      _SaIndex("ix_cbomcollectionjob_team_source_hist", "team_id", "source_id", "created_at",
+                               postgresql_include=["status", "finished_at"],
+                               postgresql_where=_sa_text("kind = 'collect' AND run_id IS NOT NULL"),
+                               sqlite_where=_sa_text("kind = 'collect' AND run_id IS NOT NULL")))
     id: int | None = Field(default=None, primary_key=True)
     team_id: int = Field(foreign_key="team.id", index=True)
     run_id: int | None = Field(default=None, foreign_key="cbomcollectionrun.id", index=True)

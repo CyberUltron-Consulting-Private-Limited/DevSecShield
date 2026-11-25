@@ -354,7 +354,10 @@ def test_targets_summary_counts_a_target_read_with_gaps_as_read():
 
 @pytest.mark.parametrize("status,jobs,expected", [
     ("done", [{"status": "success", "outcome": "ok"}], None),
-    ("running", [{"status": "pending", "waiting_reason": "Outside the scan window"}], None),
+    # staging QA2 Q1-12: a run held by the scan window says so (it had no reason)
+    ("running", [{"status": "pending", "waiting_reason": "Outside the scan window"}],
+     "1 of 1 jobs wait for the scan window: it starts when the window opens (Settings, scan window)"),
+    ("running", [{"status": "pending", "waiting_reason": "Waiting for the scan node to pick it up"}], None),
     ("failed", [{"id": 1, "status": "failure", "error": "auth_failed", "source_name": "K8s"}],
      "No job read anything: 1 failed. K8s: auth_failed"),
     ("cancelled", [{"id": 1, "status": "cancelled", "source_name": "A"}], "1 was cancelled. A: cancelled"),

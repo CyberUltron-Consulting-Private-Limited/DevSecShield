@@ -55,8 +55,6 @@ from reportlab.platypus import Flowable, KeepTogether, Paragraph, Spacer
 
 from backend.utilities.dashboard.cbom_team_rollup import (
     ASSET_ALGORITHM,
-    ASSET_OTHER,
-    ASSET_TYPES,
     EXCLUDED_FAILURE,
     EXCLUDED_NO_DATA,
     EXCLUDED_NOT_COMPLETED,
@@ -69,10 +67,13 @@ from backend.utilities.dashboard.cbom_team_rollup import (
     FrameworkPool,
     ScanFacts,
     TeamCbomView,
+    current_collections,
     newer_attempt_note,
 )
 from backend.utilities.pdf import cbom_deliverable_text as authored
+from backend.utilities.pdf import cbom_kb_text as kb_text
 from backend.utilities.pdf import cbom_methodology_text as method
+from backend.utilities.pdf import cbom_population as population
 from backend.utilities.pdf.cbom_deliverable_common import (
     TEMPLATE_VERSION,
     Styles,
@@ -148,9 +149,9 @@ COVERAGE_FORMULA_NOTE = (
 )
 # Product text: asset occurrences are per source, certificates are de-duplicated (plan 4.4).
 ASSET_TABLE_NOTE = (
-    "Occurrences are counted per source and file and are not merged, because each source's "
-    "usage is a separate exposure. A certificate found in several places is several "
-    "occurrences here but one unique certificate in the card above."
+    "The kinds and counts of the Scope Baseline and Asset Population Register (D1). Occurrences are counted per "
+    "source and are not merged, because each source's usage is a separate exposure; a certificate observed by "
+    "several sources is counted once, from its latest observation."
 )
 # Product text: the three tables of section 2 (methods, SOW Table 4 rows matched to the team's sources).
 METHODS_INTRO = (
@@ -203,15 +204,6 @@ _TEXT_LIMIT = 2000  # authored paragraphs are long; pdf_text's default (300) wou
 _CELL_LIMIT = 700  # scanner descriptions run to ~290 characters; leave generous headroom
 _BLANK_HEIGHT = 18  # write-in cells are at least this tall (points)
 
-ASSET_LIBRARY = "library"  # a CBOM Sources crypto library: a CycloneDX library component in the run CBOM
-_ASSET_TYPE_LABELS = {
-    "algorithm": "Algorithm",
-    "certificate": "Certificate",
-    "protocol": "Protocol",
-    "related-crypto-material": "Related crypto material",
-    ASSET_LIBRARY: "Crypto library (CycloneDX library component)",
-    ASSET_OTHER: "Other",
-}
 _SOURCE_KIND_NOUNS = (
     (SOURCE_REPO, "repository", "repositories"),
     (SOURCE_ZIP, "zip upload", "zip uploads"),
@@ -314,11 +306,38 @@ def _section(
 # ---------------------------------------------------------------------------------------------
 # 1. Purpose and scope (live)
 # ---------------------------------------------------------------------------------------------
-def _framework_keys(view: TeamCbomView) -> list[str]:
+def _all_framework_keys(view: TeamCbomView) -> list[str]:
     """The registered frameworks in engine order, then any key the view has that we do not know."""
     known = list(authored.FRAMEWORK_LABELS)
     extra = sorted({pool.framework for pool in view.frameworks} - set(known))
     return [*known, *extra]
+
+
+def _framework_keys(view: TeamCbomView) -> list[str]:
+    """The frameworks that bind the team's regulatory profile (``kb_text.framework_binds``, the rule D14 section 5
+    applies; staging QA2 Q1-04): an NBFC's and a bank's D2 differ where applicability differs."""
+    return [key for key in _all_framework_keys(view) if kb_text.framework_binds(key, view)]
+
+
+def _not_applicable_labels(view: TeamCbomView) -> list[str]:
+    return [authored.framework_label(key) for key in _all_framework_keys(view)
+            if not kb_text.framework_binds(key, view)]
+
+
+def _applicability_note(view: TeamCbomView) -> str:
+    """The profile, the frameworks left out, and the RBI instrument cited for this entity type: D14 section 5's
+    words, so an NBFC's and a bank's D2 differ exactly where their applicability differs."""
+    # lazy: one wording with D14 section 5
+    from backend.utilities.pdf import cbom_board_report_pdf as board
+
+    shown = f"Frameworks that apply to this team's regulatory profile ({board.profile_text(view)})."
+    hidden = _not_applicable_labels(view)
+    entity = kb_text.view_profile(view)["entity"]
+    found = authored.entity_instrument(entity)
+    entity_line = (board.EXPOSURE_ENTITY.format(label=kb_text.entity_label(entity), instrument=f"{found[0]}, {found[1]}")
+                   if found else board.EXPOSURE_ENTITY_NONE.format(label=kb_text.entity_label(entity)))
+    return (shown + (f" Not applicable and not shown: {', '.join(hidden)}." if hidden else "") + " " + entity_line
+            + " " + authored.rbi_mapping_note(entity))
 
 
 def _kpis(view: TeamCbomView) -> list[tuple[str, str, str]]:
@@ -335,7 +354,8 @@ def _kpis(view: TeamCbomView) -> list[tuple[str, str, str]]:
         ("Crypto assets", str(int(view.asset_occurrences)), "current occurrences"),
         ("Unique certificates", str(unique_certs), "de-duplicated across sources"),
         ("Frameworks", str(len(_framework_keys(view))), pooled_hint),
-        ("Requirements", str(len(view.requirements)), "tracked across frameworks"),
+        ("Requirements", str(sum(1 for r in view.requirements if kb_text.framework_binds(r.framework, view))),
+         "tracked across the frameworks that apply"),
     ]
 
 
@@ -354,13 +374,23 @@ def _scope_text(view: TeamCbomView) -> str:
         return EMPTY_SCOPE
     excluded = view.excluded or {}
     included = int(view.included)
-    first = (
-        f"This edition reflects {_count(included, 'completed scan')} of "
-        f"{_count(len(view.sources), 'source')} as of {fmt_date_utc(view.as_of)}: "
-        f"{int(view.fidelity_full)} full-fidelity and {int(view.fidelity_reduced)} legacy-format."
-    )
+    collections = len(current_collections(view))
+    if collections:  # a CBOM Sources collection is a completed result, not a code scan (QA2 Q1-16)
+        first = (
+            f"This edition reflects {_count(included, 'completed result')} "
+            f"({_count(max(included - collections, 0), 'code scan')}, "
+            f"{_count(collections, 'CBOM Sources collection')}) of {_count(len(view.sources), 'source')} as of "
+            f"{fmt_date_utc(view.as_of)}: {int(view.fidelity_full)} full-fidelity and "
+            f"{int(view.fidelity_reduced)} legacy-format."
+        )
+    else:
+        first = (
+            f"This edition reflects {_count(included, 'completed scan')} of "
+            f"{_count(len(view.sources), 'source')} as of {fmt_date_utc(view.as_of)}: "
+            f"{int(view.fidelity_full)} full-fidelity and {int(view.fidelity_reduced)} legacy-format."
+        )
     second = (
-        f"Of {_count(int(view.scans_total), 'CBOM scan')} recorded for this team, "
+        f"Of {_count(int(view.scans_total), 'CBOM result' if collections else 'CBOM scan')} recorded for this team, "
         f"{int(view.eligible)} completed successfully and {included} "
         f"{'is' if included == 1 else 'are'} included; "
         f"left out: {int(excluded.get(EXCLUDED_FAILURE, 0) or 0)} failed, "
@@ -375,38 +405,23 @@ def _scope_text(view: TeamCbomView) -> str:
     return " ".join(parts)
 
 
-def _asset_type_counts(view: TeamCbomView) -> dict[str, int]:
-    """``view.assets_by_type`` with the CBOM Sources rows the rollup types "other" counted under the type the run
-    CBOM export writes them as (``methodology.sources_other_types``: algorithm, or a library component); review #486
-    minor 9. The total is unchanged."""
-    counts = {k: int(v) for k, v in (view.assets_by_type or {}).items()}
-    mapped = (_facts(view) or {}).get("sources_other_types")
-    if isinstance(mapped, dict):
-        algorithm, library = int(mapped.get("algorithm", 0) or 0), int(mapped.get("library", 0) or 0)
-        moved = min(algorithm + library, counts.get(ASSET_OTHER, 0))
-        if moved == algorithm + library:
-            counts[ASSET_OTHER] = counts.get(ASSET_OTHER, 0) - moved
-            counts[ASSET_ALGORITHM] = counts.get(ASSET_ALGORITHM, 0) + algorithm
-            if library:
-                counts[ASSET_LIBRARY] = library
-    return counts
+def _asset_kind_rows(view: TeamCbomView) -> list[tuple[str, int]]:
+    """Current asset occurrences by the kinds the Scope Baseline (D1) counts (``cbom_population.asset_kind``), in D1's
+    order, so the two documents print the same numbers (staging QA2 Q1-05: D2 printed CycloneDX types, "Algorithm 277",
+    where D1 printed "Algorithms 8, Encryption settings 270")."""
+    counts = population.kind_counts(view)
+    return [(population.KIND_LABELS[kind], int(counts.get(kind, 0))) for kind in population.KINDS]
 
 
 def _asset_type_table(view: TeamCbomView, local: dict[str, ParagraphStyle]) -> Flowable:
-    counts = _asset_type_counts(view)
-    keys = [k for k in ASSET_TYPES if k != ASSET_OTHER]
-    keys += [k for k in (ASSET_LIBRARY, ASSET_OTHER) if counts.get(k, 0)]
-    keys += sorted(k for k in counts if k not in ASSET_TYPES and k != ASSET_LIBRARY)
-    rows: list[list[object]] = [
-        [_ASSET_TYPE_LABELS.get(key, key), str(int(counts.get(key, 0)))] for key in keys
-    ]
+    rows: list[list[object]] = [[label, str(n)] for label, n in _asset_kind_rows(view)]
     rows.append(
         [
             Paragraph(pdf_text("Total"), local["strong"]),
             Paragraph(pdf_text(str(int(view.asset_occurrences))), local["strong"]),
         ]
     )
-    return dense_table(["Asset type", "Occurrences"], rows, [170, 90])
+    return dense_table(["Asset kind (as D1)", "Occurrences"], rows, [170, 90])
 
 
 def _purpose(
@@ -415,7 +430,7 @@ def _purpose(
     body = styles["body"]
     asset_block = KeepTogether(
         [
-            _para("Current asset occurrences by type", styles["table_label"]),
+            _para("Current asset occurrences by kind", styles["table_label"]),
             Spacer(1, 2),
             _asset_type_table(view, local),
             _para(ASSET_TABLE_NOTE, local["caption"]),
@@ -596,7 +611,8 @@ def _manual(view: TeamCbomView, styles: Styles, local: dict[str, ParagraphStyle]
     content: list[Flowable] = [_para(MANUAL_INTRO, styles["body"]), table, Spacer(1, 4)]
     probed = method.network_probed(view)
     if probed:
-        content.append(_para(method.probed_note(probed), local["caption"]))
+        content.append(_para(method.probed_note(probed, int(method.coverage(view)["endpoints_probed"])),
+                             local["caption"]))
     return _section(SEC["Manual discovery checklist"], styles, content, together=True)
 
 
@@ -610,17 +626,31 @@ def _q0_open(view: TeamCbomView) -> dict[str, int] | None:
     return {str(k): int(v or 0) for k, v in found.items()} if isinstance(found, dict) else None
 
 
+def _open_cell(code: str, q0_open: dict[str, int], basis: dict[str, Any] | None) -> str:
+    """The "Open now" cell; ``mosca_missing`` says when it is 0 because defaults fill the unset inputs (QA2 Q1-06)."""
+    n = str(q0_open.get(code, 0))
+    if code == "mosca_missing" and basis is not None and not basis["team_set"]:
+        return f"{n} (defaults used)"
+    return n
+
+
 def _classification(view: TeamCbomView, styles: Styles, local: dict[str, ParagraphStyle]) -> list[Flowable]:
     body = styles["body"]
     types = dense_table(["CycloneDX 1.6 asset type", "What is recorded"],
                         [list(row) for row in method.ASSET_TYPE_ROWS], [120, 420])
-    grades = dense_table(["Grade", "Meaning"], [list(row) for row in method.Q_GRADE_ROWS], [80, 460])
+    grades = dense_table(["Grade", "Meaning"], [list(row) for row in method.Q_GRADE_ROWS], [80, 460],
+                         cell_limit=1200)  # every rule of a grade, never cut ("Disallowe…", QA2 Q1-16)
     q0_open = _q0_open(view)
-    q0_rows = [[code, text, _DASH if q0_open is None else str(q0_open.get(code, 0))]
+    basis = authored.mosca_basis(view)
+    q0_rows = [[code, text, _DASH if q0_open is None else _open_cell(code, q0_open, basis)]
                for code, text in method.Q0_REASONS]
     q0_table = dense_table(["Q0 reason", "Meaning", "Open now"], q0_rows, [96, 384, 60])
     q0_note = ("Open now: Q0 gaps open in the team's quantum risk register (D12) when this edition was generated."
                if q0_open is not None else "The quantum risk register was not loaded, so open Q0 counts are not shown.")
+    q0_note += f" Grades are computed {authored.mosca_basis_text(view)}."
+    meaning = authored.mosca_meaning_text(view)  # X, Y, Z, the rule and the defaults' sources (#497 m2)
+    if meaning:
+        q0_note += f" {meaning}"
     fixes = dense_table(["Fix class", "SOW term", "Meaning"], [list(row) for row in method.FIX_CLASSES],
                         [90, 70, 380])
     content: list[Flowable] = [
@@ -774,7 +804,7 @@ def _windows(view: TeamCbomView, styles: Styles) -> list[Flowable]:
 # 13. Evidence plan per deliverable (SOW Table 7)
 # ---------------------------------------------------------------------------------------------
 def _plan(styles: Styles) -> list[Flowable]:
-    table = dense_table(list(method.EVIDENCE_PLAN_COLUMNS), [list(row) for row in method.EVIDENCE_PLAN],
+    table = dense_table(list(method.EVIDENCE_PLAN_COLUMNS), [list(row) for row in method.evidence_plan()],
                         [30, 140, 150, 220], cell_limit=_CELL_LIMIT)
     content = [_para(PLAN_INTRO, styles["body"]), table, Spacer(1, 4)]
     return _section(SEC["Evidence plan per deliverable"], styles, content, together=False)
@@ -829,10 +859,9 @@ def _pool_row(label: str, pool: FrameworkPool | None) -> list[object]:
 
 def _pool_table(view: TeamCbomView, local: dict[str, ParagraphStyle]) -> Flowable:
     pools = {pool.framework: pool for pool in view.frameworks}
-    rows = [
-        _pool_row(authored.framework_label(key), pools.get(key)) for key in _framework_keys(view)
-    ]
-    live = list(pools.values())
+    keys = _framework_keys(view)
+    rows = [_pool_row(authored.framework_label(key), pools.get(key)) for key in keys]
+    live = [pools[key] for key in keys if key in pools]
     totals = [
         "All frameworks",
         sum(int(p.passed) for p in live),
@@ -851,8 +880,9 @@ def _coverage(
     view: TeamCbomView, styles: Styles, local: dict[str, ParagraphStyle]
 ) -> list[Flowable]:
     body = styles["body"]
-    block: list[Flowable] = [_para(_pool_note(view), local["caption"]), _pool_table(view, local)]
-    not_applicable = sum(int(pool.na) for pool in view.frameworks)
+    block: list[Flowable] = [_para(_applicability_note(view), local["caption"]),
+                             _para(_pool_note(view), local["caption"]), _pool_table(view, local)]
+    not_applicable = sum(int(pool.na) for pool in view.frameworks if kb_text.framework_binds(pool.framework, view))
     if not_applicable:
         verb = "is" if not_applicable == 1 else "are"
         block.append(

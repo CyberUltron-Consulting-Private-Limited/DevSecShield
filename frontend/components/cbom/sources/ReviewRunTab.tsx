@@ -30,6 +30,7 @@ import GradeInputsCard from "./GradeInputsCard";
 import { runResultsHref } from "@/components/cbom/results/resultsHref";
 import { cbomSourcesKeys, invalidateRunViews, TERMINAL_RUN } from "./keys";
 import { skipText } from "@/components/cbom/results/RunJobsTable";
+import { runTriggerLabel } from "@/components/cbom/results/resultRows";
 import { CriticalityCard } from "./RunPosture";
 import SchedulesCard from "./SchedulesCard";
 import { startRefusal } from "./startRefusal";
@@ -465,9 +466,16 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
                 <TableBody>
                   {runs.map((run) => (
                     <TableRow key={run.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800" data-testid={`review-run-${run.id}`}>
-                      <TableCell className="font-medium text-zinc-900 dark:text-white">#{run.id}</TableCell>
-                      <TableCell className="text-zinc-600 dark:text-zinc-400">{formatDateTime(run.created_at)}</TableCell>
                       <TableCell>
+                        <div className="font-medium text-zinc-900 dark:text-white">#{run.id}</div>
+                        {/* what started the run, under its number: the table fits a 1366 px window (#497 review m2) */}
+                        <div className="text-xs text-zinc-500 max-w-[150px] truncate" data-testid={`review-run-trigger-${run.id}`}
+                             title={runTriggerLabel(run) ?? undefined}>
+                          {runTriggerLabel(run) ?? "—"}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-zinc-600 dark:text-zinc-400">{formatDateTime(run.created_at)}</TableCell>
+                      <TableCell className="max-w-[260px] whitespace-normal">
                         <RunStatusBadge status={run.status} reason={run.status_reason} />
                         <RunStatusReason reason={run.status_reason} clamp testId={`review-run-status-reason-${run.id}`} />
                       </TableCell>
@@ -476,7 +484,8 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
                         {run.asset_count ?? 0}
                       </TableCell>
                       <TableCell className="text-zinc-600 dark:text-zinc-400">
-                        {credits(run.credits.charged)} charged / {credits(run.credits.refunded)} refunded
+                        <div>{credits(run.credits.charged)} charged</div>
+                        <div className="text-xs">{credits(run.credits.refunded)} refunded</div>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center justify-end gap-2">

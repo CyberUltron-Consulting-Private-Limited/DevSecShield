@@ -416,20 +416,17 @@ def test_binaries_are_configured_only_when_a_code_scan_ran_with_the_option(sview
     assert f"L1 {label} Agentless Not configured 0 0" in H.section(H.body_text(build_pdf(none)), 2)
 
 
-def test_sources_rows_are_counted_under_their_cyclonedx_type(sview):
-    """Review #486 minor 9: Sources rows the rollup types "other" print under the type the run CBOM export writes
-    (algorithm, or a library component); the total is unchanged."""
-    from backend.utilities.pdf.cbom_methodology_pdf import _asset_type_counts
+def test_the_asset_table_counts_d1s_kinds_not_cyclonedx_types(sview):
+    """Staging QA2 Q1-05 replaces review #486 minor 9: the table printed CycloneDX types ("Algorithm 277") while D1
+    printed its kinds ("Algorithms 8, Encryption settings 270"); it now prints D1's kinds and numbers."""
+    from backend.utilities.pdf import cbom_population as population
+    from backend.utilities.pdf.cbom_methodology_pdf import _asset_kind_rows
 
-    view = sources_view()
-    view.assets_by_type = {"algorithm": 10, "certificate": 4, "protocol": 3, "related-crypto-material": 2, "other": 9}
-    view.methodology = {**view.methodology, "sources_other_types": {"algorithm": 5, "library": 3}}
-    counts = _asset_type_counts(view)
-    assert counts == {"algorithm": 15, "certificate": 4, "protocol": 3, "related-crypto-material": 2, "other": 1,
-                      "library": 3}
-    assert sum(counts.values()) == sum(view.assets_by_type.values())
-    one = H.section(H.body_text(build_pdf(view)), 1)
-    assert "Algorithm 15" in one and "Crypto library (CycloneDX library component) 3" in one and "Other 1" in one
+    rows = _asset_kind_rows(sview)
+    assert [label for label, _n in rows] == [population.KIND_LABELS[k] for k in population.KINDS]
+    assert sum(n for _label, n in rows) == sview.asset_occurrences
+    one = H.section(H.body_text(build_pdf(sview)), 1)
+    assert "Crypto library (CycloneDX library component)" not in one and "Asset kind (as D1)" in one
 
 
 def test_no_sentence_denies_what_the_runs_did(sview, spdf, stext):
