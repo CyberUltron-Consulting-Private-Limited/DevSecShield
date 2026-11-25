@@ -69,6 +69,8 @@ _AIBOM_CATEGORY_DELTA: dict[str, float] = {
 
 _AIBOM_TYPE_DELTA: dict[str, float] = {
     "external_provider": 0.8,
+    # a self-hosted model server (Ollama on localhost): inside the trust boundary
+    "local_model_server": 0.5,
     "local_model_file": 0.6,
     "huggingface_model": 0.7,
     "embedding_model": 0.5,

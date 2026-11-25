@@ -328,6 +328,13 @@ def _bom_scope_rows(payload: Any) -> List[tuple]:
         kinds = [_model_kind(c) for c in comps if c.get("type") == "machine-learning-model"]
         # the models the compliance checks assess ("all N model(s)"): weight files and catalog / test mentions apart
         rows.append(("Models in use", str(kinds.count("model"))))
+        unnamed = _bom_props(payload).get("aibom:model_unnamed_calls")
+        if unnamed:
+            # a model call that names no model runs the library's default: stated, never guessed (#498 round 3)
+            library = _bom_props(payload).get("aibom:model_unnamed_library", "")
+            detail = _bom_props(payload).get("aibom:model_unnamed_detail", "")
+            rows.append(("Model calls naming no model (library default applies, model not identified)",
+                         f"{unnamed}" + (f" ({library})" if library else "") + (f": {detail}" if detail else "")))
         if kinds.count("weights"):
             rows.append(("Model weight files", str(kinds.count("weights"))))
         rows.append(("AI services and endpoints", str(len(bom.get("services") or []))))

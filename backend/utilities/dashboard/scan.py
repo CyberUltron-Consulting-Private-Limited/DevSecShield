@@ -15,7 +15,7 @@ from backend.utilities.dashboard.aibom_license import (
     is_unlicensed_library_gap,
     resolve_aibom_license,
 )
-from backend.utilities.dashboard.aibom_provider import is_model_asset, resolve_aibom_provider
+from backend.utilities.dashboard.aibom_provider import is_model_asset, is_service_asset, resolve_aibom_provider
 from backend.utilities.dashboard.sbom_license import (
     LICENSE_CATEGORIES as LICENSE_ALL_CATEGORIES,
     resolve_sbom_license_category,
@@ -1343,13 +1343,13 @@ def generate_scan_dashboard(
                 # when applied to non-libraries; for frameworks, not-declared does.
                 if (
                     not is_model_asset(asset)
-                    and component_type != "external_provider"
+                    and not is_service_asset(component_type)
                     and is_unlicensed_library_gap(license_type)
                 ):
                     total_unlicensed_assets += 1
                 # the libraries among them, as the PDF's "Library licences resolved" row and the BOM's
                 # aibom:licence_unknown count them (a model with no known licence is MODEL_LICENSE_UNKNOWN)
-                if not is_model_asset(asset) and component_type != "external_provider" and is_unknown_license(
+                if not is_model_asset(asset) and not is_service_asset(component_type) and is_unknown_license(
                         license_type):
                     total_licence_unknown_assets += 1
 

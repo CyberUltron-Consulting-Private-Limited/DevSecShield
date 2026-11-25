@@ -1694,7 +1694,7 @@ from backend.utilities.dashboard.aibom_license import (
     is_unlicensed_library_gap,
     resolve_aibom_license,
 )
-from backend.utilities.dashboard.aibom_provider import is_model_asset, resolve_aibom_provider
+from backend.utilities.dashboard.aibom_provider import is_model_asset, is_service_asset, resolve_aibom_provider
 from backend.utilities.dashboard.bom_risk_score import cbom_finding_risk_score
 
 CBOM_RISK_SCORE_FOR_IMPACT = {"critical": 9, "high": 7, "medium": 5, "low": 2}
@@ -1907,7 +1907,7 @@ def generate_ai_bom_dashboard_data(scans: list[Scan]) -> dict:
             # unlicensed assets = libraries still lacking a usable SPDX license
             if (
                 not is_model_asset(asset)
-                and component_type != "external_provider"
+                and not is_service_asset(component_type)
                 and is_unlicensed_library_gap(license_type)
             ):
                 total_unlicensed_assets += 1
