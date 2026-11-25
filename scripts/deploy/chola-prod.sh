@@ -462,8 +462,11 @@ aws_identity() {
 }
 CALLER_ARN=""
 
-simulate() { # <action> <resource>: allowed / implicitDeny / explicitDeny, or "unknown" when the simulation is refused
-  local src=${CALLER_ARN} out
+simulate() { # <action> <resource> [context-entry...]: allowed / implicitDeny / explicitDeny, or "unknown" when refused
+  # extra arguments are --context-entries values: a PassRole grant usually carries an iam:PassedToService condition,
+  # and without that key in the context the simulation reports implicitDeny for a grant that works
+  local src=${CALLER_ARN} out ctx=()
+  (($# > 2)) && ctx=(--context-entries "${@:3}")
   # an assumed role is simulated as its role
   if [[ "${src}" == arn:aws:sts::*:assumed-role/* ]]; then
     src="${src/:sts::/:iam::}"
@@ -471,7 +474,7 @@ simulate() { # <action> <resource>: allowed / implicitDeny / explicitDeny, or "u
     src="${src%/*}"
   fi
   out="$(aws iam simulate-principal-policy --policy-source-arn "${src}" --action-names "$1" --resource-arns "$2" \
-    --query 'EvaluationResults[0].EvalDecision' --output text 2>/dev/null)" || out=unknown
+    ${ctx[@]+"${ctx[@]}"} --query 'EvaluationResults[0].EvalDecision' --output text 2>/dev/null)" || out=unknown
   printf '%s\n' "${out}"
 }
 
@@ -516,7 +519,8 @@ aws_resources() {
   aws --region "${REGION}" backup describe-backup-vault --backup-vault-name "${BACKUP_VAULT}" --query BackupVaultName --output text >/dev/null ||
     die "cannot see backup vault ${BACKUP_VAULT}"
   [[ -n "${CALLER_ARN}" ]] || aws_identity
-  dec="$(simulate iam:PassRole "${BACKUP_ROLE}")"
+  dec="$(simulate iam:PassRole "${BACKUP_ROLE}" \
+    ContextKeyName=iam:PassedToService,ContextKeyValues=backup.amazonaws.com,ContextKeyType=string)"
   case "${dec}" in
     allowed) log "backup: iam:PassRole on ${BACKUP_ROLE##*/} allowed" ;;
     unknown) warn "cannot simulate iam:PassRole (no iam:SimulatePrincipalPolicy): the backup step fails with AccessDenied if ${CALLER_ARN##*/} may not pass ${BACKUP_ROLE##*/}" ;;
