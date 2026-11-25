@@ -37,7 +37,7 @@ def test_a_local_ollama_server_is_no_external_provider(page, tmp_path):
     http, _engine, _team, get = page
     payload = _repo(tmp_path, {
         "app.py": "import ollama\n"
-        'def ask(q):\n    return ollama.chat(model="mistral-7b-instruct", messages=[])\n',
+        'def ask(q):\n    return ollama.chat(model="mistral:7b", messages=[])\n',
         "requirements.txt": "ollama==0.4.4\n",
     })
     rows = {r["component_name"]: r for r in payload["results"]}
@@ -66,10 +66,11 @@ def test_the_pdf_states_model_calls_that_name_no_model(page, tmp_path):
     certin = body["scan_metadata"]["ai_bom_compliance"]["cert_in_aibom"]
     assert certin["out_of_scope"] == 0 and certin["pass"] == 0
     text = PROFILE._pdf_text(http.get(f"{base}/export", headers=AUTH).content)
-    assert "Model calls naming no model (library default applies, model not identified)" in text
+    assert "Model calls whose model is not identified (library default or configuration)" in text
     assert "2 (langchain 0.0.184): ChatOpenAI() in app.py; OpenAIEmbeddings() in app.py" in text
-    assert "Models in use 2" in text
-    assert "unidentified model (ChatOpenAI default)" in text
+    assert "Models in use 2 (0 identified, 2 not identified)" in text
+    assert body["dashboard"]["card_data"]["total_unidentified_models"] == 2
+    assert "unidentified model (ChatOpenAI)" in text
     assert "no AI models detected" not in text
     assert "AI model use detected; model not identified (library default applies)" in text
 
@@ -91,3 +92,36 @@ def test_a_mixed_licence_ollama_row_is_no_unknown_library(page, tmp_path):
     assert card["total_licence_unknown_assets"] == 0
     assert card["total_unlicensed_assets"] == 0
     assert card["total_external_providers"] == 0
+
+
+def test_unidentified_models_count_the_same_on_the_list_the_scan_and_the_team_views(page, tmp_path):
+    """Review 6062066749 of #498, m1: one unidentified model per client class per scan; the scan list, the scan
+    dashboard and the team dashboard count models the same way, and the team view keeps two repositories'
+    unidentified models apart (they can run different library defaults)."""
+    from types import SimpleNamespace
+
+    from backend.utilities.dashboard.scan_list import generate_ai_bom_dashboard_data
+    from backend.utilities.db.scan_list_item import return_ai_bom_list_item
+
+    _http, _engine, _team, get = page
+    payload = _repo(tmp_path, {
+        "a.py": "from langchain_openai import ChatOpenAI\nllm = ChatOpenAI()\n",
+        "b.py": "from langchain_openai import ChatOpenAI\nfrom openai import OpenAI\n"
+        'llm = ChatOpenAI()\nr = OpenAI().chat.completions.create(model="gpt-4o", messages=[])\n',
+    })
+    body, _base = get(payload)
+    card = body["dashboard"]["card_data"]
+    assert (card["total_models"], card["total_unidentified_models"]) == (2, 1)
+    class _Scan(SimpleNamespace):  # a stored scan row: any other column reads None
+        def __getattr__(self, _name):
+            return None
+
+    owner = SimpleNamespace(email="o@example.invalid", first_name="O", last_name="W", id=1)
+    scan = _Scan(id=1, scan_status="success", scan_data=payload, info={}, owner_user=owner)
+    item = return_ai_bom_list_item(scan)
+    assert item["risk_data"]["total_models"] == 2
+    other = _Scan(**{**scan.__dict__, "id": 2})
+    team = generate_ai_bom_dashboard_data([scan, other])
+    cards = team.get("card_data", team)
+    # gpt-4o is one model across both scans; each scan's unidentified ChatOpenAI stays its own
+    assert (cards["total_models"], cards["total_unidentified_models"]) == (3, 2)

@@ -140,7 +140,8 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
 
         lic = _license_type(v)
         if (
-            asset_type not in ("local_model_file", "huggingface_model", "embedding_model", "external_provider")
+            asset_type not in ("local_model_file", "huggingface_model", "embedding_model", "external_provider",
+                               "self_hosted_model", "local_model_server", "self_hosted_model_server")
             and is_unlicensed_library_gap(lic)
         ):
             unlicensed += 1
@@ -327,13 +328,18 @@ def _bom_scope_rows(payload: Any) -> List[tuple]:
         comps = [c for c in bom.get("components") or [] if isinstance(c, dict)]
         kinds = [_model_kind(c) for c in comps if c.get("type") == "machine-learning-model"]
         # the models the compliance checks assess ("all N model(s)"): weight files and catalog / test mentions apart
-        rows.append(("Models in use", str(kinds.count("model"))))
+        in_use = kinds.count("model")
+        unidentified = sum(1 for c in comps if c.get("type") == "machine-learning-model"
+                           and _model_kind(c) == "model" and _model_props(c).get("model:identified") == "false")
+        # "N identified + M not identified" (#498 round 4, m1): the same split as the results page
+        rows.append(("Models in use", f"{in_use}" + (f" ({in_use - unidentified} identified, {unidentified} not "
+                                                      "identified)" if unidentified else "")))
         unnamed = _bom_props(payload).get("aibom:model_unnamed_calls")
         if unnamed:
-            # a model call that names no model runs the library's default: stated, never guessed (#498 round 3)
+            # a call whose model is not named: the library default, or a model from configuration (#498 rounds 3-4)
             library = _bom_props(payload).get("aibom:model_unnamed_library", "")
             detail = _bom_props(payload).get("aibom:model_unnamed_detail", "")
-            rows.append(("Model calls naming no model (library default applies, model not identified)",
+            rows.append(("Model calls whose model is not identified (library default or configuration)",
                          f"{unnamed}" + (f" ({library})" if library else "") + (f": {detail}" if detail else "")))
         if kinds.count("weights"):
             rows.append(("Model weight files", str(kinds.count("weights"))))
@@ -353,6 +359,10 @@ def _bom_scope_rows(payload: Any) -> List[tuple]:
         if props.get(key):
             rows.append((label, props[key]))
     return rows
+
+
+def _model_props(comp: dict) -> Dict[str, str]:
+    return {str(p.get("name")): str(p.get("value")) for p in comp.get("properties") or [] if isinstance(p, dict)}
 
 
 def _model_kind(comp: dict) -> str:

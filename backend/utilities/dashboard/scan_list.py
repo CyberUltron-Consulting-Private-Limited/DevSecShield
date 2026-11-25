@@ -1855,6 +1855,7 @@ def generate_ai_bom_dashboard_data(scans: list[Scan]) -> dict:
     # Sets span ALL scans so the aggregate dashboard de-dupes across scans too.
     distinct_external_providers: set = set()
     distinct_models: set = set()
+    unidentified_models: set = set()
     distinct_datasets: set = set()
     total_high_risk_assets = 0
     total_unlicensed_assets = 0
@@ -1892,8 +1893,13 @@ def generate_ai_bom_dashboard_data(scans: list[Scan]) -> dict:
             # from 'source' (ModelProvider value, e.g. openai/anthropic).
             asset_name = asset.get("component_name") or asset.get("title") or "Unknown"
             if is_model_asset(asset):
-                # distinct model by (provider, asset_name)
-                distinct_models.add((provider, asset_name))
+                # distinct model by (provider, asset_name); a model the code uses without naming it is distinct per
+                # scan: two repositories' "unidentified model (ChatOpenAI)" can run different defaults (#498 round 4)
+                if asset.get("model_identified") is False:
+                    distinct_models.add((scan.id, provider, asset_name))
+                    unidentified_models.add((scan.id, provider, asset_name))
+                else:
+                    distinct_models.add((provider, asset_name))
             if component_type == "external_provider":
                 # distinct provider among external_provider findings
                 distinct_external_providers.add(provider)
@@ -2011,6 +2017,7 @@ def generate_ai_bom_dashboard_data(scans: list[Scan]) -> dict:
         "card_data": {
             "total_ai_assets": total_ai_assets,
             "total_models": total_models,
+            "total_unidentified_models": len(unidentified_models),
             "total_datasets": total_datasets,
             "total_external_providers": total_external_providers,
             "total_high_risk_assets": total_high_risk_assets,

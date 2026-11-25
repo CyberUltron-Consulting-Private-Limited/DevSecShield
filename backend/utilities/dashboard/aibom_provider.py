@@ -112,7 +112,7 @@ def infer_aibom_provider(
 
 # AI BOM component types that are a serving surface, not a library: a hosted provider, or a self-hosted model server
 # (Ollama on localhost, engine ``local_model_server``). Neither is an "unlicensed library" (#498 round 3 follow-up).
-SERVICE_ASSET_TYPES = frozenset({"external_provider", "local_model_server"})
+SERVICE_ASSET_TYPES = frozenset({"external_provider", "local_model_server", "self_hosted_model_server"})
 
 
 def is_service_asset(component_type: Any) -> bool:
@@ -124,7 +124,7 @@ def is_model_asset(asset: dict[str, Any]) -> bool:
     ``component_kind`` "model" (QA round 2, Q2-06). Weight files are ``local_model_file`` (models)."""
     kind = str(asset.get("component_kind") or asset.get("asset_kind") or "").lower()
     ctype = str(asset.get("component_type") or asset.get("asset_type") or "").lower()
-    return kind == "model" or ctype in {"local_model_file", "huggingface_model", "embedding_model"}
+    return kind == "model" or ctype in {"local_model_file", "huggingface_model", "embedding_model", "self_hosted_model"}
 
 
 def resolve_aibom_provider(asset: dict[str, Any]) -> str:

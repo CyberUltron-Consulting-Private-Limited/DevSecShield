@@ -1285,6 +1285,7 @@ def generate_scan_dashboard(
             # e.g. an OpenAI SDK imported in 4 files is ONE external provider, not 4.
             distinct_external_providers: set = set()
             distinct_models: set = set()
+            unidentified_models: set = set()
             distinct_datasets: set = set()
             total_high_risk_assets = 0
             total_unlicensed_assets = 0
@@ -1326,6 +1327,8 @@ def generate_scan_dashboard(
                     # _inventory(), so this is the verified true count, not the
                     # catalog over-count.
                     distinct_models.add((provider, asset_name))
+                    if asset.get("model_identified") is False:
+                        unidentified_models.add((provider, asset_name))
                 if component_type == "external_provider":
                     # distinct provider among external_provider findings
                     distinct_external_providers.add(provider)
@@ -1443,6 +1446,8 @@ def generate_scan_dashboard(
                 "card_data": {
                     "total_ai_assets": total_ai_assets,
                     "total_models": total_models,
+                    # of which used without naming the model (ChatOpenAI(), configuration; #498 round 4)
+                    "total_unidentified_models": len(unidentified_models),
                     "total_datasets": total_datasets,
                     "total_external_providers": total_external_providers,
                     "total_high_risk_assets": total_high_risk_assets,
