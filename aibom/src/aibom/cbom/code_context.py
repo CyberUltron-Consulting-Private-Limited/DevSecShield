@@ -62,6 +62,50 @@ def _path(props: dict[str, str]) -> str | None:
     )
 
 
+UNCONFIRMED = "unconfirmed"
+UNCONFIRMED_LABEL = "unconfirmed (configuration only)"
+CONFIG_STATUS_PROP = "crypto:configStatus"
+_UNCONFIRMED_PREFIX = (
+    "Unconfirmed (configuration only): no crypto call is proven to read this "
+    "setting, so it is Low and not scored. "
+)
+
+
+def is_unscored(props: dict[str, str]) -> bool:
+    """Listed, labelled, never scored: test code, or an unconfirmed setting."""
+    return (
+        props.get(TEST_CODE_PROP) == TEST_CODE
+        or props.get(CONFIG_STATUS_PROP) == UNCONFIRMED
+    )
+
+
+def mark_unconfirmed_settings(result: ScanResult) -> None:
+    """A settings value no crypto call in the project is proven to read (review
+    6063599094): labelled "unconfirmed (configuration only)", its flags Low, and kept
+    out of the score like test code."""
+    refs: set[str] = set()
+    for comp in result.components:
+        props = comp.properties or {}
+        if (
+            props.get("crypto:confidence") == "low"
+            and props.get("crypto:configBinding")
+            and not props.get("crypto:configReadAt")
+        ):
+            props[CONFIG_STATUS_PROP] = UNCONFIRMED
+            props["crypto:configStatusLabel"] = UNCONFIRMED_LABEL
+            comp.properties = props
+            refs.add(comp.bom_ref)
+    if not refs:
+        return
+    flags = []
+    for f in result.flags:
+        if f.target in refs and not f.message.startswith(_UNCONFIRMED_PREFIX):
+            message = _UNCONFIRMED_PREFIX + f.message
+            f = dataclasses.replace(f, severity=_LOW, message=message)
+        flags.append(f)
+    result.flags = flags
+
+
 def downgrade_test_code(result: ScanResult) -> None:
     """Every component found in test code: labelled; its flags Low (their messages
     say so); its stacked severity low."""
@@ -88,6 +132,11 @@ def downgrade_test_code(result: ScanResult) -> None:
 
 
 __all__ = [
+    "CONFIG_STATUS_PROP",
+    "UNCONFIRMED",
+    "UNCONFIRMED_LABEL",
+    "is_unscored",
+    "mark_unconfirmed_settings",
     "TEST_CODE",
     "TEST_CODE_LABEL",
     "TEST_CODE_PROP",

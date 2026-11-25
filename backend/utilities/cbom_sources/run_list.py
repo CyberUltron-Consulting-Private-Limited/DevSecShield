@@ -311,7 +311,7 @@ def run_row(run: CbomCollectionRun, counts: dict[str, Any], jobs: dict[str, Any]
         "risk_data": risk,
         "average_risk_score": average_risk(severity),
         # the one risk score (posture function), as a code scan's list row (PR #500 takeover)
-        **{k: v for k, v in risk_posture(severity).items() if k in ("risk_score", "risk_grade", "risk_label")},
+        **{k: v for k, v in risk_posture(severity).items() if k in ("risk_score", "risk_grade", "risk_label", "risk_posture")},
         "sources": [{"id": s["id"], "name": s["name"], "kind": s["kind"]} for s in sources],
         "repo_url": None,
         "branch": None,

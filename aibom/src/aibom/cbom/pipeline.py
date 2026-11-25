@@ -137,10 +137,12 @@ def scan_crypto(
         posture=ctx.posture.freeze(assembly_failed=assembly_failed),
     )
     result.sort()
-    from aibom.cbom.code_context import downgrade_test_code
+    from aibom.cbom.code_context import downgrade_test_code, mark_unconfirmed_settings
 
-    # test code is labelled and lowered BEFORE scoring, so it never weighs in
+    # test code and unconfirmed settings are labelled and lowered BEFORE scoring, so
+    # they never weigh in
     downgrade_test_code(result)
+    mark_unconfirmed_settings(result)
     score_crypto(result)  # C8: weight crypto flags -> result.scores (stacked severity)
     from aibom.cbom.normalize import stamp_algorithm_oids
 

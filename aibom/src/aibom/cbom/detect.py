@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -1248,7 +1248,8 @@ _CRYPTO_TOKENS = frozenset({
     "jws", "jwe", "jose", "ssl", "tls", "keygen", "keypair", "keyfactory", "keyspec",
     "secretkey", "secretkeyspec", "keygenerator", "keypairgenerator", "aes", "rsa",
     "ecdsa", "ecdh", "fernet", "subtle", "openssl", "getinstance", "messagedigest",
-    "pyjwt", "nacl", "sodium",
+    "pyjwt", "nacl", "sodium", "importkey", "exportkey", "generatekey", "derivekey",
+    "derivebits", "wrapkey", "unwrapkey",
 })
 _SEGMENT_ONLY = frozenset({"crypto", "cryptography"})
 _DECL_LINE = re.compile(
@@ -1297,7 +1298,11 @@ _BINDING = re.compile(
     r"""\s*(?::\s*[\w.<>?\[\], ]+?\s*)?(?:(?<![=!<>])=(?![=>])|:(?!:))\s*$"""
 )
 _WORD_ID = re.compile(r"[A-Za-z_]\w*")
-_READ_NAME = re.compile(r"(?<![\w.])(?:[A-Za-z_]\w*\s*\.\s*)*([A-Za-z_]\w*)")
+_READ_CHAIN = re.compile(r"(?<![\w.])[A-Za-z_]\w*(?:\s*\.\s*[A-Za-z_]\w*)*")
+_VALUE_ATTRS = frozenset({"value", "name"})
+_SUBSCRIPT_KEY = re.compile(
+    r"""([A-Za-z_]\w*)\s*\[\s*["']([A-Za-z_][\w.-]*)["']\s*\]"""
+)
 _ASSIGN_LHS = re.compile(
     r"^\s*(?:(?:val|var|const|let|final|private|static|public)\s+)*"
     r"[\w.\[\]\"', ]+?(?::\s*[\w.<>?\[\], ]+?)?\s*(?<![=!<>+*/-])=(?![=>])"
@@ -1335,13 +1340,16 @@ _NOT_CALLEES = frozenset({
 })
 
 
-def crypto_reads(lines: list[str]) -> dict[str, int]:
-    """Lower-cased names a crypto call reads on each line of a file, with the first
-    line (1-based) that reads it: the call's arguments, a comprehension's source, an
-    attribute or a subscript key (``Cipher.getInstance(cfg.spec)`` -> ``cfg``,
-    ``spec``; ``hashlib.new(CONFIG['digest'])`` -> ``config``, ``digest``). Not the
-    assigned name (``cipher = Fernet(k)``) nor a callee / receiver."""
-    reads: dict[str, int] = {}
+def crypto_read_sites(lines: list[str]) -> list[tuple[str, int, str | None]]:
+    """``(name, line, qualifier)`` for each name a crypto call reads in a file: the
+    call's arguments, a comprehension's source, an attribute or a subscript key, with
+    the object it is read from (``Cipher.getInstance(cfg.spec)`` -> ``("spec", n,
+    "cfg")``; ``hashlib.new(CONFIG['digest'])`` -> ``("digest", n, "CONFIG")``;
+    ``hashlib.new(Hash.WEAK.value)`` -> ``("weak", n, "Hash")``). Names are lower-cased,
+    qualifiers keep their case. Not the assigned name (``cipher = Fernet(k)``) nor a
+    callee / receiver; a dotted read names its attribute, so ``Cipher.ENCRYPT_MODE``
+    reads no setting called "cipher"."""
+    sites: list[tuple[str, int, str | None]] = []
     for n, line in enumerate(lines, start=1):
         if "(" not in line or len(line) > _MAX_STRING_SCAN:
             continue
@@ -1349,17 +1357,28 @@ def crypto_reads(lines: list[str]) -> dict[str, int]:
             line = _after_params(line)  # a declaration's parameter list is no call
         if not any(_is_crypto_callee(c) for c, _a in split_calls(_blank_strings(line))):
             continue
-        code = _ASSIGN_LHS.sub("", _blank_strings(line), count=1)
-        code = _CALL_CHAIN.sub("(", code)
-        # a dotted read names its attribute (``cfg.spec`` -> spec), not its object
-        # (``Cipher.ENCRYPT_MODE`` reads no setting called "cipher")
-        names = [m.group(1).lower() for m in _READ_NAME.finditer(code)]
-        for lit in _STR_LIT.finditer(_ASSIGN_LHS.sub("", line, count=1)):
+        raw = _ASSIGN_LHS.sub("", line, count=1)
+        code = _CALL_CHAIN.sub("(", _ASSIGN_LHS.sub("", _blank_strings(line), count=1))
+        for m in _READ_CHAIN.finditer(code):
+            parts = [p.strip() for p in m.group(0).split(".")]
+            if len(parts) > 1 and parts[-1].lower() in _VALUE_ATTRS:
+                parts = parts[:-1]  # ``Hash.WEAK.value`` / ``.name`` read the member
+            sites.append((parts[-1].lower(), n, parts[0] if len(parts) > 1 else None))
+        for m in _SUBSCRIPT_KEY.finditer(raw):
+            sites.append((m.group(2).lower(), n, m.group(1)))
+        for lit in _STR_LIT.finditer(raw):
             body = lit.group(0)[1:-1]
             if re.fullmatch(r"[A-Za-z_][\w.-]*", body):
-                names.append(body.lower())
-        for name in names:
-            reads.setdefault(name, n)
+                sites.append((body.lower(), n, None))
+    return sites
+
+
+def crypto_reads(lines: list[str]) -> dict[str, int]:
+    """Lower-cased names a crypto call reads in a file -> the first line that reads it
+    (:func:`crypto_read_sites`)."""
+    reads: dict[str, int] = {}
+    for name, line, _q in crypto_read_sites(lines):
+        reads.setdefault(name, line)
     return reads
 
 
@@ -1387,19 +1406,19 @@ def _innermost_call(stack: list[_Frame]) -> str | None:
     return next((b for ch, decl, b in reversed(stack) if ch == "(" and not decl), None)
 
 
-_PY_CLASS_LINE = re.compile(r"^class\s+[A-Za-z_]\w*(\s*\(([^)]*)\))?")
+_PY_CLASS_LINE = re.compile(r"^class\s+([A-Za-z_]\w*)(\s*\(([^)]*)\))?")
 _PY_ENUM_BASE = re.compile(r"\b(?:Enum|IntEnum|StrEnum|Flag|IntFlag)\b")
 _PY_FIELD = re.compile(r"^([A-Za-z_]\w*)\s*(?::[^=]*)?(?<![=!<>])=(?!=)")
 
 
 def _class_fields(
     raw: list[str], stack_at: list[list[_Frame]]
-) -> dict[int, tuple[str, bool]]:
-    """Line index -> (field name, in an Enum), for each ``name[: type] = ...`` line
-    directly in a Python class body (not in a method). Indentation decides the
-    body."""
-    out: dict[int, tuple[str, bool]] = {}
-    classes: list[list[Any]] = []  # [class indent, body indent, is an Enum]
+) -> dict[int, tuple[str, bool, str]]:
+    """Line index -> (field name, in an Enum, class name), for each
+    ``name[: type] = ...`` line directly in a Python class body (not in a method).
+    Indentation decides the body."""
+    out: dict[int, tuple[str, bool, str]] = {}
+    classes: list[list[Any]] = []  # [class indent, body indent, is an Enum, name]
     for idx, line in enumerate(raw):
         text = line.strip()
         if not text or text.startswith(("#", "@")) or stack_at[idx]:
@@ -1412,11 +1431,11 @@ def _class_fields(
         if classes and indent == classes[-1][1]:
             m = _PY_FIELD.match(text)
             if m:
-                out[idx] = (m.group(1).lower(), bool(classes[-1][2]))
+                out[idx] = (m.group(1).lower(), bool(classes[-1][2]), classes[-1][3])
         cls = _PY_CLASS_LINE.match(text)
         if cls:
-            enum = bool(cls.group(2) and _PY_ENUM_BASE.search(cls.group(2)))
-            classes.append([indent, None, enum])
+            enum = bool(cls.group(3) and _PY_ENUM_BASE.search(cls.group(3)))
+            classes.append([indent, None, enum, cls.group(1)])
     return out
 
 
@@ -1493,11 +1512,16 @@ def _record_types(lines: list[str]) -> set[str]:
     return out
 
 
-def _binding_before(text: str) -> str | None:
+def _binding_raw(text: str) -> str | None:
     m = _BINDING.search(text)
     if not m:
         return None
-    return (m.group(1) or m.group(2) or "").lower() or None
+    return (m.group(1) or m.group(2) or "") or None
+
+
+def _binding_before(text: str) -> str | None:
+    raw = _binding_raw(text)
+    return raw.lower() if raw else None
 
 
 _ADD_ARGUMENT = re.compile(
@@ -1524,11 +1548,16 @@ class _ConfigLiterals:
         lines: list[str],
         lang: str,
         raw: list[str] | None = None,
-        project_reads: Mapping[str, str] | None = None,
+        project_reads: Any = None,
     ) -> None:
         self.lang = lang
-        self.reads = crypto_reads(lines)
-        self.project_reads: Mapping[str, str] = project_reads or {}
+        self.sites = crypto_read_sites(lines)
+        self.reads: dict[str, int] = {}
+        for name, n, _q in self.sites:
+            self.reads.setdefault(name, n)
+        # a ``prove(binding, owners) -> "path:line" | None`` of the other files of the
+        # project (algorithm_scan), or a plain name -> location map (unit tests)
+        self.project_reads = project_reads or {}
         js_keys = _JS_LIBRARY_CONFIG_KEYS if lang == _JS else frozenset()
         self.keys = _LIBRARY_CONFIG_KEYS | js_keys
         self.records = _record_types(lines)
@@ -1543,19 +1572,33 @@ class _ConfigLiterals:
             _class_fields(raw, self.stack_at) if lang == _PY and raw else {}
         )
 
-    def read_at(self, binding: str | None) -> str | None:
+    def read_at(
+        self,
+        binding: str | None,
+        owners: Sequence[str] = (),
+        *,
+        qualified: bool = False,
+    ) -> str | None:
         """Where a crypto call reads ``binding``: ``"<line>"`` in this file, else
-        ``"<path>:<line>"`` elsewhere in the project, else None."""
+        ``"<path>:<line>"`` in another file LINKED to this one (it imports it, or
+        names one of ``owners``: the dict / object / class the setting belongs to),
+        else None. ``qualified``: in this file too, only a read through one of
+        ``owners`` (``settings.cipher`` for ``Object.assign(settings, {...})``)."""
         if not binding:
             return None
-        if binding in self.reads:
-            return str(self.reads[binding])
+        for name, n, qualifier in self.sites:
+            via_owner = bool(qualifier and qualifier in owners)
+            if name == binding and (not qualified or via_owner):
+                return str(n)
+        if callable(self.project_reads):
+            found = self.project_reads(binding, tuple(owners))
+            return str(found) if found else None
         return self.project_reads.get(binding)
 
-    def _flows(self, binding: str | None) -> bool:
+    def _flows(self, binding: str | None, owners: Sequence[str] = ()) -> bool:
         if not binding:
             return False
-        return binding in self.keys or self.read_at(binding) is not None
+        return binding in self.keys or self.read_at(binding, owners) is not None
 
     @staticmethod
     def _walk(raw: str, code: str, stack: list[_Frame], upto: int) -> None:
@@ -1564,14 +1607,17 @@ class _ConfigLiterals:
                 decl = ch == "(" and bool(_DECL_PAREN.search(code[:i]))
                 if ch == "(":
                     callee = _CALLEE.search(code[:i])
-                    key = callee.group(1).rsplit(".", 1)[-1] if callee else None
+                    # the whole callee chain (``crypto.subtle.importKey``): its last
+                    # segment names the method, the rest the API it belongs to
+                    key = callee.group(1) if callee else None
+                    last = key.rsplit(".", 1)[-1] if key else None
                     # a grouping paren (``(function () { ... })()``, ``x = (a, b)``)
                     # passes nothing to a call
-                    decl = decl or key is None or key in _NOT_CALLEES
+                    decl = decl or last is None or last in _NOT_CALLEES
                 elif ch == "{" and _ENUM_BRACE.search(code[:i]):
                     key, decl = _ENUM_KEY, True  # an enum body
                 else:
-                    key = _binding_before(raw[:i])
+                    key = _binding_raw(raw[:i])
                     # a brace after ``)`` / a name / ``else`` / ``->`` opens a block
                     # (a method, class or lambda body), not an object literal: the
                     # bindings in it are statements
@@ -1584,11 +1630,14 @@ class _ConfigLiterals:
         """Whether the innermost call is the constructor of a record type this file
         declares (not a crypto API)."""
         callee = _innermost_call(stack)
-        return bool(callee and callee in self.records and not _is_crypto_callee(callee))
+        last = callee.rsplit(".", 1)[-1] if callee else None
+        return bool(last and last in self.records and not _is_crypto_callee(callee))
 
-    def judge(self, line_idx: int, line: str) -> list[tuple[int, int, str, str]]:
-        """``(start, end, binding, SETTING | MENTION)`` for the literals of ``line``
-        that are settings or mentions (see above); other literals are not listed."""
+    def judge(self, line_idx: int, line: str) -> list[Judged]:
+        """``(start, end, binding, SETTING | MENTION, owners)`` for the literals of
+        ``line`` that are settings or mentions (see above); other literals are not
+        listed. ``owners`` are the symbols the setting belongs to (the dict, object,
+        record or class), for the linked-read rule of :meth:`read_at`."""
         if (
             self.lang not in _CONFIG_LANGS
             or len(line) > _MAX_STRING_SCAN
@@ -1599,32 +1648,34 @@ class _ConfigLiterals:
         case_label = bool(_CASE_LABEL.match(line))
         ts_type = _TS_TYPE.match(line) if self.lang == _JS else None
         code = _blank_strings(line)
-        out: list[tuple[int, int, str, str]] = []
+        out: list[Judged] = []
         field = self.class_fields.get(line_idx)
         for lit in _STR_LIT.finditer(line):
+            span = (lit.start(), lit.end())
             stack = list(self.stack_at[line_idx])
             self._walk(line, code, stack, lit.start())
             callee = _innermost_call(stack)
             in_crypto_call = any(
                 _is_crypto_callee(b) for ch, d, b in stack if ch == "(" and not d
             )
+            owners = tuple(b for _c, _d, b in stack if b and b != _ENUM_KEY)
             before, after = code[:lit.start()], code[lit.end():]
             if field is not None:
-                name, enum = field
+                name, enum, cls = field
                 if in_crypto_call:
                     continue
                 if enum:  # an Enum member: a mention, unless a crypto call reads it
-                    if not self._flows(name):
-                        out.append((lit.start(), lit.end(), name, MENTION))
+                    if not self._flows(name, (cls,)):
+                        out.append((*span, name, MENTION, (cls,)))
                     continue
-                out.append((lit.start(), lit.end(), name, SETTING))
+                out.append((*span, name, SETTING, (cls,)))
                 continue
             if in_crypto_call:
                 continue  # inside a crypto call's arguments: it flows into the call
             if self.lang == _PY and _is_label(lit.group(0)[1:-1]):
                 # a label or message (whitespace in it): ``{"backend": "AES-256 ..."}``
                 outer = next((b for _c, _d, b in reversed(stack) if b), None)
-                out.append((lit.start(), lit.end(), outer or "label", MENTION))
+                out.append((*span, (outer or "label").lower(), MENTION, owners))
                 continue
             cmp_before = _COMPARE_BEFORE.search(before)
             cmp_after = _COMPARE_AFTER.match(after)
@@ -1632,35 +1683,40 @@ class _ConfigLiterals:
                 other = (cmp_before and cmp_before.group(1)) or (
                     cmp_after and cmp_after.group(1)
                 )
-                out.append((lit.start(), lit.end(), (other or "comparison").lower(),
-                            MENTION))
+                out.append((*span, (other or "comparison").lower(), MENTION, owners))
+                continue
+            if _membership(code, lit.start(), lit.end(), stack):
+                # an inline allow / deny check: ``['md5', 'sha1'].includes(alg)``,
+                # ``alg in ('md5', 'sha1')``, ``List.of("MD5").contains(alg)``
+                out.append((*span, "membership", MENTION, owners))
                 continue
             if case_label and re.match(r"^\s*case\b[^:]*$", before):
-                out.append((lit.start(), lit.end(), "case", MENTION))
+                out.append((*span, "case", MENTION, owners))
                 continue
             if case_label and "->" in after:
-                out.append((lit.start(), lit.end(), "when", MENTION))
+                out.append((*span, "when", MENTION, owners))
                 continue
             if ts_type or (
                 self.lang == _JS
                 and (_UNION_BAR.search(before) or _UNION_AFTER.match(after))
             ):
                 name = ts_type.group(1).lower() if ts_type else "type"
-                out.append((lit.start(), lit.end(), name, MENTION))
+                out.append((*span, name, MENTION, owners))
                 continue
             enum_frame = any(b == _ENUM_KEY for _c, _d, b in stack)
+            callee = callee.rsplit(".", 1)[-1] if callee else None
             if enum_frame and callee and callee[:1].isupper():
                 # an enum constant's argument (``DES("DES/ECB")``)
-                if not self._flows(callee.lower()):
-                    out.append((lit.start(), lit.end(), callee.lower(), MENTION))
+                if not self._flows(callee.lower(), owners):
+                    out.append((*span, callee.lower(), MENTION, owners))
                 continue
             container = next(
                 (b for c, _d, b in reversed(stack) if c in "[{(" and b), None
             )
-            if container == "choices" or _CHOICES.search(before):
+            if (container or "").lower() == "choices" or _CHOICES.search(before):
                 dest = _dest(line) or "choices"
-                if not self._flows(dest):
-                    out.append((lit.start(), lit.end(), dest, MENTION))
+                if not self._flows(dest, owners):
+                    out.append((*span, dest, MENTION, owners))
                 continue
             if not stack or statement:
                 continue  # a statement, not a setting inside a container
@@ -1669,7 +1725,8 @@ class _ConfigLiterals:
             if direct and self._record_setting(stack):
                 # an argument of the file's own settings record (``KeyProfile(...,
                 # "AES-256-GCM", ...)``)
-                out.append((lit.start(), lit.end(), f"{calls[-1]}".lower(), SETTING))
+                record = (calls[-1] or "").rsplit(".", 1)[-1]
+                out.append((*span, record.lower(), SETTING, (record,)))
                 continue
             if direct:
                 continue  # a direct argument of a call: the call may use it
@@ -1679,9 +1736,78 @@ class _ConfigLiterals:
             scalar = own is not None and (
                 (top[0] == "{" and not top[1]) or (top[0] == "(" and top[1])
             )
-            if scalar:
-                out.append((lit.start(), lit.end(), own or "", SETTING))
+            if not scalar or own is None:
+                continue
+            if calls and not self._record_setting(stack):
+                # an object handed to a call that is no crypto API
+                # (``Object.assign(settings, { cipher: ... })``): a setting only when
+                # a crypto call reads it through the call's target
+                target = _call_target(line, calls[-1])
+                if target and self.read_at(own, (target,), qualified=True):
+                    out.append((*span, own, SETTING, (target,)))
+                else:
+                    out.append((*span, own, MENTION, owners))
+                continue
+            out.append((*span, own, SETTING, owners))
         return out
+
+
+Judged = tuple[int, int, str, str, tuple[str, ...]]
+_MEMBER_AFTER = re.compile(
+    r"^\s*\.\s*(?:includes|indexOf|contains|containsKey|has|count)\s*\("
+)
+_IN_BEFORE = re.compile(r"\b(?:not\s+)?in\s*$")
+_LIST_FACTORY = re.compile(
+    r"\b(?:List|Set|Arrays|ImmutableSet|ImmutableList)\s*\.\s*(?:of|asList|copyOf)\s*$"
+)
+
+
+def _membership(code: str, start: int, end: int, stack: list[_Frame]) -> bool:
+    """Whether the literal sits in an inline container that is only tested for
+    membership: followed by ``.includes(`` / ``.contains(`` / ``.has(`` (also as
+    ``List.of(...)`` / ``Set.of(...)`` / ``Arrays.asList(...)``), or preceded by
+    ``in`` / ``not in``."""
+    if not stack:
+        return False
+    depth, close = 0, None
+    for i in range(end, len(code)):
+        ch = code[i]
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            if depth == 0:
+                close = i
+                break
+            depth -= 1
+    if close is None:
+        return False
+    depth, opened = 0, None
+    for i in range(start - 1, -1, -1):
+        ch = code[i]
+        if ch in ")]}":
+            depth += 1
+        elif ch in "([{":
+            if depth == 0:
+                opened = i
+                break
+            depth -= 1
+    if opened is None:
+        return False
+    head = code[:opened]
+    # a paren is a container only as ``List.of(`` / ``Set.of(`` / ``Arrays.asList(``
+    # or a tuple after ``in``
+    factory = _LIST_FACTORY.search(head) or _IN_BEFORE.search(head)
+    if code[opened] == "(" and not factory:
+        return False
+    return bool(_MEMBER_AFTER.match(code[close + 1:]) or _IN_BEFORE.search(head))
+
+
+def _call_target(line: str, callee: str | None) -> str | None:
+    """The first argument of ``callee(`` on ``line`` when it is a plain name."""
+    if not callee:
+        return None
+    m = re.search(rf"\b{re.escape(callee)}\s*\(\s*([A-Za-z_][\w.]*)\s*,", line)
+    return m.group(1).rsplit(".", 1)[-1] if m else None
 
 
 def blank_prose(line: str, lang: str) -> str:
@@ -2741,9 +2867,14 @@ def _substitute_python_constants(
     return used
 
 
+# where crypto calls in OTHER files read a setting: ``prove(binding, owners)`` (the
+# scanner's linked reads), or a plain name -> ``path:line`` map (unit tests)
+ProjectProof = Mapping[str, str] | Callable[[str, tuple[str, ...]], str | None]
+
+
 def _tag_settings(
     per_line: dict[str, Detection],
-    settings: list[tuple[int, int, str]],
+    settings: list[tuple[int, int, str, tuple[str, ...]]],
     lit_line: str,
     pats_by_key: Mapping[str, list[re.Pattern[str]]],
     config: _ConfigLiterals,
@@ -2751,17 +2882,17 @@ def _tag_settings(
     """A detection the line names only inside a settings value carries the
     setting's name, and either the crypto call that reads it or low confidence."""
     rest = lit_line
-    for start, end, _b in settings:
+    for start, end, _b, _o in settings:
         rest = rest[:start + 1] + " " * (end - start - 2) + rest[end - 1:]
     for det in per_line.values():
         pats = pats_by_key.get(det.key.split("-")[0], []) + pats_by_key.get(det.key, [])
         if det.receiver_bound or not pats or any(p.search(rest) for p in pats):
             continue  # named by a call, or outside the settings values
-        for start, end, binding in settings:
+        for start, end, binding, owners in settings:
             body = lit_line[start:end]
             if any(p.search(body) for p in pats):
                 det.config_binding = binding
-                read = config.read_at(binding)
+                read = config.read_at(binding, owners)
                 if read is None and binding in config.keys:
                     read = "library-key"
                 det.config_read_at = read
@@ -2774,7 +2905,7 @@ def detect_crypto(
     lang: str,
     external: Mapping[str, Any] | None = None,
     config_evidence: list[dict[str, Any]] | None = None,
-    project_reads: Mapping[str, str] | None = None,
+    project_reads: ProjectProof | None = None,
 ) -> list[Detection]:
     """Detect crypto usage in one source file's ``text`` (of language ``lang``).
 
@@ -2899,11 +3030,11 @@ def detect_crypto(
         # algorithm without using it: blank it for this lane only (API strings such as "AES/GCM/NoPadding" have
         # no spaces and stay).
         lit_line = blank_labels(blank_prose(line, lang), lang)
-        settings: list[tuple[int, int, str]] = []
+        settings: list[tuple[int, int, str, tuple[str, ...]]] = []
         if config is not None:
-            for start, end, binding, kind in config.judge(line_no - 1, line):
+            for start, end, binding, kind, owners in config.judge(line_no - 1, line):
                 if kind == SETTING:
-                    settings.append((start, end, binding))
+                    settings.append((start, end, binding, owners))
                     continue
                 if lit_line[start + 1:end - 1].strip():
                     _evidence(line_no, line[start + 1:end - 1], binding)

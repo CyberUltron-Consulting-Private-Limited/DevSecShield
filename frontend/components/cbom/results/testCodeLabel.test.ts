@@ -21,3 +21,11 @@ test("the findings table labels test code beside the name", () => {
 test("test code is never filtered out of the findings", () => {
   assert.ok(!/filter\([^)]*code_context/.test(src), "rows in test code must stay listed");
 });
+
+test("the findings table labels an unconfirmed setting (review 6063599094)", () => {
+  const at = src.indexOf('finding.config_status === "unconfirmed"');
+  assert.ok(at > 0, "no unconfirmed label");
+  const block = src.slice(at, at + 700);
+  assert.match(block, />\s*unconfirmed \(configuration only\)\s*</);
+  assert.match(block, /data-testid="cbom-finding-unconfirmed"/);
+});

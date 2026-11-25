@@ -1116,7 +1116,14 @@ def emit_cyclonedx(result: ScanResult) -> dict[str, Any]:
             mentions = [m for m in json.loads(evidence) if isinstance(m, dict)]
     bom_props.setdefault("regulatory:disclaimer", disclaimer_of(result))
     metadata["properties"] = _properties_list(bom_props) + [
-        {"name": "crypto:configMention", "value": json.dumps(m, sort_keys=True)}
+        # file:line and the algorithm token only: no source text in a signed,
+        # distributed BOM (review 6063599094); the API and the PDF keep the text
+        {
+            "name": "crypto:configMention",
+            "value": json.dumps(
+                {k: m.get(k) for k in ("location", "line", "algorithm")}, sort_keys=True
+            ),
+        }
         for m in mentions
     ]
 

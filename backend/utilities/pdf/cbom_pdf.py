@@ -151,7 +151,9 @@ RISK_METHOD_TEXT = (
     "Risk score: 4 x (10 per Critical + 5 per High + 2 per Medium + 1 per Low finding), at most 100, capped by "
     "the worst severity found (no Critical: at most 69; no Critical or High: at most 49; Low only: at most 29). "
     "Findings in test, fixture or example code are listed and labelled \"test code\" but not counted in the "
-    "score. Configuration mentions (an algorithm named in a label, a comparison, a case label or an Enum member) "
+    "score. A setting that names an algorithm but that no crypto call is proven to read (no import, owner or "
+    "same-file read links it to one) is listed as \"unconfirmed (configuration only)\", at Low, and not counted. "
+    "Configuration mentions (an algorithm named in a label, a comparison, a case label or an Enum member) "
     "are listed in the appendix and not counted."
 )
 CONFIG_MENTIONS_SHOWN = 50
@@ -258,6 +260,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                 ["Weak algorithms", str(summary.weak)],
                 ["Risk score", risk_text],
                 ["Findings in test code (listed, not scored)", str(summary.findings_in_test_code)],
+                ["Unconfirmed settings (configuration only; listed, not scored)", str(summary.findings_unconfirmed)],
             ],
             [4.0 * inch, 1.5 * inch],
         )

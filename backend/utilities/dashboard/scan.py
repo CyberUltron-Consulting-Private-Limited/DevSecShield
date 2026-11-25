@@ -1261,6 +1261,7 @@ def generate_scan_dashboard(
                     "risk_score": risk["risk_score"],
                     "risk_grade": risk["risk_grade"],
                     "risk_label": risk["risk_label"],
+                    "risk_posture": risk["risk_posture"],
                 },
                 "severity_distribution": summary.severity_distribution(),
                 "algorithm_type_distribution": dict(summary.algorithm_types),

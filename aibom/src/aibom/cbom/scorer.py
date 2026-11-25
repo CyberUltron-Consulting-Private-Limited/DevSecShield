@@ -56,10 +56,11 @@ def score_crypto(result: ScanResult) -> ScanResult:
     # not change CBOM scores. Findings in test, fixture or example code are listed but
     # weigh nothing (PR #500 review 6061095673): their components' flags are left out
     # of every sum, and their stacked severity is low.
+    from aibom.cbom.code_context import is_unscored
+
+    # test code and unconfirmed settings (review 6063599094) are listed, never scored
     test_refs = {
-        c.bom_ref
-        for c in result.components
-        if (c.properties or {}).get("crypto:codeContext") == "test"
+        c.bom_ref for c in result.components if is_unscored(c.properties or {})
     }
     if not test_refs:
         return score_result(result, str(_CBOM_WEIGHTS_PATH), posture=False)
@@ -91,8 +92,11 @@ def finding_severity_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
         if not isinstance(row, dict):
             continue
         codes = [c for c in row.get("finding_codes") or [] if isinstance(c, str) and c]
-        if row.get("code_context") == "test":
-            continue  # listed, labelled "test code", never scored
+        unscored = row.get("code_context") == "test" or (
+            row.get("config_status") == "unconfirmed"
+        )
+        if unscored:
+            continue  # listed, labelled "test code" / "unconfirmed", never scored
         if (
             "finding_codes" in row
             and not codes

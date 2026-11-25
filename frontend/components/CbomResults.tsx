@@ -1180,6 +1180,14 @@ export default function CbomResults({
                                   test code
                                 </Badge>
                               )}
+                              {finding.config_status === "unconfirmed" && (
+                                // a setting no crypto call is proven to read: Low, not scored (re-review 6063599094)
+                                <Badge variant="outline" className="mt-1 whitespace-normal border-amber-300 text-amber-700 dark:text-amber-300"
+                                       title="A settings value that names an algorithm, but no crypto call is proven to read it: listed at Low, not counted in the risk score"
+                                       data-testid="cbom-finding-unconfirmed">
+                                  unconfirmed (configuration only)
+                                </Badge>
+                              )}
                               {/* phones: the impact and risk score under the name, never only behind a sideways scroll
                                   (staging QA N6) */}
                               <span className="mt-1 flex items-center gap-1.5 sm:hidden" data-testid="cbom-finding-mobile-meta">

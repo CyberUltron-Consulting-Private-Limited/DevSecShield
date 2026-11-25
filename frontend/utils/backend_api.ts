@@ -2085,6 +2085,10 @@ export interface CbomFinding {
   id: string
   /** "test": found in test, fixture or example code; the engine lowered it to Low and the table labels it "test code" */
   code_context?: string | null
+  /** "unconfirmed": a settings value no crypto call is proven to read (Low, not scored); labelled in the table */
+  config_status?: string | null
+  /** where the setting is read by a crypto call (``path:line``), when proven */
+  config_read_at?: string | null
   /** CycloneDX inventory bom-ref (charts → finding join); absent on legacy rows */
   bom_ref?: string | null
   title: string

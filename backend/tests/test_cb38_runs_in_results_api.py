@@ -192,6 +192,8 @@ def test_b1_scan_list_includes_runs(api, world, no_mongo, api_run):
     want = M.risk_posture({"critical": 1, "high": 2, "medium": 1, "low": 1})
     assert (p["risk_score"], p["risk_grade"], p["risk_label"]) == (want["risk_score"], want["risk_grade"],
                                                                     want["risk_label"])
+    assert p["risk_posture"] == {"score": p["risk_score"], "grade": p["risk_grade"], "label": p["risk_label"],
+                                 "band": want["risk_band"]}
     assert p["asset_count"] == 9 and p["endpoints_probed"] == 2  # coverage rows count as rows of the run (#159)
     assert p["title"] == f"Sources run #{partial} · srv-partial"
     assert p["sources"] == [{"id": p["sources"][0]["id"], "name": "srv-partial", "kind": "linux_servers"}]
@@ -216,7 +218,8 @@ def test_b1_scan_list_includes_runs(api, world, no_mongo, api_run):
                      # S4 (FIX-D1): what started the run
                      "trigger", "schedule_id", "schedule_name",
                      "status_reason",  # FIX-B3: why a run is partial / failed (additive)
-                     "risk_score", "risk_grade", "risk_label"}  # PR #500 takeover: the one risk score
+                     "risk_score", "risk_grade", "risk_label",  # PR #500 takeover: the one risk score
+                     "risk_posture"}  # the same number as #505's posture object (re-review 6063599094)
     assert all(set(r) == expected_keys for r in rows)
 
 

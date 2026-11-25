@@ -510,7 +510,7 @@ def _assemble(acc: _Acc, posture: dict[str, Any], top_risks: list[dict[str, Any]
             "average_risk_score": average_risk(severity),
             # the risk score tile: the engine's posture function over the same severity counts, as a code scan's
             # (staging QA Q2-01; one KPI definition for both pages)
-            **{k: v for k, v in risk_posture(severity).items() if k in ("risk_score", "risk_grade", "risk_label")},
+            **{k: v for k, v in risk_posture(severity).items() if k in ("risk_score", "risk_grade", "risk_label", "risk_posture")},
         },
         "severity_distribution": {**severity, INFORMATIONAL: assets - findings},
         "algorithm_type_distribution": dict(sorted(acc.algorithm_types.items())),

@@ -481,7 +481,7 @@ def return_cbom_list_item(scan : Scan) -> dict:
         "average_risk_score" : average_risk_score,
         # the one D3 risk score (the engine's posture function over these findings): the list shows it, not the
         # 0-10 average (PR #500 takeover)
-        **{k: v for k, v in summary.risk.items() if k in ("risk_score", "risk_grade", "risk_label")},
+        **{k: v for k, v in summary.risk.items() if k in ("risk_score", "risk_grade", "risk_label", "risk_posture")},
         "total_weak_algorithms": total_weak,
         "total_quantum_vulnerable": total_quantum_vulnerable,
         "scan_binaries": scan.scan_metadata.get("scan_binaries", False) if scan.scan_metadata else False,

@@ -266,15 +266,18 @@ def test_an_enum_member_read_by_a_crypto_call_is_an_asset():
     assert "md5" in keys
 
 
-def test_object_assign_and_a_const_object_are_judged_alike(tmp_path):
+def test_object_assign_is_a_mention_and_a_const_object_an_unconfirmed_setting(tmp_path):
+    """Re-review 6063599094: an object handed to ``Object.assign`` is a mention (no
+    crypto call reads its target); a declared settings object no crypto call reads is
+    an unconfirmed setting, listed and not scored."""
     a = _scan(
         tmp_path / "a",
         {"a.js": "Object.assign(settings, { cipher: 'AES-256-GCM' });\n"},
     )
     b = _scan(tmp_path / "b", {"b.js": "const settings = { cipher: 'AES-256-GCM' };\n"})
-    ra = [(r["title"], r.get("confidence")) for r in a["results"]]
-    rb = [(r["title"], r.get("confidence")) for r in b["results"]]
-    assert ra == rb and ra and all(c == "low" for _t, c in ra)
+    assert a["results"] == [] and a["config_evidence"]
+    rb = [(r["title"], r.get("config_status")) for r in b["results"]]
+    assert rb and all(status == "unconfirmed" for _t, status in rb)
 
 
 # ----------------------------------------------------------------------------- 6

@@ -24,13 +24,14 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any
 
 from aibom.cbom.detect import (
     _strip_line_comment,
-    crypto_reads,
+    crypto_read_sites,
     detect_crypto,
     strip_noncode,
 )
@@ -174,28 +175,79 @@ CONFIG_EVIDENCE_MAX = 200
 _READ_LANGS = frozenset({"python", "java", "javascript"})
 
 
-def _project_reads(walk: FileWalk) -> dict[str, dict[str, str]]:
-    """Every name a crypto call reads anywhere in the project -> its first reader,
-    as ``path:line`` (:func:`aibom.cbom.detect.crypto_reads`): a settings value
-    declared in one file and read by ``Cipher.getInstance`` / ``hashlib.new`` /
-    ``createCipheriv`` in another is a proven asset (review 6061095673)."""
-    # per language: a Kotlin read proves no Python setting
-    out: dict[str, dict[str, str]] = {}
-    for path in _iter_source_files(walk):
-        lang = source_language(path)
-        if lang not in _READ_LANGS:
-            continue
-        text = walk.read_text(path)
-        if text is None:
-            continue
-        lines = [
-            _strip_line_comment(ln, lang).strip()
-            for ln in strip_noncode(text).split("\n")
-        ]
-        rel = walk.rel(path)
-        for name, line in crypto_reads(lines).items():
-            out.setdefault(lang, {}).setdefault(name, f"{rel}:{line}")
-    return out
+_IMPORT_LINE = re.compile(r"^\s*(?:import\b|from\b|.*\brequire\s*\(|.*\bimport\s*\()")
+_NOT_OWNERS = frozenset({"exports", "module", "default", "self", "this", "cls", "it"})
+
+
+class _Reader:
+    __slots__ = ("path", "imports", "words")
+
+    def __init__(self, path: str, imports: str, words: frozenset[str]) -> None:
+        self.path = path
+        self.imports = imports  # the file's import / require lines
+        self.words = words  # every identifier the file names
+
+
+class ProjectReads:
+    """The names crypto calls read in each file of the project, per language, and
+    what links a reader to a settings file (review 6061095673 / 6063599094).
+
+    A read in another file proves a setting only through a real link: the reader
+    imports the declaring module (``from config import CONFIG``,
+    ``require('./config')``, ``import { cryptoConfig } from '../ui/options'``), or
+    reads it through, or names, one of the setting's owner symbols (the dict,
+    object, record or class: ``cryptoConfig.digest``, ``cfg: CryptoCfg``). A bare
+    leaf-name match (any ``x.digest``) proves nothing."""
+
+    def __init__(self, walk: FileWalk) -> None:
+        # lang -> name -> [(reader, line, qualifier)]
+        self.sites: dict[str, dict[str, list[tuple[_Reader, int, str | None]]]] = {}
+        for path in _iter_source_files(walk):
+            lang = source_language(path)
+            if lang not in _READ_LANGS:
+                continue
+            text = walk.read_text(path)
+            if text is None:
+                continue
+            lines = [
+                _strip_line_comment(ln, lang).strip()
+                for ln in strip_noncode(text).split("\n")
+            ]
+            sites = crypto_read_sites(lines)
+            if not sites:
+                continue
+            imports = "\n".join(ln for ln in lines if _IMPORT_LINE.match(ln))
+            words = frozenset(re.findall(r"[A-Za-z_]\w*", text))
+            reader = _Reader(walk.rel(path), imports, words)
+            by_name = self.sites.setdefault(lang or "", {})
+            for name, line, qualifier in sites:
+                by_name.setdefault(name, []).append((reader, line, qualifier))
+
+    def for_file(
+        self, lang: str | None, rel: str
+    ) -> Callable[[str, tuple[str, ...]], str | None]:
+        """``prove(binding, owners) -> "path:line" | None`` for ``rel``'s settings."""
+        by_name = self.sites.get(lang or "", {})
+        stem = Path(rel).stem
+        imported = (
+            re.compile(rf"(?<![\w-]){re.escape(stem)}(?![\w-])") if stem else None
+        )
+
+        def prove(binding: str, owners: tuple[str, ...]) -> str | None:
+            real = [o for o in owners if o and o not in _NOT_OWNERS]
+            for reader, line, qualifier in by_name.get(binding, ()):
+                if reader.path == rel:
+                    continue
+                linked = (
+                    (imported is not None and bool(imported.search(reader.imports)))
+                    or (qualifier is not None and qualifier in real)
+                    or any(o in reader.words for o in real)
+                )
+                if linked:
+                    return f"{reader.path}:{line}"
+            return None
+
+        return prove
 
 
 def _detect_assets(
@@ -211,7 +263,7 @@ def _detect_assets(
     """
     walk = walk or FileWalk(root)
     seen: dict[tuple[str, str], _Asset] = {}
-    reads = _project_reads(walk)
+    reads = ProjectReads(walk)
     for path in _iter_source_files(walk):
         lang = source_language(path)
         rel = walk.rel(path)
@@ -223,7 +275,7 @@ def _detect_assets(
         at_line: dict[tuple[int, str], str] = {}  # (line, key) -> display name, to find a composite
         inner: list[tuple[_Asset, int, str, str | None]] = []
         found: list[dict[str, Any]] = []
-        same_lang = reads.get(lang or "")
+        same_lang = reads.for_file(lang, rel)
         dets = detect_crypto(
             text, lang, external, config_evidence=found, project_reads=same_lang
         )

@@ -93,8 +93,11 @@ def risk_posture(severity: dict[str, int]) -> dict[str, Any]:
 
     counts = {s: int(severity.get(s, 0) or 0) for s in SEVERITIES}
     score, grade, label = posture_risk(counts["critical"], counts["high"], counts["medium"], counts["low"])
+    band = label.split(" ")[0].lower()
     return {"risk_score": score, "risk_grade": grade, "risk_label": label,
-            "risk_band": label.split(" ")[0].lower(), "severity_counts": counts}
+            "risk_band": band, "severity_counts": counts,
+            # the same number in the shape of the app-wide ``risk_posture`` object (risk_scale.posture_field, #505)
+            "risk_posture": {"score": score, "grade": grade, "label": label, "band": band}}
 
 
 def average_risk(severity: dict[str, int]) -> float:
@@ -117,6 +120,8 @@ class CodeRowSummary:
         # review 6061095673: six test files must not move the grade from B to D)
         self.scored = {s: 0 for s in SEVERITIES}
         self.findings_in_test_code = 0
+        # settings no crypto call is proven to read (re-review 6063599094): listed, Low, not scored
+        self.findings_unconfirmed = 0
         self.algorithm_types: dict[str, int] = defaultdict(int)
         self.strengths = {"weak": 0, "moderate": 0, "strong": 0, "quantum_safe": 0}
         # the results table's Quantum column: Quantum-safe / Broken today / Quantum-vulnerable (one rule)
@@ -164,10 +169,12 @@ class CodeRowSummary:
                 continue  # clean inventory: listed above, never a finding
             self.findings += 1
             self.severity[severity] += 1
-            if row.get("code_context") != "test":
-                self.scored[severity] += 1
-            else:
+            if row.get("code_context") == "test":
                 self.findings_in_test_code += 1
+            elif row.get("config_status") == "unconfirmed":
+                self.findings_unconfirmed += 1
+            else:
+                self.scored[severity] += 1
             for value in (row.get("owasp_top_10") or {}).values():
                 self.owasp[value] += 1
             for value in (row.get("compliance_controls") or {}).values():
