@@ -14,6 +14,7 @@ trap 'err_report "$?" "${LINENO}"' ERR
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 KIT_DIR="${REPO_ROOT}/deploy/chola-prod"
 KIT_PY="${KIT_DIR}/kit.py"
+ARTIFACTS_PY="${KIT_DIR}/artifacts.py"
 
 ACCOUNT="${CHOLA_ACCOUNT:-935951870001}"
 REGION="${CHOLA_REGION:-ap-south-1}"
@@ -35,6 +36,21 @@ API_HOST=chola-api.zeroshield.ai
 REAL_IP_FROM=10.60.1.0/24,10.60.2.0/24
 REMOTE_DIR=/opt/devsecshield-chola
 GHCR="${CHOLA_GHCR:-ghcr.io/cyberultron-consulting-private-limited}"
+GH_REPO="${CHOLA_GH_REPO:-CyberUltron-Consulting-Private-Limited/DevSecShield}"
+IMAGES_WORKFLOW=.github/workflows/chola-prod-images.yml # its runs are what --from-run reads (README "Images from a CI run")
+# crane (go-containerregistry) copies a run's image layouts to ECR without Docker. Used from PATH; otherwise this
+# release is downloaded into the scratch directory and used only when its sha256 is the one pinned here (from the
+# release's checksums.txt). .github/workflows/chola-prod-images.yml pins the same version and Linux_x86_64 sum (tested).
+CRANE_VERSION=v0.22.1
+crane_sha256() { # <OS_arch> -> the pinned sha256 of go-containerregistry_<OS_arch>.tar.gz
+  case "$1" in
+    Linux_x86_64) printf '%s\n' 0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0 ;;
+    Linux_arm64) printf '%s\n' 898c0cff975f898a33e8c4580bdafb0e7c02c7faa33374e946762f97c4ab7110 ;;
+    Darwin_x86_64) printf '%s\n' 6fedd06a648c11335f0e8b9547e4783002c30e9336047fec292942cd518bb799 ;;
+    Darwin_arm64) printf '%s\n' 2231fc8df8806d20d680ff1225db44e095a55dd6ac1ae8eced4faf4b278b78fb ;;
+    *) return 1 ;;
+  esac
+}
 KNOWN_HOSTS="${CHOLA_KNOWN_HOSTS:-${HOME}/.ssh/known_hosts_devsec_chola}"
 ANSH_REFSPEC=+refs/heads/ansh:refs/remotes/origin/ansh
 # Pulled by digest, shipped under the tag docker-compose.yml and deploy/chola-prod/remote.sh name (tested). To move
@@ -49,7 +65,11 @@ INFRA_IMAGES=(
 COMPONENTS=(backend frontend scan-worker dast-worker)
 
 DRY=0 YES=0 HELP=0 SHA="" SHA12="" GHCR_TAG="" FRONTEND_IMAGE="" FORCE_INFRA=0 ALLOW_DOWNGRADE=0 REFRESH_MAIL=0
-MAIL_PROMPT=0 ALLOW_IMDS=0 EMAIL="" SERVICE="" TAIL=200 JOB="" ROLLBACK_TO=""
+MAIL_PROMPT=0 ALLOW_IMDS=0 EMAIL="" SERVICE="" TAIL=200 JOB="" ROLLBACK_TO="" FROM_RUN="" TO_ECR=0
+RELAYED=0   # 1 once the S3 relay loaded this commit's images (and the archive) on the instance: no ECR pull follows
+REVIEWED="" # origin/dev or origin/staging once --sha was proved to be on it
+IMDS_HOP="" IMDS_V6=disabled # the instance's HttpPutResponseHopLimit / HttpProtocolIpv6 (imds_options), for remote.sh
+CRANE=""
 WORK=""
 SSH_READY=0
 KIT_RUN="" # this run's kit copy on the instance: $REMOTE_DIR/.kit/<run>
@@ -69,16 +89,29 @@ Commands
                              runs, but WRITES and then deletes one S3 probe object (s3://devsecshield-storage/
                              releases/preflight-probe.txt, for the instance to read) and copies the kit to the
                              instance's /opt/devsecshield-chola/.kit/<run> (not the live kit)
-  host-setup                 install AWS CLI v2 on the instance from an installer downloaded here (only if preflight
-                             says it is missing)
+  host-setup                 install AWS CLI v2 on the instance from an installer downloaded here (when it has none;
+                             CHOLA_AWSCLI_REINSTALL=1: always), then the container IMDS block (a DOCKER-USER rule
+                             dropping container traffic to the metadata service, kept by a systemd unit; every deploy
+                             installs it again)
   secrets                    fill devsec-chola/prod/app-secrets: generate what is missing, keep every existing value;
                              the mail login only on first setup (from origin/ansh) or with --refresh-mail/--mail-prompt
   images --sha S             backend + workers from GHCR (linux/amd64), the frontend built here for the API URL, all
                              pushed to ECR as :<sha12>
-  infra [--force-infra]      the infrastructure images as the S3 release archive, loaded on the instance if missing
+  images --sha S --from-run RUN
+                             the same four images as built by CI: run RUN of .github/workflows/chola-prod-images.yml,
+                             which must have run ON commit S (on dev or staging; its workflow and helpers the kit's at
+                             S). S3 RELAY (default): each artifact streams from GitHub into s3://devsecshield-storage/
+                             releases/<sha12>/ (sha256 in the stream; no local copy); the instance downloads, checks
+                             and loads them and the S3 objects are deleted; the instance pulls nothing from ECR.
+                             --to-ecr: pushed to ECR with crane instead, one at a time (needs the largest image's size
+                             free here)
+  infra [--force-infra] [--from-run RUN --sha S]
+                             the infrastructure images as the S3 release archive, loaded on the instance if missing
+                             (--from-run: the run's archive, relayed through S3, instead of pulling them here)
   backup                     logical dumps on the instance, then the AWS Backup job of the data volume (waits)
-  deploy --sha S [--yes]     all of the above in order, then migrate + start (detached on the instance), smtp-test,
-                             verify
+  deploy --sha S [--from-run RUN] [--yes]
+                             all of the above in order (the IMDS block first; its container probe again before
+                             anything starts), then migrate + start (detached on the instance), smtp-test, verify
   verify                     ALB target health (instance or ip targets), nginx-health on the instance, public URLs
   rollback [--allow-downgrade] [--to TAG] [--yes]
                              backup, then back to the previous tag (also after an interrupted deploy), then verify.
@@ -97,22 +130,28 @@ Commands
 Flags
   --dry-run                  print every step; run no AWS, SSH, Docker, registry or git-fetch command, read no secret
   --yes                      no confirmation prompt (deploy, rollback)
-  --sha S                    the commit to deploy (7-40 hex characters; must exist in this checkout)
+  --sha S                    the commit to deploy (7-40 hex characters; must exist in this checkout and be on
+                             origin/dev or origin/staging)
   --ghcr-tag T               GHCR tag of the backend/worker images (default: dev-, staging- or manual-<sha12>)
   --frontend-image REF       use this frontend image instead of building one (its API URL is checked)
+  --from-run RUN             images, infra, deploy, preflight (with --sha): the images of that chola-prod-images.yml
+                             run (gh api; no GHCR pull, no Docker needed here), relayed through S3 to the instance
+  --to-ecr                   with --from-run: push the run's images to ECR with crane instead of the S3 relay
   --force-infra              build and load the release archive even when the instance has every image
   --allow-downgrade          rollback only: let it run alembic downgrade (drops what newer migrations added)
   --to TAG                   rollback only: to this older release (12 or 40 hex characters) instead of the recorded
                              target
   --refresh-mail             re-read the mail login from origin/ansh:backend/.env into app-secrets
   --mail-prompt              type the mailbox address and password at a hidden prompt instead of reading origin/ansh
-  --allow-imds               accept IMDSv1 or a hop limit > 1 (containers could use the instance role); not advised
+  --allow-imds               accept IMDSv1, or containers that can reach IMDS (no block rule, or a probe that got a
+                             token); not advised. A hop limit > 1 needs no flag when the container IMDS block holds
   --email E, --service S, --tail N, --job ID
   -h, --help                 this text (also `<command> --help`)
 
 Environment (defaults are the Chola values)
   AWS_PROFILE                the owner's AWS profile (AnshSinghal-Cyberultron)
   CHOLA_ACCOUNT, CHOLA_REGION, CHOLA_INSTANCE_ID, CHOLA_TG_ARN, CHOLA_GHCR
+  CHOLA_GH_REPO              the repository whose workflow runs --from-run reads (owner/name)
   CHOLA_KNOWN_HOSTS          SSH host keys of the instance (default ~/.ssh/known_hosts_devsec_chola)
   CHOLA_WORK_PARENT          scratch directory parent (default $TMPDIR); the scratch dir is removed on exit
   CHOLA_BACKUP_TIMEOUT_S     wait for the backup job (default 7200)
@@ -123,6 +162,7 @@ Environment (defaults are the Chola values)
   CHOLA_DUMPS_KEEP           passed to the instance: logical dumps kept per database (default 3)
   CHOLA_SSH_RETRIES          consecutive lost connections while following a job (default 30)
   CHOLA_AWSCLI_PGP_KEY       host-setup: file with the AWS CLI PGP key to verify the installer
+  CHOLA_AWSCLI_REINSTALL     host-setup: 1 reinstalls the AWS CLI on the instance even when it has one
 EOF
 }
 
@@ -156,6 +196,11 @@ cleanup() {
         "each run adds a version) that every preflight overwrites; delete it by hand when convenient:" \
         "aws s3api delete-object --bucket ${BUCKET} --key ${S3_PROBE_KEY}"
     fi
+  fi
+  if ((${#RELAY_KEYS[@]})) && ((!DRY)); then # a relay that did not finish: its S3 objects go too, unless its load
+    # job may still be running on the instance (Ctrl-C, lost tunnel): it still reads them
+    if [[ -z "${CURRENT_JOB}" ]]; then relay_cleanup || true
+    else warn "job ${CURRENT_JOB} may still be loading from s3://${BUCKET}/releases/${SHA12}/: those objects are kept; delete them once it ended (aws s3 rm --recursive s3://${BUCKET}/releases/${SHA12}/)"; fi
   fi
   if [[ -n "${WORK}" && -d "${WORK}" ]]; then
     if ((SSH_READY && !DRY)); then ssh "${SSH_OPTS[@]}" -O exit "${SSH_USER}@${INSTANCE_ID}" >/dev/null 2>&1 || true; fi
@@ -204,6 +249,9 @@ parse_args() { # flags may come before or after the command
       --refresh-mail) REFRESH_MAIL=1; shift ;;
       --mail-prompt) MAIL_PROMPT=1; shift ;;
       --allow-imds) ALLOW_IMDS=1; shift ;;
+      --from-run) [[ $# -ge 2 && "$2" =~ ^[0-9]{1,20}$ ]] || die "--from-run needs a workflow run id (a number)"
+        FROM_RUN=$2; shift 2 ;;
+      --to-ecr) TO_ECR=1; shift ;;
       --email) [[ $# -ge 2 ]] || die "--email needs an address"; EMAIL=$2; shift 2 ;;
       --service) [[ $# -ge 2 ]] || die "--service needs a name"; SERVICE=$2; shift 2 ;;
       --tail) [[ $# -ge 2 && "$2" =~ ^[0-9]{1,6}$ ]] || die "--tail needs a number"; TAIL=$2; shift 2 ;;
@@ -216,6 +264,11 @@ parse_args() { # flags may come before or after the command
   [[ -z "${SERVICE}" || "${SERVICE}" =~ ^[a-z0-9-]{1,40}$ ]] || die "--service ${SERVICE} is not a service name"
   [[ -z "${JOB}" || "${JOB}" =~ ^[0-9TZ]+-[a-z-]+-[0-9]+$ ]] || die "--job ${JOB} is not a job id"
   ((!(REFRESH_MAIL && MAIL_PROMPT))) || die "--refresh-mail and --mail-prompt exclude each other"
+  if [[ -n "${FROM_RUN}" && (-n "${GHCR_TAG}" || -n "${FRONTEND_IMAGE}") ]]; then
+    die "--from-run takes every image from the run: it excludes --ghcr-tag and --frontend-image"
+  fi
+  [[ "${GH_REPO}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "CHOLA_GH_REPO ${GH_REPO} is not owner/name"
+  ((!TO_ECR)) || [[ -n "${FROM_RUN}" ]] || die "--to-ecr is only for --from-run"
 }
 
 resolve_sha() {
@@ -320,10 +373,11 @@ remote_cmdline() { # the shell command that runs remote.sh <args> on the instanc
   [[ -z "${CHOLA_WAIT_S:-}" ]] || tuning+=" CHOLA_WAIT_S=${CHOLA_WAIT_S}"
   [[ -z "${CHOLA_DUMPS_KEEP:-}" ]] || tuning+=" CHOLA_DUMPS_KEEP=${CHOLA_DUMPS_KEEP}"
   [[ -z "${S3_PROBE_KEY}" ]] || tuning+=" CHOLA_S3_PROBE_KEY=$(quote "${S3_PROBE_KEY}")"
-  printf 'cd %s &&%s CHOLA_BASE_DIR=%s CHOLA_REGION=%s CHOLA_ACCOUNT=%s CHOLA_REGISTRY=%s CHOLA_IMAGE_PREFIX=%s CHOLA_SECRET_PREFIX=%s CHOLA_BUCKET=%s CHOLA_FRONTEND_HOST=%s CHOLA_API_HOST=%s CHOLA_REAL_IP_FROM=%s CHOLA_ALLOW_IMDS=%s bash %s %s' \
+  [[ -z "${IMDS_HOP}" ]] || tuning+=" CHOLA_IMDS_HOP=$(quote "${IMDS_HOP}")"
+  printf 'cd %s &&%s CHOLA_BASE_DIR=%s CHOLA_REGION=%s CHOLA_ACCOUNT=%s CHOLA_REGISTRY=%s CHOLA_IMAGE_PREFIX=%s CHOLA_SECRET_PREFIX=%s CHOLA_BUCKET=%s CHOLA_FRONTEND_HOST=%s CHOLA_API_HOST=%s CHOLA_REAL_IP_FROM=%s CHOLA_ALLOW_IMDS=%s CHOLA_IMDS_IPV6=%s bash %s %s' \
     "$(quote "${REMOTE_DIR}")" "${tuning}" "$(quote "${REMOTE_DIR}")" "$(quote "${REGION}")" "$(quote "${ACCOUNT}")" \
     "$(quote "${REGISTRY}")" "$(quote "${IMAGE_PREFIX}")" "$(quote "${SECRET_PREFIX}")" "$(quote "${BUCKET}")" \
-    "$(quote "${FRONTEND_HOST}")" "$(quote "${API_HOST}")" "$(quote "${REAL_IP_FROM}")" "${ALLOW_IMDS}" \
+    "$(quote "${FRONTEND_HOST}")" "$(quote "${API_HOST}")" "$(quote "${REAL_IP_FROM}")" "${ALLOW_IMDS}" "$(quote "${IMDS_V6}")" \
     "$(quote "${KIT_RUN}/deploy/chola-prod/remote.sh")" "$(quote "$@")"
 }
 
@@ -420,17 +474,24 @@ follow_job() { # <id>: print the job's output until it ends; returns its exit st
 DOCKER_ISOLATED=0
 docker_isolate() {
   ((DOCKER_ISOLATED || DRY)) && return 0
-  work
-  local host cfg="${WORK}/docker-config"
+  local host
   if [[ -z "${DOCKER_HOST:-}" ]]; then
     host="$(docker context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null || true)"
     [[ -z "${host}" ]] || export DOCKER_HOST="${host}"
   fi
+  registry_config_isolate
+  DOCKER_ISOLATED=1
+}
+REGISTRY_CONFIG_ISOLATED=0
+registry_config_isolate() { # the throwaway DOCKER_CONFIG alone (crane reads it too); runs no docker command
+  ((REGISTRY_CONFIG_ISOLATED || DRY)) && return 0
+  work
+  local cfg="${WORK}/docker-config"
   mkdir -p "${cfg}"
   printf '{}\n' >"${cfg}/config.json"
   if [[ -d "${HOME}/.docker/cli-plugins" ]]; then ln -s "${HOME}/.docker/cli-plugins" "${cfg}/cli-plugins"; fi
   export DOCKER_CONFIG="${cfg}"
-  DOCKER_ISOLATED=1
+  REGISTRY_CONFIG_ISOLATED=1
 }
 
 # ------------------------------------------------------------------------------------------------ preflight
@@ -438,15 +499,22 @@ need() { command -v "$1" >/dev/null 2>&1 || { if ((DRY)); then warn "$1 not foun
 
 local_preflight() {
   local v major minor
-  for v in aws docker git python3 curl ssh tar; do need "${v}"; done
+  # --from-run: the images come from a CI run through gh and crane; Docker is not needed here at all
+  for v in aws git python3 curl ssh tar; do need "${v}"; done
+  if [[ -n "${FROM_RUN}" ]]; then need gh; else need docker; fi
   if ((DRY)); then
-    printf '[dry-run] aws --version (2.12+ for ec2-instance-connect open-tunnel); docker info; docker buildx version\n'
+    printf '[dry-run] aws --version (2.12+ for ec2-instance-connect open-tunnel)%s\n' \
+      "$([[ -n "${FROM_RUN}" ]] && echo '; gh auth status' || echo '; docker info; docker buildx version')"
   else
     v="$(aws --version 2>&1 | sed -n -E 's|^aws-cli/([0-9]+)\.([0-9]+)\..*|\1 \2|p')"
     read -r major minor <<<"${v:-0 0}"
     ((major >= 2 && (major > 2 || minor >= 12))) || die "AWS CLI v2.12+ is needed (ec2-instance-connect open-tunnel); found $(aws --version 2>&1 | cut -d' ' -f1)"
-    docker info >/dev/null 2>&1 || die "Docker is not running"
-    docker buildx version >/dev/null 2>&1 || die "docker buildx is missing (needed to build the linux/amd64 frontend)"
+    if [[ -n "${FROM_RUN}" ]]; then
+      gh auth status >/dev/null 2>&1 || die "gh is not signed in (gh auth login): --from-run reads the run with gh api"
+    else
+      docker info >/dev/null 2>&1 || die "Docker is not running"
+      docker buildx version >/dev/null 2>&1 || die "docker buildx is missing (needed to build the linux/amd64 frontend)"
+    fi
   fi
   python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)' 2>/dev/null || die "python3 3.8+ is needed"
   git -C "${REPO_ROOT}" rev-parse --git-dir >/dev/null 2>&1 || die "${REPO_ROOT} is not a git checkout"
@@ -462,8 +530,11 @@ aws_identity() {
 }
 CALLER_ARN=""
 
-simulate() { # <action> <resource>: allowed / implicitDeny / explicitDeny, or "unknown" when the simulation is refused
-  local src=${CALLER_ARN} out
+simulate() { # <action> <resource> [context-entry...]: allowed / implicitDeny / explicitDeny, or "unknown" when refused
+  # extra arguments are --context-entries values: a PassRole grant usually carries an iam:PassedToService condition,
+  # and without that key in the context the simulation reports implicitDeny for a grant that works
+  local src=${CALLER_ARN} out ctx=()
+  (($# > 2)) && ctx=(--context-entries "${@:3}")
   # an assumed role is simulated as its role
   if [[ "${src}" == arn:aws:sts::*:assumed-role/* ]]; then
     src="${src/:sts::/:iam::}"
@@ -471,7 +542,7 @@ simulate() { # <action> <resource>: allowed / implicitDeny / explicitDeny, or "u
     src="${src%/*}"
   fi
   out="$(aws iam simulate-principal-policy --policy-source-arn "${src}" --action-names "$1" --resource-arns "$2" \
-    --query 'EvaluationResults[0].EvalDecision' --output text 2>/dev/null)" || out=unknown
+    ${ctx[@]+"${ctx[@]}"} --query 'EvaluationResults[0].EvalDecision' --output text 2>/dev/null)" || out=unknown
   printf '%s\n' "${out}"
 }
 
@@ -483,17 +554,14 @@ aws_resources() {
       "${BUCKET}" "${ACCOUNT}" "${BACKUP_ROLE}"
     return 0
   fi
-  local out s r c state itype ip tokens hop endpoint dec
+  local out s r c state itype ip tokens hop endpoint v6 dec
   out="$(aws --region "${REGION}" ec2 describe-instances --instance-ids "${INSTANCE_ID}" --query \
-    'Reservations[0].Instances[0].[State.Name,InstanceType,PrivateIpAddress,MetadataOptions.HttpTokens,MetadataOptions.HttpPutResponseHopLimit,MetadataOptions.HttpEndpoint]' --output text)" ||
+    'Reservations[0].Instances[0].[State.Name,InstanceType,PrivateIpAddress,MetadataOptions.HttpTokens,MetadataOptions.HttpPutResponseHopLimit,MetadataOptions.HttpEndpoint,MetadataOptions.HttpProtocolIpv6]' --output text)" ||
     die "cannot describe ${INSTANCE_ID}"
-  read -r state itype ip tokens hop endpoint <<<"${out}"
-  log "instance ${INSTANCE_ID}: ${state}, ${itype}, ${ip}; IMDS ${endpoint} tokens=${tokens} hop-limit=${hop}"
+  read -r state itype ip tokens hop endpoint v6 <<<"${out}"
+  log "instance ${INSTANCE_ID}: ${state}, ${itype}, ${ip}; IMDS ${endpoint} tokens=${tokens} hop-limit=${hop} ipv6=${v6:-disabled}"
   [[ "${state}" == running ]] || die "the instance is ${state}"
-  if [[ "${tokens}" != required || ! "${hop}" =~ ^[0-9]+$ || "${hop}" -gt 1 ]]; then
-    local why="HttpTokens=${tokens}, HttpPutResponseHopLimit=${hop}: containers can obtain the instance role's credentials, which read every ${SECRET_PREFIX} secret (the app does not need them: S3/Bedrock use the app-user keys). Ask the infra team for HttpTokens=required and hop limit 1"
-    if ((ALLOW_IMDS)); then warn "${why} (accepted: --allow-imds)"; else die "${why}, or pass --allow-imds"; fi
-  fi
+  imds_accept "${tokens}" "${hop}" "${v6}"
   out="$(aws --region "${REGION}" elbv2 describe-target-groups --target-group-arns "${TG_ARN}" --query \
     'TargetGroups[0].[TargetType,Protocol,Port,HealthCheckPath]' --output text)" || die "cannot read the target group"
   log "target group: ${out//$'\t'/ } (expect HTTP 80 /nginx-health)"
@@ -516,7 +584,8 @@ aws_resources() {
   aws --region "${REGION}" backup describe-backup-vault --backup-vault-name "${BACKUP_VAULT}" --query BackupVaultName --output text >/dev/null ||
     die "cannot see backup vault ${BACKUP_VAULT}"
   [[ -n "${CALLER_ARN}" ]] || aws_identity
-  dec="$(simulate iam:PassRole "${BACKUP_ROLE}")"
+  dec="$(simulate iam:PassRole "${BACKUP_ROLE}" \
+    ContextKeyName=iam:PassedToService,ContextKeyValues=backup.amazonaws.com,ContextKeyType=string)"
   case "${dec}" in
     allowed) log "backup: iam:PassRole on ${BACKUP_ROLE##*/} allowed" ;;
     unknown) warn "cannot simulate iam:PassRole (no iam:SimulatePrincipalPolicy): the backup step fails with AccessDenied if ${CALLER_ARN##*/} may not pass ${BACKUP_ROLE##*/}" ;;
@@ -528,6 +597,38 @@ aws_resources() {
     unknown) warn "cannot simulate backup:StartBackupJob; the backup step will tell" ;;
     *) die "backup:StartBackupJob on ${BACKUP_VAULT} is ${dec} for ${CALLER_ARN}" ;;
   esac
+}
+
+# imds_accept <HttpTokens> <HttpPutResponseHopLimit> <HttpProtocolIpv6>: the owner's half of the IMDS check. IMDSv1
+# (tokens optional) is refused: a plain GET from anything on the host gets the role's credentials, and no container
+# rule covers the host. A hop limit > 1 lets a container's token PUT through; it is accepted here because the host
+# drops container traffic to the metadata service (remote.sh imds-block, installed by host-setup and every deploy), and
+# the instance preflight refuses unless that rule, its unit AND a failed token probe from a container prove it.
+imds_accept() {
+  local tokens=$1 hop=$2 v6=${3:-disabled}
+  [[ "${v6}" == enabled ]] || v6=disabled # "None" from an older API answer: no IPv6 endpoint
+  IMDS_V6=${v6}
+  IMDS_HOP=""
+  [[ "${hop}" =~ ^[0-9]+$ ]] && IMDS_HOP=${hop}
+  if [[ "${tokens}" != required ]]; then
+    local why="HttpTokens=${tokens}: IMDSv1 hands the instance role's credentials (they read every ${SECRET_PREFIX} secret) to any plain GET on the host; the container block cannot cover the host. Ask the infra team for HttpTokens=required"
+    if ((ALLOW_IMDS)); then warn "${why} (accepted: --allow-imds)"; else die "${why}, or pass --allow-imds"; fi
+  elif [[ -z "${IMDS_HOP}" || "${IMDS_HOP}" -gt 1 ]]; then
+    log "IMDS hop limit ${hop}: a container's token request would reach the metadata service; accepted only with the" \
+      "host's container IMDS block (host-setup and every deploy install it; the instance preflight checks the rule," \
+      "its unit and a token probe from a container)"
+  fi
+}
+
+imds_options() { # host-setup: the instance's IMDS options for the block (IPv6) and the instance's checks
+  if ((DRY)); then printf '[dry-run] aws ec2 describe-instances %s (MetadataOptions)\n' "${INSTANCE_ID}"; return 0; fi
+  local out tokens hop v6
+  out="$(aws --region "${REGION}" ec2 describe-instances --instance-ids "${INSTANCE_ID}" --query \
+    'Reservations[0].Instances[0].MetadataOptions.[HttpTokens,HttpPutResponseHopLimit,HttpProtocolIpv6]' --output text)" ||
+    die "cannot describe ${INSTANCE_ID}"
+  read -r tokens hop v6 <<<"${out}"
+  log "IMDS options: tokens=${tokens} hop-limit=${hop} ipv6=${v6:-disabled}"
+  imds_accept "${tokens}" "${hop}" "${v6}"
 }
 
 # A small object the instance must READ in its preflight (a list proves no s3:GetObject); deleted on exit. One fixed key,
@@ -560,12 +661,17 @@ cmd_preflight() {
   local_preflight
   aws_identity
   aws_resources
-  if [[ -n "${SHA}" ]]; then
+  if [[ -n "${SHA}" && -n "${FROM_RUN}" ]]; then
+    resolve_sha
+    require_reviewed_sha
+    run_check_images # the run, its artifacts and its manifest (only the manifest is downloaded)
+  elif [[ -n "${SHA}" ]]; then
     resolve_sha
     docker_isolate
     ghcr_login
     ghcr_tag >/dev/null
   fi
+  [[ -z "${SHA}" ]] || require_reviewed_sha
   s3_probe
   remote_step "the instance preflight changes nothing there: fix what it reports, then re-run" preflight
   mail_source_check
@@ -577,7 +683,15 @@ cmd_host_setup() {
   step "host-setup: AWS CLI v2 on the instance"
   ssh_setup
   work
-  local d="${WORK}/awscli"
+  local d="${WORK}/awscli" have=""
+  if ((!DRY)) && [[ "${CHOLA_AWSCLI_REINSTALL:-0}" != 1 ]]; then
+    have="$(ssh "${SSH_OPTS[@]}" "${SSH_USER}@${INSTANCE_ID}" 'command -v aws >/dev/null 2>&1 && aws --version 2>&1 | head -n 1' || true)"
+  fi
+  if [[ "${have}" == aws-cli/2.* ]]; then
+    log "the instance has ${have%% *}: not reinstalled (CHOLA_AWSCLI_REINSTALL=1 reinstalls it)"
+    host_setup_imds "AWS CLI already there (${have%% *})"
+    return 0
+  fi
   mkdir -p "${d}"
   x curl -fsSL --retry 3 -o "${d}/awscliv2.zip" https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip
   x curl -fsSL --retry 3 -o "${d}/awscliv2.sig" https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip.sig
@@ -589,11 +703,23 @@ cmd_host_setup() {
     warn "installer not signature-checked: set CHOLA_AWSCLI_PGP_KEY=<file with the AWS CLI PGP key> to check it"
   fi
   x unzip -q "${d}/awscliv2.zip" -d "${d}"
-  if ((DRY)); then printf '[dry-run] tar -C %s -czf - aws | ssh ... "sudo ./aws/install --update"\n' "${d}"; note "host-setup" ""; return 0; fi
-  tar -C "${d}" -czf - aws | ssh "${SSH_OPTS[@]}" "${SSH_USER}@${INSTANCE_ID}" \
-    't=$(mktemp -d) && tar -xzf - -C "$t" && sudo -n "$t/aws/install" --update && rm -rf "$t" && aws --version'
-  note "host-setup" "AWS CLI installed on the instance"
+  if ((DRY)); then
+    printf '[dry-run] tar -C %s -czf - aws | ssh ... "sudo ./aws/install --update"\n' "${d}"
+  else
+    tar -C "${d}" -czf - aws | ssh "${SSH_OPTS[@]}" "${SSH_USER}@${INSTANCE_ID}" \
+      't=$(mktemp -d) && tar -xzf - -C "$t" && sudo -n "$t/aws/install" --update && rm -rf "$t" && aws --version' ||
+      die "installing the AWS CLI on the instance failed (above)"
+  fi
+  rm -rf "${d:?}"
+  host_setup_imds "AWS CLI installed on the instance"
 }
+host_setup_imds() { # <what happened to the AWS CLI>: then the container IMDS block (README "Instance metadata (IMDS)")
+  step "host-setup: container IMDS block on the instance"
+  imds_options
+  remote_step "re-run host-setup" imds-block
+  note "host-setup" "$1; container IMDS block installed (${IMDS_UNIT_NAME})"
+}
+IMDS_UNIT_NAME=devsec-chola-imds-block.service
 
 # ------------------------------------------------------------------------------------------------ secrets
 # The mail login: origin/ansh:backend/.env (OUTLOOK_EMAIL / OUTLOOK_PASSWORD) is read ONLY when app-secrets has no mail
@@ -716,6 +842,318 @@ cmd_secrets() {
   rm -f "${out}" "${cur}"
 }
 
+# ------------------------------------------------------------------------------------------------ images from a CI run
+# .github/workflows/chola-prod-images.yml uploads, for one commit: the exact GHCR images CI published (backend,
+# scan-worker, dast-worker: their linux/amd64 manifests, byte for byte), the frontend built for https://API_HOST, each
+# as an OCI image layout artifact; the infrastructure release archive; and a manifest naming each image's source,
+# digest and revision. Here the run is checked (that workflow, completed, success), its manifest must name --sha and
+# this kit's infrastructure pins, and each image artifact streams through artifacts.py unzip-stream straight into a
+# layout (no zip on disk), is checked (every blob's sha256, linux/amd64, the revision label, the manifest's digest),
+# pushed with crane (no Docker), compared with the digest ECR answers, and deleted before the next one is downloaded.
+# Production runs reviewed code only: --sha must be on origin/dev or origin/staging (fetched now). Both image paths.
+require_reviewed_sha() {
+  [[ -z "${REVIEWED}" ]] || return 0
+  if ((DRY)); then
+    printf '[dry-run] git fetch origin dev staging; git merge-base --is-ancestor %s origin/dev (or origin/staging)\n' "${SHA:-<sha>}"
+    REVIEWED=dry-run
+    return 0
+  fi
+  git -C "${REPO_ROOT}" fetch -q origin +refs/heads/dev:refs/remotes/origin/dev \
+    +refs/heads/staging:refs/remotes/origin/staging || die "git fetch origin dev staging failed (network or access)"
+  local b
+  for b in dev staging; do
+    if git -C "${REPO_ROOT}" merge-base --is-ancestor "${SHA}" "refs/remotes/origin/${b}" 2>/dev/null; then
+      REVIEWED="origin/${b}"
+      log "${SHA12} is on ${REVIEWED} (reviewed)"
+      return 0
+    fi
+  done
+  die "${SHA12} is on neither origin/dev nor origin/staging: only reviewed commits are deployed to production"
+}
+
+RUN_DIR=""
+sha256_of() { local s; s="$(sha256sum "$1" 2>/dev/null || shasum -a 256 "$1")"; printf '%s\n' "${s%% *}"; }
+
+run_artifacts() { # the run and its artifact list -> ${RUN_DIR}/artifacts.tsv (name, id, expired, bytes)
+  [[ -z "${RUN_DIR}" ]] || return 0
+  work
+  RUN_DIR="${WORK}/run"
+  mkdir -p "${RUN_DIR}"
+  if ((DRY)); then
+    printf '[dry-run] gh api repos/%s/actions/runs/%s (must be %s, completed, success) and its artifact list\n' \
+      "${GH_REPO}" "${FROM_RUN}" "${IMAGES_WORKFLOW}"
+    return 0
+  fi
+  local info path status conclusion url event head repo head_repo f remote_blob local_blob
+  info="$(gh api "repos/${GH_REPO}/actions/runs/${FROM_RUN}" --jq '[.path, .status, (.conclusion // "none"), .html_url, .event, .head_sha, .repository.full_name, (.head_repository.full_name // "none")] | @tsv')" ||
+    die "cannot read workflow run ${FROM_RUN} of ${GH_REPO} (gh auth status; CHOLA_GH_REPO?)"
+  IFS=$'\t' read -r path status conclusion url event head repo head_repo <<<"${info}"
+  [[ "${path%%@*}" == "${IMAGES_WORKFLOW}" ]] || die "run ${FROM_RUN} is a run of ${path:-an unknown workflow}, not ${IMAGES_WORKFLOW}"
+  [[ "${status}" == completed && "${conclusion}" == success ]] ||
+    die "run ${FROM_RUN} is ${status}/${conclusion}, not completed/success (${url})"
+  # Provenance: the run ran in this repository, ON the commit being deployed (so its workflow and helpers are that
+  # commit's), and that commit is reviewed (require_reviewed_sha); GitHub's blobs of those files at it are the kit's.
+  [[ "${event}" == workflow_dispatch || "${event}" == push ]] || die "run ${FROM_RUN} was started by '${event}', not workflow_dispatch or push"
+  [[ "${repo,,}" == "${GH_REPO,,}" && "${head_repo,,}" == "${GH_REPO,,}" ]] ||
+    die "run ${FROM_RUN} ran for ${head_repo} in ${repo}, not ${GH_REPO}"
+  [[ "${head}" == "${SHA}" ]] ||
+    die "run ${FROM_RUN} ran on ${head:-?}, not ${SHA}: run the workflow on the commit itself (README 'Images from a CI run')"
+  require_reviewed_sha
+  for f in "${IMAGES_WORKFLOW}" deploy/chola-prod/artifacts.py deploy/chola-prod/ci_images.sh; do
+    remote_blob="$(gh api "repos/${GH_REPO}/contents/${f}?ref=${SHA}" --jq .sha)" || die "cannot read ${f} at ${SHA12} from GitHub"
+    local_blob="$(git -C "${REPO_ROOT}" rev-parse "${SHA}:${f}" 2>/dev/null)" || die "${f} is not in ${SHA12}: that commit has no chola-prod-images workflow"
+    [[ "${remote_blob}" == "${local_blob}" ]] || die "${f} at ${SHA12} is ${remote_blob} on GitHub but ${local_blob} here: not the reviewed file"
+  done
+  log "run ${FROM_RUN} ran on ${SHA12} (${event}), in ${GH_REPO}; its workflow and helpers are the reviewed files"
+  gh api --paginate "repos/${GH_REPO}/actions/runs/${FROM_RUN}/artifacts?per_page=100" \
+    --jq '.artifacts[] | [.name, (.id | tostring), (.expired | tostring), (.size_in_bytes | tostring)] | @tsv' \
+    >"${RUN_DIR}/artifacts.tsv" || die "cannot list the artifacts of run ${FROM_RUN}"
+  log "workflow run ${FROM_RUN}: ${url} ($(wc -l <"${RUN_DIR}/artifacts.tsv" | tr -d ' ') artifacts)"
+}
+
+# artifact_fetch <name> <dest dir> <unzip-stream mode...>: downloaded and extracted in one stream, never kept as a zip
+artifact_fetch() {
+  local name=$1 dest=$2 line id expired bytes free_kb need_kb
+  shift 2
+  line="$(awk -F'\t' -v n="${name}" '$1 == n { print $2, $3, $4; exit }' "${RUN_DIR}/artifacts.tsv")"
+  read -r id expired bytes <<<"${line}"
+  [[ "${id}" =~ ^[0-9]+$ ]] || die "run ${FROM_RUN} has no artifact ${name}"
+  [[ "${expired}" == false ]] || die "artifact ${name} of run ${FROM_RUN} has expired (kept 3 days): run the workflow again"
+  [[ "${bytes}" =~ ^[0-9]+$ ]] || bytes=0
+  # it unpacks to about its own size (the layers are compressed already); 100 MB to spare
+  free_kb="$(df -Pk "${WORK}" | awk 'NR == 2 { print $4 }')"
+  need_kb=$((bytes / 1024 + 102400))
+  if [[ "${free_kb}" =~ ^[0-9]+$ ]] && ((free_kb < need_kb)); then
+    die "artifact ${name} needs about $((need_kb / 1024)) MB in ${WORK}, $((free_kb / 1024)) MB are free (CHOLA_WORK_PARENT=<a directory with more room>)"
+  fi
+  log "downloading ${name} ($((bytes / 1048576)) MB), extracted as it arrives"
+  mkdir -p "${dest}"
+  gh api "repos/${GH_REPO}/actions/artifacts/${id}/zip" | python3 -I "${ARTIFACTS_PY}" unzip-stream --dest "${dest}" "$@" ||
+    die "downloading or extracting artifact ${name} of run ${FROM_RUN} failed (above)"
+}
+
+run_manifest() { # -> ${RUN_DIR}/manifest/manifest.json
+  [[ -s "${RUN_DIR}/manifest/manifest.json" ]] || artifact_fetch chola-manifest "${RUN_DIR}/manifest" --file manifest.json
+}
+
+run_check_images() { # preflight: the run, its manifest and the four images it names (nothing large is downloaded)
+  run_artifacts
+  if ((DRY)); then
+    printf '[dry-run] gh api .../artifacts/<chola-manifest>/zip | artifacts.py unzip-stream; artifacts.py manifest-check --sha %s\n' "${SHA:-<sha>}"
+    return 0
+  fi
+  run_manifest
+  python3 -I "${ARTIFACTS_PY}" manifest-check --manifest "${RUN_DIR}/manifest/manifest.json" --run-id "${FROM_RUN}" --sha "${SHA}" \
+    --api-url "https://${API_HOST}" --component backend --component frontend --component scan-worker \
+    --component dast-worker | sed 's/^/    /' || die "run ${FROM_RUN} does not hold the images of ${SHA12} (above)"
+  log "run ${FROM_RUN} holds the CI-built images of ${SHA12}"
+}
+
+crane_ensure() { # CRANE: crane from PATH, else the pinned release downloaded into the scratch directory (sha256 checked)
+  [[ -z "${CRANE}" ]] || return 0
+  if command -v crane >/dev/null 2>&1; then
+    CRANE=crane
+    log "crane $(crane version 2>/dev/null || echo '(version unknown)') from PATH"
+    return 0
+  fi
+  local os arch asset want got d
+  os="$(uname -s)"
+  arch="$(uname -m)"
+  [[ "${arch}" != aarch64 ]] || arch=arm64
+  asset="go-containerregistry_${os}_${arch}.tar.gz"
+  want="$(crane_sha256 "${os}_${arch}")" || die "no pinned crane build for ${os}/${arch}: install crane (it is used from PATH)"
+  d="${WORK}/crane"
+  mkdir -p "${d}"
+  log "crane not on PATH: downloading ${CRANE_VERSION} ${asset} into the scratch directory"
+  curl -fsSL --retry 3 -o "${d}/${asset}" \
+    "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/${asset}" ||
+    die "downloading crane ${CRANE_VERSION} failed"
+  got="$(sha256_of "${d}/${asset}")"
+  if [[ "${got}" != "${want}" ]]; then
+    rm -f "${d:?}/${asset:?}"
+    die "crane ${CRANE_VERSION} ${asset} has sha256 ${got}, not the pinned ${want}: not used"
+  fi
+  tar -xzf "${d}/${asset}" -C "${d}" crane || die "cannot unpack crane"
+  rm -f "${d:?}/${asset:?}"
+  chmod 755 "${d}/crane"
+  CRANE="${d}/crane"
+  log "crane ${CRANE_VERSION}: sha256 matches the pin"
+}
+
+ecr_digest() { # <component> <tag>: the digest ECR has under that tag; empty when it has none
+  ((DRY)) && return 0
+  local out
+  out="$(aws --region "${REGION}" ecr describe-images --repository-name "${ECR_NS}/$(ecr_repo "$1")" \
+    --image-ids "imageTag=$2" --query 'imageDetails[0].imageDigest' --output text 2>/dev/null)" || out=""
+  if [[ "${out}" =~ ^sha256:[0-9a-f]{64}$ ]]; then printf '%s\n' "${out}"; fi
+  return 0
+}
+
+images_from_run() {
+  registry_config_isolate # crane keeps its ECR login in the throwaway DOCKER_CONFIG; no Docker is needed
+  run_artifacts
+  if ((DRY)); then
+    printf '[dry-run] artifacts.py manifest-check --sha %s (commit, API URL, four images); crane %s (PATH or pinned download)\n' "${SHA}" "${CRANE_VERSION}"
+    printf '[dry-run] aws ecr get-login-password | crane auth login %s --password-stdin (throwaway DOCKER_CONFIG)\n' "${REGISTRY}"
+    printf '[dry-run] per image, one at a time: gh api .../artifacts/<id>/zip | artifacts.py unzip-stream --oci; artifacts.py oci-check; crane push <layout> %s/<repo>:%s; digest compared; layout deleted\n' "${IMAGE_PREFIX}" "${SHA12}"
+    note "images" ""
+    return 0
+  fi
+  run_manifest
+  local lines kind c art digest bytes ref have layout pushed mismatch=""
+  lines="$(python3 -I "${ARTIFACTS_PY}" manifest-check --manifest "${RUN_DIR}/manifest/manifest.json" --run-id "${FROM_RUN}" --sha "${SHA}" \
+    --api-url "https://${API_HOST}" --component backend --component frontend --component scan-worker \
+    --component dast-worker)" || die "run ${FROM_RUN} does not hold the images of ${SHA12} (above); nothing was pushed"
+  crane_ensure
+  aws --region "${REGION}" ecr get-login-password | "${CRANE}" auth login "${REGISTRY}" -u AWS --password-stdin \
+    >/dev/null 2>"${WORK}/crane.err" || die "crane auth login to ECR failed: $(tail -n 1 "${WORK}/crane.err")"
+  # the list is read on fd 3: gh and crane inside the loop must not consume it
+  while read -r kind c art digest bytes <&3; do
+    [[ "${kind}" == image ]] || continue
+    ref="$(ecr_ref "${c}" "${SHA12}")"
+    have="$(ecr_digest "${c}" "${SHA12}")"
+    if [[ "${have}" == "${digest}" ]]; then
+      log "${ref} already in ECR as ${digest}, the run's image"
+      continue
+    elif [[ -n "${have}" ]]; then
+      warn "${ref} is already in ECR as ${have}, not the run's ${digest}. Tags are written once, so the existing image stays and is what the instance pulls; it was NOT built by this run (e.g. an earlier GHCR-path build of the same commit) and nothing here checks it again"
+      mismatch+=" ${c}"
+      continue
+    fi
+    layout="${WORK}/oci-${c}"
+    rm -rf "${layout:?}"
+    artifact_fetch "${art}" "${layout}" --oci
+    local -a labels=()
+    [[ "${c}" != frontend ]] || labels=(--label "com.zeroshield.devsecshield.api-url=https://${API_HOST}")
+    python3 -I "${ARTIFACTS_PY}" oci-check --layout "${layout}" --digest "${digest}" --revision "${SHA}" \
+      ${labels[@]+"${labels[@]}"} >/dev/null || die "the ${c} image of run ${FROM_RUN} failed its check (above); not pushed"
+    log "${c}: ${digest} checked (linux/amd64, revision ${SHA12}, $((bytes / 1048576)) MB); pushing to ${ref}"
+    rm -f "${WORK:?}/pushed"
+    if ! "${CRANE}" push --image-refs "${WORK}/pushed" "${layout}" "${ref}" >/dev/null 2>"${WORK}/crane.err"; then
+      tail -n 5 "${WORK}/crane.err" | sed 's/^/    /' >&2
+      die "crane push of ${c} to ${ref} failed (above)"
+    fi
+    pushed="$(cat "${WORK}/pushed" 2>/dev/null || true)"
+    [[ "${pushed##*@}" == "${digest}" ]] || die "crane pushed ${pushed:-nothing} for ${c}, not ${digest}"
+    # crane's digest is computed here; read back what ECR itself stores under the tag
+    have="$(ecr_digest "${c}" "${SHA12}")"
+    [[ "${have}" == "${digest}" ]] || die "ECR stores ${have:-nothing} under ${ref}, not ${digest}"
+    rm -rf "${layout:?}" "${WORK:?}/pushed"
+    log "${ref} = ${digest} (CI-built); the local copy is deleted"
+  done 3<<<"${lines}"
+  if [[ -n "${mismatch}" ]]; then
+    note "images" "from run ${FROM_RUN}; ALREADY IN ECR with another digest (kept):${mismatch}"
+  else
+    note "images" "${IMAGE_PREFIX}/{devsecshield-backend,devsecshield-frontend,scan-worker,dast-worker}:${SHA12} = run ${FROM_RUN}'s images"
+  fi
+}
+
+infra_from_run() { # -> INFRA_TAR, INFRA_SUM: the run's release archive (its pins checked), ready for S3
+  run_artifacts
+  if ((DRY)); then
+    INFRA_TAR="${WORK}/infra/release.tar.gz" INFRA_SUM="<sha256>"
+    printf '[dry-run] gh api .../artifacts/<chola-infra>/zip | artifacts.py unzip-stream --file release.tar.gz (the manifest names its sha256 and these INFRA_IMAGES)\n'
+    return 0
+  fi
+  run_manifest
+  local line kind art file sum bytes got
+  local -a pins=() check=()
+  for line in "${INFRA_IMAGES[@]}"; do pins+=(--infra "${line}"); done
+  [[ -z "${SHA}" ]] || check=(--sha "${SHA}")
+  line="$(python3 -I "${ARTIFACTS_PY}" manifest-check --manifest "${RUN_DIR}/manifest/manifest.json" --run-id "${FROM_RUN}" \
+    ${check[@]+"${check[@]}"} "${pins[@]}")" || die "the infrastructure archive of run ${FROM_RUN} is not usable (above)"
+  read -r kind art file sum bytes <<<"${line}"
+  [[ "${kind}" == infra ]] || die "unexpected manifest-check output: ${line:0:80}"
+  rm -rf "${WORK:?}/infra"
+  artifact_fetch "${art}" "${WORK}/infra" --file "${file}"
+  got="$(sha256_of "${WORK}/infra/${file}")"
+  [[ "${got}" == "${sum}" ]] || die "the release archive of run ${FROM_RUN} has sha256 ${got}, the manifest says ${sum}"
+  INFRA_TAR="${WORK}/infra/${file}" INFRA_SUM="${sum}"
+  log "release archive from run ${FROM_RUN}: ${file} ($((bytes / 1048576)) MB, sha256 ${sum}; docker load reads it compressed)"
+}
+INFRA_TAR="" INFRA_SUM=""
+
+# ------------------------------------------------------------------------------------------------ S3 relay (default --from-run)
+# Nearly no local disk: each artifact zip streams from `gh api .../zip` through artifacts.py hash-pipe (its sha256, in
+# the same stream) into `aws s3 cp - s3://BUCKET/releases/<sha12>/<artifact>.zip` with the bucket owner pinned. The
+# instance (remote.sh relay-load, detached) downloads each, checks its sha256, extracts, checks the image against the
+# run's manifest and loads it into its Docker; the S3 objects are deleted once it succeeded.
+RELAY_KEYS=()
+relay_upload() { # <artifact> <s3 key> -> RELAY_SUM
+  local line id expired bytes sum n
+  line="$(awk -F'\t' -v n="$1" '$1 == n { print $2, $3, $4; exit }' "${RUN_DIR}/artifacts.tsv")"
+  read -r id expired bytes <<<"${line}"
+  [[ "${id}" =~ ^[0-9]+$ ]] || die "run ${FROM_RUN} has no artifact $1"
+  [[ "${expired}" == false ]] || die "artifact $1 of run ${FROM_RUN} has expired (kept 3 days): run the workflow again"
+  [[ "${bytes}" =~ ^[0-9]+$ ]] || die "artifact $1 of run ${FROM_RUN} has no size"
+  log "relaying $1 ($((bytes / 1048576)) MB) to s3://${BUCKET}/$2 (streamed; nothing stored here)"
+  RELAY_KEYS+=("$2")
+  gh api "repos/${GH_REPO}/actions/artifacts/${id}/zip" | python3 -I "${ARTIFACTS_PY}" hash-pipe --out "${WORK}/relay.sum" |
+    aws --region "${REGION}" s3 cp - "s3://${BUCKET}/$2" --expected-bucket-owner "${ACCOUNT}" --expected-size "${bytes}" \
+      --only-show-errors || die "relaying artifact $1 to s3://${BUCKET}/$2 failed (above)"
+  read -r sum n <"${WORK}/relay.sum"
+  [[ "${n}" == "${bytes}" ]] || die "artifact $1 streamed ${n} bytes, GitHub lists ${bytes}"
+  RELAY_SUM=${sum}
+}
+RELAY_SUM=""
+
+relay_cleanup() { # delete what this run put under releases/<sha12>/
+  local k
+  for k in "${RELAY_KEYS[@]}"; do
+    aws --region "${REGION}" s3api delete-object --bucket "${BUCKET}" --key "${k}" --expected-bucket-owner "${ACCOUNT}" \
+      >/dev/null 2>"${WORK:-/nonexistent}/relay-del.err" ||
+      warn "could not delete s3://${BUCKET}/${k} ($(tail -n 1 "${WORK:-/nonexistent}/relay-del.err" 2>/dev/null)); delete it by hand: aws s3api delete-object --bucket ${BUCKET} --key ${k}"
+  done
+  RELAY_KEYS=()
+}
+
+relay_from_run() { # <images|infra>: images = the four images (and the archive when the instance lacks any pin)
+  local what=$1 lines line kind c art digest bytes file fsum key missing=""
+  local -a specs=() comps=() pins=()
+  run_artifacts
+  if ((DRY)); then
+    printf '[dry-run] artifacts.py manifest-check --sha %s --run-id %s; per artifact: gh api .../artifacts/<id>/zip | artifacts.py hash-pipe | aws s3 cp - s3://%s/releases/%s/<artifact>.zip --expected-bucket-owner %s\n' \
+      "${SHA}" "${FROM_RUN}" "${BUCKET}" "${SHA12}" "${ACCOUNT}"
+    remote_job relay-load "${SHA}" "<spec per artifact>"
+    printf '[dry-run] aws s3api delete-object (each relayed key, after the load)\n'
+    RELAYED=1
+    note "relay" ""
+    return 0
+  fi
+  run_manifest
+  if [[ "${what}" == images ]]; then
+    comps=(--component backend --component frontend --component scan-worker --component dast-worker)
+    kit_upload
+    missing="$(remote infra-missing | paste -sd' ' -)" || die "cannot list the instance's images (above)"
+  fi
+  if [[ "${what}" == infra || -n "${missing}" || "${FORCE_INFRA}" == 1 ]]; then
+    for line in "${INFRA_IMAGES[@]}"; do pins+=(--infra "${line}"); done
+  fi
+  lines="$(python3 -I "${ARTIFACTS_PY}" manifest-check --manifest "${RUN_DIR}/manifest/manifest.json" --run-id "${FROM_RUN}" \
+    --sha "${SHA}" --api-url "https://${API_HOST}" ${comps[@]+"${comps[@]}"} ${pins[@]+"${pins[@]}"})" ||
+    die "run ${FROM_RUN} does not hold what ${SHA12} needs (above); nothing was relayed"
+  while read -r kind c art digest bytes <&3; do
+    if [[ "${kind}" == image ]]; then
+      key="releases/${SHA12}/${art}.zip"
+      relay_upload "${art}" "${key}"
+      specs+=("image:${c}:${key}:${RELAY_SUM}:${digest}")
+    elif [[ "${kind}" == infra ]]; then # infra <artifact> <file> <sha256> <bytes>
+      file=${art} art=${c} fsum=${digest}
+      [[ "${file}" == release.tar.gz ]] || die "the run's archive is ${file}, not release.tar.gz"
+      key="releases/${SHA12}/${art}.zip"
+      relay_upload "${art}" "${key}"
+      specs+=("infra:${key}:${RELAY_SUM}:${fsum}")
+    fi
+  done 3<<<"${lines}"
+  ((${#specs[@]})) || die "nothing to relay"
+  if ! remote_job relay-load "${SHA}" "${specs[@]}"; then
+    die "loading the relayed artifacts on the instance failed (above); their S3 objects under s3://${BUCKET}/releases/${SHA12}/ are deleted on exit"
+  fi
+  relay_cleanup
+  RELAYED=1
+  note "relay" "run ${FROM_RUN} -> s3://${BUCKET}/releases/${SHA12}/ -> loaded on the instance (${#specs[@]} artifacts, checked there); S3 objects deleted"
+}
+
 # ------------------------------------------------------------------------------------------------ images
 ghcr_login() {
   if ((DRY)); then printf '[dry-run] gh auth token | docker login ghcr.io --password-stdin (throwaway DOCKER_CONFIG)\n'; return 0; fi
@@ -805,8 +1243,11 @@ push_ecr() { # <local image> <ecr ref>
 }
 
 cmd_images() {
-  step "images: ${SHA12:-<sha>} -> ${IMAGE_PREFIX}/*:<sha12> (linux/amd64)"
+  step "images: ${SHA12:-<sha>} -> ${IMAGE_PREFIX}/*:<sha12> (linux/amd64)${FROM_RUN:+ from workflow run ${FROM_RUN}}"
   resolve_sha
+  require_reviewed_sha
+  if [[ -n "${FROM_RUN}" ]] && ((!TO_ECR)); then relay_from_run images; return 0; fi
+  if [[ -n "${FROM_RUN}" ]]; then images_from_run; return 0; fi
   docker_isolate
   ghcr_login
   ecr_login_local
@@ -855,6 +1296,18 @@ cmd_images() {
 # ------------------------------------------------------------------------------------------------ infrastructure images
 cmd_infra() {
   step "infra: release archive of the infrastructure images"
+  if ((RELAYED)); then
+    log "the S3 relay loaded the archive already when the instance lacked any image"
+    note "infra" "with the relay"
+    return 0
+  fi
+  if [[ -n "${FROM_RUN}" ]] && ((!TO_ECR)); then
+    resolve_sha
+    require_reviewed_sha
+    relay_from_run infra
+    note "infra" "release archive of run ${FROM_RUN} relayed through S3 and loaded"
+    return 0
+  fi
   ssh_setup # here, not inside $(remote ...) below
   local missing="" i
   if ((DRY)); then
@@ -873,6 +1326,12 @@ cmd_infra() {
   work
   local tar="${WORK}/release.tar" sum
   local -a plat=() tags=()
+  if [[ -n "${FROM_RUN}" ]]; then
+    infra_from_run
+    infra_upload "${INFRA_TAR}" "${INFRA_SUM}"
+    note "infra" "release archive of run ${FROM_RUN} uploaded (s3://${BUCKET}/${RELEASE_KEY}) and loaded"
+    return 0
+  fi
   # pulled by digest, shipped under the tag the compose file runs
   for i in "${INFRA_IMAGES[@]}"; do
     x docker pull -q --platform linux/amd64 "${i}"
@@ -882,14 +1341,19 @@ cmd_infra() {
   if ((!DRY)) && containerd_store && docker save --help 2>/dev/null | grep -q -- '--platform'; then plat=(--platform linux/amd64); fi
   if ((!DRY)); then for i in "${tags[@]}"; do check_amd64 "${i}" ""; done; fi
   x docker save ${plat[@]+"${plat[@]}"} -o "${tar}" "${tags[@]}"
-  if ((DRY)); then sum="<sha256>"; else sum="$(sha256sum "${tar}" 2>/dev/null || shasum -a 256 "${tar}")"; sum="${sum%% *}"; fi
-  log "release archive sha256 ${sum}"
-  # s3api put-object: one PUT (the archive is ~2.5 GB, under the 5 GB limit) with the bucket owner pinned
-  aws_ s3api put-object --bucket "${BUCKET}" --key "${RELEASE_KEY}" --body "${tar}" --expected-bucket-owner "${ACCOUNT}" \
-    --query ETag --output text
-  remote_job infra-load "${RELEASE_KEY}" "${sum}" || die "loading the release archive on the instance failed (above)"
-  x rm -f "${tar}"
+  if ((DRY)); then sum="<sha256>"; else sum="$(sha256_of "${tar}")"; fi
+  infra_upload "${tar}" "${sum}"
   note "infra" "release archive uploaded (s3://${BUCKET}/${RELEASE_KEY}) and loaded"
+}
+
+infra_upload() { # <archive> <sha256>: to S3, then loaded on the instance (detached job; sha256 checked there)
+  log "release archive sha256 $2"
+  # s3api put-object: one PUT (a docker save archive is ~2.5 GB, the run's compressed one less; the limit is 5 GB) with
+  # the bucket owner pinned. The key keeps its name; docker load reads a compressed archive as well.
+  aws_ s3api put-object --bucket "${BUCKET}" --key "${RELEASE_KEY}" --body "$1" --expected-bucket-owner "${ACCOUNT}" \
+    --query ETag --output text
+  x rm -f "${1:?}" # before the long load: the instance downloads its own copy from S3
+  remote_job infra-load "${RELEASE_KEY}" "$2" || die "loading the release archive on the instance failed (above)"
 }
 
 # ------------------------------------------------------------------------------------------------ backup
@@ -993,21 +1457,32 @@ confirm() { # <what>
 cmd_deploy() {
   resolve_sha
   confirm "Deploy ${SHA12}"
+  require_reviewed_sha
   step "deploy ${SHA12} to ${FRONTEND_HOST} / ${API_HOST}"
   local_preflight
   aws_identity
   aws_resources
   kit_upload with-overlay
   s3_probe
+  step "container IMDS block on the instance (idempotent)"
+  remote_step "${PRE_SWITCH}" imds-block
   remote_step "${PRE_SWITCH}" preflight
   cmd_secrets
   cmd_images
   step "environment and images on the instance"
   remote_step "${PRE_SWITCH}" render "${SHA12}"
-  remote_step "${PRE_SWITCH}" ecr-login
-  remote_step "${PRE_SWITCH}" pull "${SHA12}"
-  note "instance" "env rendered from Secrets Manager (instance role), images of ${SHA12} pulled, frontend URL checked"
+  if ((RELAYED)); then
+    remote_step "${PRE_SWITCH}" pull "${SHA12}" --local
+    note "instance" "env rendered from Secrets Manager (instance role), relayed images of ${SHA12} present, frontend URL checked"
+  else
+    remote_step "${PRE_SWITCH}" ecr-login
+    remote_step "${PRE_SWITCH}" pull "${SHA12}"
+    note "instance" "env rendered from Secrets Manager (instance role), images of ${SHA12} pulled, frontend URL checked"
+  fi
   cmd_infra
+  step "IMDS: a token probe from a container must fail before anything starts"
+  remote_step "${PRE_SWITCH}" imds-check
+  note "imds" "containers cannot reach the instance metadata service (rule, unit and container probe checked)"
   cmd_backup
   step "migrate and start ${SHA12} (detached on the instance)"
   remote_job deploy "${SHA12}" || die "the deploy of ${SHA12} failed on the instance (above); to go back: ${0##*/} rollback"
@@ -1024,7 +1499,7 @@ cmd_rollback() {
   confirm "Roll back"
   step "rollback"
   aws_identity
-  cmd_backup
+  # the plan first: it proves the target's images are on the instance or in ECR before any backup is taken
   remote_step "nothing was rolled back yet: re-run the rollback" ecr-login
   local rc=0
   local -a to=()
@@ -1043,8 +1518,9 @@ cmd_rollback() {
     [[ "${a}" == downgrade ]] || die "aborted; nothing was changed"
     ALLOW_DOWNGRADE=1
   elif [[ "${rc}" != 0 && "${rc}" != 3 ]]; then
-    die "cannot plan the rollback (above); nothing was changed"
+    die "cannot plan the rollback (above); nothing was changed (no backup was taken)"
   fi
+  cmd_backup
   local -a args=()
   ((ALLOW_DOWNGRADE)) && args=(--allow-downgrade)
   remote_job rollback ${args[@]+"${args[@]}"} ${to[@]+"${to[@]}"} || die "the rollback failed on the instance (above)"
@@ -1073,6 +1549,10 @@ main() {
   parse_args "$@"
   if ((HELP)) || [[ -z "${CMD}" || "${CMD}" == help ]]; then usage; return 0; fi
   # rollback-only flags are refused elsewhere, never silently ignored (`deploy --to X` must not look like it did something)
+  if [[ -n "${FROM_RUN}" && " images infra deploy preflight " != *" ${CMD} "* ]]; then
+    die "--from-run is only for images, infra, deploy and preflight"
+  fi
+  [[ -z "${FROM_RUN}" || -n "${SHA}" ]] || die "--from-run needs --sha (the commit the run must have run on)"
   if [[ "${CMD}" != rollback ]]; then
     [[ -z "${ROLLBACK_TO}" ]] || die "--to is only for rollback (to go forward: deploy --sha <commit>)"
     ((!ALLOW_DOWNGRADE)) || die "--allow-downgrade is only for rollback"
