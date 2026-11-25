@@ -48,6 +48,7 @@ from backend.utilities.dashboard.cbom_team_rollup import (  # noqa: E402
     fold_scans,
 )
 from backend.utilities.pdf import cbom_deliverable_text as text  # noqa: E402
+from backend.utilities.pdf import cbom_deliverable_text as authored_text  # noqa: E402
 from backend.utilities.pdf import cbom_pqc_roadmap_pdf as roadmap  # noqa: E402
 from backend.utilities.pdf.cbom_deliverable_common import (  # noqa: E402
     build_document,
@@ -144,8 +145,7 @@ TIMELINE_ROWS = [
     ),
     (
         "2025 to 2035",
-        "CNSA 2.0 NSS milestones: software/firmware signing 2025, networking 2030, all NSS "
-        "by 2033-2035. Verify against the NSA advisory before submission.",
+        f"{authored_text.CNSA_2_0_TIMETABLE}. Verify against the NSA advisory before submission.",
         "ADVISORY",
         "NSA CNSA 2.0 advisory",
         URL_CNSA,
@@ -1440,6 +1440,7 @@ def test_module_imports_only_stdlib_reportlab_and_the_allowed_backend_modules():
         "backend.utilities.pdf",
         "backend.utilities.dashboard.cbom_team_rollup",
         "backend.utilities.cbom_sources.pqc_targets",  # pure: the KB target table resolved through algid
+        "backend.utilities.cbom_sources.reconciliation",  # pure: the population block every document prints (QA2 M4)
     )
     seen: list[str] = []
     for node in ast.walk(_module_tree()):

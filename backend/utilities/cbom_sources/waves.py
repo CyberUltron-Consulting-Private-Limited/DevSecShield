@@ -14,6 +14,8 @@ a row id or inside ``scan_data``, so a plan made on one run still applies to the
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
+import json
 import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -205,6 +207,55 @@ def node_first_seen(session: Session, team_id: int, refs_keys: Iterable[tuple[st
     return out
 
 
+def identity_first_seen(session: Session, team_id: int, rows: Iterable[tuple[Any, str]]) -> dict[int, str]:
+    """collected row id -> the day its identity was first found, for rows ``node_first_seen`` could not place (the
+    estate keeps ONE observation per asset and source: a certificate a source reads at two places has one stored
+    observation key, so the other place's key is not there; staging QA2 M1).
+
+    The earliest of (a) the estate asset of the row's de-duplicated identity (``asset_keys.asset_key``, the key the
+    estate counts by; ``CbomEstateAsset.first_seen_at``) and (b) the earliest stored observation of the same row
+    identity in the same source (``cbomcollectedasset.asset_key`` is a digest of type, target, location and the
+    certificate fingerprint, equal from run to run). (b) includes the row itself, so the answer never moves when a
+    later collection reads the asset again: it is the first observation, never "this collection"."""
+    from backend.utilities.cbom_sources import asset_keys as AK
+    from backend.utilities.cbom_sources import estate as E
+
+    pairs = list(rows)
+    out: dict[int, str] = {}
+    by_key: dict[str, list[int]] = {}
+    for row, ref in pairs:
+        try:
+            key = AK.asset_key(E._observation(row, ref))
+        except Exception:  # noqa: BLE001  # a key the estate cannot compute: (b) still dates the row
+            key = None
+        if isinstance(key, str) and key:
+            by_key.setdefault(key, []).append(int(row.id))
+    keys = sorted(by_key)
+    for start in range(0, len(keys), 500):
+        for key, at in session.exec(select(CbomEstateAsset.asset_key, CbomEstateAsset.first_seen_at).where(
+                CbomEstateAsset.team_id == team_id,
+                CbomEstateAsset.asset_key.in_(keys[start:start + 500]))).all():  # type: ignore[attr-defined]
+            day = _day(at)
+            for rid in by_key.get(key, ()):
+                out[rid] = _earliest(out.get(rid), day) or out.get(rid) or ""
+    by_source: dict[int, dict[str, list[int]]] = {}
+    for row, _ref in pairs:
+        if row.source_id is not None:
+            by_source.setdefault(int(row.source_id), {}).setdefault(row.asset_key, []).append(int(row.id))
+    for source_id, wanted in by_source.items():
+        row_keys = sorted(wanted)
+        for start in range(0, len(row_keys), 500):
+            for row_key, at in session.exec(
+                    select(CbomCollectedAsset.asset_key, sa.func.min(CbomCollectedAsset.created_at)).where(
+                        CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.source_id == source_id,
+                        CbomCollectedAsset.asset_key.in_(row_keys[start:start + 500]))  # type: ignore[attr-defined]
+                    .group_by(CbomCollectedAsset.asset_key)).all():
+                day = _day(at)
+                for rid in wanted.get(row_key, ()):
+                    out[rid] = _earliest(out.get(rid), day) or out.get(rid) or ""
+    return {k: v for k, v in out.items() if v}
+
+
 def code_disallowed(asset_type: Any, algorithm: Any, key_size: Any) -> bool:
     """NIST disallows the code row's algorithm or key size today (``qgrade.disallowed_now``, as D12 grades it)."""
     from backend.utilities.cbom_sources import qgrade as QG
@@ -268,6 +319,7 @@ def node_items(session: Session, team_id: int, run: CbomCollectionRun, *,
         asset_exposure,
         hndl,
         job_metadata,
+        stored_verdict,
     )
 
     jobs = {j.id: j for j in session.exec(select(CbomCollectionJob).where(
@@ -281,6 +333,7 @@ def node_items(session: Session, team_id: int, run: CbomCollectionRun, *,
     from backend.utilities.cbom_sources.classify import shown
 
     items = []
+    placed: dict[int, tuple[Any, str]] = {}
     now = _dt.datetime.utcnow()
     for row in session.exec(query.order_by(CbomCollectedAsset.id)).all():
         if row.asset_type == "coverage":
@@ -293,24 +346,33 @@ def node_items(session: Session, team_id: int, run: CbomCollectionRun, *,
         exposure, _basis = asset_exposure(row.facts, row.target, row.location, override=meta["exposure"],
                                           node_segment=meta["segment"])
         codes = view["finding_codes"]
-        in_transit = hndl(row.asset_type, row.quantum_vulnerable)
+        # the verdict every count reads (review 6057476173 M1): a symmetric key is never planned as a post-quantum
+        # migration, as D13 counts it
+        qv = stored_verdict(row)
+        in_transit = hndl(row.asset_type, qv)
         snap = (job.params or {}).get("metadata") if job else None
         owner = (snap.get("owner") if isinstance(snap, dict) else None) or ((src.config or {}).get("owner") if src else None)
         items.append({
             "asset_id": row.id, "asset_key": ID.stable_key("node", ref, ID.node_identity(row)), "scope": "node",
             "source_ref": ref, "source_name": ID.job_source_name(job, src) if job else None,
             "label": ID.node_label(row), "type": row.asset_type, "impact": view["impact"], "finding_codes": codes,
-            "quantum_vulnerable": row.quantum_vulnerable, "exposure": exposure, "hndl": in_transit,
+            "quantum_vulnerable": qv, "exposure": exposure, "hndl": in_transit,
             "owner_hint": owner, **target_fields(row.asset_type, row.algorithm, row.facts),
-            "suggested_wave": suggested_wave(view["impact"], codes, row.quantum_vulnerable,
+            "suggested_wave": suggested_wave(view["impact"], codes, qv,
                                              internet=exposure == "internet", hndl=in_transit),
-            # when it was first found: the estate's first_seen_at (below), else this collection
-            "first_seen_on": _day(row.created_at),
+            # when it was first found: the estate's first_seen_at of its observation, else of its de-duplicated
+            # identity, else the earliest stored observation of the same identity (below; never "this collection")
+            "first_seen_on": None,
             "disallowed": QG.disallowed_now(row) if PQT.classical_weakness(codes) else False,
         })
+        placed[int(row.id)] = (row, ref)  # type: ignore[arg-type]
     first = node_first_seen(session, team_id, ((i["source_ref"], i["asset_key"]) for i in items))
+    others = identity_first_seen(session, team_id, (placed[i["asset_id"]] for i in items
+                                                    if i["asset_key"] not in first))
     for item in items:
-        item["first_seen_on"] = _earliest(first.get(item["asset_key"]), item["first_seen_on"])
+        found = _earliest(first.get(item["asset_key"]), others.get(item["asset_id"]))
+        # a row with neither (no estate yet, a row the store cannot read back) is its own first observation
+        item["first_seen_on"] = found or _day(placed[item["asset_id"]][0].created_at)
     return _with_assignment(items, _assignments(session, team_id, (i["asset_key"] for i in items)),
                             fix_windows(session, team_id), as_of)
 
@@ -461,6 +523,62 @@ def _kex_group(facts: Any) -> str | None:
     return None
 
 
+# what D13 does not plan as a post-quantum migration, though its collector marked it quantum-vulnerable (QA2 M2)
+PLAN_EXCLUDED_USAGES = {"symmetric": "symmetric", "hash": "symmetric"}
+
+
+def plan_exclusion(usage: str | None) -> str | None:
+    """Why an asset with a quantum-vulnerable verdict is not a public-key migration of D13: ``symmetric`` (a
+    symmetric cipher, hash or MAC: Grover, AES-256 is the answer) or ``no_algorithm`` (no algorithm recorded, so no
+    function and no target can be derived); None when D13 plans it."""
+    if not usage:
+        return "no_algorithm"
+    return PLAN_EXCLUDED_USAGES.get(usage)
+
+
+def view_qv_asset_ids(view: Any) -> set[int] | None:
+    """The collected row ids of the view's current CBOM Sources assets with a quantum-vulnerable verdict (the rows
+    ``view.pqc_vulnerable`` counts, ``bom_ref`` ``zs-asset-<id>``); None without a view."""
+    if view is None or getattr(view, "assets", None) is None:
+        return None
+    out: set[int] = set()
+    for asset in view.assets:
+        ref = str(getattr(asset, "bom_ref", "") or "")
+        if (asset.current and asset.quantum_vulnerable is True and asset.source_key.startswith("sources:")
+                and ref.startswith("zs-asset-") and ref[9:].isdigit()):
+            out.add(int(ref[9:]))
+    return out
+
+
+def population_from_rows(rows: Iterable[Any], view: Any) -> dict[str, Any]:
+    """D13's population from in-memory CBOM Sources rows (``collections_view.SourcesRow``: the dashboard, which loads
+    no roadmap): the same rule as ``roadmap_extras`` (the view's current quantum-vulnerable Sources assets, each by
+    its function, ``target_fields`` + ``plan_exclusion``), the same keys (review 6038529822 M2)."""
+    counted = view_qv_asset_ids(view) or set()
+    population: dict[str, Any] = {"sources": 0, "sources_planned": 0, "symmetric": 0, "no_algorithm": 0,
+                                  "by_usage": {}}
+    kinds: set[tuple[str, str]] = set()
+    for item in rows:
+        ref = str(item.row.get("bom_ref") or "")
+        if not (ref.startswith("zs-asset-") and ref[9:].isdigit() and int(ref[9:]) in counted):
+            continue
+        usage = target_fields(item.node_type, item.algorithm, item.facts)["pq_usage"]
+        population["sources"] += 1
+        excluded = plan_exclusion(usage)
+        if excluded:
+            population[excluded] += 1
+            continue
+        population["sources_planned"] += 1
+        kinds.add((str(item.algorithm or item.node_type or "").casefold(), str(item.key_size or "")))
+        slot = population["by_usage"].setdefault(usage, {"assets": 0, "sources": set()})
+        slot["assets"] += 1
+        slot["sources"].add(item.collection.source_name)
+    population["by_usage"] = {u: {"assets": v["assets"], "sources": sorted(v["sources"])}
+                              for u, v in population["by_usage"].items()}
+    population["kinds"] = sorted(f"{a}|{k}" for a, k in kinds)
+    return population
+
+
 def code_asset_key(asset: Any) -> str:
     return ID.stable_key("code", asset.source_key, ID.asset_agg_identity(asset))
 
@@ -499,35 +617,83 @@ def roadmap_extras(session: Session, team_id: int, view: Any = None) -> dict[str
     # the same collections every CBOM view counts: each source's latest completed collection (collections_view)
     from backend.utilities.cbom_sources.collections_view import latest_jobs
 
+    # D13's population (staging QA2 M2, Rule P): the view's current CBOM Sources assets with a quantum-vulnerable
+    # verdict (a certificate two sources read counted once, as every count of the view), of which the public-key
+    # ones are planned; a symmetric or hash asset, or one with no algorithm recorded, is counted apart, never planned
+    counted = view_qv_asset_ids(view)
+    also_at = {int(str(a.bom_ref)[9:]): a.also_at for a in (getattr(view, "assets", None) or ())
+               if getattr(a, "also_at", ()) and str(a.bom_ref or "").startswith("zs-asset-")
+               and str(a.bom_ref)[9:].isdigit()}
+    population: dict[str, Any] = {"sources": 0, "sources_planned": 0, "symmetric": 0, "no_algorithm": 0,
+                                  "by_usage": {}}
     node_rows: list[dict[str, Any]] = []
+    kinds: set[tuple[str, str]] = set()
+    omitted = 0
     runs: dict[int, CbomCollectionRun] = {}
+    sources_by_id = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
+        CbomCollectionSource.team_id == team_id)).all()}
     for job in latest_jobs(session, team_id):
-        if job.run_id is None or len(node_rows) >= ROADMAP_NODE_CAP:
+        if job.run_id is None:
+            continue
+        ids = [r for r in session.exec(select(CbomCollectedAsset.id).where(
+            CbomCollectedAsset.job_id == job.id, CbomCollectedAsset.attempt == job.attempts,
+            CbomCollectedAsset.quantum_vulnerable == True)).all()]  # noqa: E712
+        if counted is not None:
+            ids = [i for i in ids if i in counted]
+        if not ids:
+            continue
+        name = ID.job_source_name(job, sources_by_id.get(job.source_id or 0)) or f"source {job.source_id}"
+        planned = []
+        for start in range(0, len(ids), 500):
+            for rid, a_type, algorithm, key_size, facts in session.exec(select(
+                    CbomCollectedAsset.id, CbomCollectedAsset.asset_type, CbomCollectedAsset.algorithm,
+                    CbomCollectedAsset.key_size, CbomCollectedAsset.facts).where(CbomCollectedAsset.id.in_(ids[start:start + 500]))).all():  # type: ignore[union-attr]
+                usage = target_fields(a_type, algorithm, facts)["pq_usage"]
+                population["sources"] += 1
+                excluded = plan_exclusion(usage)
+                if excluded:
+                    population[excluded] += 1
+                    continue
+                planned.append(rid)
+                kinds.add((str(algorithm or a_type or "").casefold(), str(key_size or "")))
+                slot = population["by_usage"].setdefault(usage, {"assets": 0, "sources": set()})
+                slot["assets"] += 1
+                slot["sources"].add(name)
+        population["sources_planned"] += len(planned)
+        if not planned:
+            continue
+        if len(node_rows) >= ROADMAP_NODE_CAP:
+            omitted += len(planned)
             continue
         run = runs.get(job.run_id) or session.get(CbomCollectionRun, job.run_id)
         if run is None:
             continue
         runs[run.id] = run
-        ids = [r for r in session.exec(select(CbomCollectedAsset.id).where(
-            CbomCollectedAsset.job_id == job.id, CbomCollectedAsset.attempt == job.attempts,
-            CbomCollectedAsset.quantum_vulnerable == True)).all()]  # noqa: E712
-        if not ids:
-            continue
-        for item in node_items(session, team_id, run, asset_ids=ids, as_of=as_of):
+        for item in node_items(session, team_id, run, asset_ids=sorted(planned), as_of=as_of):
             row = session.get(CbomCollectedAsset, item["asset_id"])
             node_rows.append({**item, "algorithm": row.algorithm if row else None,
                               "key_size": row.key_size if row else None, "target": row.target if row else None,
                               "location": row.location if row else None, "run_id": run.id,
                               # the key-exchange group an endpoint negotiated (the part a quantum computer breaks)
                               "kex_group": _kex_group(row.facts) if row else None,
+                              "also_at": list(also_at.get(item["asset_id"], ())),
                               "collected_at": iso_z(row.created_at) if row else None})
     order = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
     node_rows.sort(key=lambda r: (r["wave"] or 9, order.get(r["impact"] or "", 8), str(r["source_name"]), r["label"]))
+    population["by_usage"] = {u: {"assets": v["assets"], "sources": sorted(v["sources"])}
+                              for u, v in population["by_usage"].items()}
+    population["kinds"] = sorted(f"{a}|{k}" for a, k in kinds)  # distinct algorithm + key size of the planned rows
     return {"code_plans": code_plans, "node_rows": node_rows[:ROADMAP_NODE_CAP],
-            "node_rows_omitted": max(len(node_rows) - ROADMAP_NODE_CAP, 0),
+            "node_rows_omitted": max(len(node_rows) - ROADMAP_NODE_CAP, 0) + omitted,
+            # what D13 prints of the team's plan, as one digest (review 6038529822 M4: D13's Document ID): every
+            # assignment's wave, owner, status and target date
+            "assignments_digest": hashlib.sha256(json.dumps(sorted(
+                [k, a.get("wave"), a.get("owner"), a.get("status"), a.get("target_date"), a.get("note")]
+                for k, a in assignments.items()), separators=(",", ":"), default=str).encode()).hexdigest()[:16],
+            "population": population,
             # the days-to-fix per wave the PDF dates classical weaknesses with, from when each asset was first found
             "fix_windows": fix_windows(session, team_id)}
 
 
 __all__ = ["AssignmentBulk", "STATUSES", "WAVES", "WAVE_LABEL", "WAVE_RULE", "WAVE_RULES", "WaveRule", "code_asset_key",
-           "code_disallowed", "code_first_seen", "code_items", "fix_windows", "node_first_seen", "node_items", "matching_rule", "roadmap_extras", "suggested_wave", "upsert"]
+           "code_disallowed", "code_first_seen", "code_items", "fix_windows", "identity_first_seen", "node_first_seen", "node_items", "plan_exclusion", "population_from_rows", "view_qv_asset_ids", "matching_rule", "roadmap_extras", "suggested_wave", "upsert"]

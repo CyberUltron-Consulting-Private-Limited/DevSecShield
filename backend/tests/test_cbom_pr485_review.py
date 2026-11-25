@@ -358,9 +358,10 @@ def test_m6_d1_reconciles_run_assets_occurrences_and_register(seeded):
     assert (counts["collected"], counts["counted_once"], counts["sources_occurrences"]) == (11, 1, 10)
     assert counts["register"]["total"] == 10
     steps = " ".join(population.reconciliation_steps(view))
-    assert "list 11 assets" in steps and "Minus 1 observation" in steps and "= 10 occurrences" in steps
+    assert "list 11 assets" in steps and "minus 1 observation of" in steps and "= 10 CBOM Sources occurrences" in steps
     # PR #490 (merged): assets without Mosca inputs are graded on the KB default assumptions, so none is Q0
-    assert "holds 10 distinct assets" in steps and "Q1 Critical 3, Q2 High 5" in steps and "Q0 Unknown 0" in steps
+    assert "= 10 distinct assets in the Quantum Risk Register" in steps and "Q1 Critical 3, Q2 High 5" in steps
+    assert "Q0 Unknown 0" in steps
     text = scope_text(view)
     assert "is counted twice" not in text and "one per source that observed the asset" not in text
     per_source = sum(len(v) for k, v in population.current_assets_by_source(view).items() if k.startswith("sources:"))

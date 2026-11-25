@@ -95,3 +95,13 @@ assert.equal(DISPLAY_TZ_LABEL, "IST");
 }
 
 console.log("datetime.test.ts: all assertions passed");
+
+// staging QA2 m10 (D-S1-4): an API time without a zone is UTC, never the browser's local time: one moment, one label
+{
+  const naive = parseDisplayDate("2026-11-24T05:48:00");
+  const zulu = parseDisplayDate("2026-11-24T05:48:00Z");
+  assert.ok(naive && zulu && naive.getTime() === zulu.getTime(), "a naive ISO time is read as UTC");
+  assert.equal(formatDateIst("2026-11-24T05:48:00"), formatDateIst("2026-11-24T05:48:00+00:00"));
+  assert.match(formatDateIst("2026-11-24T05:48:00.123456"), /11:18\s*am IST/i);
+  assert.equal(parseDisplayDate("2026-11-24")?.toISOString(), "2026-11-24T00:00:00.000Z", "a date stays a UTC day");
+}

@@ -109,6 +109,10 @@ class SourcesRow:
     # impact depends on the facts (a domain's functional level, a key's size) keeps it in the posture facts, so a
     # deliverable's findings table never falls back to the KB default for it (#493 review 6032906354 M1)
     code_impacts: dict[str, str] = field(default_factory=dict, compare=False, repr=False)
+    # the stored algorithm and key size (``CbomCollectedAsset``): D13's population reads the asset's function from
+    # them (``waves.population_from_rows``), as the roadmap does from the stored row (review 6038529822 M2)
+    algorithm: str | None = field(default=None, compare=False, repr=False)
+    key_size: int | None = field(default=None, compare=False, repr=False)
 
 
 def is_deleted_source(collection: Any) -> bool:
@@ -203,7 +207,11 @@ def node_row(asset: Any, collection: Collection, view: Mapping[str, Any]) -> dic
     facts = asset.facts if isinstance(asset.facts, dict) else {}
     codes = [c for c in (view.get("finding_codes") or []) if isinstance(c, str) and c]
     impact = view.get("impact") if view.get("impact") in ("Critical", "High", "Medium", "Low") else None
-    qv = asset.quantum_vulnerable
+    from backend.utilities.cbom_sources.posture import stored_verdict
+
+    # the verdict every count reads: a symmetric cipher, MAC or hash is never quantum-vulnerable (review 6038529822
+    # M5, the class function's own rule), so readiness, the dashboard and the documents follow the grade
+    qv = stored_verdict(asset)
     # a finding is weak unless its only codes are quantum verdicts; an impact without any code is a weakness too
     weak = bool(impact) and (not codes or any(c not in _NOT_WEAK for c in codes))
     name = asset.name or asset.algorithm or asset.asset_type
@@ -455,7 +463,8 @@ def load_sources_result(session: Any, team_id: int, now: _dt.datetime | None = N
                                        target=asset.target, facts=dict(asset.facts or {}),
                                        asset_key=ID.stable_key("node", collection.source_ref, own),
                                        clause_evidence=CE.evidence_by_code(asset, rule_codes) if rule_codes else {},
-                                       standards_parts=_parts(asset), code_impacts=code_impacts(view)))
+                                       standards_parts=_parts(asset), code_impacts=code_impacts(view),
+                                       algorithm=asset.algorithm, key_size=asset.key_size))
     # the remediation status a finding has on the Sources pages (waves): open / in_progress / done / accepted_risk
     keys = list(dict.fromkeys(item.asset_key for item in out.rows))
     status: dict[str, str] = {}
@@ -634,6 +643,39 @@ def resolve(code_observations: Iterable[tuple[int, _dt.datetime, str]], rows: It
                       aliases={ident: canon for _s, _c, ident, canon in code_list if canon != ident})
 
 
-__all__ = ["Collection", "link_certificates", "NETWORK_TYPES", "REMEDIATION_BUCKET", "ORIGIN_CODE", "ORIGIN_SOURCES", "Resolution", "SourcesResult",
-           "SourcesRow", "attempt_reason", "cert_identity", "code_cert_identities", "code_row_identity", "collection_history",
-           "current_only", "is_deleted_source", "latest_jobs", "load_sources_result", "node_row", "origin_label", "resolve"]
+def dedup_counts(rows: Iterable[SourcesRow], resolution: Resolution) -> dict[str, int]:
+    """How "latest observation wins" (``resolve``) counted the rows of current collections, each bucket counted
+    (SOW audit A-09, review 6038529822 B1): ``same_source_places`` (a certificate one source read at another place),
+    ``cross_source`` (a certificate another source also read; the other source's observation is counted),
+    ``to_code`` (a certificate a code scan saw at the same time or later; the code row is counted), and
+    ``estate_repeats`` (current Sources occurrences of one estate asset beyond the first: one endpoint two probes
+    read, ``asset_keys.distinct_assets``, the estate store's own key)."""
+    from backend.utilities.cbom_sources import asset_keys as AK
+
+    kept = [r for r in resolution.sources_rows if not is_deleted_source(r.collection)]
+    winner = {r.identity: r for r in resolution.sources_rows}
+    kept_ids = {id(r) for r in resolution.sources_rows}
+    out = {"same_source_places": 0, "cross_source": 0, "to_code": 0}
+    for row in rows:
+        if is_deleted_source(row.collection) or id(row) in kept_ids:
+            continue
+        held = winner.get(row.identity)
+        if held is None:
+            out["to_code"] += 1
+        elif held.collection.source_ref == row.collection.source_ref:
+            out["same_source_places"] += 1
+        else:
+            out["cross_source"] += 1
+    # only rows that can link to another source's (certificates, endpoints, cloud resources) can repeat an estate
+    # asset; every other row is its own asset by construction (``estate._linkless``), so it is not correlated
+    linkable = [r for r in kept if r.node_type in AK.CERT_TYPES or r.node_type in AK.ENDPOINT_TYPES
+                or r.row.get("algorithm_type") == "certificate"
+                or AK._maybe_cloud((r.facts or {}).get("identity")) or AK._maybe_cloud(r.row.get("location"))]
+    out["estate_repeats"] = len(linkable) - AK.distinct_assets(linkable) if linkable else 0
+    return out
+
+
+__all__ = ["Collection", "dedup_counts", "link_certificates", "NETWORK_TYPES", "REMEDIATION_BUCKET", "ORIGIN_CODE",
+           "ORIGIN_SOURCES", "Resolution", "SourcesResult", "SourcesRow", "attempt_reason", "cert_identity",
+           "code_cert_identities", "code_row_identity", "collection_history", "current_only", "is_deleted_source",
+           "latest_jobs", "load_sources_result", "node_row", "origin_label", "resolve"]
