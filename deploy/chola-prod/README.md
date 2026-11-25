@@ -28,7 +28,8 @@ browser --HTTPS--> ALB devsec-chola-prod-alb (ACM, both host names) --HTTP :80--
 | `deploy/chola-prod/nginx/` | site template + entrypoint script (host routing, real IP and scheme from the ALB subnets only, security headers) |
 | `deploy/chola-prod/remote.sh` | the instance side, run over SSH by chola-prod.sh |
 | `deploy/chola-prod/kit.py` | secret merge, env rendering (stdlib only) |
-| `deploy/chola-prod/artifacts.py` | images from a CI run: streaming artifact unzip, OCI layout check, the run's manifest (stdlib only; the workflow uses the same file) |
+| `deploy/chola-prod/artifacts.py` | images from a CI run: streaming artifact unzip (upload-artifact's stored + data-descriptor format too), OCI layout check and naming, stream hashing, the run's manifest (stdlib only; the workflow and the instance use the same file) |
+| `deploy/chola-prod/ci_images.sh` | the steps of `.github/workflows/chola-prod-images.yml` (tested here) |
 | `deploy/chola-prod/host/` | the container IMDS block: script, systemd unit, Docker drop-in ([Instance metadata (IMDS)](#instance-metadata-imds)) |
 | `.github/workflows/chola-prod-images.yml` | the CI run that packages one commit's images as artifacts ([Images from a CI run](#images-from-a-ci-run)) |
 | `deploy/chola-prod/smtp_check.py` | SMTP login test (authenticates, sends nothing) |
@@ -218,47 +219,94 @@ Single steps can be run on their own: `secrets`, `images --sha S [--from-run RUN
 
 ### Images from a CI run
 
-Two ways to get a commit's images into ECR; both end with the same four tags
-(`devsec-chola/{devsecshield-backend,devsecshield-frontend,scan-worker,dast-worker}:<sha12>`), and the instance checks
-both the same way (linux/amd64, the frontend's API URL).
+Three ways to get a commit's images onto the instance. Each one checks the images the same way (linux/amd64, revision
+label = the commit, the frontend's API URL). Every way deploys only a commit that is on `origin/dev` or
+`origin/staging`: the kit fetches both and checks with `git merge-base --is-ancestor`.
 
-| | GHCR path (default; the owner's laptop) | `--from-run RUN` (a machine that cannot pull GHCR or Docker Hub) |
-|---|---|---|
-| backend, scan-worker, dast-worker | `docker pull` from GHCR (`dev-<sha12>` / `staging-<sha12>` / `manual-<sha12>`) | the same GHCR images, copied by the run byte for byte (same digests) |
-| frontend | built here with buildx for `https://chola-api.zeroshield.ai` | built by the run the same way |
-| infrastructure archive | `docker pull` by digest + `docker save` here | the run's `release.tar.gz` (same pins) |
-| needs here | Docker + buildx, gh with `read:packages`, ~15 GB | gh (`gh api`), crane (or curl to fetch the pinned one), about the largest image's size free (~1.5 GB), **no Docker** |
+| | GHCR path (default; the owner's laptop) | `--from-run RUN`: S3 relay (default for `--from-run`) | `--from-run RUN --to-ecr` |
+|---|---|---|---|
+| backend, scan-worker, dast-worker | `docker pull` from GHCR here, then push to ECR | the run's copies of the GHCR images (same digests), streamed GitHub -> S3 -> instance | the run's copies, `crane push`ed to ECR from here |
+| frontend | built here with buildx for `https://chola-api.zeroshield.ai` | built by the run the same way | built by the run |
+| infrastructure archive | `docker pull` by digest + `docker save` here | the run's `release.tar.gz` (same pins), relayed | the run's archive, downloaded here |
+| the instance gets them | `docker pull` from ECR | `docker load` from the relayed files; nothing is pulled from ECR | `docker pull` from ECR |
+| needs here | Docker + buildx, gh with `read:packages`, ~15 GB | gh (`gh api`), aws; **almost no disk** | gh, crane (or curl to fetch the pinned one), the largest image's size free |
 
-1. **Run the workflow** `.github/workflows/chola-prod-images.yml` for the commit (it needs green **Publish images
-   (GHCR)** for it first):
-   ```sh
-   # from the default branch (GitHub offers workflow_dispatch only for workflows that are on it)
-   gh api -X POST repos/CyberUltron-Consulting-Private-Limited/DevSecShield/actions/workflows/chola-prod-images.yml/dispatches \
-     -f ref=main -f 'inputs[sha]=<40-character commit>'
-   # or, before the workflow is on the default branch: push a branch named after the commit (any branch that has
-   # the workflow file; delete it afterwards)
-   git push origin <branch with the workflow>:refs/heads/chola-prod-images/<40-character commit>
-   ```
-   It pulls the three GHCR images (`crane pull --format=oci --platform linux/amd64`: their linux/amd64 manifests, byte
-   for byte), builds the frontend for linux/amd64 with `NEXT_PUBLIC_BACKEND_URL=https://chola-api.zeroshield.ai` (the
-   same build arguments and labels as the kit; the bundle must contain the URL), pulls the pinned `INFRA_IMAGES` and
-   `docker save`s them compressed, and uploads six artifacts, kept **3 days**: `chola-image-{backend,frontend,
-   scan-worker,dast-worker}` (each an OCI image layout, checked with `artifacts.py oci-check`: one linux/amd64 image,
-   every blob's sha256, `org.opencontainers.image.revision` = the commit), `chola-infra` (`release.tar.gz`) and
-   `chola-manifest` (`manifest.json`: the commit, each image's source ref, index and linux/amd64 digests and revision,
-   the archive's sha256 and pins). Its token has `contents: read` and `packages: read` only.
-2. **Deploy from it**: `chola-prod.sh deploy --sha <commit> --from-run <run id>` (also `preflight --sha S --from-run
-   RUN`, `images --sha S --from-run RUN`, `infra --from-run RUN`). The kit checks the run (that workflow,
-   `completed`/`success`), reads the manifest (its commit must be `--sha`, the frontend's API URL this kit's, the
-   archive's pins this kit's `INFRA_IMAGES`), then for each image, **one at a time**: streams the artifact zip from
-   `gh api .../actions/artifacts/<id>/zip` through `artifacts.py unzip-stream` straight into a layout (no zip file on
-   disk; names other than an OCI layout's are refused), checks it again (`oci-check`: the manifest's digest, every
-   blob's sha256, linux/amd64, the revision label), pushes it with `crane push` (ECR login with
-   `aws ecr get-login-password | crane auth login`, in the throwaway config), compares the digest ECR stored, and
-   **deletes the layout** before the next download. A tag already in ECR with the run's digest is skipped; with
-   another digest it is kept (tags are written once) and the summary says so. crane is used from PATH; without it,
-   `v0.22.1` is downloaded into the scratch directory and used only when its sha256 is the one pinned in the script.
-   Free space is checked before each download (`CHOLA_WORK_PARENT` moves the scratch directory).
+**1. Run the workflow on the commit.** `.github/workflows/chola-prod-images.yml` must run **on the commit it packages**
+(`github.sha` is the commit), so the workflow, `ci_images.sh` and `artifacts.py` it runs are that reviewed commit's own
+files. The commit needs a green **Publish images (GHCR)** run first. Two ways to start it:
+
+```sh
+# a branch named after the commit, pointing AT it (any commit that has the workflow file); delete it afterwards
+git push origin <SHA40>:refs/heads/chola-prod-images/<SHA40>
+# or, once the workflow is on the default branch (main), workflow_dispatch from a branch whose tip is the commit
+gh api -X POST repos/CyberUltron-Consulting-Private-Limited/DevSecShield/actions/workflows/chola-prod-images.yml/dispatches \
+  -f ref=dev -f 'inputs[sha]=<SHA40 = the tip of dev>'
+```
+
+What the run does (the steps are in `ci_images.sh`):
+- It pulls the three GHCR images with `crane pull --format=oci --platform linux/amd64`, which copies their linux/amd64
+  manifests byte for byte.
+- It builds the frontend for linux/amd64 with `NEXT_PUBLIC_BACKEND_URL=https://chola-api.zeroshield.ai`, with the
+  kit's build arguments and labels. The bundle must contain that URL.
+- It `docker save`s the pinned `INFRA_IMAGES`, compressed. The shared runner's Docker is put back as it was: tags that
+  existed before are put back on their images, and the tags and images this step created are removed.
+- It checks each image with `artifacts.py oci-check`, uploads it straight away and deletes it, so only one image is on
+  the runner's disk at a time.
+- The artifacts are kept **3 days**: `chola-image-{backend,frontend,scan-worker,dast-worker}` (OCI layouts),
+  `chola-infra` (`release.tar.gz`) and `chola-manifest` (`manifest.json`). The manifest holds the commit, this run's
+  id, each image's source ref, index and linux/amd64 digests and revision, and the archive's sha256 and pins.
+- The image and infra artifacts are uploaded with `compression-level: 0`. upload-artifact then writes stored zip
+  entries with a data descriptor: the header has sizes 0, and the CRC and sizes come after the data.
+  `artifacts.py unzip-stream` reads that format as it streams in. It finds the descriptor whose CRC-32 and size match
+  every byte before it, so a "PK\x07\x08" inside the data is never taken for the end of the entry.
+- Its token has `contents: read` and `packages: read` only.
+
+**2. Deploy from it**: `chola-prod.sh deploy --sha <SHA> --from-run <RUN>`. The same flags work with `preflight`,
+`images` and `infra`, and every `--from-run` command needs `--sha`. Before anything is copied, the kit checks:
+- **the run**: it is that workflow, `completed`/`success`, started by `workflow_dispatch` or `push`, in this
+  repository (its head repository too), and **its `head_sha` is `--sha`**;
+- **the commit**: `--sha` is on `origin/dev` or `origin/staging`;
+- **the files**: the blobs GitHub has for `.github/workflows/chola-prod-images.yml`, `deploy/chola-prod/artifacts.py`
+  and `deploy/chola-prod/ci_images.sh` at that commit equal `git rev-parse <sha>:<path>` here. An edited workflow or
+  helper on a pushed branch is refused;
+- **the manifest**: its run id is `--from-run`, its commit is `--sha`, the frontend's API URL is this kit's, and the
+  infrastructure pins are this kit's `INFRA_IMAGES`.
+
+**S3 relay (default).** Nothing is stored on this machine.
+1. Each artifact zip streams from `gh api .../actions/artifacts/<id>/zip` through `artifacts.py hash-pipe` (which
+   computes its sha256 in the same stream) into `aws s3 cp - s3://devsecshield-storage/releases/<sha12>/<artifact>.zip
+   --expected-bucket-owner 935951870001`. The streamed size must equal the size GitHub lists.
+2. Then one detached instance job, `remote.sh relay-load`, takes the artifacts one at a time on the data volume
+   (`/var/lib/docker/releases`):
+   - it downloads the zip (bucket owner pinned) and checks its sha256;
+   - it extracts the zip (only OCI layout names are accepted) and checks the layout against the manifest's digest
+     (every blob's sha256, linux/amd64, the revision label, and the API URL label for the frontend);
+   - it names the image `<ECR prefix>/<repo>:<sha12>` in `index.json` (this does not change the image's digest) and
+     `docker load`s it. Docker 25+ loads an OCI layout; on an older Docker the kit uses `skopeo` only if the instance
+     has it;
+   - it checks what Docker now holds: linux/amd64, the label, and an id equal to the config or manifest digest;
+   - it deletes the zip and the files, whether the step succeeded or failed.
+
+   The release archive gets the same treatment: sha256 of the zip, then sha256 of `release.tar.gz` against the
+   manifest, then `docker load`, then the pins and architectures. It is relayed only when the instance lacks a pinned
+   image, or with `--force-infra`.
+3. The S3 objects are deleted after a successful load. After a failed load they stay until the next relay overwrites
+   them.
+4. The deploy then never runs `ecr-login`. `remote.sh pull <tag> --local` only checks the images (and the frontend's
+   API URL), and fails if one is missing. Compose already has `pull_policy: never`.
+
+The relayed images are **not in ECR**. A rollback uses the images kept on the instance (the deploy keeps the
+previous and the last good release); a rollback to a release that is not on the instance any more would try ECR.
+
+**`--to-ecr`.** The kit copies each image to ECR with crane, one at a time:
+- it streams the artifact into a local layout and checks it (`oci-check`);
+- it runs `crane push`, then reads back with `describe-images` the digest ECR stores under the tag, which must be the
+  manifest's;
+- it deletes the layout before the next download.
+
+crane is used from PATH. Without it, `v0.22.1` is downloaded and used only if its sha256 matches the pin. A tag
+already in ECR with another digest is kept, because tags are written once. That image was not built by the run and is
+not checked again. Free space is checked before each download (`CHOLA_WORK_PARENT` moves the scratch directory).
 
 ## 3. First administrator (ansh@zeroshield.ai)
 
@@ -377,9 +425,12 @@ metadata service:
   a gap. Installing it runs `daemon-reload` and starts the unit; **Docker itself is not restarted**.
 * **Installed by** `host-setup` and, idempotently, by **every deploy** before its preflight (`remote.sh imds-block`).
 * **Checked**: with a hop limit above 1 (or an unreadable one) the instance preflight requires the rule (IPv4, and
-  IPv6 when enabled), the enabled unit with its script and drop-in, and a raw IMDSv2 token `PUT` from a bridge-network
-  container (`qdrant/qdrant:v1.13.5`, 8 s timeout) that must **fail**; a probe that did not run is a failure, never a
-  pass. Before the infrastructure images are loaded the probe cannot run yet: preflight says so, and the deploy runs
+  IPv6 when enabled), the enabled unit with its script and drop-in, and a raw IMDSv2 token `PUT` from a container
+  (`qdrant/qdrant:v1.13.5`, 8 s timeout) on the default bridge **and** on the stack's `dss-chola_egress` network (once
+  it exists) that must **fail**: only a connect that times out (what the DROP rule does) or is refused counts as
+  blocked. A connection accepted but never answered, another answer than 200, no route (IPv4), no `timeout` in the
+  image, or a probe that did not run is an error, never a pass. For IPv6, no route counts as blocked (a container
+  without IPv6 cannot reach `fd00:ec2::254`). Before the infrastructure images are loaded the probe cannot run yet: preflight says so, and the deploy runs
   `remote.sh imds-check` after loading them, which requires the probe, before the backup and before anything starts.
   IMDSv1 (`HttpTokens` optional) is refused outright (the host itself would hand out credentials). `--allow-imds`
   turns each of these failures into a warning; not advised.

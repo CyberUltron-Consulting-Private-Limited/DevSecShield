@@ -18,7 +18,10 @@
 #   remote.sh infra-load <s3 key> <sha256>  download the release archive to /var/lib/docker/releases, check, load, delete
 #   remote.sh render [<tag>]                the env files from Secrets Manager with the instance role (kit.py)
 #   remote.sh ecr-login                     docker login to the ECR registry with the instance role
-#   remote.sh pull <tag>                    pull the four application images (linux/amd64; frontend API URL checked)
+#   remote.sh pull <tag> [--local]          pull the four application images (linux/amd64; frontend API URL checked);
+#                                           --local: only check them (the S3 relay loaded them; nothing is pulled)
+#   remote.sh relay-load <sha40> <spec>...  the S3 relay of a CI run's artifacts: download from S3, sha256, extract,
+#                                           check (digest, blobs, linux/amd64, revision), load, delete (detached job)
 #   remote.sh volume-exists                 "yes" or "no" (exit 0) whether any database / queue volume exists; any
 #                                           other outcome is an error (exit != 0)
 #   remote.sh dump                          pg_dump + mongodump onto the data volume (last CHOLA_DUMPS_KEEP=3 kept)
@@ -33,7 +36,7 @@
 #   remote.sh smtp-test                     SMTP login only, from a backend container with backend.env (sends nothing)
 #   remote.sh admin <email>                 make an existing account the platform administrator (is_superuser)
 #   remote.sh status | logs [service|all] [N]
-#   remote.sh job-start <deploy|rollback|dump|infra-load> [args]
+#   remote.sh job-start <deploy|rollback|dump|infra-load|relay-load> [args]
 #                                           run that command DETACHED (setsid nohup; survives a dropped tunnel or
 #                                           Ctrl-C), output in state/jobs/<id>/log, exit status in .../rc; prints <id>
 #   remote.sh job-follow <id> <offset> [wait-s]
@@ -79,7 +82,7 @@ PASSED_FILE="${STATE_DIR}/passed"
 JOBS_DIR="${STATE_DIR}/jobs"
 RELEASE_FILES=(deploy/chola-prod compose/aibom-config-overlay)
 RELEASE_EXCLUDES=(--exclude=deploy/chola-prod/.env --exclude='deploy/chola-prod/*.env')
-ARCHIVE_DIR=/var/lib/docker/releases
+ARCHIVE_DIR=${CHOLA_ARCHIVE_DIR:-/var/lib/docker/releases} # the variable: tests only
 DUMP_DIR=/var/lib/docker/dss-backups
 ALEMBIC_INI=/prod_database_migrations/alembic.ini
 PROJECT=dss-chola
@@ -278,16 +281,40 @@ imds_rule() { # <4|6>: 0 when the DROP rule is in DOCKER-USER
   sudo -n "${t}" -w -C DOCKER-USER -d "${dst}" -m comment --comment "${IMDS_COMMENT}" -j DROP >/dev/null 2>&1
 }
 
-imds_probe() { # <4|6>: reachable | blocked | error | unprobed. A raw IMDSv2 token PUT from a bridge-network container.
-  # The container prints its own verdict; no output (Docker failed, the image is missing) is "error", never "blocked".
-  local addr=169.254.169.254 host=169.254.169.254 out
+# The probe's script, run inside a container: one word for what the token request met. A connect that never completes
+# (a DROP rule) is "timeout", a refused one "refused", no route "noroute"; a 200 answer "reachable"; anything else
+# (accepted but never answered, another answer, no timeout or /dev/tcp in the image) "error".
+# shellcheck disable=SC2016 # expanded inside the container
+PROBE_SCRIPT='command -v timeout >/dev/null 2>&1 || { echo error; exit 0; }
+r=$(timeout "${T:-8}" bash -c '"'"'exec 3<>"/dev/tcp/$A/${P:-80}" || exit 7; echo connected; printf "PUT /latest/api/token HTTP/1.1\r\nHost: %s\r\nX-aws-ec2-metadata-token-ttl-seconds: 60\r\nConnection: close\r\n\r\n" "$H" >&3; head -n 1 <&3'"'"' 2>&1); rc=$?
+if [ "$rc" = 124 ]; then case "$r" in *connected*) echo error ;; *) echo timeout ;; esac
+elif printf "%s" "$r" | grep -q " 200 "; then echo reachable
+else case "$r" in *connected*) echo error ;; *"Connection refused"*) echo refused ;; *nreachable*|*"No route"*|*"Cannot assign"*) echo noroute ;; *) echo error ;; esac
+fi'
+
+imds_probe() { # <4|6>: reachable | blocked | error | unprobed, over the default bridge AND the stack's egress network
+  # (once it exists): every network a container of this stack can route out of. No output (Docker failed, the image
+  # is missing) is "error", never "blocked". IPv4: only timeout or refused is blocked. IPv6: no route counts as
+  # blocked too (a container without IPv6 cannot reach fd00:ec2::254 at all).
+  local addr=169.254.169.254 host=169.254.169.254 out net verdict=blocked w
+  local -a nets=(bridge)
   if [[ "$1" == 6 ]]; then addr=fd00:ec2::254 host='[fd00:ec2::254]'; fi
   d image inspect "${PROBE_IMAGE}" >/dev/null 2>&1 || { printf 'unprobed\n'; return 0; }
-  # shellcheck disable=SC2016 # expanded inside the container
-  out="$(d run --rm --network bridge --entrypoint bash -e "A=${addr}" -e "H=${host}" "${PROBE_IMAGE}" -c \
-    'if timeout "${T:-8}" bash -c '"'"'exec 3<>"/dev/tcp/$A/${P:-80}" && printf "PUT /latest/api/token HTTP/1.1\r\nHost: %s\r\nX-aws-ec2-metadata-token-ttl-seconds: 60\r\nConnection: close\r\n\r\n" "$H" >&3 && head -n 1 <&3'"'"' 2>/dev/null | grep -q " 200 "; then echo reachable; else echo blocked; fi' \
-    2>/dev/null || true)"
-  case "${out}" in reachable | blocked) printf '%s\n' "${out}" ;; *) printf 'error\n' ;; esac
+  if d network inspect "${PROJECT}_egress" >/dev/null 2>&1; then nets+=("${PROJECT}_egress"); fi
+  for net in "${nets[@]}"; do
+    out="$(d run --rm --network "${net}" --entrypoint bash -e "A=${addr}" -e "H=${host}" "${PROBE_IMAGE}" \
+      -c "${PROBE_SCRIPT}" 2>/dev/null || true)"
+    case "${out}" in
+      reachable) w=reachable ;;
+      timeout | refused) w=blocked ;;
+      noroute) if [[ "$1" == 6 ]]; then w=blocked; else w=error; fi ;;
+      *) w=error ;;
+    esac
+    log "IMDS probe (IPv$1) on network ${net}: ${out:-no answer} -> ${w}" >&2
+    if [[ "${w}" == reachable ]]; then verdict=reachable
+    elif [[ "${w}" == error && "${verdict}" != reachable ]]; then verdict=error; fi
+  done
+  printf '%s\n' "${verdict}"
 }
 
 # imds_verdict <hop> <ipv6 enabled|disabled> <rule4> <rule6> <unit> <probe4> <probe6> <require-probe 0|1> <allow 0|1>
@@ -316,8 +343,8 @@ imds_verdict() {
     blocked) log "IMDS token from a container: blocked (good: containers cannot use the instance role)" ;;
     reachable) fail "containers can get an IMDSv2 token: a compromised container could read the instance role's secrets" ;;
     error)
-      if ((need_block || need)); then fail "the IMDS probe from a container did not run (docker run ${PROBE_IMAGE} gave no answer)"
-      else log "WARNING the IMDS probe from a container did not run (hop limit ${hop} still stops it)"; fi ;;
+      if ((need_block || need)); then fail "the IMDS probe from a container gave no clear answer (the probe lines say what it met: it did not run, was accepted but never answered, got another answer, or had no route)"
+      else log "WARNING the IMDS probe from a container gave no clear answer (hop limit ${hop} still stops it)"; fi ;;
     unprobed)
       if ((need)); then fail "the IMDS probe from a container needs ${PROBE_IMAGE} (the infrastructure images), which is not loaded"
       else log "IMDS from a container: not probed yet (needs ${PROBE_IMAGE}); a deploy probes it after loading the infrastructure images, before anything starts"; fi ;;
@@ -458,7 +485,7 @@ cmd_install() { # this run's kit (and the commit's aibom overlay uploaded with i
 }
 
 cmd_infra_load() {
-  local key=${1:?usage: remote.sh infra-load <s3 key> <sha256>} want=${2:?sha256} file got missing arch i
+  local key=${1:?usage: remote.sh infra-load <s3 key> <sha256>} want=${2:?sha256} file got
   [[ "${key}" =~ ^[A-Za-z0-9._/-]+$ ]] || die "not an S3 key: ${key}"
   [[ "${want}" =~ ^[0-9a-f]{64}$ ]] || die "not a sha256: ${want}"
   sudo -n mkdir -p "${ARCHIVE_DIR}"
@@ -473,8 +500,13 @@ cmd_infra_load() {
   got="$(sha256sum "${file}" | cut -d' ' -f1)"
   [[ "${got}" == "${want}" ]] || die "release archive sha256 ${got} is not ${want} (damaged or replaced)"
   log "sha256 ok; docker load"
-  d load -i "${file}"
-  rm -f "${file}"
+  load_release_file "${file}"
+}
+
+load_release_file() { # <docker save archive, plain or compressed>: load, delete, check every pinned image is there
+  local missing arch i
+  d load -i "$1"
+  rm -f "$1"
   EXIT_RM=()
   missing="$(infra_missing | paste -sd' ' -)"
   [[ -z "${missing}" ]] || die "still missing after the load: ${missing}"
@@ -483,6 +515,104 @@ cmd_infra_load() {
     [[ "${arch}" == linux/amd64 ]] || die "${i} is ${arch}, not linux/amd64"
   done
   log "infrastructure images loaded (linux/amd64): ${INFRA_IMAGES[*]}; archive deleted"
+}
+
+# ------------------------------------------------------------------------------------------------ S3 relay (--from-run)
+# chola-prod.sh streamed each artifact zip of a chola-prod-images.yml run into s3://BUCKET/releases/<sha12>/ (sha256
+# computed in the same stream). Here, one at a time on the data volume: download, sha256, extract (artifacts.py
+# unzip-stream: only OCI layout names), check (artifacts.py oci-check: the manifest's digest, every blob, linux/amd64,
+# the revision label = the commit), name it ${IMAGE_PREFIX}/<repo>:<sha12>, load it into Docker, check what Docker has
+# (linux/amd64, the label, its id = the config or manifest digest), delete the zip and the files. The release archive
+# likewise. Nothing is pulled from ECR.
+relay_repo() { case "$1" in backend | frontend) printf 'devsecshield-%s\n' "$1" ;; scan-worker | dast-worker) printf '%s\n' "$1" ;; *) return 1 ;; esac; }
+
+relay_fetch() { # <s3 key> <sha256> <file>
+  rm -f "$3"
+  log "downloading s3://${BUCKET}/$1 (bucket owner ${ACCOUNT})"
+  aws s3api get-object --region "${REGION}" --bucket "${BUCKET}" --key "$1" --expected-bucket-owner "${ACCOUNT}" \
+    "$3" >/dev/null || die "cannot download s3://${BUCKET}/$1"
+  local got
+  got="$(sha256sum "$3" | cut -d' ' -f1)"
+  [[ "${got}" == "$2" ]] || die "s3://${BUCKET}/$1 has sha256 ${got}, not $2 (damaged or replaced)"
+}
+
+oci_load() { # <layout dir> <ref>: Docker 25+ loads an OCI layout archive (its index.json names the image); otherwise
+  # skopeo, when the instance has it
+  local major
+  major="$(d version --format '{{.Server.Version}}' 2>/dev/null | cut -d. -f1)"
+  if [[ "${major}" =~ ^[0-9]+$ ]] && ((major >= 25)); then
+    tar -C "$1" -cf - oci-layout index.json blobs | d load >/dev/null || die "docker load of $2 failed"
+  elif command -v skopeo >/dev/null 2>&1; then
+    "${SUDO[@]}" skopeo copy --quiet "oci:$1" "docker-daemon:$2" || die "skopeo copy of $2 failed"
+  else
+    die "Docker ${major:-?} cannot load an OCI layout (25+ can) and skopeo is not installed"
+  fi
+}
+
+cmd_relay_load() { # <sha40> image:<component>:<key>:<zip sha256>:sha256:<hex> ... infra:<key>:<zip sha256>:<file sha256>
+  local sha=${1:?usage: remote.sh relay-load <sha40> <spec>...} tag spec kind c key zsum alg hex repo ref dir out
+  local config want got labels
+  shift
+  [[ "${sha}" =~ ^[0-9a-f]{40}$ ]] || die "not a 40-character commit: ${sha}"
+  (($#)) || die "nothing to load"
+  tag=${sha:0:12}
+  for spec in "$@"; do # every spec checked before anything is downloaded
+    case "${spec}" in
+      image:*) [[ "${spec}" =~ ^image:(backend|frontend|scan-worker|dast-worker):releases/${tag}/[A-Za-z0-9._-]+\.zip:[0-9a-f]{64}:sha256:[0-9a-f]{64}$ ]] || die "bad spec: ${spec}" ;;
+      infra:*) [[ "${spec}" =~ ^infra:releases/${tag}/[A-Za-z0-9._-]+\.zip:[0-9a-f]{64}:[0-9a-f]{64}$ ]] || die "bad spec: ${spec}" ;;
+      *) die "bad spec: ${spec}" ;;
+    esac
+  done
+  docker_setup
+  disk_check || die "not enough disk for the relay (above)"
+  sudo -n mkdir -p "${ARCHIVE_DIR}"
+  sudo -n chown "$(id -u):$(id -g)" "${ARCHIVE_DIR}"
+  chmod 700 "${ARCHIVE_DIR}"
+  for spec in "$@"; do
+    kind=${spec%%:*}
+    if [[ "${kind}" == image ]]; then
+      IFS=: read -r _ c key zsum alg hex <<<"${spec}"
+      repo="$(relay_repo "${c}")"
+      ref="$(image_of "${repo}" "${tag}")"
+      dir="${ARCHIVE_DIR}/oci-${c}"
+      EXIT_RM=("${ARCHIVE_DIR}/relay.zip")
+      relay_fetch "${key}" "${zsum}" "${ARCHIVE_DIR}/relay.zip"
+      rm -rf "${dir:?}"
+      EXIT_RMDIR=${dir} # a layout that failed its check goes too
+      python3 -I "${SCRIPT_DIR}/artifacts.py" unzip-stream --dest "${dir}" --oci <"${ARCHIVE_DIR}/relay.zip" >/dev/null ||
+        die "the ${c} artifact is not an OCI image layout (above)"
+      rm -f "${ARCHIVE_DIR}/relay.zip"
+      labels=()
+      [[ "${c}" != frontend ]] || labels=(--label "com.zeroshield.devsecshield.api-url=https://${API_HOST}")
+      out="$(python3 -I "${SCRIPT_DIR}/artifacts.py" oci-check --layout "${dir}" --digest "${alg}:${hex}" \
+        --revision "${sha}" ${labels[@]+"${labels[@]}"})" || die "the ${c} image failed its check (above); not loaded"
+      config=${out##* }
+      python3 -I "${SCRIPT_DIR}/artifacts.py" oci-name --layout "${dir}" --ref "${ref}"
+      oci_load "${dir}" "${ref}"
+      rm -rf "${dir:?}"
+      EXIT_RMDIR=""
+      got="$(d image inspect -f '{{.Os}}/{{.Architecture}} {{index .Config.Labels "org.opencontainers.image.revision"}} {{.Id}}' "${ref}" 2>/dev/null)" ||
+        die "Docker has no ${ref} after the load"
+      want="linux/amd64 ${sha}"
+      [[ "${got% *}" == "${want}" ]] || die "${ref} in Docker is '${got% *}', not '${want}'"
+      [[ "${got##* }" == "${config}" || "${got##* }" == "${alg}:${hex}" ]] ||
+        die "${ref} in Docker is ${got##* }, neither the checked config ${config} nor the manifest ${alg}:${hex}"
+      log "${ref} loaded: ${alg}:${hex} (linux/amd64, revision ${tag}); zip and layout deleted"
+    else
+      IFS=: read -r _ key zsum hex <<<"${spec}"
+      EXIT_RM=("${ARCHIVE_DIR}/relay.zip" "${ARCHIVE_DIR}/release.tar.gz")
+      relay_fetch "${key}" "${zsum}" "${ARCHIVE_DIR}/relay.zip"
+      rm -f "${ARCHIVE_DIR}/release.tar.gz"
+      python3 -I "${SCRIPT_DIR}/artifacts.py" unzip-stream --dest "${ARCHIVE_DIR}" --file release.tar.gz \
+        <"${ARCHIVE_DIR}/relay.zip" >/dev/null || die "the infrastructure artifact has no release.tar.gz (above)"
+      rm -f "${ARCHIVE_DIR}/relay.zip"
+      got="$(sha256sum "${ARCHIVE_DIR}/release.tar.gz" | cut -d' ' -f1)"
+      [[ "${got}" == "${hex}" ]] || die "release.tar.gz has sha256 ${got}, the run's manifest says ${hex}"
+      load_release_file "${ARCHIVE_DIR}/release.tar.gz"
+    fi
+  done
+  EXIT_RM=()
+  log "relay of ${tag} loaded ($# artifacts); nothing was pulled from ECR"
 }
 
 # ------------------------------------------------------------------------------------------------ env, registry, images
@@ -516,8 +646,9 @@ frontend_url_ok() { # <image>: the browser bundle carries https://API_HOST (read
   [[ "${hit:-0}" =~ ^[1-9] ]] || die "$1 was built for another API URL (no https://${API_HOST} in its bundle); not starting it"
 }
 
-cmd_pull() {
-  local tag=${1:?usage: remote.sh pull <tag>} r ref arch
+cmd_pull() { # <tag> [--local]: --local (the S3 relay loaded them) never pulls, it only checks
+  local tag=${1:?usage: remote.sh pull <tag> [--local]} local_only=0 r ref arch
+  [[ "${2:-}" != --local ]] || local_only=1
   [[ "${tag}" =~ ^[0-9a-f]{12}$ ]] || die "tag ${tag} is not a 12-character commit"
   docker_setup
   disk_check || die "not enough disk to pull (above)"
@@ -526,6 +657,7 @@ cmd_pull() {
     if d image inspect "${ref}" >/dev/null 2>&1; then
       log "${ref} already here"
     else
+      ((!local_only)) || die "${ref} is not on the instance (the relay loads it; nothing is pulled from ECR in that mode)"
       log "pulling ${ref}"
       d pull -q --platform linux/amd64 "${ref}" >/dev/null || die "pull of ${ref} failed (ecr-login? pushed?)"
     fi
@@ -958,7 +1090,7 @@ cmd_rollback() {
 }
 
 # ------------------------------------------------------------------------------------------------ detached jobs
-DETACHABLE=" deploy rollback dump infra-load "
+DETACHABLE=" deploy rollback dump infra-load relay-load "
 cmd_job_start() {
   local cmd=${1:?usage: remote.sh job-start <command> [args]} id dir
   [[ "${DETACHABLE}" == *" ${cmd} "* ]] || die "${cmd} cannot run detached"
@@ -1006,11 +1138,12 @@ proc_alive() {
 # then writes rc itself, which every reader checks before liveness).
 job_alive() { proc_alive "$1/pid" || proc_alive "$1/worker"; }
 
-EXIT_RM=() JOB_RC_DIR=""
+EXIT_RM=() EXIT_RMDIR="" JOB_RC_DIR=""
 on_exit() { # the one EXIT trap: temporary files; in a detached job, the worker's own exit status (only when this shell
   # ends on purpose: EXIT_EXPECTED, above; never a status read after a signal)
   local rc=$?
   if ((${#EXIT_RM[@]})); then rm -f -- "${EXIT_RM[@]}"; fi
+  if [[ -n "${EXIT_RMDIR}" && "${EXIT_RMDIR}" == "${ARCHIVE_DIR}/"* ]]; then rm -rf -- "${EXIT_RMDIR}"; fi
   if [[ -n "${JOB_RC_DIR}" && "${EXIT_EXPECTED}" == 1 && ! -f "${JOB_RC_DIR}/rc" ]]; then
     printf '%s\n' "${rc}" >"${JOB_RC_DIR}/rc.worker" && mv "${JOB_RC_DIR}/rc.worker" "${JOB_RC_DIR}/rc"
   fi
@@ -1190,7 +1323,7 @@ main() {
   trap on_exit EXIT
   if [[ -n "${CHOLA_JOB_DIR:-}" ]]; then job_worker; fi
   case "${cmd}" in
-    install | infra-load | render | pull | dump | deploy | admin | imds-block) lock ;;
+    install | infra-load | relay-load | render | pull | dump | deploy | admin | imds-block) lock ;;
     rollback) [[ " $* " == *" --plan "* ]] || lock ;;
   esac
   case "${cmd}" in
@@ -1200,6 +1333,7 @@ main() {
     install) cmd_install ;;
     infra-missing) docker_setup; infra_missing ;;
     infra-load) docker_setup; cmd_infra_load "$@" ;;
+    relay-load) cmd_relay_load "$@" ;;
     render) cmd_render "$@" ;;
     ecr-login) cmd_ecr_login ;;
     pull) cmd_pull "$@" ;;

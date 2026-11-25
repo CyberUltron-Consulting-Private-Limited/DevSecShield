@@ -1,32 +1,34 @@
-# The Chola production images of ONE commit, as workflow artifacts the deploy kit can read through the GitHub API
+# The Chola production images of ONE commit, as workflow artifacts the deploy kit reads through the GitHub API
 # (deploy/chola-prod/README.md, "Images from a CI run"): a machine that cannot pull private GHCR packages or Docker Hub
-# runs `scripts/deploy/chola-prod.sh deploy --sha <sha> --from-run <run id>` with only `gh api` and crane.
+# runs `scripts/deploy/chola-prod.sh deploy --sha <sha> --from-run <run id>`; the artifacts stream through S3 to the
+# instance, which checks and loads them.
 #
 #   chola-image-backend, chola-image-scan-worker, chola-image-dast-worker
 #       the images publish-ghcr.yml already published for the commit (dev-, staging- or manual-<sha12>, the tags the
-#       kit reads), their linux/amd64 manifest copied byte for byte (crane pull --format=oci: same digest in ECR)
+#       kit reads), their linux/amd64 manifest copied byte for byte (crane pull --format=oci)
 #   chola-image-frontend
 #       the frontend built here for linux/amd64 with NEXT_PUBLIC_BACKEND_URL=https://chola-api.zeroshield.ai, as the
 #       kit builds it (the GHCR frontends carry another API URL)
 #   chola-infra       release.tar.gz: docker save of the kit's digest-pinned infrastructure images (INFRA_IMAGES)
-#   chola-manifest    manifest.json: the commit, each image's source ref, index and linux/amd64 digests and its
-#                     org.opencontainers.image.revision label (deploy/chola-prod/artifacts.py writes and checks it)
+#   chola-manifest    manifest.json: the commit, this run's id, each image's source ref, index and linux/amd64 digests
+#                     and its org.opencontainers.image.revision label (deploy/chola-prod/artifacts.py)
 #
-# Every image artifact is an OCI image layout (compressed layers, uploaded without a second compression), checked by
-# artifacts.py oci-check before upload (one linux/amd64 image, every blob's sha256, revision = the commit). Kept 3 days.
+# Every image artifact is an OCI image layout, checked by artifacts.py oci-check before upload (one linux/amd64 image,
+# every blob's sha256, revision = the commit), uploaded right after it is made and deleted (one image on disk at a
+# time). Kept 3 days. The steps are deploy/chola-prod/ci_images.sh, tested in backend/tests/test_chola_prod_kit.py.
 #
-# Triggers: workflow_dispatch with the full commit (GitHub offers a dispatch only for workflows on the default
-# branch), or a push of a branch named chola-prod-images/<40-hex commit> (works from any branch that has this file;
-# delete the branch afterwards). Neither pushes anything anywhere: the token can only read the repository and packages.
-# The helper scripts come from THIS workflow's commit; the target commit is only checked out as the frontend's build
-# context.
+# The run must run ON the commit it packages (github.sha == the commit): its workflow, ci_images.sh and artifacts.py
+# are then that commit's own, and the kit refuses a run unless that commit is on dev or staging (reviewed) and these
+# files' blobs at it are the kit's. Triggers: a push of a branch chola-prod-images/<40-hex commit> that points AT that
+# commit (delete it afterwards), or workflow_dispatch with the commit, from a branch whose tip is that commit.
+# Neither pushes anything anywhere: the token can only read the repository and packages.
 name: Chola production images
 
 on:
   workflow_dispatch:
     inputs:
       sha:
-        description: "Full 40-character commit SHA whose images to package (its GHCR images must exist)"
+        description: "Full 40-character commit SHA to package: the tip of the branch this runs from"
         type: string
         required: true
   push:
@@ -77,25 +79,23 @@ jobs:
             echo "::error::'$sha' is not a full 40-character lowercase commit SHA"
             exit 1
           fi
+          if [ "$sha" != "$GITHUB_SHA" ]; then
+            echo "::error::this run is on $GITHUB_SHA, not $sha: run it from a branch whose tip is $sha"
+            exit 1
+          fi
           out="$RUNNER_TEMP/chola"
           rm -rf "${out:?}"
-          mkdir -p "$out"
+          mkdir -p "$out/manifest" "$out/crane-config" "$out/bin"
           printf 'sha=%s\nsha12=%s\nout=%s\n' "$sha" "${sha:0:12}" "$out" | tee -a "$GITHUB_OUTPUT"
 
-      - name: Checkout (this workflow's commit, for the kit's helpers)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          path: tools
-          sparse-checkout: deploy/chola-prod
-
-      - name: Checkout the commit (the frontend's build context)
+      - name: Checkout (the commit, for its helpers and the frontend's build context)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ steps.commit.outputs.sha }}
-          path: target
-          sparse-checkout: frontend
+          sparse-checkout: |
+            deploy/chola-prod
+            frontend
 
       # The self-hosted runners share one long-lived BuildKit builder (dss-vm-builder, docker-container driver, which
       # can write an OCI layout); GitHub's runners create one per job.
@@ -104,12 +104,13 @@ jobs:
         if: runner.environment == 'github-hosted'
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      - name: crane (pinned, sha256 checked)
+      - name: crane (pinned, sha256 checked) and the GHCR login (read-only token, this run's own config)
         env:
           OUT: ${{ steps.commit.outputs.out }}
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
         run: |
           set -euo pipefail
-          mkdir -p "$OUT/bin"
           asset=go-containerregistry_Linux_x86_64.tar.gz
           curl -fsSL --retry 3 -o "$OUT/$asset" \
             "https://github.com/google/go-containerregistry/releases/download/$CRANE_VERSION/$asset"
@@ -117,149 +118,34 @@ jobs:
           tar -xzf "$OUT/$asset" -C "$OUT/bin" crane
           rm -f "$OUT/$asset"
           echo "$OUT/bin" >> "$GITHUB_PATH"
+          printf '%s' "$GH_TOKEN" | DOCKER_CONFIG="$OUT/crane-config" "$OUT/bin/crane" auth login ghcr.io -u "$ACTOR" --password-stdin
 
-      # crane's registry login lives in this run's own config, never in the shared runner's ~/.docker
-      - name: Log in to GHCR (crane, read-only token)
-        env:
-          OUT: ${{ steps.commit.outputs.out }}
-          GH_TOKEN: ${{ github.token }}
-          ACTOR: ${{ github.actor }}
-        run: |
-          set -euo pipefail
-          mkdir -p "$OUT/crane-config"
-          printf '%s' "$GH_TOKEN" | DOCKER_CONFIG="$OUT/crane-config" crane auth login ghcr.io -u "$ACTOR" --password-stdin
-
-      - name: Manifest
+      - name: Manifest and GHCR tag
+        id: tag
         env:
           OUT: ${{ steps.commit.outputs.out }}
           SHA: ${{ steps.commit.outputs.sha }}
+          OWNER: ${{ github.repository_owner }}
           REPO: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
           REF: ${{ github.ref }}
         run: |
           set -euo pipefail
-          mkdir -p "$OUT/manifest"
-          python3 -I tools/deploy/chola-prod/artifacts.py manifest-init --out "$OUT/manifest/manifest.json" \
+          python3 -I deploy/chola-prod/artifacts.py manifest-init --out "$OUT/manifest/manifest.json" \
             --commit "$SHA" --api-url "$API_URL" --repository "$REPO" --run-id "$RUN_ID" --run-attempt "$RUN_ATTEMPT" \
             --ref "$REF"
+          tag=$(DOCKER_CONFIG="$OUT/crane-config" REGISTRY="ghcr.io/${OWNER,,}" deploy/chola-prod/ci_images.sh ghcr-tag)
+          echo "GHCR images: ghcr.io/${OWNER,,}/devsecshield-*:$tag" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-      - name: Backend and workers from GHCR (linux/amd64, byte for byte)
+      - name: backend (GHCR, linux/amd64, byte for byte)
         env:
           OUT: ${{ steps.commit.outputs.out }}
           SHA: ${{ steps.commit.outputs.sha }}
-          SHA12: ${{ steps.commit.outputs.sha12 }}
-          OWNER: ${{ github.repository_owner }}
-        run: |
-          set -euo pipefail
-          export DOCKER_CONFIG="$OUT/crane-config"
-          registry="ghcr.io/${OWNER,,}"
-          tag=""
-          for t in "dev-$SHA12" "staging-$SHA12" "manual-$SHA12"; do
-            if crane digest "$registry/devsecshield-backend:$t" > /dev/null 2>&1; then tag=$t; break; fi
-          done
-          if [ -z "$tag" ]; then
-            echo "::error::no GHCR images for $SHA12 (dev-, staging- or manual-$SHA12): is the commit on dev or staging and its 'Publish images (GHCR)' run green?"
-            exit 1
-          fi
-          echo "GHCR images of $SHA12: $registry/devsecshield-*:$tag" | tee -a "$GITHUB_STEP_SUMMARY"
-          for c in backend scan-worker dast-worker; do
-            ref="$registry/devsecshield-$c:$tag"
-            index=$(crane digest "$ref")
-            crane pull --format=oci --platform linux/amd64 "$ref" "$OUT/image-$c"
-            # checks the layout (one linux/amd64 image, every blob) and that its revision label is this commit
-            python3 -I tools/deploy/chola-prod/artifacts.py manifest-add-image --manifest "$OUT/manifest/manifest.json" \
-              --component "$c" --artifact "chola-image-$c" --source "$ref" --layout "$OUT/image-$c" --index-digest "$index" |
-              tee -a "$GITHUB_STEP_SUMMARY"
-          done
-
-      - name: Frontend for the Chola API (linux/amd64, as the kit builds it)
-        env:
-          OUT: ${{ steps.commit.outputs.out }}
-          SHA: ${{ steps.commit.outputs.sha }}
-          BUILDER: ${{ runner.environment == 'self-hosted' && 'dss-vm-builder' || steps.buildx.outputs.name }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          docker buildx build --builder "$BUILDER" --platform linux/amd64 \
-            --build-arg "NEXT_PUBLIC_BACKEND_URL=$API_URL" \
-            --label "org.opencontainers.image.revision=$SHA" --label "com.zeroshield.devsecshield.api-url=$API_URL" \
-            --provenance=false --sbom=false --output "type=oci,dest=$OUT/frontend-oci.tar" target/frontend
-          mkdir -p "$OUT/image-frontend"
-          tar -xf "$OUT/frontend-oci.tar" -C "$OUT/image-frontend"
-          rm -f "$OUT/frontend-oci.tar"
-          python3 -I tools/deploy/chola-prod/artifacts.py oci-check --normalize --layout "$OUT/image-frontend" \
-            --revision "$SHA" --label "com.zeroshield.devsecshield.api-url=$API_URL"
-          # the API URL is inlined into the browser chunks: refuse a bundle without it (the instance checks again)
-          hits=0
-          for blob in "$OUT"/image-frontend/blobs/sha256/*; do
-            if tar -tzf "$blob" > /dev/null 2>&1; then
-              n=$(tar -xzOf "$blob" --wildcards 'frontend/.next/static/*' 2> /dev/null | grep -acF "$API_URL" || true)
-              hits=$((hits + ${n:-0}))
-            fi
-          done
-          if [ "$hits" -lt 1 ]; then echo "::error::the frontend bundle does not contain $API_URL"; exit 1; fi
-          echo "frontend: $API_URL is in the browser bundle ($hits chunks)"
-          python3 -I tools/deploy/chola-prod/artifacts.py manifest-add-image --manifest "$OUT/manifest/manifest.json" \
-            --component frontend --artifact chola-image-frontend --source "built in $RUN_URL" \
-            --layout "$OUT/image-frontend" | tee -a "$GITHUB_STEP_SUMMARY"
-
-      # As the kit's own infra step: pulled by digest, tagged with the name the compose file runs, saved for linux/amd64
-      # (docker save --platform exists only with the containerd image store), compressed (docker load reads it so).
-      - name: Infrastructure release archive
-        env:
-          OUT: ${{ steps.commit.outputs.out }}
-        run: |
-          set -euo pipefail
-          read -r -a images <<< "$INFRA_IMAGES"
-          tags=()
-          for i in "${images[@]}"; do
-            docker pull -q --platform linux/amd64 "$i" > /dev/null
-            docker tag "$i" "${i%%@*}"
-            tags+=("${i%%@*}")
-          done
-          plat=()
-          if docker info --format '{{json .DriverStatus}}' 2> /dev/null | grep -q io.containerd.snapshotter &&
-            docker save --help 2> /dev/null | grep -q -- '--platform'; then
-            plat=(--platform linux/amd64)
-          fi
-          iplat=()
-          if [ ${#plat[@]} -gt 0 ] && docker image inspect --help 2> /dev/null | grep -q -- '--platform'; then
-            iplat=(--platform linux/amd64)
-          fi
-          for t in "${tags[@]}"; do
-            arch=$(docker image inspect ${iplat[@]+"${iplat[@]}"} -f '{{.Os}}/{{.Architecture}}' "$t")
-            [ "$arch" = linux/amd64 ] || { echo "::error::$t is $arch, not linux/amd64"; exit 1; }
-          done
-          mkdir -p "$OUT/infra"
-          docker save ${plat[@]+"${plat[@]}"} "${tags[@]}" | gzip -6 > "$OUT/infra/release.tar.gz"
-          args=()
-          for i in "${images[@]}"; do args+=(--image "$i"); done
-          python3 -I tools/deploy/chola-prod/artifacts.py manifest-set-infra --manifest "$OUT/manifest/manifest.json" \
-            --artifact chola-infra --file "$OUT/infra/release.tar.gz" "${args[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
-
-      # The deploy machine extracts one artifact at a time while it downloads (no zip on disk); what it needs is about
-      # the largest artifact. GitHub takes artifacts of several GB (deploy-staging.yml uploads ~5 GB in one); this
-      # guard keeps each one well below that.
-      - name: Artifact sizes
-        env:
-          OUT: ${{ steps.commit.outputs.out }}
-          MAX_BYTES: "4294967296"
-        run: |
-          set -euo pipefail
-          for d in manifest image-backend image-frontend image-scan-worker image-dast-worker infra; do
-            n=$(du -sb "$OUT/$d" | cut -f1)
-            echo "$d: $((n / 1048576)) MB" | tee -a "$GITHUB_STEP_SUMMARY"
-            if [ "$n" -gt "$MAX_BYTES" ]; then echo "::error::$d is $n bytes, over $MAX_BYTES"; exit 1; fi
-          done
-
-      - name: Upload manifest
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: chola-manifest
-          path: ${{ steps.commit.outputs.out }}/manifest/manifest.json
-          retention-days: 3
-          if-no-files-found: error
+          REGISTRY: ghcr.io/${{ github.repository_owner }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: DOCKER_CONFIG="$OUT/crane-config" REGISTRY="${REGISTRY,,}" deploy/chola-prod/ci_images.sh ghcr backend "$TAG"
       - name: Upload backend
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -268,14 +154,21 @@ jobs:
           retention-days: 3
           compression-level: 0
           if-no-files-found: error
-      - name: Upload frontend
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: chola-image-frontend
-          path: ${{ steps.commit.outputs.out }}/image-frontend
-          retention-days: 3
-          compression-level: 0
-          if-no-files-found: error
+      - name: Free backend
+        env:
+          OUT: ${{ steps.commit.outputs.out }}
+          SHA: ${{ steps.commit.outputs.sha }}
+          REGISTRY: ghcr.io/${{ github.repository_owner }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: deploy/chola-prod/ci_images.sh free image-backend
+
+      - name: scan-worker (GHCR, linux/amd64, byte for byte)
+        env:
+          OUT: ${{ steps.commit.outputs.out }}
+          SHA: ${{ steps.commit.outputs.sha }}
+          REGISTRY: ghcr.io/${{ github.repository_owner }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: DOCKER_CONFIG="$OUT/crane-config" REGISTRY="${REGISTRY,,}" deploy/chola-prod/ci_images.sh ghcr scan-worker "$TAG"
       - name: Upload scan-worker
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -284,6 +177,21 @@ jobs:
           retention-days: 3
           compression-level: 0
           if-no-files-found: error
+      - name: Free scan-worker
+        env:
+          OUT: ${{ steps.commit.outputs.out }}
+          SHA: ${{ steps.commit.outputs.sha }}
+          REGISTRY: ghcr.io/${{ github.repository_owner }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: deploy/chola-prod/ci_images.sh free image-scan-worker
+
+      - name: dast-worker (GHCR, linux/amd64, byte for byte)
+        env:
+          OUT: ${{ steps.commit.outputs.out }}
+          SHA: ${{ steps.commit.outputs.sha }}
+          REGISTRY: ghcr.io/${{ github.repository_owner }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: DOCKER_CONFIG="$OUT/crane-config" REGISTRY="${REGISTRY,,}" deploy/chola-prod/ci_images.sh ghcr dast-worker "$TAG"
       - name: Upload dast-worker
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -292,6 +200,41 @@ jobs:
           retention-days: 3
           compression-level: 0
           if-no-files-found: error
+      - name: Free dast-worker
+        env:
+          OUT: ${{ steps.commit.outputs.out }}
+          SHA: ${{ steps.commit.outputs.sha }}
+          REGISTRY: ghcr.io/${{ github.repository_owner }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: deploy/chola-prod/ci_images.sh free image-dast-worker
+
+      - name: frontend (built for the Chola API, linux/amd64, as the kit builds it)
+        env:
+          OUT: ${{ steps.commit.outputs.out }}
+          SHA: ${{ steps.commit.outputs.sha }}
+          BUILDER: ${{ runner.environment == 'self-hosted' && 'dss-vm-builder' || steps.buildx.outputs.name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: deploy/chola-prod/ci_images.sh frontend
+      - name: Upload frontend
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: chola-image-frontend
+          path: ${{ steps.commit.outputs.out }}/image-frontend
+          retention-days: 3
+          compression-level: 0
+          if-no-files-found: error
+      - name: Free frontend
+        env:
+          OUT: ${{ steps.commit.outputs.out }}
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: deploy/chola-prod/ci_images.sh free image-frontend
+
+      # pulled by digest, tagged, saved; the shared runner's Docker is put back as it was (ci_images.sh infra)
+      - name: Infrastructure release archive
+        env:
+          OUT: ${{ steps.commit.outputs.out }}
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: deploy/chola-prod/ci_images.sh infra
       - name: Upload infrastructure archive
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -299,6 +242,14 @@ jobs:
           path: ${{ steps.commit.outputs.out }}/infra/release.tar.gz
           retention-days: 3
           compression-level: 0
+          if-no-files-found: error
+
+      - name: Upload manifest
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: chola-manifest
+          path: ${{ steps.commit.outputs.out }}/manifest/manifest.json
+          retention-days: 3
           if-no-files-found: error
 
       # The runner outlives the job: this run's layouts, archive, crane and its login go (the layer cache stays).

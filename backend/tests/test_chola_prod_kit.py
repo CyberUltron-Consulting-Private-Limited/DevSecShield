@@ -1398,8 +1398,21 @@ if c == ["elbv2", "describe-target-health"]:
     if count("th") == 0: print("An error occurred (Throttling): Rate exceeded", file=sys.stderr); sys.exit(254)
     print("10.60.10.108\t80\thealthy\tNone"); sys.exit(0)
 if c == ["ecr", "describe-repositories"]: print("IMMUTABLE"); sys.exit(0)
-if c == ["ecr", "describe-images"]:  # FAKE_ECR_HAVE: {"repo": digest}; otherwise the tag is not in ECR yet
-    have = json.loads(os.environ.get("FAKE_ECR_HAVE", "{}")).get(arg("--repository-name").split("/", 1)[1])
+if c == ["s3", "cp"] and a[2] == "-":  # the relay: an artifact zip streamed in
+    if os.environ.get("FAKE_S3_CP") == "deny": sys.stdin.buffer.read(); print("upload failed: AccessDenied", file=sys.stderr); sys.exit(1)
+    if arg("--expected-bucket-owner") != "935951870001": sys.exit(1)
+    key = a[3].split("/", 3)[3]; data = sys.stdin.buffer.read()
+    work = [p for p in os.listdir(os.environ["TMPDIR"]) if p.startswith("chola-prod.")]
+    local = [os.path.join(r, f) for w in work for r, _, fs in os.walk(os.path.join(os.environ["TMPDIR"], w)) for f in fs
+             if f.endswith(".zip") or "/oci-" in r]
+    open(F + "/s3cp.log", "a").write(json.dumps({"key": key, "bytes": len(data), "size": arg("--expected-size"),
+                                                  "local_copies": local}) + "\n")
+    os.makedirs(os.path.dirname(F + "/s3/" + key), exist_ok=True); open(F + "/s3/" + key, "wb").write(data); sys.exit(0)
+if c == ["ecr", "describe-images"]:  # FAKE_ECR_HAVE: {"repo": digest}; then what crane pushed (ecr.json)
+    repo = arg("--repository-name").split("/", 1)[1]
+    pushed = json.load(open(F + "/ecr.json")) if os.path.exists(F + "/ecr.json") else {}
+    have = json.loads(os.environ.get("FAKE_ECR_HAVE", "{}")).get(repo) or pushed.get(repo)
+    if have and pushed.get(repo) and os.environ.get("FAKE_ECR_READBACK"): have = os.environ["FAKE_ECR_READBACK"]
     if have: print(have); sys.exit(0)
     print("An error occurred (ImageNotFoundException)", file=sys.stderr); sys.exit(254)
 if c == ["ecr", "get-login-password"]: print("fake-token"); sys.exit(0)
@@ -1408,6 +1421,8 @@ if c == ["s3api", "put-object"] and os.environ.get("FAKE_S3_PUT") == "deny":
     print("An error occurred (AccessDenied) when calling the PutObject operation: Access Denied", file=sys.stderr); sys.exit(254)
 if c == ["s3api", "delete-object"] and os.environ.get("FAKE_S3_DELETE") == "deny":
     print("An error occurred (AccessDenied) when calling the DeleteObject operation: Access Denied", file=sys.stderr); sys.exit(254)
+if c == ["s3api", "delete-object"] and arg("--key").startswith("releases/") and "/" in arg("--key")[9:]:
+    open(F + "/s3del.log", "a").write(arg("--key") + "\n")
 if c[0] == "s3api" and c[1] in ("put-object", "delete-object"): sys.exit(0 if arg("--expected-bucket-owner") == "935951870001" else 1)
 if c == ["iam", "simulate-principal-policy"]:
     mode = os.environ.get("FAKE_SIM", "allowed")
@@ -1460,6 +1475,10 @@ case "$*" in
   *"show refs/remotes/origin/ansh:backend/.env"*) echo "git $*" >> "$FAKE_DIR/calls.log"
      if [ "${FAKE_ANSH:-ok}" = nokeys ]; then echo 'OTHER=1'; else printf 'OUTLOOK_EMAIL="dummy@example.com"\nOUTLOOK_PASSWORD="dummy-pass-1"\n'; fi; exit 0;;
   *"rev-parse --short=12 refs/remotes/origin/ansh"*) echo 0123456789ab; exit 0;;
+  *"fetch -q origin +refs/heads/dev:refs/remotes/origin/dev"*) echo "git $*" >> "$FAKE_DIR/calls.log"; exit 0;;
+  *"merge-base --is-ancestor"*) echo "git $*" >> "$FAKE_DIR/calls.log"  # FAKE_REVIEWED: dev (default), staging, no
+     case "${FAKE_REVIEWED:-dev}" in dev) [[ "$*" == *refs/remotes/origin/dev ]] && exit 0;;
+       staging) [[ "$*" == *refs/remotes/origin/staging ]] && exit 0;; esac; exit 1;;
 esac
 exec REALGIT "$@"
 '''
@@ -1525,8 +1544,10 @@ def fake_world(tmp_path):
     (tmp_path / "home").mkdir()
 
     def call(*args, **env):
-        e = hermetic_env(bin_dir, tmp_path / "home", tmp_path, FAKE_DIR=str(tmp_path), CHOLA_POLL_S="0", **env)
+        e = hermetic_env(bin_dir, tmp_path / "home", tmp_path, FAKE_DIR=str(tmp_path), CHOLA_POLL_S="0",
+                         **{**call.extra, **env})
         return run(["bash", str(OWNER), *args], env=e, stdin=subprocess.DEVNULL)
+    call.extra = {}
     call.dir = tmp_path
     call.log = lambda: (tmp_path / "calls.log").read_text() if (tmp_path / "calls.log").exists() else ""
     return call
@@ -2142,7 +2163,7 @@ def test_host_setup_keeps_an_installed_aws_cli_and_still_installs_the_block(fake
     ("2 disabled no no yes blocked blocked 0 0", False, "FAIL the container IMDS block is not installed"),
     ("2 disabled yes no no blocked blocked 0 0", False, "FAIL the container IMDS block is not installed"),
     ("2 disabled yes no yes reachable blocked 0 0", False, "FAIL containers can get an IMDSv2 token"),
-    ("2 disabled yes no yes error blocked 0 0", False, "FAIL the IMDS probe from a container did not run"),
+    ("2 disabled yes no yes error blocked 0 0", False, "FAIL the IMDS probe from a container gave no clear answer"),
     ("2 disabled yes no yes unprobed blocked 0 0", True, "a deploy probes it after loading the infrastructure images"),
     ("2 disabled yes no yes unprobed blocked 1 0", False, "FAIL the IMDS probe from a container needs"),
     # --allow-imds turns each failure into a warning
@@ -2156,7 +2177,7 @@ def test_host_setup_keeps_an_installed_aws_cli_and_still_installs_the_block(fake
     # hop limit 1: AWS stops it; no block needed, a reachable probe still fails, a probe error only warns
     ("1 disabled no no no blocked blocked 0 0", True, "AWS stops a container's token at the bridge hop"),
     ("1 disabled no no no reachable blocked 0 0", False, "FAIL containers can get an IMDSv2 token"),
-    ("1 disabled no no no error blocked 0 0", True, "WARNING the IMDS probe from a container did not run"),
+    ("1 disabled no no no error blocked 0 0", True, "WARNING the IMDS probe from a container gave no clear answer"),
 ])
 def test_imds_verdict(tmp_path, args, ok, words):
     hop, rest = args.split(" ", 1)
@@ -2168,11 +2189,15 @@ FAKE_PROBE_DOCKER = r'''#!/bin/bash
 # docker for imds_probe: runs the container's script HERE against FAKE_ADDR:FAKE_PORT
 echo "docker $*" >> "$FAKE_DIR/docker.log"
 case "$1 $2" in "image inspect") [ -n "${FAKE_NO_IMAGE:-}" ] && exit 1; exit 0;; esac
+case "$1 $2" in "network inspect") [ -n "${FAKE_NO_EGRESS:-}" ] && exit 1; exit 0;; esac
 if [ "$1" = run ]; then
   [ -n "${FAKE_DOCKER_FAIL:-}" ] && { echo "docker: Error response from daemon" >&2; exit 125; }
   envs=(); script=""
   while [ $# -gt 0 ]; do case "$1" in -e) envs+=("$2"); shift 2;; -c) script=$2; shift 2;; *) shift;; esac; done
-  exec env "${envs[@]}" "A=$FAKE_ADDR" "P=$FAKE_PORT" "T=${FAKE_T:-6}" bash -c "$script"
+  p=$PATH
+  [ -n "${FAKE_DROP:-}" ] && p="$FAKE_DIR/drop:$PATH"         # a timeout that ends a connect that never completes
+  [ -n "${FAKE_NO_TIMEOUT:-}" ] && p="$FAKE_DIR/notimeout"    # an image without timeout
+  exec env PATH="$p" "${envs[@]}" "A=$FAKE_ADDR" "P=$FAKE_PORT" "T=${FAKE_T:-6}" /bin/bash -c "$script"
 fi
 exit 0
 '''
@@ -2196,14 +2221,15 @@ def _metadata_server(mode):
                 continue
             conn.settimeout(10)
             try:
-                if mode == "answer":  # read the whole request first: closing with unread bytes would reset it
+                if mode in ("answer", "other"):  # read the whole request first: closing with unread bytes would reset it
                     req = b""
                     while b"\r\n\r\n" not in req:
                         chunk = conn.recv(4096)
                         if not chunk:
                             break
                         req += chunk
-                    conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\ntokn")
+                    conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\ntokn" if mode == "answer" else
+                                 b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\n\r\n")
                     conn.shutdown(socket.SHUT_WR)
                 else:
                     stop.wait(5)
@@ -2218,8 +2244,14 @@ def _metadata_server(mode):
 
 @pytest.mark.parametrize("mode, env, want", [
     ("answer", {}, "reachable"),
-    ("hang", {"FAKE_T": "2"}, "blocked"),  # a DROP rule: no answer ever comes; the probe's timeout ends it
-    ("closed", {}, "blocked"),        # nothing listens
+    ("answer", {"FAKE_NO_EGRESS": "1"}, "reachable"),
+    ("drop", {}, "blocked"),          # a DROP rule: the connect never completes; the probe's timeout ends it
+    ("noroute", {}, "error"),         # IPv4 without a route: not proof of the block
+    ("noroute6", {}, "blocked"),      # IPv6 without a route: the container cannot reach fd00:ec2::254 at all
+    ("closed", {}, "blocked"),        # refused
+    ("hang", {"FAKE_T": "2"}, "error"),  # accepted, never answered: not what a DROP rule does
+    ("other", {}, "error"),           # another answer than 200
+    ("answer", {"FAKE_NO_TIMEOUT": "1"}, "error"),    # no timeout in the image
     ("answer", {"FAKE_DOCKER_FAIL": "1"}, "error"),   # Docker could not run it: never read as blocked
     ("answer", {"FAKE_NO_IMAGE": "1"}, "unprobed"),
 ])
@@ -2228,21 +2260,31 @@ def test_imds_probe_reports_what_the_container_saw(tmp_path, mode, env, want):
     bin_dir.mkdir()
     (bin_dir / "docker").write_text(FAKE_PROBE_DOCKER)
     (bin_dir / "docker").chmod(0o755)
-    if mode == "closed":
+    if mode in ("closed", "drop", "noroute", "noroute6"):
         import socket
         s = socket.socket()
         s.bind(("127.0.0.1", 0))
         port, stop = s.getsockname()[1], s.close  # bound, never listening: refused
+        if mode != "closed":
+            (tmp_path / "drop").mkdir()
+            (tmp_path / "drop" / "timeout").write_text(  # what timeout reports after a hung connect, or no route
+                "#!/bin/sh\nexit 124\n" if mode == "drop" else
+                "#!/bin/sh\necho 'bash: connect: Network is unreachable' >&2\nexit 1\n")
+            (tmp_path / "drop" / "timeout").chmod(0o755)
+            env = {**env, "FAKE_DROP": "1"}
     else:
         port, stop = _metadata_server(mode)
+    if env.get("FAKE_NO_TIMEOUT"):
+        (tmp_path / "notimeout").mkdir()
     try:
-        proc = _source(tmp_path, "imds_probe 4", env={"PATH": f"{bin_dir}:{os.environ['PATH']}", "FAKE_DIR": str(tmp_path),
+        proc = _source(tmp_path, "imds_probe " + ("6" if mode == "noroute6" else "4"), env={"PATH": f"{bin_dir}:{os.environ['PATH']}", "FAKE_DIR": str(tmp_path),
                                                       "FAKE_ADDR": "127.0.0.1", "FAKE_PORT": str(port), **env})
     finally:
         stop()
     assert proc.returncode == 0 and proc.stdout.strip() == want, proc.stdout + proc.stderr
     if want != "unprobed":
-        assert "run --rm --network bridge --entrypoint bash" in (tmp_path / "docker.log").read_text()
+        runs = re.findall(r"run --rm --network (\S+) --entrypoint bash", (tmp_path / "docker.log").read_text())
+        assert runs == (["bridge"] if env.get("FAKE_NO_EGRESS") else ["bridge", "dss-chola_egress"]), runs
 
 
 FAKE_SUDO = r'''#!/bin/bash
@@ -2261,7 +2303,7 @@ esac
 '''
 
 
-def _instance_bin(tmp_path, probe="blocked"):
+def _instance_bin(tmp_path, probe="timeout"):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     (bin_dir / "sudo").write_text(FAKE_SUDO)
@@ -2312,12 +2354,12 @@ def test_imds_block_fails_when_the_rule_is_not_there(tmp_path, env, words):
 
 
 @pytest.mark.parametrize("env, probe, ok, words", [
-    ({"CHOLA_IMDS_HOP": "2"}, "blocked", True, "IMDS checks OK"),
-    ({"CHOLA_IMDS_HOP": "2", "FAKE_UNIT": "no"}, "blocked", False, "the container IMDS block is not installed"),
-    ({"CHOLA_IMDS_HOP": "2", "FAKE_NO_IMAGE": "1"}, "blocked", False, "needs qdrant/qdrant:v1.13.5"),
+    ({"CHOLA_IMDS_HOP": "2"}, "timeout", True, "IMDS checks OK"),
+    ({"CHOLA_IMDS_HOP": "2", "FAKE_UNIT": "no"}, "timeout", False, "the container IMDS block is not installed"),
+    ({"CHOLA_IMDS_HOP": "2", "FAKE_NO_IMAGE": "1"}, "timeout", False, "needs qdrant/qdrant:v1.13.5"),
     ({"CHOLA_IMDS_HOP": "2"}, "reachable", False, "containers can get an IMDSv2 token"),
     ({"CHOLA_IMDS_HOP": "2", "CHOLA_ALLOW_IMDS": "1"}, "reachable", True, "accepted: --allow-imds"),
-    ({"CHOLA_IMDS_HOP": "1", "FAKE_RULE4": "no", "FAKE_UNIT": "no"}, "blocked", True, "IMDS checks OK"),
+    ({"CHOLA_IMDS_HOP": "1", "FAKE_RULE4": "no", "FAKE_UNIT": "no"}, "timeout", True, "IMDS checks OK"),
 ])
 def test_imds_check_on_the_instance(tmp_path, env, probe, ok, words):
     proc = run(["bash", str(REMOTE), "imds-check"], env={**_instance_bin(tmp_path, probe), **env})
@@ -2587,8 +2629,8 @@ def test_manifest_add_image_refuses_an_image_of_another_commit(tmp_path):
 
 # ------------------------------------------------------------------------------------------------ K3: --from-run
 FAKE_GH_RUN = r'''#!/usr/bin/env python3
-"""gh for --from-run: the run, its artifact list, and each artifact's zip (streamed to stdout)."""
-import os, sys
+"""gh for --from-run: the run, its artifact list, file blobs, and each artifact's zip (streamed to stdout)."""
+import json, os, subprocess, sys
 F = os.environ["FAKE_DIR"]; a = sys.argv[1:]
 open(F + "/calls.log", "a").write("gh " + " ".join(a) + "\n")
 if a[:2] == ["auth", "status"]: sys.exit(0)
@@ -2596,7 +2638,19 @@ if a[:2] == ["auth", "token"]: print("tok"); sys.exit(0)
 if a[:1] != ["api"]: sys.exit(1)
 path = next(x for x in a[1:] if x.startswith("repos/"))
 if path.endswith("/actions/runs/42"):
-    print(os.environ.get("FAKE_RUN", ".github/workflows/chola-prod-images.yml\tcompleted\tsuccess\thttps://example/runs/42")); sys.exit(0)
+    run = {"path": ".github/workflows/chola-prod-images.yml", "status": "completed", "conclusion": "success",
+           "url": "https://example/runs/42", "event": "push", "head": os.environ["FAKE_HEAD"],
+           "repo": "CyberUltron-Consulting-Private-Limited/devsecshield",
+           "head_repo": "CyberUltron-Consulting-Private-Limited/devsecshield"}
+    run.update(json.loads(os.environ.get("FAKE_RUN", "{}")))
+    print("\t".join(run[k] for k in ("path", "status", "conclusion", "url", "event", "head", "repo", "head_repo"))); sys.exit(0)
+if "/contents/" in path:  # the blob GitHub has for a file at a commit
+    f, ref = path.split("/contents/", 1)[1].split("?ref=")
+    if f in os.environ.get("FAKE_BLOB_OTHER", ""): print("0" * 40); sys.exit(0)
+    out = subprocess.run(["git", "-c", "safe.directory=*", "-C", os.environ["FAKE_REPO"], "rev-parse", ref + ":" + f],
+                         capture_output=True, text=True)
+    if out.returncode: print("gh: Not Found (HTTP 404)", file=sys.stderr); sys.exit(1)
+    print(out.stdout.strip()); sys.exit(0)
 if path.endswith("/actions/runs/42/artifacts?per_page=100"):
     sys.stdout.write(open(F + "/run/artifacts.tsv").read()); sys.exit(0)
 if "/actions/artifacts/" in path and path.endswith("/zip"):
@@ -2618,6 +2672,8 @@ if a[:1] == ["push"]:
     open(F + "/pushes.log", "a").write(json.dumps({"ref": ref, "digest": digest,
         "layouts": sorted(os.path.basename(p) for p in glob.glob(work + "/oci-*")),
         "zips": glob.glob(work + "/**/*.zip", recursive=True)}) + "\n")
+    ecr = json.load(open(F + "/ecr.json")) if os.path.exists(F + "/ecr.json") else {}
+    ecr[ref.rsplit(":", 1)[0].split("/")[-1]] = digest; json.dump(ecr, open(F + "/ecr.json", "w"))
     digest = os.environ.get("FAKE_CRANE_DIGEST", digest)
     open(refs, "w").write(ref.rsplit(":", 1)[0] + "@" + digest + "\n"); sys.exit(0)
 sys.exit(1)
@@ -2649,12 +2705,14 @@ def ci_run(fake_world):
         for c in artifacts.COMPONENTS:
             entries[f"chola-image-{c}"] = _dir_entries(src / f"layout-{c}")
         for n, (name, files) in enumerate(entries.items(), 100):
-            data = _zip(files)
+            # as upload-artifact writes them: the big ones stored with data descriptors (compression-level 0)
+            data = _zip(files) if name == "chola-manifest" else _upload_artifact_zip(files)
             (d / "zips" / f"{n}.zip").write_bytes(data)
             ids[name] = n
             rows.append(f"{name}\t{n}\tfalse\t{len(data)}")
         (d / "artifacts.tsv").write_text("\n".join(rows) + "\n")
     publish()
+    fake_world.extra.update(FAKE_HEAD=head, FAKE_REPO=str(REPO))
 
     class Run:
         sha = head
@@ -2672,7 +2730,7 @@ def ci_run(fake_world):
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
 def test_images_from_run_pushes_the_ci_images_one_at_a_time_without_docker(fake_world, ci_run):
-    proc = fake_world("images", "--sha", ci_run.sha, "--from-run", "42")
+    proc = fake_world("images", "--sha", ci_run.sha, "--from-run", "42", "--to-ecr")
     assert proc.returncode == 0, proc.stdout + proc.stderr
     pushes = ci_run.pushes()
     prefix = "935951870001.dkr.ecr.ap-south-1.amazonaws.com/devsec-chola/"
@@ -2694,16 +2752,25 @@ def test_images_from_run_pushes_the_ci_images_one_at_a_time_without_docker(fake_
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
+@pytest.mark.parametrize("mode", ["relay", "to-ecr"])
 @pytest.mark.parametrize("case, words", [
     ("other-commit", "the run built commit"),
     ("other-api", "built for 'https://elsewhere'"),
     ("bad-revision", "dast-worker image is revision"),
+    ("other-run-id", "the manifest was written by run '7'"),
     ("other-workflow", "is a run of .github/workflows/publish-ghcr.yml"),
     ("failed-run", "is completed/failure, not completed/success"),
+    # provenance (review 6057210285 item 2)
+    ("other-event", "was started by 'pull_request'"),
+    ("other-head", "ran on " + "f" * 40 + ", not "),
+    ("fork", "ran for evil/devsecshield"),
+    ("edited-helper", "deploy/chola-prod/artifacts.py at "),
+    ("edited-workflow", ".github/workflows/chola-prod-images.yml at "),
+    ("unreviewed", "is on neither origin/dev nor origin/staging"),
     ("expired", "has expired"),
     ("no-manifest", "has no artifact chola-manifest"),
 ])
-def test_images_from_run_refuses_a_run_that_does_not_fit(fake_world, ci_run, case, words):
+def test_from_run_refuses_a_run_that_does_not_fit(fake_world, ci_run, case, words, mode):
     env = {}
     if case == "other-commit":
         ci_run.republish(manifest_edit=lambda m: m.update(commit="f" * 40))
@@ -2711,18 +2778,34 @@ def test_images_from_run_refuses_a_run_that_does_not_fit(fake_world, ci_run, cas
         ci_run.republish(manifest_edit=lambda m: m.update(api_url="https://elsewhere"))
     elif case == "bad-revision":
         ci_run.republish(manifest_edit=lambda m: m["images"]["dast-worker"].update(revision="f" * 40))
+    elif case == "other-run-id":
+        ci_run.republish(manifest_edit=lambda m: m["workflow"].update(run_id="7"))
     elif case == "other-workflow":
-        env["FAKE_RUN"] = ".github/workflows/publish-ghcr.yml\tcompleted\tsuccess\thttps://example/runs/42"
+        env["FAKE_RUN"] = json.dumps({"path": ".github/workflows/publish-ghcr.yml"})
     elif case == "failed-run":
-        env["FAKE_RUN"] = ".github/workflows/chola-prod-images.yml\tcompleted\tfailure\thttps://example/runs/42"
+        env["FAKE_RUN"] = json.dumps({"conclusion": "failure"})
+    elif case == "other-event":
+        env["FAKE_RUN"] = json.dumps({"event": "pull_request"})
+    elif case == "other-head":
+        env["FAKE_RUN"] = json.dumps({"head": "f" * 40})
+    elif case == "fork":
+        env["FAKE_RUN"] = json.dumps({"head_repo": "evil/devsecshield"})
+    elif case == "edited-helper":
+        env["FAKE_BLOB_OTHER"] = "deploy/chola-prod/artifacts.py"
+    elif case == "edited-workflow":
+        env["FAKE_BLOB_OTHER"] = ".github/workflows/chola-prod-images.yml"
+    elif case == "unreviewed":
+        env["FAKE_REVIEWED"] = "no"
     tsv = fake_world.dir / "run" / "artifacts.tsv"
     if case == "expired":
         tsv.write_text(tsv.read_text().replace("chola-manifest\t100\tfalse", "chola-manifest\t100\ttrue"))
     elif case == "no-manifest":
         tsv.write_text("".join(line + "\n" for line in tsv.read_text().splitlines() if "chola-manifest" not in line))
-    proc = fake_world("images", "--sha", ci_run.sha, "--from-run", "42", **env)
+    extra = ["--to-ecr"] if mode == "to-ecr" else []
+    proc = fake_world("images", "--sha", ci_run.sha, "--from-run", "42", *extra, **env)
     assert proc.returncode == 1 and words in proc.stderr, proc.stdout + proc.stderr
     assert ci_run.pushes() == [] and "crane push" not in fake_world.log()
+    assert not (fake_world.dir / "s3cp.log").exists() and "relay-load" not in fake_world.log()
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
@@ -2732,7 +2815,7 @@ def test_images_from_run_refuses_an_image_whose_label_or_bytes_do_not_match(fake
     shutil.rmtree(lay)
     other = _oci_layout(lay, "f" * 40, layer=b"scan-worker")
     ci_run.republish(manifest_edit=lambda m: m["images"]["scan-worker"].update(digest=other))
-    proc = fake_world("images", "--sha", ci_run.sha, "--from-run", "42")
+    proc = fake_world("images", "--sha", ci_run.sha, "--from-run", "42", "--to-ecr")
     assert proc.returncode == 1 and "label org.opencontainers.image.revision is 'fffff" in proc.stderr, proc.stderr
     assert [p["ref"].split("/")[-1].split(":")[0] for p in ci_run.pushes()] == ["devsecshield-backend",
                                                                                "devsecshield-frontend"]
@@ -2741,25 +2824,33 @@ def test_images_from_run_refuses_an_image_whose_label_or_bytes_do_not_match(fake
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
 def test_images_from_run_compares_the_digest_ecr_stored(fake_world, ci_run):
-    proc = fake_world("images", "--sha", ci_run.sha, "--from-run", "42", FAKE_CRANE_DIGEST="sha256:" + "0" * 64)
-    assert proc.returncode == 1 and "ECR answered" in proc.stderr and "not " + ci_run.digest["backend"] in proc.stderr
+    proc = fake_world("images", "--sha", ci_run.sha, "--from-run", "42", "--to-ecr", FAKE_CRANE_DIGEST="sha256:" + "0" * 64)
+    assert proc.returncode == 1 and "crane pushed" in proc.stderr and "not " + ci_run.digest["backend"] in proc.stderr
+    # review item 3: crane's own digest is local; what ECR stores under the tag is read back and must match
+    (fake_world.dir / "ecr.json").unlink()
+    proc = fake_world("images", "--sha", ci_run.sha, "--from-run", "42", "--to-ecr",
+                      FAKE_ECR_READBACK="sha256:" + "1" * 64)
+    assert proc.returncode == 1 and "ECR stores sha256:" + "1" * 64 in proc.stderr, proc.stderr
+    assert "devsec-chola/devsecshield-backend:" in proc.stderr
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
 def test_images_from_run_keeps_what_ecr_already_has(fake_world, ci_run):
     have = json.dumps({"devsecshield-backend": ci_run.digest["backend"], "scan-worker": "sha256:" + "d" * 64})
-    proc = fake_world("images", "--sha", ci_run.sha, "--from-run", "42", FAKE_ECR_HAVE=have)
+    proc = fake_world("images", "--sha", ci_run.sha, "--from-run", "42", "--to-ecr", FAKE_ECR_HAVE=have)
     assert proc.returncode == 0, proc.stderr
     assert [p["ref"].split("/")[-1].split(":")[0] for p in ci_run.pushes()] == ["devsecshield-frontend", "dast-worker"]
     assert "already in ECR as " + ci_run.digest["backend"] + ", the run's image" in proc.stdout
     assert "scan-worker:" in proc.stderr and "not the run's " + ci_run.digest["scan-worker"] in proc.stderr
+    assert "it was NOT built by this run" in proc.stderr and "checks it again" not in proc.stderr.replace(
+        "nothing here checks it again", "")
     assert "ALREADY IN ECR with another digest (kept): scan-worker" in proc.stdout.split("==== summary", 1)[1]
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
-def test_deploy_from_run_takes_images_and_infra_archive_from_the_run(fake_world, ci_run):
+def test_deploy_from_run_to_ecr_takes_images_and_infra_archive_from_the_run(fake_world, ci_run):
     import hashlib
-    proc = fake_world("deploy", "--sha", ci_run.sha, "--from-run", "42", "--yes")
+    proc = fake_world("deploy", "--sha", ci_run.sha, "--from-run", "42", "--to-ecr", "--yes")
     assert proc.returncode == 0, proc.stdout[-3000:] + proc.stderr[-3000:]
     log = fake_world.log()
     assert "docker " not in log  # images and the release archive: no Docker on this machine
@@ -2777,10 +2868,12 @@ def test_deploy_from_run_takes_images_and_infra_archive_from_the_run(fake_world,
 @pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
 def test_infra_from_run_refuses_other_pins_or_a_damaged_archive(fake_world, ci_run):
     ci_run.republish(manifest_edit=lambda m: m["infra"]["images"].pop())
-    proc = fake_world("infra", "--from-run", "42")
-    assert proc.returncode == 1 and "not this kit's pins" in proc.stderr and "put-object" not in fake_world.log()
+    for extra in ([], ["--to-ecr"]):
+        proc = fake_world("infra", "--sha", ci_run.sha, "--from-run", "42", *extra)
+        assert proc.returncode == 1 and "not this kit's pins" in proc.stderr and "put-object" not in fake_world.log()
+        assert not (fake_world.dir / "s3cp.log").exists()
     ci_run.republish(manifest_edit=lambda m: m["infra"].update(sha256="0" * 64, images=_infra_pins()))
-    proc = fake_world("infra", "--from-run", "42")
+    proc = fake_world("infra", "--sha", ci_run.sha, "--from-run", "42", "--to-ecr")
     assert proc.returncode == 1 and "the manifest says " + "0" * 64 in proc.stderr
     assert "put-object" not in fake_world.log()
 
@@ -2802,7 +2895,7 @@ def test_crane_download_is_refused_when_its_sha256_is_not_the_pin(fake_world, ci
     (fake_world.dir / "bin" / "curl").write_text(
         '#!/bin/sh\necho "curl $*" >> "$FAKE_DIR/calls.log"\n'
         'while [ $# -gt 0 ]; do [ "$1" = -o ] && echo "not crane" > "$2"; shift; done\n')
-    proc = fake_world("images", "--sha", ci_run.sha, "--from-run", "42")
+    proc = fake_world("images", "--sha", ci_run.sha, "--from-run", "42", "--to-ecr")
     assert proc.returncode == 1 and "not the pinned " in proc.stderr, proc.stderr
     assert re.search(r"curl -fsSL --retry 3 -o \S+ https://github\.com/google/go-containerregistry/releases/download/"
                      r"v0\.22\.1/go-containerregistry_\w+\.tar\.gz", fake_world.log())
@@ -2814,7 +2907,9 @@ def test_crane_download_is_refused_when_its_sha256_is_not_the_pin(fake_world, ci
     (["images", "--sha", "HEAD", "--from-run", "42", "--ghcr-tag", "dev-x"], "excludes --ghcr-tag"),
     (["status", "--from-run", "42"], "--from-run is only for images, infra, deploy and preflight"),
     (["images", "--sha", "HEAD", "--from-run", "abc"], "--from-run needs a workflow run id"),
-    (["preflight", "--from-run", "42"], "preflight --from-run needs --sha"),
+    (["preflight", "--from-run", "42"], "--from-run needs --sha"),
+    (["infra", "--from-run", "42"], "--from-run needs --sha"),
+    (["images", "--sha", "HEAD", "--to-ecr"], "--to-ecr is only for --from-run"),
 ])
 def test_from_run_flag_misuse(fake_world, args, words):
     proc = fake_world(*args)
@@ -2828,7 +2923,8 @@ def test_dry_run_from_run_touches_nothing(tmp_path):
     (shim_dir / "crane").write_text(f"#!/bin/sh\necho \"crane $*\" >> {log}\nexit 97\n")
     (shim_dir / "crane").chmod(0o755)
     env = dict(os.environ, PATH=f"{shim_dir}:{os.environ['PATH']}", HOME=str(tmp_path), TMPDIR=str(tmp_path))
-    for args in (["images", "--sha", head], ["infra"], ["deploy", "--sha", head]):
+    for args in (["images", "--sha", head], ["infra", "--sha", head], ["deploy", "--sha", head],
+                 ["deploy", "--sha", head, "--to-ecr"]):
         proc = run(["bash", str(OWNER), "--dry-run", *args, "--from-run", "42"], env=env, stdin=subprocess.DEVNULL)
         assert proc.returncode == 0 and "[dry-run] gh api repos/" in proc.stdout, proc.stdout + proc.stderr
         assert not log.exists(), log.read_text()
@@ -2869,3 +2965,444 @@ def test_readme_documents_the_imds_block_and_both_image_paths():
                    "## Images from a CI run", "--from-run", "chola-prod-images.yml", "crane", "chola-prod-images/",
                    "dev-<sha12>"):
         assert needle in text, needle
+
+
+# ------------------------------------------------------------------------------------------------ round 2 (review 6057210285)
+# Item 1: the zip format upload-artifact really writes at compression-level 0: stored, general-purpose bit 3, CRC and
+# sizes 0 in the local header, a signed data descriptor after the data. The first 61 bytes below are the local header of
+# a real artifact of this repository (dss-staging-a24ec455d96c, artifact 14891971319, deploy-staging.yml,
+# upload-artifact v4.6.2, compression-level 0), range-fetched on 2026-11-25.
+REAL_UPLOAD_ARTIFACT_HEADER = bytes.fromhex(
+    "504b03041400080000000a27785d0000000000000000000000001f000000"
+    "6473732d73746167696e672d6132346563343535643936632e7461722e677a")
+
+
+def _upload_artifact_zip(entries, zip64=False):
+    """{name: bytes} -> a zip as upload-artifact writes it at compression-level 0 (see above)."""
+    import struct
+    import zlib
+    out, central = bytearray(), bytearray()
+    for name, data in entries.items():
+        nb, off, crc = name.encode(), len(out), zlib.crc32(data)
+        out += struct.pack("<IHHHHHIIIHH", 0x04034B50, 20, 8, 0, 9994, 23928, 0, 0, 0, len(nb), 0) + nb + data
+        out += b"PK\x07\x08" + (struct.pack("<IQQ", crc, len(data), len(data)) if zip64 else
+                                struct.pack("<III", crc, len(data), len(data)))
+        central += struct.pack("<IHHHHHHIIIHHHHHII", 0x02014B50, 20, 20, 8, 0, 9994, 23928, crc,
+                               min(len(data), 0xFFFFFFFF), min(len(data), 0xFFFFFFFF), len(nb), 0, 0, 0, 0, 0, off) + nb
+    cd = len(out)
+    out += central + struct.pack("<IHHHHIIH", 0x06054B50, 0, 0, len(entries), len(entries), len(central), cd, 0)
+    return bytes(out)
+
+
+def test_the_fixture_writes_the_real_upload_artifact_header():
+    data = _upload_artifact_zip({"dss-staging-a24ec455d96c.tar.gz": b"\x1f\x8b" + b"x" * 10})
+    assert data[:61] == REAL_UPLOAD_ARTIFACT_HEADER
+
+
+@pytest.mark.parametrize("zip64", [False, True])
+def test_unzip_stream_takes_the_real_upload_artifact_format(tmp_path, zip64):
+    import io
+    sha = "c" * 40
+    digest = _oci_layout(tmp_path / "src", sha, layer=os.urandom(70_000) + b"PK\x07\x08" + os.urandom(64))
+    got = artifacts.unzip_stream(io.BytesIO(_upload_artifact_zip(_dir_entries(tmp_path / "src"), zip64)),
+                                 str(tmp_path / "out"), oci=True)
+    assert len(got) == 5 and artifacts.oci_check(str(tmp_path / "out"), digest, sha)[0] == digest
+
+
+def test_unzip_stream_real_header_with_false_descriptor_signatures_in_the_data(tmp_path):
+    """The real header, then data full of descriptor signatures followed by plausible fields: only the descriptor whose
+    CRC-32 and size match all bytes before it ends the entry."""
+    import io
+    import struct
+    import zlib
+    decoy = b"PK\x07\x08" + struct.pack("<III", 0, 10, 10) + b"PK\x03\x04"  # a wrong CRC, a record signature behind
+    data = b"\x1f\x8b" + os.urandom(200_000) + decoy * 50 + os.urandom(1000) + b"PK\x07\x08"
+    crc = zlib.crc32(data)
+    z = REAL_UPLOAD_ARTIFACT_HEADER + data + b"PK\x07\x08" + struct.pack("<III", crc, len(data), len(data)) + \
+        b"PK\x05\x06" + b"\0" * 18
+    name = "dss-staging-a24ec455d96c.tar.gz"
+    assert artifacts.unzip_stream(io.BytesIO(z), str(tmp_path / "a"), file_name=name) == {name: len(data)}
+    assert (tmp_path / "a" / name).read_bytes() == data
+    # negative control: a descriptor whose CRC does not match is never taken; the stream ends inside the entry
+    bad = REAL_UPLOAD_ARTIFACT_HEADER + data + b"PK\x07\x08" + struct.pack("<III", crc ^ 1, len(data), len(data)) + \
+        b"PK\x05\x06" + b"\0" * 18
+    with pytest.raises(artifacts.Refused, match="cut short"):
+        artifacts.unzip_stream(io.BytesIO(bad), str(tmp_path / "b"), file_name=name)
+    assert not (tmp_path / "b" / name).exists() and not list((tmp_path / "b").glob(".part-*"))
+
+
+def test_hash_pipe_copies_and_hashes(tmp_path):
+    import hashlib
+    data = os.urandom(3_000_000)
+    proc = subprocess.run(["python3", "-I", str(KIT_DIR / "artifacts.py"), "hash-pipe", "--out", str(tmp_path / "h")],
+                          input=data, capture_output=True, check=False)
+    assert proc.returncode == 0 and proc.stdout == data
+    assert (tmp_path / "h").read_text() == f"{hashlib.sha256(data).hexdigest()} {len(data)}\n"
+
+
+# Item 2: the GHCR path too deploys only a commit on origin/dev or origin/staging
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
+@pytest.mark.parametrize("reviewed, ok", [("dev", True), ("staging", True), ("no", False)])
+def test_only_a_commit_on_dev_or_staging_is_deployed(fake_world, reviewed, ok):
+    head = run(["git", "-C", str(REPO), "rev-parse", "HEAD"]).stdout.strip()
+    proc = fake_world("deploy", "--sha", head, "--yes", FAKE_REVIEWED=reviewed)
+    assert (proc.returncode == 0) == ok, proc.stdout[-2000:] + proc.stderr[-2000:]
+    log = fake_world.log()
+    assert "fetch -q origin +refs/heads/dev:refs/remotes/origin/dev +refs/heads/staging:refs/remotes/origin/staging" in log
+    if ok:
+        assert f"is on origin/{reviewed} (reviewed)" in proc.stdout
+    else:
+        assert "is on neither origin/dev nor origin/staging" in proc.stderr
+        assert "remote.sh" not in log and "secretsmanager" not in log  # stopped before anything was touched
+
+
+# Item 4: the S3 relay (default for --from-run)
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
+def test_deploy_from_run_relays_through_s3_with_no_local_copy(fake_world, ci_run):
+    import hashlib
+    proc = fake_world("deploy", "--sha", ci_run.sha, "--from-run", "42", "--yes")
+    assert proc.returncode == 0, proc.stdout[-3000:] + proc.stderr[-3000:]
+    log = fake_world.log()
+    tag = ci_run.sha[:12]
+    cps = [json.loads(line) for line in (fake_world.dir / "s3cp.log").read_text().splitlines()]
+    names = ["chola-image-backend", "chola-image-frontend", "chola-image-scan-worker", "chola-image-dast-worker",
+             "chola-infra"]  # the instance lacks qdrant: the archive goes too
+    assert [c["key"] for c in cps] == [f"releases/{tag}/{n}.zip" for n in names]
+    for c in cps:
+        assert c["bytes"] == int(c["size"]) and c["local_copies"] == [], c  # streamed: nothing stored here
+        assert "s3 cp - s3://devsecshield-storage/" + c["key"] + " --expected-bucket-owner 935951870001" in log
+    job = next(line for line in log.splitlines() if "remote.sh job-start relay-load" in line)
+    for c, n in zip(cps, names):
+        zsum = hashlib.sha256((fake_world.dir / "s3" / c["key"]).read_bytes()).hexdigest()
+        comp = n.removeprefix("chola-image-")
+        want = (f"image:{comp}:{c['key']}:{zsum}:{ci_run.digest[comp]}" if n != "chola-infra" else
+                f"infra:{c['key']}:{zsum}:{hashlib.sha256(b'release archive').hexdigest()}")
+        assert want in job, want
+    assert f"relay-load {ci_run.sha} " in job
+    # deleted after the load; the instance pulls nothing from ECR; no Docker or crane here
+    assert (fake_world.dir / "s3del.log").read_text().split() == [c["key"] for c in cps]
+    assert "remote.sh ecr-login" not in log and f"remote.sh pull {tag} --local" in log
+    assert "infra-load" not in log and "docker " not in log and "crane" not in log
+    assert log.index("relay-load") < log.index("remote.sh render") < log.index("imds-check") < log.index("job-start dump")
+    summary = proc.stdout.split("==== summary", 1)[1]
+    assert "relay: run 42 -> s3://devsecshield-storage/releases/" in summary and "infra: with the relay" in summary
+    assert not list(fake_world.dir.glob("chola-prod.*"))
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
+@pytest.mark.parametrize("env, words", [
+    ({"FAKE_JOB_RC": "1"}, "keeps them until the next relay overwrites them"),
+    ({"FAKE_S3_CP": "deny"}, "relaying artifact chola-image-backend to s3://devsecshield-storage/releases/"),
+])
+def test_relay_failures_stop_before_anything_starts(fake_world, ci_run, env, words):
+    proc = fake_world("deploy", "--sha", ci_run.sha, "--from-run", "42", "--yes", **env)
+    assert proc.returncode == 1 and words in proc.stderr, proc.stderr[-2000:]
+    log = fake_world.log()
+    assert "job-start deploy" not in log and "start-backup-job" not in log and "remote.sh render" not in log
+    assert not (fake_world.dir / "s3del.log").exists()  # kept for a look; overwritten by the next relay
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
+def test_relay_refuses_a_download_of_another_size(fake_world, ci_run):
+    tsv = fake_world.dir / "run" / "artifacts.tsv"
+    rows = [line.split("\t") for line in tsv.read_text().splitlines()]
+    rows = [r[:3] + [str(int(r[3]) + 1)] if r[0] == "chola-image-backend" else r for r in rows]
+    tsv.write_text("".join("\t".join(r) + "\n" for r in rows))
+    proc = fake_world("images", "--sha", ci_run.sha, "--from-run", "42")
+    assert proc.returncode == 1 and "streamed" in proc.stderr and "GitHub lists" in proc.stderr
+    assert "relay-load" not in fake_world.log()
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
+def test_relay_of_images_only_when_the_instance_has_every_pin(fake_world, ci_run):
+    (fake_world.dir / "bin" / "ssh").write_text(FAKE_SSH.replace('echo "qdrant/qdrant:v1.13.5";;', 'true;;'))
+    proc = fake_world("images", "--sha", ci_run.sha, "--from-run", "42")
+    assert proc.returncode == 0, proc.stderr
+    keys = [json.loads(line)["key"] for line in (fake_world.dir / "s3cp.log").read_text().splitlines()]
+    assert len(keys) == 4 and not any("chola-infra" in k for k in keys)
+
+
+# The instance side of the relay: the real remote.sh relay-load, with fake aws (S3), sudo and docker
+FAKE_RELAY_DOCKER = r'''#!/usr/bin/env python3
+"""docker for relay-load: version, info, load (an OCI layout tar on stdin, or a release archive), image inspect."""
+import io, json, os, sys, tarfile
+F = os.environ["FAKE_DIR"]; a = sys.argv[1:]; st_path = F + "/images.json"
+st = json.load(open(st_path)) if os.path.exists(st_path) else {}
+open(F + "/docker.log", "a").write("docker " + " ".join(a) + "\n")
+INFRA = ["postgres:15-alpine", "mongo:8.0.6", "rabbitmq:4.1-management-alpine", "nginx:1.27-alpine", "qdrant/qdrant:v1.13.5"]
+if a[0] == "version": print(os.environ.get("FAKE_DOCKER_VERSION", "29.0.1")); sys.exit(0)
+if a[0] == "info":
+    if "DockerRootDir" in " ".join(a): print(F)
+    elif "DriverStatus" in " ".join(a): print("[]")
+    sys.exit(0)
+if a[:2] == ["load", "-i"]:
+    for i in INFRA: st[i] = {"os": "linux", "arch": "amd64", "rev": "", "id": "sha256:infra"}
+    json.dump(st, open(st_path, "w")); sys.exit(0)
+if a == ["load"]:
+    t = tarfile.open(fileobj=io.BytesIO(sys.stdin.buffer.read()))
+    rd = lambda n: t.extractfile(n).read()
+    desc = json.loads(rd("index.json"))["manifests"][0]
+    man = json.loads(rd("blobs/sha256/" + desc["digest"][7:]))
+    cfg = json.loads(rd("blobs/sha256/" + man["config"]["digest"][7:]))
+    name = (desc.get("annotations") or {}).get("io.containerd.image.name")
+    if name and not os.environ.get("FAKE_LOAD_UNNAMED"):
+        st[name] = {"os": cfg["os"], "arch": cfg["architecture"],
+                    "rev": os.environ.get("FAKE_LOAD_REV") or cfg["config"]["Labels"].get("org.opencontainers.image.revision", ""),
+                    "id": man["config"]["digest"]}
+        print("Loaded image: " + name)
+    json.dump(st, open(st_path, "w")); sys.exit(0)
+if a[:2] == ["image", "inspect"]:
+    ref = a[-1]
+    if ref not in st: sys.exit(1)
+    i = st[ref]
+    if "-f" in a and "{{.Id}}" in a[a.index("-f") + 1]: print(f"{i['os']}/{i['arch']} {i['rev']} {i['id']}")
+    elif "-f" in a: print(f"{i['os']}/{i['arch']}")
+    sys.exit(0)
+sys.exit(0)
+'''
+FAKE_RELAY_AWS = r'''#!/usr/bin/env python3
+import os, shutil, sys
+F = os.environ["FAKE_DIR"]; a = sys.argv[1:]
+open(F + "/aws.log", "a").write("aws " + " ".join(a) + "\n")
+if "get-object" in a:
+    if a[a.index("--expected-bucket-owner") + 1] != "935951870001": sys.exit(1)
+    shutil.copy(F + "/s3/" + a[a.index("--key") + 1], a[-1]); sys.exit(0)
+sys.exit(1)
+'''
+RELAY_SHA = "ab" * 20
+
+
+@pytest.fixture
+def relay_instance(tmp_path):
+    """The instance's view of a relay: S3 holds the run's zips for RELAY_SHA; returns (specs, run, env)."""
+    import hashlib
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for name, body in (("docker", FAKE_RELAY_DOCKER), ("aws", FAKE_RELAY_AWS),
+                       ("sudo", '#!/bin/sh\n[ "$1" = -n ] && shift\nexec "$@"\n')):
+        (bin_dir / name).write_text(body)
+        (bin_dir / name).chmod(0o755)
+    src = tmp_path / "src"
+    src.mkdir()
+    _, digests = _run_manifest(src, RELAY_SHA)
+    tag = RELAY_SHA[:12]
+    (tmp_path / "s3" / "releases" / tag).mkdir(parents=True)
+    specs = {}
+
+    def put(name, files):
+        key = f"releases/{tag}/{name}.zip"
+        data = _upload_artifact_zip(files)
+        (tmp_path / "s3" / key).write_bytes(data)
+        return key, hashlib.sha256(data).hexdigest()
+    for c in artifacts.COMPONENTS:
+        key, zsum = put(f"chola-image-{c}", _dir_entries(src / f"layout-{c}"))
+        specs[c] = f"image:{c}:{key}:{zsum}:{digests[c]}"
+    key, zsum = put("chola-infra", {"release.tar.gz": (src / "release.tar.gz").read_bytes()})
+    specs["infra"] = f"infra:{key}:{zsum}:{hashlib.sha256(b'release archive').hexdigest()}"
+    env = {"PATH": f"{bin_dir}:{os.environ['PATH']}", "FAKE_DIR": str(tmp_path), "HOME": str(tmp_path), "LC_ALL": "C",
+           "CHOLA_BASE_DIR": str(tmp_path / "base"), "CHOLA_ARCHIVE_DIR": str(tmp_path / "releases"),
+           "CHOLA_MIN_FREE_GB": "0", "CHOLA_IMAGE_PREFIX": "reg.example/devsec-chola"}
+
+    class R:
+        dir = tmp_path
+        spec = specs
+        digest = digests
+
+        @staticmethod
+        def load(*spec_list, **extra):
+            return run(["bash", str(REMOTE), "relay-load", RELAY_SHA, *spec_list], env={**env, **extra})
+
+        @staticmethod
+        def images():
+            p = tmp_path / "images.json"
+            return json.loads(p.read_text()) if p.exists() else {}
+    return R
+
+
+def test_relay_load_checks_and_loads_every_image_and_the_archive(relay_instance):
+    r = relay_instance
+    proc = r.load(*(r.spec[c] for c in artifacts.COMPONENTS), r.spec["infra"])
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    images = r.images()
+    tag = RELAY_SHA[:12]
+    for c, repo in (("backend", "devsecshield-backend"), ("frontend", "devsecshield-frontend"),
+                    ("scan-worker", "scan-worker"), ("dast-worker", "dast-worker")):
+        img = images[f"reg.example/devsec-chola/{repo}:{tag}"]
+        assert (img["os"], img["arch"], img["rev"]) == ("linux", "amd64", RELAY_SHA)
+        assert f"loaded: {r.digest[c]} (linux/amd64, revision {tag})" in proc.stdout
+    assert "postgres:15-alpine" in images and "nothing was pulled from ECR" in proc.stdout
+    assert list((r.dir / "releases").iterdir()) == []  # every zip, layout and archive deleted
+    gets = [line for line in (r.dir / "aws.log").read_text().splitlines() if "get-object" in line]
+    assert len(gets) == 5 and all("--expected-bucket-owner 935951870001" in g for g in gets)
+    assert "docker pull" not in (r.dir / "docker.log").read_text()
+
+
+@pytest.mark.parametrize("case, words", [
+    ("zip-sum", "has sha256"),
+    ("digest", "failed its check"),
+    ("unnamed", "Docker has no reg.example/devsec-chola/devsecshield-backend:"),
+    ("docker-other", "in Docker is 'linux/amd64 " + "f" * 40 + "'"),
+    ("old-docker", "cannot load an OCI layout (25+ can) and skopeo is not installed"),
+    ("archive-sum", "the run's manifest says"),
+    ("bad-spec", "bad spec"),
+])
+def test_relay_load_refusals(relay_instance, case, words):
+    r = relay_instance
+    spec, extra = r.spec["backend"], {}
+    if case == "zip-sum":
+        spec = spec.replace(spec.split(":")[3], "0" * 64)
+    elif case == "digest":
+        spec = spec.rsplit(":", 1)[0] + ":" + "0" * 64
+    elif case == "unnamed":
+        extra = {"FAKE_LOAD_UNNAMED": "1"}
+    elif case == "docker-other":
+        extra = {"FAKE_LOAD_REV": "f" * 40}
+    elif case == "old-docker":
+        extra = {"FAKE_DOCKER_VERSION": "24.0.7"}
+    elif case == "archive-sum":
+        spec = r.spec["infra"].rsplit(":", 1)[0] + ":" + "0" * 64
+    elif case == "bad-spec":
+        spec = spec.replace("releases/", "other/")
+    proc = r.load(spec, **extra)
+    assert proc.returncode == 1 and words in proc.stderr, proc.stdout + proc.stderr
+    assert not any(k.endswith(RELAY_SHA[:12]) for k in r.images()) or case in ("unnamed", "docker-other")
+    if case == "bad-spec":
+        assert not (r.dir / "aws.log").exists()  # every spec is checked before anything is downloaded
+    leftovers = list((r.dir / "releases").iterdir()) if (r.dir / "releases").exists() else []
+    assert leftovers == []  # zips, layouts and archives are deleted however the load ends
+
+
+def test_relay_load_refuses_a_frontend_built_for_another_api(relay_instance):
+    import hashlib
+    r = relay_instance
+    lay = r.dir / "fe-other"
+    digest = _oci_layout(lay, RELAY_SHA, labels={"com.zeroshield.devsecshield.api-url": "http://localhost:8000"})
+    key = f"releases/{RELAY_SHA[:12]}/chola-image-frontend.zip"
+    data = _upload_artifact_zip(_dir_entries(lay))
+    (r.dir / "s3" / key).write_bytes(data)
+    proc = r.load(f"image:frontend:{key}:{hashlib.sha256(data).hexdigest()}:{digest}")
+    assert proc.returncode == 1 and "api-url" in proc.stderr and r.images() == {}
+
+
+def test_relay_load_uses_skopeo_on_an_older_docker(relay_instance):
+    r = relay_instance
+    skopeo = r.dir / "bin" / "skopeo"
+    skopeo.write_text('#!/bin/sh\necho "skopeo $*" >> "$FAKE_DIR/skopeo.log"\n'
+                      f'python3 - "$3" "$4" <<\'EOF\'\nimport json, sys\nlay, dst = sys.argv[1][4:], sys.argv[2][14:]\n'
+                      'd = json.load(open(lay + "/index.json"))["manifests"][0]\n'
+                      'm = json.load(open(lay + "/blobs/sha256/" + d["digest"][7:]))\n'
+                      'c = json.load(open(lay + "/blobs/sha256/" + m["config"]["digest"][7:]))\n'
+                      f'st = {{}}\nst[dst] = {{"os": c["os"], "arch": c["architecture"], "rev": "{RELAY_SHA}", "id": m["config"]["digest"]}}\n'
+                      f'json.dump(st, open("{r.dir}/images.json", "w"))\nEOF\n')
+    skopeo.chmod(0o755)
+    proc = r.load(r.spec["backend"], FAKE_DOCKER_VERSION="24.0.7")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "copy --quiet oci:" in (r.dir / "skopeo.log").read_text() and "docker-daemon:reg.example/devsec-chola/" \
+        "devsecshield-backend:" + RELAY_SHA[:12] in (r.dir / "skopeo.log").read_text()
+
+
+def test_pull_local_never_pulls(tmp_path):
+    env = {**_fake_docker(tmp_path), "CHOLA_BASE_DIR": str(tmp_path), "CHOLA_MIN_FREE_GB": "0"}
+    (tmp_path / "bin" / "docker").write_text('#!/bin/sh\necho "docker $*" >> "' + str(tmp_path) + '/d.log"\n'
+                                             'case "$1 $2" in "image inspect") exit 1;; "info --format") echo /tmp;; esac\nexit 0\n')
+    proc = run(["bash", str(REMOTE), "pull", "aaaaaaaaaaaa", "--local"], env=env)
+    assert proc.returncode == 1 and "nothing is pulled from ECR in that mode" in proc.stderr
+    assert " pull " not in (tmp_path / "d.log").read_text()
+
+
+# The workflow's steps (deploy/chola-prod/ci_images.sh)
+CI_IMAGES = KIT_DIR / "ci_images.sh"
+FAKE_CI_CRANE = r'''#!/bin/sh
+echo "crane $*" >> "$FAKE_DIR/crane.log"
+case "$1" in
+  digest) case "$2" in *":${FAKE_TAG:-none}") echo "sha256:$(printf %064d 7)"; exit 0;; esac; exit 1;;
+  pull) cp -r "$FAKE_LAYOUT" "$6"; exit 0;;
+esac
+exit 1
+'''
+
+
+def _ci_env(tmp_path, **extra):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    (bin_dir / "crane").write_text(FAKE_CI_CRANE)
+    (bin_dir / "crane").chmod(0o755)
+    out = tmp_path / "out"
+    (out / "manifest").mkdir(parents=True, exist_ok=True)
+    sha = "d" * 40
+    if not (out / "manifest" / "manifest.json").exists():
+        artifacts.manifest_init(str(out / "manifest" / "manifest.json"), sha, "https://chola-api.zeroshield.ai")
+    return {"PATH": f"{bin_dir}:{os.environ['PATH']}", "FAKE_DIR": str(tmp_path), "OUT": str(out), "SHA": sha,
+            "REGISTRY": "ghcr.io/acme", "API_URL": "https://chola-api.zeroshield.ai", "LC_ALL": "C", **extra}
+
+
+@pytest.mark.parametrize("have, want", [("dev-dddddddddddd", "dev-dddddddddddd"),
+                                        ("staging-dddddddddddd", "staging-dddddddddddd"), ("none", None)])
+def test_ci_images_ghcr_tag(tmp_path, have, want):
+    proc = run(["bash", str(CI_IMAGES), "ghcr-tag"], env=_ci_env(tmp_path, FAKE_TAG=have))
+    assert (proc.returncode == 0) == bool(want) and (proc.stdout.strip() == want if want else "no GHCR images" in proc.stderr)
+
+
+def test_ci_images_ghcr_copies_records_and_refuses_another_commit(tmp_path):
+    good = tmp_path / "good"
+    digest = _oci_layout(good, "d" * 40)
+    env = _ci_env(tmp_path, FAKE_TAG="dev-dddddddddddd", FAKE_LAYOUT=str(good))
+    proc = run(["bash", str(CI_IMAGES), "ghcr", "backend", "dev-dddddddddddd"], env=env)
+    assert proc.returncode == 0, proc.stderr
+    assert "pull --format=oci --platform linux/amd64 ghcr.io/acme/devsecshield-backend:dev-dddddddddddd" in \
+        (tmp_path / "crane.log").read_text()
+    m = json.loads((tmp_path / "out" / "manifest" / "manifest.json").read_text())["images"]["backend"]
+    assert m["digest"] == digest and m["index_digest"] == "sha256:" + "0" * 63 + "7"
+    assert run(["bash", str(CI_IMAGES), "free", "image-backend"], env=env).returncode == 0
+    assert not (tmp_path / "out" / "image-backend").exists()
+    other = tmp_path / "other"
+    _oci_layout(other, "e" * 40)
+    proc = run(["bash", str(CI_IMAGES), "ghcr", "scan-worker", "dev-dddddddddddd"], env={**env, "FAKE_LAYOUT": str(other)})
+    assert proc.returncode == 1 and "label org.opencontainers.image.revision" in proc.stderr
+    proc = run(["bash", str(CI_IMAGES), "ghcr", "backend", "dev-x"], env={**env, "MAX_BYTES": "10", "FAKE_TAG": "dev-x"})
+    assert proc.returncode == 1 and "over 10" in proc.stderr
+    assert run(["bash", str(CI_IMAGES), "free", "../x"], env=env).returncode == 1
+
+
+FAKE_CI_DOCKER = r'''#!/bin/sh
+echo "docker $*" >> "$FAKE_DIR/docker.log"
+case "$1 $2" in
+  "image inspect")
+    case "$*" in
+      *"{{.Id}} postgres:15-alpine") echo "sha256:oldpostgres"; exit 0;;   # a tag another job had
+      *"{{.Id}}"*) exit 1;;
+      *"--help"*) exit 0;;
+      *"{{.Os}}/{{.Architecture}}"*) echo linux/amd64; exit 0;;
+      *"@sha256:"*) case "$*" in *postgres*) exit 0;; esac; exit 1;;   # the postgres pin was there already
+    esac; exit 0;;
+  "save "*|"save --platform") [ -n "$FAKE_SAVE_FAIL" ] && exit 1; echo archive; exit 0;;
+  "info --format") echo '[]'; exit 0;;
+esac
+exit 0
+'''
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_ci_images_infra_puts_the_shared_docker_back(tmp_path, fail):
+    env = _ci_env(tmp_path, INFRA_IMAGES=" ".join(_infra_pins()), **({"FAKE_SAVE_FAIL": "1"} if fail else {}))
+    (tmp_path / "bin" / "docker").write_text(FAKE_CI_DOCKER)
+    (tmp_path / "bin" / "docker").chmod(0o755)
+    proc = run(["bash", str(CI_IMAGES), "infra"], env=env)
+    assert (proc.returncode == 0) != fail, proc.stdout + proc.stderr
+    log = (tmp_path / "docker.log").read_text()
+    pins = _infra_pins()
+    assert "docker tag sha256:oldpostgres postgres:15-alpine" in log  # put back on the image it had
+    for pin in pins[1:]:
+        assert f"docker image rm {pin.split('@')[0]}" in log  # created here: removed
+    rm_pulled = [line for line in log.splitlines() if line.startswith("docker image rm ") and "@sha256:" in line]
+    assert len(rm_pulled) == 1 and pins[0] not in rm_pulled[0] and all(p in rm_pulled[0] for p in pins[1:])
+    if not fail:
+        infra = json.loads((tmp_path / "out" / "manifest" / "manifest.json").read_text())["infra"]
+        assert infra["images"] == pins and infra["artifact"] == "chola-infra"
+
+
+def test_workflow_runs_on_the_commit_and_uses_its_own_helpers():
+    text = WORKFLOW.read_text()
+    assert 'if [ "$sha" != "$GITHUB_SHA" ]; then' in text
+    assert "tools/" not in text and "path: target" not in text
+    assert text.count("deploy/chola-prod/ci_images.sh ") == 10

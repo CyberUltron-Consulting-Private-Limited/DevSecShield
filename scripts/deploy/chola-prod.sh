@@ -65,7 +65,9 @@ INFRA_IMAGES=(
 COMPONENTS=(backend frontend scan-worker dast-worker)
 
 DRY=0 YES=0 HELP=0 SHA="" SHA12="" GHCR_TAG="" FRONTEND_IMAGE="" FORCE_INFRA=0 ALLOW_DOWNGRADE=0 REFRESH_MAIL=0
-MAIL_PROMPT=0 ALLOW_IMDS=0 EMAIL="" SERVICE="" TAIL=200 JOB="" ROLLBACK_TO="" FROM_RUN=""
+MAIL_PROMPT=0 ALLOW_IMDS=0 EMAIL="" SERVICE="" TAIL=200 JOB="" ROLLBACK_TO="" FROM_RUN="" TO_ECR=0
+RELAYED=0   # 1 once the S3 relay loaded this commit's images (and the archive) on the instance: no ECR pull follows
+REVIEWED="" # origin/dev or origin/staging once --sha was proved to be on it
 IMDS_HOP="" IMDS_V6=disabled # the instance's HttpPutResponseHopLimit / HttpProtocolIpv6 (imds_options), for remote.sh
 CRANE=""
 WORK=""
@@ -96,12 +98,16 @@ Commands
   images --sha S             backend + workers from GHCR (linux/amd64), the frontend built here for the API URL, all
                              pushed to ECR as :<sha12>
   images --sha S --from-run RUN
-                             the same four images as built by CI: run RUN of .github/workflows/chola-prod-images.yml
-                             (its manifest must name commit S; each image's revision label is checked), copied to ECR
-                             with crane one at a time (no Docker; each download deleted after its push)
-  infra [--force-infra] [--from-run RUN]
+                             the same four images as built by CI: run RUN of .github/workflows/chola-prod-images.yml,
+                             which must have run ON commit S (on dev or staging; its workflow and helpers the kit's at
+                             S). S3 RELAY (default): each artifact streams from GitHub into s3://devsecshield-storage/
+                             releases/<sha12>/ (sha256 in the stream; no local copy); the instance downloads, checks
+                             and loads them and the S3 objects are deleted; the instance pulls nothing from ECR.
+                             --to-ecr: pushed to ECR with crane instead, one at a time (needs the largest image's size
+                             free here)
+  infra [--force-infra] [--from-run RUN --sha S]
                              the infrastructure images as the S3 release archive, loaded on the instance if missing
-                             (--from-run: the run's archive instead of pulling them here)
+                             (--from-run: the run's archive, relayed through S3, instead of pulling them here)
   backup                     logical dumps on the instance, then the AWS Backup job of the data volume (waits)
   deploy --sha S [--from-run RUN] [--yes]
                              all of the above in order (the IMDS block first; its container probe again before
@@ -124,11 +130,13 @@ Commands
 Flags
   --dry-run                  print every step; run no AWS, SSH, Docker, registry or git-fetch command, read no secret
   --yes                      no confirmation prompt (deploy, rollback)
-  --sha S                    the commit to deploy (7-40 hex characters; must exist in this checkout)
+  --sha S                    the commit to deploy (7-40 hex characters; must exist in this checkout and be on
+                             origin/dev or origin/staging)
   --ghcr-tag T               GHCR tag of the backend/worker images (default: dev-, staging- or manual-<sha12>)
   --frontend-image REF       use this frontend image instead of building one (its API URL is checked)
-  --from-run RUN             images, infra, deploy, preflight: the images of that chola-prod-images.yml run (gh api;
-                             no GHCR pull, no Docker needed here)
+  --from-run RUN             images, infra, deploy, preflight (with --sha): the images of that chola-prod-images.yml
+                             run (gh api; no GHCR pull, no Docker needed here), relayed through S3 to the instance
+  --to-ecr                   with --from-run: push the run's images to ECR with crane instead of the S3 relay
   --force-infra              build and load the release archive even when the instance has every image
   --allow-downgrade          rollback only: let it run alembic downgrade (drops what newer migrations added)
   --to TAG                   rollback only: to this older release (12 or 40 hex characters) instead of the recorded
@@ -238,6 +246,7 @@ parse_args() { # flags may come before or after the command
       --allow-imds) ALLOW_IMDS=1; shift ;;
       --from-run) [[ $# -ge 2 && "$2" =~ ^[0-9]{1,20}$ ]] || die "--from-run needs a workflow run id (a number)"
         FROM_RUN=$2; shift 2 ;;
+      --to-ecr) TO_ECR=1; shift ;;
       --email) [[ $# -ge 2 ]] || die "--email needs an address"; EMAIL=$2; shift 2 ;;
       --service) [[ $# -ge 2 ]] || die "--service needs a name"; SERVICE=$2; shift 2 ;;
       --tail) [[ $# -ge 2 && "$2" =~ ^[0-9]{1,6}$ ]] || die "--tail needs a number"; TAIL=$2; shift 2 ;;
@@ -254,6 +263,7 @@ parse_args() { # flags may come before or after the command
     die "--from-run takes every image from the run: it excludes --ghcr-tag and --frontend-image"
   fi
   [[ "${GH_REPO}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "CHOLA_GH_REPO ${GH_REPO} is not owner/name"
+  ((!TO_ECR)) || [[ -n "${FROM_RUN}" ]] || die "--to-ecr is only for --from-run"
 }
 
 resolve_sha() {
@@ -648,15 +658,15 @@ cmd_preflight() {
   aws_resources
   if [[ -n "${SHA}" && -n "${FROM_RUN}" ]]; then
     resolve_sha
+    require_reviewed_sha
     run_check_images # the run, its artifacts and its manifest (only the manifest is downloaded)
   elif [[ -n "${SHA}" ]]; then
     resolve_sha
     docker_isolate
     ghcr_login
     ghcr_tag >/dev/null
-  elif [[ -n "${FROM_RUN}" ]]; then
-    die "preflight --from-run needs --sha (the commit the run must have built)"
   fi
+  [[ -z "${SHA}" ]] || require_reviewed_sha
   s3_probe
   remote_step "the instance preflight changes nothing there: fix what it reports, then re-run" preflight
   mail_source_check
@@ -835,6 +845,27 @@ cmd_secrets() {
 # this kit's infrastructure pins, and each image artifact streams through artifacts.py unzip-stream straight into a
 # layout (no zip on disk), is checked (every blob's sha256, linux/amd64, the revision label, the manifest's digest),
 # pushed with crane (no Docker), compared with the digest ECR answers, and deleted before the next one is downloaded.
+# Production runs reviewed code only: --sha must be on origin/dev or origin/staging (fetched now). Both image paths.
+require_reviewed_sha() {
+  [[ -z "${REVIEWED}" ]] || return 0
+  if ((DRY)); then
+    printf '[dry-run] git fetch origin dev staging; git merge-base --is-ancestor %s origin/dev (or origin/staging)\n' "${SHA:-<sha>}"
+    REVIEWED=dry-run
+    return 0
+  fi
+  git -C "${REPO_ROOT}" fetch -q origin +refs/heads/dev:refs/remotes/origin/dev \
+    +refs/heads/staging:refs/remotes/origin/staging || die "git fetch origin dev staging failed (network or access)"
+  local b
+  for b in dev staging; do
+    if git -C "${REPO_ROOT}" merge-base --is-ancestor "${SHA}" "refs/remotes/origin/${b}" 2>/dev/null; then
+      REVIEWED="origin/${b}"
+      log "${SHA12} is on ${REVIEWED} (reviewed)"
+      return 0
+    fi
+  done
+  die "${SHA12} is on neither origin/dev nor origin/staging: only reviewed commits are deployed to production"
+}
+
 RUN_DIR=""
 sha256_of() { local s; s="$(sha256sum "$1" 2>/dev/null || shasum -a 256 "$1")"; printf '%s\n' "${s%% *}"; }
 
@@ -848,13 +879,27 @@ run_artifacts() { # the run and its artifact list -> ${RUN_DIR}/artifacts.tsv (n
       "${GH_REPO}" "${FROM_RUN}" "${IMAGES_WORKFLOW}"
     return 0
   fi
-  local info path status conclusion url
-  info="$(gh api "repos/${GH_REPO}/actions/runs/${FROM_RUN}" --jq '[.path, .status, (.conclusion // "none"), .html_url] | @tsv')" ||
+  local info path status conclusion url event head repo head_repo f remote_blob local_blob
+  info="$(gh api "repos/${GH_REPO}/actions/runs/${FROM_RUN}" --jq '[.path, .status, (.conclusion // "none"), .html_url, .event, .head_sha, .repository.full_name, (.head_repository.full_name // "none")] | @tsv')" ||
     die "cannot read workflow run ${FROM_RUN} of ${GH_REPO} (gh auth status; CHOLA_GH_REPO?)"
-  IFS=$'\t' read -r path status conclusion url <<<"${info}"
+  IFS=$'\t' read -r path status conclusion url event head repo head_repo <<<"${info}"
   [[ "${path%%@*}" == "${IMAGES_WORKFLOW}" ]] || die "run ${FROM_RUN} is a run of ${path:-an unknown workflow}, not ${IMAGES_WORKFLOW}"
   [[ "${status}" == completed && "${conclusion}" == success ]] ||
     die "run ${FROM_RUN} is ${status}/${conclusion}, not completed/success (${url})"
+  # Provenance: the run ran in this repository, ON the commit being deployed (so its workflow and helpers are that
+  # commit's), and that commit is reviewed (require_reviewed_sha); GitHub's blobs of those files at it are the kit's.
+  [[ "${event}" == workflow_dispatch || "${event}" == push ]] || die "run ${FROM_RUN} was started by '${event}', not workflow_dispatch or push"
+  [[ "${repo,,}" == "${GH_REPO,,}" && "${head_repo,,}" == "${GH_REPO,,}" ]] ||
+    die "run ${FROM_RUN} ran for ${head_repo} in ${repo}, not ${GH_REPO}"
+  [[ "${head}" == "${SHA}" ]] ||
+    die "run ${FROM_RUN} ran on ${head:-?}, not ${SHA}: run the workflow on the commit itself (README 'Images from a CI run')"
+  require_reviewed_sha
+  for f in "${IMAGES_WORKFLOW}" deploy/chola-prod/artifacts.py deploy/chola-prod/ci_images.sh; do
+    remote_blob="$(gh api "repos/${GH_REPO}/contents/${f}?ref=${SHA}" --jq .sha)" || die "cannot read ${f} at ${SHA12} from GitHub"
+    local_blob="$(git -C "${REPO_ROOT}" rev-parse "${SHA}:${f}" 2>/dev/null)" || die "${f} is not in ${SHA12}: that commit has no chola-prod-images workflow"
+    [[ "${remote_blob}" == "${local_blob}" ]] || die "${f} at ${SHA12} is ${remote_blob} on GitHub but ${local_blob} here: not the reviewed file"
+  done
+  log "run ${FROM_RUN} ran on ${SHA12} (${event}), in ${GH_REPO}; its workflow and helpers are the reviewed files"
   gh api --paginate "repos/${GH_REPO}/actions/runs/${FROM_RUN}/artifacts?per_page=100" \
     --jq '.artifacts[] | [.name, (.id | tostring), (.expired | tostring), (.size_in_bytes | tostring)] | @tsv' \
     >"${RUN_DIR}/artifacts.tsv" || die "cannot list the artifacts of run ${FROM_RUN}"
@@ -893,7 +938,7 @@ run_check_images() { # preflight: the run, its manifest and the four images it n
     return 0
   fi
   run_manifest
-  python3 -I "${ARTIFACTS_PY}" manifest-check --manifest "${RUN_DIR}/manifest/manifest.json" --sha "${SHA}" \
+  python3 -I "${ARTIFACTS_PY}" manifest-check --manifest "${RUN_DIR}/manifest/manifest.json" --run-id "${FROM_RUN}" --sha "${SHA}" \
     --api-url "https://${API_HOST}" --component backend --component frontend --component scan-worker \
     --component dast-worker | sed 's/^/    /' || die "run ${FROM_RUN} does not hold the images of ${SHA12} (above)"
   log "run ${FROM_RUN} holds the CI-built images of ${SHA12}"
@@ -951,7 +996,7 @@ images_from_run() {
   fi
   run_manifest
   local lines kind c art digest bytes ref have layout pushed mismatch=""
-  lines="$(python3 -I "${ARTIFACTS_PY}" manifest-check --manifest "${RUN_DIR}/manifest/manifest.json" --sha "${SHA}" \
+  lines="$(python3 -I "${ARTIFACTS_PY}" manifest-check --manifest "${RUN_DIR}/manifest/manifest.json" --run-id "${FROM_RUN}" --sha "${SHA}" \
     --api-url "https://${API_HOST}" --component backend --component frontend --component scan-worker \
     --component dast-worker)" || die "run ${FROM_RUN} does not hold the images of ${SHA12} (above); nothing was pushed"
   crane_ensure
@@ -966,7 +1011,7 @@ images_from_run() {
       log "${ref} already in ECR as ${digest}, the run's image"
       continue
     elif [[ -n "${have}" ]]; then
-      warn "${ref} is already in ECR as ${have}, not the run's ${digest}. Tags are written once: that image stays (it was checked when it was pushed, and the instance checks it again)"
+      warn "${ref} is already in ECR as ${have}, not the run's ${digest}. Tags are written once, so the existing image stays and is what the instance pulls; it was NOT built by this run (e.g. an earlier GHCR-path build of the same commit) and nothing here checks it again"
       mismatch+=" ${c}"
       continue
     fi
@@ -984,7 +1029,10 @@ images_from_run() {
       die "crane push of ${c} to ${ref} failed (above)"
     fi
     pushed="$(cat "${WORK}/pushed" 2>/dev/null || true)"
-    [[ "${pushed##*@}" == "${digest}" ]] || die "ECR answered ${pushed:-nothing} for ${c}, not ${digest}"
+    [[ "${pushed##*@}" == "${digest}" ]] || die "crane pushed ${pushed:-nothing} for ${c}, not ${digest}"
+    # crane's digest is computed here; read back what ECR itself stores under the tag
+    have="$(ecr_digest "${c}" "${SHA12}")"
+    [[ "${have}" == "${digest}" ]] || die "ECR stores ${have:-nothing} under ${ref}, not ${digest}"
     rm -rf "${layout:?}" "${WORK:?}/pushed"
     log "${ref} = ${digest} (CI-built); the local copy is deleted"
   done 3<<<"${lines}"
@@ -1007,7 +1055,7 @@ infra_from_run() { # -> INFRA_TAR, INFRA_SUM: the run's release archive (its pin
   local -a pins=() check=()
   for line in "${INFRA_IMAGES[@]}"; do pins+=(--infra "${line}"); done
   [[ -z "${SHA}" ]] || check=(--sha "${SHA}")
-  line="$(python3 -I "${ARTIFACTS_PY}" manifest-check --manifest "${RUN_DIR}/manifest/manifest.json" \
+  line="$(python3 -I "${ARTIFACTS_PY}" manifest-check --manifest "${RUN_DIR}/manifest/manifest.json" --run-id "${FROM_RUN}" \
     ${check[@]+"${check[@]}"} "${pins[@]}")" || die "the infrastructure archive of run ${FROM_RUN} is not usable (above)"
   read -r kind art file sum bytes <<<"${line}"
   [[ "${kind}" == infra ]] || die "unexpected manifest-check output: ${line:0:80}"
@@ -1019,6 +1067,86 @@ infra_from_run() { # -> INFRA_TAR, INFRA_SUM: the run's release archive (its pin
   log "release archive from run ${FROM_RUN}: ${file} ($((bytes / 1048576)) MB, sha256 ${sum}; docker load reads it compressed)"
 }
 INFRA_TAR="" INFRA_SUM=""
+
+# ------------------------------------------------------------------------------------------------ S3 relay (default --from-run)
+# Nearly no local disk: each artifact zip streams from `gh api .../zip` through artifacts.py hash-pipe (its sha256, in
+# the same stream) into `aws s3 cp - s3://BUCKET/releases/<sha12>/<artifact>.zip` with the bucket owner pinned. The
+# instance (remote.sh relay-load, detached) downloads each, checks its sha256, extracts, checks the image against the
+# run's manifest and loads it into its Docker; the S3 objects are deleted once it succeeded.
+RELAY_KEYS=()
+relay_upload() { # <artifact> <s3 key> -> RELAY_SUM
+  local line id expired bytes sum n
+  line="$(awk -F'\t' -v n="$1" '$1 == n { print $2, $3, $4; exit }' "${RUN_DIR}/artifacts.tsv")"
+  read -r id expired bytes <<<"${line}"
+  [[ "${id}" =~ ^[0-9]+$ ]] || die "run ${FROM_RUN} has no artifact $1"
+  [[ "${expired}" == false ]] || die "artifact $1 of run ${FROM_RUN} has expired (kept 3 days): run the workflow again"
+  [[ "${bytes}" =~ ^[0-9]+$ ]] || die "artifact $1 of run ${FROM_RUN} has no size"
+  log "relaying $1 ($((bytes / 1048576)) MB) to s3://${BUCKET}/$2 (streamed; nothing stored here)"
+  RELAY_KEYS+=("$2")
+  gh api "repos/${GH_REPO}/actions/artifacts/${id}/zip" | python3 -I "${ARTIFACTS_PY}" hash-pipe --out "${WORK}/relay.sum" |
+    aws --region "${REGION}" s3 cp - "s3://${BUCKET}/$2" --expected-bucket-owner "${ACCOUNT}" --expected-size "${bytes}" \
+      --only-show-errors || die "relaying artifact $1 to s3://${BUCKET}/$2 failed (above)"
+  read -r sum n <"${WORK}/relay.sum"
+  [[ "${n}" == "${bytes}" ]] || die "artifact $1 streamed ${n} bytes, GitHub lists ${bytes}"
+  RELAY_SUM=${sum}
+}
+RELAY_SUM=""
+
+relay_cleanup() { # delete what this run put under releases/<sha12>/
+  local k
+  for k in "${RELAY_KEYS[@]}"; do
+    aws --region "${REGION}" s3api delete-object --bucket "${BUCKET}" --key "${k}" --expected-bucket-owner "${ACCOUNT}" \
+      >/dev/null 2>"${WORK}/err" || warn "could not delete s3://${BUCKET}/${k} ($(tail -n 1 "${WORK}/err")); the next relay overwrites it"
+  done
+  RELAY_KEYS=()
+}
+
+relay_from_run() { # <images|infra>: images = the four images (and the archive when the instance lacks any pin)
+  local what=$1 lines line kind c art digest bytes file fsum key missing=""
+  local -a specs=() comps=() pins=()
+  run_artifacts
+  if ((DRY)); then
+    printf '[dry-run] artifacts.py manifest-check --sha %s --run-id %s; per artifact: gh api .../artifacts/<id>/zip | artifacts.py hash-pipe | aws s3 cp - s3://%s/releases/%s/<artifact>.zip --expected-bucket-owner %s\n' \
+      "${SHA}" "${FROM_RUN}" "${BUCKET}" "${SHA12}" "${ACCOUNT}"
+    remote_job relay-load "${SHA}" "<spec per artifact>"
+    printf '[dry-run] aws s3api delete-object (each relayed key, after the load)\n'
+    RELAYED=1
+    note "relay" ""
+    return 0
+  fi
+  run_manifest
+  if [[ "${what}" == images ]]; then
+    comps=(--component backend --component frontend --component scan-worker --component dast-worker)
+    kit_upload
+    missing="$(remote infra-missing | paste -sd' ' -)" || die "cannot list the instance's images (above)"
+  fi
+  if [[ "${what}" == infra || -n "${missing}" || "${FORCE_INFRA}" == 1 ]]; then
+    for line in "${INFRA_IMAGES[@]}"; do pins+=(--infra "${line}"); done
+  fi
+  lines="$(python3 -I "${ARTIFACTS_PY}" manifest-check --manifest "${RUN_DIR}/manifest/manifest.json" --run-id "${FROM_RUN}" \
+    --sha "${SHA}" --api-url "https://${API_HOST}" ${comps[@]+"${comps[@]}"} ${pins[@]+"${pins[@]}"})" ||
+    die "run ${FROM_RUN} does not hold what ${SHA12} needs (above); nothing was relayed"
+  while read -r kind c art digest bytes <&3; do
+    if [[ "${kind}" == image ]]; then
+      key="releases/${SHA12}/${art}.zip"
+      relay_upload "${art}" "${key}"
+      specs+=("image:${c}:${key}:${RELAY_SUM}:${digest}")
+    elif [[ "${kind}" == infra ]]; then # infra <artifact> <file> <sha256> <bytes>
+      file=${art} art=${c} fsum=${digest}
+      [[ "${file}" == release.tar.gz ]] || die "the run's archive is ${file}, not release.tar.gz"
+      key="releases/${SHA12}/${art}.zip"
+      relay_upload "${art}" "${key}"
+      specs+=("infra:${key}:${RELAY_SUM}:${fsum}")
+    fi
+  done 3<<<"${lines}"
+  ((${#specs[@]})) || die "nothing to relay"
+  if ! remote_job relay-load "${SHA}" "${specs[@]}"; then
+    die "loading the relayed artifacts on the instance failed (above); s3://${BUCKET}/releases/${SHA12}/ keeps them until the next relay overwrites them"
+  fi
+  relay_cleanup
+  RELAYED=1
+  note "relay" "run ${FROM_RUN} -> s3://${BUCKET}/releases/${SHA12}/ -> loaded on the instance (${#specs[@]} artifacts, checked there); S3 objects deleted"
+}
 
 # ------------------------------------------------------------------------------------------------ images
 ghcr_login() {
@@ -1111,6 +1239,8 @@ push_ecr() { # <local image> <ecr ref>
 cmd_images() {
   step "images: ${SHA12:-<sha>} -> ${IMAGE_PREFIX}/*:<sha12> (linux/amd64)${FROM_RUN:+ from workflow run ${FROM_RUN}}"
   resolve_sha
+  require_reviewed_sha
+  if [[ -n "${FROM_RUN}" ]] && ((!TO_ECR)); then relay_from_run images; return 0; fi
   if [[ -n "${FROM_RUN}" ]]; then images_from_run; return 0; fi
   docker_isolate
   ghcr_login
@@ -1160,6 +1290,18 @@ cmd_images() {
 # ------------------------------------------------------------------------------------------------ infrastructure images
 cmd_infra() {
   step "infra: release archive of the infrastructure images"
+  if ((RELAYED)); then
+    log "the S3 relay loaded the archive already when the instance lacked any image"
+    note "infra" "with the relay"
+    return 0
+  fi
+  if [[ -n "${FROM_RUN}" ]] && ((!TO_ECR)); then
+    resolve_sha
+    require_reviewed_sha
+    relay_from_run infra
+    note "infra" "release archive of run ${FROM_RUN} relayed through S3 and loaded"
+    return 0
+  fi
   ssh_setup # here, not inside $(remote ...) below
   local missing="" i
   if ((DRY)); then
@@ -1309,6 +1451,7 @@ confirm() { # <what>
 cmd_deploy() {
   resolve_sha
   confirm "Deploy ${SHA12}"
+  require_reviewed_sha
   step "deploy ${SHA12} to ${FRONTEND_HOST} / ${API_HOST}"
   local_preflight
   aws_identity
@@ -1322,9 +1465,14 @@ cmd_deploy() {
   cmd_images
   step "environment and images on the instance"
   remote_step "${PRE_SWITCH}" render "${SHA12}"
-  remote_step "${PRE_SWITCH}" ecr-login
-  remote_step "${PRE_SWITCH}" pull "${SHA12}"
-  note "instance" "env rendered from Secrets Manager (instance role), images of ${SHA12} pulled, frontend URL checked"
+  if ((RELAYED)); then
+    remote_step "${PRE_SWITCH}" pull "${SHA12}" --local
+    note "instance" "env rendered from Secrets Manager (instance role), relayed images of ${SHA12} present, frontend URL checked"
+  else
+    remote_step "${PRE_SWITCH}" ecr-login
+    remote_step "${PRE_SWITCH}" pull "${SHA12}"
+    note "instance" "env rendered from Secrets Manager (instance role), images of ${SHA12} pulled, frontend URL checked"
+  fi
   cmd_infra
   step "IMDS: a token probe from a container must fail before anything starts"
   remote_step "${PRE_SWITCH}" imds-check
@@ -1397,8 +1545,7 @@ main() {
   if [[ -n "${FROM_RUN}" && " images infra deploy preflight " != *" ${CMD} "* ]]; then
     die "--from-run is only for images, infra, deploy and preflight"
   fi
-  [[ -z "${FROM_RUN}" || "${CMD}" != preflight || -n "${SHA}" ]] ||
-    die "preflight --from-run needs --sha (the commit the run must have built)"
+  [[ -z "${FROM_RUN}" || -n "${SHA}" ]] || die "--from-run needs --sha (the commit the run must have run on)"
   if [[ "${CMD}" != rollback ]]; then
     [[ -z "${ROLLBACK_TO}" ]] || die "--to is only for rollback (to go forward: deploy --sha <commit>)"
     ((!ALLOW_DOWNGRADE)) || die "--allow-downgrade is only for rollback"

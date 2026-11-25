@@ -21,6 +21,7 @@ WF = (ROOT / ".github" / "workflows" / "chola-prod-images.yml").read_text(encodi
 PUBLISH = (ROOT / ".github" / "workflows" / "publish-ghcr.yml").read_text(encoding="utf-8")
 KIT = (ROOT / "scripts" / "deploy" / "chola-prod.sh").read_text(encoding="utf-8")
 ARTIFACTS = (ROOT / "deploy" / "chola-prod" / "artifacts.py").read_text(encoding="utf-8")
+STEPS_SH = (ROOT / "deploy" / "chola-prod" / "ci_images.sh").read_text(encoding="utf-8")
 SHA = "0123456789abcdef0123456789abcdef01234567"
 
 
@@ -82,30 +83,37 @@ class Privilege(unittest.TestCase):
                 self.assertTrue(comment)
                 self.assertEqual(ref, pinned[action], f"{action}: not the pin publish-ghcr.yml uses")
 
-    def test_helpers_come_from_the_workflows_own_commit(self):
-        # the target commit is only the frontend's build context: no script of it runs with the token
-        self.assertEqual(re.findall(r"python3 -I (\S+)", WF), ["tools/deploy/chola-prod/artifacts.py"] * 5)
-        self.assertNotRegex(WF, r"target/(?!frontend)")
-        self.assertRegex(STEPS["Checkout (this workflow's commit, for the kit's helpers)"], r"sparse-checkout: deploy/chola-prod")
-        target = STEPS["Checkout the commit (the frontend's build context)"]
-        self.assertIn("ref: ${{ steps.commit.outputs.sha }}", target)
-        self.assertIn("sparse-checkout: frontend", target)
-        for step in STEPS.values():
-            if "actions/checkout@" in step:
-                self.assertIn("persist-credentials: false", step)
+    def test_the_run_runs_on_the_commit_and_uses_its_own_helpers(self):
+        # github.sha == the commit: the workflow, ci_images.sh and artifacts.py are the packaged commit's own, which
+        # the kit proves reviewed (on dev/staging, blobs equal its copies)
+        self.assertIn('if [ "$sha" != "$GITHUB_SHA" ]; then', run_block("Commit"))
+        checkouts = [st for st in STEPS.values() if "actions/checkout@" in st]
+        self.assertEqual(len(checkouts), 1)
+        self.assertIn("ref: ${{ steps.commit.outputs.sha }}", checkouts[0])
+        self.assertIn("sparse-checkout: |\n            deploy/chola-prod\n            frontend\n", checkouts[0])
+        self.assertIn("persist-credentials: false", checkouts[0])
+        self.assertEqual(re.findall(r"python3 -I (\S+)", WF), ["deploy/chola-prod/artifacts.py"])
+        self.assertEqual(WF.count("deploy/chola-prod/ci_images.sh "), 10)
 
     def test_registry_login_stays_in_the_runs_own_config(self):
-        self.assertIn('DOCKER_CONFIG="$OUT/crane-config" crane auth login ghcr.io', WF)
+        self.assertIn('DOCKER_CONFIG="$OUT/crane-config" "$OUT/bin/crane" auth login ghcr.io', WF)
         self.assertNotIn("docker/login-action", WF)
         self.assertIn('rm -rf "${OUT:?}"', run_block("Clean up"))
         self.assertIn("if: always()", STEPS["Clean up"])
+
+    def test_each_image_is_uploaded_then_freed(self):
+        names = list(STEPS)
+        for c in ("backend", "scan-worker", "dast-worker", "frontend"):
+            up, free = names.index(f"Upload {c}"), names.index(f"Free {c}")
+            self.assertEqual(free, up + 1, c)
+            self.assertIn(f"ci_images.sh free image-{c}", STEPS[f"Free {c}"])
 
 
 class CommitStep(unittest.TestCase):
     def commit(self, **env: str) -> tuple[int, str]:
         with tempfile.TemporaryDirectory() as d:
             out = Path(d) / "out"
-            full = {"PATH": os.environ["PATH"], "RUNNER_TEMP": d, "GITHUB_OUTPUT": str(out), **env}
+            full = {"PATH": os.environ["PATH"], "RUNNER_TEMP": d, "GITHUB_OUTPUT": str(out), "GITHUB_SHA": SHA, **env}
             p = subprocess.run(["bash", "-c", run_block("Commit")], env=full, capture_output=True, text=True, timeout=30,
                                check=False)
             return p.returncode, (out.read_text() if out.exists() else "") + p.stdout
@@ -126,7 +134,9 @@ class CommitStep(unittest.TestCase):
                     {"EVENT": "workflow_dispatch", "INPUT_SHA": "$(id)"},
                     {"EVENT": "push", "REF_NAME": "chola-prod-images/main"},
                     {"EVENT": "push", "REF_NAME": f"chola-prod-images/{SHA}/x"},
-                    {"EVENT": "pull_request", "INPUT_SHA": SHA}):
+                    {"EVENT": "pull_request", "INPUT_SHA": SHA},
+                    {"EVENT": "workflow_dispatch", "INPUT_SHA": SHA, "GITHUB_SHA": "f" * 40},  # run on another commit
+                    {"EVENT": "push", "REF_NAME": f"chola-prod-images/{SHA}", "GITHUB_SHA": "f" * 40}):
             with self.subTest(env):
                 rc, out = self.commit(**env)
                 self.assertEqual(rc, 1, out)
@@ -135,18 +145,18 @@ class CommitStep(unittest.TestCase):
 
 class Images(unittest.TestCase):
     def test_ghcr_images_are_copied_for_linux_amd64_with_the_kits_tags(self):
-        block = run_block("Backend and workers from GHCR (linux/amd64, byte for byte)")
-        self.assertIn('for t in "dev-$SHA12" "staging-$SHA12" "manual-$SHA12"; do', block)
+        self.assertIn('for t in "dev-${sha12}" "staging-${sha12}" "manual-${sha12}"; do', STEPS_SH)
         self.assertIn('for t in "dev-${SHA12}" "staging-${SHA12}" "manual-${SHA12}"; do', KIT)  # the kit's GHCR path
-        self.assertIn('crane pull --format=oci --platform linux/amd64 "$ref" "$OUT/image-$c"', block)
-        self.assertIn("for c in backend scan-worker dast-worker; do", block)
-        self.assertIn('--artifact "chola-image-$c"', block)
+        self.assertIn('crane pull --format=oci --platform linux/amd64 "${ref}" "${OUT}/image-${c}"', STEPS_SH)
+        self.assertIn('--artifact "chola-image-${c}"', STEPS_SH)
+        for c in ("backend", "scan-worker", "dast-worker"):
+            self.assertIn(f'ci_images.sh ghcr {c} "$TAG"', WF)
 
     def test_the_frontend_is_built_as_the_kit_builds_it(self):
-        block = run_block("Frontend for the Chola API (linux/amd64, as the kit builds it)")
-        for arg in ('--platform linux/amd64', '--build-arg "NEXT_PUBLIC_BACKEND_URL=$API_URL"',
-                    '--label "org.opencontainers.image.revision=$SHA"',
-                    '--label "com.zeroshield.devsecshield.api-url=$API_URL"', "--provenance=false"):
+        block = STEPS_SH.split("cmd_frontend() {", 1)[1].split("\n}\n", 1)[0]
+        for arg in ('--platform linux/amd64', '--build-arg "NEXT_PUBLIC_BACKEND_URL=${API_URL:?}"',
+                    '--label "org.opencontainers.image.revision=${SHA}"',
+                    '--label "com.zeroshield.devsecshield.api-url=${API_URL}"', "--provenance=false"):
             self.assertIn(arg, block)
         kit_build = KIT.rsplit("docker buildx build --platform linux/amd64", 1)[1].split("|| die", 1)[0]
         for arg in ('--build-arg "NEXT_PUBLIC_BACKEND_URL=https://${API_HOST}"',
@@ -154,7 +164,7 @@ class Images(unittest.TestCase):
                     '--label "com.zeroshield.devsecshield.api-url=https://${API_HOST}"', "--provenance=false"):
             self.assertIn(arg, kit_build)
         self.assertIn("oci-check --normalize", block)
-        self.assertIn("grep -acF \"$API_URL\"", block)
+        self.assertIn('grep -acF "${API_URL}"', block)
 
     def test_contract_with_the_kit(self):
         self.assertEqual(job_env("API_URL"), "https://" + re.search(r"\nAPI_HOST=(\S+)", KIT).group(1))
@@ -164,6 +174,8 @@ class Images(unittest.TestCase):
         self.assertEqual(job_env("INFRA_IMAGES").split(), kit_pins)
         self.assertIn("IMAGES_WORKFLOW=.github/workflows/chola-prod-images.yml", KIT)
         self.assertIn('artifact_fetch chola-manifest "${RUN_DIR}/manifest" --file manifest.json', KIT)
+        # the files whose blobs the kit compares at the run's commit
+        self.assertIn('for f in "${IMAGES_WORKFLOW}" deploy/chola-prod/artifacts.py deploy/chola-prod/ci_images.sh; do', KIT)
         self.assertIn('COMPONENTS = ("backend", "frontend", "scan-worker", "dast-worker")', ARTIFACTS)
 
     def test_uploads(self):
@@ -179,7 +191,7 @@ class Images(unittest.TestCase):
                     self.assertIn("compression-level: 0\n", text)
         self.assertIn("/infra/release.tar.gz\n", uploads["chola-infra"])
         self.assertIn("/manifest/manifest.json\n", uploads["chola-manifest"])
-        self.assertIn('MAX_BYTES: "4294967296"', WF)  # each artifact stays well under GitHub's limits
+        self.assertIn("MAX_BYTES=${MAX_BYTES:-4294967296}", STEPS_SH)  # each artifact stays well under GitHub's limits
 
 
 if __name__ == "__main__":

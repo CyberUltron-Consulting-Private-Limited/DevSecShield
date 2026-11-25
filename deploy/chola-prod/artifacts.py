@@ -9,22 +9,29 @@ Standard library only, Python 3.8+. One contract, used on both sides:
   artifact while it streams in (no zip file on disk) and checks each image layout before it pushes it to ECR.
 
   artifacts.py unzip-stream --dest D (--oci | --file NAME)  < artifact zip
-      Extract a GitHub artifact zip read from stdin, without a seekable file (local headers; deflate, or stored with
-      known sizes; data descriptors; zip64). --oci: only an OCI image layout's names (oci-layout, index.json,
+      Extract a GitHub artifact zip read from stdin, without a seekable file (local headers; deflate; stored with
+      known sizes, or stored with sizes 0 and a data descriptor as upload-artifact writes at compression-level 0, its
+      end found by a descriptor whose CRC-32 and size match; zip64). --oci: only an OCI image layout's names (oci-layout, index.json,
       blobs/sha256/<64 hex> and their directories); --file NAME: exactly that one file. Any other name (a path
       outside D included) is refused before a byte of it is written; every entry's CRC-32 and size are checked.
   artifacts.py oci-check --layout D [--digest sha256:X] [--revision SHA] [--label K=V ...] [--normalize]
       The layout holds exactly ONE linux/amd64 image: index.json names one manifest (--normalize: one nested index is
       resolved to its single linux/amd64 manifest and index.json rewritten; buildx output); every blob the manifest
       names is present with its size and sha256; the config says linux/amd64; the org.opencontainers.image.revision
-      label is --revision; each --label K=V is set; --digest is the manifest's digest. Prints "<digest> <bytes>".
+      label is --revision; each --label K=V is set; --digest is the manifest's digest. Prints "<digest> <bytes>
+      <config digest>".
+  artifacts.py oci-name --layout D --ref REGISTRY/REPO:TAG
+      Names the layout's image for docker load (index.json annotations; the image's digest does not change).
+  artifacts.py hash-pipe --out F  < in > out
+      Copies stdin to stdout and writes "<sha256> <bytes>" to F (the S3 relay hashes what it uploads, in the stream).
   artifacts.py manifest-init --out F --commit SHA --api-url URL [--repository R] [--run-id N] [--run-attempt N]
                              [--ref REF]
   artifacts.py manifest-add-image --manifest F --component C --artifact A --source S --layout D [--index-digest D]
       oci-check (revision = the manifest's commit; the frontend also its api-url label), then records the image.
   artifacts.py manifest-set-infra --manifest F --artifact A --file PATH --image REF@sha256:X [...]
   artifacts.py manifest-check --manifest F [--sha SHA] [--api-url URL] [--component C ...] [--infra REF@sha256:X ...]
-      Refuses a manifest of another schema, commit or API URL, one whose infrastructure pins are not --infra, an image
+                             [--run-id N]
+      Refuses a manifest of another schema, commit, run (--run-id) or API URL, one whose infrastructure pins are not --infra, an image
       whose revision is not --sha or whose digest is no sha256. Prints "image <component> <artifact> <digest>
       <bytes>" per --component and "infra <artifact> <file> <sha256> <bytes>" when --infra is given.
 """
@@ -138,6 +145,52 @@ def _skip_descriptor(r, crc, usize, csize):
     raise Refused("unreadable data descriptor in the artifact zip")
 
 
+_DESC_MAX = 4 + 4 + 16 + 4  # signature, CRC, two 8-byte sizes, the next record's signature
+
+
+def _stored_until_descriptor(r, out, name):
+    """Copy a stored entry of unknown size to `out` until its data descriptor; returns (crc, size).
+
+    A candidate is a descriptor signature followed by the CRC-32 and size (4- or 8-byte fields) of exactly the bytes
+    before it, and then a zip record signature. Any other "PK\x07\x08" in the data is data: the scan goes on. A false
+    accept needs a CRC-32 collision at the same length AND a record signature behind it."""
+    crc, size, buf, start = 0, 0, b"", 0
+    while True:
+        i = buf.find(SIG_DESCRIPTOR, start)
+        if i < 0:
+            keep = 3  # a signature may begin in the last three bytes
+            if len(buf) > keep:
+                k = len(buf) - keep
+                if out:
+                    out.write(buf[:k])
+                crc, size, buf = zlib.crc32(buf[:k], crc), size + k, buf[k:]
+            start = 0
+            more = r.some()
+            if not more:
+                raise Refused(f"the artifact zip ends inside {name} (download cut short?)")
+            buf += more
+            continue
+        while len(buf) < i + _DESC_MAX:
+            more = r.some()
+            if not more:
+                break
+            buf += more
+        c = zlib.crc32(buf[:i], crc)
+        n = size + i
+        tail = buf[i + 4:]
+        for width, fmt in ((4, "<III"), (8, "<IQQ")):
+            if len(tail) < 4 + 2 * width + 4:
+                continue
+            got_crc, cs, us = struct.unpack(fmt, tail[:4 + 2 * width])
+            after = tail[4 + 2 * width:4 + 2 * width + 4]
+            if got_crc == c and cs == us == n % (1 << (8 * width)) and after in (SIG_LOCAL,) + SIG_ENDS:
+                if out:
+                    out.write(buf[:i])
+                r.unread(tail[4 + 2 * width:])
+                return c, n
+        start = i + 1
+
+
 def unzip_stream(stream, dest, oci=False, file_name=None):
     """Extract the zip read from `stream` into `dest`; returns {name: bytes}. See the module docstring."""
     if oci == bool(file_name):
@@ -172,8 +225,6 @@ def unzip_stream(stream, dest, oci=False, file_name=None):
         descriptor = bool(flags & 0x8)
         if method not in (0, 8):
             raise Refused(f"{name}: compression method {method} is not supported")
-        if method == 0 and descriptor:
-            raise Refused(f"{name}: a stored entry without its size cannot be streamed")
         is_dir = name.endswith("/")
         out = None
         tmp = None
@@ -182,7 +233,13 @@ def unzip_stream(stream, dest, oci=False, file_name=None):
             out = os.fdopen(fd, "wb")
         got_crc, got_u, got_c = 0, 0, 0
         try:
-            if method == 0:
+            if method == 0 and descriptor:
+                # upload-artifact at compression-level 0: stored, sizes 0 in the header, a data descriptor after the
+                # data. Its end is the descriptor whose CRC-32 and size match everything before it (_stored_until).
+                got_crc, got_u = _stored_until_descriptor(r, out, name)
+                got_c = got_u
+                descriptor, crc, usize = False, got_crc, got_u  # consumed and checked against the data
+            elif method == 0:
                 left = csize
                 while left:
                     data = r.read(min(left, CHUNK))
@@ -287,7 +344,7 @@ def _write_index(layout, desc):
 
 
 def oci_check(layout, digest=None, revision=None, labels=None, normalize=False):
-    """Check the single linux/amd64 image of an OCI layout; returns (manifest digest, total bytes)."""
+    """Check the single linux/amd64 image of an OCI layout; returns (manifest digest, total bytes, config digest)."""
     marker = _load_json(os.path.join(layout, "oci-layout"), "oci-layout")
     if not isinstance(marker, dict) or not marker.get("imageLayoutVersion"):
         raise Refused("oci-layout has no imageLayoutVersion: not an OCI image layout")
@@ -334,7 +391,7 @@ def oci_check(layout, digest=None, revision=None, labels=None, normalize=False):
     for i, layer in enumerate(layers):
         _, size = _blob(layout, layer, f"layer {i + 1}/{len(layers)}")
         total += size
-    return desc["digest"], total
+    return desc["digest"], total, cdesc["digest"]
 
 
 # ------------------------------------------------------------------------------------------------ the run's manifest
@@ -370,7 +427,7 @@ def manifest_add_image(path, component, artifact, source, layout, index_digest="
     if index_digest and not DIGEST.match(index_digest):
         raise Refused(f"--index-digest is not a sha256 digest: {index_digest!r}")
     labels = {API_URL_LABEL: data["api_url"]} if component == "frontend" else {}
-    digest, size = oci_check(layout, revision=data["commit"], labels=labels)
+    digest, size, _ = oci_check(layout, revision=data["commit"], labels=labels)
     data["images"][component] = {"artifact": artifact, "source": source, "index_digest": index_digest,
                                  "digest": digest, "revision": data["commit"], "platform": "linux/amd64",
                                  "bytes": size}
@@ -392,9 +449,37 @@ def manifest_set_infra(path, artifact, file_path, images):
     return digest[7:], size
 
 
-def manifest_check(path, sha, api_url=None, components=(), infra=None):
+def oci_name(layout, ref):
+    """Name the layout's one image for `docker load` (io.containerd.image.name; the tag in ref.name). index.json is no
+    part of the image: its digest does not change."""
+    if not re.match(r"^[a-z0-9][a-z0-9./_-]*(:[0-9]+)?/[a-z0-9./_-]+:[A-Za-z0-9._-]+$", ref):
+        raise Refused(f"not an image reference with a tag: {ref!r}")
+    index = _load_json(os.path.join(layout, "index.json"), "index.json")
+    entries = index.get("manifests") if isinstance(index, dict) else None
+    if not isinstance(entries, list) or len(entries) != 1:
+        raise Refused("index.json must name exactly one image")
+    desc = dict(entries[0])
+    desc["annotations"] = dict(desc.get("annotations") or {}, **{
+        "io.containerd.image.name": ref, "org.opencontainers.image.ref.name": ref.rsplit(":", 1)[1]})
+    _write_index(layout, desc)
+
+
+def hash_pipe(src, dst):
+    """Copy src to dst; returns (sha256 hex, bytes)."""
+    h, n = hashlib.sha256(), 0
+    for chunk in iter(lambda: src.read(CHUNK), b""):
+        h.update(chunk)
+        n += len(chunk)
+        dst.write(chunk)
+    dst.flush()
+    return h.hexdigest(), n
+
+
+def manifest_check(path, sha, api_url=None, components=(), infra=None, run_id=None):
     """Validated lines for the kit (see the module docstring)."""
     data = _read_manifest(path)
+    if run_id is not None and str((data.get("workflow") or {}).get("run_id")) != str(run_id):
+        raise Refused(f"the manifest was written by run {(data.get('workflow') or {}).get('run_id')!r}, not {run_id}")
     if data.get("schema") != SCHEMA:
         raise Refused(f"the run manifest is {data.get('schema')!r}, this kit reads {SCHEMA!r} (another kit version?)")
     if components and not sha:
@@ -481,14 +566,21 @@ def main(argv=None):
     mc.add_argument("--api-url")
     mc.add_argument("--component", action="append", default=[])
     mc.add_argument("--infra", action="append")
+    mc.add_argument("--run-id")
+    hp = sub.add_parser("hash-pipe")
+    hp.add_argument("--out", required=True)
+    on = sub.add_parser("oci-name")
+    on.add_argument("--layout", required=True)
+    on.add_argument("--ref", required=True)
     args = p.parse_args(argv)
     try:
         if args.cmd == "unzip-stream":
             got = unzip_stream(sys.stdin.buffer, args.dest, oci=args.oci, file_name=args.file)
             print(f"extracted {len([n for n in got if not n.endswith('/')])} files, {sum(got.values())} bytes")
         elif args.cmd == "oci-check":
-            digest, size = oci_check(args.layout, args.digest, args.revision, _labels(args.label), args.normalize)
-            print(f"{digest} {size}")
+            digest, size, config = oci_check(args.layout, args.digest, args.revision, _labels(args.label),
+                                             args.normalize)
+            print(f"{digest} {size} {config}")
         elif args.cmd == "manifest-init":
             manifest_init(args.out, args.commit, args.api_url, args.repository, args.run_id, args.run_attempt,
                           args.ref)
@@ -500,8 +592,14 @@ def main(argv=None):
             digest, size = manifest_set_infra(args.manifest, args.artifact, args.file, args.image)
             print(f"infra: {os.path.basename(args.file)} sha256 {digest} ({size} bytes)")
         elif args.cmd == "manifest-check":
-            for line in manifest_check(args.manifest, args.sha, args.api_url, args.component, args.infra):
+            for line in manifest_check(args.manifest, args.sha, args.api_url, args.component, args.infra, args.run_id):
                 print(line)
+        elif args.cmd == "hash-pipe":
+            digest, size = hash_pipe(sys.stdin.buffer, sys.stdout.buffer)
+            with open(args.out, "w") as fh:
+                fh.write(f"{digest} {size}\n")
+        elif args.cmd == "oci-name":
+            oci_name(args.layout, args.ref)
     except Refused as e:
         print(f"artifacts.py: {e}", file=sys.stderr)
         return 1
