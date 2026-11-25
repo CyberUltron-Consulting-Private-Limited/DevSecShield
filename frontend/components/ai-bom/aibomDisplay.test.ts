@@ -4,7 +4,14 @@
  * Run: npx --yes tsx components/ai-bom/aibomDisplay.test.ts
  */
 import assert from "node:assert/strict";
-import { applicabilityNote, bindingCompliance, governanceSubtitle, isHealthcareBom, licenceLabel } from "./aibomDisplay";
+import {
+  applicabilityNote,
+  bindingCompliance,
+  governanceSubtitle,
+  isHealthcareBom,
+  licenceLabel,
+  unnamedModelHint,
+} from "./aibomDisplay";
 import { inventoryModelNames } from "./modelCardDisplay";
 
 const HEALTH_BOM = {
@@ -74,5 +81,22 @@ assert.equal(bindingCompliance(compliance, null), compliance); // an older backe
 assert.match(applicabilityNote(bank) ?? "", /Not applicable to it: FDA Section 524B, HIPAA, FDA GMLP, SEBI CSCRF\./);
 assert.match(applicabilityNote({ regulatory_profile: null, binding: Object.keys(compliance) }) ?? "",
   /regulated entity not set/);
+
+// #498 round 3: ChatOpenAI() with no model runs the library default: the Models tile says so, never a silent 0
+const unnamedBom = {
+  metadata: {
+    properties: [
+      { name: "aibom:model_unnamed_calls", value: "2" },
+      { name: "aibom:model_unnamed_library", value: "langchain 0.0.184" },
+    ],
+  },
+};
+assert.equal(unnamedModelHint(unnamedBom), "2 calls name no model: library default (langchain 0.0.184)");
+assert.equal(
+  unnamedModelHint({ metadata: { properties: [{ name: "aibom:model_unnamed_calls", value: "1" }] } }),
+  "1 call names no model: library default",
+);
+assert.equal(unnamedModelHint(PLAIN_BOM), null);
+assert.equal(unnamedModelHint(undefined), null);
 
 console.log("aibomDisplay tests passed");

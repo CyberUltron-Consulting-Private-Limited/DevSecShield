@@ -82,7 +82,7 @@ export const FRAMEWORK_GROUPS_AIBOM_WITH_INDIA: FrameworkGroup[] = [
   {
     id: "india",
     label: "India / CERT-In / SEBI",
-    keys: ["cert_in_aibom", "sebi_cscrf_aibom"],
+    keys: ["cert_in_aibom", "rbi_free_ai", "sebi_cscrf_aibom"],
   },
 ];
 
@@ -125,3 +125,32 @@ export const FRAMEWORK_GROUPS_INDIA_CERTIN: FrameworkGroup[] = [
 ];
 
 export const labelFramework = (k: string) => FRAMEWORK_LABELS[k] ?? k;
+
+/** Indian regulators in chip order, by the framework keys that belong to them. */
+const INDIA_REGULATORS: [string, RegExp][] = [
+  ["CERT-In", /^cert_in_/],
+  ["RBI", /^rbi_/],
+  ["SEBI", /^sebi_cscrf_/],
+];
+
+/**
+ * The preset chips for the frameworks a page actually shows (#498 round 3). The "india" chip keeps only its keys that
+ * are present, and is named after their regulators: a bank's AI BOM, whose SEBI CSCRF report the team profile drops,
+ * reads "India / CERT-In / RBI", never "… / SEBI". With no India framework left the chip is dropped. Other chips are
+ * unchanged. ``present`` = the framework keys of the compliance object the matrix receives.
+ */
+export function groupsForFrameworks(groups: FrameworkGroup[], present: Iterable<string>): FrameworkGroup[] {
+  const have = new Set(present);
+  const out: FrameworkGroup[] = [];
+  for (const g of groups) {
+    if (g.id !== "india") {
+      out.push(g);
+      continue;
+    }
+    const keys = g.keys.filter((k) => have.has(k));
+    if (keys.length === 0) continue;
+    const names = INDIA_REGULATORS.filter(([, re]) => keys.some((k) => re.test(k))).map(([name]) => name);
+    out.push({ ...g, keys, label: ["India", ...names].join(" / ") });
+  }
+  return out;
+}

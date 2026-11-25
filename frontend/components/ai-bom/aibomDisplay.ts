@@ -62,6 +62,23 @@ export function applicabilityNote(applicability: AiBomApplicability | null | und
   return `Frameworks shown for this team's regulatory profile (${applicability.basis}). Not applicable to it: ${names.join(", ")}.`;
 }
 
+/** The Models tile's note for model calls that name no model (engine ``aibom:model_unnamed_*``, #498 round 3):
+ * ``ChatOpenAI()`` runs the library's default model, which depends on the installed release, so the page says so
+ * instead of silently showing fewer models. ``null`` when every call names its model. */
+export function unnamedModelHint(aiBomJson: Json | null | undefined): string | null {
+  const meta = aiBomJson?.metadata as Json | undefined;
+  const props = Array.isArray(meta?.properties) ? (meta?.properties as Json[]) : [];
+  const value = (name: string) => {
+    const v = props.find((p) => p?.name === name)?.value;
+    return typeof v === "string" ? v : "";
+  };
+  const n = Number.parseInt(value("aibom:model_unnamed_calls"), 10);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const library = value("aibom:model_unnamed_library");
+  const calls = n === 1 ? "1 call names no model" : `${n} calls name no model`;
+  return `${calls}: library default${library ? ` (${library})` : ""}`;
+}
+
 const MAX_LABEL = 24;
 
 /** A short label for a licence id (at most ``max`` characters); the full id belongs in the tooltip / title. */

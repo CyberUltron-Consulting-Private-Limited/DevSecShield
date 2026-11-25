@@ -12,7 +12,7 @@ import { ChevronRight, Scale } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { InfoTip } from "@/components/ui/info-tip";
-import { labelFramework } from "@/components/compliance/frameworkLabels";
+import { groupsForFrameworks, labelFramework } from "@/components/compliance/frameworkLabels";
 import type { AttestHandler, Compliance, ComplianceRequirement, FrameworkCoverage, FrameworkGroup } from "@/components/compliance/ComplianceMatrix";
 import { VERDICT_BADGE, VERDICT_COLOR, VERDICT_LABEL, isFailingVerdict } from "@/components/compliance/verdictTokens";
 
@@ -81,7 +81,7 @@ function Ring({ score }: { score: FrameworkScore }) {
 
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
-export function ComplianceScorecards({ compliance, groups, enableFailingOnly = true, enableAttestation = true, onAttest,
+export function ComplianceScorecards({ compliance, groups: givenGroups, enableFailingOnly = true, enableAttestation = true, onAttest,
   title = "Crypto compliance readiness" }: {
   compliance: Compliance;
   groups?: FrameworkGroup[];
@@ -93,6 +93,8 @@ export function ComplianceScorecards({ compliance, groups, enableFailingOnly = t
   const frameworks = Object.entries(compliance ?? {})
     .filter(([k, v]) => k !== "disclaimer" && typeof v === "object" && v !== null)
     .map(([k, v]) => ({ key: k, ...(v as FrameworkCoverage) }));
+  // the India chip names only the regulators whose frameworks are shown (as the matrix does, #498 round 3)
+  const groups = givenGroups?.length ? groupsForFrameworks(givenGroups, frameworks.map((f) => f.key)) : givenGroups;
   const [group, setGroup] = useState("all");
   const [active, setActive] = useState<string | null>(null);
   const [failingOnly, setFailingOnly] = useState(false);

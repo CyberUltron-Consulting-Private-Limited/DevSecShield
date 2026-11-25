@@ -102,7 +102,7 @@ import {
   type Graph as AiBomGraph,
   type Scores as AiBomScores,
 } from "@/components/ai-bom/AiBomVisualizations";
-import { licenceLabel, type AiBomApplicability } from "@/components/ai-bom/aibomDisplay";
+import { licenceLabel, unnamedModelHint, type AiBomApplicability } from "@/components/ai-bom/aibomDisplay";
 import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRollup";
 import { CertInLanePosture } from "@/components/certin/CertInLanePosture";
 import { type CertInRollupData } from "@/components/certin/certinShared";
@@ -844,13 +844,17 @@ export default function AiBomResults({
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8 gap-4" data-testid="aibom-summary-tiles">
                 {[
                   { label: "AI Assets", value: cardData.total_ai_assets, icon: Bot, color: "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400" },
-                  { label: "Models", value: cardData.total_models, icon: Bot, color: "bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400" },
+                  { label: "Models", value: cardData.total_models, icon: Bot, color: "bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400",
+                    // ChatOpenAI() with no model runs the library default: said, never a silent 0 (#498 round 3)
+                    hint: unnamedModelHint(meta?.ai_bom_json as Record<string, unknown> | undefined) ?? undefined,
+                    testId: "aibom-unnamed-model-hint" },
                   { label: "Datasets", value: cardData.total_datasets, icon: Database, color: "bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400" },
                   { label: "External Providers", value: cardData.total_external_providers, icon: Cloud, color: "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400" },
                   { label: "High Risk", value: cardData.total_high_risk_assets, icon: ShieldAlert, color: "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400" },
                   { label: "Unlicensed", value: cardData.total_unlicensed_assets, icon: Scale, color: "bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400",
                     // a licence the offline manifest did not resolve is unknown, not unlicensed: say how many (M7)
-                    hint: cardData.total_licence_unknown_assets ? `Licence unknown: ${cardData.total_licence_unknown_assets}` : undefined },
+                    hint: cardData.total_licence_unknown_assets ? `Licence unknown: ${cardData.total_licence_unknown_assets}` : undefined,
+                    testId: "aibom-licence-unknown-hint" },
                   { label: "Governance Ready", value: `${cardData.governance_readiness_score}%`, icon: Shield, color: "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400" },
                   { label: "Avg Risk", value: cardData.average_risk_score?.toFixed(1) ?? "N/A", icon: Activity, color: "bg-pink-100 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400" },
                 ].map((c) => (
@@ -863,7 +867,7 @@ export default function AiBomResults({
                         <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 break-words">{c.label}</p>
                         <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums">{c.value}</p>
                         {"hint" in c && c.hint && (
-                          <p className="text-[11px] text-zinc-500 dark:text-zinc-400" data-testid="aibom-licence-unknown-hint">{c.hint}</p>
+                          <p className="text-[11px] text-zinc-500 dark:text-zinc-400 break-words" data-testid={"testId" in c ? c.testId : undefined}>{c.hint}</p>
                         )}
                       </div>
                     </CardContent>
