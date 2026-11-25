@@ -217,7 +217,7 @@ export function DiffView({ diff }: { diff: CbomDiff }) {
             </p>
             <ul className="space-y-0.5 text-xs text-zinc-700 dark:text-zinc-300 max-h-48 overflow-y-auto">
               {diff.collector_changes.map((x, i) => (
-                <li key={i} className="break-all"><span className="font-mono mr-1.5">{x.code}</span>{x.direction} · {x.label}</li>
+                <li key={i} className="break-all"><span className="font-mono mr-1.5">{x.code}</span>{x.direction} · {x.label_before ? `${x.label_before} → ${x.label}` : x.label}</li>
               ))}
             </ul>
           </div>
@@ -248,8 +248,8 @@ export function CompareDialog({ teamId, runId, runs, onClose }: {
         <DialogHeader>
           <DialogTitle>Compare run #{runId}</DialogTitle>
           <DialogDescription>
-            Against {q.data?.against_run_id ? `run #${q.data.against_run_id}` : "the previous complete run"}. Sources not complete in
-            both runs are listed as not compared.
+            Against {q.data?.against_run_id ? `run #${q.data.against_run_id}` : "the previous complete run"}. A source outside
+            either run&apos;s scope, collected only once, or not complete in both runs is listed as not compared, with its reason.
           </DialogDescription>
         </DialogHeader>
         <div className="flex items-center gap-2 text-sm">

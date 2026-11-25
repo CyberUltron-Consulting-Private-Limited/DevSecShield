@@ -277,5 +277,7 @@ def test_one_run_has_the_same_severity_counts_on_the_run_page_dashboard_rollup_a
     assert key_asset.impact == "Info" and key_asset.quantum_vulnerable is True
 
     text, _headers = _pdf_text(api, tmp_path, "board-executive-report")
-    shown = " · ".join(f"{level} {expected[level.lower()]}" for level in ("Critical", "High", "Medium", "Low"))
-    assert shown in text, shown
+    # the summary's occurrences by impact (staging QA2 Q1-07 moved the KPI caption to "distinct (N occurrences): ...",
+    # which pdftotext -layout interleaves with the next card when it wraps)
+    shown = ", ".join(f"{level} {expected[level.lower()]}" for level in ("Critical", "High", "Medium", "Low"))
+    assert f"occurrences by impact: {shown}." in text, shown

@@ -1715,9 +1715,10 @@ def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None) -> dict
     once, from the latest observation (``collections_view.resolve``)."""
     from backend.utilities.cbom_sources.cbom_metrics import CodeRowSummary
     from backend.utilities.cbom_sources.collections_view import (
-        ORIGIN_CODE, REMEDIATION_BUCKET, SourcesResult, code_cert_identities, code_row_identity, resolve)
+        ORIGIN_CODE, REMEDIATION_BUCKET, SourcesResult, code_cert_identities, code_row_identity, current_only, resolve)
 
-    sources = sources if isinstance(sources, SourcesResult) else SourcesResult()
+    # a deleted source's last collection is never current population (staging QA2 Q1-01, the roll-up's rule)
+    sources = current_only(sources) if isinstance(sources, SourcesResult) else SourcesResult()
     summary = CodeRowSummary()
     compliance_controls_metrics: dict[str, int] = defaultdict(int)
 

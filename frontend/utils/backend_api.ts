@@ -2597,7 +2597,8 @@ const downloadCbomDeliverable = (
   team_id: number,
   slug: CbomDeliverableSlug,
   options: ReportOptions,
-): Promise<ReportDownload> => downloadDeliverable(team_id, slug, options);
+  issue = false,
+): Promise<ReportDownload> => downloadDeliverable(team_id, slug, options, issue);
 
 /** Team-scoped: GET /{team_id}/cbom/deliverables/{slug}.csv (the same rows as the PDF, UTF-8 with BOM). */
 const downloadCbomDeliverableCsv = async (team_id: number, slug: CbomDeliverableSlug): Promise<Blob> => {
@@ -5818,8 +5819,10 @@ export const downloadRunReport = (team_id: number, run_id: number, options: Repo
 
 /** A team-wide CBOM deliverable: /{team_id}/cbom/deliverables/{slug}, its cover options in a POST body (a plain GET
  * when none is set). No toast. */
-export const downloadDeliverable = (team_id: number, slug: CbomDeliverableSlug, options: ReportOptions): Promise<ReportDownload> =>
-    getReport(`/${team_id}/cbom/deliverables/${slug}`, toQuery(options, "deliverable"))
+export const downloadDeliverable = (team_id: number, slug: CbomDeliverableSlug, options: ReportOptions,
+                                   issue = false): Promise<ReportDownload> =>
+    // issue: the board report (D14) is recorded as a formal issue, the one the next issue's trend compares with
+    getReport(`/${team_id}/cbom/deliverables/${slug}${issue ? "?issue=1" : ""}`, toQuery(options, "deliverable"))
 
 // -------------------------------------------------------------- Team report logo (plan §5) --------------------------------------------------------------
 

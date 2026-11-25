@@ -332,7 +332,9 @@ def _list_schedules(engine, team_id: int) -> dict:
         settings = get_or_create_settings(session, team_id)
         rows = session.exec(select(CbomCollectionSchedule).where(CbomCollectionSchedule.team_id == team_id)
                             .order_by(CbomCollectionSchedule.id)).all()
-        return {"schedules": [SCHED.public_schedule(s) for s in rows], "timezone": settings.window_timezone,
+        runs = SCHED.run_statuses(session, team_id, (s.last_run_id for s in rows))  # QA2 Q1-10: the run's status now
+        return {"schedules": [SCHED.public_schedule(s, runs.get(s.last_run_id or 0)) for s in rows],
+                "timezone": settings.window_timezone,
                 "server_time": iso_z(utcnow())}
 
 

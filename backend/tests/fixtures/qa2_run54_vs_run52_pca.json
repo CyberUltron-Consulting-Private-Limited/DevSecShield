@@ -1,0 +1,157 @@
+{
+ "_about": "Staging QA2 Q1-09 evidence q1/runs/t1-run54/diff.json (run 54 against run 52), the AWS Private CA entries only; account id replaced.",
+ "run_id": 54,
+ "against_run_id": 52,
+ "removed": [
+  {
+   "key": "fb7bccc55aac509758aab734eb0a881eb2178e0d",
+   "label": "{\"CommonName\": \"ZeroShield-AWS-PCA-Test\"} \u00b7 aws:111122223333 arn:aws:acm-pca:ap-south-1:111122223333:certificate-authority/ca429b08-b7b5-4248-b52a-0625de8919c0",
+   "type": "cloud_ca",
+   "impact": null,
+   "finding_codes": [
+    "QUANTUM_VULNERABLE"
+   ],
+   "quantum_vulnerable": true,
+   "asset_id": 11078,
+   "q_grade": "Q1",
+   "target": "aws:111122223333",
+   "location": "arn:aws:acm-pca:ap-south-1:111122223333:certificate-authority/ca429b08-b7b5-4248-b52a-0625de8919c0",
+   "pqc_class": "quantum-vulnerable",
+   "pqc_class_basis": "shor_breaks",
+   "source_name": "aws-pca-test"
+  },
+  {
+   "key": "088a866b79bc50f0338bcd42b42618f5f0737fcb",
+   "label": "{\"CommonName\": \"ZeroShield-AWS-PCA-Test\"} \u00b7 aws:111122223333 arn:aws:acm-pca:ap-south-1:111122223333:certificate-authority/ca429b08-b7b5-4248-b52a-0625de8919c0",
+   "type": "cloud_ca",
+   "impact": null,
+   "finding_codes": [
+    "QUANTUM_VULNERABLE"
+   ],
+   "quantum_vulnerable": true,
+   "asset_id": 10849,
+   "q_grade": "Q1",
+   "target": "aws:111122223333",
+   "location": "arn:aws:acm-pca:ap-south-1:111122223333:certificate-authority/ca429b08-b7b5-4248-b52a-0625de8919c0",
+   "pqc_class": "quantum-vulnerable",
+   "pqc_class_basis": "shor_breaks",
+   "source_name": "stgqa-aws-ap-south-1"
+  }
+ ],
+ "added": [
+  {
+   "key": "3fb253c438896d78a2d5865ecef0e63e3f7bd837",
+   "label": "CN=ZeroShield-AWS-PCA-Test \u00b7 aws:111122223333 arn:aws:acm-pca:ap-south-1:111122223333:certificate-authority/ca429b08-b7b5-4248-b52a-0625de8919c0",
+   "type": "cloud_ca",
+   "impact": null,
+   "finding_codes": [
+    "QUANTUM_VULNERABLE"
+   ],
+   "quantum_vulnerable": true,
+   "asset_id": 11923,
+   "q_grade": "Q1",
+   "target": "aws:111122223333",
+   "location": "arn:aws:acm-pca:ap-south-1:111122223333:certificate-authority/ca429b08-b7b5-4248-b52a-0625de8919c0",
+   "pqc_class": "quantum-vulnerable",
+   "pqc_class_basis": "shor_breaks",
+   "source_name": "aws-pca-test"
+  },
+  {
+   "key": "473dc2843e54e4a6878e76d4d6bce19d9a97ebd7",
+   "label": "CN=ZeroShield-AWS-PCA-Test \u00b7 aws:111122223333 arn:aws:acm-pca:ap-south-1:111122223333:certificate-authority/ca429b08-b7b5-4248-b52a-0625de8919c0",
+   "type": "cloud_ca",
+   "impact": null,
+   "finding_codes": [
+    "QUANTUM_VULNERABLE"
+   ],
+   "quantum_vulnerable": true,
+   "asset_id": 11691,
+   "q_grade": "Q1",
+   "target": "aws:111122223333",
+   "location": "arn:aws:acm-pca:ap-south-1:111122223333:certificate-authority/ca429b08-b7b5-4248-b52a-0625de8919c0",
+   "pqc_class": "quantum-vulnerable",
+   "pqc_class_basis": "shor_breaks",
+   "source_name": "stgqa-aws-ap-south-1"
+  }
+ ],
+ "resolved": [
+  {
+   "key": "fb7bccc55aac509758aab734eb0a881eb2178e0d",
+   "label": "{\"CommonName\": \"ZeroShield-AWS-PCA-Test\"} \u00b7 aws:111122223333 arn:aws:acm-pca:ap-south-1:111122223333:certificate-authority/ca429b08-b7b5-4248-b52a-0625de8919c0",
+   "type": "cloud_ca",
+   "impact": null,
+   "finding_codes": [
+    "QUANTUM_VULNERABLE"
+   ],
+   "quantum_vulnerable": true,
+   "asset_id": 11078,
+   "q_grade": "Q1",
+   "target": "aws:111122223333",
+   "location": "arn:aws:acm-pca:ap-south-1:111122223333:certificate-authority/ca429b08-b7b5-4248-b52a-0625de8919c0",
+   "pqc_class": "quantum-vulnerable",
+   "pqc_class_basis": "shor_breaks",
+   "code": "QUANTUM_VULNERABLE",
+   "asset_removed": true,
+   "source_name": "aws-pca-test"
+  },
+  {
+   "key": "088a866b79bc50f0338bcd42b42618f5f0737fcb",
+   "label": "{\"CommonName\": \"ZeroShield-AWS-PCA-Test\"} \u00b7 aws:111122223333 arn:aws:acm-pca:ap-south-1:111122223333:certificate-authority/ca429b08-b7b5-4248-b52a-0625de8919c0",
+   "type": "cloud_ca",
+   "impact": null,
+   "finding_codes": [
+    "QUANTUM_VULNERABLE"
+   ],
+   "quantum_vulnerable": true,
+   "asset_id": 10849,
+   "q_grade": "Q1",
+   "target": "aws:111122223333",
+   "location": "arn:aws:acm-pca:ap-south-1:111122223333:certificate-authority/ca429b08-b7b5-4248-b52a-0625de8919c0",
+   "pqc_class": "quantum-vulnerable",
+   "pqc_class_basis": "shor_breaks",
+   "code": "QUANTUM_VULNERABLE",
+   "asset_removed": true,
+   "source_name": "stgqa-aws-ap-south-1"
+  }
+ ],
+ "opened": [
+  {
+   "key": "3fb253c438896d78a2d5865ecef0e63e3f7bd837",
+   "label": "CN=ZeroShield-AWS-PCA-Test \u00b7 aws:111122223333 arn:aws:acm-pca:ap-south-1:111122223333:certificate-authority/ca429b08-b7b5-4248-b52a-0625de8919c0",
+   "type": "cloud_ca",
+   "impact": null,
+   "finding_codes": [
+    "QUANTUM_VULNERABLE"
+   ],
+   "quantum_vulnerable": true,
+   "asset_id": 11923,
+   "q_grade": "Q1",
+   "target": "aws:111122223333",
+   "location": "arn:aws:acm-pca:ap-south-1:111122223333:certificate-authority/ca429b08-b7b5-4248-b52a-0625de8919c0",
+   "pqc_class": "quantum-vulnerable",
+   "pqc_class_basis": "shor_breaks",
+   "code": "QUANTUM_VULNERABLE",
+   "new_asset": true,
+   "source_name": "aws-pca-test"
+  },
+  {
+   "key": "473dc2843e54e4a6878e76d4d6bce19d9a97ebd7",
+   "label": "CN=ZeroShield-AWS-PCA-Test \u00b7 aws:111122223333 arn:aws:acm-pca:ap-south-1:111122223333:certificate-authority/ca429b08-b7b5-4248-b52a-0625de8919c0",
+   "type": "cloud_ca",
+   "impact": null,
+   "finding_codes": [
+    "QUANTUM_VULNERABLE"
+   ],
+   "quantum_vulnerable": true,
+   "asset_id": 11691,
+   "q_grade": "Q1",
+   "target": "aws:111122223333",
+   "location": "arn:aws:acm-pca:ap-south-1:111122223333:certificate-authority/ca429b08-b7b5-4248-b52a-0625de8919c0",
+   "pqc_class": "quantum-vulnerable",
+   "pqc_class_basis": "shor_breaks",
+   "code": "QUANTUM_VULNERABLE",
+   "new_asset": true,
+   "source_name": "stgqa-aws-ap-south-1"
+  }
+ ]
+}

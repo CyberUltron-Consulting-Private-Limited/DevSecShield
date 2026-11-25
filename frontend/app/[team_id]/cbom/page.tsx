@@ -122,6 +122,9 @@ import { quantumReadinessBars } from "@/utils/cbomReadiness";
 
 type ScanStatus = "pending" | "started" | "retry" | "failure" | "success" | "partial" | "not_started" | "cancelled";
 
+// the board report (SOW D14): its menu offers "Issue to the board" (a formal issue, the next issue's trend baseline)
+const BOARD_SLUG: CbomDeliverableSlug = "board-executive-report";
+
 const RISK_SCORE_LABELS: Record<RiskScoreFilter, string> = {
   all: "Risk score",
   critical: "Critical",
@@ -702,15 +705,19 @@ export default function CBOMPage() {
 
   // Each item stays one click (ten registers are downloaded in a row): it uses the cover options of "Cover options…"
   // (the remembered label, and the client name typed there during this page session; utils/reportOptions.ts).
+  // the board report (D14) can be "issued": recorded as the formal issue the next issue's trend compares with
   const downloadDeliverableMutation = useMutation({
-    mutationFn: (slug: CbomDeliverableSlug) => {
+    mutationFn: (slug: CbomDeliverableSlug | `${CbomDeliverableSlug}#issue`) => {
       const tid = parseInt(team_id);
       if (Number.isNaN(tid)) throw new Error("Missing or invalid team id");
-      return downloadCbomDeliverable(tid, slug, deliverableCover(tid));
+      const issue = slug.endsWith("#issue");
+      return downloadCbomDeliverable(tid, slug.replace("#issue", "") as CbomDeliverableSlug, deliverableCover(tid), issue);
     },
-    onSuccess: ({ blob, meta }, slug) => {
+    onSuccess: ({ blob, meta }, picked) => {
+      const slug = picked.replace("#issue", "") as CbomDeliverableSlug;
       saveBlob(blob, deliverableFileName(slug, parseInt(team_id), new Date()));
-      const title = CBOM_DELIVERABLES.find((d) => d.slug === slug)?.title ?? slug;
+      const title = (CBOM_DELIVERABLES.find((d) => d.slug === slug)?.title ?? slug)
+        + (picked.endsWith("#issue") ? " (issued to the board)" : "");
       toast.success(meta.logo === "skipped" ? `Downloaded ${title} (team logo skipped: it could not be read)` : `Downloaded ${title}`);
     },
     onError: (error) => { showErrorToast(error, "Error downloading deliverable"); },
@@ -846,6 +853,18 @@ export default function CBOMPage() {
                           {pendingSlug === d.slug && !pendingCsv ? <Loader2 className="animate-spin" /> : <FileText />}
                           <span>{`D${d.number} · ${d.title}`}</span>
                         </DropdownMenuItem>
+                        {d.slug === BOARD_SLUG && (
+                          <DropdownMenuItem
+                            data-testid={`cbom-deliverable-${d.slug}-issue`}
+                            className={itemClass}
+                            disabled={unavailable || pendingSlug !== null}
+                            title="Download and record this edition as the formal issue the next issue's trend compares with"
+                            onSelect={() => downloadDeliverableMutation.mutate(`${d.slug}#issue`)}
+                          >
+                            {pendingSlug === `${d.slug}#issue` ? <Loader2 className="animate-spin" /> : <FileText />}
+                            <span>{`D${d.number} · Issue to the board (record for the trend)`}</span>
+                          </DropdownMenuItem>
+                        )}
                         {/* the backend says which formats exist (a frontend newer than its backend offers no CSV) */}
                         {hint?.formats?.includes("csv") && (
                           <DropdownMenuItem

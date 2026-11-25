@@ -72,6 +72,9 @@ class Collection:
     metadata: dict[str, Any] = field(default_factory=dict, compare=False, repr=False)
     # how the collection was made (``collection_info``: method, window, credential reference by name only); D1 prints it
     info: dict[str, Any] = field(default_factory=dict, compare=False, repr=False)
+    # the source's collect-job history (``collection_history``): successful collections, the first one, and the latest
+    # attempt whatever its status (D1's "Scans", "First scanned" and "Last attempt"; staging QA2 Q1-02)
+    history: dict[str, Any] = field(default_factory=dict, compare=False, repr=False)
 
     @property
     def label(self) -> str:
@@ -106,6 +109,19 @@ class SourcesRow:
     # impact depends on the facts (a domain's functional level, a key's size) keeps it in the posture facts, so a
     # deliverable's findings table never falls back to the KB default for it (#493 review 6032906354 M1)
     code_impacts: dict[str, str] = field(default_factory=dict, compare=False, repr=False)
+
+
+def is_deleted_source(collection: Any) -> bool:
+    """THE rule for a collection whose source was deleted (``Collection.source_kind`` is "" then): its last collection
+    is history, never current population or posture evidence. The team roll-up (D1, D12, D14, posture), the dashboard
+    and the certificate / network estates all ask this one function (staging QA2 Q1-01)."""
+    return not str(getattr(collection, "source_kind", "") or "")
+
+
+def current_only(found: SourcesResult) -> SourcesResult:
+    """``found`` without the collections (and rows) of deleted sources: what every population count reads."""
+    return SourcesResult(collections=[c for c in found.collections if not is_deleted_source(c)],
+                         rows=[r for r in found.rows if not is_deleted_source(r.collection)])
 
 
 # remediation status of a Sources finding (waves) -> the dashboard's finding status buckets
@@ -236,6 +252,100 @@ def latest_jobs(session: Any, team_id: int, *, limit: int = 2_000) -> list[Any]:
     return list(latest.values())
 
 
+# "Nothing collected: <target>: <code> (<detail>)" (scan node ``zscollect``): the code is the attempt's reason
+_NOTHING_CODE = re.compile(r"Nothing collected: .*?: ([a-z][a-z0-9_]{2,40})\b")
+_OPEN_STATUSES = {"pending": "waiting", "claimed": "running"}
+
+
+def attempt_reason(status: Any, error: Any, outcome: Any = None) -> str | None:
+    """A short reason for a collect attempt that did not read everything ("auth_failed", "expired", "partial"), None
+    for a complete success. Never a secret: the collector's own error code, else the first words of its message."""
+    status = str(status or "")
+    if status == "success":
+        return None if outcome in (None, "", "ok") else str(outcome)
+    if status in _OPEN_STATUSES:
+        return _OPEN_STATUSES[status]
+    found = _NOTHING_CODE.search(str(error or ""))
+    if found:
+        return found.group(1)
+    if status in ("expired", "cancelled") and not error:
+        return status
+    text = " ".join(str(error or status or "failed").split())
+    return text if len(text) <= 60 else text[:59].rstrip() + "\u2026"
+
+
+def collection_history(session: Any, team_id: int, sources: Mapping[int, Any]) -> dict[str, dict[str, Any]]:
+    """Per source ref (``identity.job_source_ref``): how many collections succeeded (``scans``), when the first one
+    finished (``first_scanned``) and the latest attempt whatever its status (``last_attempt_*``: run, job, status,
+    reason, time). D1's Sources rows print it (staging QA2 Q1-02).
+
+    Aggregated in SQL (#497 review M3: reading every job's params was 2.1 s and 529 MB at 60k jobs): one statement for
+    the per-source totals (success count, first success, newest creation time), grouped by source id over the history
+    index (``ix_cbomcollectionjob_team_source_hist``: no row and no params read) plus, UNION ALL, a deleted source's
+    detached jobs grouped by the uid their params kept; then one statement for each source's newest job, found by
+    (source, created_at) on the same index, of which only status, error and outcome are read."""
+    import sqlalchemy as sa
+
+    from backend.new_models import CbomCollectionJob as J
+
+    base = (J.team_id == team_id, J.kind == "collect", J.run_id.is_not(None))  # type: ignore[union-attr]
+    ok = J.status == "success"
+    done_at = sa.case((ok, sa.func.coalesce(J.finished_at, J.created_at)), else_=None)
+    measures = (sa.func.sum(sa.case((ok, 1), else_=0)), sa.func.min(done_at), sa.func.max(J.created_at))
+    # a detached job (its source deleted): the uid its params kept, else its name
+    uid = J.params["source_uid"].as_string()  # type: ignore[index]
+    name = J.params["source_name"].as_string()  # type: ignore[index]
+    detached = sa.case((uid.is_not(None), sa.literal("u:") + uid), else_=sa.literal("n:") + sa.func.coalesce(name, ""))
+    attached_q = (sa.select(J.source_id, sa.literal(None, sa.String).label("g"), *measures)
+                  .where(*base, J.source_id.is_not(None)).group_by(J.source_id))  # type: ignore[union-attr]
+    detached_q = (sa.select(sa.literal(None, sa.Integer).label("source_id"), detached.label("g"), *measures)
+                  .where(*base, J.source_id.is_(None)).group_by(detached))  # type: ignore[union-attr]
+    totals = [(f"i:{sid}" if sid is not None else g, sid, scans, first, newest)
+              for sid, g, scans, first, newest in session.execute(sa.union_all(attached_q, detached_q)).all()]
+    pairs = sorted({(sid, newest) for _k, sid, _s, _f, newest in totals if sid is not None and newest is not None})
+    loose = sorted({newest for _k, sid, _s, _f, newest in totals if sid is None and newest is not None})
+    latest: dict[str, Any] = {}  # group -> its newest job (created_at, then id), status / error / outcome only
+    for start in range(0, max(len(pairs), len(loose)), 250):
+        found = [sa.and_(J.source_id.is_(None), J.created_at.in_(loose[start:start + 250]))]  # type: ignore[union-attr]
+        if pairs[start:start + 250]:
+            found.append(sa.tuple_(J.source_id, J.created_at).in_(pairs[start:start + 250]))
+        for row in session.execute(sa.select(J.source_id, detached, J.id, J.run_id, J.status, J.error, J.outcome,
+                                             J.created_at, J.finished_at).where(*base, sa.or_(*found))).all():
+            key = f"i:{row[0]}" if row[0] is not None else row[1]
+            held = latest.get(key)
+            if held is None or (row[7], row[2]) > (held[6], held[1]):
+                latest[key] = (key, *row[2:])
+    totals = [(key, scans, first, newest) for key, _sid, scans, first, newest in totals]
+    rows = []
+    for key, scans, first, newest in totals:
+        row = latest.get(key)
+        if row is not None and row[6] == newest:
+            rows.append((key, scans, first, *row[1:]))
+    out: dict[str, dict[str, Any]] = {}
+    for key, scans, first, job_id, run_id, status, error, outcome, created, finished in rows:
+        kind, _sep, value = str(key).partition(":")
+        if kind == "i":
+            source = sources.get(int(value))
+            ref = source.source_uid if source is not None and source.source_uid else f"source-{value}"
+        else:
+            ref = value if kind == "u" else f"deleted:{value or job_id}"
+        if isinstance(first, str):  # SQLite returns the aggregated time as text
+            first = _dt.datetime.fromisoformat(first)
+        h: dict[str, Any] = {"scans": int(scans or 0), "first_scanned": _aware(first) if first is not None else None,
+                             "last_attempt_run_id": int(run_id), "last_attempt_job_id": int(job_id),
+                             "last_attempt_status": str(status), "last_attempt_at": _aware(finished or created),
+                             "last_attempt_reason": attempt_reason(status, error, outcome)}
+        held = out.get(ref)
+        if held is not None:  # a source's attached and detached jobs (rare): one history, the newer attempt
+            h["scans"] += held["scans"]
+            firsts = [f for f in (h["first_scanned"], held["first_scanned"]) if f is not None]
+            h["first_scanned"] = min(firsts) if firsts else None
+            if (held["last_attempt_at"], held["last_attempt_job_id"]) > (h["last_attempt_at"], h["last_attempt_job_id"]):
+                h.update({k: v for k, v in held.items() if k.startswith("last_attempt")})
+        out[ref] = h
+    return out
+
+
 @dataclass
 class SourcesResult:
     """What the team's Sources contribute: their latest collections and those collections' assets."""
@@ -320,6 +430,7 @@ def load_sources_result(session: Any, team_id: int, now: _dt.datetime | None = N
     sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
         CbomCollectionSource.team_id == team_id)).all()}
     out = SourcesResult()
+    history = collection_history(session, team_id, sources)
     for job in latest_jobs(session, team_id):
         source = sources.get(job.source_id or 0)
         assets = [a for a in session.exec(select(CbomCollectedAsset).where(
@@ -331,7 +442,8 @@ def load_sources_result(session: Any, team_id: int, now: _dt.datetime | None = N
             source_name=ID.job_source_name(job, source), source_kind=(source.kind if source is not None else ""),
             observed_at=_aware(job.finished_at or job.created_at), asset_count=len(assets),
             endpoints_probed=sum(1 for a in assets if a.asset_type in NETWORK_TYPES),
-            metadata=_source_metadata(source, job), info=collection_info(session, source, job))
+            metadata=_source_metadata(source, job), info=collection_info(session, source, job),
+            history=history.get(ID.job_source_ref(job, source), {}))
         out.collections.append(collection)
         for asset in assets:
             # its identity in its own source; link_certificates gives certificates their cross-source asset key
@@ -523,5 +635,5 @@ def resolve(code_observations: Iterable[tuple[int, _dt.datetime, str]], rows: It
 
 
 __all__ = ["Collection", "link_certificates", "NETWORK_TYPES", "REMEDIATION_BUCKET", "ORIGIN_CODE", "ORIGIN_SOURCES", "Resolution", "SourcesResult",
-           "SourcesRow", "cert_identity", "code_cert_identities", "code_row_identity", "latest_jobs",
-           "load_sources_result", "node_row", "origin_label", "resolve"]
+           "SourcesRow", "attempt_reason", "cert_identity", "code_cert_identities", "code_row_identity", "collection_history",
+           "current_only", "is_deleted_source", "latest_jobs", "load_sources_result", "node_row", "origin_label", "resolve"]

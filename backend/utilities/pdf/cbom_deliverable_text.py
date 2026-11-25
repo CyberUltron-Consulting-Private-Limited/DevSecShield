@@ -35,7 +35,9 @@ Which document uses what (SOW Table 7 IDs): ``D1`` scope register: ``SCOPE_*``, 
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any
 
 from backend.utilities.pdf import cbom_kb_text as kb_text
 
@@ -62,8 +64,8 @@ TOOL_NAME = "DevSecShield CBOM engine"
 ASSESSOR_SUFFIX = "(assessor)"
 MANUAL_CELL_NOTE = "To be completed by assessor"
 MANUAL_LEGEND = (
-    "Cells marked (assessor) are MANUAL: they are intentionally left blank for the assessor "
-    "to complete and are never pre-filled by the platform."
+    "Cells marked (assessor) are MANUAL: the platform leaves them blank for the assessor to complete. "
+    "Every other cell is filled from the platform's records."
 )
 EMPTY_TABLE_TEXT = "No entries"
 PREVIOUSLY_SEEN_TITLE = "Previously seen, not in latest scan"
@@ -151,9 +153,12 @@ _KEY_CUSTODY_KINDS = _CLOUD_KINDS | {"key_manager"}
 
 
 def collections_in_scope(view: object) -> tuple:
-    """The view's CBOM Sources collections (``TeamCbomView.collections``), () for a hand-made view."""
+    """The view's CBOM Sources collections whose source still exists (``TeamCbomView.collections`` without the deleted
+    ones: ``collections_view.is_deleted_source``, staging QA2 Q1-01), () for a hand-made view."""
+    from backend.utilities.dashboard.cbom_team_rollup import current_collections
+
     found = getattr(view, "collections", ()) or ()
-    return tuple(found) if isinstance(found, (tuple, list)) else ()
+    return current_collections(view) if isinstance(found, (tuple, list)) else ()
 
 
 def endpoints_probed(view: object) -> int:
@@ -468,6 +473,15 @@ def _posture_text():
     return cbom_posture_text
 
 
+# Product text: classify's per-protocol codes ("PROTO_SSLv3", "PROTO_TLS10"), which no authored table or knowledge-base
+# entry names: D14 printed "Proto sslv3" (staging QA2 Q1-16)
+_PROTO_NAMES = {"SSLV2": "SSL 2.0", "SSLV3": "SSL 3.0", "TLS10": "TLS 1.0", "TLS11": "TLS 1.1"}
+
+
+def _proto(key: str) -> str | None:
+    return _PROTO_NAMES.get(key[6:].upper()) if key.upper().startswith("PROTO_") else None
+
+
 def finding_label(code: object) -> str:
     """Human label for a finding code: the authored label, else the knowledge base's title of the code (every CBOM
     Sources code has one), else the code humanised, never dropped."""
@@ -475,8 +489,9 @@ def finding_label(code: object) -> str:
     if not key:
         return ""
     kb = kb_text.finding(key) or {}
+    proto = _proto(key)
     return (FINDING_LABELS.get(key) or _posture_text().FINDING_LABELS.get(key) or kb.get("title")
-            or key.replace("_", " ").capitalize())
+            or (f"{proto} accepted" if proto else None) or key.replace("_", " ").capitalize())
 
 
 def finding_action(code: object) -> str:
@@ -484,7 +499,9 @@ def finding_action(code: object) -> str:
     the generic action (a code no source knows)."""
     key = _code(code)
     kb = kb_text.finding(key) or {}
+    proto = _proto(key)
     return (FINDING_ACTIONS.get(key) or _posture_text().FINDING_ACTIONS.get(key) or kb.get("fix")
+            or (f"Allow TLS 1.2 and 1.3 only: disable {proto} on the endpoint or appliance." if proto else None)
             or GENERIC_FINDING_ACTION)
 
 
@@ -661,10 +678,80 @@ GOVERNANCE_ACTIONS = (
         ("Set the data-lifetime and migration inputs (Mosca X, Y, Z) so that the {mosca_missing} "
          "quantum-vulnerable assets graded Q0 for missing inputs can be graded."),
     ),
+    (
+        "mosca_defaults",
+        ("Set the data lifetimes (Mosca X, per team or per source) and the migration and threat horizons (Y, Z). "
+         "Distinct quantum-vulnerable assets in the register (D12) graded on default Mosca assumptions (team inputs "
+         "not set): {mosca_defaults}."),
+    ),
 )
+# Product text: the Mosca basis of the register's grades (staging QA2 Q1-06). ``qgrade.effective_mosca`` fills an unset
+# team X, Y or Z with its documented default (``qgrade.DEFAULTS_TEXT``) and says so in its ``assumed`` flag; the
+# register counts the rows graded that way (``risk_register.default_assumptions``). D2, D12 and D14 print it the same.
+MOSCA_DEFAULTS_PHRASE = "default Mosca assumptions (team inputs not set)"
+
+
+def mosca_basis(view: object) -> dict[str, Any] | None:
+    """``{"team_set", "unset", "defaults_used", "defaults"}`` from the register summary; None when it was not loaded.
+    ``defaults_used``: register assets graded with at least one default input (read from the register, never recounted)."""
+    register = getattr(view, "register", None)
+    summary = register.get("summary") if isinstance(register, Mapping) else None
+    found = summary.get("default_assumptions") if isinstance(summary, Mapping) else None
+    if not isinstance(found, Mapping):
+        return None
+    team = found.get("team_mosca") if isinstance(found.get("team_mosca"), Mapping) else {}
+    unset = [k.upper() for k in "xyz" if team.get(k) is None]
+    return {"team_set": not unset, "unset": unset, "defaults_used": int(found.get("count") or 0),
+            "defaults": str(found.get("defaults") or ""), "definition": str(found.get("definition") or ""),
+            "horizon": found.get("horizon") if isinstance(found.get("horizon"), Mapping) else {}}
+
+
+def mosca_meaning_text(view: object) -> str:
+    """What X, Y and Z are, the X + Y > Z rule and where each default comes from (``qgrade.MOSCA_DEFINITION``, the
+    sentence D12 prints), that the default Z is NIST IR 8547's disallowance date and not an estimate of when a quantum
+    computer arrives, and what the defaults imply this year (#497 review 6057627810 m2). "" when the register did
+    not say (the register summary carries them in ``default_assumptions``)."""
+    basis = mosca_basis(view)
+    if basis is None or not basis["definition"]:
+        return ""
+    out = [basis["definition"]]
+    h = basis["horizon"]
+    try:
+        x, y, z, year, z_year = (int(h[k]) for k in ("x", "y", "z", "year", "z_year"))
+    except (KeyError, TypeError, ValueError):
+        return out[0]
+    out.append(f"The default Z is the years left until {z_year}, the date after which NIST IR 8547 disallows "
+               "quantum-vulnerable public-key algorithms: a regulatory deadline, not an estimate of when a "
+               "cryptographically relevant quantum computer will exist.")
+    if x + y > z:
+        out.append(f"On the defaults in {year} (X {x} + Y {y} = {x + y} > Z {z}), every quantum-vulnerable asset "
+                   "is at risk (X + Y > Z), whatever its data or system; only the team's own inputs can tell "
+                   "assets apart.")
+    else:
+        out.append(f"On the defaults in {year} (X {x} + Y {y} = {x + y}, Z {z}), X + Y does not exceed Z.")
+    return " ".join(out)
+
+
+def mosca_basis_text(view: object) -> str:
+    """"under the team's Mosca inputs" or "on default Mosca assumptions (team inputs not set): N assets graded on
+    defaults (<the defaults>)"."""
+    basis = mosca_basis(view)
+    if basis is None:
+        return "under the team's Mosca inputs, or the documented defaults where they are not set"
+    n = basis["defaults_used"]
+    if basis["team_set"] and not n:
+        return "under the team's Mosca inputs"
+    lead = (MOSCA_DEFAULTS_PHRASE if not basis["team_set"] else
+            "default Mosca assumptions where a source sets no data lifetime")
+    if basis["unset"] and len(basis["unset"]) < 3:
+        lead = f"default Mosca assumptions (team inputs not set: {', '.join(basis['unset'])})"
+    detail = f" ({basis['defaults']})" if basis["defaults"] else ""
+    return f"on {lead}: {n} asset{'' if n == 1 else 's'} graded on defaults{detail}"
+
+
 # Product text: a governance action whose live count is zero has nothing to decide (SOW audit A-12: "Re-scan the 0
 # sources"); these keys are printed only when their count is positive.
-GOVERNANCE_HIDE_WHEN_ZERO = ("owners", "legacy", "mosca", "attestations")
+GOVERNANCE_HIDE_WHEN_ZERO = ("owners", "legacy", "mosca", "attestations", "mosca_defaults")
 
 # ---------------------------------------------------------------------------------------------
 # Discovery methodology (D2) and the manual-discovery checklist (D1 section E, D2 section 3)
@@ -1236,6 +1323,7 @@ __all__ = [
     "METHOD_RETENTION",
     "METHOD_RETENTION_PERIOD_LABEL",
     "METHOD_VALIDATION",
+    "MOSCA_DEFAULTS_PHRASE",
     "PINNED_ENGINE_NIST_TIMELINE",
     "PQC_NO_VULNERABLE_TEXT",
     "PQC_NO_VULNERABLE_TITLE",
@@ -1269,4 +1357,7 @@ __all__ = [
     "finding_action",
     "finding_label",
     "framework_label",
+    "mosca_basis",
+    "mosca_basis_text",
+    "mosca_meaning_text",
 ]

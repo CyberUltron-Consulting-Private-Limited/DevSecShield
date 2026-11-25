@@ -161,8 +161,10 @@ def inputs_of(view: TeamCbomView) -> EstateInputs:
 
 
 def is_deleted(collection: Any) -> bool:
-    """A collection whose source no longer exists (``Collection.source_kind`` is "" for a deleted source)."""
-    return not str(getattr(collection, "source_kind", "") or "")
+    """A collection whose source no longer exists: ``collections_view.is_deleted_source``, the one rule."""
+    from backend.utilities.cbom_sources.collections_view import is_deleted_source
+
+    return is_deleted_source(collection)
 
 
 # ----------------------------------------------------------------------------- the estate

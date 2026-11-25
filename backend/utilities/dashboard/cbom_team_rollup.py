@@ -272,6 +272,9 @@ class SourceAgg:
     asset_counts: dict[str, int] = field(default_factory=dict)  # current, by ASSET_*
     impact_counts: dict[str, int] = field(default_factory=dict)  # current, by IMPACT_LEVELS
     library_count: int = 0  # current library components
+    # a CBOM Sources source's latest attempt that did not read everything: its reason ("auth_failed", "expired");
+    # None for a code-scan source (its raw scan status says it) and for a complete latest attempt
+    last_attempt_reason: str | None = None
 
 
 @dataclass(slots=True)  # no per-instance __dict__: a team of 50k collected assets holds 50k of these
@@ -672,6 +675,9 @@ class CollectionAgg:
     metadata: Mapping[str, Any] = field(default_factory=dict, compare=False, repr=False)
     # how the collection was made (``collections_view.collection_info``: method, window, credential reference by name)
     info: Mapping[str, Any] = field(default_factory=dict, compare=False, repr=False)
+    # the source's collect-job history (``collections_view.collection_history``): D1's Scans / First scanned / Last
+    # attempt (staging QA2 Q1-02)
+    history: Mapping[str, Any] = field(default_factory=dict, compare=False, repr=False)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1183,7 +1189,10 @@ def _asset_from_row(row: Mapping[str, Any], facts: ScanFacts) -> AssetAgg:
     the current engine keep None, so only rows the engine graded count towards readiness)."""
     # one set of numbers for every CBOM view (pure modules: stdlib plus cbom_rows)
     from backend.utilities.cbom_sources.cbom_metrics import (
-        code_row_broken_today, code_row_quantum_vulnerable, finding_severity)
+        code_row_broken_today,
+        code_row_quantum_vulnerable,
+        finding_severity,
+    )
 
     asset_type = _asset_type_of(row)
     title = _text(row.get("title")) or _text(row.get("algorithm_name")) or "(unnamed)"
@@ -3323,6 +3332,49 @@ def _fold_lib_group(group: Sequence[LibAgg]) -> LibAgg:
         advisories=tuple(dict.fromkeys(a for lib in group for a in lib.advisories)))
 
 
+# a collect job's status -> the code-scan status vocabulary D1's "Last attempt" reads (failed vs not completed)
+_JOB_ATTEMPT_STATUS = {"success": STATUS_SUCCESS, "failure": STATUS_FAILURE}
+
+
+def _collection_source_row(agg: CollectionAgg, asset_counts: dict[str, int], impact_counts: dict[str, int]) -> SourceAgg:
+    """A CBOM Sources source as a D1 Sources row: the figures are its latest successful collection; scans, first
+    scanned and the latest attempt come from its collect-job history (staging QA2 Q1-02: they were hard-coded to
+    1, the collection's own date and SUCCESS, so a source whose newer runs failed read "SUCCESS run #8")."""
+    history = agg.history or {}
+    first = history.get("first_scanned")
+    first = _utc(first) if isinstance(first, datetime) else agg.observed_at
+    attempt_run = history.get("last_attempt_run_id")
+    attempt_at = history.get("last_attempt_at")
+    newer = attempt_run is not None and int(attempt_run) != agg.run_id and (
+        not isinstance(attempt_at, datetime) or (_utc(attempt_at) or _EPOCH) >= agg.observed_at)
+    raw = str(history.get("last_attempt_status") or "")
+    return SourceAgg(
+        key=agg.key, label=agg.label, kind=SOURCE_SOURCES, repo_url=None, branch=None, scan_ids=(agg.run_id,),
+        scan_count=max(int(history.get("scans") or 1), 1), first_scanned=min(first or agg.observed_at, agg.observed_at),
+        last_scanned=agg.observed_at, current_scan_id=agg.run_id, current_tier=TIER_A, current_fidelity=FIDELITY_FULL,
+        last_attempt_scan_id=int(attempt_run) if newer else agg.run_id,
+        last_attempt_status=_JOB_ATTEMPT_STATUS.get(raw, raw or STATUS_SUCCESS) if newer else STATUS_SUCCESS,
+        last_attempt_at=(_utc(attempt_at) or agg.observed_at) if newer else agg.observed_at,
+        last_attempt_reason=history.get("last_attempt_reason") if newer else None,
+        asset_counts=asset_counts, impact_counts=impact_counts)
+
+
+def current_collections(view: Any) -> tuple[Any, ...]:
+    """The view's CBOM Sources collections whose source still exists: the population every count reads. A deleted
+    source's last collection stays in ``view.collections`` (documents name it as left out) but is never counted
+    (``collections_view.is_deleted_source``; staging QA2 Q1-01)."""
+    from backend.utilities.cbom_sources.collections_view import is_deleted_source
+
+    return tuple(c for c in (getattr(view, "collections", ()) or ()) if not is_deleted_source(c))
+
+
+def removed_collections(view: Any) -> tuple[Any, ...]:
+    """The last collections of deleted sources (D1 "Removed from scope"), outside every total."""
+    from backend.utilities.cbom_sources.collections_view import is_deleted_source
+
+    return tuple(c for c in (getattr(view, "collections", ()) or ()) if is_deleted_source(c))
+
+
 def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequence[Any]) -> TeamCbomView:
     """Fold each CBOM Sources source's latest completed collection into a code-scan view.  PURE.
 
@@ -3335,16 +3387,22 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
     become posture facts with evidence ``probed:CBOM Sources`` (the Network TLS document lists them)."""
     import backend.utilities.cbom_sources.posture_mapper as mapper
     from backend.utilities.cbom_sources.asset_keys import code_certificate_key
-    from backend.utilities.cbom_sources.collections_view import resolve
+    from backend.utilities.cbom_sources.collections_view import is_deleted_source, resolve
 
     if not collections:
         return view
-    aggs = {c.key: CollectionAgg(key=c.key, label=c.label, source_name=c.source_name, source_kind=c.source_kind,
-                                 run_id=int(c.run_id), job_id=int(c.job_id), observed_at=_utc(c.observed_at) or _EPOCH,
-                                 asset_count=int(c.asset_count), endpoints_probed=int(c.endpoints_probed),
-                                 metadata=dict(getattr(c, "metadata", None) or {}),
-                                 info=dict(getattr(c, "info", None) or {}))
-            for c in collections}
+    every = {c.key: CollectionAgg(key=c.key, label=c.label, source_name=c.source_name, source_kind=c.source_kind,
+                                  run_id=int(c.run_id), job_id=int(c.job_id), observed_at=_utc(c.observed_at) or _EPOCH,
+                                  asset_count=int(c.asset_count), endpoints_probed=int(c.endpoints_probed),
+                                  metadata=dict(getattr(c, "metadata", None) or {}),
+                                  info=dict(getattr(c, "info", None) or {}),
+                                  history=dict(getattr(c, "history", None) or {}))
+             for c in collections}
+    # a deleted source's last collection is history, never current population: none of its assets, certificates,
+    # source rows, posture facts or compliance verdicts is counted (D1 lists it under "Removed from scope" from
+    # ``view.collections``, which still names every collection; staging QA2 Q1-01)
+    aggs = {key: agg for key, agg in every.items() if not is_deleted_source(agg)}
+    rows = [item for item in rows if not is_deleted_source(item.collection)]
     # 1. code certificates with a cross-scope identity; latest observation wins
     code_ident: dict[str, str] = {}
     for cert in view.certs:
@@ -3437,13 +3495,8 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
                            impact_counts=_ordered_counts(impacts_by.get(s.key, Counter()), IMPACT_LEVELS))
                    for s in view.sources]
     for agg in aggs.values():
-        source_rows.append(SourceAgg(
-            key=agg.key, label=agg.label, kind=SOURCE_SOURCES, repo_url=None, branch=None, scan_ids=(agg.run_id,),
-            scan_count=1, first_scanned=agg.observed_at, last_scanned=agg.observed_at, current_scan_id=agg.run_id,
-            current_tier=TIER_A, current_fidelity=FIDELITY_FULL, last_attempt_scan_id=agg.run_id,
-            last_attempt_status=STATUS_SUCCESS, last_attempt_at=agg.observed_at,
-            asset_counts=_ordered_counts(types_by.get(agg.key, Counter()), ASSET_TYPES),
-            impact_counts=_ordered_counts(impacts_by.get(agg.key, Counter()), IMPACT_LEVELS)))
+        source_rows.append(_collection_source_row(agg, _ordered_counts(types_by.get(agg.key, Counter()), ASSET_TYPES),
+                                                  _ordered_counts(impacts_by.get(agg.key, Counter()), IMPACT_LEVELS)))
     source_rows.sort(key=lambda source: (source.label.casefold(), source.key))
     # 4. posture: probed endpoints and collected settings are assessed evidence of their collection; the counts are
     # recomputed over every current fact so a document's KPI and its registers read one set (Rule P)
@@ -3483,7 +3536,7 @@ def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequ
         window_end=max([*seen, *([view.window_end] if view.window_end else [])]),
         fingerprint=digest, sources=tuple(source_rows), assets=tuple(assets), certs=tuple(certs), posture=posture,
         libs=_merge_sources_libs(view.libs, components), frameworks=frameworks, requirements=requirements,
-        collections=tuple(sorted(aggs.values(), key=lambda a: (a.label.casefold(), a.key))), **_headline(live))
+        collections=tuple(sorted(every.values(), key=lambda a: (a.label.casefold(), a.key))), **_headline(live))
     merged.remediation = view.remediation
     merged.register = view.register
     merged.regulated_entity = view.regulated_entity
@@ -3669,10 +3722,12 @@ __all__ = [
     "TeamCbomView",
     "cert_identity_key",
     "classify_expiry",
+    "current_collections",
     "extract_scan_facts",
     "fold_scans",
     "load_team_cbom_view",
     "merge_collections",
+    "removed_collections",
     "sanitize_repo_url",
     "source_key_for",
 ]

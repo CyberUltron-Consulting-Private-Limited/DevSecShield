@@ -113,6 +113,8 @@ class EstateWrite:
     # source_ref -> (job, attempt) it pointed at before this write, None for a new source (#352: a hook that brought
     # the source up to that job compares the new job's rows with it instead of every observation's own row)
     previous: dict[str, tuple[int, int] | None] = field(default_factory=dict)
+    # staging QA2 Q1-09: stored per-source keys this write moved to the current identity (``identity_migration``)
+    identity_moves: dict[str, int] = field(default_factory=dict)
 
 
 Hook = Callable[[Session, EstateWrite], None]
@@ -478,6 +480,18 @@ def record_run(session: Session, run: CbomCollectionRun, now: _dt.datetime, *,
     write.source_refs = sorted(jobs)
     write.previous = {ref: (int(prev[0]), int(prev[1] or 1)) if prev is not None else None
                       for ref, (_job, prev) in jobs.items()}
+    # 0b. #497 reviews 6038990137 M1 / 6057627810 M1: the keys the certificate identity rule changed move IN PLACE
+    # before the store is read, driven by the stored observations' own rows (a source whose latest job failed too).
+    # The deploy migration moved every team (``identity_migration.migrate_all``) and marked it with the highest job it
+    # covered: only rows of later jobs (an older worker's write during a rolling deploy) are looked at here, one read.
+    if write.previous:
+        from backend.utilities.cbom_sources import identity_migration
+
+        mark = identity_migration.mark_of(session, team_id)
+        for k, v in identity_migration.migrate_team(session, team_id, refs=sorted(write.previous),
+                                                    since_job=mark or 0, lock=False).items():
+            if k != "sources":
+                write.identity_moves[k] = write.identity_moves.get(k, 0) + v
     marks = {"sources": time.perf_counter()}
 
     # 1. what the run read: rows of its successful collections, keyed across sources
@@ -495,6 +509,15 @@ def record_run(session: Session, run: CbomCollectionRun, now: _dt.datetime, *,
     marks["read"] = time.perf_counter()
     keyed = _keys_for_run(team_id, seen_rows)
     alias_to_key = keyed.alias_to_key
+    # staging QA2 Q1-09: a key the current rows' spelling changed (a row first collected after #481 under its old
+    # identity); the stored rows' own keys moved before the store was read (``identity_migration``, step 0b)
+    moves = {ref: found for ref, rows in job_rows.items()
+             if (found := ID.rekeyed_observations((r for r in rows if r.asset_type != "coverage"), ref))}
+    if moves:
+        from backend.utilities.cbom_sources import identity_migration
+
+        for k, v in identity_migration.remap(session, team_id, moves).items():
+            write.identity_moves[k] = write.identity_moves.get(k, 0) + v
     seen: dict[tuple[str, str], _Seen] = {}
     for i, (row, ref) in enumerate(seen_rows):
         key, kind, basis = _key_of(keyed.keys[i])

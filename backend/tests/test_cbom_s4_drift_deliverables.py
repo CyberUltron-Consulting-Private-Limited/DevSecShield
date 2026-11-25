@@ -406,7 +406,8 @@ def test_migration_is_the_one_head_after_fd2gate001():
             revisions.add(rev.group(1))
         if down:
             parents.update(re.findall(r"""['"]([^'"]+)['"]""", down.group(1)))
-    assert revisions - parents == {"rsched1trig001"}
+    # one head (test_alembic_single_head); later migrations chain after this one (q102hist001 since #497)
+    assert "rsched1trig001" in parents and len(revisions - parents) == 1
 
 
 def test_migration_up_down_up_backfills_from_schedule_id(tmp_path):
