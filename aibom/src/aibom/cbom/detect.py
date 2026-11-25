@@ -1301,6 +1301,60 @@ def _innermost_call(stack: list[_Frame]) -> str | None:
     return next((b for ch, decl, b in reversed(stack) if ch == "(" and not decl), None)
 
 
+_PY_CLASS_LINE = re.compile(r"^class\s+[A-Za-z_]\w*")
+_PY_FIELD = re.compile(r"^([A-Za-z_]\w*)\s*(?::[^=]*)?(?<![=!<>])=(?!=)")
+
+
+def _class_fields(raw: list[str], stack_at: list[list[_Frame]]) -> dict[int, str]:
+    """Line index -> field name, for each ``name[: type] = ...`` line directly in a
+    Python class body (not in a method). Indentation decides the body."""
+    out: dict[int, str] = {}
+    classes: list[list[int | None]] = []  # [class indent, body indent]
+    for idx, line in enumerate(raw):
+        text = line.strip()
+        if not text or text.startswith(("#", "@")) or stack_at[idx]:
+            continue  # blank, comment, decorator, or a bracket continuation
+        indent = len(line) - len(line.lstrip())
+        while classes and indent <= int(classes[-1][0] or 0):
+            classes.pop()
+        if classes and classes[-1][1] is None:
+            classes[-1][1] = indent
+        if classes and indent == classes[-1][1]:
+            m = _PY_FIELD.match(text)
+            if m:
+                out[idx] = m.group(1).lower()
+        if _PY_CLASS_LINE.match(text):
+            classes.append([indent, None])
+    return out
+
+
+# Code carried in a Python string (a JS snippet, a shell line) or pasted with its
+# string escapes (``\"cipher\": \"AES-256-GCM\"``, EncDec server.py:379): its
+# calls are not Python calls and its names are no use.
+_EVIDENCE_NAME = re.compile(
+    r"\b(?:AES|3DES|DES|RC4|RC2|Blowfish|ChaCha20|MD5|MD4|SHA-?(?:1|224|256|384|512)"
+    r"|SHA3-\d+|HMAC|PBKDF2|scrypt|Argon2|bcrypt|RSA|ECDSA|ECDH|Ed25519|X25519"
+    r"|HS256|RS256|ES256)\b",
+    re.I,
+)
+_NESTED_QUOTE = re.compile(r"""^"[^"]*'[^']*'|^'[^']*"[^"]*"|\\["']""")
+_CODE_CHARS = re.compile(r"[(){};]|=>")
+
+
+def _py_embedded_code(body: str) -> bool:
+    """Whether a Python string literal's body is code in another language."""
+    inner = body[1:-1]
+    return bool(_CODE_CHARS.search(inner)) and bool(
+        _NESTED_QUOTE.search(body) or re.search(r"""\w\(\s*['"]""", inner)
+    )
+
+
+def _py_escaped_code(line: str) -> bool:
+    """A line with a backslash-escaped quote outside any string literal: text copied
+    out of a string, not Python."""
+    return "\\" in _blank_strings(line) and bool(re.search(r"""\\["']""", line))
+
+
 def _record_types(lines: list[str]) -> set[str]:
     out: set[str] = set()
     deco = False
@@ -1325,7 +1379,9 @@ def _binding_before(text: str) -> str | None:
 class _ConfigLiterals:
     """Which string literals of a file are settings or labels, not uses (above)."""
 
-    def __init__(self, lines: list[str], lang: str) -> None:
+    def __init__(
+        self, lines: list[str], lang: str, raw: list[str] | None = None
+    ) -> None:
         self.lang = lang
         self.refs = _crypto_refs(lines)
         js_keys = _JS_LIBRARY_CONFIG_KEYS if lang == _JS else frozenset()
@@ -1338,6 +1394,9 @@ class _ConfigLiterals:
             self.stack_at.append(list(stack))
             if len(line) <= _MAX_STRING_SCAN:
                 self._walk(line, _blank_strings(line), stack, len(line))
+        self.class_fields = (
+            _class_fields(raw, self.stack_at) if lang == _PY and raw else {}
+        )
 
     @staticmethod
     def _walk(raw: str, code: str, stack: list[_Frame], upto: int) -> None:
@@ -1392,9 +1451,20 @@ class _ConfigLiterals:
         statement = bool(_NOT_A_SETTING.match(line))
         code = _blank_strings(line)
         out: list[tuple[int, int, str]] = []
+        field = self.class_fields.get(line_idx)
         for lit in _STR_LIT.finditer(line):
             stack = list(self.stack_at[line_idx])
             self._walk(line, code, stack, lit.start())
+            if field is not None:
+                # a class-body field default (dataclass, pydantic, attrs, NamedTuple,
+                # a class attribute): a setting, unless a crypto call reads the field
+                # or the literal is a crypto call's own argument
+                callee = _innermost_call(stack)
+                if field not in self.refs and field not in self.keys and not (
+                    callee and _CRYPTO_CALLEE.search(callee)
+                ):
+                    out.append((lit.start(), lit.end(), field))
+                continue
             if self.lang == _PY and _is_label(lit.group(0)[1:-1]):
                 # a label or message (whitespace in it) anywhere but a crypto call's
                 # own argument: ``{"backend": "AES-256-GCM AEAD (...)"}``,
@@ -2508,10 +2578,22 @@ def detect_crypto(
     jwt_file = bool(_JWT_FILE.search(stripped)) and lang in (_PY, _JS, _JAVA)
     keyword_lines = _keyword_list_lines(work_lines, lang) | _policy_list_lines(work_lines, lang)
     config = (
-        _ConfigLiterals([ln.strip() for ln in work_lines], lang)
+        _ConfigLiterals([ln.strip() for ln in work_lines], lang, work_lines)
         if lang in _CONFIG_LANGS
         else None
     )
+    pats = (*LITERAL_PATTERNS, *LITERAL_BY_LANG.get(lang, ()))
+
+    def _evidence(line_no: int, text: str, binding: str) -> None:
+        if config_evidence is None or not text.strip():
+            return
+        named = [k for k, pat in pats if pat.search(text)]
+        if not named:  # a value in another language's spelling ('AES-GCM', 'DES')
+            hit = _EVIDENCE_NAME.search(text)
+            named = [hit.group(0).lower()] if hit else []
+        if named:
+            config_evidence.append({"line": line_no, "algorithm": named[0],
+                                    "binding": binding, "value": text.strip()[:80]})
 
     out: list[Detection] = []
     for line_no, work in enumerate(work_lines, start=1):
@@ -2520,6 +2602,17 @@ def detect_crypto(
             continue  # imports are LIBRARY signals, handled by the scanner
         if line_no in keyword_lines:
             continue  # an element of a non-crypto keyword table, or of a deny-list
+        if lang == _PY and len(line) <= _MAX_STRING_SCAN:
+            if _py_escaped_code(line):
+                _evidence(line_no, line, "escaped-code")
+                continue  # escaped text pasted as code: no call, no use
+            embedded = [
+                m for m in _STR_LIT.finditer(line) if _py_embedded_code(m.group(0))
+            ]
+            for m in reversed(embedded):
+                _evidence(line_no, m.group(0)[1:-1], "embedded-code")
+                gap = " " * (m.end() - m.start() - 2)
+                line = line[:m.start() + 1] + gap + line[m.end() - 1:]
         per_line: dict[str, Detection] = {}
 
         # --- receiver+method rule lane ---
@@ -2551,17 +2644,8 @@ def detect_crypto(
         lit_line = blank_labels(blank_prose(line, lang), lang)
         if config is not None:
             for start, end, binding in config.unused_spans(line_no - 1, line):
-                body = lit_line[start + 1:end - 1]
-                if config_evidence is not None and body.strip():
-                    pats = (*LITERAL_PATTERNS, *LITERAL_BY_LANG.get(lang, ()))
-                    named = [k for k, pat in pats if pat.search(body)]
-                    if named:
-                        config_evidence.append({
-                            "line": line_no,
-                            "algorithm": named[0],
-                            "binding": binding,
-                            "value": line[start + 1:end - 1][:80],
-                        })
+                if lit_line[start + 1:end - 1].strip():
+                    _evidence(line_no, line[start + 1:end - 1], binding)
                 blank = " " * (end - start - 2)
                 lit_line = lit_line[:start + 1] + blank + lit_line[end - 1:]
         if lang == _C and "_set_cipher_list" in lit_line:

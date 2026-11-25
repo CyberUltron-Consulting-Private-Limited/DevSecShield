@@ -218,3 +218,79 @@ def test_md5_and_sha1_classical_level_is_their_collision_strength(tmp_path):
     assert cdx["MD5"] == rows["MD5"] == 18
     assert cdx["SHA-1"] == rows["SHA-1"] == 63
     assert cdx["SHA-256"] == rows["SHA-256"] == 128
+
+
+# ----------------------------------------------------------------------------- round 3
+# class-body field defaults and embedded / escaped code in Python strings
+_PY_FIELDS = [
+    # dataclass
+    "from dataclasses import dataclass, field\n"
+    "@dataclass\nclass Conf:\n    name: str = 'x'\n    cipher: str = 'AES-256-GCM'\n",
+    # dataclass field(default=...)
+    "from dataclasses import dataclass, field\n"
+    "@dataclass\nclass Conf:\n    cipher: str = field(default='AES-256-GCM')\n",
+    # pydantic
+    "from pydantic import BaseModel\n"
+    "class Settings(BaseModel):\n    hash_name: str = 'SHA-1'\n",
+    # attrs
+    "import attr\n@attr.s\nclass Conf:\n    cipher = attr.ib(default='DES')\n",
+    # NamedTuple
+    "from typing import NamedTuple\n"
+    "class Profile(NamedTuple):\n    kdf: str = 'scrypt'\n    cipher: str = 'RC4'\n",
+    # a plain class attribute
+    "class Defaults:\n    CIPHER = 'AES-128-CBC'\n",
+]
+
+
+@pytest.mark.parametrize("text", _PY_FIELDS)
+def test_python_class_body_field_defaults_are_configuration_evidence(text):
+    keys, ev = _keys(text, "python")
+    assert keys == set(), keys
+    assert ev, "kept as configuration evidence"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # the field's value reaches a crypto call in the file
+        "import hashlib\nclass Conf:\n    hash_name = 'md5'\n"
+        "def digest(c, b):\n    return hashlib.new(c.hash_name, b)\n",
+        "from cryptography.hazmat.primitives import hashes\n"
+        "class Signer:\n    DIGEST = 'SHA1'\n"
+        "    def sign(self, key, data):\n"
+        "        return key.sign(data, getattr(hashes, self.DIGEST)())\n",
+    ],
+)
+def test_a_field_that_flows_into_a_crypto_call_stays(text):
+    keys, _ev = _keys(text, "python")
+    assert keys & {"md5", "sha1"}, keys
+
+
+def test_method_locals_are_not_class_fields():
+    text = (
+        "import hashlib\nclass H:\n    def run(self, b):\n"
+        "        return hashlib.md5(b).hexdigest()\n"
+    )
+    keys, _ev = _keys(text, "python")
+    assert "md5" in keys
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # JS held in a Python string: not Python calls, not inventory
+        "PAGE_JS = \"crypto.subtle.encrypt({name: 'AES-GCM', iv}, key, data)\"\n",
+        "SNIPPET = 'const h = crypto.createHash(\"md5\").update(x).digest(\"hex\");'\n",
+        # escaped code pasted outside a string (EncDec server.py:379: \"cipher\": ...)
+        "def f():\n    return {\n        \\\"cipher\\\": \\\"AES-256-GCM\\\",\n    }\n",
+    ],
+)
+def test_code_inside_or_escaped_from_a_python_string_is_not_parsed(text):
+    keys, ev = _keys(text, "python")
+    assert keys == set(), keys
+    assert ev, "kept as configuration evidence"
+
+
+def test_a_plain_algorithm_string_argument_still_counts():
+    keys, _ev = _keys("import hashlib\nh = hashlib.new('md5')\n", "python")
+    assert "md5" in keys
