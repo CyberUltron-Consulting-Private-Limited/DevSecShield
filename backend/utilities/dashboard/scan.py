@@ -1347,7 +1347,10 @@ def generate_scan_dashboard(
                     and is_unlicensed_library_gap(license_type)
                 ):
                     total_unlicensed_assets += 1
-                if is_unknown_license(license_type):
+                # the libraries among them, as the PDF's "Library licences resolved" row and the BOM's
+                # aibom:licence_unknown count them (a model with no known licence is MODEL_LICENSE_UNKNOWN)
+                if not is_model_asset(asset) and component_type != "external_provider" and is_unknown_license(
+                        license_type):
                     total_licence_unknown_assets += 1
 
                 # governance readiness: assets with both declared license and model card
