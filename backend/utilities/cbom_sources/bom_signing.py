@@ -632,7 +632,9 @@ Files
      openssl dgst -sha256 -verify ~/zeroshield-bom-key.pem -signature SHA256SUMS.sig SHA256SUMS
      sha256sum -c SHA256SUMS
      openssl dgst -sha256 -verify ~/zeroshield-bom-key.pem -signature manifest.json.sig manifest.json
+   CBOM packs only (the CycloneDX XML copy of the BOM):
      openssl dgst -sha256 -verify ~/zeroshield-bom-key.pem -signature bom.cdx.xml.sig bom.cdx.xml
+   AI BOM packs only (the SPDX 3.0.1 file; the SARIF file likewise, with bom.sarif.sig and bom.sarif):
      openssl dgst -sha256 -verify ~/zeroshield-bom-key.pem -signature bom.spdx.json.sig bom.spdx.json
    Each openssl line prints "Verified OK". sha256sum -c also refuses a pack whose zip held two entries of one name:
    the verifier rejects such a pack outright, since unzip tools disagree on which entry is the file.
