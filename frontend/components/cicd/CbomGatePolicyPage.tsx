@@ -24,6 +24,7 @@ import {
   cleanException,
   gatePolicyKey,
   getGatePolicy,
+  matchingPreset,
   policyFileText,
   resetGatePolicy,
   saveGatePolicy,
@@ -36,6 +37,7 @@ import {
   type KeyFamily,
   type StoredGatePolicy,
 } from "@/utils/api/cbomGatePolicy";
+import { formatDateIst } from "@/utils/datetime";
 import { saveBlob } from "@/utils/download";
 import { showErrorToast } from "@/utils/error-handler";
 import { toast } from "@/utils/toast";
@@ -55,6 +57,7 @@ const MODE_LABEL: Record<GateMode, string> = {
   fail: "Fail the build",
 };
 
+const CUSTOM_PRESET = "custom";
 const PRESET_LABEL: Record<string, string> = {
   "sp800-131a": "NIST SP 800-131A Rev. 2 (default)",
   "sp800-131a-2031": "SP 800-131A from 2031 (128-bit floor)",
@@ -104,7 +107,9 @@ function PolicyEditor({ teamId, view, stored, integrationId, onDone }: {
   const queryClient = useQueryClient();
   const start = stored?.policy ?? (integrationId ? view.team?.policy : undefined) ?? view.default;
   const [draft, setDraft] = useState<Draft>(() => toDraft(start));
-  const [preset, setPreset] = useState("sp800-131a");
+  // the preset the saved rules equal ("custom" when edited): a save remounts the editor, which used to reset it to the
+  // default (staging QA2 m9)
+  const [preset, setPreset] = useState(() => matchingPreset(start, view.presets) ?? CUSTOM_PRESET);
   const isAdmin = view.is_admin;
   const prefix = integrationId ? `gate-int-${integrationId}` : "gate-team";
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((d) => ({ ...d, [key]: value }));
@@ -148,10 +153,12 @@ function PolicyEditor({ teamId, view, stored, integrationId, onDone }: {
                 {Object.keys(view.presets).map((k) => (
                   <SelectItem key={k} value={k} className="cursor-pointer">{PRESET_LABEL[k] ?? k}</SelectItem>
                 ))}
+                <SelectItem value={CUSTOM_PRESET} disabled>Custom (edited rules)</SelectItem>
               </SelectContent>
             </Select>
           </Field>
-          <Button variant="outline" className="cursor-pointer" onClick={() => setDraft(toDraft({ ...view.presets[preset], exceptions: draft.exceptions }))}>
+          <Button variant="outline" className="cursor-pointer" disabled={!view.presets[preset]}
+                  onClick={() => setDraft(toDraft({ ...view.presets[preset], exceptions: draft.exceptions }))}>
             Apply preset
           </Button>
         </div>
@@ -297,7 +304,7 @@ function PolicyEditor({ teamId, view, stored, integrationId, onDone }: {
       </div>
       {stored && (
         <p className="text-xs text-zinc-500">
-          Saved version {stored.row_version}{stored.updated_at ? ` (${new Date(stored.updated_at).toLocaleString()})` : ""} · digest{" "}
+          Saved version {stored.row_version}{stored.updated_at ? ` (${formatDateIst(stored.updated_at)})` : ""} · digest{" "}
           <span className="font-mono">{stored.digest}</span>: the CI verdict shows the same digest.
         </p>
       )}

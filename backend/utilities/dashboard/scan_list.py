@@ -116,7 +116,8 @@ def _display_lang(meta: dict | None) -> str:
     return LANG_DISPLAY.get(app_lang, app_lang.capitalize() if app_lang else "Unknown")
 
 
-def generate_dashboard_data_for_scan_list(scans: list[Scan], scan_type: scan_types, sources: Any = None) -> dict:
+def generate_dashboard_data_for_scan_list(scans: list[Scan], scan_type: scan_types, sources: Any = None,
+                                          **cbom: Any) -> dict:
     """
     Generate dashboard data for a list of SAST scans.
     Arguments :
@@ -138,7 +139,7 @@ def generate_dashboard_data_for_scan_list(scans: list[Scan], scan_type: scan_typ
         elif scan_type == "dast":
             return generate_dast_dashboard_data(scans=scans)
         elif scan_type == "cbom":
-            return generate_cbom_dashboard_data(scans=scans, sources=sources)
+            return generate_cbom_dashboard_data(scans=scans, sources=sources, **cbom)
         elif scan_type == "ai_bom":
             return generate_ai_bom_dashboard_data(scans=scans)
     except Exception as e:
@@ -1707,37 +1708,80 @@ def _cbom_results(scan: Scan) -> list:
     return scan.scan_data.get("results", []) or []
 
 
-def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None) -> dict:
-    """Aggregate CBOM dashboard data across all scans for the scan-list page (same rules as one scan: cbom_metrics).
+def rollup_code_rows(scans: list[Scan], view: Any) -> dict[int, list]:
+    """scan id -> the rows the team roll-up counts for it (``cbom_team_rollup``: the CURRENT scan of each repository
+    and branch only, a superseded scan is history; within a scan one row per asset identity, ``AssetAgg`` 's
+    ``(asset_type, bom_ref or slug(title)#location)``). The dashboard and the documents count these rows (QA2 Q1-08)."""
+    from backend.utilities.dashboard.cbom_team_rollup import asset_identity
 
-    ``sources`` (``collections_view.SourcesResult``) adds each CBOM Sources source's latest completed collection: its
-    rows are counted by the same rules, and an asset seen by both a code scan and a Sources collection is counted
-    once, from the latest observation (``collections_view.resolve``)."""
+    current = {f.scan_id for f in getattr(view, "scans", ()) if f.is_current and f.exclusion is None}
+    out: dict[int, list] = {}
+    for scan in scans:
+        if scan.scan_status != "success" or scan.id not in current:
+            continue
+        seen: set[tuple[str, str]] = set()
+        rows = []
+        for row in _cbom_results(scan):
+            if not isinstance(row, dict):
+                continue
+            key = asset_identity(row)
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append(row)
+        out[scan.id] = rows
+    return out
+
+
+def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None, *, team_id: int | None = None,
+                                 register_summary: Any = None, now: Any = None) -> dict:
+    """Aggregate CBOM dashboard data for the scan-list page from the team roll-up the deliverables use (same rules as
+    one scan: cbom_metrics).
+
+    The code scans counted are the roll-up's current ones (the latest successful scan of each repository and branch;
+    staging QA2 Q1-08: a superseded scan was counted too, so the dashboard said 2463 assets and the Board Report 2454),
+    one row per asset identity. ``sources`` (``collections_view.SourcesResult``) adds each CBOM Sources source's
+    latest completed collection: its rows are counted by the same rules, and an asset seen by both a code scan and a
+    Sources collection is counted once, from the latest observation (``collections_view.resolve``). ``population``:
+    the population reconciliation every document prints (``cbom_sources.reconciliation``), with the register summary
+    when the caller passes it."""
+    from backend.utilities.cbom_sources import reconciliation as RECON
     from backend.utilities.cbom_sources.cbom_metrics import CodeRowSummary
     from backend.utilities.cbom_sources.collections_view import (
-        ORIGIN_CODE, REMEDIATION_BUCKET, SourcesResult, code_cert_identities, code_row_identity, current_only, resolve)
+        ORIGIN_CODE,
+        REMEDIATION_BUCKET,
+        SourcesResult,
+        code_cert_identities,
+        code_row_identity,
+        current_only,
+        resolve,
+    )
 
-    # a deleted source's last collection is never current population (staging QA2 Q1-01, the roll-up's rule)
-    sources = current_only(sources) if isinstance(sources, SourcesResult) else SourcesResult()
+    found = sources if isinstance(sources, SourcesResult) else SourcesResult()
+    team = team_id if team_id is not None else next(
+        (s.team_id for s in scans if getattr(s, "team_id", None) is not None), 0)
+    # the documents' roll-up: it drops a deleted source's rows itself and keeps its collection as "removed from scope",
+    # so the dashboard's block names it as D1 / D12 / D14 do
+    view = RECON.team_view(int(team), scans, found, now)
+    # every other count here: a deleted source's last collection is never current population (staging QA2 Q1-01)
+    sources = current_only(found)
+    rows_of = rollup_code_rows(scans, view)
+    counted = [scan for scan in scans if scan.id in rows_of]
     summary = CodeRowSummary()
     compliance_controls_metrics: dict[str, int] = defaultdict(int)
 
     cert_ids: dict[int, dict[str, str]] = {}
     code_observations = []
-    for scan in scans:
-        if scan.scan_status != "success":
-            continue
+    for scan in counted:
         cert_ids[scan.id] = code_cert_identities(scan.scan_data)
-        for row in _cbom_results(scan):
+        for row in rows_of[scan.id]:
             ident = code_row_identity(row, cert_ids[scan.id])
             if ident:
                 code_observations.append((scan.id, getattr(scan, "created_at", None), ident))
     resolution = resolve(code_observations, sources.rows)
 
-    for scan in scans:
-        if scan.scan_status != "success":
-            continue
-        results = [row for row in _cbom_results(scan)
+    for scan in counted:
+        results = [row for row in rows_of[scan.id]
                    if resolution.code_kept(scan.id, code_row_identity(row, cert_ids.get(scan.id, {})))]
         if not results:
             continue
@@ -1762,7 +1806,9 @@ def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None) -> dict
     summary.add_rows([item.row for item in resolution.sources_rows])
     for label, count in summary.compliance.items():
         compliance_controls_metrics[label] += count
-    readiness = summary.readiness_pct
+    # Rule P (review 6038529822 M1): the headline is the view's, the one the documents print; the distributions below
+    # are counted over the same rows
+    readiness = view.readiness_pct
 
     # Aggregate remediation across all successful scans (finding rows only)
     total_fixed = 0
@@ -1770,9 +1816,7 @@ def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None) -> dict
     total_not_started = 0
     total_ignored = 0
     all_findings_count = 0
-    for scan in scans:
-        if scan.scan_status != "success":
-            continue
+    for scan in counted:  # the roll-up's current scans: a superseded scan's findings are history
         findings = get_findings_for_scan_id(scan_id=scan.id, scan_type="cbom")
         all_findings_count += len(findings)
         metrics = get_issue_status_metrics(findings)
@@ -1792,18 +1836,24 @@ def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None) -> dict
         total_ignored += bucket == "ignored"
     all_findings_count += sources_findings
 
+    population = None
+    try:  # the reconciliation never costs the dashboard its cards
+        population = RECON.for_dashboard(view, register_summary, view.asset_occurrences, sources)
+    except Exception as exc:  # noqa: BLE001  # pragma: no cover - defensive
+        console.print(f"CBOM population reconciliation failed: {type(exc).__name__}", style="bold red")
     return {
+        "population": population,
         "sources": {
             "collections": len(sources.collections),
             "assets": len(resolution.sources_rows),
             "deduplicated": len(sources.rows) - len(resolution.sources_rows) + len(resolution.dropped_code),
         },
         "card_data": {
-            "total_crypto_assets": summary.crypto_assets,
+            "total_crypto_assets": view.asset_occurrences,
             "total_crypto_vulnerabilities": summary.findings,
             "total_informational": summary.informational,
             "total_weak_algorithms": summary.weak,
-            "total_quantum_vulnerable": summary.quantum["quantum_vulnerable"],
+            "total_quantum_vulnerable": view.pqc_vulnerable,
             "total_certificates": summary.certificates,
             "total_keys": summary.keys,
             "quantum_readiness_score": 0.0 if readiness is None else readiness,
@@ -1813,7 +1863,8 @@ def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None) -> dict
         "severity_distribution": summary.severity_distribution(),
         "algorithm_type_distribution": dict(summary.algorithm_types),
         "strength_distribution": dict(summary.strengths),
-        "quantum_readiness": dict(summary.quantum),
+        "quantum_readiness": {"quantum_safe": view.pqc_safe, "quantum_vulnerable": view.pqc_vulnerable,
+                              "broken_today": view.pqc_broken_today},
         "owasp_top_10_issues": dict(summary.owasp),
         "compliance_controls": dict(compliance_controls_metrics),
         "top_risks": summary.top(10),

@@ -3,7 +3,7 @@ description: >
   Air-gapped CBOM scan of a repository. Fails the job when a high finding is
   present. Installs nothing on the scanned hosts and does not call the network
   during the scan. Usable from any repository
-  (uses: AnshSinghal-CyberUltron/devsecshield/.github/actions/cbom-scan@<ref>):
+  (uses: CyberUltron-Consulting-Private-Limited/DevSecShield/.github/actions/cbom-scan@<ref>):
   the scanner runs from the action's own copy of this repository, and `path`
   is resolved in the caller's workspace.
 inputs:

@@ -126,7 +126,17 @@ async def list_scans(
                 from backend.utilities.cbom_sources.collections_view import load_sources_result
 
                 sources = load_sources_result(session, team_id)
-            dashboard_data = generate_dashboard_data_for_scan_list(scans=scans,scan_type=type, sources=sources)  # ✅ done for sast , iac , sbom_sca , mcp , llm
+            extra = {}
+            if type == "cbom":  # the population reconciliation reads the register summary (SOW audit A-09, QA2 M4)
+                from backend.utilities.cbom_sources import risk_register as REG
+
+                extra = {"team_id": team_id}
+                try:
+                    extra["register_summary"] = REG.summary(session, team_id,
+                                                            datetime.now(timezone.utc).replace(tzinfo=None))
+                except Exception as exc:  # noqa: BLE001  # the block then says the register was not loaded; the cards stand
+                    console.print(f"CBOM register summary not read: {exc.__class__.__name__}", style="bold red")
+            dashboard_data = generate_dashboard_data_for_scan_list(scans=scans,scan_type=type, sources=sources, **extra)  # ✅ done for sast , iac , sbom_sca , mcp , llm
             body = {
                 "scans_list_data": scans_list_data,
                 "dashboard_data": dashboard_data, #dashboard data will look different for different scan types

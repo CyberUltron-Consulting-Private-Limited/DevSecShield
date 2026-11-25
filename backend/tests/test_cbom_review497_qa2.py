@@ -71,7 +71,8 @@ def test_d12_leaves_the_assets_only_a_deleted_source_read_out_of_its_total(delet
 def test_d1_d12_and_d14_print_one_population(deleted_world):
     view = R.load_team_cbom_view(deleted_world.engine, 1, now=NOW.replace(tzinfo=dt.timezone.utc))
     steps = " ".join(P.reconciliation_steps(view))
-    assert "Total: 1 asset occurrence" in steps and "holds 1 distinct asset" in steps
+    # the one reconciliation block (#496, ``cbom_sources.reconciliation``) states the same two totals
+    assert "= 1 asset occurrence" in steps and "= 1 distinct asset in the Quantum Risk Register (D12)" in steps
     assert "Not counted: 1 asset only deleted sources read" in steps
     d14_text = re.sub(r"\s+", " ", pdf_text(d14.build_pdf(view)))
     assert "Grades from the quantum risk register (D12): 1 distinct assets" in d14_text

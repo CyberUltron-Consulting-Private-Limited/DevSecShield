@@ -35,6 +35,7 @@ from sqlmodel import Session, select
 
 from backend.new_models import (
     CbomCollectedAsset,
+    CbomCollectionAuditEvent,
     CbomCollectionSettings,
     CbomCollectionSource,
     CbomEstateAsset,
@@ -52,10 +53,10 @@ CSV_COLUMNS = ("item_key", "q_grade", "q_label", "q_reason", "label", "asset_typ
                "source_name", "application", "presence", "sources", "last_run_id", "last_observed_at",
                "model_version", "owners", "data_classification",
                # SOW D12 (audit A-15): what the grade read and how to fix it, per asset (``add_detail``)
-               *("pqc_class", "algorithm", "key_size", "fips_203_204_205", "cnsa_2_0", "sp800_131a", "fix_class",
+               *("sow_class", "also_quantum_broken", "pqc_class", "algorithm", "key_size", "fips_203_204_205", "cnsa_2_0", "sp800_131a", "fix_class",
                  "nist_pq_target", "nist_pq_reference", "data_lifetime_years", "data_lifetime_basis",
                  "migration_years", "crqc_years", "grade_inputs", "criticality", "owner"))
-DETAIL_FIELDS = CSV_COLUMNS[CSV_COLUMNS.index("pqc_class"):]
+DETAIL_FIELDS = CSV_COLUMNS[CSV_COLUMNS.index("sow_class"):]
 _RT = CbomRiskRegister.__table__
 USE_DIGESTS = True  # #352: narrow a write's keys with the content digests (False: every key, the reference path)
 
@@ -201,6 +202,8 @@ class Refresh:
     written: int = 0
     deleted: int = 0
     transitions: list[Transition] = field(default_factory=list)
+    # rows stored under another grade model that this refresh moved to another grade or reason (D12's week mark)
+    model_moves: int = 0
 
     def counts(self) -> dict[str, int]:
         return {"keys": self.keys, "graded": self.graded, "skipped": self.skipped, "written": self.written,
@@ -243,7 +246,7 @@ def refresh(session: Session, team_id: int, keys: Iterable[str], now: _dt.dateti
     model = QG.GRADE_MODEL_VERSION
     for part in _chunks(keys):
         stored = {r.item_key: r for r in session.execute(sa.select(
-            _RT.c.item_key, _RT.c.q_grade, _RT.c.q_reason, _RT.c.grade_digest).where(
+            _RT.c.item_key, _RT.c.q_grade, _RT.c.q_reason, _RT.c.grade_digest, _RT.c.model_version).where(
             _RT.c.team_id == team_id, _RT.c.item_key.in_(list(part)))).all()}
         ea = CbomEstateAsset.__table__  # type: ignore[attr-defined]
         assets = {a.asset_key: a for a in session.execute(sa.select(  # plain columns: no ORM object per key
@@ -306,6 +309,9 @@ def refresh(session: Session, team_id: int, keys: Iterable[str], now: _dt.dateti
                 "last_run_id": pointer.get("run_id") if run_id is None else run_id,
                 "last_observed_at": pointer.get("observed_at"), "model_version": model[:32],
                 "inputs_digest": inputs.digest, "grade_digest": digest, "updated_at": now})
+            if before is not None and before.model_version != model[:32] and \
+                    (before.q_grade, before.q_reason) != (g.q_grade, g.q_reason):
+                out.model_moves += 1  # moved under a new grade model, whichever path re-graded it (run or scheduler)
             if before is None or (before.q_grade, before.q_reason) != (g.q_grade, g.q_reason):
                 out.transitions.append(Transition(
                     key, (before.q_grade, before.q_reason) if before is not None else None, (g.q_grade, g.q_reason),
@@ -317,6 +323,8 @@ def refresh(session: Session, team_id: int, keys: Iterable[str], now: _dt.dateti
         out.written += len(writes)
         out.deleted += len(gone)
     out.graded = grader.graded
+    if out.model_moves:  # the run's write hook (apply_write) and the background re-grade both record it (6060527885)
+        _record_model_regrade(session, team_id, out.model_moves, model, now)
     return out
 
 
@@ -476,6 +484,36 @@ def regrade_team(session: Session, team_id: int, now: _dt.datetime, *, limit: in
     return out
 
 
+MODEL_REGRADE_ACTION = "register_model_regrade"
+
+
+def _record_model_regrade(session: Session, team_id: int, moved: int, model: str, now: _dt.datetime) -> int:
+    """Record, at ``now`` (the time the re-grade was given, so it lands in the week of its transitions), how many
+    register rows stored under another grade model a re-grade moved to another grade or reason (review 6057476173 M2;
+    6060527885: from the run's write hook as well as the background re-grade). D12 marks that week "grade model
+    changed" even when no Q0 gap opens or closes. One system audit row per refresh; its items are counts and the model
+    version, never a value of the team's data (``CbomCollectionAuditEvent``'s documented exception)."""
+    if moved:
+        session.add(CbomCollectionAuditEvent(team_id=team_id, at=now.astimezone(_dt.timezone.utc).replace(tzinfo=None) if now.tzinfo else now,
+                                             actor_type="system", action=MODEL_REGRADE_ACTION,
+                                             object_type="risk_register",
+                                             changed_fields=[f"moved={moved}", f"model_version={model[:32]}"]))
+    return moved
+
+
+def _model_regrades(session: Session, team_id: int, start: _dt.datetime, end: _dt.datetime) -> dict[str, int]:
+    """Register rows a grade-model re-grade moved, per week (Monday, ISO date) in ``[start, end)``."""
+    out: dict[str, int] = {}
+    for at, fields in session.exec(select(CbomCollectionAuditEvent.at, CbomCollectionAuditEvent.changed_fields).where(
+            CbomCollectionAuditEvent.team_id == team_id, CbomCollectionAuditEvent.action == MODEL_REGRADE_ACTION,
+            CbomCollectionAuditEvent.at >= start, CbomCollectionAuditEvent.at < end)).all():  # type: ignore[operator]
+        moved = next((int(f[6:]) for f in (fields or []) if isinstance(f, str) and f.startswith("moved=")
+                      and f[6:].isdigit()), 0)
+        monday = (at - _dt.timedelta(days=at.weekday())).date().isoformat()
+        out[monday] = out.get(monday, 0) + moved
+    return out
+
+
 def _teams(session: Session) -> list[int]:
     return sorted(set(session.exec(select(CbomEstateAsset.team_id).distinct()).all()))  # type: ignore[attr-defined]
 
@@ -579,6 +617,7 @@ def add_detail(session: Session, team_id: int, items: list[dict[str, Any]], now:
     from backend.utilities.cbom_sources import posture as P
     from backend.utilities.cbom_sources import pqc_targets as PQT
     from backend.utilities.cbom_sources import qgrade as QG
+    from backend.utilities.cbom_sources import sow_class as SC
     from backend.utilities.cbom_sources import standards as STD
     from backend.utilities.cbom_sources.classify import shown, standards_of
 
@@ -607,6 +646,9 @@ def add_detail(session: Session, team_id: int, items: list[dict[str, Any]], now:
     for item in items:
         row = rows.get(pick.get(item["item_key"], -1))
         out: dict[str, Any] = {k: None for k in DETAIL_FIELDS}
+        # without the stored row the grade read: the class its grade and reason say (a trust anchor reads as broken)
+        out["sow_class"] = SC.sow_class(item.get("q_grade"), item.get("q_reason"))
+        out["also_quantum_broken"] = "no"
         crit = item.get("business_criticality") or []
         out["criticality"] = "; ".join(crit) if isinstance(crit, list) else crit
         out["owner"] = "; ".join(item.get("owners") or []) or PQT.UNASSIGNED_OWNER
@@ -633,7 +675,12 @@ def add_detail(session: Session, team_id: int, items: list[dict[str, Any]], now:
             x, y, z, basis, assumed = QG.effective_mosca(src_in.get("x"), m["x"], m["y"], m["z"],
                                                          src_in.get("criticality"), inputs.year)
             reads = str(item.get("q_reason") or "").startswith("qv_")
+            # SOW 3.2 step 4 (staging QA2 M3): the SOW class from the grade the row holds and the grade's own SP
+            # 800-131A input, the same function the summary counts with (``sow_class``), both facts when both hold
+            label = SC.sow_class(item.get("q_grade"), item.get("q_reason"), lambda row=row: QG.disallowed_now(row))
             out.update({
+                "sow_class": label,
+                "also_quantum_broken": "yes" if SC.also_quantum_broken(label, cls, item.get("q_reason")) else "no",
                 "pqc_class": cls, "algorithm": row.algorithm, "key_size": row.key_size,
                 **{k: (STD.export_value(graded[k]) if graded and k in graded else None)
                    for k in ("fips_203_204_205", "cnsa_2_0", "sp800_131a")},
@@ -751,12 +798,17 @@ def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 1
     from backend.utilities.cbom_sources import estate_summary_ddl as SUMMARY
     from backend.utilities.cbom_sources import qgrade as QG
 
+    from backend.utilities.cbom_sources import sow_class as SC
+
     grades: dict[str | None, int] = {}
     q0_reasons: dict[str, int] = {}
     families: dict[str, dict[str, int]] = {}
+    presence_counts = {"present": 0, "not_read": 0, "removed": 0}
     live = 0
-    for grade, reason, fam, presence, n in SUMMARY.register_groups(session, team_id):
+    groups = SUMMARY.register_groups(session, team_id)
+    for grade, reason, fam, presence, n in groups:
         live += int(n) if presence != "removed" else 0
+        presence_counts[presence] = presence_counts.get(presence, 0) + int(n)
         grades[grade] = grades.get(grade, 0) + int(n)
         if grade == "Q0":
             q0_reasons[reason] = q0_reasons.get(reason, 0) + int(n)
@@ -786,6 +838,9 @@ def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 1
             continue
         bucket = weekly[monday]
         bucket[cause or "unknown"] = bucket.get(cause or "unknown", 0) + 1
+    # register rows a re-grade under a new grade model moved to another grade or reason (no Q0 gap needs to open or
+    # close for that, review 6057476173 M2): counted apart from the Q0 items the model closed, same week mark
+    regraded_weeks = _model_regrades(session, team_id, start, end)
     # SOW D12 Table 7 "gaps closed by week": with each week's openings and the gaps still open at its end, from the
     # gap lifecycle the runs wrote (opened_at / closed_at), so the series reads as a burn-down
     opened = {w: 0 for w in weekly}
@@ -811,24 +866,78 @@ def summary(session: Session, team_id: int, now: _dt.datetime, *, weeks: int = 1
         if bucket is not None and (grade or "none") in bucket:
             bucket[grade or "none"] = max(bucket[grade or "none"] - n, 0)
     q0_reasons = {k: v for k, v in q0_reasons.items() if v}
+    # the SOW classes and the presence split of the same population (the reconciliation's step 3 and 4)
+    groups = _without(groups, removed["groups"])
+    for presence, n in _removed_presence(session, team_id).items():
+        presence_counts[presence] = max(presence_counts.get(presence, 0) - n, 0)
     families = {f: {g: n for g, n in b.items() if n} for f, b in families.items() if any(b.values())}
     total = sum(int(v) for v in grades.values())
+    anchors_disallowed = SC.anchor_disallowed_count(session, team_id)
     return {
         "total": total, "q_grades": {g or "none": int(grades.get(g, 0)) for g in (*QG.GRADES, None)},
         "removed_from_scope": {"total": removed["total"], "q_grades": removed["q_grades"]},
         "q0_reasons": {k: int(v) for k, v in sorted(q0_reasons.items())},
+        # SOW 3.2 step 4 (staging QA2 M3/M4): rows per SOW class (``sow_class.counts``, the CSV's ``sow_class``) and
+        # per presence (present in a latest collection, not read, removed: the population reconciliation)
+        "sow_classes": SC.counts(groups, anchors_disallowed),
+        # of the deprecated rows, those a quantum computer also breaks (the CSV's also_quantum_broken)
+        "deprecated_quantum_broken": SC.deprecated_also_broken(groups, anchors_disallowed),
+        "presence": presence_counts,
+        "present_removed_sources": _present_removed(session, team_id),
         "q0_gaps_open": {k: int(v) for k, v in sorted(gaps_open.items())},
         "families": dict(sorted(families.items())),
         # Q0 GAP lifecycle per week (not drift events: drift_report.weekly_drift() counts findings opened / closed by
         # run comparison, a different series): total = Q0 gaps closed, q0_gaps_opened, q0_gaps_open_at_week_end
         "closures_by_week": [{"week": w, "total": sum(c.values()), "by_cause": dict(sorted(c.items())),
                               "q0_gaps_opened": opened[w], "q0_gaps_open_at_week_end": open_end[w],
-                              "model_changes": model_weeks.get(w, 0)}
+                              "model_changes": model_weeks.get(w, 0),
+                              "model_regraded": regraded_weeks.get(w, 0)}
                              for w, c in sorted(weekly.items())],
         "default_assumptions": default_assumptions(session, team_id, removed=removed["groups"]),
         "pending_regrade": pending(session, team_id, graded_live=live), "estate": E.stale_status(session, team_id),
         "model_version": QG.GRADE_MODEL_VERSION, "server_time": iso_z(now),
     }
+
+
+def _without(groups: list[tuple], removed: list[tuple]) -> list[tuple]:
+    """``register_groups``' ``(grade, reason, family, presence, n)`` minus ``removed_groups``' rows (matched on grade,
+    reason and family): the SOW-class counts and the presence split read the same population as the total (#497)."""
+    take: dict[tuple, int] = {}
+    for g, r, f, _ref, n in removed:
+        take[(g or None, r, f or None)] = take.get((g or None, r, f or None), 0) + int(n)
+    out = []
+    for g, r, f, p, n in groups:
+        k = (g or None, r, f or None)
+        cut = min(int(n), take.get(k, 0))
+        if cut:
+            take[k] -= cut
+        if int(n) - cut > 0:
+            out.append((g, r, f, p, int(n) - cut))
+    return out
+
+
+def _present_removed(session: Session, team_id: int) -> int:
+    """Register rows still ``present`` whose grade comes from a deleted source's last collection and that no later
+    run has settled yet (so ``removed_from_scope`` does not hold them): in the register's total, not in the team view
+    (the roll-up drops a deleted source's rows). The reconciliation names them, so its chain closes."""
+    from backend.new_models import CbomEstateObservation
+
+    live = sa.select(CbomCollectionSource.source_uid).where(CbomCollectionSource.team_id == team_id,
+                                                            CbomCollectionSource.source_uid.is_not(None))  # type: ignore[union-attr]
+    eo = CbomEstateObservation.__table__  # type: ignore[attr-defined]
+    # an asset a live source still reads is a view occurrence through that source (the certificate a deleted vault
+    # and a live Kubernetes source both read): it is not "in the total, not in the view" (review 6061787002 M1)
+    read_live = sa.exists(sa.select(eo.c.id).where(eo.c.team_id == _RT.c.team_id, eo.c.asset_key == _RT.c.item_key,
+                                                   eo.c.presence == "present", eo.c.source_ref.in_(live)))
+    return int(session.execute(sa.select(sa.func.count()).select_from(_RT).where(
+        _RT.c.team_id == team_id, _RT.c.presence == "present", _RT.c.source_ref.is_not(None),
+        _RT.c.source_ref.not_in(live), ~_removed_condition(team_id), ~read_live)).scalar_one())
+
+
+def _removed_presence(session: Session, team_id: int) -> dict[str, int]:
+    """The presence of the register rows ``removed_from_scope`` leaves out (the reconciliation's presence split)."""
+    return {str(p): int(n) for p, n in session.execute(sa.select(_RT.c.presence, sa.func.count()).where(
+        _removed_condition(team_id)).group_by(_RT.c.presence)).all()}
 
 
 def default_assumptions(session: Session, team_id: int, inputs: TeamInputs | None = None, *,

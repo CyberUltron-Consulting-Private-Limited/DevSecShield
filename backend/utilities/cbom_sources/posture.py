@@ -19,10 +19,11 @@ from __future__ import annotations
 import datetime as _dt
 import ipaddress
 import re
-from collections import Counter, defaultdict
+import threading
+from collections import Counter, OrderedDict, defaultdict
 from typing import Any, Callable, Iterable, Mapping
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionSource, CbomScanNode
@@ -64,7 +65,10 @@ PQC_CLASS_MODEL = "pc-3"
 # the export and the posture card show.
 CLASS_BASIS: dict[str, tuple[str, str]] = {
     "shor_breaks": ("quantum-vulnerable", "RSA, elliptic-curve or Diffie-Hellman: a large quantum computer breaks it"),
-    "grover_128_bit": ("grover-weakened", "A 128-bit symmetric key: still secure, smaller margin against quantum search"),
+    "grover_128_bit": ("grover-weakened", "A symmetric key of 128 bits or less (AES-128, Triple DES): not broken by a "
+                                          "quantum computer, a smaller margin against quantum search (Grover)"),
+    "symmetric_not_shor": ("quantum-safe", "A symmetric key of 192 bits or more, a MAC or a hash: a quantum computer "
+                                           "does not break it (Shor does not apply; Grover only halves the margin)"),
     "pq_kex_accepted": ("hybrid", "A named post-quantum key-exchange group is accepted next to the classical one"),
     "hybrid_construction": ("hybrid", "A hybrid or composite construction whose post-quantum component is identified; "
                                       "classical public-key cryptography is still part of it"),
@@ -260,6 +264,16 @@ def classify_pqc(row: Any, codes: list[str] | None = None, *, quantum_vulnerable
     if asset_type == "disk_encryption" and qv is False and \
             "128" in str(facts.get("method") or facts.get("cipher") or ""):
         return "grover-weakened", "grover_128_bit"  # any 128-bit volume key (BitLocker Aes128, aes-cbc-128), not only XTS
+    if qv is not None:  # a symmetric cipher, MAC or hash is never quantum-vulnerable, whatever its collector said
+        sym = symmetric_key(asset_type, algorithm, facts, _get(row, "key_size"))
+        if sym is not None:
+            kind, bits = sym
+            # an unrecorded size reads as 128 bits only to overrule a quantum-vulnerable verdict; a stored "safe"
+            # verdict is never downgraded without the size (a LUKS volume's aes-xts-plain64 records none)
+            if kind == "cipher" and ((bits is not None and bits <= 128) or (bits is None and qv is True)):
+                return "grover-weakened", "grover_128_bit"
+            if qv is True:
+                return "quantum-safe", "symmetric_not_shor"
     if qv is True:
         return "quantum-vulnerable", "shor_breaks"
     if qv is False:
@@ -268,6 +282,195 @@ def classify_pqc(row: Any, codes: list[str] | None = None, *, quantum_vulnerable
     if cls == "unknown" and elsewhere is not None and elsewhere(row) is not None:
         return "not-applicable", "read_elsewhere"
     return cls, basis
+
+
+# Symmetric cryptography (review 6038529822 M5): Shor breaks public-key algorithms only. Ciphers, MACs, hashes and
+# KDFs keep their security against a quantum computer up to Grover's quadratic search: a cipher key of 128 bits or less
+# is "weakened" (NIST's PQC security category 1 is defined relative to AES-128; NIST IR 8547 keeps AES-128 acceptable,
+# CNSA 2.0 requires AES-256), 192 bits or more, a MAC, a hash or a KDF is quantum-safe. What SP 800-131A disallows
+# (DES, Triple DES, RC4, MD5 ...) is "deprecated" whatever its quantum class (``qgrade.graded_pqc_class``).
+#
+# Detection is by primitive class (review 6057476173 m2), not by a list of names: algid's primitive first (the one
+# identity table), then each symmetric class's families; a public-key family (algid), a hash-and-sign name
+# ("SHA256withRSA") or a JOSE public-key algorithm (RS256, ES384, PS512, EdDSA) is never symmetric.
+_SYMMETRIC_PRIMITIVES = {"block-cipher": "cipher", "stream-cipher": "cipher", "ae": "cipher", "mac": "mac",
+                         "hash": "hash", "xof": "hash", "kdf": "kdf"}
+_SYMMETRIC_CLASSES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    # block, stream and authenticated ciphers
+    ("cipher", re.compile(r"^(aes|rijndael|3des|tdea|des|triple|rc[2456]|arcfour|blowfish|twofish|threefish|serpent|"
+                          r"x?chacha|salsa20|camellia|aria|seed|idea|sm4|cast|gost.?28147|magma|kuznyechik|kalyna|"
+                          r"skipjack|ascon)", re.IGNORECASE)),
+    # MACs: HMAC, CMAC, GMAC, KMAC, Poly1305, SipHash, and JOSE's HMAC algorithms (HS256 / HS384 / HS512)
+    ("mac", re.compile(r"^(hmac|cmac|gmac|kmac|poly1305|siphash|hs(256|384|512)$)", re.IGNORECASE)),
+    # hashes and XOFs
+    ("hash", re.compile(r"^(sha|md[245]|ripemd|blake|whirlpool|sm3|keccak|shake|streebog|tiger)", re.IGNORECASE)),
+    # key derivation and password hashing
+    ("kdf", re.compile(r"^(pbkdf|hkdf|scrypt|argon2|bcrypt|kbkdf|concat-?kdf|x9\.?63-?kdf|kdf)", re.IGNORECASE)),
+)
+_WITH_PUBLIC_KEY = re.compile(r"with", re.IGNORECASE)  # a hash-and-sign name ("SHA256withRSA", "SM3withSM2")
+_JOSE_PUBLIC_KEY = re.compile(r"^(rs|ps|es)(256|384|512)k?$|^eddsa$|^ed(25519|448)$", re.IGNORECASE)
+_TRIPLE_DES = re.compile(r"^(3des|tdea|desede|triple|des-?ede|des3|des-?cbc3)", re.IGNORECASE)  # DES-CBC3: 3DES
+# an OpenSSL cipher-suite name ("AES128-SHA", "DES-CBC3-SHA", "RC4-MD5", "AES256-GCM-SHA384"): a cipher, then the
+# suite's MAC; with no key-exchange part it is static RSA key exchange, which Shor breaks (review 6060527885 m2)
+_OPENSSL_SUITE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*-(sha|sha1|sha256|sha384|md5)$", re.IGNORECASE)
+_SINGLE_DES = re.compile(r"^des(?!-?ede)(?![a-z0-9])", re.IGNORECASE)
+# a key or digest size in a name ("AES-128-GCM", "AES256", "HMAC-SHA256"), never a mode's counter ("aes-xts-plain64")
+_KEY_BITS = re.compile(r"(?<!\d)(112|128|168|192|224|256|384|512)(?!\d)")
+_NOT_SYMMETRIC_TYPES = _CERT_TYPES | _PRIVATE_KEY_TYPES | _TLS_TYPES | _SSH_TYPES | _KEX_ELSEWHERE_TYPES | {
+    "ike_endpoint", "appliance_config"}
+
+
+def _int_bits(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int) and 0 < value <= 1024:
+        return value
+    if isinstance(value, str) and value.strip().isdigit() and 0 < int(value.strip()) <= 1024:
+        return int(value.strip())
+    return None
+
+
+def symmetric_class(text: str) -> str | None:
+    """The symmetric primitive class of one algorithm name (``cipher`` / ``mac`` / ``hash`` / ``kdf``), None for a
+    public-key or unknown name."""
+    text = text.strip()
+    if not text or _WITH_PUBLIC_KEY.search(text) or _JOSE_PUBLIC_KEY.match(text) or algid.family_label(text):
+        return None
+    found = algid.resolve(text)
+    primitive = str(getattr(found, "primitive", "") or "") if found is not None else ""
+    if primitive:
+        return _SYMMETRIC_PRIMITIVES.get(primitive)  # algid names the primitive: a public-key one is None
+    return next((kind for kind, pattern in _SYMMETRIC_CLASSES if pattern.match(text)), None)
+
+
+def symmetric_key(asset_type: str, algorithm: Any, facts: Mapping[str, Any] | None,
+                  key_size: Any = None) -> tuple[str, int | None] | None:
+    """``(class, key bits or None)`` when the asset's cryptography is symmetric (``symmetric_class``: a cipher, a MAC,
+    a hash or a KDF), else None. KMS ``SYMMETRIC_DEFAULT`` is AES-256-GCM. A certificate, private key, endpoint or
+    IKE / SSH setting is never read as symmetric (its public-key part decides). ``key_size``: the stored column."""
+    facts = facts if isinstance(facts, Mapping) else {}
+    if asset_type in _NOT_SYMMETRIC_TYPES:
+        return None
+    spec = facts.get("key_spec")
+    if asset_type == "kms_key" and isinstance(spec, str) and spec:
+        if spec.upper() == "SYMMETRIC_DEFAULT":
+            return "cipher", 256
+        if spec.upper().startswith("HMAC"):
+            return "mac", _int_bits((_KEY_BITS.findall(spec) or [None])[-1])
+        return None  # an asymmetric key spec (RSA_2048, ECC_NIST_P256 ...)
+    for raw in (algorithm, facts.get("algorithm"), facts.get("key_alg"), facts.get("cipher"), facts.get("method")):
+        text = raw.strip() if isinstance(raw, str) else ""
+        if not text:
+            continue
+        if _WITH_PUBLIC_KEY.search(text) or _JOSE_PUBLIC_KEY.match(text) or algid.family_label(text):
+            return None  # a public-key family (RSA, EC, DSA ...), a signature scheme or a JOSE public-key algorithm
+        kind = symmetric_class(text)
+        if kind is None:
+            continue
+        if kind == "cipher" and _OPENSSL_SUITE.match(text) and "hmac" not in text.lower():
+            return None  # a TLS cipher suite: its key exchange decides, not its bulk cipher
+        if kind == "cipher" and _TRIPLE_DES.match(text):
+            return kind, 112  # three 56-bit keys: 112 bits of strength
+        if kind == "cipher" and _SINGLE_DES.match(text):
+            return kind, 56
+        if kind == "cipher" and text.lower().startswith(("chacha", "xchacha", "salsa20")):
+            return kind, 256  # one key size
+        found = algid.resolve(text)
+        bits = (getattr(found, "key_size", None) if found is not None else None) or _int_bits(key_size) \
+            or _int_bits(facts.get("key_size")) or _int_bits(facts.get("key_length")) \
+            or _int_bits(facts.get("key_bits")) or _int_bits((_KEY_BITS.findall(text) or [None])[0])
+        return kind, bits
+    return None
+
+
+def stored_verdict(row: Any, *, quantum_vulnerable: Any = _ROW) -> bool | None:
+    """The quantum verdict as every count reads it, the stored one corrected by the class rule (``graded_class``):
+
+    * a symmetric cipher, MAC, hash or KDF (``symmetric_key``) is never quantum-vulnerable, whatever its collector
+      said (review 6038529822 M5): False;
+    * unless SP 800-131A disallows it today (DES, Triple DES, RC4, MD5 ...): None, because its class is
+      ``deprecated``, which is outside readiness like every other disallowed asset (review 6057476173 B1);
+    * anything else as stored.
+
+    ``quantum_vulnerable`` stands in for the stored verdict when a caller re-judged the row (drift's ``reclassify``).
+    The run posture, the team view (``collections_view.node_row``), the run list, the asset list, the waves, drift and
+    the CycloneDX export all read this one function."""
+    qv = _get(row, "quantum_vulnerable") if quantum_vulnerable is _ROW else quantum_vulnerable
+    if qv is None:
+        return None
+    facts = _get(row, "facts")
+    facts = facts if isinstance(facts, Mapping) else {}
+    if symmetric_key(str(_get(row, "asset_type") or ""), _get(row, "algorithm"), facts,
+                     _get(row, "key_size")) is None:
+        return qv
+    from types import SimpleNamespace
+
+    from backend.utilities.cbom_sources import qgrade as QG
+
+    return None if QG.disallowed_now(SimpleNamespace(**row) if isinstance(row, dict) else row) else False
+
+
+def verdict_corrections(session: Session, *conditions: Any) -> dict[int, tuple[int | None, bool | None, bool | None]]:
+    """The stored rows (``CbomCollectedAsset`` matching ``conditions``) whose ``stored_verdict`` differs from the
+    stored column: ``{id: (run_id, stored, corrected)}``. A grouped SQL count over ``quantum_vulnerable`` (the run
+    list's column, the asset list's chip and filter) applies these to count what every other surface counts (review
+    6057476173 M1). Only rows that can be symmetric (not a certificate, key, endpoint or setting with a public-key
+    part) and carry a verdict are read, so a run of certificates and endpoints reads nothing."""
+    from types import SimpleNamespace
+
+    cols = (CbomCollectedAsset.id, CbomCollectedAsset.run_id, CbomCollectedAsset.asset_type,
+            CbomCollectedAsset.algorithm, CbomCollectedAsset.key_size, CbomCollectedAsset.facts,
+            CbomCollectedAsset.quantum_vulnerable)
+    query = select(*cols).where(*conditions, CbomCollectedAsset.quantum_vulnerable.is_not(None),  # type: ignore[union-attr]
+                                CbomCollectedAsset.asset_type.notin_(sorted(_NOT_SYMMETRIC_TYPES | {"coverage"})))  # type: ignore[union-attr]
+    out: dict[int, tuple[int | None, bool | None, bool | None]] = {}
+    for aid, run_id, a_type, algorithm, key_size, facts, qv in session.exec(query).all():
+        corrected = stored_verdict(SimpleNamespace(asset_type=a_type, algorithm=algorithm, key_size=key_size,
+                                                   facts=facts if isinstance(facts, dict) else {},
+                                                   quantum_vulnerable=qv))
+        if corrected is not qv:
+            out[int(aid)] = (run_id, qv, corrected)
+    return out
+
+
+_CORRECTIONS: OrderedDict[tuple, dict[int, tuple[int | None, bool | None, bool | None]]] = OrderedDict()
+_CORRECTIONS_MAX = 32
+_CORRECTIONS_LOCK = threading.Lock()
+
+
+def scope_corrections(session: Session, team_id: int, *, run_id: int | None = None,
+                      job_id: int | None = None) -> dict[int, tuple[int | None, bool | None, bool | None]]:
+    """``verdict_corrections`` of one team / run / job scope, kept in a small per-process cache (review 6060527885
+    m1: the asset list does not re-classify every symmetric row on each request). Stored assets are written once and
+    never changed, so the key is the scope, its candidate rows' count, highest id, newest write time and job-id sum,
+    and the grade model (which hashes this module, so a rule change is a new key). The write time and the job sum make
+    a reused id (SQLite without AUTOINCREMENT gives a deleted highest id to the next row) a new key (review
+    6061787002)."""
+    from backend.utilities.cbom_sources import qgrade as QG
+
+    conditions = [CbomCollectedAsset.team_id == team_id]
+    if run_id is not None:
+        conditions.append(CbomCollectedAsset.run_id == run_id)
+    if job_id is not None:
+        conditions.append(CbomCollectedAsset.job_id == job_id)
+    count, top, newest, jobs = session.exec(select(
+            func.count(), func.max(CbomCollectedAsset.id), func.max(CbomCollectedAsset.created_at),
+            func.sum(CbomCollectedAsset.job_id)).where(
+        *conditions, CbomCollectedAsset.quantum_vulnerable.is_not(None),  # type: ignore[union-attr]
+        CbomCollectedAsset.asset_type.notin_(sorted(_NOT_SYMMETRIC_TYPES | {"coverage"})))).one()  # type: ignore[union-attr]
+    key = (team_id, run_id, job_id, int(count or 0), int(top or 0), str(newest), int(jobs or 0),
+           QG.GRADE_MODEL_VERSION)
+    with _CORRECTIONS_LOCK:
+        hit = _CORRECTIONS.get(key)
+        if hit is not None:
+            _CORRECTIONS.move_to_end(key)
+            return hit
+    found = verdict_corrections(session, *conditions) if count else {}
+    with _CORRECTIONS_LOCK:
+        _CORRECTIONS[key] = found
+        while len(_CORRECTIONS) > _CORRECTIONS_MAX:
+            _CORRECTIONS.popitem(last=False)
+    return found
 
 
 def sibling_key(row: Any) -> tuple[str, str, str]:
@@ -420,16 +623,18 @@ def run_class_summary(session: Session, *, team_id: int, run_id: int) -> dict[st
 
 def graded_class(row: Any, codes: list[str], *, elsewhere: Any = None) -> tuple[str, str]:
     """(class, basis) as every surface shows it and as the quantum risk grade reads it: ``classify_pqc``, except that
-    a not-applicable asset whose algorithm SP 800-131A disallows is ``deprecated`` (``qgrade.graded_pqc_class``)."""
+    an asset SP 800-131A disallows with no public-key class (not applicable, or symmetric) is ``deprecated``
+    (``qgrade.graded_pqc_class``, the one rule the grade reads too)."""
     from types import SimpleNamespace
 
     from backend.utilities.cbom_sources import qgrade as QG
 
     cls, basis = classify_pqc(row, codes, elsewhere=elsewhere)
-    if cls != "not-applicable":
+    if cls not in ("not-applicable", "grover-weakened", "quantum-safe"):
         return cls, basis
     probe = SimpleNamespace(**row) if isinstance(row, dict) else row
-    return ("deprecated", "sp800_131a_disallowed") if QG.disallowed_now(probe) else (cls, basis)
+    graded = QG.graded_pqc_class(cls, probe)
+    return (graded, "sp800_131a_disallowed") if graded != cls else (cls, basis)
 
 
 def hndl(asset_type: str, quantum_vulnerable: bool | None) -> bool:
@@ -541,6 +746,26 @@ def framework_verdict(clauses: list[dict[str, Any]]) -> str | None:
     return "fail" if "fail" in verdicts else ("needs_evidence" if verdicts else None)
 
 
+def _repeated_certificates(rows: Iterable[Any]) -> set[int]:
+    """Ids of the certificate rows of one run that repeat a certificate another row already holds (the same
+    ``asset_keys.correlate`` key): counted once in the posture's classes and readiness."""
+    from backend.utilities.cbom_sources import asset_keys as AK
+
+    certs = [r for r in rows if r.asset_type != "coverage"
+             and (r.asset_type in AK.CERT_TYPES or getattr(r, "cdx_type", "") == "certificate")]
+    if len(certs) < 2:
+        return set()
+    seen: set[str] = set()
+    out: set[int] = set()
+    for row, key in sorted(zip(certs, AK.correlate([AK.observation(r) for r in certs])), key=lambda p: p[0].id or 0):
+        if not isinstance(key, str):
+            continue
+        if key in seen:
+            out.add(int(row.id))
+        seen.add(key)
+    return out
+
+
 def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict[str, Any] | None,
                 top: int = 10) -> dict[str, Any]:
     from backend.utilities.cbom_sources.classify import shown
@@ -567,8 +792,13 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
     clause_assets: dict[tuple[str, str], set[int]] = defaultdict(set)
     clause_meta: dict[tuple[str, str], dict[str, Any]] = {}
     clause_recorded: dict[tuple[str, str], set[int]] = defaultdict(set)  # cited on a recorded algorithm (or always)
+    # one certificate read at several places of the run (a SQL Server certificate in master and msdb) is ONE asset in
+    # the class counts and the readiness, as the team view counts it (``asset_keys.correlate``, review 6038529822 M1);
+    # ``asset_rows`` keeps the row count
+    repeated = _repeated_certificates(rows)
+    row_count = 0
     for row in rows:
-        aid, a_type, qv, facts, source_id = row.id, row.asset_type, row.quantum_vulnerable, row.facts, row.source_id
+        aid, a_type, qv, facts, source_id = row.id, row.asset_type, stored_verdict(row), row.facts, row.source_id
         location, name, job_id, target = row.location, row.name, row.job_id, row.target
         view = shown(row, now)  # date-based findings (certificate expiry, library end of life) judged today
         impact, a_codes, finding = view["impact"], view["finding_codes"], view["finding"]
@@ -577,10 +807,12 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
             grades.add(row, a_codes)
             continue
         cls, basis = graded_class(row, a_codes, elsewhere=elsewhere)
-        classes[cls] += 1
-        bases[basis] += 1
-        if cls == "quantum-vulnerable":
-            vulnerable_groups[(a_type, quantum_code(a_codes))] += 1
+        row_count += 1
+        if aid not in repeated:
+            classes[cls] += 1
+            bases[basis] += 1
+            if cls == "quantum-vulnerable":
+                vulnerable_groups[(a_type, quantum_code(a_codes))] += 1
         agility.add(row, a_codes)
         if impact:
             impacts[impact] += 1
@@ -633,7 +865,8 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
                                       **({"unrecorded": unrecorded} if unrecorded else {})})
     risky.sort(key=lambda r: (-r["score"], r["id"]))
     return {
-        "assets": sum(classes.values()),
+        "assets": sum(classes.values()),  # distinct assets: a certificate at several places once
+        "asset_rows": row_count,  # the run's asset rows (coverage aside), a certificate once per place
         "pqc_classes": {c: classes.get(c, 0) for c in PQC_CLASSES},
         # why each class: basis code -> count, and the sentence for each code (CB-18 OB-8)
         "pqc_class_bases": dict(sorted(bases.items())),
@@ -743,12 +976,14 @@ def asset_detail(row: CbomCollectedAsset, source: CbomCollectionSource | None, *
         "id": row.id, "type": row.asset_type, "name": row.name, "location": row.location, "target": row.target,
         "impact": view["impact"], "finding": view["finding"], "finding_codes": codes, "as_of_run": view["as_of_run"],
         "algorithm": row.algorithm,
-        "key_size": row.key_size, "protocol": row.protocol, "quantum_vulnerable": row.quantum_vulnerable,
+        # the verdict every count reads (``stored_verdict``, review 6057476173 M1): the finding dialog and the Jira
+        # ticket ("Quantum vulnerable: yes / no") never call a symmetric key quantum-vulnerable
+        "key_size": row.key_size, "protocol": row.protocol, "quantum_vulnerable": stored_verdict(row),
         "pqc_class": pqc_class_value,
         "pqc_class_basis": pqc_basis,
         "pqc_class_basis_text": CLASS_BASIS[pqc_basis][1],
         "pqc_class_read_elsewhere": sibling,
-        "hndl": hndl(row.asset_type, row.quantum_vulnerable),
+        "hndl": hndl(row.asset_type, stored_verdict(row)),
         "source_name": _job_source_name(job, source),
         "criticality": crit,
         "exposure": exposure,
