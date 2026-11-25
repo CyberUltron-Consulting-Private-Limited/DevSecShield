@@ -7,12 +7,13 @@ from __future__ import annotations
 
 import datetime as _dt
 import hashlib
+import itertools
 import json
 import re
 import uuid
 from typing import Any, BinaryIO, Callable, Iterator
 
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, bindparam, func, or_
 from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionRun, CbomCollectionSource
@@ -68,6 +69,24 @@ def changed_today(session: Session, scope, now: _dt.datetime) -> dict[int, dict[
     return {aid: view for aid, view in views.items() if view["as_of_run"]}
 
 
+_ID_CHUNK = 5_000
+
+
+def _ids_in(ids: list[int]):
+    """``id IN (...)`` over any number of asset ids without one bind parameter per id (review 6060527885 m1: PostgreSQL
+    caps a statement at 65,535 parameters, SQLite at its compile-time limit): the ids are integers this module read
+    from the database, rendered as literals, in chunks of ``_ID_CHUNK`` OR-ed together."""
+    parts = []
+    for start in range(0, len(ids), _ID_CHUNK):
+        chunk = [int(i) for i in ids[start:start + _ID_CHUNK]]
+        parts.append(CbomCollectedAsset.id.in_(  # type: ignore[union-attr]
+            bindparam(f"zs_ids_{next(_ID_NAMES)}", value=chunk, expanding=True, literal_execute=True)))
+    return parts[0] if len(parts) == 1 else or_(*parts)
+
+
+_ID_NAMES = itertools.count(1)  # unique bind names within one statement (names only, never values)
+
+
 def _filtered(query, *, asset_type: str | None, impact: str | None, quantum: bool | None, text: str | None,
               source_id: int | None, changed: dict[int, dict[str, Any]] | None = None,
               corrected: dict[int, tuple[Any, Any, Any]] | None = None):
@@ -87,10 +106,12 @@ def _filtered(query, *, asset_type: str | None, impact: str | None, quantum: boo
     if quantum is not None:
         # the verdict the badge shows (``posture.stored_verdict``, review 6057476173 M1): a stored verdict the class
         # rule corrects (a symmetric key) is filtered by its corrected value
-        stored = and_(CbomCollectedAsset.quantum_vulnerable == quantum,
-                      CbomCollectedAsset.id.notin_([a for a, (_r, old, new) in corrected.items() if old is quantum]))  # type: ignore[union-attr]
-        into = [a for a, (_r, _old, new) in corrected.items() if new is quantum]
-        query = query.where(or_(stored, CbomCollectedAsset.id.in_(into)) if into else stored)  # type: ignore[union-attr]
+        away = sorted(a for a, (_r, old, _new) in corrected.items() if old is quantum)
+        into = sorted(a for a, (_r, _old, new) in corrected.items() if new is quantum)
+        stored = CbomCollectedAsset.quantum_vulnerable == quantum
+        if away:
+            stored = and_(stored, ~_ids_in(away))
+        query = query.where(or_(stored, _ids_in(into)) if into else stored)
     if source_id:
         query = query.where(CbomCollectedAsset.source_id == source_id)
     if text:
@@ -148,12 +169,7 @@ def list_assets(session: Session, *, team_id: int, run_id: int | None = None, jo
     if job_id is not None:
         base = base.where(CbomCollectedAsset.job_id == job_id)
     changed = changed_today(session, base, now)
-    scope_conditions = [CbomCollectedAsset.team_id == team_id]
-    if run_id is not None:
-        scope_conditions.append(CbomCollectedAsset.run_id == run_id)
-    if job_id is not None:
-        scope_conditions.append(CbomCollectedAsset.job_id == job_id)
-    corrected = POSTURE.verdict_corrections(session, *scope_conditions)
+    corrected = POSTURE.scope_corrections(session, team_id, run_id=run_id, job_id=job_id)
     filtered = _filtered(base, asset_type=asset_type, impact=impact, quantum=quantum, text=text, source_id=source_id,
                          changed=changed, corrected=corrected)
     if refine is not None:  # CB-38: a caller's extra filter (run_assets: findings view, status), given today's view

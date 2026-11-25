@@ -202,6 +202,8 @@ class Refresh:
     written: int = 0
     deleted: int = 0
     transitions: list[Transition] = field(default_factory=list)
+    # rows stored under another grade model that this refresh moved to another grade or reason (D12's week mark)
+    model_moves: int = 0
 
     def counts(self) -> dict[str, int]:
         return {"keys": self.keys, "graded": self.graded, "skipped": self.skipped, "written": self.written,
@@ -244,7 +246,7 @@ def refresh(session: Session, team_id: int, keys: Iterable[str], now: _dt.dateti
     model = QG.GRADE_MODEL_VERSION
     for part in _chunks(keys):
         stored = {r.item_key: r for r in session.execute(sa.select(
-            _RT.c.item_key, _RT.c.q_grade, _RT.c.q_reason, _RT.c.grade_digest).where(
+            _RT.c.item_key, _RT.c.q_grade, _RT.c.q_reason, _RT.c.grade_digest, _RT.c.model_version).where(
             _RT.c.team_id == team_id, _RT.c.item_key.in_(list(part)))).all()}
         ea = CbomEstateAsset.__table__  # type: ignore[attr-defined]
         assets = {a.asset_key: a for a in session.execute(sa.select(  # plain columns: no ORM object per key
@@ -307,6 +309,9 @@ def refresh(session: Session, team_id: int, keys: Iterable[str], now: _dt.dateti
                 "last_run_id": pointer.get("run_id") if run_id is None else run_id,
                 "last_observed_at": pointer.get("observed_at"), "model_version": model[:32],
                 "inputs_digest": inputs.digest, "grade_digest": digest, "updated_at": now})
+            if before is not None and before.model_version != model[:32] and \
+                    (before.q_grade, before.q_reason) != (g.q_grade, g.q_reason):
+                out.model_moves += 1  # moved under a new grade model, whichever path re-graded it (run or scheduler)
             if before is None or (before.q_grade, before.q_reason) != (g.q_grade, g.q_reason):
                 out.transitions.append(Transition(
                     key, (before.q_grade, before.q_reason) if before is not None else None, (g.q_grade, g.q_reason),
@@ -318,6 +323,8 @@ def refresh(session: Session, team_id: int, keys: Iterable[str], now: _dt.dateti
         out.written += len(writes)
         out.deleted += len(gone)
     out.graded = grader.graded
+    if out.model_moves:  # the run's write hook (apply_write) and the background re-grade both record it (6060527885)
+        _record_model_regrade(session, team_id, out.model_moves, model, now)
     return out
 
 
@@ -469,8 +476,6 @@ def regrade_team(session: Session, team_id: int, now: _dt.datetime, *, limit: in
         res = refresh(session, team_id, keys, now, inputs=inputs, force=True)
         out["graded"] += res.graded
         Q0.sync_assets(session, team_id, res.transitions, now, cause=cause)
-        if cause == "model_change":
-            _record_model_regrade(session, team_id, res.transitions, QG.GRADE_MODEL_VERSION)
     if any((by_model, by_inputs, missing)):
         # a batch that re-graded rows of another grade model closes the Mosca item as a model change (recorded, not
         # forwarded, not a gap the team closed); otherwise the cause follows the team's inputs (q0register.mosca_cause)
@@ -482,15 +487,16 @@ def regrade_team(session: Session, team_id: int, now: _dt.datetime, *, limit: in
 MODEL_REGRADE_ACTION = "register_model_regrade"
 
 
-def _record_model_regrade(session: Session, team_id: int, transitions: Sequence[Transition], model: str) -> int:
-    """Record, with its time, how many register rows a re-grade under a new grade model moved (another grade or
-    reason; review 6057476173 M2): D12 marks that week "grade model changed" even when no Q0 gap opens or closes (the
-    symmetric-key change moves Q2 rows to Q3 / Q4). One system audit row per batch; its items are counts and the model
+def _record_model_regrade(session: Session, team_id: int, moved: int, model: str, now: _dt.datetime) -> int:
+    """Record, at ``now`` (the time the re-grade was given, so it lands in the week of its transitions), how many
+    register rows stored under another grade model a re-grade moved to another grade or reason (review 6057476173 M2;
+    6060527885: from the run's write hook as well as the background re-grade). D12 marks that week "grade model
+    changed" even when no Q0 gap opens or closes. One system audit row per refresh; its items are counts and the model
     version, never a value of the team's data (``CbomCollectionAuditEvent``'s documented exception)."""
-    moved = sum(1 for t in transitions if t.before is not None and t.after is not None and t.before != t.after)
     if moved:
-        session.add(CbomCollectionAuditEvent(team_id=team_id, at=_dt.datetime.utcnow(), actor_type="system",
-                                             action=MODEL_REGRADE_ACTION, object_type="risk_register",
+        session.add(CbomCollectionAuditEvent(team_id=team_id, at=now.astimezone(_dt.timezone.utc).replace(tzinfo=None) if now.tzinfo else now,
+                                             actor_type="system", action=MODEL_REGRADE_ACTION,
+                                             object_type="risk_register",
                                              changed_fields=[f"moved={moved}", f"model_version={model[:32]}"]))
     return moved
 

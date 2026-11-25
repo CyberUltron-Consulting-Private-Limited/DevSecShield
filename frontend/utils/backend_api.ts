@@ -4769,6 +4769,8 @@ export interface CbomAuditEvent {
     actor_type: "user" | "node" | "vendor" | "system"
     actor_id: number | null
     action: string
+    /** readable wording of a system action (e.g. "Risk register re-graded under a new grade model"); else the action */
+    label?: string
     object_type: string
     object_id: number | null
     changed_fields: string[]

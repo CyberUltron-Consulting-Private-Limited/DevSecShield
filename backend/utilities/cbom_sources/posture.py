@@ -19,10 +19,11 @@ from __future__ import annotations
 import datetime as _dt
 import ipaddress
 import re
-from collections import Counter, defaultdict
+import threading
+from collections import Counter, OrderedDict, defaultdict
 from typing import Any, Callable, Iterable, Mapping
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionSource, CbomScanNode
@@ -308,7 +309,10 @@ _SYMMETRIC_CLASSES: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 _WITH_PUBLIC_KEY = re.compile(r"with", re.IGNORECASE)  # a hash-and-sign name ("SHA256withRSA", "SM3withSM2")
 _JOSE_PUBLIC_KEY = re.compile(r"^(rs|ps|es)(256|384|512)k?$|^eddsa$|^ed(25519|448)$", re.IGNORECASE)
-_TRIPLE_DES = re.compile(r"^(3des|tdea|desede|triple|des-?ede|des3)", re.IGNORECASE)
+_TRIPLE_DES = re.compile(r"^(3des|tdea|desede|triple|des-?ede|des3|des-?cbc3)", re.IGNORECASE)  # DES-CBC3: 3DES
+# an OpenSSL cipher-suite name ("AES128-SHA", "DES-CBC3-SHA", "RC4-MD5", "AES256-GCM-SHA384"): a cipher, then the
+# suite's MAC; with no key-exchange part it is static RSA key exchange, which Shor breaks (review 6060527885 m2)
+_OPENSSL_SUITE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*-(sha|sha1|sha256|sha384|md5)$", re.IGNORECASE)
 _SINGLE_DES = re.compile(r"^des(?!-?ede)(?![a-z0-9])", re.IGNORECASE)
 # a key or digest size in a name ("AES-128-GCM", "AES256", "HMAC-SHA256"), never a mode's counter ("aes-xts-plain64")
 _KEY_BITS = re.compile(r"(?<!\d)(112|128|168|192|224|256|384|512)(?!\d)")
@@ -363,6 +367,8 @@ def symmetric_key(asset_type: str, algorithm: Any, facts: Mapping[str, Any] | No
         kind = symmetric_class(text)
         if kind is None:
             continue
+        if kind == "cipher" and _OPENSSL_SUITE.match(text) and "hmac" not in text.lower():
+            return None  # a TLS cipher suite: its key exchange decides, not its bulk cipher
         if kind == "cipher" and _TRIPLE_DES.match(text):
             return kind, 112  # three 56-bit keys: 112 bits of strength
         if kind == "cipher" and _SINGLE_DES.match(text):
@@ -425,6 +431,41 @@ def verdict_corrections(session: Session, *conditions: Any) -> dict[int, tuple[i
         if corrected is not qv:
             out[int(aid)] = (run_id, qv, corrected)
     return out
+
+
+_CORRECTIONS: OrderedDict[tuple, dict[int, tuple[int | None, bool | None, bool | None]]] = OrderedDict()
+_CORRECTIONS_MAX = 32
+_CORRECTIONS_LOCK = threading.Lock()
+
+
+def scope_corrections(session: Session, team_id: int, *, run_id: int | None = None,
+                      job_id: int | None = None) -> dict[int, tuple[int | None, bool | None, bool | None]]:
+    """``verdict_corrections`` of one team / run / job scope, kept in a small per-process cache (review 6060527885
+    m1: the asset list does not re-classify every symmetric row on each request). Stored assets are written once and
+    never changed, so the key is the scope, its candidate rows' count and highest id, and the grade model (which
+    hashes this module, so a rule change is a new key)."""
+    from backend.utilities.cbom_sources import qgrade as QG
+
+    conditions = [CbomCollectedAsset.team_id == team_id]
+    if run_id is not None:
+        conditions.append(CbomCollectedAsset.run_id == run_id)
+    if job_id is not None:
+        conditions.append(CbomCollectedAsset.job_id == job_id)
+    count, top = session.exec(select(func.count(), func.max(CbomCollectedAsset.id)).where(
+        *conditions, CbomCollectedAsset.quantum_vulnerable.is_not(None),  # type: ignore[union-attr]
+        CbomCollectedAsset.asset_type.notin_(sorted(_NOT_SYMMETRIC_TYPES | {"coverage"})))).one()  # type: ignore[union-attr]
+    key = (team_id, run_id, job_id, int(count or 0), int(top or 0), QG.GRADE_MODEL_VERSION)
+    with _CORRECTIONS_LOCK:
+        hit = _CORRECTIONS.get(key)
+        if hit is not None:
+            _CORRECTIONS.move_to_end(key)
+            return hit
+    found = verdict_corrections(session, *conditions) if count else {}
+    with _CORRECTIONS_LOCK:
+        _CORRECTIONS[key] = found
+        while len(_CORRECTIONS) > _CORRECTIONS_MAX:
+            _CORRECTIONS.popitem(last=False)
+    return found
 
 
 def sibling_key(row: Any) -> tuple[str, str, str]:

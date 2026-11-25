@@ -930,10 +930,11 @@ def test_round2_b1_disallowed_symmetric_keys_are_deprecated_and_outside_readines
                    for i in items)
 
 
-def test_round2_m1_every_run_surface_counts_three_quantum_vulnerable(tmp_path):
+def test_round2_m1_every_run_surface_counts_three_assets_four_rows(tmp_path):
     """M1: the Scans table column, the run asset list (badge, chip, filter), the remediation waves / tickets and the
     asset detail read the corrected verdict, as the run posture does: 3 quantum-vulnerable assets on the parity seed
-    (the certificate once, the RSA key, the endpoint). On b376a964 the list and the Scans column said 8."""
+    (the certificate once, the RSA key, the endpoint), which are 4 rows on the row-counted surfaces (the certificate's
+    two places). On b376a964 the list and the Scans column said 8."""
     from backend.routers import cbom_sources as R
     from backend.utilities.cbom_sources import inventory as INV
     from backend.utilities.cbom_sources import posture as P
@@ -1012,3 +1013,113 @@ def test_round2_m4_reconciliation_wording(tmp_path):
 
 def test_round2_nit_weakened_meaning_names_ir_8547_and_cnsa():
     assert "acceptable under NIST IR 8547, CNSA 2.0 requires AES-256" in SC.MEANING[SC.WEAKENED]
+
+
+# ============================================================================ review 6060527885 (round 3)
+def test_round3_a_runs_write_hook_records_the_rows_a_new_model_moved(tmp_path):
+    """Open item 2: a run's write hook (``apply_write``) that re-grades rows stored under a previous grade model
+    records their moves too, so D12's week mark counts them; on e88d60d1 only ``regrade_team`` recorded them."""
+    w, _run = _parity_team(tmp_path)
+    with Session(w.engine) as s:
+        symmetric = sa.or_(*(REG._RT.c.label.like(f"{n}%") for n in ("aes-128", "aes-256")))
+        s.execute(REG._RT.update().where(REG._RT.c.team_id == 1).values(model_version="qg-1+previous"))
+        s.execute(REG._RT.update().where(REG._RT.c.team_id == 1, symmetric).values(
+            q_grade="Q2", q_rank=2, q_reason="qv_exceeds_exposure_unknown"))
+        s.commit()
+        aws = s.exec(select(CbomCollectedAsset.source_id).where(CbomCollectedAsset.name == "aes-128")).first()
+
+    def key(arn, name, size):  # the same keys, read again with one more fact (their content digest changes)
+        return {"type": "managed_key", "target": arn, "location": "kms", "name": name, "algorithm": "AES",
+                "qv": True, "codes": ["QUANTUM_VULNERABLE"], "facts": {"key_size": size, "rotation": "yearly"}}
+
+    w.finalise(w.run({aws: {"rows": [key("arn:k/1", "aes-128", 128), key("arn:k/2", "aes-256", 256)]}}))
+    with Session(w.engine) as s:
+        weeks = REG.summary(s, 1, dt.datetime(2026, 11, 20))["closures_by_week"]  # noqa: DTZ001
+    assert sum(x["model_regraded"] for x in weeks) >= 2, weeks
+
+
+def test_round3_n2_a_pinned_regrade_lands_in_its_own_week(tmp_path):
+    """n2: the audit row takes the ``now`` the re-grade was given (a re-grade at a pinned time lands in that week)."""
+    w, _run = _parity_team(tmp_path)
+    with Session(w.engine) as s:
+        s.execute(REG._RT.update().where(REG._RT.c.team_id == 1, REG._RT.c.label.like("aes-256%")).values(
+            model_version="qg-1+previous", q_grade="Q2", q_rank=2, q_reason="qv_exceeds_exposure_unknown"))
+        s.commit()
+        at = dt.datetime(2026, 10, 7, 9)  # noqa: DTZ001  (a Wednesday, weeks before the real clock)
+        REG.regrade_team(s, 1, at)
+        s.commit()
+        week = next(x for x in REG.summary(s, 1, at)["closures_by_week"] if x["week"] == "2026-10-05")
+    assert week["model_regraded"] == 1
+
+
+def _limited_sqlite(engine, limit: int) -> None:
+    """Emulate a database that caps bind parameters per statement (PostgreSQL: 65,535) at ``limit``."""
+    import sqlite3
+
+    @sa.event.listens_for(engine, "connect")
+    def _cap(dbapi_connection, _record):  # noqa: ANN001
+        dbapi_connection.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, limit)
+
+    engine.dispose()
+
+
+def test_round3_m1_the_quantum_filter_never_binds_one_parameter_per_corrected_row(tmp_path, monkeypatch):
+    """m1: 1,200 corrected rows (AES keys a collector marked quantum-vulnerable) under a 999-parameter cap. On
+    e88d60d1 ``?quantum=`` bound every id and failed ("too many SQL variables"; on PostgreSQL past 65,535 rows a
+    500). The second request reuses the classified corrections (no re-classification)."""
+    from backend.utilities.cbom_sources import inventory as INV
+    from backend.utilities.cbom_sources import posture as P
+
+    w = World(_sqlite(tmp_path / "many.db"))
+    aws = w.source("aws_account", "aws-prod")
+    rows = [{"type": "managed_key", "target": f"arn:k/{i}", "location": "kms", "name": f"aes-{i}", "algorithm": "AES",
+             "qv": True, "codes": ["QUANTUM_VULNERABLE"], "facts": {"key_size": 256}} for i in range(1200)]
+    rows.append({"type": "kms_key", "target": "arn:k/rsa", "location": "kms", "name": "signer", "algorithm": "RSA_2048",
+                 "qv": True, "codes": ["QUANTUM_VULNERABLE"], "facts": {"key_spec": "RSA_2048"}})
+    run = w.run({aws: {"rows": rows}})
+    _limited_sqlite(w.engine, 999)
+    with Session(w.engine) as s:
+        vulnerable = INV.list_assets(s, team_id=1, run_id=run, quantum=True, page_size=10)
+        safe = INV.list_assets(s, team_id=1, run_id=run, quantum=False, page_size=10)
+        calls = []
+        real = P.verdict_corrections
+        monkeypatch.setattr(P, "verdict_corrections", lambda *a, **k: calls.append(1) or real(*a, **k))
+        again = INV.list_assets(s, team_id=1, run_id=run, quantum=True, page_size=10)
+    assert vulnerable["total"] == 1 and vulnerable["items"][0]["name"] == "signer"
+    assert safe["total"] == 1200 and vulnerable["facets"]["quantum_vulnerable"] == 1
+    assert again["total"] == 1 and calls == []  # cached: the same scope, rows and model
+
+
+@pytest.mark.parametrize("algorithm", ["AES128-SHA", "AES256-GCM-SHA384", "RC4-MD5", "DES-CBC3-SHA", "CAMELLIA128-SHA",
+                                       "SEED-SHA"])
+def test_round3_m2_an_openssl_suite_name_is_not_a_symmetric_key(algorithm):
+    """m2: an OpenSSL cipher-suite name on a non-TLS asset type carries its suite's static RSA key exchange: it keeps
+    its stored verdict (quantum-vulnerable), never "symmetric only"."""
+    from backend.utilities.cbom_sources import posture as P
+
+    assert P.symmetric_key("load_balancer_policy", algorithm, {}) is None
+    assert P.classify_pqc({"asset_type": "load_balancer_policy", "algorithm": algorithm, "quantum_vulnerable": True,
+                           "facts": {}}) == ("quantum-vulnerable", "shor_breaks")
+    # a symmetric name with a hash in it is still symmetric
+    assert P.symmetric_key("managed_key", "aes256-cts-hmac-sha1-96", {}) == ("cipher", 256)
+
+
+def test_round3_m3_des_cbc3_is_triple_des():
+    from backend.utilities.cbom_sources import posture as P
+
+    assert P.symmetric_key("managed_key", "DES-CBC3", {}) == ("cipher", 112)
+    assert P.symmetric_key("managed_key", "des-ede3-cbc", {}) == ("cipher", 112)
+    assert P.symmetric_key("managed_key", "DES-CBC", {}) == ("cipher", 56)
+
+
+def test_round3_n3_the_model_regrade_audit_row_has_a_readable_label(tmp_path):
+    from backend.new_models import CbomCollectionAuditEvent
+    from backend.routers import cbom_sources as R
+
+    w, _run = _parity_team(tmp_path)
+    with Session(w.engine) as s:
+        s.add(CbomCollectionAuditEvent(team_id=1, actor_type="system", action="register_model_regrade",
+                                       object_type="risk_register", changed_fields=["moved=2", "model_version=x"]))
+        s.commit()
+    (event,) = [e for e in R._audit_list(w.engine, 1, 50)["events"] if e["action"] == "register_model_regrade"]
+    assert event["label"] == "Risk register re-graded under a new grade model"

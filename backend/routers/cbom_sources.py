@@ -2091,12 +2091,21 @@ async def cancel_run(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeade
 
 
 # ============================================================================ audit
+# readable labels of the system and documented-exception actions (review 6060527885 n3); a user's change keeps its
+# action name, which the page words itself
+AUDIT_ACTION_LABELS = {
+    "register_model_regrade": "Risk register re-graded under a new grade model",
+    "deliverable_issued": "Board report issued",
+}
+
+
 def _audit_list(engine, team_id: int, limit: int) -> dict:
     with Session(engine) as session:
         rows = session.exec(select(CbomCollectionAuditEvent).where(CbomCollectionAuditEvent.team_id == team_id)
                             .order_by(CbomCollectionAuditEvent.id.desc()).limit(limit)).all()  # type: ignore[union-attr]
         return {"events": [{"id": r.id, "at": iso_z(r.at), "actor_type": r.actor_type, "actor_id": r.actor_id,
-                            "action": r.action, "object_type": r.object_type, "object_id": r.object_id,
+                            "action": r.action, "label": AUDIT_ACTION_LABELS.get(r.action, r.action),
+                            "object_type": r.object_type, "object_id": r.object_id,
                             "changed_fields": r.changed_fields or []} for r in rows]}
 
 
