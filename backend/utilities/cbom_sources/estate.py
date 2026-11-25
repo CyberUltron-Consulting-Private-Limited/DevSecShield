@@ -480,20 +480,17 @@ def record_run(session: Session, run: CbomCollectionRun, now: _dt.datetime, *,
     write.source_refs = sorted(jobs)
     write.previous = {ref: (int(prev[0]), int(prev[1] or 1)) if prev is not None else None
                       for ref, (_job, prev) in jobs.items()}
-    # 0b. #497 review M1: the keys the certificate identity rule changed move IN PLACE from each source's STORED latest
-    # rows (their own spelling), before the store is read, so nothing below is read as removed and added
-    for ref, prev_job in write.previous.items():
-        if prev_job is None:
-            continue
-        stored_rows = session.execute(sa.select(*_ROW_COLUMNS).where(  # certificates only: no other key changed
-            CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.job_id == prev_job[0],
-            CbomCollectedAsset.attempt == prev_job[1], sa.or_(
-                CbomCollectedAsset.asset_type.in_(sorted(AK.CERT_TYPES)),  # type: ignore[attr-defined]
-                CbomCollectedAsset.cdx_type == "certificate"))).all()
-        if stored_rows:
-            from backend.utilities.cbom_sources import identity_migration
+    # 0b. #497 reviews 6038990137 M1 / 6057627810 M1: the keys the certificate identity rule changed move IN PLACE
+    # before the store is read, driven by the stored observations' own rows (a source whose latest job failed too).
+    # The deploy migration moved every team (``identity_migration.migrate_all``) and marked it with the highest job it
+    # covered: only rows of later jobs (an older worker's write during a rolling deploy) are looked at here, one read.
+    if write.previous:
+        from backend.utilities.cbom_sources import identity_migration
 
-            for k, v in identity_migration.migrate_source(session, team_id, ref, stored_rows).items():
+        mark = identity_migration.mark_of(session, team_id)
+        for k, v in identity_migration.migrate_team(session, team_id, refs=sorted(write.previous),
+                                                    since_job=mark or 0, lock=False).items():
+            if k != "sources":
                 write.identity_moves[k] = write.identity_moves.get(k, 0) + v
     marks = {"sources": time.perf_counter()}
 

@@ -14,9 +14,9 @@ Diffs, drift events, finding resolution and remediation assignments all compare 
     one certificate or CA, and the subject is free text the provider API formats (staging QA2 Q1-09: #481 changed the
     AWS Private CA subject from ``{"CommonName": ...}`` to ``CN=...`` and run #54 showed the same CA removed + added,
     its QUANTUM_VULNERABLE resolved and opened again). Not the fingerprint or serial: both change on renewal.
-  - The subject and issuer of every other certificate are compared as normalised DNs (``canonical_dn``): a DN text
-    is compared as before (lower case, whitespace collapsed), a subject a collector stored as an attribute map (AWS
-    ``ASN1Subject`` JSON) as the RFC 4514 DN it denotes, so the old and new spellings are one identity.
+  - The subject and issuer of every other certificate are compared as normalised DNs (``canonical_dn``): attribute
+    order, spacing and case ignored, and a subject a collector stored as an attribute map (AWS ``ASN1Subject`` JSON)
+    read as the RFC 4514 DN it denotes, so every spelling of one name is one identity.
   - ``legacy_node_identity`` is the identity before this rule; ``rekeyed_observations`` maps the stored keys it gave
     to the new ones (the estate store and the remediation assignments move along, ``identity_migration``).
 * Code-scan row: (asset type, file, title, bom-ref without a trailing line marker). Misuse refs end in ``-l<line>``
@@ -88,9 +88,13 @@ def mapping_dn(value: Any) -> str | None:
 
 
 def canonical_dn(value: Any) -> str:
-    """A subject or issuer as compared: an attribute map becomes its RFC 4514 DN (``mapping_dn``); then lower case,
-    whitespace collapsed. A DN text is unchanged by the first step, so its identity is as before."""
-    return _norm(mapping_dn(value) or value)
+    """A subject or issuer as compared: an attribute map becomes its RFC 4514 DN (``mapping_dn``); a DN is then read
+    order- and spacing-insensitive (``asset_keys.norm_dn``: ``CN=Corp CA, O=Corp`` = ``o=corp,cn=corp ca``, #497 review
+    6057627810 nit), any other text lower case with whitespace collapsed. ``identity_migration`` freezes this rule
+    for the key migration (the stored keys of the earlier rule move there)."""
+    from backend.utilities.cbom_sources.asset_keys import norm_dn
+
+    return norm_dn(mapping_dn(value) or value)
 
 
 def legacy_node_identity(row: CbomCollectedAsset) -> str:

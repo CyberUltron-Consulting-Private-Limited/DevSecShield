@@ -79,8 +79,9 @@ def test_the_legacy_identity_is_what_made_the_phantom_drift():
 def test_canonical_dn_reads_an_attribute_map_as_the_dn_it_denotes():
     aws = {"Country": "IN", "Organization": "Bank One", "CommonName": "Bank One Root CA"}
     assert ID.canonical_dn(aws) == ID.canonical_dn(json.dumps(aws)) == ID.canonical_dn(
-        "CN=Bank One Root CA,O=Bank One,C=IN") == "cn=bank one root ca,o=bank one,c=in"
-    assert ID.canonical_dn("CN=x, O=y") == "cn=x, o=y"  # a DN text compares exactly as before (no re-key)
+        "CN=Bank One Root CA,O=Bank One,C=IN") == "c=in,cn=bank one root ca,o=bank one"
+    # review 6057627810 nit: spacing and attribute order are not part of the name (the key migration moves them)
+    assert ID.canonical_dn("CN=x, O=y") == ID.canonical_dn("O=y,CN=x") == "cn=x,o=y"
     assert ID.canonical_dn("{not json") == "{not json"
     assert ID.canonical_dn(None) == ""
 
@@ -90,13 +91,32 @@ def _cert(location: str, subject: str, **extra) -> SimpleNamespace:
                            facts={"subject": subject, "issuer": "CN=Issuing CA,O=Bank", **extra}, asset_key="k")
 
 
-def test_a_dn_text_certificate_off_the_cloud_keeps_its_stored_key():
-    """No mass re-key: a prober / file / store certificate's identity (and so every key stored from it) is unchanged."""
-    for row in (_cert("10.0.0.5:443#chain[0]", "CN=pay.example.com,O=Bank,C=IN"),
-                _cert("/etc/ssl/pay.pem", "CN=pay.example.com, O=Bank"),
-                _cert("LocalMachine\\My", "CN=win")):
-        assert ID.node_identity(row) == ID.legacy_node_identity(row)
-    assert ID.rekeyed_observations([_cert("10.0.0.5:443#chain[0]", "CN=a")], "ref") == {}
+def test_a_dn_off_the_cloud_is_compared_whatever_its_spacing_and_attribute_order():
+    """Review 6057627810 nit: ``CN=Corp Issuing CA, O=Corp, C=IN``, the same without spaces and in reverse order are
+    one identity (an AD CS / prober / Windows-store CA whose spelling changes is no longer removed and added). A DN
+    whose canonical form equals its old text keeps its key; one whose spelling the rule now reads differently is moved
+    by the key migration (``identity_migration.keys_of``)."""
+    where = "10.0.0.5:443#chain[1]"
+    spellings = ("CN=Corp Issuing CA, O=Corp, C=IN", "CN=Corp Issuing CA,O=Corp,C=IN", "C=IN, O=Corp, CN=Corp Issuing CA",
+                 "cn=corp issuing ca,  o=corp,c=in")
+    assert len({ID.node_identity(_cert(where, s)) for s in spellings}) == 1
+    assert len({ID.legacy_node_identity(_cert(where, s)) for s in spellings}) == 4  # what made the phantom drift
+    assert ID.rekeyed_observations([_cert(where, "CN=a")], "ref") == {}  # one attribute: the same text either way
+    assert M.keys_of(_cert(where, "CN=a"), "ref") is None
+    assert M.keys_of(_cert(where, "CN=Corp Issuing CA, O=Corp, C=IN"), "ref") is not None
+
+
+def test_the_migrations_frozen_rule_is_the_live_rule_today():
+    """m4: ``identity_migration`` keeps its own copy of the rule, so a later release cannot change what q109 moves;
+    today both give the same identity for every kind of certificate row."""
+    rows = [_cert("10.0.0.5:443#chain[0]", "CN=pay.example.com, O=Bank"), _cert("/etc/ssl/a.pem", "O=B,CN=a"),
+            _cert("arn:aws:acm:ap-south-1:111122223333:certificate/0f1e", '{"CommonName": "x"}'),
+            _cert("LocalMachine\\My", '{"CommonName": "win", "Organization": "Corp"}'),
+            SimpleNamespace(asset_type="tls_endpoint", cdx_type="protocol", target="t", location="l", facts={},
+                            asset_key="k1")]
+    for row in rows:
+        assert M.node_identity(row) == ID.node_identity(row)
+        assert M.legacy_node_identity(row) == ID.legacy_node_identity(row)
 
 
 def test_a_cloud_certificate_is_its_resource_id_and_a_renewal_stays_renewed():
@@ -116,7 +136,9 @@ from test_cbom_cb20_estate import World, _sqlite, cert  # noqa: E402
 @pytest.fixture
 def estate(tmp_path):
     engine = _sqlite(tmp_path / "estate.db")
+    M._DONE.clear()  # review 6057627810 m3: a scheduler tick in an earlier suite must not mark this team done
     yield World(engine)
+    M._DONE.clear()
     engine.dispose()
 
 
@@ -136,6 +158,7 @@ def test_the_first_run_after_the_change_moves_every_stored_key_and_removes_nothi
     src = world.source("aws_account", "aws-pca-test")
     with monkeypatch.context() as patch:  # before this change
         patch.setattr(ID, "node_identity", ID.legacy_node_identity)
+        patch.setattr(M, "node_identity", M.legacy_node_identity)  # the migration's frozen rule too
         run52 = world.run({src: {"rows": [_pca('{"CommonName": "ZeroShield-AWS-PCA-Test"}')]}})
         world.finalise(run52)
         run53 = world.run({src: {"rows": [_pca("CN=ZeroShield-AWS-PCA-Test")]}})
@@ -161,7 +184,9 @@ def test_the_first_run_after_the_change_moves_every_stored_key_and_removes_nothi
     write = seen[0]
     # #497 review M1: moved IN PLACE before the store is read, so the write itself re-keys, removes and inserts nothing
     assert write.rekeyed == [] and write.counts["removed"] == 0 and write.counts["inserted"] == 0
-    assert write.identity_moves["assignments"] == 1 and write.identity_moves["estate"] == 1
+    # the CN= observation (run 53) is renamed and the JSON one (run 52, removed then) merges into it: one asset
+    assert write.identity_moves["assignments"] == 1 and write.identity_moves["estate"] == 2
+    assert world.assets()[f"obs:{new_key}"].first_seen_run_id == run52  # the earlier first seen wins
     with Session(world.engine) as s:
         assert [(a.asset_key, a.owner) for a in s.exec(select(CbomRemediationAssignment))] == [(new_key, "pki-team")]
         assert not [g for g in s.exec(select(CbomQ0Gap))
@@ -198,6 +223,7 @@ def _store(world: World, ref_source: int, dated: bool, monkeypatch) -> tuple[int
     on its key. Returns (run, old estate key, old node key)."""
     with monkeypatch.context() as patch:
         patch.setattr(ID, "node_identity", ID.legacy_node_identity)
+        patch.setattr(M, "node_identity", M.legacy_node_identity)  # the migration's frozen rule too
         patch.setattr(E.AK, "asset_key", E.AK.legacy_asset_key)
         patch.setattr(E.AK, "_cert_analysis_of", lambda fields, raw_names=True: _LEGACY(fields, True))
         E.AK._cert_analysed.cache_clear()
@@ -387,14 +413,14 @@ def test_a_team_the_migration_cannot_move_never_blocks_the_deploy_and_the_schedu
     src = deployed.source("aws_account", "stgqa-aws-ap-south-1")
     _run52, old_asset, old_obs = _store(deployed, src, False, monkeypatch)
     new_asset, new_obs = _expected_keys(deployed, False)
-    real = M.backfill_team
+    real = M.migrate_team
 
     def broken(session, team_id, **kw):
         real(session, team_id, **kw)  # writes, then fails: the team's savepoint must undo them
         raise RuntimeError("boom")
 
     with monkeypatch.context() as patch:
-        patch.setattr(M, "backfill_team", broken)
+        patch.setattr(M, "migrate_team", broken)
         _step(deployed.engine, "q109certkey001_cert_identity_keys", "upgrade")  # no exception: the deploy goes on
     assert _held(deployed) == ({old_asset}, [old_obs], [(old_obs, "accepted_risk")], set())
     assert M.backfill_due(deployed.engine)["teams"] == 1
@@ -421,3 +447,97 @@ def test_the_history_index_migration_round_trips(tmp_path):
     chain = {(_migration(n).revision, _migration(n).down_revision) for n in (
         "q102hist001_collect_history_index", "q109certkey001_cert_identity_keys")}
     assert chain == {("q102hist001", "rsched1trig001"), ("q109certkey001", "q102hist001")}
+
+
+def test_a_source_whose_latest_run_failed_moves_at_deploy_and_its_first_success_removes_nothing(deployed: World,
+                                                                                             monkeypatch):
+    """Review 6057627810 M1: run #1 stored the PCA (JSON subject, before #481) and a dated ACM certificate with the
+    old identity; run #2 failed (no rows, both observations ``not_read``), so the source's latest job holds nothing.
+    The move is driven by the observations' own rows: the migration moves both, the accepted risk follows, and the
+    first successful run after deploy removes 0 and inserts 0, with the first-seen run kept."""
+    src = deployed.source("aws_account", "stgqa-aws-ap-south-1")
+    acm_arn = "arn:aws:acm:ap-south-1:111122223333:certificate/0f1e"
+    acm = {**cert("aws:111122223333", acm_arn, serial="7a" * 16, not_after="2027-03-01T00:00:00Z",
+                  subject='{"CommonName": "pay.bank.in"}', issuer='{"CommonName": "Amazon RSA 2048 M02"}'),
+           "codes": ["QUANTUM_VULNERABLE"], "qv": True}
+    with monkeypatch.context() as patch:  # stored before this change
+        patch.setattr(ID, "node_identity", ID.legacy_node_identity)
+        patch.setattr(M, "node_identity", M.legacy_node_identity)
+        patch.setattr(E.AK, "asset_key", E.AK.legacy_asset_key)
+        patch.setattr(E.AK, "_cert_analysis_of", lambda fields, raw_names=True: _LEGACY(fields, True))
+        E.AK._cert_analysed.cache_clear()
+        run1 = deployed.run({src: {"rows": [_pca_row(JSON_SUBJECT, True), acm]}})
+        deployed.finalise(run1)
+        deployed.finalise(deployed.run({src: {"rows": [], "status": "failed", "outcome": "failed",
+                                              "counts": {"ok": 0, "failed": 1}}}))
+    E.AK._cert_analysed.cache_clear()
+    E._INDEXES.clear()
+    old_assets = set(deployed.assets())
+    observations = deployed.observations()
+    assert len(old_assets) == 2 and {o.presence for o in observations} == {"not_read"}
+    pca = next(o for o in observations if o.location == ARN)
+    pca_obs, pca_asset = pca.observation_key, pca.asset_key
+    assert pca_asset.startswith("cert:")  # a cross key made from the name: it moves too
+    with Session(deployed.engine) as s:
+        s.add(CbomRemediationAssignment(team_id=1, asset_key=pca_obs, status="accepted_risk", owner="risk-office"))
+        s.commit()
+
+    _step(deployed.engine, "q109certkey001_cert_identity_keys", "upgrade")
+    moved_assets = set(deployed.assets())
+    assert pca_asset not in moved_assets and len(moved_assets) == 2
+    assert all(a.first_seen_run_id == run1 for a in deployed.assets().values())
+    new_pca_obs = next(o for o in deployed.observations() if o.location == ARN).observation_key
+    assert new_pca_obs != pca_obs
+    with Session(deployed.engine) as s:
+        assert [(a.asset_key, a.status) for a in s.exec(select(CbomRemediationAssignment))] == [
+            (new_pca_obs, "accepted_risk")]
+
+    seen = []
+    E.register_hook(hook := (lambda s, write: seen.append(write)))
+    try:
+        acm_now = {**acm, "facts": {**acm["facts"], "subject": "CN=pay.bank.in", "issuer": "CN=Amazon RSA 2048 M02"}}
+        deployed.finalise(deployed.run({src: {"rows": [_pca_row(CN_SUBJECT, True), acm_now]}}))
+    finally:
+        E.unregister_hook(hook)
+    write = seen[0]
+    assert write.counts["removed"] == 0 and write.counts["inserted"] == 0 and write.rekeyed == []
+    assert set(deployed.assets()) == moved_assets
+    assert {o.presence for o in deployed.observations()} == {"present"}
+    assert all(a.first_seen_run_id == run1 for a in deployed.assets().values())
+    with Session(deployed.engine) as s:
+        assert [(a.asset_key, a.status, a.owner) for a in s.exec(select(CbomRemediationAssignment))] == [
+            (new_pca_obs, "accepted_risk", "risk-office")]
+
+
+def test_the_scheduler_fallback_skips_a_failing_team_and_moves_the_next(deployed: World, monkeypatch, capsys):
+    """m4: a team that fails every time never stops the scheduler from moving a later unmarked team; the log says
+    why (class and first line, no values)."""
+    src = deployed.source("aws_account", "stgqa-aws-ap-south-1")
+    _store(deployed, src, False, monkeypatch)
+    other = deployed.source("aws_account", "team-2-aws", team_id=2)
+    deployed.finalise(deployed.run({other: {"rows": [_pca(CN_SUBJECT)]}}, team_id=2))
+    real = M.migrate_team
+
+    def team1_fails(session, team_id, **kw):
+        if team_id == 1:
+            raise RuntimeError("relation cbomestateobservation is locked\nDETAIL: second line never logged")
+        return real(session, team_id, **kw)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(M, "migrate_team", team1_fails)
+        out = M.backfill_due(deployed.engine)
+    assert out["failed"] == 1 and out["teams"] == 1
+    logged = capsys.readouterr().out
+    assert "team=1" in logged and "RuntimeError: relation cbomestateobservation is locked" in logged
+    assert "second line" not in logged
+    _held_marks = _held(deployed)[3]
+    assert _held_marks == {f"{M.MARK}2"}  # team 2 moved and marked; team 1 left for the next start
+    assert M.backfill_due(deployed.engine)["teams"] == 1  # team 1 moves once it can
+    assert _held(deployed)[3] == {f"{M.MARK}1", f"{M.MARK}2"}
+
+
+def test_the_history_index_is_built_concurrently_on_postgresql():
+    """m1: as ``cb19grade002``: CONCURRENTLY, outside the revision's transaction, retry-safe."""
+    text = (VERSIONS / "q102hist001_collect_history_index.py").read_text()
+    assert text.count("autocommit_block()") == 2 and text.count("postgresql_concurrently=True") == 2
+    assert "if_not_exists=True" in text and "if_exists=True" in text

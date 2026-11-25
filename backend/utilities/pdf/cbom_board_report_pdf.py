@@ -202,8 +202,8 @@ REMEDIATION_NOTE = (
 NO_ISSUES_RISKS = "No current asset carries a finding."
 NO_ISSUES_REMEDIATION = "No findings to remediate."
 PQC_FAMILIES_LEAD = (
-    "Every current quantum-vulnerable asset ({total}, as in section 3: algorithms, certificates, keys and "
-    "protocols), grouped by the post-quantum target its use calls for: key establishment moves to {kem}, "
+    "Every current quantum-vulnerable asset occurrence ({total} occurrences, as in section 3: algorithms, "
+    "certificates, keys and protocols), grouped by the post-quantum target its use calls for: key establishment moves to {kem}, "
     "signatures, certificates and signing keys to {sig} (national security systems under CNSA 2.0: {kem5} and "
     "{sig5}). A code-scan algorithm keeps the target its scan recorded."
 )
@@ -1086,6 +1086,9 @@ def _quantum_section(view: TeamCbomView, styles: Styles, w: float):
     total = int((_register_summary(view) or {}).get("total", 0) or 0)
     story += [_para(QGRADE_LEAD.format(total=total, mosca=authored.mosca_basis_text(view)), styles), _gap(3),
               dense_table(["Quantum risk grade", "Assets"], rows, [400, 140])]
+    meaning = authored.mosca_meaning_text(view)  # X, Y, Z, the rule and the defaults' sources (#497 m2)
+    if meaning:
+        story += [_gap(3), _para(meaning, styles, "muted")]
     reasons = q0_reason_text(view)
     if reasons:
         story += [_gap(3), _para(reasons, styles, "muted")]

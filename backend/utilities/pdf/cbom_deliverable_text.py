@@ -675,7 +675,8 @@ GOVERNANCE_ACTIONS = (
     (
         "mosca_defaults",
         ("Set the data lifetimes (Mosca X, per team or per source) and the migration and threat horizons (Y, Z). "
-         "Quantum-vulnerable assets graded on default Mosca assumptions (team inputs not set): {mosca_defaults}."),
+         "Distinct quantum-vulnerable assets in the register (D12) graded on default Mosca assumptions (team inputs "
+         "not set): {mosca_defaults}."),
     ),
 )
 # Product text: the Mosca basis of the register's grades (staging QA2 Q1-06). ``qgrade.effective_mosca`` fills an unset
@@ -695,7 +696,34 @@ def mosca_basis(view: object) -> dict[str, Any] | None:
     team = found.get("team_mosca") if isinstance(found.get("team_mosca"), Mapping) else {}
     unset = [k.upper() for k in "xyz" if team.get(k) is None]
     return {"team_set": not unset, "unset": unset, "defaults_used": int(found.get("count") or 0),
-            "defaults": str(found.get("defaults") or "")}
+            "defaults": str(found.get("defaults") or ""), "definition": str(found.get("definition") or ""),
+            "horizon": found.get("horizon") if isinstance(found.get("horizon"), Mapping) else {}}
+
+
+def mosca_meaning_text(view: object) -> str:
+    """What X, Y and Z are, the X + Y > Z rule and where each default comes from (``qgrade.MOSCA_DEFINITION``, the
+    sentence D12 prints), that the default Z is NIST IR 8547's disallowance date and not an estimate of when a quantum
+    computer arrives, and what the defaults imply this year (#497 review 6057627810 m2). "" when the register did
+    not say (the register summary carries them in ``default_assumptions``)."""
+    basis = mosca_basis(view)
+    if basis is None or not basis["definition"]:
+        return ""
+    out = [basis["definition"]]
+    h = basis["horizon"]
+    try:
+        x, y, z, year, z_year = (int(h[k]) for k in ("x", "y", "z", "year", "z_year"))
+    except (KeyError, TypeError, ValueError):
+        return out[0]
+    out.append(f"The default Z is the years left until {z_year}, the date after which NIST IR 8547 disallows "
+               "quantum-vulnerable public-key algorithms: a regulatory deadline, not an estimate of when a "
+               "cryptographically relevant quantum computer will exist.")
+    if x + y > z:
+        out.append(f"On the defaults in {year} (X {x} + Y {y} = {x + y} > Z {z}), every quantum-vulnerable asset "
+                   "is at risk (X + Y > Z), whatever its data or system; only the team's own inputs can tell "
+                   "assets apart.")
+    else:
+        out.append(f"On the defaults in {year} (X {x} + Y {y} = {x + y}, Z {z}), X + Y does not exceed Z.")
+    return " ".join(out)
 
 
 def mosca_basis_text(view: object) -> str:
@@ -1325,4 +1353,5 @@ __all__ = [
     "framework_label",
     "mosca_basis",
     "mosca_basis_text",
+    "mosca_meaning_text",
 ]

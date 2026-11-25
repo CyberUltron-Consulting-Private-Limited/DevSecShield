@@ -127,3 +127,47 @@ def test_collection_history_reads_the_totals_and_the_newest_jobs_from_the_histor
     # totals by source on the index (SQLite has no INCLUDE; on PostgreSQL the same plan is an index-only scan)
     assert "USING INDEX ix_cbomcollectionjob_team_source_hist (team_id=? AND source_id>?)" in plans[0], plans[0]
     assert "SCAN cbomcollectionjob" not in plans[1], plans[1]  # newest jobs: a search (by key on PostgreSQL)
+
+
+# ----------------------------------------------------------------------------- review 6057627810 M3 / m2
+def test_every_d12_figure_leaves_out_the_assets_only_a_deleted_source_read(deleted_world):
+    """Rule P everywhere in D12: the default-Mosca count, the families, the Q0 reasons and the heat-map agree with the
+    total (the deleted source's certificate is in none of them); D14 section 3 / 8 and D2 section 6 print that count."""
+    with Session(deleted_world.engine) as s:
+        summary = RR.summary(s, 1, NOW)
+        heat = RR.heatmap(s, 1)
+        live_refs = {r for (r,) in s.execute(sa.select(CbomCollectionSource.source_uid)).all()}
+    total = summary["total"]
+    assert total == 1 and summary["removed_from_scope"]["total"] == 1
+    assert summary["default_assumptions"]["count"] == 1  # was 2: the deleted source's asset was graded on defaults
+    assert sum(n for fam in summary["families"].values() for n in fam.values()) == total
+    assert sum(summary["q0_reasons"].values()) == summary["q_grades"]["Q0"]
+    assert heat["total"] == total and sum(c["total"] for c in heat["cells"]) == total
+    assert {c["source_ref"] for c in heat["columns"]} <= live_refs  # no column for the deleted source
+    assert all(c["source_name"] for c in heat["columns"])
+    view = R.load_team_cbom_view(deleted_world.engine, 1, now=NOW.replace(tzinfo=dt.timezone.utc))
+    d14_text = re.sub(r"\s+", " ", pdf_text(d14.build_pdf(view)))
+    assert "1 asset graded on defaults" in d14_text and "2 assets graded on defaults" not in d14_text
+    from backend.utilities.pdf import cbom_methodology_pdf as d2
+
+    d2_text = re.sub(r"\s+", " ", pdf_text(d2.build_pdf(view)))
+    assert "1 asset graded on defaults" in d2_text and "2 assets graded on defaults" not in d2_text
+
+
+def test_d14_and_d2_define_mosca_and_say_what_the_defaults_imply(deleted_world):
+    """m2: X, Y, Z and the X + Y > Z rule (``qgrade.MOSCA_DEFINITION``), the default Z as NIST IR 8547's disallowance
+    date and not a quantum-computer estimate, and that on this year's defaults every quantum-vulnerable asset is at
+    risk."""
+    from backend.utilities.cbom_sources import qgrade as QG
+    from backend.utilities.pdf import cbom_methodology_pdf as d2
+
+    view = R.load_team_cbom_view(deleted_world.engine, 1, now=NOW.replace(tzinfo=dt.timezone.utc))
+    year = view.register["summary"]["default_assumptions"]["horizon"]["year"]
+    z = QG.default_z(year)
+    assert QG.DEFAULT_X + QG.DEFAULT_Y > z
+    for doc in (d14, d2):
+        text = re.sub(r"\s+", " ", pdf_text(doc.build_pdf(view)))
+        assert QG.MOSCA_DEFINITION in text, doc.__name__
+        assert "a regulatory deadline, not an estimate of when a cryptographically relevant quantum computer" in text
+        assert (f"On the defaults in {year} (X {QG.DEFAULT_X} + Y {QG.DEFAULT_Y} = {QG.DEFAULT_X + QG.DEFAULT_Y} > "
+                f"Z {z}), every quantum-vulnerable asset is at risk") in text

@@ -647,6 +647,9 @@ def _classification(view: TeamCbomView, styles: Styles, local: dict[str, Paragra
     q0_note = ("Open now: Q0 gaps open in the team's quantum risk register (D12) when this edition was generated."
                if q0_open is not None else "The quantum risk register was not loaded, so open Q0 counts are not shown.")
     q0_note += f" Grades are computed {authored.mosca_basis_text(view)}."
+    meaning = authored.mosca_meaning_text(view)  # X, Y, Z, the rule and the defaults' sources (#497 m2)
+    if meaning:
+        q0_note += f" {meaning}"
     fixes = dense_table(["Fix class", "SOW term", "Meaning"], [list(row) for row in method.FIX_CLASSES],
                         [90, 70, 380])
     content: list[Flowable] = [
