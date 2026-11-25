@@ -330,7 +330,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     catalog_part: List[Any] = []
     catalog: List[List[Any]] = []
     for idx, v in shown if ctx.has("catalog") else ():
-        title = v.get("title") or v.get("algorithm_name") or f"Finding #{idx}"
+        title = _labelled_title(v, v.get("title") or v.get("algorithm_name") or f"Finding #{idx}")
         impact = count_label(finding_severity(v) or "low")  # the severity the counts use
         location = finding_location(v)
         catalog.append(
@@ -368,7 +368,8 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         details.append(Paragraph(escape_html(ctx.empty_text("No cryptographic findings were detected.")), styles["body"]))
     else:
         for idx, v in shown:
-            title = v.get("title") or v.get("algorithm_name") or f"Finding #{idx}"
+            title = _labelled_title(v, v.get("title") or v.get("algorithm_name") or f"Finding #{idx}")
+            unscored = scoring_label(v)
             impact = count_label(finding_severity(v) or "low")  # the severity the counts use
             strength = (v.get("crypto_strength") or "unknown").strip()
             alg_name = str(v.get("algorithm_name") or "—")
@@ -392,6 +393,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                         ("Strength", enum_label(strength)),
                         ("Quantum status", _quantum_label(v)),
                         ("Where it was found", location),
+                        *([("Scoring", f"Listed, not scored: {unscored}")] if unscored else []),
                         *([("CWE", ", ".join(map(str, v.get("cwe") or [])))] if v.get("cwe") else []),
                         *([("CVE", ", ".join(map(str, v.get("cves") or [])))] if v.get("cves") else []),
                     ],
@@ -421,6 +423,22 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         onLaterPages=make_footer_callback("cbom", ctx),
     )
     return output_path
+
+
+def scoring_label(v: dict) -> str | None:
+    """The results page's badge for a finding that is listed but not scored: "test code" (test, fixture or example
+    code) or "unconfirmed (configuration only)" (a setting no crypto call is proven to read); None when it is scored."""
+    if v.get("code_context") == "test":
+        return "test code"
+    if v.get("config_status") == "unconfirmed":
+        return "unconfirmed (configuration only)"
+    return None
+
+
+def _labelled_title(v: dict, title: Any) -> str:
+    """The finding's title with its badge, as the findings table on the results page (re-review 6064703319, 4)."""
+    label = scoring_label(v)
+    return f"{title} · {label}" if label else str(title)
 
 
 def create_title_page(canvas_obj, doc):

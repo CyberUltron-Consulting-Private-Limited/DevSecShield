@@ -177,6 +177,10 @@ _READ_LANGS = frozenset({"python", "java", "javascript"})
 
 _IMPORT_LINE = re.compile(r"^\s*(?:import\b|from\b|.*\brequire\s*\(|.*\bimport\s*\()")
 _NOT_OWNERS = frozenset({"exports", "module", "default", "self", "this", "cls", "it"})
+# an import that renames: ``from .base import Cfg as AppCfg``, ``import { Cfg as C }``,
+# ``const { Cfg: C } = require('./cfg')``
+_IMPORT_AS = re.compile(r"\b([A-Za-z_]\w*)\s+as\s+([A-Za-z_]\w*)")
+_REQUIRE_RENAME = re.compile(r"\b([A-Za-z_]\w*)\s*:\s*([A-Za-z_]\w*)\s*[,}]")
 
 
 class _Reader:
@@ -202,6 +206,8 @@ class ProjectReads:
     def __init__(self, walk: FileWalk) -> None:
         # lang -> name -> [(reader, line, qualifier)]
         self.sites: dict[str, dict[str, list[tuple[_Reader, int, str | None]]]] = {}
+        # lang -> alias -> the names it renames (a package re-export or an import)
+        self.aliases: dict[str, dict[str, set[str]]] = {}
         for path in _iter_source_files(walk):
             lang = source_language(path)
             if lang not in _READ_LANGS:
@@ -213,10 +219,18 @@ class ProjectReads:
                 _strip_line_comment(ln, lang).strip()
                 for ln in strip_noncode(text).split("\n")
             ]
+            imports = "\n".join(ln for ln in lines if _IMPORT_LINE.match(ln))
+            renames = self.aliases.setdefault(lang or "", {})
+            for ln in imports.split("\n"):
+                found = _IMPORT_AS.findall(ln)
+                if "require" in ln:
+                    found += _REQUIRE_RENAME.findall(ln)
+                for original, alias in found:
+                    if original != alias:
+                        renames.setdefault(alias, set()).add(original)
             sites = crypto_read_sites(lines)
             if not sites:
                 continue
-            imports = "\n".join(ln for ln in lines if _IMPORT_LINE.match(ln))
             words = frozenset(re.findall(r"[A-Za-z_]\w*", text))
             reader = _Reader(walk.rel(path), imports, words)
             by_name = self.sites.setdefault(lang or "", {})
@@ -228,6 +242,7 @@ class ProjectReads:
     ) -> Callable[[str, tuple[str, ...]], str | None]:
         """``prove(binding, owners) -> "path:line" | None`` for ``rel``'s settings."""
         by_name = self.sites.get(lang or "", {})
+        renames = self.aliases.get(lang or "", {})
         stem = Path(rel).stem
         imported = (
             re.compile(rf"(?<![\w-]){re.escape(stem)}(?![\w-])") if stem else None
@@ -238,9 +253,11 @@ class ProjectReads:
             for reader, line, qualifier in by_name.get(binding, ()):
                 if reader.path == rel:
                     continue
+                # a renamed import reads the original (``AppCfg.HASH`` reads Cfg's)
+                names = {qualifier, *renames.get(qualifier or "", ())} - {None}
                 linked = (
                     (imported is not None and bool(imported.search(reader.imports)))
-                    or (qualifier is not None and qualifier in real)
+                    or any(q in real for q in names)
                     or any(o in reader.words for o in real)
                 )
                 if linked:

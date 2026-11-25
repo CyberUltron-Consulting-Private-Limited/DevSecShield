@@ -100,6 +100,21 @@ def risk_posture(severity: dict[str, int]) -> dict[str, Any]:
             "risk_posture": {"score": score, "grade": grade, "label": label, "band": band}}
 
 
+RISK_FIELDS = ("risk_score", "risk_grade", "risk_label", "risk_posture")
+# finished CBOM Sources runs (a partial run finished with what it collected)
+RUN_SCORED_STATUSES = frozenset({"done", "partial"})
+
+
+def risk_fields(risk: dict[str, Any], *, judged: bool = True) -> dict[str, Any]:
+    """The risk fields a list row or a card spreads, with ``risk_posture_status`` (#505's
+    ``risk_scale.posture_field``): "scored" with the posture numbers, or, for a scan or run that did not succeed
+    (pending, running, failed, cancelled), "not_scored" with every number null, shown "—" and never matched by the
+    "Low (A)" filter (re-review 6064703319, 5)."""
+    if not judged:
+        return {**dict.fromkeys(RISK_FIELDS), "risk_posture_status": "not_scored"}
+    return {**{k: risk[k] for k in RISK_FIELDS}, "risk_posture_status": "scored"}
+
+
 def average_risk(severity: dict[str, int]) -> float:
     """Average 0-10 risk over findings (inventory excluded), one decimal."""
     total = sum(int(severity.get(s, 0) or 0) for s in SEVERITIES)

@@ -442,7 +442,7 @@ def return_dast_list_item(scan : Scan) -> dict:
 
 def return_cbom_list_item(scan : Scan) -> dict:
     # the same counts as the scan's dashboard and PDF (cbom_metrics): findings only, inventory is informational
-    from backend.utilities.cbom_sources.cbom_metrics import summarize_code_rows
+    from backend.utilities.cbom_sources.cbom_metrics import risk_fields, summarize_code_rows
 
     rows = []
     if scan.scan_data and scan.scan_data != {} and "results" in scan.scan_data and scan.scan_status == "success":
@@ -481,7 +481,8 @@ def return_cbom_list_item(scan : Scan) -> dict:
         "average_risk_score" : average_risk_score,
         # the one D3 risk score (the engine's posture function over these findings): the list shows it, not the
         # 0-10 average (PR #500 takeover)
-        **{k: v for k, v in summary.risk.items() if k in ("risk_score", "risk_grade", "risk_label", "risk_posture")},
+        # a scan that did not succeed has no score: "not_scored", shown "—" (re-review 6064703319)
+        **risk_fields(summary.risk, judged=str(scan.scan_status or "").lower() == "success"),
         "total_weak_algorithms": total_weak,
         "total_quantum_vulnerable": total_quantum_vulnerable,
         "scan_binaries": scan.scan_metadata.get("scan_binaries", False) if scan.scan_metadata else False,

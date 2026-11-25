@@ -207,6 +207,9 @@ def test_b1_scan_list_includes_runs(api, world, no_mongo, api_run):
 
     q = by_id[queued]  # a run with no assets yet
     assert q["asset_count"] == 0 and q["average_risk_score"] == 0.0 and sum(q["risk_data"].values()) == 0
+    # an open run has no score, never "0 · A" (re-review 6064703319); a partial run finished with what it collected
+    assert (q["risk_score"], q["risk_posture"], q["risk_posture_status"]) == (None, None, "not_scored")
+    assert p["risk_posture_status"] == "scored"
 
     real = by_id[api_run]  # judged by the real classifier through the node API
     assert real["asset_count"] == 3 and real["endpoints_probed"] == 1
@@ -219,7 +222,8 @@ def test_b1_scan_list_includes_runs(api, world, no_mongo, api_run):
                      "trigger", "schedule_id", "schedule_name",
                      "status_reason",  # FIX-B3: why a run is partial / failed (additive)
                      "risk_score", "risk_grade", "risk_label",  # PR #500 takeover: the one risk score
-                     "risk_posture"}  # the same number as #505's posture object (re-review 6063599094)
+                     "risk_posture",  # the same number as #505's posture object (re-review 6063599094)
+                     "risk_posture_status"}  # "not_scored" for an open / failed / cancelled run (6064703319)
     assert all(set(r) == expected_keys for r in rows)
 
 

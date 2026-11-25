@@ -1207,7 +1207,7 @@ def generate_scan_dashboard(
             # One set of numbers for every CBOM surface (cbom_metrics): findings by severity over FINDING rows only
             # (cbom_rows.is_finding), clean inventory under "informational", inventory distributions over every row,
             # app-wide 0-10 risk scale (critical=9, high=7, medium=5, low=2).
-            from backend.utilities.cbom_sources.cbom_metrics import summarize_code_rows
+            from backend.utilities.cbom_sources.cbom_metrics import risk_fields, summarize_code_rows
 
             summary = summarize_code_rows(results)
             total_crypto_assets = summary.crypto_assets  # the scan list and the PDF count the same rows
@@ -1258,10 +1258,10 @@ def generate_scan_dashboard(
                     "average_risk_score": summary.average_risk,
                     # the D3 risk score (Q2-01, Rule P): the engine's posture function over these findings, the
                     # number, grade and words of the PDF headline and of cbom_scores
-                    "risk_score": risk["risk_score"],
-                    "risk_grade": risk["risk_grade"],
-                    "risk_label": risk["risk_label"],
-                    "risk_posture": risk["risk_posture"],
+                    # none for a scan that did not succeed: "not_scored", shown "—" (re-review 6064703319)
+                    # (results passed without a scan row, or a row without a status, are a finished scan's)
+                    **risk_fields(risk, judged=str(getattr(scan, "scan_status", "success") or "").lower()
+                                  == "success"),
                 },
                 "severity_distribution": summary.severity_distribution(),
                 "algorithm_type_distribution": dict(summary.algorithm_types),

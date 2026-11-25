@@ -1746,7 +1746,7 @@ def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None, *, team
     the population reconciliation every document prints (``cbom_sources.reconciliation``), with the register summary
     when the caller passes it."""
     from backend.utilities.cbom_sources import reconciliation as RECON
-    from backend.utilities.cbom_sources.cbom_metrics import CodeRowSummary
+    from backend.utilities.cbom_sources.cbom_metrics import CodeRowSummary, risk_fields
     from backend.utilities.cbom_sources.collections_view import (
         ORIGIN_CODE,
         REMEDIATION_BUCKET,
@@ -1860,7 +1860,7 @@ def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None, *, team
             "quantum_readiness_judged": readiness is not None,
             "average_risk_score": summary.average_risk,
             # the one risk score (posture, 0-100) over the team's findings: the tile shows it (PR #500 takeover)
-            **{k: v for k, v in summary.risk.items() if k in ("risk_score", "risk_grade", "risk_label", "risk_posture")},
+            **risk_fields(summary.risk),
         },
         "severity_distribution": summary.severity_distribution(),
         "algorithm_type_distribution": dict(summary.algorithm_types),

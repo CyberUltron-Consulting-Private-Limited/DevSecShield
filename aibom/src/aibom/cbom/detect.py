@@ -1249,7 +1249,7 @@ _CRYPTO_TOKENS = frozenset({
     "secretkey", "secretkeyspec", "keygenerator", "keypairgenerator", "aes", "rsa",
     "ecdsa", "ecdh", "fernet", "subtle", "openssl", "getinstance", "messagedigest",
     "pyjwt", "nacl", "sodium", "importkey", "exportkey", "generatekey", "derivekey",
-    "derivebits", "wrapkey", "unwrapkey",
+    "derivebits", "wrapkey", "unwrapkey", "jwk", "jwks", "pyjwk",
 })
 _SEGMENT_ONLY = frozenset({"crypto", "cryptography"})
 _DECL_LINE = re.compile(
@@ -1350,27 +1350,69 @@ def crypto_read_sites(lines: list[str]) -> list[tuple[str, int, str | None]]:
     callee / receiver; a dotted read names its attribute, so ``Cipher.ENCRYPT_MODE``
     reads no setting called "cipher"."""
     sites: list[tuple[str, int, str | None]] = []
+    # one hop: ``const alg = config.get('security.hashAlgorithm')`` then
+    # ``createHash(alg)`` reads what ``alg`` was read from (the qualified reads only)
+    aliases: dict[str, list[tuple[str, str | None]]] = {}
     for n, line in enumerate(lines, start=1):
         if "(" not in line or len(line) > _MAX_STRING_SCAN:
+            if len(line) <= _MAX_STRING_SCAN:
+                _note_alias(aliases, line)
             continue
         if _DECL_LINE.match(line):
             line = _after_params(line)  # a declaration's parameter list is no call
         if not any(_is_crypto_callee(c) for c, _a in split_calls(_blank_strings(line))):
+            _note_alias(aliases, line)
             continue
-        raw = _ASSIGN_LHS.sub("", line, count=1)
-        code = _CALL_CHAIN.sub("(", _ASSIGN_LHS.sub("", _blank_strings(line), count=1))
-        for m in _READ_CHAIN.finditer(code):
-            parts = [p.strip() for p in m.group(0).split(".")]
-            if len(parts) > 1 and parts[-1].lower() in _VALUE_ATTRS:
-                parts = parts[:-1]  # ``Hash.WEAK.value`` / ``.name`` read the member
-            sites.append((parts[-1].lower(), n, parts[0] if len(parts) > 1 else None))
-        for m in _SUBSCRIPT_KEY.finditer(raw):
-            sites.append((m.group(2).lower(), n, m.group(1)))
-        for lit in _STR_LIT.finditer(raw):
-            body = lit.group(0)[1:-1]
-            if re.fullmatch(r"[A-Za-z_][\w.-]*", body):
-                sites.append((body.lower(), n, None))
+        found = _expr_reads(_ASSIGN_LHS.sub("", line, count=1))
+        for name, qualifier in list(found):
+            if qualifier is None:
+                found.extend(aliases.get(name, ()))
+        sites.extend((name, n, qualifier) for name, qualifier in found)
     return sites
+
+
+# ``[const|let|var|val|final|<Type>] name = <expression>`` (not ``==`` / ``=>``)
+_ALIAS_DECL = re.compile(
+    r"^\s*(?:(?:const|let|var|val|final|private|static|String|auto)\s+)*"
+    r"([A-Za-z_]\w*)\s*(?::[^=]+)?(?<![=!<>])=(?![=>])\s*(.+)$"
+)
+# a Java bean getter (``props.getHashAlgorithm()``) reads the property
+_GETTER = re.compile(r"(?<![\w.])([A-Za-z_]\w*)\s*\.\s*get([A-Z]\w*)\s*\(\s*\)")
+
+
+def _note_alias(aliases: dict[str, list[tuple[str, str | None]]], line: str) -> None:
+    """Record ``name = <expression>``: the qualified reads of the expression."""
+    m = _ALIAS_DECL.match(line)
+    if m:
+        reads = _expr_reads(m.group(2))
+        aliases[m.group(1).lower()] = [r for r in reads if r[1] is not None]
+
+
+def _expr_reads(raw: str) -> list[tuple[str, str | None]]:
+    """``(name, qualifier)`` for each name an expression reads: dotted chains (the
+    attribute, with the object it is read from), subscript keys, bean getters, and
+    string keys; a dotted string key (node-config ``config.get('security.alg')``)
+    also reads its last segment through the one before it."""
+    out: list[tuple[str, str | None]] = []
+    blanked = _blank_strings(raw)
+    for m in _GETTER.finditer(blanked):
+        out.append((m.group(2).lower(), m.group(1)))
+    code = _CALL_CHAIN.sub("(", blanked)
+    for m in _READ_CHAIN.finditer(code):
+        parts = [p.strip() for p in m.group(0).split(".")]
+        if len(parts) > 1 and parts[-1].lower() in _VALUE_ATTRS:
+            parts = parts[:-1]  # ``Hash.WEAK.value`` / ``.name`` read the member
+        out.append((parts[-1].lower(), parts[0] if len(parts) > 1 else None))
+    for m in _SUBSCRIPT_KEY.finditer(raw):
+        out.append((m.group(2).lower(), m.group(1)))
+    for lit in _STR_LIT.finditer(raw):
+        body = lit.group(0)[1:-1]
+        if re.fullmatch(r"[A-Za-z_][\w.-]*", body):
+            out.append((body.lower(), None))
+            keys = body.split(".")
+            if len(keys) > 1 and all(keys):
+                out.append((keys[-1].lower(), keys[-2]))
+    return out
 
 
 def crypto_reads(lines: list[str]) -> dict[str, int]:
@@ -1551,6 +1593,7 @@ class _ConfigLiterals:
         project_reads: Any = None,
     ) -> None:
         self.lang = lang
+        self.lines = lines
         self.sites = crypto_read_sites(lines)
         self.reads: dict[str, int] = {}
         for name, n, _q in self.sites:
@@ -1595,6 +1638,33 @@ class _ConfigLiterals:
             return str(found) if found else None
         return self.project_reads.get(binding)
 
+    def registry_use(self, name: str) -> str | None:
+        """``"<line>"`` of the first use of the registry ``name`` outside its own
+        declaration (``HASHES[name](data)``, ``return _algorithms``), else None."""
+        word = re.compile(rf"(?<![\w.]){re.escape(name)}(?!\w)")
+        decl = re.compile(
+            rf"^\s*(?:[\w<>\[\], ]+\s+)?{re.escape(name)}\s*(?::[^=]*)?=(?!=)"
+        )
+        for idx, line in enumerate(self.lines):
+            if not word.search(_blank_strings(line)) or decl.match(line):
+                continue
+            if any(b == name for _c, _d, b in self.stack_at[idx]):
+                continue  # inside the registry's own body
+            return str(idx + 1)
+        return None
+
+    def _call_target_at(self, line_idx: int, callee: str | None) -> str | None:
+        """The first argument of ``callee(`` when it is a plain name, also when the
+        call opened on an earlier line (``Object.assign(\n  settings,\n  {...}``)."""
+        if not callee:
+            return None
+        start = max(0, line_idx - 20)
+        for j in range(line_idx, start - 1, -1):
+            if re.search(rf"\b{re.escape(callee)}\s*\(", self.lines[j]):
+                joined = " ".join(self.lines[j:line_idx + 1])
+                return _call_target(joined, callee)
+        return None
+
     def _flows(self, binding: str | None, owners: Sequence[str] = ()) -> bool:
         if not binding:
             return False
@@ -1622,9 +1692,45 @@ class _ConfigLiterals:
                     # (a method, class or lambda body), not an object literal: the
                     # bindings in it are statements
                     decl = ch == "{" and not _EXPR_BRACE.search(code[:i])
+                    if decl and not code[:i].strip() and stack and (
+                        stack[-1][0] in "([" and not stack[-1][1]
+                    ):
+                        # a line that opens with ``{`` inside a call's arguments
+                        decl = False
                 stack.append((ch, decl, key))
             elif ch in ")]}" and stack:
                 stack.pop()
+
+    @staticmethod
+    def _registry_entry(
+        code: str, end: int, stack: list[_Frame]
+    ) -> tuple[str, int] | None:
+        """``(registry name, end of the value)`` when the literal is a key of a dict
+        whose value is a crypto constructor or algorithm object (``{'md5':
+        hashlib.md5}``, PyJWT ``{'none': NoneAlgorithm()}``)."""
+        if not stack or stack[-1][0] != "{" or stack[-1][1]:
+            return None
+        m = _REGISTRY_VALUE.match(code[end:])
+        if not m:
+            return None
+        chain = m.group(1)
+        last = chain.rsplit(".", 1)[-1]
+        if not (_is_crypto_callee(chain) or last.endswith("Algorithm")):
+            return None
+        depth, stop = 0, len(code)
+        for i in range(end + m.end(1), len(code)):
+            ch = code[i]
+            if ch in "([{":
+                depth += 1
+            elif ch in ")]}":
+                if depth == 0:
+                    stop = i
+                    break
+                depth -= 1
+            elif ch == "," and depth == 0:
+                stop = i
+                break
+        return (stack[-1][2] or "registry"), stop
 
     def _record_setting(self, stack: list[_Frame]) -> bool:
         """Whether the innermost call is the constructor of a record type this file
@@ -1685,7 +1791,11 @@ class _ConfigLiterals:
                 )
                 out.append((*span, (other or "comparison").lower(), MENTION, owners))
                 continue
-            if _membership(code, lit.start(), lit.end(), stack):
+            member_call = (
+                stack[-1][0] == "(" and not stack[-1][1]
+                and (stack[-1][2] or "").rsplit(".", 1)[-1] in _MEMBER_METHODS
+            ) if stack else False
+            if member_call or _membership(code, lit.start(), lit.end(), stack):
                 # an inline allow / deny check: ``['md5', 'sha1'].includes(alg)``,
                 # ``alg in ('md5', 'sha1')``, ``List.of("MD5").contains(alg)``
                 out.append((*span, "membership", MENTION, owners))
@@ -1702,6 +1812,11 @@ class _ConfigLiterals:
             ):
                 name = ts_type.group(1).lower() if ts_type else "type"
                 out.append((*span, name, MENTION, owners))
+                continue
+            registry = self._registry_entry(code, lit.end(), stack)
+            if registry is not None:
+                name, value_end = registry
+                out.append((lit.start(), value_end, name.lower(), REGISTRY, (name,)))
                 continue
             enum_frame = any(b == _ENUM_KEY for _c, _d, b in stack)
             callee = callee.rsplit(".", 1)[-1] if callee else None
@@ -1742,8 +1857,13 @@ class _ConfigLiterals:
                 # an object handed to a call that is no crypto API
                 # (``Object.assign(settings, { cipher: ... })``): a setting only when
                 # a crypto call reads it through the call's target
-                target = _call_target(line, calls[-1])
-                if target and self.read_at(own, (target,), qualified=True):
+                target = self._call_target_at(line_idx, calls[-1])
+                if target and (
+                    self.read_at(own, (target,), qualified=True)
+                    or self.read_at(own, (target,))
+                ):
+                    # the target owns the setting: a read through it (or of the
+                    # setting's name by a crypto call) proves it
                     out.append((*span, own, SETTING, (target,)))
                 else:
                     out.append((*span, own, MENTION, owners))
@@ -1753,8 +1873,20 @@ class _ConfigLiterals:
 
 
 Judged = tuple[int, int, str, str, tuple[str, ...]]
-_MEMBER_AFTER = re.compile(
+REGISTRY = "registry"
+_REGISTRY_VALUE = re.compile(r"^\s*:\s*(?:new\s+)?([A-Za-z_][\w.]*)\s*(?=[(,}\s]|$)")
+_MEMBER_METHODS = frozenset({"includes", "indexOf", "contains", "containsKey", "has"})
+# (a distinct name: the deny-list lane below has its own ``_MEMBER_AFTER``)
+_INLINE_MEMBER_AFTER = re.compile(
     r"^\s*\.\s*(?:includes|indexOf|contains|containsKey|has|count)\s*\("
+)
+_SET_CTOR_MEMBER = re.compile(r"^\s*\)\s*\.\s*(?:has|includes|contains)\s*\(")
+_NEW_SET = re.compile(
+    r"\bnew\s+(?:Set|HashSet|TreeSet|LinkedHashSet)\s*(?:<[^>]*>)?\s*\(\s*$"
+)
+_KT_IN_FACTORY = re.compile(
+    r"(?:!in|\bin)\s+(?:listOf|setOf|arrayOf|mutableListOf|mutableSetOf|hashSetOf"
+    r"|linkedSetOf|sortedSetOf|arrayListOf)\s*$"
 )
 _IN_BEFORE = re.compile(r"\b(?:not\s+)?in\s*$")
 _LIST_FACTORY = re.compile(
@@ -1794,12 +1926,19 @@ def _membership(code: str, start: int, end: int, stack: list[_Frame]) -> bool:
     if opened is None:
         return False
     head = code[:opened]
+    if code[opened] == "(" and _KT_IN_FACTORY.search(head):
+        return True  # Kotlin ``alg in listOf("MD5", "SHA-1")``
+    if code[opened] == "[" and _NEW_SET.search(head):
+        # ``new Set(['md5', 'sha1']).has(alg)``
+        return bool(_SET_CTOR_MEMBER.match(code[close + 1:]))
     # a paren is a container only as ``List.of(`` / ``Set.of(`` / ``Arrays.asList(``
     # or a tuple after ``in``
     factory = _LIST_FACTORY.search(head) or _IN_BEFORE.search(head)
     if code[opened] == "(" and not factory:
         return False
-    return bool(_MEMBER_AFTER.match(code[close + 1:]) or _IN_BEFORE.search(head))
+    return bool(
+        _INLINE_MEMBER_AFTER.match(code[close + 1:]) or _IN_BEFORE.search(head)
+    )
 
 
 def _call_target(line: str, callee: str | None) -> str | None:
@@ -2900,6 +3039,38 @@ def _tag_settings(
                 break
 
 
+def _tag_registries(
+    per_line: dict[str, Detection],
+    registries: list[tuple[int, int, str, tuple[str, ...]]],
+    line: str,
+    line_no: int,
+    pats_by_key: Mapping[str, list[re.Pattern[str]]],
+    config: _ConfigLiterals,
+) -> None:
+    """One rule for algorithm registries (re-review 6064703319): each entry of a
+    dict whose values are crypto constructors or algorithm objects is an asset (a
+    real capability), confirmed by a use of the registry, else unconfirmed. A JWA
+    key (``'none'``, ``'HS256'``) names its algorithm."""
+    for start, end, binding, owners in registries:
+        body = line[start:end]
+        key = re.match(r"""^["'`]([^"'`]*)["'`]""", body)
+        added: set[str] = set()
+        if key and _JWA.match(key.group(1)):
+            for k, v in _jwa_assets(key.group(1)):
+                if k not in per_line:
+                    per_line[k] = Detection(key=k, line_no=line_no, variant=v)
+                added.add(k)
+        read = config.registry_use(owners[0] if owners else binding)
+        for det in per_line.values():
+            pats = pats_by_key.get(det.key.split("-")[0], []) + pats_by_key.get(
+                det.key, []
+            )
+            if det.key in added or any(p.search(body) for p in pats):
+                det.config_binding = binding
+                det.config_read_at = read
+                det.low_confidence = read is None
+
+
 def detect_crypto(
     text: str,
     lang: str,
@@ -3031,10 +3202,14 @@ def detect_crypto(
         # no spaces and stay).
         lit_line = blank_labels(blank_prose(line, lang), lang)
         settings: list[tuple[int, int, str, tuple[str, ...]]] = []
+        registries: list[tuple[int, int, str, tuple[str, ...]]] = []
         if config is not None:
             for start, end, binding, kind, owners in config.judge(line_no - 1, line):
                 if kind == SETTING:
                     settings.append((start, end, binding, owners))
+                    continue
+                if kind == REGISTRY:
+                    registries.append((start, end, binding, owners))
                     continue
                 if lit_line[start + 1:end - 1].strip():
                     _evidence(line_no, line[start + 1:end - 1], binding)
@@ -3097,6 +3272,8 @@ def detect_crypto(
         _mark_inner(per_line, line)
         if settings and config is not None:
             _tag_settings(per_line, settings, lit_line, pats_by_key, config)
+        if registries and config is not None:
+            _tag_registries(per_line, registries, line, line_no, pats_by_key, config)
         for d in substituted.get(line_no, ()):
             keys = _value_keys(d.value, lang)
             for det in per_line.values():

@@ -99,9 +99,11 @@ export function mttrText(totalDays: number, totalFixed: number | null | undefine
   return totalDays < 0.1 && totalDays >= 0 ? "<0.1 days" : `${totalDays.toFixed(1)} days`;
 }
 
-/** "52 · D" from the API's risk score and grade; "N/A" when the API sent none. The scale and label go in the hint
- * (riskScoreHint), so the value fits one line in the seven-tile row at 1366 px (Playwright run, round 2). */
+/** "52 · D" from the API's risk score and grade; "—" for a scan or run that did not succeed (``not_scored``, as the
+ * results list); "N/A" when an older API sent none. The scale and label go in the hint (riskScoreHint), so the value
+ * fits one line in the seven-tile row at 1366 px (Playwright run, round 2). */
 export function riskScoreText(c: KpiCardData): string {
+  if (c.risk_posture_status === "not_scored") return "—";
   if (typeof c.risk_score !== "number") return "N/A";
   return c.risk_grade ? `${c.risk_score} · ${c.risk_grade}` : `${c.risk_score}`;
 }

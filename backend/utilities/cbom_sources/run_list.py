@@ -32,7 +32,12 @@ from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionRun, CbomCollectionSource, User
 from backend.utilities.cbom_sources.run_status import status_reason
-from backend.utilities.cbom_sources.cbom_metrics import average_risk, risk_posture
+from backend.utilities.cbom_sources.cbom_metrics import (
+    RUN_SCORED_STATUSES,
+    average_risk,
+    risk_fields,
+    risk_posture,
+)
 from backend.utilities.cbom_sources.collections_view import NETWORK_TYPES, REMEDIATION_BUCKET
 from backend.utilities.build_info import utc_timestamp
 from backend.utilities.cbom_sources.common import console, iso_z, utcnow
@@ -311,7 +316,8 @@ def run_row(run: CbomCollectionRun, counts: dict[str, Any], jobs: dict[str, Any]
         "risk_data": risk,
         "average_risk_score": average_risk(severity),
         # the one risk score (posture function), as a code scan's list row (PR #500 takeover)
-        **{k: v for k, v in risk_posture(severity).items() if k in ("risk_score", "risk_grade", "risk_label", "risk_posture")},
+        # a run that has not finished (queued, running) or failed / was cancelled has no score (re-review 6064703319)
+        **risk_fields(risk_posture(severity), judged=str(run.status or "") in RUN_SCORED_STATUSES),
         "sources": [{"id": s["id"], "name": s["name"], "kind": s["kind"]} for s in sources],
         "repo_url": None,
         "branch": None,

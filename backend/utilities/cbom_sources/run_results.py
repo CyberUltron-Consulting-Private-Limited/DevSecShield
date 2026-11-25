@@ -75,7 +75,13 @@ from backend.utilities.cbom_sources import collections_view as CV
 from backend.utilities.cbom_sources import crypto_kb
 from backend.utilities.cbom_sources import identity as ID
 from backend.utilities.cbom_sources import posture as POSTURE
-from backend.utilities.cbom_sources.cbom_metrics import INFORMATIONAL, average_risk, risk_posture
+from backend.utilities.cbom_sources.cbom_metrics import (
+    INFORMATIONAL,
+    RUN_SCORED_STATUSES,
+    average_risk,
+    risk_fields,
+    risk_posture,
+)
 from backend.utilities.cbom_sources.common import console, iso_z, utcnow
 
 ACTIVE_STATUSES = ("queued", "running")
@@ -510,7 +516,7 @@ def _assemble(acc: _Acc, posture: dict[str, Any], top_risks: list[dict[str, Any]
             "average_risk_score": average_risk(severity),
             # the risk score tile: the engine's posture function over the same severity counts, as a code scan's
             # (staging QA Q2-01; one KPI definition for both pages)
-            **{k: v for k, v in risk_posture(severity).items() if k in ("risk_score", "risk_grade", "risk_label", "risk_posture")},
+            **risk_fields(risk_posture(severity)),
         },
         "severity_distribution": {**severity, INFORMATIONAL: assets - findings},
         "algorithm_type_distribution": dict(sorted(acc.algorithm_types.items())),
@@ -885,9 +891,14 @@ def run_results(session: Session, run: CbomCollectionRun, *, team_id: int, risk_
                 _store(rid, _Entry(key=key, digest=digest, computed=computed, live=True, at=_monotonic()))
     actions, metrics = _remediation(session, team_id, computed.finding_keys)  # never cached
     certs = computed.certificates
+    dashboard = {**computed.dashboard, "remediation_actions_required": actions, "remediation_metrics": metrics}
+    if str(run.status or "") not in RUN_SCORED_STATUSES:
+        # an open, failed or cancelled run's tile has no score (re-review 6064703319): "not_scored", shown "—"
+        card = dict(dashboard.get("card_data") or {})
+        dashboard["card_data"] = {**card, **risk_fields({}, judged=False)}
     return {
         "run": run_detail,
-        "dashboard": {**computed.dashboard, "remediation_actions_required": actions, "remediation_metrics": metrics},
+        "dashboard": dashboard,
         "distributions": computed.distributions,
         "compliance": computed.compliance,
         "certificates_orphaned": certs["orphaned"],

@@ -2212,6 +2212,8 @@ export interface CbomScanDashboardData {
     risk_score?: number | null
     risk_grade?: string | null
     risk_label?: string | null
+    /** "not_scored" for a scan or run that did not succeed: no score, shown "—" (as #505's risk_posture_status) */
+    risk_posture_status?: string | null
   }
   remediation_metrics: {
     mean_time_to_remediate: [number, number, number]
@@ -2256,6 +2258,8 @@ export interface CBOMConversation {
   risk_score?: number | null
   risk_grade?: string | null
   risk_label?: string | null
+  /** "not_scored" for a scan that did not succeed: no score, shown "—" */
+  risk_posture_status?: string | null
   branch: string | null
   repo_url: string | null
   owner_user_email: string | null
@@ -2331,6 +2335,8 @@ export interface CBOMDashboardData {
     risk_score?: number | null
     risk_grade?: string | null
     risk_label?: string | null
+    /** "not_scored" for a scan or run that did not succeed: no score, shown "—" (as #505's risk_posture_status) */
+    risk_posture_status?: string | null
   }
 }
 
@@ -2372,6 +2378,8 @@ export interface RunListRow {
   risk_score?: number | null
   risk_grade?: string | null
   risk_label?: string | null
+  /** "not_scored" for a run that has not finished, failed or was cancelled: no score, shown "—" */
+  risk_posture_status?: string | null
   sources: { id: number; name: string; kind: string }[]
   repo_url: null
   branch: null
@@ -2695,6 +2703,8 @@ export interface AiBomScanDashboardData {
     risk_score?: number | null
     risk_grade?: string | null
     risk_label?: string | null
+    /** "not_scored" for a scan or run that did not succeed: no score, shown "—" (as #505's risk_posture_status) */
+    risk_posture_status?: string | null
   }
   remediation_metrics: {
     mean_time_to_remediate: [number, number, number]

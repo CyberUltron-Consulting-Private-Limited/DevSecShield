@@ -27,6 +27,8 @@ assert.equal(tile.label, "Risk score");
 assert.equal(tile.value(c), "36 · C");
 assert.equal(tile.hint?.(c), "of 100 · Elevated risk");
 assert.equal(riskScoreText(card({})), "N/A", "an API without the score shows N/A, never the average");
+// re-review 6064703319 (5): a scan or run that did not succeed has no score: "—", never "0 · A"
+assert.equal(riskScoreText(card({ risk_score: null, risk_grade: null, risk_posture_status: "not_scored" })), "—");
 assert.equal(riskScoreText(card({ risk_score: 0, risk_grade: "A", risk_label: "Low risk" })), "0 · A");
 
 // the backend fixture's engine score is what the tile prints (PDF / API / UI agree; backend test_cbom_d3_qa2)
