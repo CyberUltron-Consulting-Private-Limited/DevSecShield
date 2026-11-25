@@ -96,11 +96,34 @@ def test_settings_and_labels_are_configuration_evidence_not_assets(lang, text):
         ),
         # no binding at all: left to the existing rules
         ("python", 'if alg == "MD5":\n    pass\n', "md5"),
+        (
+            "javascript",
+            "function f() {\n  const alg = 'md5';\n  return run(alg);\n}\n",
+            "md5",
+        ),
     ],
 )
 def test_literals_that_flow_into_crypto_stay(lang, text, key):
     keys, _ev = _keys(text, lang)
     assert key in keys, keys
+
+
+@pytest.mark.parametrize("lang", ["java", "javascript"])
+def test_locals_in_a_method_body_are_statements_not_settings(lang):
+    """A brace after a signature opens a block: its bindings are statements that
+    may reach a crypto call in another method (CryptoAPI-Bench interprocedural and
+    multiple-class cases, a D1 floor), never object-literal settings."""
+    from aibom.cbom.detect import _ConfigLiterals
+
+    lines = [
+        "class A {",
+        "  void m() {",
+        '    String c = "DES/ECB/PKCS5Padding";',
+        "    go(c);",
+        "  }",
+        "}",
+    ]
+    assert _ConfigLiterals(lines, lang).unused_spans(2, lines[2]) == []
 
 
 def test_a_call_spelled_inside_a_string_is_no_call():

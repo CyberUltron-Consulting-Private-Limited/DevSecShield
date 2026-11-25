@@ -1258,7 +1258,7 @@ _ASSIGN_LHS = re.compile(
 )
 _CALL_CHAIN = re.compile(r"[A-Za-z_][\w.]*\s*\(")
 _NOT_A_SETTING = re.compile(r"\s*(?:return|yield|throw|raise|assert|case)\b")
-_Frame = tuple[str, bool, "str | None"]  # bracket, is a declaration, key / callee
+_Frame = tuple[str, bool, "str | None"]  # bracket, declaration / block, key / callee
 # A record type the file declares (Kotlin ``data class``, Java ``record``, a Python
 # ``@dataclass`` / NamedTuple / pydantic model): constructing one fills app settings.
 _RECORD_DECL = re.compile(
@@ -1268,6 +1268,7 @@ _RECORD_DECL = re.compile(
 _DATACLASS_DECO = re.compile(r"^\s*@(?:dataclasses\.)?dataclass\b")
 _PY_CLASS = re.compile(r"^\s*class\s+([A-Z]\w*)\b")
 _CALLEE = re.compile(r"([A-Za-z_][\w.]*)\s*$")
+_EXPR_BRACE = re.compile(r"(?:[=:(,\[?]|\breturn|=>)\s*$")
 _NOT_CALLEES = frozenset({
     "if", "for", "while", "switch", "catch", "return", "in", "and", "or", "not",
     "await", "yield", "function", "lambda", "elif",
@@ -1351,6 +1352,10 @@ class _ConfigLiterals:
                     decl = decl or key is None or key in _NOT_CALLEES
                 else:
                     key = _binding_before(raw[:i])
+                    # a brace after ``)`` / a name / ``else`` / ``->`` opens a block
+                    # (a method, class or lambda body), not an object literal: the
+                    # bindings in it are statements
+                    decl = ch == "{" and not _EXPR_BRACE.search(code[:i])
                 stack.append((ch, decl, key))
             elif ch in ")]}" and stack:
                 stack.pop()
@@ -1416,7 +1421,9 @@ class _ConfigLiterals:
             cut = max(before.rfind(c) for c in "([{,") + 1 if before else 0
             own = _binding_before(line[cut:lit.start()])
             top = stack[-1]
-            scalar = own is not None and (top[0] == "{" or (top[0] == "(" and top[1]))
+            scalar = own is not None and (
+                (top[0] == "{" and not top[1]) or (top[0] == "(" and top[1])
+            )
             if not scalar or own in self.refs or own in self.keys:
                 continue
             out.append((lit.start(), lit.end(), own or ""))
