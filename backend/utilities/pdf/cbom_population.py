@@ -29,6 +29,7 @@ from backend.utilities.dashboard.cbom_team_rollup import (
     AssetAgg,
     SourceAgg,
     TeamCbomView,
+    current_collections,
 )
 
 LAYERS = ("L1", "L2", "L3", "L4")
@@ -189,7 +190,7 @@ def reconciliation_counts(view: TeamCbomView) -> dict[str, Any]:
     * ``register``: the quantum risk register summary (distinct assets, Q-grade split), None when not loaded."""
     live = [a for a in view.assets if a.current]
     sources = sum(1 for a in live if a.source_key.startswith("sources:"))
-    collected = sum(int(getattr(c, "asset_count", 0) or 0) for c in (getattr(view, "collections", ()) or ()))
+    collected = sum(int(getattr(c, "asset_count", 0) or 0) for c in current_collections(view))  # QA2 Q1-01
     register = getattr(view, "register", None)
     summary = (register or {}).get("summary") if isinstance(register, Mapping) else None
     cross = getattr(view, "cross_scope", None) or {}
@@ -207,13 +208,21 @@ def grade_split_text(summary: Mapping[str, Any]) -> str:
     return ", ".join(f"{label} {int(grades.get(key, 0) or 0)}" for key, label in names)
 
 
+def _removed_note(summary: Mapping[str, Any]) -> str:
+    """The register assets only deleted sources read, left out of its total (#497 review M2)."""
+    found = summary.get("removed_from_scope")
+    n = int(found.get("total", 0) or 0) if isinstance(found, Mapping) else 0
+    return (f" Not counted: {_plural(n, 'asset')} only deleted sources read (removed from scope, D12 section G)."
+            if n else "")
+
+
 def reconciliation_steps(view: TeamCbomView) -> list[str]:
     """The reconciliation as arithmetic, one step per line: run assets -> occurrences -> distinct register assets ->
     Q-grade split (SOW audit A-09, review M6)."""
     c = reconciliation_counts(view)
     steps = []
-    if getattr(view, "collections", None):
-        n = len(view.collections)
+    if current_collections(view):
+        n = len(current_collections(view))
         steps.append(
             f"1. The latest collections of the {_plural(n, 'CBOM Sources source')} list {c['collected']} "
             f"asset{'' if c['collected'] == 1 else 's'} (the runs' asset lists). Minus {c['counted_once']} "
@@ -231,7 +240,8 @@ def reconciliation_steps(view: TeamCbomView) -> list[str]:
         steps.append(
             f"{len(steps) + 1}. The quantum risk register (D12) holds {_plural(total, 'distinct asset')}: the Sources "
             "occurrences, each estate asset once (an asset observed by several sources or runs is one asset); "
-            f"code-scan rows are not held. Grades: {grade_split_text(c['register'])}.")
+            f"code-scan rows are not held. Grades: {grade_split_text(c['register'])}."
+            + _removed_note(c["register"]))
     else:
         steps.append(f"{len(steps) + 1}. The quantum risk register (D12) was not loaded for this document.")
     steps.append(f"{len(steps) + 1}. The estate CBOM (D11) lists one component per distinct asset plus the "

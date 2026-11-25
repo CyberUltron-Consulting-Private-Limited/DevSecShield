@@ -154,12 +154,15 @@ def test_reissued_certificate_with_the_same_key_pair_is_a_new_asset_but_the_same
 
 
 def test_existing_per_source_keys_are_unchanged():
-    """Drift, waves and remediation assignments are keyed by ``identity``: CB-21 must not move them."""
+    """Drift, waves and remediation assignments are keyed by ``identity``: CB-21 must not move them. (#497 review
+    6057627810 nit: the DN is compared order- and spacing-insensitive, so the identity reads the issuer as
+    ``asset_keys.norm_dn`` spells it; the stored keys of the earlier spelling move in migration q109certkey001.)"""
     row = CbomCollectedAsset(team_id=1, run_id=1, job_id=1, attempt=1, asset_key="type|t|l|i",
                              asset_type="certificate", cdx_type="certificate", target="10.0.0.5",
                              location="10.0.0.5:443#chain[0]", facts=NODE)
-    assert ID.node_identity(row) == "cert|10.0.0.5|10.0.0.5:443#chain[0]|cn=www.example.com|" + NODE_ISSUER.lower()
-    assert ID.stable_key("node", "src-uid", ID.node_identity(row)) == "01108eae896457e39069a5db01217c87c6e74957"  # dev
+    assert ID.node_identity(row) == "cert|10.0.0.5|10.0.0.5:443#chain[0]|cn=www.example.com|" + AK.norm_dn(NODE_ISSUER)
+    assert AK.norm_dn(NODE_ISSUER) == "c=us,cn=amazon rsa 2048 m02,o=amazon"
+    assert ID.stable_key("node", "src-uid", ID.node_identity(row)) == "a9b70a198619e6447fa89417b6e59ff3d6b9ec40"
     assert AK.observation_key(row, "src-uid") == ID.stable_key("node", "src-uid", ID.node_identity(row))
     key = CbomCollectedAsset(team_id=1, run_id=1, job_id=1, attempt=1, asset_key="kms_key|acct|arn|x",
                              asset_type="kms_key", cdx_type="related-crypto-material", target="acct", location="arn")

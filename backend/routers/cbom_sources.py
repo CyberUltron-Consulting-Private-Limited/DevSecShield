@@ -1674,6 +1674,19 @@ def _schedule_name(session: Session, run: CbomCollectionRun) -> str | None:
     return schedule_names(session, run.team_id, [run.schedule_id]).get(run.schedule_id or 0)
 
 
+def _list_wait_reason(session: Session, job: CbomCollectionJob, nodes: dict, team_id: int, now) -> str | None:
+    """What ``status_reason`` reads of a pending node job in the run list: an offline node (with its expiry), or the
+    scan window that holds it (staging QA2 Q1-12: a run waiting for the window had no reason)."""
+    if job.status != "pending" or job.node_id not in nodes:
+        return None
+    node = nodes[job.node_id]
+    if node_status(node, now) == "offline":
+        return J.offline_wait_reason(job, node, now)
+    source = session.get(CbomCollectionSource, job.source_id) if job.source_id else None
+    reason = J.job_waiting_reason(job, node, get_or_create_settings(session, team_id), now, source)
+    return reason if reason == RUN_STATUS.WINDOW_WAIT else None
+
+
 def _list_runs(engine, team_id: int, scan_id: int | None) -> dict:
     now = utcnow()
     with Session(engine) as session:
@@ -1700,9 +1713,7 @@ def _list_runs(engine, team_id: int, scan_id: int | None) -> dict:
                 rows.append({"id": job.id, "status": job.status, "outcome": job.outcome, "error": job.error,
                              "summary": (job.result or {}).get("summary"),
                              "source_name": source_names.get(job.source_id) or (job.params or {}).get("source_name"),
-                             "waiting_reason": (J.offline_wait_reason(job, nodes[job.node_id], now)
-                                                if job.status == "pending" and job.node_id in nodes
-                                                and node_status(nodes[job.node_id], now) == "offline" else None)})
+                             "waiting_reason": _list_wait_reason(session, job, nodes, team_id, now)})
             # FIX-B3: the list says why a run is partial or failed, as the run detail does
             reason = RUN_STATUS.status_reason(run.status, rows)
             out.append({**public_run(run, schedule_name=schedules_by_id.get(run.schedule_id or 0)), "job_counts": counts,
