@@ -37,7 +37,7 @@ import type {
   FrameworkCoverage,
   FrameworkGroup,
 } from "./types";
-import { groupsForFrameworks, labelFramework } from "./frameworkLabels";
+import { labelFramework } from "./frameworkLabels";
 import { appliesAtAll } from "./scope";
 import {
   VERDICT_BADGE,
@@ -87,7 +87,7 @@ export function ComplianceMatrix({
   compliance,
   title = "Regulatory Compliance Readiness",
   description,
-  groups: givenGroups,
+  groups,
   defaultGroup = "all",
   enableFailingOnly = false,
   enableAttestation = false,
@@ -107,12 +107,6 @@ export function ComplianceMatrix({
     [compliance, hideOutOfScope],
   );
 
-  // the India chip is named after the regulators whose frameworks are shown (#498 round 3: a non-SEBI bank read
-  // "India / CERT-In / SEBI"); computed from the frameworks this matrix receives
-  const groups = useMemo(
-    () => (givenGroups?.length ? groupsForFrameworks(givenGroups, frameworks.map((f) => f.key)) : givenGroups),
-    [givenGroups, frameworks],
-  );
   const [group, setGroup] = useState<string>(defaultGroup);
   const [active, setActive] = useState<string | null>(null);
   const [failingOnly, setFailingOnly] = useState(false);

@@ -37,10 +37,12 @@ const cbom = groupsForFrameworks(FRAMEWORK_GROUPS_CBOM_WITH_INDIA, ["nist_800_57
 assert.deepEqual(cbom.map((g) => g.id), ["all", "quantum", "baseline", "regulatory", "india"]);
 assert.equal(india(cbom)?.label, "India / CERT-In");
 
-// wiring: the shared matrix and the CBOM scorecards derive their chips from the frameworks they receive
+// wiring: the AI BOM matrix wrapper derives its chips from the frameworks it receives (the CBOM / SBOM code-mode markup
+// is pinned by codeModeSnapshot.test.ts and keeps its chips)
 const here = path.dirname(new URL(import.meta.url).pathname);
-for (const file of ["ComplianceMatrix.tsx", "../cbom/results/ComplianceScorecards.tsx"]) {
-  assert.match(fs.readFileSync(path.join(here, file), "utf8"), /groupsForFrameworks\(givenGroups/);
-}
+assert.match(
+  fs.readFileSync(path.join(here, "../ai-bom/AiBomVisualizations.tsx"), "utf8"),
+  /groups=\{groupsForFrameworks\(groups, keys\)\}/,
+);
 
 console.log("frameworkLabels tests passed");

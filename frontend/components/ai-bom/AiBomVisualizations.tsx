@@ -64,7 +64,7 @@ import {
   type Compliance,
   type FrameworkGroup,
 } from "@/components/compliance/ComplianceMatrix";
-import { FRAMEWORK_GROUPS_AIBOM_WITH_INDIA } from "@/components/compliance/frameworkLabels";
+import { FRAMEWORK_GROUPS_AIBOM_WITH_INDIA, groupsForFrameworks } from "@/components/compliance/frameworkLabels";
 import {
   buildModelCandidates,
   fillModelCardRows,
@@ -158,6 +158,10 @@ export function ComplianceCoverage({
   /** Hide frameworks that do not apply at all (every requirement out of scope). */
   hideOutOfScope?: boolean;
 }) {
+  // the India chip names only the regulators whose frameworks this AI BOM shows: the compliance reaching here is the
+  // team's binding set (server ai_bom_applicability), so a bank SEBI does not regulate reads "India / CERT-In / RBI"
+  // (#498 round 3). The CBOM / SBOM matrices keep their pinned chips.
+  const keys = Object.keys(compliance ?? {}).filter((k) => k !== "disclaimer");
   return (
     <ComplianceMatrix
       compliance={compliance}
@@ -166,7 +170,7 @@ export function ComplianceCoverage({
       enableAttestation
       onAttest={onAttest}
       hideOutOfScope={hideOutOfScope}
-      groups={groups}
+      groups={groupsForFrameworks(groups, keys)}
       defaultGroup={defaultGroup}
       className="col-span-full"
     />
