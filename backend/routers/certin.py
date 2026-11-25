@@ -536,9 +536,9 @@ async def verify_scan_bom_signature(
     ``valid`` is true only when the signature is this deployment's AND the file is this scan's (D4): the
     ``zs:scan_id``, ``zs:scan_type`` and ``zs:team_id`` the server stamped on the BOM / VEX, or the pack manifest's
     ``subject`` (kind, scan id, team), never a serial number alone (review 6029745818 N1); an AI BOM's SPDX / SARIF
-    file, which carries no such stamp, by being this scan's own stored file byte for byte (review 6038801363 m-1).
-    ``signed_by_deployment``
-    says the first alone (a file of another scan or team is ``valid: false`` with ``signed_by_deployment: true``).
+    file, which carries no such stamp, by byte equality with this scan's stored file (review 6038801363 m-1), checked
+    only after its signature verifies. ``signed_by_deployment`` says the first alone (a file of another scan or team
+    is ``valid: false`` with ``signed_by_deployment: true``).
     JSON that is not I-JSON (duplicate member names, NaN, out-of-range numbers), far denser than any BOM, or carrying a
     malformed signature member is 400 (a body that is not JSON at all is ``valid: false``, as before); one over 64 MB
     is 413. Offline checks need only the key at ``GET /{team}/bom-signing-keys``."""
@@ -579,8 +579,11 @@ def _malformed(reason: str) -> HTTPException:
 def _own_artifact(scan_type: str, data: dict, sha256_hex: str) -> str | None:
     """``ai_bom-spdx`` / ``ai_bom-sarif`` when ``sha256_hex`` is that of this scan's own stored SPDX / SARIF file as
     GET /spdx and /sarif serve it, else None. Those files carry no ``zs:`` subject stamp (the stored documents stay
-    unchanged and SHACL-valid), so the binding of N1 is the scan's own bytes: another scan's or team's file has other
-    bytes (review 6038801363 m-1). The route loaded ``data`` for this team's scan only."""
+    unchanged and SHACL-valid), so the binding of N1 is byte equality with this scan's stored file (review 6038801363
+    m-1), and nothing more: another scan whose file is byte-identical binds too (same inputs in the same second, or
+    a document built without ``generated_at``, which carries ``PINNED_TIMESTAMP``), which is harmless since the
+    content is the same. The route loaded ``data`` for this team's scan only, and calls
+    this only after the detached signature has verified (review 6039705173: the bytes never stand in for it)."""
     if scan_type != "ai_bom":
         return None
     for artifact in ARTIFACTS.ARTIFACTS:
