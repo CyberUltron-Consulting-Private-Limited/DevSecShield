@@ -9,10 +9,11 @@ plus three appendices (grade formula, scans included, disclaimers).  Plan 5.4 / 
 Design decisions, in one place:
 
 * **Grade input** (plan D-03): only CURRENT issue assets, i.e. de-duplicated current crypto
-  assets with at least one finding code, bucketed by their impact, go into the existing
-  ``compute_risk_score``.  Inventory-only assets are excluded, so the grade does not saturate
-  on inventory volume.  The formula is printed in Appendix A.
-* **NOT ASSESSED** (plan F-06 / R-05): ``compute_risk_score(0, 0, 0, 0)`` is grade A / "Low risk",
+  assets with at least one finding code, bucketed by their impact, go into the shared posture
+  ``compute_posture_risk_score`` (the score every scan's row, results page and PDF print, with the
+  worst-severity cap and floor; review 6065663183 of #505, 3).  Inventory-only assets are excluded,
+  so the grade does not saturate on inventory volume.  The formula is printed in Appendix A.
+* **NOT ASSESSED** (plan F-06 / R-05): ``compute_posture_risk_score(0, 0, 0, 0)`` is grade A / "Low risk",
   which would be false assurance.  A grade is therefore assigned only when current assets were
   inventoried and their findings can be read.  No completed scan, no inventoried asset, or only
   legacy-format scans without any finding data all give "NOT ASSESSED" with the reason; none of
@@ -102,7 +103,7 @@ from backend.utilities.pdf.report_branding import (
     PILL_MEDIUM_FG,
     PILL_UNKNOWN_BD,
     REPORT_META,
-    compute_risk_score,
+    compute_posture_risk_score,
 )
 
 DELIVERABLE_NUMBER = 14  # SOW D14 (REPORT_META sow_id; the Document ID reads it)
@@ -225,7 +226,7 @@ SCANS_NOTE = (
 SCANS_OMITTED = "{omitted} further scans omitted from this list."
 GRADE_NOT_ASSIGNED = "No grade was assigned. {reason}"
 GRADE_WORKED = (
-    "Weighted points: {weighted}. Score = min({cap}, {multiplier} x {weighted}) = {score}. "
+    "Weighted points: {weighted}. Score = min({cap}, {multiplier} x {weighted}) = {score}{bound}. "
     "Grade {grade} ({band})."
 )
 
@@ -321,7 +322,8 @@ def configuration_posture_line(view: TeamCbomView) -> str | None:
 
 
 def posture_grade(view: TeamCbomView) -> PostureGrade:
-    """Grade of the current issue assets via ``compute_risk_score``; NOT ASSESSED without data."""
+    """Grade of the current issue assets via the shared posture (``compute_posture_risk_score``); NOT ASSESSED
+    without data."""
     asset_counts = [int(view.issue_by_impact.get(level, 0) or 0) for level in IMPACT_LEVELS]
     if posture_active(view):
         asset_counts = [
@@ -348,8 +350,25 @@ def posture_grade(view: TeamCbomView) -> PostureGrade:
             low,
             weighted,
         )
-    score, grade, band = compute_risk_score(critical, high, medium, low)
+    score, grade, band = compute_posture_risk_score(critical, high, medium, low)
     return PostureGrade(True, grade, score, band, None, critical, high, medium, low, weighted)
+
+
+def worked_grade_text(posture: PostureGrade) -> str:
+    """Appendix A's worked line: the weighted points, the score they give, and, when the worst severity bounds it,
+    the bound that set the printed score ("raised to 70 by the Critical floor", "capped at 69 when the worst finding
+    is High")."""
+    raw = min(authored.GRADE_SCORE_CAP, authored.GRADE_SCORE_MULTIPLIER * int(posture.weighted_points or 0))
+    bound = ""
+    counts = dict(zip(IMPACT_LEVELS, (posture.critical, posture.high, posture.medium, posture.low), strict=True))
+    worst = next((level for level in IMPACT_LEVELS if int(counts[level] or 0) > 0), None)
+    if worst is not None and posture.score is not None and posture.score > raw:
+        bound = f", raised to {posture.score} by the {worst} floor"
+    elif worst is not None and posture.score is not None and posture.score < raw:
+        bound = f", capped at {posture.score} when the worst finding is {worst}"
+    return GRADE_WORKED.format(weighted=posture.weighted_points, cap=authored.GRADE_SCORE_CAP,
+                               multiplier=authored.GRADE_SCORE_MULTIPLIER, score=raw, bound=bound,
+                               grade=posture.grade, band=posture.band)
 
 
 def _risk_key(asset: AssetAgg):
@@ -1372,14 +1391,7 @@ def _grade_appendix(view: TeamCbomView, posture: PostureGrade, styles: Styles):
             [level, str(n), str(weights[level]), str(n * weights[level])]
             for level, n in zip(IMPACT_LEVELS, counts, strict=True)
         ]
-        worked = GRADE_WORKED.format(
-            weighted=posture.weighted_points,
-            cap=authored.GRADE_SCORE_CAP,
-            multiplier=authored.GRADE_SCORE_MULTIPLIER,
-            score=posture.score,
-            grade=posture.grade,
-            band=posture.band,
-        )
+        worked = worked_grade_text(posture)
         story += [
             dense_table(["Impact", "Issue occurrences", "Weight", "Points"], rows, [150, 130, 130, 130]),
             _gap(4),

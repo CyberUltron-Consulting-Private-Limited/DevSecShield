@@ -720,6 +720,11 @@ def _build_evidence_pack(engine, team_id: int, scan_type: str, scan_id: int) -> 
         _save_scan_data(engine, scan_id, team_id, scan_type, data)
     except ImportError:
         pass
+    if scan_type == "sbom_sca":  # report.pdf lists the frameworks that bind the team, as GET /export (#505); not stored
+        from backend.utilities.compliance import bom_applicability
+
+        with Session(engine) as session:
+            data = bom_applicability.with_pdf_profile("sbom_sca", data, session, team_id)
 
     with Session(engine) as session:
         ctx = ReportContext(branding=load_report_branding(session, team_id))

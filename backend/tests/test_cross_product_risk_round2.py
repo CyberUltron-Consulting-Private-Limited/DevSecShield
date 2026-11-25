@@ -210,7 +210,7 @@ def test_a_cbom_scan_that_did_not_succeed_has_no_score(status):
     assert row[risk_scale.POSTURE_KEY] is None and row[risk_scale.STATUS_KEY] == "not_scored"
     # #500 spreads flat risk_score / risk_grade / risk_label before this gate; the gate's nulls come last and win
     assert (row["risk_score"], row["risk_grade"], row["risk_label"]) == (None, None, None)
-    merged = {"risk_score": 0, "risk_grade": "A", "risk_label": "Low risk", **items._cbom_gate(_cbom(status), {})}
+    merged = items._cbom_gate(_cbom(status), {"risk_score": 0, "risk_grade": "A", "risk_label": "Low risk"}, [])
     assert (merged["risk_score"], merged["risk_grade"]) == (None, None)
     card = risk_scale.gate_dashboard("cbom", {"card_data": {"risk_score": 0, "risk_grade": "A", "risk_label": "Low risk",
                                                             "average_risk_score": 0.0}}, status)["card_data"]
@@ -221,18 +221,21 @@ def test_a_cbom_scan_that_did_not_succeed_has_no_score(status):
 def test_a_successful_cbom_scan_keeps_its_score():
     row = items.return_cbom_list_item(_cbom("success"))
     assert row[risk_scale.STATUS_KEY] == "scored" and row[risk_scale.POSTURE_KEY]["grade"] == "F"
-    assert "risk_score" not in row  # #500's flat fields, when merged, stay #500's
+    if "risk_score" in row:  # #500 merged: its flat fields stay #500's and say what risk_posture says (round 3)
+        p = row[risk_scale.POSTURE_KEY]
+        assert (row["risk_score"], row["risk_grade"], row["risk_label"]) == (p["score"], p["grade"], p["label"])
     card = {"card_data": {"risk_score": 70}}
     assert risk_scale.gate_dashboard("cbom", card, "success") is card
 
 
 def test_the_cbom_tile_of_a_team_whose_scans_failed_has_no_score():
     tile = scan_list_mod._gate_cbom_tile([], SimpleNamespace(rows=[]), {
-        "card_data": {"risk_score": 0, "risk_grade": "A", "risk_label": "Low risk"}, "severity_distribution": {}})
+        "card_data": {"risk_score": 0, "risk_grade": "A", "risk_label": "Low risk"}, "severity_distribution": {}}, {})
     card = tile["card_data"]
     assert card[risk_scale.STATUS_KEY] == "not_scored" and card["risk_score"] is None and card["risk_grade"] is None
     scored = scan_list_mod._gate_cbom_tile([object()], SimpleNamespace(rows=[]), {
-        "card_data": {"risk_score": 70}, "severity_distribution": {"critical": 1, "informational": 4}})["card_data"]
+        "card_data": {"risk_score": 70}, "severity_distribution": {"critical": 1, "informational": 4}},
+        {"critical": 1})["card_data"]
     assert scored["risk_score"] == 70 and scored[risk_scale.POSTURE_KEY]["score"] == 70
 
 
@@ -260,7 +263,9 @@ def test_confirmed_score_with_an_unverified_note():
     tile = scan_list_mod.generate_sbom_sca_dashboard_data([scan])["card_data"]
     for got in (row, card, tile):
         assert _sg(got) == (4, "A") and got[risk_scale.STATUS_KEY] == "scored"
-        assert got[risk_scale.UNVERIFIED_KEY] == {"count": 10, "worst": "critical"}
+        unverified = got[risk_scale.UNVERIFIED_KEY]
+        assert (unverified["count"], unverified["worst"]) == (10, "critical")
+        assert unverified["worst_case"]["score"] == 100  # the filter and the sort read it (round 3, 6)
     assert risk_scale.unverified_note(row[risk_scale.UNVERIFIED_KEY]) == \
         "unverified: 10 guessed-version matches (worst: Critical)"
 

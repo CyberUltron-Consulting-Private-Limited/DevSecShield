@@ -1753,15 +1753,22 @@ def rollup_code_rows(scans: list[Scan], view: Any) -> dict[int, list]:
     return out
 
 
-def _gate_cbom_tile(counted: list, sources: Any, out: dict) -> dict:
-    """The CBOM tile's one risk score, gated like every product (review 6064315680 of #505, 4): with no successful
-    code scan and no Sources row counted, no score, and the flat ``risk_score`` / ``risk_grade`` / ``risk_label`` (#500)
-    are nulled: "—", never "0 · A" for a team whose scans failed."""
+def _gate_cbom_tile(counted: list, sources: Any, out: dict, scored: dict) -> dict:
+    """The CBOM tile's one risk score, gated like every product (review 6064315680 of #505, 4). It only gates (review
+    6065663183 of #505, 1): with no successful code scan and no Sources row counted, no score, ``not_scored``, and
+    #500's flat ``risk_score`` / ``risk_grade`` / ``risk_label`` nulled ("—", never "0 · A" for a team whose scans
+    failed). A judged team keeps #500's posture as it is, plus the status; without #500's fields the score is the
+    posture of ``scored`` (the counted rows as #500 scores them: no test code, no unconfirmed setting), never the
+    severity distribution."""
     judged = bool(counted) or bool(getattr(sources, "rows", None))
     card = dict(out.get("card_data") or {})
-    card.update(risk_scale.posture_field(out.get("severity_distribution") or {}, judged=judged))
     if not judged:
-        card.update({"risk_score": None, "risk_grade": None, "risk_label": None})
+        card.update({risk_scale.POSTURE_KEY: None, risk_scale.STATUS_KEY: "not_scored",
+                     "risk_score": None, "risk_grade": None, "risk_label": None})
+    elif card.get(risk_scale.POSTURE_KEY) is not None:
+        card[risk_scale.STATUS_KEY] = card.get(risk_scale.STATUS_KEY) or "scored"
+    else:
+        card.update(risk_scale.posture_field(scored or {}))
     return {**out, "card_data": card}
 
 
@@ -1800,6 +1807,7 @@ def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None, *, team
     rows_of = rollup_code_rows(scans, view)
     counted = [scan for scan in scans if scan.id in rows_of]
     summary = CodeRowSummary()
+    scored_rows: list = []  # the rows the summary counts, for the tile's score (risk_rollup.cbom_scored_counts)
     compliance_controls_metrics: dict[str, int] = defaultdict(int)
 
     cert_ids: dict[int, dict[str, str]] = {}
@@ -1819,6 +1827,7 @@ def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None, *, team
             continue
         summary.add_rows(results, origin={"kind": ORIGIN_CODE, "scan_id": scan.id,
                                           "scan_title": getattr(scan, "title", None)})
+        scored_rows.extend(results)
 
         # Framework FAIL counts from cbom_compliance (mirrors single-scan CBOM dashboard)
         _cbom_compliance = (
@@ -1836,6 +1845,7 @@ def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None, *, team
                     compliance_controls_metrics[_label] += int(_fail)
 
     summary.add_rows([item.row for item in resolution.sources_rows])
+    scored_rows.extend(item.row for item in resolution.sources_rows)
     for label, count in summary.compliance.items():
         compliance_controls_metrics[label] += count
     # Rule P (review 6038529822 M1): the headline is the view's, the one the documents print; the distributions below
@@ -1907,7 +1917,7 @@ def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None, *, team
             "total_not_started": total_not_started,
             "total_ignored": total_ignored,
         },
-    })
+    }, risk_rollup.cbom_scored_counts(scored_rows))
 
 
 AI_BOM_RISK_SCORE_FOR_IMPACT = {"critical": 10.0, "high": 7.5, "medium": 5.0, "low": 2.5}

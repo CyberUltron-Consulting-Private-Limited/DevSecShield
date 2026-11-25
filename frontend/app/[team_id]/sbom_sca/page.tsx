@@ -30,7 +30,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
-import { RISK_TIER_LABELS, matchesRiskTier, postureScore, postureSortValue, riskCellHint, riskCellNote, riskCellText, riskTone } from "@/utils/riskPosture";
+import { RISK_TIER_LABELS, matchesRiskTier, postureScore, postureSortValue, riskCellHint, riskCellNote, riskCellText, riskTone, triageScore } from "@/utils/riskPosture";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, CheckCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, MinusCircle, Shield, AlertTriangle, Activity, BookOpen, Crosshair, ChevronDown, ArrowUpDown, Check, Filter, DollarSign, TrendingUp, TrendingDown } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { singleFlight } from "@/utils/single_flight";
@@ -113,9 +113,11 @@ const SORT_BY_LABELS: Record<TableSortBy, string> = {
   credits_asc: "Credits (low first)",
 };
 
-/** The scan's one 0-100 risk score (risk_posture), as its tile, its results page and its PDF; null: no score. */
+/** The score the Risk score filter reads: the scan's one 0-100 risk score (risk_posture), or the worst case of its
+ * guessed-version matches when that is higher (triagePosture: 1 confirmed Low + guessed Criticals is shown 4 · A and
+ * also listed under Critical); null: no score. */
 function getDisplayRiskScore(c: SCASBOMConversation): number | null {
-  return postureScore(c);
+  return triageScore(c);
 }
 
 function matchesRiskScoreFilter(score: number | null, filter: RiskScoreFilter): boolean {

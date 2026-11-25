@@ -24,6 +24,8 @@ import {
   riskScoreHint,
   riskScoreText,
   riskTone,
+  triagePosture,
+  triageScore,
 } from "./riskPosture";
 
 const repo = path.join(__dirname, "..", "..");
@@ -121,6 +123,32 @@ test("round 2: the floor puts one Critical in the Critical tier, and the weighte
     assert.match(src, /const scoreA = postureSortValue\(a\);/, `${page}: sorts on the score then the weighted sum`);
   }
   assert.match(read("frontend/app/[team_id]/sbom_sca/page.tsx"), /riskCellNote\(conversation\)/);
+});
+
+test("round 3 (review 6065663183, 6): 1 confirmed Low + guessed Criticals is shown 4 · A and triaged as Critical", () => {
+  const mixed = { risk_posture: { score: 4, grade: "A", label: "Low risk", weighted: 1 }, risk_posture_status: "scored",
+                  risk_unverified: { count: 10, worst: "critical",
+                                     worst_case: { score: 100, grade: "F", label: "Critical risk", weighted: 101 } } };
+  // shown: the confirmed score and the note
+  assert.equal(riskCellText(mixed), "4 · A");
+  assert.equal(postureScore(mixed), 4);
+  assert.equal(riskCellNote(mixed), "unverified: 10 guessed-version matches (worst: Critical)");
+  // filter and sort: the higher of the two
+  assert.equal(triageScore(mixed), 100);
+  assert.equal(triagePosture(mixed)?.grade, "F");
+  assert.ok(matchesRiskTier(triageScore(mixed), "critical"));
+  assert.ok(!matchesRiskTier(triageScore(mixed), "low"));
+  const confirmedF = { risk_posture: { score: 100, grade: "F", label: "Critical risk", weighted: 50 } };
+  assert.ok(postureSortValue(mixed) > postureSortValue(confirmedF));  // 100 then weighted 101 > 50
+  const plainHigh = { risk_posture: { score: 69, grade: "D", label: "High risk", weighted: 20 } };
+  assert.ok(postureSortValue(mixed) > postureSortValue(plainHigh));
+  // a lower worst case never lowers the shown score; no score stays no score
+  const lower = { ...mixed, risk_unverified: { count: 1, worst: "low", worst_case: { score: 2, grade: "A", label: "Low risk" } } };
+  assert.equal(triageScore(lower), 4);
+  assert.equal(triageScore({ risk_posture_status: "not_scored", risk_unverified: mixed.risk_unverified }), null);
+  assert.equal(triageScore({ risk_posture: { score: 50, grade: "D", label: "High risk" } }), 50);
+  // the SBOM list filters on it
+  assert.match(read("frontend/app/[team_id]/sbom_sca/page.tsx"), /return triageScore\(c\);/);
 });
 
 const PAGES = ["sbom_sca", "dast", "sast", "llm", "iac"] as const;

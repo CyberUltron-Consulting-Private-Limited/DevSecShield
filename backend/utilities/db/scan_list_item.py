@@ -460,7 +460,7 @@ def return_cbom_list_item(scan : Scan) -> dict:
     total_weak = summary.weak
     total_quantum_vulnerable = summary.quantum["quantum_vulnerable"]
 
-    return {
+    return _cbom_gate(scan, {
         "id": scan.id,
         "title": scan.title,
         "created_at": scan.created_at,
@@ -481,8 +481,8 @@ def return_cbom_list_item(scan : Scan) -> dict:
         "average_risk_score" : average_risk_score,
         "total_weak_algorithms": total_weak,
         "total_quantum_vulnerable": total_quantum_vulnerable,
-        "scan_binaries": scan.scan_metadata.get("scan_binaries", False) if scan.scan_metadata else False, **_cbom_gate(scan, summary.severity),
-    }
+        "scan_binaries": scan.scan_metadata.get("scan_binaries", False) if scan.scan_metadata else False,
+    }, rows)
 
 
 
@@ -569,11 +569,20 @@ def _posture(scan: Scan, critical: int, high: int, medium: int, low: int, *, inc
                                     judged=scan.scan_status == "success", incomplete=incomplete, unverified=unverified)
 
 
-def _cbom_gate(scan: Scan, severity: dict) -> dict:
-    """The CBOM row's one risk score, gated on success like every product (review 6064315680 of #505, 4): a failed,
-    running or cancelled scan has no score. It also nulls the flat ``risk_score`` / ``risk_grade`` / ``risk_label`` the
-    CBOM row carries once #500 is merged (spread before this, so these win): the page shows "—", never "0 · A"."""
-    out = _posture(scan, *(int(severity.get(k, 0) or 0) for k in ("critical", "high", "medium", "low")))
-    if out[risk_scale.STATUS_KEY] == "not_scored":
-        out.update({"risk_score": None, "risk_grade": None, "risk_label": None})
-    return out
+def _cbom_gate(scan: Scan, row: dict, rows: list) -> dict:
+    """The CBOM row's one risk score, gated on success like every product (review 6064315680 of #505, 4). It only
+    gates (review 6065663183 of #505, 1):
+
+    * a scan that did not succeed (failed, running, cancelled, pending): no score, ``risk_posture`` and the flat
+      ``risk_score`` / ``risk_grade`` / ``risk_label`` (#500) null, ``not_scored``: the page shows "—", never "0 · A";
+    * a successful scan whose row already carries #500's posture: unchanged, plus ``risk_posture_status``;
+    * without #500's fields: the posture of the counts #500 scores (``risk_rollup.cbom_scored_counts``: test code and
+      unconfirmed settings are listed, not scored), never every finding's severity."""
+    if str(scan.scan_status or "").lower() != "success":
+        return {**row, risk_scale.POSTURE_KEY: None, risk_scale.STATUS_KEY: "not_scored",
+                "risk_score": None, "risk_grade": None, "risk_label": None}
+    if row.get(risk_scale.POSTURE_KEY) is not None:
+        return {**row, risk_scale.STATUS_KEY: row.get(risk_scale.STATUS_KEY) or "scored"}
+    from backend.utilities.dashboard.risk_rollup import cbom_scored_counts
+
+    return {**row, **risk_scale.posture_field(cbom_scored_counts(rows))}

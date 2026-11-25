@@ -109,14 +109,19 @@ UNVERIFIED_KEY = "risk_unverified"
 
 
 def posture_field(impact_counts: Mapping[str, int], *, judged: bool = True, incomplete: bool = False,
-                  unverified: Mapping[str, int] | None = None) -> dict[str, Any]:
+                  unverified: Mapping[str, int] | None = None,
+                  confirmed: Mapping[str, int] | None = None) -> dict[str, Any]:
     """``{"risk_posture": posture(...), "risk_posture_status": "scored"}`` to spread into a list row or a card. No
     score (``None``) when the scan has no result to judge (``judged=False``: pending, running, failed) or its result is
     incomplete: such a row shows "—" or "incomplete", never "0 · A".
 
     ``unverified``: an SBOM's matches on guessed versions per severity, never in the confirmed score. They add
-    ``risk_unverified`` = ``{"count", "worst"}`` (the note "unverified: N guessed-version matches (worst: Critical)");
-    when they are the only vulnerabilities, the score is their worst case, status "unverified"."""
+    ``risk_unverified`` = ``{"count", "worst", "worst_case"}`` (the note "unverified: N guessed-version matches (worst:
+    Critical)"; ``worst_case``: the posture of the confirmed and the guessed findings together, which the lists' risk
+    filter and sort read, so 1 confirmed Low + 10 guessed Criticals is shown 4 · A and also found under "Critical";
+    review 6065663183 of #505, 6). When they are the only vulnerabilities, the score is their worst case, status
+    "unverified". ``confirmed``: the confirmed counts when ``impact_counts`` is not (the SBOM tile, whose
+    ``impact_counts`` already hold an unverified target's worst case)."""
     if not judged:
         return {POSTURE_KEY: None, STATUS_KEY: "not_scored"}
     if incomplete:
@@ -124,12 +129,37 @@ def posture_field(impact_counts: Mapping[str, int], *, judged: bool = True, inco
     out: dict[str, Any] = {POSTURE_KEY: posture(impact_counts), STATUS_KEY: "scored"}
     if unverified is not None:
         guessed = _severity_counts(unverified)
+        sure = _severity_counts(impact_counts if confirmed is None else confirmed)
         n = sum(guessed.values())
         worst = next((sev for sev in SEVERITIES if guessed[sev] > 0), None)
-        out[UNVERIFIED_KEY] = {"count": n, "worst": worst} if n else None
+        out[UNVERIFIED_KEY] = {"count": n, "worst": worst,
+                               "worst_case": posture({k: sure[k] + guessed[k] for k in SEVERITIES})} if n else None
         if n and not sum(_severity_counts(impact_counts).values()):
             out = {**out, POSTURE_KEY: posture(guessed), STATUS_KEY: "unverified"}
     return out
+
+
+def ai_bom_scores_now(scores: Any, rows: Any = None) -> Any:
+    """A stored AI BOM ``ai_bom_scores`` with its headline (``risk_normalized``, ``risk_band``, ``risk_grade``,
+    ``risk_label``: the page's "Risk by Component · Normalized risk N/100 · BAND") recomputed by the engine's posture
+    function at read time, like the results card and the PDF: a scan stored before the floor reads 70 · F for one
+    Critical, not the 40 / ELEVATED it was saved with (review 6065663183 of #505, 3). The counts are the stored
+    ``severity_counts`` (what the engine scored), else the scan's rows by impact (what the headline and PDF count).
+    The per-component weights (``by_component``) are not a 0-100 score and stay as stored. Not a dict: unchanged."""
+    if not isinstance(scores, Mapping):
+        return scores
+    stored = scores.get("severity_counts")
+    if isinstance(stored, Mapping) and all(isinstance(stored.get(k), (int, float)) for k in SEVERITIES):
+        counts = {k: int(stored[k]) for k in SEVERITIES}
+    else:
+        counts = dict.fromkeys(SEVERITIES, 0)
+        for row in rows if isinstance(rows, list) else []:
+            key = str((row or {}).get("impact") or "").strip().lower() if isinstance(row, Mapping) else ""
+            if key in counts:
+                counts[key] += 1
+    p = posture(counts)
+    return {**scores, "risk_normalized": float(p["score"]), "risk_band": p["band"], "risk_grade": p["grade"],
+            "risk_label": p["label"], "severity_counts": counts}
 
 
 def unverified_note(unverified: Mapping[str, Any] | None) -> str | None:
@@ -160,5 +190,5 @@ def gate_dashboard(scan_type: str, dashboard: Any, scan_status: Any) -> Any:
     return out
 
 
-__all__ = ["IMPACT_RISK", "POSTURE_KEY", "RISK_BANDS", "SEVERITIES", "STATUSES", "STATUS_KEY", "UNVERIFIED_KEY", "gate_dashboard", "unverified_note", "average_risk", "average_risk_of", "impact_risk",
+__all__ = ["ai_bom_scores_now", "IMPACT_RISK", "POSTURE_KEY", "RISK_BANDS", "SEVERITIES", "STATUSES", "STATUS_KEY", "UNVERIFIED_KEY", "gate_dashboard", "unverified_note", "average_risk", "average_risk_of", "impact_risk",
            "posture", "posture_field", "posture_of", "risk_band"]

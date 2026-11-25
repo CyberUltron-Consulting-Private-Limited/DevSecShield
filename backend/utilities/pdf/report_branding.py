@@ -1540,17 +1540,11 @@ def build_kpi_grid(
 
 
 def compute_risk_score(critical: int, high: int, medium: int, low: int) -> Tuple[int, str, str]:
-    weighted = critical * 10 + high * 5 + medium * 2 + low * 1
-    score = min(100, weighted * 4)
-    if score >= 70:
-        return score, "F", "Critical risk"
-    if score >= 50:
-        return score, "D", "High risk"
-    if score >= 30:
-        return score, "C", "Elevated risk"
-    if score >= 15:
-        return score, "B", "Moderate risk"
-    return score, "A", "Low risk"
+    """``(score, grade, words)`` of these counts: the shared posture (``compute_posture_risk_score``). It was the bare
+    ``min(100, 4 x (10C + 5H + 2M + 1L))``: one Critical graded 40 / C and fifteen Highs 100 / F on the reports that
+    still called it (the CBOM Board Report D14, the CBOM run PDF), against 70 / F and 69 / D everywhere else (review
+    6065663183 of #505, 3). One score, so a caller can no longer pick the unbounded one."""
+    return compute_posture_risk_score(critical, high, medium, low)
 
 
 # The method of compute_posture_risk_score (aibom/src/aibom/score/posture.py), printed under the headline.
@@ -1571,16 +1565,12 @@ def compute_posture_risk_score(critical: int, high: int, medium: int, low: int) 
 
 
 def compute_risk_score_band(score: int) -> Tuple[int, str, str]:
-    """The grade and band of a 0-100 score (the bands of ``compute_risk_score``)."""
-    if score >= 70:
-        return score, "F", "Critical risk"
-    if score >= 50:
-        return score, "D", "High risk"
-    if score >= 30:
-        return score, "C", "Elevated risk"
-    if score >= 15:
-        return score, "B", "Moderate risk"
-    return score, "A", "Low risk"
+    """The grade and words of a 0-100 score, from the engine's one grade table (``POSTURE_GRADES``)."""
+    from backend.utilities.pdf.aibom_posture import engine_posture
+
+    engine = engine_posture()
+    grade, band = engine.posture_grade(score)
+    return score, str(grade), str(engine.posture_label(band))
 
 
 def build_severity_bar(
@@ -2007,7 +1997,7 @@ def append_executive_summary(
                 time_label = str(value)
                 break
 
-    risk_score, risk_grade, risk_band = (risk_score_fn or compute_risk_score)(critical, high, medium, low)
+    risk_score, risk_grade, risk_band = (risk_score_fn or compute_posture_risk_score)(critical, high, medium, low)
     if risk_override:
         risk_score, risk_grade, risk_band = risk_override
 

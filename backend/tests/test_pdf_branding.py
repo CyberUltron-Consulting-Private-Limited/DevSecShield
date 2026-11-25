@@ -105,9 +105,10 @@ def test_append_executive_summary_unknown_counts_in_total_not_risk():
     # Total issues = 3; High KPI stays 1 (Unknown is not High).
     assert "3" in markup
     risk_score, risk_grade, risk_band = compute_risk_score(0, 1, 0, 0)
-    assert risk_score == 20
-    assert risk_grade == "B"
-    assert risk_band == "Moderate risk"
+    # the shared posture (#505 round 3): one High is at least 50 / D (the bare formula said 20 / B)
+    assert risk_score == 50
+    assert risk_grade == "D"
+    assert risk_band == "High risk"
     assert str(risk_score) in markup
     assert risk_grade in markup
 

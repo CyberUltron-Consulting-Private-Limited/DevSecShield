@@ -64,7 +64,7 @@ type MaybePosture = {
   risk_posture?: RiskPosture | null;
   risk_posture_status?: RiskPostureStatus | string | null;
   /** an SBOM's matches on guessed versions, never in the confirmed score */
-  risk_unverified?: { count: number; worst?: string | null } | null;
+  risk_unverified?: { count: number; worst?: string | null; worst_case?: RiskPosture | null } | null;
   risk_score?: unknown;
   risk_grade?: unknown;
   risk_label?: unknown;
@@ -98,9 +98,33 @@ export function postureOf(item: MaybePosture): RiskPosture | null {
   return null;
 }
 
-/** The 0-100 score the lists filter and sort by; null without one. */
+/** The 0-100 score a row or a tile shows; null without one. */
 export function postureScore(item: MaybePosture): number | null {
   return postureOf(item)?.score ?? null;
+}
+
+/**
+ * The posture the lists' risk filter and sort read: the shown one, or, when an SBOM also has matches on guessed
+ * versions, their worst case (`risk_unverified.worst_case`: the confirmed and guessed findings together) when it is
+ * higher. 1 confirmed Low + 10 guessed Criticals is shown "4 · A" with its "unverified" note, and is also found under
+ * "Critical" and sorted with the F rows (review 6065663183 of #505, 6). null without a score.
+ */
+export function triagePosture(item: MaybePosture): RiskPosture | null {
+  const shown = postureOf(item);
+  const w = item?.risk_unverified?.worst_case;
+  if (!shown || !w || !isNum(w.score)) return shown;
+  const score = Math.round(Math.min(100, Math.max(0, w.score)));
+  const weighted = typeof w.weighted === "number" ? w.weighted : undefined;
+  const higher = score > shown.score || (score === shown.score && (weighted ?? 0) > (shown.weighted ?? 0));
+  if (!higher) return shown;
+  const g = gradeOf(score);
+  return { score, grade: w.grade || g.grade, label: w.label || g.label, band: w.band || g.band,
+           ...(weighted !== undefined ? { weighted } : {}) };
+}
+
+/** The 0-100 score the lists filter by (`triagePosture`); null without one. */
+export function triageScore(item: MaybePosture): number | null {
+  return triagePosture(item)?.score ?? null;
 }
 
 /** The status of a row or a card: "incomplete" only when the backend says so; a score is "scored"; else "not_scored". */
@@ -110,10 +134,10 @@ export function postureStatus(item: MaybePosture): RiskPostureStatus {
   return item?.risk_posture_status === "unverified" ? "unverified" : "scored";
 }
 
-/** The lists' sort value: the score, then the uncapped weighted sum (4 Highs before 1000 Highs, both 69 · D); -1 without
+/** The lists' sort value: the triage score (`triagePosture`), then the uncapped weighted sum (4 Highs before 1000 Highs, both 69 · D); -1 without
  * a score, so unscored rows sort last. */
 export function postureSortValue(item: MaybePosture): number {
-  const p = postureOf(item);
+  const p = triagePosture(item);
   if (!p) return -1;
   return p.score * 1e9 + Math.min(Math.max(p.weighted ?? 0, 0), 1e9 - 1);
 }

@@ -3,6 +3,7 @@ from backend.utilities.db.mcp_headers import seal_headers
 from backend.utilities.db.schemas import StartScanPayload
 from fastapi import HTTPException, status
 from backend.utilities.scan.path_patterns import PATH_PATTERN_VERSION
+from backend.utilities.dashboard.risk_rollup import endpoint_for_record
 
 def get_scan_metadata_for_type(scan_type: scan_types , start_scan_payload: StartScanPayload) -> dict:
     """
@@ -55,6 +56,8 @@ def get_scan_metadata_for_type(scan_type: scan_types , start_scan_payload: Start
             return {
                 "model_type": start_scan_payload.llm.model_type,
                 "model_name": start_scan_payload.llm.model_name,
+                # the endpoint of a custom model, without credentials or query: the tile's target is endpoint + model
+                "model_uri": endpoint_for_record(getattr(start_scan_payload.llm, "model_uri", None)),
                 "generations": start_scan_payload.llm.generations,
                 "probes": start_scan_payload.llm.probes,
             }

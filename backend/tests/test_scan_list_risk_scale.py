@@ -173,7 +173,9 @@ def _util_tiers() -> dict[str, tuple[float, float]]:
                                                 ("iac", iac_scan, return_iac_list_item)])
 def test_the_list_filters_use_the_one_score(page, build, item_of):
     src = _page_source(page)
-    assert "return matchesRiskTier(score, filter);" in src and "return postureScore(c);" in src, page
+    # the SBOM list filters on triageScore: the shown score, or its guessed-version worst case when higher (#505 r3)
+    reads = "return triageScore(c);" if page == "sbom_sca" else "return postureScore(c);"
+    assert "return matchesRiskTier(score, filter);" in src and reads in src, page
     tiers = _util_tiers()
     for impacts, tier in POSTURE_CASES:
         score = item_of(build(impacts))["risk_posture"]["score"]

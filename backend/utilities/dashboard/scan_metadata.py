@@ -423,7 +423,11 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
                 except Exception:
                     pass
             if "ai_bom_scores" in scan.scan_data:
-                ai_bom_scores = scan.scan_data["ai_bom_scores"]
+                # the headline recomputed by the shared posture at read time, so a scan stored before the floor
+                # reads on "Risk by Component" what its card and PDF say (review 6065663183 of #505, 3)
+                from backend.utilities.dashboard.risk_scale import ai_bom_scores_now
+
+                ai_bom_scores = ai_bom_scores_now(scan.scan_data["ai_bom_scores"], scan.scan_data.get("results"))
 
         rbi_csf_rollup = None
         certin_posture = None

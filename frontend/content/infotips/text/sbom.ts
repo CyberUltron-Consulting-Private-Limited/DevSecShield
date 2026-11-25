@@ -57,9 +57,9 @@ const TEXT = {
     why: "Strong copyleft or source-available licenses can force you to publish code or change your product.",
     example: "A package licensed GPL-2.0-only.",
   },
-  // src: backend/utilities/dashboard/risk_rollup.py:1-17,123-149, backend/utilities/dashboard/risk_scale.py:76-95, frontend/utils/riskPosture.ts:22-28, frontend/app/[team_id]/sbom_sca/page.tsx:284-287 — risk_rollup.team_posture: the latest successful scan per target, then risk_scale.posture over the known vulnerabilities of successful scans; inventory rows left out (#46)
+  // src: backend/utilities/dashboard/risk_rollup.py:1-24,205-245, backend/utilities/dashboard/risk_scale.py:76-95, frontend/utils/riskPosture.ts:22-28, frontend/app/[team_id]/sbom_sca/page.tsx:284-287 — risk_rollup.team_posture / sbom_team_posture: the latest successful scan per target, each scored by its row's rule (confirmed, or the worst case of guessed-version matches when they are all it has), then risk_scale.posture over the sum; inventory rows left out (#46)
   "sbom.kpi.avg_risk": {
-    what: "The current risk: the known vulnerabilities of the latest successful scan of each repository and branch, scored as one: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), set by the worst severity: any Critical 70+, any High 50–69, Medium at most 49, Low only 29. Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+. Packages without a known vulnerability are not counted.",
+    what: "The current risk of the latest successful scan of each repository and branch, scored as one: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), set by the worst severity: any Critical 70+, any High 50–69, Medium at most 49, Low only 29. Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+. A repository with only guessed-version matches counts their worst case: the tile is never better than a row.",
     why: "One number and grade to compare dependency risk over time, as every product shows it.",
     example: "Rescanned 4 times, the latest scan has 15 High: 4 × 75 = 300, capped at 69, grade D; the older scans do not add up.",
   },

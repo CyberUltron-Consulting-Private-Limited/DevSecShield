@@ -58,6 +58,7 @@ from backend.utilities.pdf.cbom_deliverable_common import (  # noqa: E402
 from backend.utilities.pdf.report_branding import (  # noqa: E402
     PILL_MEDIUM_BG,
     REPORT_META,
+    compute_posture_risk_score,
     compute_risk_score,
     get_report_styles,
 )
@@ -1380,7 +1381,7 @@ def test_unknown_finding_codes_degrade_gracefully():
     assert text.finding_action(None) == text.GENERIC_FINDING_ACTION
 
 
-def test_grade_constants_are_pinned_to_compute_risk_score():
+def test_grade_constants_are_pinned_to_the_shared_posture():
     assert text.GRADE_NOT_ASSESSED == "NOT ASSESSED"
     levels = ("Critical", "High", "Medium", "Low")
     samples = [
@@ -1401,8 +1402,15 @@ def test_grade_constants_are_pinned_to_compute_risk_score():
             text.GRADE_WEIGHTS[level] * n for level, n in zip(levels, counts, strict=True)
         )
         score = min(text.GRADE_SCORE_CAP, weighted * text.GRADE_SCORE_MULTIPLIER)
+        # the worst severity present bounds it (the shared posture, #505 round 3): at most its cap, at least its floor
+        worst = next((level for level, n in zip(levels, counts, strict=True) if n), None)
+        if worst is None:
+            score = 0
+        else:
+            score = max(min(score, text.GRADE_CAPS[worst]), text.GRADE_FLOORS.get(worst, 0))
         grade, band = next((g, b) for floor, g, b in text.GRADE_BANDS if score >= floor)
-        assert compute_risk_score(*counts) == (score, grade, band), counts
+        assert compute_posture_risk_score(*counts) == (score, grade, band), counts
+        assert compute_risk_score(*counts) == (score, grade, band), counts  # one score: the same function
     disclaimer = text.GRADE_DISCLAIMER.lower()
     assert "platform posture grade" in disclaimer
     assert "not a regulatory rating" in disclaimer
