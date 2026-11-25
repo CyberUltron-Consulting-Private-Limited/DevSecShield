@@ -2083,6 +2083,8 @@ export {
 /** CBOM finding from backend get_findings_for_scan_type (cbom branch) */
 export interface CbomFinding {
   id: string
+  /** "test": found in test, fixture or example code; the engine lowered it to Low and the table labels it "test code" */
+  code_context?: string | null
   /** CycloneDX inventory bom-ref (charts → finding join); absent on legacy rows */
   bom_ref?: string | null
   title: string
@@ -2243,6 +2245,10 @@ export interface CBOMConversation {
   last_updated: string
   estimated_credits: number | null
   average_risk_score: number | null
+  /** the one D3 risk score (posture, 0-100) with its grade and words; older backends omit it */
+  risk_score?: number | null
+  risk_grade?: string | null
+  risk_label?: string | null
   branch: string | null
   repo_url: string | null
   owner_user_email: string | null
@@ -2312,6 +2318,10 @@ export interface CBOMDashboardData {
     /** false: no asset has a quantum verdict; quantum_readiness_score is then a 0 placeholder (show "n/a") */
     quantum_readiness_judged?: boolean
     average_risk_score: number
+    /** the one risk score (posture, 0-100) over the team's findings, its grade and words; older backends omit it */
+    risk_score?: number | null
+    risk_grade?: string | null
+    risk_label?: string | null
   }
 }
 
@@ -2349,6 +2359,10 @@ export interface RunListRow {
     total_quantum_vulnerable: number
   } | null
   average_risk_score: number | null
+  /** the one D3 risk score (posture, 0-100) with its grade and words; older backends omit it */
+  risk_score?: number | null
+  risk_grade?: string | null
+  risk_label?: string | null
   sources: { id: number; name: string; kind: string }[]
   repo_url: null
   branch: null
@@ -2667,6 +2681,10 @@ export interface AiBomScanDashboardData {
     total_unlicensed_assets: number
     governance_readiness_score: number
     average_risk_score: number
+    /** the one risk score (posture, 0-100) the PDF prints, its grade and words; older backends omit it */
+    risk_score?: number | null
+    risk_grade?: string | null
+    risk_label?: string | null
   }
   remediation_metrics: {
     mean_time_to_remediate: [number, number, number]

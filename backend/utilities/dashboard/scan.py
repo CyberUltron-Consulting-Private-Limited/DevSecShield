@@ -1415,6 +1415,7 @@ def generate_scan_dashboard(
 
             # Average risk score: the app's one 0-10 scale (risk_scale), the same number the AI BOM PDF prints
             from backend.utilities.dashboard.risk_scale import average_risk as _average_risk
+            from backend.utilities.pdf.aibom_posture import posture_risk as _posture_risk
 
             average_risk_score = _average_risk(severity_distribution) or 0.0
 
@@ -1448,6 +1449,11 @@ def generate_scan_dashboard(
                     "total_unlicensed_assets": total_unlicensed_assets,
                     "governance_readiness_score": governance_readiness_score,
                     "average_risk_score": round(average_risk_score * 10) / 10,
+                    # the one risk score (the engine's posture function, as the AI BOM PDF headline and summary),
+                    # shown by the results tile instead of the 0-10 average (PR #500 takeover)
+                    **dict(zip(("risk_score", "risk_grade", "risk_label"), _posture_risk(
+                        severity_distribution["critical"], severity_distribution["high"],
+                        severity_distribution["medium"], severity_distribution["low"]))),
                 },
                 "severity_distribution": severity_distribution,
                 "asset_type_distribution": dict(asset_type_distribution),

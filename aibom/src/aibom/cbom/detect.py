@@ -1212,6 +1212,217 @@ def _literal_key_size(key: str, line: str, explicit: int | None) -> int | None:
     return explicit
 
 
+# --------------------------------------------------------------------------- #
+# Configuration literals (PR #500 takeover of staging QA Q2-02). A string literal
+# is evidence of algorithm USE only when it flows into a crypto API: an argument of
+# a call, the value of a name / key a crypto call in the file reads
+# (``ALGO = "AES/GCM/NoPadding"`` ... ``Cipher.getInstance(ALGO)``), or the value
+# of a key a crypto library reads (``algorithm``, ``alg``, ``ciphers``,
+# ``digestmod``; WebCrypto ``name`` / ``hash`` / ``namedCurve`` in JS). An app's
+# own setting (``"cipher": "AES-256-GCM"``, a Kotlin data-class default
+# ``val cipher: String = "AES-256-GCM"``) or a display label
+# (``["PBKDF2-HMAC-SHA256 (Legacy Decrypt)"]``) names an algorithm without using
+# it: the literal lane does not inventory it; the scan keeps it as low-confidence
+# configuration evidence (``config_evidence``), outside every total. IBM
+# sonar-cryptography / CBOMkit likewise detect API calls, not bare strings.
+# --------------------------------------------------------------------------- #
+_CONFIG_LANGS = frozenset({_PY, _JAVA, _JS})
+_CRYPTO_CALLEE = re.compile(
+    r"crypt|cipher|hash|digest|kdf|derive|sign|verify|getinstance|hmac|\bmac\b"
+    r"|jwt|jws|jwe|ssl|tls|keygen|keypair|keyfactory|keyspec|secretkey|aes|rsa"
+    r"|ecdsa|ecdh|scrypt|pbkdf|argon|bcrypt|fernet|subtle|cryptography|hashlib"
+    r"|openssl",
+    re.I,
+)
+_LIBRARY_CONFIG_KEYS = frozenset({
+    "alg", "algorithm", "algorithms", "jwt_algorithm", "signing_algorithm",
+    "hash_algorithm", "hashalg", "digestmod", "hashfunc", "ciphers",
+    "cipher_suites", "ciphersuites", "ssl_ciphers", "ssl_cipher", "tls_ciphers",
+    "password_hashers", "schemes", "transformation", "kex", "kexalgorithms",
+    "macs", "hostkeyalgorithms", "signature_algorithm", "sigalgs", "curve",
+    "curves", "ecdh_curve",
+})
+_JS_LIBRARY_CONFIG_KEYS = frozenset({"name", "hash", "namedcurve"})
+_DECL_PAREN = re.compile(
+    r"(?:\bdef\s+\w+|\bfun\s+[\w.<>]+|\bclass\s+\w+(?:<[^>]*>)?|\bconstructor"
+    r"|\bfunction\s*\w*|\binit)\s*$"
+)
+_BINDING = re.compile(
+    r"""(?:["'`]([A-Za-z_][\w.-]*)["'`]|\b([A-Za-z_]\w*))"""
+    r"""\s*(?::\s*[\w.<>?\[\], ]+?\s*)?(?:(?<![=!<>])=(?![=>])|:(?!:))\s*$"""
+)
+_WORD_ID = re.compile(r"[A-Za-z_]\w*")
+_ASSIGN_LHS = re.compile(
+    r"^\s*(?:(?:val|var|const|let|final|private|static|public)\s+)*"
+    r"[\w.\[\]\"', ]+?(?::\s*[\w.<>?\[\], ]+?)?\s*(?<![=!<>+*/-])=(?![=>])"
+)
+_CALL_CHAIN = re.compile(r"[A-Za-z_][\w.]*\s*\(")
+_NOT_A_SETTING = re.compile(r"\s*(?:return|yield|throw|raise|assert|case)\b")
+_Frame = tuple[str, bool, "str | None"]  # bracket, is a declaration, key / callee
+# A record type the file declares (Kotlin ``data class``, Java ``record``, a Python
+# ``@dataclass`` / NamedTuple / pydantic model): constructing one fills app settings.
+_RECORD_DECL = re.compile(
+    r"\b(?:data\s+class|record)\s+([A-Z]\w*)\s*[(<]"
+    r"|\bclass\s+([A-Z]\w*)\s*\((?:[\w.]*\.)?(?:NamedTuple|BaseModel|TypedDict)\)"
+)
+_DATACLASS_DECO = re.compile(r"^\s*@(?:dataclasses\.)?dataclass\b")
+_PY_CLASS = re.compile(r"^\s*class\s+([A-Z]\w*)\b")
+_CALLEE = re.compile(r"([A-Za-z_][\w.]*)\s*$")
+_NOT_CALLEES = frozenset({
+    "if", "for", "while", "switch", "catch", "return", "in", "and", "or", "not",
+    "await", "yield", "function", "lambda", "elif",
+})
+
+
+def _crypto_refs(lines: list[str]) -> set[str]:
+    """Lower-cased names on any line of the file that calls a crypto API (its
+    arguments, a comprehension's source, an attribute or a subscript key read there:
+    ``Cipher.getInstance(ALGO)`` -> ``algo``, ``derive(conf["kdf"])`` -> ``kdf``)."""
+    refs: set[str] = set()
+    for line in lines:
+        if "(" not in line or len(line) > _MAX_STRING_SCAN:
+            continue
+        if not any(_CRYPTO_CALLEE.search(c) for c, _a in split_calls(line)):
+            continue
+        # not the assigned name (``cipher = Fernet(k)``) nor a callee / receiver
+        # (``cipher.doFinal(x)``): only what the call reads
+        code = _ASSIGN_LHS.sub("", _blank_strings(line), count=1)
+        code = _CALL_CHAIN.sub("(", code)
+        refs.update(w.lower() for w in _WORD_ID.findall(code))
+        for lit in _STR_LIT.finditer(_ASSIGN_LHS.sub("", line, count=1)):
+            body = lit.group(0)[1:-1]
+            if re.fullmatch(r"[A-Za-z_][\w.-]*", body):
+                refs.add(body.lower())
+    return refs
+
+
+def _innermost_call(stack: list[_Frame]) -> str | None:
+    return next((b for ch, decl, b in reversed(stack) if ch == "(" and not decl), None)
+
+
+def _record_types(lines: list[str]) -> set[str]:
+    out: set[str] = set()
+    deco = False
+    for line in lines:
+        m = _RECORD_DECL.search(line)
+        if m:
+            out.add(m.group(1) or m.group(2))
+        cls = _PY_CLASS.match(line)
+        if cls and deco:
+            out.add(cls.group(1))
+        deco = bool(_DATACLASS_DECO.match(line)) or (deco and not line.strip())
+    return out
+
+
+def _binding_before(text: str) -> str | None:
+    m = _BINDING.search(text)
+    if not m:
+        return None
+    return (m.group(1) or m.group(2) or "").lower() or None
+
+
+class _ConfigLiterals:
+    """Which string literals of a file are settings or labels, not uses (above)."""
+
+    def __init__(self, lines: list[str], lang: str) -> None:
+        self.lang = lang
+        self.refs = _crypto_refs(lines)
+        js_keys = _JS_LIBRARY_CONFIG_KEYS if lang == _JS else frozenset()
+        self.keys = _LIBRARY_CONFIG_KEYS | js_keys
+        self.records = _record_types(lines)
+        # the bracket stack at the start of each line
+        self.stack_at: list[list[_Frame]] = []
+        stack: list[_Frame] = []
+        for line in lines:
+            self.stack_at.append(list(stack))
+            if len(line) <= _MAX_STRING_SCAN:
+                self._walk(line, _blank_strings(line), stack, len(line))
+
+    @staticmethod
+    def _walk(raw: str, code: str, stack: list[_Frame], upto: int) -> None:
+        for i, ch in enumerate(code[:upto]):
+            if ch in "([{":
+                decl = ch == "(" and bool(_DECL_PAREN.search(code[:i]))
+                if ch == "(":
+                    callee = _CALLEE.search(code[:i])
+                    key = callee.group(1).rsplit(".", 1)[-1] if callee else None
+                    # a grouping paren (``(function () { ... })()``, ``x = (a, b)``)
+                    # passes nothing to a call
+                    decl = decl or key is None or key in _NOT_CALLEES
+                else:
+                    key = _binding_before(raw[:i])
+                stack.append((ch, decl, key))
+            elif ch in ")]}" and stack:
+                stack.pop()
+
+    def _record_setting(self, stack: list[_Frame]) -> bool:
+        """Whether the innermost call is the constructor of a record type this file
+        declares (not a crypto API: its name names none)."""
+        callee = _innermost_call(stack)
+        return bool(
+            callee and callee in self.records and not _CRYPTO_CALLEE.search(callee)
+        )
+
+    def unused_spans(self, line_idx: int, line: str) -> list[tuple[int, int, str]]:
+        """``(start, end, binding)`` of each literal on ``line`` that names a setting
+        or a label, not a use. Two shapes only, so allow-lists, deny-lists and
+        constants keep the rules they have:
+
+        * a label: a literal with whitespace inside a list, set, dict or parameter
+          list (the Python lane; Kotlin / Java and JS / TS labels are blanked by
+          ``blank_labels``);
+        * a scalar setting: the value of a dict key / object property or of a
+          declared parameter's default whose key no crypto call in the file reads and
+          no crypto library reads.
+
+        A plain statement (``ALGO = "AES"``) and a list / set element are never
+        judged here.
+        """
+        if (
+            self.lang not in _CONFIG_LANGS
+            or len(line) > _MAX_STRING_SCAN
+            or not any(q in line for q in "\"'`")
+        ):
+            return []
+        statement = bool(_NOT_A_SETTING.match(line))
+        code = _blank_strings(line)
+        out: list[tuple[int, int, str]] = []
+        for lit in _STR_LIT.finditer(line):
+            stack = list(self.stack_at[line_idx])
+            self._walk(line, code, stack, lit.start())
+            if self.lang == _PY and _is_label(lit.group(0)[1:-1]):
+                # a label or message (whitespace in it) anywhere but a crypto call's
+                # own argument: ``{"backend": "AES-256-GCM AEAD (...)"}``,
+                # ``return ok, data, f"{alias} (AES-256-GCM)"``
+                callee = _innermost_call(stack)
+                if not (callee and _CRYPTO_CALLEE.search(callee)):
+                    outer = next((b for _c, _d, b in reversed(stack) if b), None)
+                    out.append((lit.start(), lit.end(), outer or "label"))
+                continue
+            if not stack or statement:
+                continue  # a statement, not a setting inside a container
+            calls = [b for ch, decl, b in stack if ch == "(" and not decl]
+            if any(b and _CRYPTO_CALLEE.search(b) for b in calls):
+                continue  # inside a crypto call's arguments: it flows into the call
+            direct = stack[-1][0] == "(" and not stack[-1][1]
+            if direct and self._record_setting(stack):
+                # an argument of the file's own settings record (``KeyProfile(...,
+                # "AES-256-GCM", ...)``): fills a setting, calls no crypto API
+                out.append((lit.start(), lit.end(), f"{calls[-1]}()".lower()))
+                continue
+            if direct:
+                continue  # a direct argument of a call: the call may use it
+            before = code[:lit.start()]
+            cut = max(before.rfind(c) for c in "([{,") + 1 if before else 0
+            own = _binding_before(line[cut:lit.start()])
+            top = stack[-1]
+            scalar = own is not None and (top[0] == "{" or (top[0] == "(" and top[1]))
+            if not scalar or own in self.refs or own in self.keys:
+                continue
+            out.append((lit.start(), lit.end(), own or ""))
+        return out
+
+
 def blank_prose(line: str, lang: str) -> str:
     """``line`` with prose-like string literals (and JSX text in JS/TS) replaced by spaces of the same length."""
     def blank(m: re.Match) -> str:
@@ -2250,7 +2461,12 @@ def _substitute_python_constants(
     return used
 
 
-def detect_crypto(text: str, lang: str, external: Mapping[str, Any] | None = None) -> list[Detection]:
+def detect_crypto(
+    text: str,
+    lang: str,
+    external: Mapping[str, Any] | None = None,
+    config_evidence: list[dict[str, Any]] | None = None,
+) -> list[Detection]:
     """Detect crypto usage in one source file's ``text`` (of language ``lang``).
 
     Runs the bounded 3-step match: prose-strip + call-split -> data-flow-lite
@@ -2260,6 +2476,10 @@ def detect_crypto(text: str, lang: str, external: Mapping[str, Any] | None = Non
     ``external`` maps the names this file uses that are constants of other project files
     (:meth:`aibom.cbom.project.ProjectIndex.scope_for`) to their definitions; a detection that reads one carries
     ``defined_at``.
+
+    ``config_evidence``, when given, receives one
+    ``{"line", "algorithm", "binding", "value"}`` per configuration literal that
+    names an algorithm no crypto call reads (``_ConfigLiterals``): not an asset.
     """
     stripped = strip_noncode(text)
     # Split on "\n" only: splitlines() also breaks on \f, \v, \x1c-\x1e, \x85, U+2028/9 and would shift
@@ -2280,6 +2500,11 @@ def detect_crypto(text: str, lang: str, external: Mapping[str, Any] | None = Non
     java_ctx = _JavaContext(work_lines, external) if lang == _JAVA else None
     jwt_file = bool(_JWT_FILE.search(stripped)) and lang in (_PY, _JS, _JAVA)
     keyword_lines = _keyword_list_lines(work_lines, lang) | _policy_list_lines(work_lines, lang)
+    config = (
+        _ConfigLiterals([ln.strip() for ln in work_lines], lang)
+        if lang in _CONFIG_LANGS
+        else None
+    )
 
     out: list[Detection] = []
     for line_no, work in enumerate(work_lines, start=1):
@@ -2292,6 +2517,12 @@ def detect_crypto(text: str, lang: str, external: Mapping[str, Any] | None = Non
 
         # --- receiver+method rule lane ---
         calls = split_calls(line)
+        quoted = any(q in line for q in "\"'`")
+        if calls and quoted and len(line) <= _MAX_STRING_SCAN:
+            # a "call" spelled inside a string literal ("Scrypt (Memory-Hard)") is text,
+            # not a call
+            in_code = {chain for chain, _args in split_calls(_blank_strings(line))}
+            calls = [c for c in calls if c[0] in in_code]
         for rule in rules:
             if rule.receiver_re is not None and not rule.receiver_re.search(line):
                 continue
@@ -2311,6 +2542,21 @@ def detect_crypto(text: str, lang: str, external: Mapping[str, Any] | None = Non
         # algorithm without using it: blank it for this lane only (API strings such as "AES/GCM/NoPadding" have
         # no spaces and stay).
         lit_line = blank_labels(blank_prose(line, lang), lang)
+        if config is not None:
+            for start, end, binding in config.unused_spans(line_no - 1, line):
+                body = lit_line[start + 1:end - 1]
+                if config_evidence is not None and body.strip():
+                    pats = (*LITERAL_PATTERNS, *LITERAL_BY_LANG.get(lang, ()))
+                    named = [k for k, pat in pats if pat.search(body)]
+                    if named:
+                        config_evidence.append({
+                            "line": line_no,
+                            "algorithm": named[0],
+                            "binding": binding,
+                            "value": line[start + 1:end - 1][:80],
+                        })
+                blank = " " * (end - start - 2)
+                lit_line = lit_line[:start + 1] + blank + lit_line[end - 1:]
         if lang == _C and "_set_cipher_list" in lit_line:
             # CB-28: an OpenSSL cipher-list string is a TLS suite policy (the
             # protocol lane reads it, with ``!RC4`` / ``-3DES`` as removals), not a

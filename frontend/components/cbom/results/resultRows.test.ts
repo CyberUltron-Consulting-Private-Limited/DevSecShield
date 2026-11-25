@@ -12,6 +12,7 @@ import {
   activeRunIds,
   changedRunStatuses,
   displayRiskScore,
+  riskScoreCell,
   liveRunFromDetail,
   refundedHint,
   rowsFromListResponse,
@@ -110,30 +111,33 @@ test("status filter includes Partial; run statuses are mapped", () => {
   assert.deepEqual(runProgress(active), { done: 1, total: 4, pct: 25 });
 });
 
-test("risk tiers on average_risk_score across kinds", () => {
+test("risk tiers on the one risk score (posture grade bands) across kinds, never the 0-10 average", () => {
   const rows = mergeResultRows(
-    [scan(1, { average_risk_score: 9.2 }), scan(2, { average_risk_score: 4.9 }), scan(3, { average_risk_score: null })],
-    [run(4, { average_risk_score: 7 }), run(5, { average_risk_score: 5 }), run(6, { average_risk_score: 12 })],
+    [scan(1, { risk_score: 80, risk_grade: "F", average_risk_score: 2 }), scan(2, { risk_score: 10, risk_grade: "A", average_risk_score: 9.5 }),
+      scan(3, { risk_score: null })],
+    [run(4, { risk_score: 56, risk_grade: "D" }), run(5, { risk_score: 36, risk_grade: "C" }), run(6, { risk_score: 100, risk_grade: "F" })],
   );
   assert.deepEqual(new Set(keys(filterAndSortRows(rows, f({ risk: "critical" })))), new Set(["scan-1", "run-6"]));
   assert.deepEqual(keys(filterAndSortRows(rows, f({ risk: "high" }))), ["run-4"]);
   assert.deepEqual(keys(filterAndSortRows(rows, f({ risk: "medium" }))), ["run-5"]);
   assert.deepEqual(keys(filterAndSortRows(rows, f({ risk: "low" }))), ["scan-2"]);
   assert.equal(filterAndSortRows(rows, f({ risk: "all" })).length, 6);
-  assert.equal(displayRiskScore({ average_risk_score: 12 }), 10);
-  assert.equal(displayRiskScore({ average_risk_score: 6.84 }), 6.8);
+  assert.equal(displayRiskScore({ risk_score: 120 }), 100);
+  assert.equal(displayRiskScore({ risk_score: 56 }), 56);
+  assert.equal(riskScoreCell({ risk_score: 56, risk_grade: "D" }), "56 · D");
+  assert.equal(riskScoreCell({ risk_score: null, risk_grade: null }), "—");
   assert.equal(matchesRiskTier(null, "low"), false);
 });
 
 test("the three sorts work across kinds", () => {
   const rows = mergeResultRows(
     [
-      scan(1, { created_at: "2026-11-01T00:00:00Z", average_risk_score: 3, estimated_credits: 10 }),
-      scan(2, { created_at: "2026-11-03T00:00:00Z", average_risk_score: null, estimated_credits: null }),
+      scan(1, { created_at: "2026-11-01T00:00:00Z", risk_score: 30, estimated_credits: 10 }),
+      scan(2, { created_at: "2026-11-03T00:00:00Z", risk_score: null, estimated_credits: null }),
     ],
     [
-      run(1, { created_at: "2026-11-02T00:00:00Z", average_risk_score: 8, estimated_credits: 2 }),
-      run(7, { created_at: "2026-11-04T00:00:00Z", average_risk_score: 5, estimated_credits: 30 }),
+      run(1, { created_at: "2026-11-02T00:00:00Z", risk_score: 80, estimated_credits: 2 }),
+      run(7, { created_at: "2026-11-04T00:00:00Z", risk_score: 50, estimated_credits: 30 }),
     ],
   );
   assert.deepEqual(keys(filterAndSortRows(rows, f({ sort: "created_desc" }))), ["run-7", "scan-2", "run-1", "scan-1"]);
@@ -163,6 +167,7 @@ test("deploy skew: no runs_list_data builds one row per run from sources_runs", 
   assert.equal(r5.created_at, "2026-11-12T17:32:00Z");
   assert.equal(r5.risk_data, null);
   assert.equal(r5.average_risk_score, null);
+  assert.equal(r5.risk_score, null);
   assert.equal(r5.estimated_credits, null);
   assert.deepEqual(keys(filterAndSortRows(rows, f({ search: "adcs" }))), ["run-4"]);
   // a backend that sends runs_list_data (even empty) is the only source: sources_runs is then ignored

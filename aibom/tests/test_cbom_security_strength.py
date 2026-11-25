@@ -97,7 +97,8 @@ def test_strength_and_quantum_level_never_disagree() -> None:
 
 def test_legacy_and_weak_algorithms_carry_a_strength() -> None:
     algos = _algos(scan_crypto(_FX_APP))
-    assert _bits(algos["MD5"]) == "64"       # MD5 collision (128/2)
+    # MD5 collision as attacked today (RFC 6151; PR #500 takeover), not 128 / 2
+    assert _bits(algos["MD5"]) == "18"
     assert _bits(algos["RC4"]) == "128"      # nominal key; weakness is a flag
     assert _bits(algos["RSA-1024"]) == "80"  # SP 800-57: 1024-bit modulus
     assert _bits(algos["3DES-CBC"]) == "112"  # three-key TDEA meet-in-the-middle

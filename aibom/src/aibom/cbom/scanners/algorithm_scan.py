@@ -26,6 +26,7 @@ import json
 import re
 from fnmatch import fnmatchcase
 from pathlib import Path
+from typing import Any
 
 from aibom.cbom.detect import _strip_line_comment, detect_crypto, strip_noncode
 from aibom.cbom.files import FileWalk, file_walk
@@ -152,8 +153,15 @@ class _Asset:
         self.library = self.library or library
 
 
+#: the run property that carries configuration evidence to ``normalize`` (the
+#: CycloneDX metadata states only its count)
+CONFIG_EVIDENCE_PROP = "crypto:configEvidence"
+CONFIG_EVIDENCE_MAX = 200
+
+
 def _detect_assets(
-    root: Path, walk: FileWalk | None = None, project: ProjectIndex | None = None
+    root: Path, walk: FileWalk | None = None, project: ProjectIndex | None = None,
+    config_evidence: list[dict[str, Any]] | None = None,
 ) -> list[_Asset]:
     """Detect concrete algorithm usages (one per distinct name+file).
 
@@ -174,7 +182,11 @@ def _detect_assets(
         code_lines: list[str] | None = None
         at_line: dict[tuple[int, str], str] = {}  # (line, key) -> display name, to find a composite
         inner: list[tuple[_Asset, int, str, str | None]] = []
-        for det in detect_crypto(text, lang, external):
+        found: list[dict[str, Any]] = []
+        dets = detect_crypto(text, lang, external, config_evidence=found)
+        if config_evidence is not None:
+            config_evidence.extend({"location": rel, **e} for e in found)
+        for det in dets:
             refined = _refine_key(det.key, det.key_size)
             info = algo_info(refined) or {}
             resolved_ks = det.key_size or info.get("key_size")
@@ -488,7 +500,16 @@ class CryptoAlgorithmScanner(Scanner):
                 )
             )
 
-        for asset in _detect_assets(ctx.root, walk, project_index(ctx)):
+        config_evidence: list[dict[str, Any]] = []
+        assets = _detect_assets(ctx.root, walk, project_index(ctx), config_evidence)
+        if config_evidence:
+            # low-confidence configuration evidence (PR #500 takeover): algorithm names
+            # in settings no crypto call
+            # reads; carried to the run object (normalize), never an asset or a total
+            ctx.properties[CONFIG_EVIDENCE_PROP] = json.dumps(
+                config_evidence[:CONFIG_EVIDENCE_MAX], sort_keys=True
+            )
+        for asset in assets:
             # The AST scanner (order 8) owns Python algorithm detection with
             # argument binding; defer to any ref it already emitted so the regex
             # pass only adds usages the AST could not see (e.g. an algorithm named

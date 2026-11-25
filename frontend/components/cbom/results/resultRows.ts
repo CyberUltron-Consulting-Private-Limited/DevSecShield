@@ -35,6 +35,10 @@ interface ResultRowBase {
   scan_status: string;
   risk_data: RiskCounts | null;
   average_risk_score: number | null;
+  /** the one risk score (the engine's posture function, 0-100), its grade and words: what the list shows and filters */
+  risk_score: number | null;
+  risk_grade: string | null;
+  risk_label: string | null;
   estimated_credits: number | null;
   owner_user_email: string | null;
   owner_user_full_name: string | null;
@@ -101,6 +105,9 @@ export function scanRow(scan: CBOMConversation): ScanResultRow {
     scan_status: (scan.scan_status ?? "").toLowerCase(),
     risk_data: scan.risk_data ?? null,
     average_risk_score: num(scan.average_risk_score),
+    risk_score: num(scan.risk_score),
+    risk_grade: scan.risk_grade ?? null,
+    risk_label: scan.risk_label ?? null,
     estimated_credits: num(scan.estimated_credits),
     owner_user_email: scan.owner_user_email ?? null,
     owner_user_full_name: scan.owner_user_full_name ?? null,
@@ -131,6 +138,9 @@ export function runRow(run: RunListRow): RunResultRow {
     scan_status: status,
     risk_data: run.risk_data ?? null,
     average_risk_score: num(run.average_risk_score),
+    risk_score: num(run.risk_score),
+    risk_grade: run.risk_grade ?? null,
+    risk_label: run.risk_label ?? null,
     estimated_credits: netCredits(charged, refunded),
     owner_user_email: run.owner_user_email ?? null,
     owner_user_full_name: run.owner_user_full_name ?? null,
@@ -183,6 +193,9 @@ export function runRowsFromSourcesRuns(entries: readonly CbomSourcesRun[] | null
       scan_status: "success",
       risk_data: null,
       average_risk_score: null,
+      risk_score: null,
+      risk_grade: null,
+      risk_label: null,
       estimated_credits: null,
       owner_user_email: null,
       owner_user_full_name: null,
@@ -223,20 +236,29 @@ export function mergeResultRows(
   return rows.sort(newestFirst);
 }
 
-/** Risk score shown in the table: clamped to 0-10, one decimal. */
-export function displayRiskScore(row: Pick<ResultRow, "average_risk_score">): number | null {
-  if (row.average_risk_score == null) return null;
-  return Math.round(Math.min(10, Math.max(0, row.average_risk_score)) * 10) / 10;
+/** Risk score shown in the table: the one risk score (posture, 0-100, as the results page, the PDF and the API), never
+ * the 0-10 average (PR #500 takeover). A row from an older backend without it shows "—". */
+export function displayRiskScore(row: Pick<ResultRow, "risk_score">): number | null {
+  if (row.risk_score == null) return null;
+  return Math.round(Math.min(100, Math.max(0, row.risk_score)));
 }
 
-/** Risk tiers: Critical >= 9, High 7-9, Medium 5-7, Low < 5; a row without a score matches only "all". */
+/** "56 · D" for the table cell (grade when the backend sent it). */
+export function riskScoreCell(row: Pick<ResultRow, "risk_score" | "risk_grade">): string {
+  const score = displayRiskScore(row);
+  if (score == null) return "—";
+  return row.risk_grade ? `${score} · ${row.risk_grade}` : `${score}`;
+}
+
+/** Risk tiers on the posture grade bands: Critical = F (>= 70), High = D (50-69), Medium = C and B (15-49),
+ * Low = A (< 15); a row without a score matches only "all". */
 export function matchesRiskTier(score: number | null, tier: RiskScoreFilter): boolean {
   if (tier === "all") return true;
   if (score == null) return false;
-  if (tier === "critical") return score >= 9;
-  if (tier === "high") return score >= 7 && score < 9;
-  if (tier === "medium") return score >= 5 && score < 7;
-  return score < 5;
+  if (tier === "critical") return score >= 70;
+  if (tier === "high") return score >= 50 && score < 70;
+  if (tier === "medium") return score >= 15 && score < 50;
+  return score < 15;
 }
 
 const RUN_NUMBER = /^(?:(?:sources\s+)?run\s*)?#?\s*(\d+)$/;

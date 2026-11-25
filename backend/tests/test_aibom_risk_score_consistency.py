@@ -5,7 +5,8 @@ Staging (peva3/SmarterRouter, ai_bom #9): 0 critical, 0 high, 10 medium, 32 low 
 
 * the PDF grade uses ``report_branding.compute_posture_risk_score``, the same formula as the engine's
   ``aibom.score.scorer.posture_score`` (pinned below over a grid of counts), never worse than the worst severity;
-* the PDF's "Average risk score (0-10)" and the dashboard card use the app's one 0-10 scale (``risk_scale``);
+* the PDF's summary rows and the results tile show that same posture score, grade and words, never a second 0-10
+  average (PR #500 takeover);
 * the PDF lists the SOW AI BOM checks (CERT-In AIBOM, RBI FREE-AI, SEBI CSCRF, NIST AI RMF, EU AI Act Annex IV) with
   every requirement's verdict, and no out-of-scope healthcare framework row.
 
@@ -116,8 +117,24 @@ def test_smarterrouter_counts_no_longer_print_critical_risk(tmp_path):
     score, grade, band = compute_posture_risk_score(0, 0, 10, 32)
     assert (score, grade, band) == (49, "C", "Elevated risk")
     assert band in text and str(score) in text
-    avg = average_risk_of(["Medium"] * 10 + ["Low"] * 32)
-    assert f"{avg:.1f}" in text  # the dashboard card's number
+    # the summary rows print the headline's number, not a 0-10 average (PR #500 takeover)
+    assert "Risk score 49 / 100 · grade C · Elevated risk" in text
+    assert "Average risk score" not in text and f"{average_risk_of(['Medium'] * 10 + ['Low'] * 32):.1f}" not in text
+
+
+def test_aibom_results_tile_reads_the_posture_score(monkeypatch):
+    import types
+
+    from backend.utilities.dashboard import scan as dashboard
+    from backend.utilities.dashboard.scan import generate_scan_dashboard
+
+    monkeypatch.setattr(dashboard, "get_findings_for_scan_id", lambda *a, **k: [])
+
+    rows = [{"impact": "Medium", "component_type": "python_package"}] * 10 + \
+        [{"impact": "Low", "component_type": "python_package"}] * 32
+    card = generate_scan_dashboard("ai_bom", scan_object=types.SimpleNamespace(
+        id=1, scan_data={"results": rows}))["card_data"]
+    assert (card["risk_score"], card["risk_grade"], card["risk_label"]) == (49, "C", "Elevated risk")
 
 
 def test_pdf_lists_the_sow_aibom_checks_with_every_requirement(tmp_path):

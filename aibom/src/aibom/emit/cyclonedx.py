@@ -21,6 +21,7 @@ itself satisfy FDA / EU AI Act / HIPAA obligations.
 from __future__ import annotations
 
 import contextlib
+import json
 import re
 import uuid
 from typing import Any, NamedTuple
@@ -1105,6 +1106,12 @@ def emit_cyclonedx(result: ScanResult) -> dict[str, Any]:
     _add(metadata["component"], "version", result.subject.version)
 
     bom_props = dict(result.properties)
+    # configuration evidence belongs to the run object (normalize), not the BOM:
+    # the metadata states only its count
+    evidence = bom_props.pop("crypto:configEvidence", None)
+    if evidence:
+        with contextlib.suppress(ValueError, TypeError):
+            bom_props["crypto:configEvidenceCount"] = str(len(json.loads(evidence)))
     bom_props.setdefault("regulatory:disclaimer", disclaimer_of(result))
     metadata["properties"] = _properties_list(bom_props)
 

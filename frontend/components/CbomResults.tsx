@@ -1169,6 +1169,13 @@ export default function CbomResults({
                               >
                                 {finding.algorithm_name || finding.title}
                               </button>
+                              {finding.code_context === "test" && (
+                                // found in test, fixture or example code: lowered to Low by the engine, still listed
+                                <Badge variant="outline" className="mt-1 whitespace-nowrap border-zinc-300 text-zinc-600 dark:text-zinc-300"
+                                       title="Found in test, fixture or example code: downgraded to Low, kept visible" data-testid="cbom-finding-test-code">
+                                  test code
+                                </Badge>
+                              )}
                               {/* phones: the impact and risk score under the name, never only behind a sideways scroll
                                   (staging QA N6) */}
                               <span className="mt-1 flex items-center gap-1.5 sm:hidden" data-testid="cbom-finding-mobile-meta">
