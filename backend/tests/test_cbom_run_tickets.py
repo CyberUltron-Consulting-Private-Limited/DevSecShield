@@ -10,7 +10,6 @@ from __future__ import annotations
 import contextlib
 import datetime as dt
 import importlib.util
-import os
 import json
 import sys
 import threading
@@ -197,8 +196,8 @@ def test_one_failed_issue_never_loses_the_others(api, runs, jira):
     assert [f["asset_id"] for f in body["failed"]] == [lib] and "issuetype" in body["failed"][0]["error"]
     with Session(runs["engine"]) as s:  # the refused asset has no key, and its claim was released (4xx: none created)
         rows = {r.ticket_key: r for r in s.exec(select(CbomRemediationAssignment)).all()}
-    assert set(rows) == {"SEC-1", "SEC-3", None}
-    assert rows[None].ticket_state is None and rows[None].ticket_claim is None and rows[None].status == "open"
+    # review 6065677758 M1 (P10b): the blank record the claim inserted is deleted, not left behind as the newest record
+    assert set(rows) == {"SEC-1", "SEC-3"}
     jira.fail_on = None
     retry = api("POST", f"/1/cbom/sources/runs/{runs['run1']['id']}/tickets", json={"asset_ids": [tls, lib, cert]}).json()
     assert [c["asset_id"] for c in retry["created"]] == [lib] and len(retry["existing"]) == 2
@@ -406,8 +405,8 @@ def test_only_jira_messages_reach_the_user(api, runs, jira, capsys):
     assert [f["error"] for f in body["failed"]] == [RT.GENERIC_ERROR]
     out = capsys.readouterr().out
     assert "error=RuntimeError" in out and "internal detail" not in out
-    with Session(runs["engine"]) as s:  # not a Jira timeout: the claim is released for an immediate retry
-        assert s.exec(select(CbomRemediationAssignment)).one().ticket_state is None
+    with Session(runs["engine"]) as s:  # not a Jira timeout: the claim is released for an immediate retry, and the
+        assert s.exec(select(CbomRemediationAssignment)).all() == []  # blank record it inserted goes (6065677758 M1)
 
 
 def test_time_budget_defers_the_rest(api, runs, jira):
@@ -658,7 +657,8 @@ def test_migration_up_and_down_on_sqlite(tmp_path):
     _upgrade_downgrade(sa.create_engine(f"sqlite:///{tmp_path / 'm.db'}"))
 
 
-PG = os.environ.get("CBOM_TEST_PG_URL")
+from backend.tests.support.pg_test_db import cbom_test_pg_url  # noqa: E402  (review 6065677758 n1)
+PG = cbom_test_pg_url()  # a database named *test* only
 
 
 @pytest.mark.skipif(not PG, reason="set CBOM_TEST_PG_URL to run against PostgreSQL")

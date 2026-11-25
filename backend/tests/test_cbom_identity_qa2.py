@@ -23,6 +23,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from backend.tests.support.pg_test_db import cbom_test_pg_url  # noqa: E402  (review 6065677758 n1)
 from backend.new_models import (  # noqa: E402
     CbomCollectionJob,
     CbomQ0Gap,
@@ -353,16 +354,15 @@ def _held(world: World) -> tuple[set[str], list[str], list[tuple[str, str]], set
 
 
 @pytest.fixture(params=["sqlite", pytest.param("postgresql", marks=pytest.mark.skipif(
-    not __import__("os").environ.get("CBOM_TEST_PG_URL"), reason="set CBOM_TEST_PG_URL to run against PostgreSQL"))])
+    not cbom_test_pg_url(), reason="set CBOM_TEST_PG_URL to run against PostgreSQL"))])
 def deployed(request, tmp_path):
-    import os
 
     from sqlmodel import SQLModel, create_engine
 
     if request.param == "sqlite":
         engine = _sqlite(tmp_path / "deploy.db")
     else:
-        engine = create_engine(os.environ["CBOM_TEST_PG_URL"])
+        engine = create_engine(cbom_test_pg_url())
         SQLModel.metadata.drop_all(engine)
         SQLModel.metadata.create_all(engine)
     M._DONE.clear()

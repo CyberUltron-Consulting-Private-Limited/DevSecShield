@@ -50,14 +50,16 @@ def row_group_key(asset_type: Any, target: Any, location: Any, facts: Mapping[st
 
 
 def has_plan(a: Any) -> bool:
-    """A record that holds a decision, not only a ticket.  The one record that does not: what "Create tickets" inserts
-    (``run_tickets._claim``: a ticket, status "open", no wave, owner, due date or note).  Any other record is a plan,
-    an explicit "open" (a reopened resource) included."""
+    """A record that holds a decision: a status other than "open", or a wave, owner, due date or note.  A record with
+    status "open" and none of those is not a plan, whatever its ticket fields (review 6065677758 M1): it is what a
+    ticket claim inserts (``run_tickets._claim``) and, before this release, left behind when Jira refused the call
+    (P10b), or "Create tickets" made on another copy (a ticket-only record).  Counted as a plan, such a leftover was
+    the newest record and hid an older real plan on every surface (P10), and q111 wrote it to the group key (R4).
+    A user's reset to blank is written to every key of the resource (``waves.upsert``), so it is no exception."""
     if a is None:
         return False
-    ticket_only = bool(a.ticket_key) and str(a.status or "open") == "open" and not any(
+    return str(a.status or "open") != "open" or any(
         getattr(a, name, None) not in (None, "") for name in ("wave", "owner", "target_date", "note"))
-    return not ticket_only
 
 
 @dataclass
@@ -106,8 +108,9 @@ def resolve(found: Mapping[str, Any], groups: Sequence[str | None], members: Ite
     """The resource's plan and ticket over its group key and every copy's key, merged FIELD BY FIELD (review
     6064356833 M2: a copy that holds only a ticket never replaces a real plan):
 
-    * the plan shown: the most recently updated record that holds a plan (``has_plan``), ties by key order (group
-      keys first); without any plan, the group key's record, else the first copy with a ticket, else the first copy;
+    * the plan shown: the most recently updated record that holds a plan (``has_plan``: never a blank leftover or a
+      ticket-only record, review 6065677758 M1), ties by key order (group keys first); without any plan, the group
+      key's record, else the first copy with a ticket, else the first copy (all blank: shown as not started);
     * the ticket shown: the plan record's own ticket, else the group key's, else the first copy's by key order; any
       other ticket key a copy holds is a conflict (``conflicts``: two issues for one resource, made before this rule);
     * the key a change is written to: the plan record's key, else the group key, else the row's own key.

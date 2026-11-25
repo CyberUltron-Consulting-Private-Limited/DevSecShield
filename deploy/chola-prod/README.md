@@ -226,9 +226,11 @@ variable before any rollout that keeps the old release running for more than a d
 `CONCURRENTLY` (`q102hist001`, `q110linkuq001`) wait for older transactions; `q110linkuq001` gives up after 3 attempts:
 end the idle-in-transaction sessions and deploy again (deploy/staging/README.md, "Migrations that build an index
 CONCURRENTLY").
-Worst-case total wait for `q110linkuq001` with a transaction that stays open: about 4.5 minutes. Attempt 1 waits
-60 s to build; attempts 2 and 3 each wait 60 s to drop the INVALID index it left; two 10 s pauses; one final 60 s
-wait to drop it: 4 x 60 s + 2 x 10 s = 260 s. Each wait is cut at 60 s (`lock_timeout`); end the session and rerun.
+Worst-case total wait for `q110linkuq001` with a transaction that stays open: about 3.5 minutes. Attempt 1 waits
+60 s to build; attempts 2 and 3 each wait 60 s to drop the INVALID index it left; two 10 s pauses; one final 2 s
+wait to drop it (`DROP INDEX CONCURRENTLY`, so the table's readers and writers never queue behind it; when it cannot
+get its lock it logs "cleanup drop ... gave up" and the next run drops the index first): 3 x 60 s + 2 x 10 s + 2 s =
+202 s. Each build wait is cut at 60 s (`lock_timeout`); end the session and rerun.
 
 ### Images from a CI run
 

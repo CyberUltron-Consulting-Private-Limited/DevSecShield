@@ -576,7 +576,8 @@ def test_alembic_env_imports_every_table_model(tmp_path):
 
 
 # ============================================================================ major 8: serials and the CA row (PostgreSQL)
-PG = os.environ.get("CBOM_TEST_PG_URL")
+from backend.tests.support.pg_test_db import cbom_test_pg_url  # noqa: E402  (review 6065677758 n1)
+PG = cbom_test_pg_url()  # a database named *test* only
 needs_pg = pytest.mark.skipif(not PG, reason="set CBOM_TEST_PG_URL to run against PostgreSQL")
 
 

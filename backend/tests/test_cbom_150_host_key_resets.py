@@ -8,7 +8,6 @@ that reported it with its next job for the source, and is marked applied when th
 from __future__ import annotations
 
 import importlib.util
-import os
 from pathlib import Path
 
 import pytest
@@ -166,7 +165,8 @@ def test_a_newer_decision_supersedes_the_pending_one(api, world):  # noqa: F811
 
 
 # ----------------------------------------------------------------------------- migration
-PG = os.environ.get("CBOM_TEST_PG_URL")
+from backend.tests.support.pg_test_db import cbom_test_pg_url  # noqa: E402  (review 6065677758 n1)
+PG = cbom_test_pg_url()  # a database named *test* only
 _VERSIONS = Path(__file__).resolve().parents[2] / "prod_database_migrations" / "migrations" / "versions"
 
 

@@ -50,7 +50,8 @@ api = _base.api
 NOW = dt.datetime(2026, 11, 15, 9, 0)
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATION = ROOT / "prod_database_migrations" / "migrations" / "versions" / "cb19grade002_asset_stored_grade.py"
-PG = os.environ.get("CBOM_TEST_PG_URL")
+from backend.tests.support.pg_test_db import cbom_test_pg_url  # noqa: E402  (review 6065677758 n1)
+PG = cbom_test_pg_url()  # a database named *test* only
 MOSCA = {"data_shelf_life_years": 10, "migration_years": 5, "threat_years": 12}
 _IDS = itertools.count(1)
 

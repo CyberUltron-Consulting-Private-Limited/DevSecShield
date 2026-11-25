@@ -597,7 +597,31 @@ def upsert(session: Session, team_id: int, user_id: int, body: AssignmentBulk, n
         row.row_version = (row.row_version or 0) + 1 if row.id is not None else 1
         session.add(row)
         changed += 1
+        from backend.utilities.cbom_sources import remediation_group as RG
+
+        if not RG.has_plan(row):
+            _reset_other_keys(session, team_id, user_id, info, now)
     return {"updated": changed}
+
+
+def _reset_other_keys(session: Session, team_id: int, user_id: int, info: dict[str, Any], now: _dt.datetime) -> None:
+    """A user cleared the resource's plan (status "open", no wave, owner, due date or note): a blank record is not a
+    plan (``remediation_group.has_plan``, review 6065677758 M1), so an older plan on another key of the resource
+    (q111 keeps the original it copied to the group key; a copy made before the group key) would be shown again.
+    The reset applies to the resource: those records' plan fields are cleared too; their tickets stay."""
+    from backend.utilities.cbom_sources import remediation_group as RG
+
+    others = [k for k in (info.get("alias_keys") or ()) if k]
+    if not others:
+        return
+    for other in _assignments(session, team_id, others).values():
+        if not RG.has_plan(other):
+            continue
+        other.status, other.wave, other.owner, other.target_date, other.note, other.done_at = (
+            "open", None, None, None, None, None)
+        other.updated_by_user_id, other.last_updated = user_id, now
+        other.row_version = (other.row_version or 0) + 1
+        session.add(other)
 
 
 # ----------------------------------------------------------------------------- roadmap

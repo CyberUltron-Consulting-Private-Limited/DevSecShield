@@ -7,7 +7,6 @@ Fixture: ``fixtures/cbom_sources_two_aws_roles.json`` via ``test_cbom_posture_re
 from __future__ import annotations
 
 import datetime as dt
-import os
 import sys
 from pathlib import Path
 
@@ -19,6 +18,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from sqlmodel import Session, SQLModel, create_engine, select  # noqa: E402
 
+from backend.tests.support.pg_test_db import cbom_test_pg_url  # noqa: E402  (review 6065677758 n1)
 from backend.new_models import (  # noqa: E402
     CbomCollectedAsset,
     CbomCollectionJob,
@@ -36,7 +36,7 @@ MIGRATION = "q111remgroup001_remediation_group_keys"
 
 
 @pytest.fixture(params=["sqlite", pytest.param("postgresql", marks=pytest.mark.skipif(
-    not os.environ.get("CBOM_TEST_PG_URL"), reason="set CBOM_TEST_PG_URL to run against PostgreSQL"))])
+    not cbom_test_pg_url(), reason="set CBOM_TEST_PG_URL to run against PostgreSQL"))])
 def engine(request, tmp_path):
     from backend.tests.test_cbom_posture_review_6064356833 import pg_test_url
 

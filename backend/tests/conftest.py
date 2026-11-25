@@ -56,6 +56,25 @@ def _no_mongo_client_outlives_its_test():
 
 
 @pytest.fixture(autouse=True, scope="session")
+def _cbom_test_databases():
+    """PR #499 review 6065677758 n1: the tests that drop tables read ``CBOM_TEST_PG_URL`` through
+    ``backend.tests.support.pg_test_db.cbom_test_pg_url()``, which never names a database without "test" in its name
+    (it swaps in ``<name>_cbom_test``).  This creates those databases once, before the first test."""
+    from pathlib import Path
+
+    root = str(Path(__file__).resolve().parents[2])
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    try:
+        from backend.tests.support import pg_test_db
+    except ImportError:  # a test that runs without the backend package on the path
+        yield
+        return
+    pg_test_db.ensure_databases()
+    yield
+
+
+@pytest.fixture(autouse=True, scope="session")
 def _content_digest_follows_its_columns():
     """#352: every statement any test runs is checked: an UPDATE of cbomcollectedasset that changes a column
     ``content_digest`` digests must set ``content_digest`` too (``content_digest_guard``)."""

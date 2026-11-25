@@ -526,7 +526,9 @@ def _dispatch_in_child(url, barrier, out):
     out.put(Q.dispatch_tick(eng, NOW, launcher=FakeLauncher(), token_for=token_for, max_inflight=5, team_max=5))
 
 
-PG_URL = os.environ.get("SCM_TEST_PG_URL") or os.environ.get("CBOM_TEST_PG_URL")
+from backend.tests.support.pg_test_db import cbom_test_pg_url, guarded  # noqa: E402  (review 6065677758 n1)
+
+PG_URL = guarded(os.environ.get("SCM_TEST_PG_URL")) or cbom_test_pg_url()  # a database named *test* only
 
 
 @pytest.mark.skipif(not PG_URL, reason="set SCM_TEST_PG_URL (or CBOM_TEST_PG_URL) to run against PostgreSQL")

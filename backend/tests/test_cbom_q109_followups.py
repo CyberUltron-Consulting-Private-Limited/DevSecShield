@@ -12,7 +12,6 @@ PostgreSQL variants: CBOM_TEST_PG_URL=postgresql+psycopg2://... (skipped without
 from __future__ import annotations
 
 import datetime as dt
-import os
 import sys
 from pathlib import Path
 
@@ -26,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import sqlalchemy as sa  # noqa: E402
 from sqlmodel import Session, select  # noqa: E402
 
+from backend.tests.support.pg_test_db import cbom_test_pg_url  # noqa: E402  (review 6065677758 n1)
 from backend.new_models import (  # noqa: E402
     CbomCollectedAsset,
     CbomEstateLink,
@@ -389,7 +389,7 @@ def test_the_migration_chain_has_one_head():
     assert script.get_revision("q110linkuq001").down_revision == "q109certkey001"
 
 
-@pytest.mark.skipif(not os.environ.get("CBOM_TEST_PG_URL"), reason="set CBOM_TEST_PG_URL")
+@pytest.mark.skipif(not cbom_test_pg_url(), reason="set CBOM_TEST_PG_URL")
 def test_q110_retries_after_an_interrupted_concurrent_build(deployed: World):
     """An earlier attempt left an INVALID index (a build interrupted, or failed on a duplicate written meanwhile):
     the upgrade drops it, removes the duplicates again and builds a valid one."""
@@ -543,7 +543,7 @@ def test_q110_labels_an_operator_removed_assets_item_removed(deployed: World):
     assert causes == {"asset:cert:merged-away": "model_change", "asset:cert:backfilled-away": "removed"}
 
 
-@pytest.mark.skipif(not os.environ.get("CBOM_TEST_PG_URL"), reason="set CBOM_TEST_PG_URL")
+@pytest.mark.skipif(not cbom_test_pg_url(), reason="set CBOM_TEST_PG_URL")
 def test_q110_gives_up_on_an_idle_transaction_after_its_lock_timeout_and_retries(deployed: World, monkeypatch):
     """Nit: the CONCURRENTLY build waits for every older transaction. Each attempt now waits at most
     ``LOCK_TIMEOUT``; after ``ATTEMPTS`` it raises (no invalid index left), and the deploy run again builds it."""

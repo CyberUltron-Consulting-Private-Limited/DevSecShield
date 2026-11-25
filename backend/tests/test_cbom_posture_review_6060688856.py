@@ -206,7 +206,9 @@ def test_team_view_and_waves_give_one_status_for_one_resource(engine):
 
 
 def test_an_explicit_open_plan_on_the_group_key_wins_everywhere(engine):
-    """An explicit "open" (a reopen) newer than another copy's "done" is the plan shown, everywhere."""
+    """An explicit "open" (a reopen) newer than another copy's "done" is the plan shown, everywhere.  A reopen keeps
+    the plan's wave or owner (``waves.upsert`` changes the fields it is sent); a record that is "open" with nothing
+    planned is a blank leftover, not a plan (review 6065677758 M1: ``test_cbom_posture_review_6065677758``)."""
     from backend.utilities.cbom_sources import collections_view as CV
 
     first, _second, a_id, b_id = _two_runs(engine)
@@ -215,7 +217,7 @@ def test_an_explicit_open_plan_on_the_group_key_wins_everywhere(engine):
         item = _item(s, first, ID.node_label(a_row))
         # a reopen: the newest plan wins (review 6064356833 M2: the most recently updated record holding a plan)
         s.add(CbomRemediationAssignment(team_id=1, asset_key=item["group_key"], source_ref="srcA", status="open",
-                                        last_updated=dt.datetime(2026, 11, 25)))
+                                        owner="alice", last_updated=dt.datetime(2026, 11, 25)))
         s.add(CbomRemediationAssignment(team_id=1, asset_key=_own_key(b_row, "srcB"), source_ref="srcB",
                                         status="done", last_updated=dt.datetime(2026, 11, 20)))
         s.commit()

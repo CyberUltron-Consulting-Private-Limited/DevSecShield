@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
-import os
 import sys
 import threading
 import time
@@ -50,29 +49,17 @@ VERSIONS = _REPO_ROOT / "prod_database_migrations/migrations/versions"
 
 
 def _test_database_name(name: str) -> str:
-    """The database these tests may drop tables in: ``name`` itself when it says "test", else ``<name>_cbom_test``."""
-    return name if "test" in name.lower() else f"{name}_cbom_test"
+    """The database these tests may drop tables in (now ``support.pg_test_db``, shared by every PostgreSQL test)."""
+    from backend.tests.support.pg_test_db import safe_database_name
+
+    return safe_database_name(name)
 
 
 def pg_test_url() -> str | None:
-    """A URL for ``CBOM_TEST_PG_URL``'s server whose database name contains "test" (these tests drop every table):
-    the configured database when its name says so, else a database of its own, created once on that server (review
-    6064356833 note: never the configured database itself)."""
-    url = os.environ.get("CBOM_TEST_PG_URL")
-    if not url:
-        return None
-    parsed = sa.engine.make_url(url)
-    target = _test_database_name(parsed.database or "postgres")
-    if target == parsed.database:
-        return url
-    admin = create_engine(url, isolation_level="AUTOCOMMIT")
-    try:
-        with admin.connect() as conn:
-            if not conn.execute(sa.text("SELECT 1 FROM pg_database WHERE datname = :n"), {"n": target}).scalar():
-                conn.execute(sa.text(f'CREATE DATABASE "{target}"'))
-    finally:
-        admin.dispose()
-    return parsed.set(database=target).render_as_string(hide_password=False)
+    """``CBOM_TEST_PG_URL`` through the shared guard (review 6065677758 n1): never a database without "test"."""
+    from backend.tests.support.pg_test_db import cbom_test_pg_url
+
+    return cbom_test_pg_url()
 
 
 @pytest.fixture()
@@ -389,7 +376,8 @@ def test_q110_makes_three_attempts_against_a_held_transaction(pg):
         holder.close()
     # 3f3107f4: [create, drop, drop] and raised after the first build attempt (the start-of-attempt drop escaped)
     assert calls == ["create_index", "drop_index", "drop_index", "drop_index"]
-    assert 9 <= took < 20  # 4 waits of 2 s + 2 pauses of 1 s (the README's 4 x 60 + 2 x 10 at full scale)
+    # 3 waits of 2 s + 2 pauses of 1 s + the 2 s cleanup drop (the README's 3 x 60 + 2 x 10 + 2 at full scale)
+    assert 9 <= took < 20
 
 
 def test_q110_retries_until_the_transaction_ends_and_leaves_a_valid_index(pg):

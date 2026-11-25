@@ -19,8 +19,8 @@ asset in a write without hooks (its register row is still there: ``estate backfi
 No ``q0_closed`` event is written by the migration.
 
 Runbook: the CONCURRENTLY build waits for every transaction older than it; each step of an attempt (dropping an
-INVALID index left before, building) waits at most ``LOCK_TIMEOUT`` (60 s), three attempts, then one cleanup drop:
-4 x 60 s + 2 x 10 s = 260 s in the worst case. If the ``migrate`` one-shot fails on it, end the idle-in-transaction sessions
+INVALID index left before, building) waits at most ``LOCK_TIMEOUT`` (60 s), three attempts, then one cleanup drop
+(CONCURRENTLY, at most 2 s; PR #499 review 6065677758 m1): 3 x 60 s + 2 x 10 s + 2 s = 202 s in the worst case. If the ``migrate`` one-shot fails on it, end the idle-in-transaction sessions
 (``pg_stat_activity``) and run the deploy again (deploy/staging/README.md, "Migrations that build an index
 CONCURRENTLY").
 
@@ -44,6 +44,7 @@ COLUMNS = ['team_id', 'asset_key', 'kind', 'scan_id', 'component']
 ATTEMPTS = 3
 LOCK_TIMEOUT = '60s'  # per build attempt: how long it may wait for older transactions
 RETRY_SECONDS = 10
+CLEANUP_LOCK_TIMEOUT = '2s'  # the last cleanup drop only: it gives up fast and leaves the index to the next run
 
 
 def _pg() -> bool:
@@ -124,13 +125,16 @@ def build_concurrently(bind) -> None:
     timeout or duplicate in ANY of those steps fails that attempt only (PR #499 review 6064356833 m2: the drop at the
     start of an attempt used to raise out of the loop, so a held transaction got one build attempt, not three), and
     the next one starts after ``RETRY_SECONDS``, ``ATTEMPTS`` times. After the last failure the INVALID index is
-    dropped (non-concurrently, still under ``lock_timeout``: it succeeds as soon as nothing holds a lock on the table,
-    so a transaction that only kept an old snapshot leaves no INVALID index) and the error is raised (runbook:
-    deploy/staging/README.md "Migrations that build an index CONCURRENTLY").
+    dropped CONCURRENTLY under ``CLEANUP_LOCK_TIMEOUT`` (2 s, PR #499 review 6065677758 m1: the plain drop it was
+    queued an ACCESS EXCLUSIVE lock for up to 60 s, and every reader and writer of the table waited behind it while
+    the old release still serves; a ``DROP INDEX CONCURRENTLY`` waits for the table's lock holders only, never blocks
+    them, and a transaction that only kept an old snapshot does not stop it, so no INVALID index is left then); when
+    it cannot get its lock it is logged and the index left for the next run, which drops it first.  Then the error is
+    raised (runbook: deploy/staging/README.md "Migrations that build an index CONCURRENTLY").
 
     Worst case with a transaction that holds the table and stays open: attempt 1 waits ``LOCK_TIMEOUT`` (60 s) to
     build; attempts 2 and 3 each wait ``LOCK_TIMEOUT`` to drop the INVALID index it left; two ``RETRY_SECONDS`` (10 s)
-    pauses; one final cleanup wait: 4 x 60 + 2 x 10 = 260 s, about 4.5 minutes."""
+    pauses; one final cleanup wait of ``CLEANUP_LOCK_TIMEOUT`` (2 s): 3 x 60 + 2 x 10 + 2 = 202 s, about 3.5 minutes."""
     import time
 
     bind.execute(sa.text("SELECT set_config('lock_timeout', :value, false)"), {"value": LOCK_TIMEOUT})
@@ -150,10 +154,18 @@ def build_concurrently(bind) -> None:
                 failure = exc
                 if attempt < ATTEMPTS:
                     time.sleep(RETRY_SECONDS)
-        try:  # leave no INVALID index when the table is free to drop it
-            _drop_invalid(bind, concurrently=False)
-        except sa.exc.OperationalError:
-            pass  # still held: the next run drops it first
+        # leave no INVALID index when the table is free (PR #499 review 6065677758 m1): CONCURRENTLY, so it never
+        # queues an ACCESS EXCLUSIVE lock that every reader and writer of cbomestatelink would wait behind while the
+        # old release still serves, and under a short lock_timeout of its own; held: logged, the next run drops it
+        bind.execute(sa.text("SELECT set_config('lock_timeout', :value, false)"), {"value": CLEANUP_LOCK_TIMEOUT})
+        try:
+            _drop_invalid(bind)
+        except sa.exc.OperationalError as exc:
+            import logging
+
+            logging.getLogger('alembic.runtime.migration').warning(
+                "q110linkuq001: cleanup drop of the INVALID index %s gave up after %s (%s); the next run drops it "
+                "first", NAME, CLEANUP_LOCK_TIMEOUT, type(exc.orig).__name__ if exc.orig is not None else 'error')
         assert failure is not None
         raise failure
     finally:

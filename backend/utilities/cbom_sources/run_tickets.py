@@ -213,9 +213,10 @@ def _error_kind(exc: BaseException) -> str:
 _M = CbomRemediationAssignment
 
 
-def _ensure_row(session: Session, team_id: int, item: dict[str, Any], user_id: int, now: _dt.datetime) -> None:
+def _ensure_row(session: Session, team_id: int, item: dict[str, Any], user_id: int, now: _dt.datetime) -> bool:
     """The asset's assignment row exists (committed by the caller); a concurrent insert by ``waves.upsert`` or another
-    ticket request is fine (``ON CONFLICT DO NOTHING``)."""
+    ticket request is fine (``ON CONFLICT DO NOTHING``).  True when this call inserted it (a blank record: status
+    "open", no plan, no ticket), so a released claim deletes it again (review 6065677758 M1)."""
     values = {"team_id": team_id, "asset_key": item["asset_key"], "scope": "node",
               "source_ref": str(item["source_ref"])[:255], "label": str(item.get("label") or "")[:255] or None,
               "status": "open", "row_version": 1, "updated_by_user_id": user_id, "created_at": now,
@@ -223,31 +224,33 @@ def _ensure_row(session: Session, team_id: int, item: dict[str, Any], user_id: i
     dialect = session.get_bind().dialect.name
     if dialect in ("postgresql", "sqlite"):
         mod = pg_dialect if dialect == "postgresql" else sqlite_dialect
-        session.exec(mod.insert(_M).values(**values)  # type: ignore[call-overload]
-                     .on_conflict_do_nothing(index_elements=["team_id", "asset_key"]))
-        return
+        result = session.exec(mod.insert(_M).values(**values)  # type: ignore[call-overload]
+                              .on_conflict_do_nothing(index_elements=["team_id", "asset_key"]))
+        return bool(result.rowcount)
     try:  # other dialects: the unique key decides
         with session.begin_nested():
             session.exec(_M.__table__.insert().values(**values))  # type: ignore[attr-defined,call-overload]
+        return True
     except IntegrityError:
-        pass
+        return False
 
 
 def _claim(engine, team_id: int, item: dict[str, Any], user_id: int, now: _dt.datetime
-           ) -> tuple[str, str | None, bool, CbomRemediationAssignment | None]:
-    """Short committed transaction. Returns (outcome, claim id, search_first, row): outcome ``existing`` (a ticket is
-    stored), ``busy`` (another request holds a live claim) or ``claimed`` (ours; ``search_first`` when we took over a
-    stale claim, whose Jira call may have created the issue)."""
+           ) -> tuple[str, str | None, bool, CbomRemediationAssignment | None, bool]:
+    """Short committed transaction. Returns (outcome, claim id, search_first, row, inserted): outcome ``existing`` (a
+    ticket is stored), ``busy`` (another request holds a live claim) or ``claimed`` (ours; ``search_first`` when we
+    took over a stale claim, whose Jira call may have created the issue); ``inserted``: this claim created the record
+    (``_finish(release=True)`` deletes it again)."""
     with Session(engine) as session:
-        _ensure_row(session, team_id, item, user_id, now)
+        inserted = _ensure_row(session, team_id, item, user_id, now)
         session.commit()
         for _attempt in range(3):
             row = session.exec(select(_M).where(_M.team_id == team_id, _M.asset_key == item["asset_key"])).one()
             if row.ticket_key:
-                return "existing", None, False, row
+                return "existing", None, False, row, inserted
             stale = row.ticket_claimed_at is None or row.ticket_claimed_at < now - CLAIM_TTL
             if row.ticket_state == "claimed" and not stale:
-                return "busy", None, False, row
+                return "busy", None, False, row, inserted
             claim = uuid.uuid4().hex
             previous, was_claimed = row.ticket_claim, row.ticket_state == "claimed"  # read before the commit expires row
             won = session.exec(update(_M).where(  # type: ignore[call-overload]
@@ -258,23 +261,42 @@ def _claim(engine, team_id: int, item: dict[str, Any], user_id: int, now: _dt.da
                 .execution_options(synchronize_session=False)).rowcount
             session.commit()
             if won == 1:
-                return "claimed", claim, was_claimed, None
+                return "claimed", claim, was_claimed, None, inserted
             session.expire_all()  # someone changed the row between the read and the claim: read again
-        return "busy", None, False, None
+        return "busy", None, False, None, inserted
 
 
 def _finish(engine, team_id: int, asset_key: str, claim: str, user_id: int, *, key: str | None = None,
-            url: str | None = None, release: bool = False) -> CbomRemediationAssignment | None:
+            url: str | None = None, release: bool = False, inserted: bool = False) -> CbomRemediationAssignment | None:
     """Short transaction: store the key (or release the claim) only while the claim is still ours. Returns the row
-    as stored when the claim was no longer ours."""
+    as stored when the claim was no longer ours.
+
+    A release puts the record back as it was before the claim (review 6065677758 M1, P10b): the record the claim
+    inserted (``inserted``) is deleted while it is still blank and ours (a plan a user wrote meanwhile keeps it, and
+    only the claim is cleared); a record that existed keeps its ``last_updated`` and author (the claim never changed
+    them).  A blank record left behind was the newest one, so it used to hide an older plan, and q111 wrote it to the
+    group key."""
     now = _utcnow()
-    values: dict[str, Any] = {"row_version": _M.row_version + 1, "last_updated": now, "updated_by_user_id": user_id}
+    values: dict[str, Any] = {"row_version": _M.row_version + 1}
     if key is not None:
         values.update(ticket_key=key[:64], ticket_url=(url or "")[:512] or None, ticket_state="created",
-                      ticket_claim=None, ticket_claimed_at=None)
+                      ticket_claim=None, ticket_claimed_at=None, last_updated=now, updated_by_user_id=user_id)
     elif release:
         values.update(ticket_state=None, ticket_claim=None, ticket_claimed_at=None)
+    else:
+        values.update(last_updated=now, updated_by_user_id=user_id)
     with Session(engine) as session:
+        if release and inserted:
+            from sqlalchemy import delete
+
+            gone = session.exec(delete(_M).where(  # type: ignore[call-overload]
+                _M.team_id == team_id, _M.asset_key == asset_key, _M.ticket_claim == claim,
+                _M.ticket_key.is_(None), _M.status == "open", _M.wave.is_(None),  # type: ignore[union-attr]
+                _M.owner.is_(None), _M.target_date.is_(None), _M.note.is_(None))  # type: ignore[union-attr]
+                .execution_options(synchronize_session=False)).rowcount
+            if gone == 1:
+                session.commit()
+                return None
         won = session.exec(update(_M).where(  # type: ignore[call-overload]
             _M.team_id == team_id, _M.asset_key == asset_key, _M.ticket_claim == claim)
             .values(**values).execution_options(synchronize_session=False)).rowcount
@@ -287,7 +309,15 @@ def _finish(engine, team_id: int, asset_key: str, claim: str, user_id: int, *, k
 def resource_label(group_key: str, salt: str | None) -> str:
     """The Jira label of a resource: from its team-scoped group key and the team's own random salt in this deployment
     (``cbomcollectionsettings.aws_external_id``, generated per team per environment), so two teams, or staging and
-    production on one Jira site, never share a label (review 6064356833 M1).  The salt is hashed, never printed."""
+    production on one Jira site, never share a label (review 6064356833 M1).  The salt is hashed, never printed.
+
+    The salt and its fallback (review 6065677758 n3): ``aws_external_id`` is generated once per team, in
+    ``get_or_create_settings``, and no code path rotates it.  Were the team's settings row ever recreated, this label
+    would change, and a search for an issue made before (only when a stale claim is taken over: the stored
+    ``ticket_key`` is checked first and is what prevents a second issue) would not find it under the new label; it
+    still reads the labels of the resource's own, write and alias keys (``_jira_issue``), which issues made before
+    the group key carry.  No previous-salt label is tried: the old salt is gone with the row.  A change that rotates
+    the salt must keep the old value and add ``resource_label(group_key, old_salt)`` to that search."""
     return label_for(ID.stable_key("jira", str(salt or ""), group_key))
 
 
@@ -368,7 +398,7 @@ def create_tickets(engine, team_id: int, user_id: int, run_id: int, body: Ticket
             out["existing"].append(ref(asset_id, item, held.get("ticket_key"), held.get("ticket_url")))
             continue
         try:
-            outcome, claim, search_first, row = _claim(engine, team_id, item, user_id, _utcnow())
+            outcome, claim, search_first, row, inserted = _claim(engine, team_id, item, user_id, _utcnow())
         except Exception as exc:  # noqa: BLE001 - one asset's failure never loses the others
             log("run ticket FAILED", team=team_id, run=run_id, asset=asset_id, step="claim", error=_error_kind(exc))
             out["failed"].append({"asset_id": asset_id, "asset_key": item["asset_key"], "error": GENERIC_ERROR})
@@ -386,7 +416,7 @@ def create_tickets(engine, team_id: int, user_id: int, run_id: int, body: Ticket
             uncertain = getattr(exc, "kind", None) in ("timeout", "http_5xx")
             if not uncertain:  # nothing was created: let the next request try at once
                 try:
-                    _finish(engine, team_id, item["asset_key"], claim, user_id, release=True)
+                    _finish(engine, team_id, item["asset_key"], claim, user_id, release=True, inserted=inserted)
                 except Exception as release_exc:  # noqa: BLE001
                     log("run ticket release FAILED", team=team_id, asset=asset_id, error=_error_kind(release_exc))
             log("run ticket FAILED", team=team_id, run=run_id, asset=asset_id, step="jira", error=_error_kind(exc),

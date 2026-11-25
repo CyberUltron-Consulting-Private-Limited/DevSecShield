@@ -17,12 +17,14 @@ What it does, per team (one savepoint each, like ``identity_migration.migrate_al
    key is placed;
 3. per group key, ``remediation_group.resolve`` over the copies picks, field by field, the record whose PLAN is shown
    (the most recently updated one that holds a plan) and the one whose TICKET is shown: the precedence every surface
-   already shows (review 6064356833 M2); a second ticket key is a conflict, logged with the key not shown;
+   already shows (review 6064356833 M2); a second ticket key is a conflict, logged with the key not shown.  A blank
+   record (status "open", no wave, owner, due date or note: a released ticket claim's leftover) is not a plan (review
+   6065677758 M1, R4): it is never copied, and a group of blank records only gets no group record (``blank``);
 4. no record on the group key yet: one is INSERTED with the plan record's plan (wave, owner, target date, status,
    note, done time, created time, so time-to-remediate is kept) and the ticket holder's ticket, and
    ``source_ref = "group-backfill:<plan key>[|<ticket key>]"``.  A record whose rows were all purged is left where it
-   is and counted ``unplaced`` (logged).  A record already on the group key is the primary
-   (``resolve``'s first rule) and is left as it is, except that a ticket a copy holds is filled in when it has none.
+   is and counted ``unplaced`` (logged).  A record already on the group key keeps its plan; a ticket a copy holds is
+   filled in when it has none, and a copy's plan when it is blank (``plans_filled``).
 
 Nothing is lost or duplicated: the originals are kept unchanged (an older release still reads them), the group record
 is the one every surface shows (it is what they already showed: the same primary), the Jira issue is the same one
@@ -121,31 +123,46 @@ def backfill_team(session: Any, team_id: int) -> dict[str, int]:
         if group and group != own:
             groups.setdefault(group, []).append(own)
     unplaced = sorted(k for k in wanted if k not in placed and k not in on_group)
-    out = {"groups": len(groups), "inserted": 0, "tickets_filled": 0, "kept": 0, "unplaced": len(unplaced),
-           "ticket_conflicts": 0}
+    out = {"groups": len(groups), "inserted": 0, "tickets_filled": 0, "plans_filled": 0, "kept": 0, "blank": 0,
+           "unplaced": len(unplaced), "ticket_conflicts": 0}
     if unplaced:  # their rows are gone: they stay where they are, reachable only if the same source reads them again
         log("cbom remediation group backfill unplaced", team=team_id, count=len(unplaced),
             keys=",".join(k[:12] for k in unplaced[:50]))
     for group, members in sorted(groups.items()):
         resolved = RG.resolve(found, [group], members, sorted(members)[0])
-        plan, ticket = resolved.assignment, resolved.ticket
+        # a blank record (status "open", nothing planned: a released ticket claim's leftover) is not a plan (review
+        # 6065677758 M1, R4): it is never copied, and never hides a real plan
+        plan = resolved.assignment if RG.has_plan(resolved.assignment) else None
+        ticket = resolved.ticket
         if resolved.conflicts:  # two Jira issues for one resource (made before this rule): name the one not shown
             out["ticket_conflicts"] += 1
             log("cbom remediation group backfill ticket conflict", team=team_id, group=group[:12],
                 shown=resolved.ticket_key, not_shown=",".join(resolved.conflicts))
         held = found.get(group)
-        if held is not None:  # a record on the group key already: fill a missing ticket only, never its plan
+        if held is not None:  # a record on the group key already: fill what it lacks, never replace its plan
+            filled = False
             if not held.ticket_key and ticket is not None and ticket is not held:
                 for name in RG.TICKET_FIELDS:
                     setattr(held, name, getattr(ticket, name))
+                out["tickets_filled"] += 1
+                filled = True
+            if not RG.has_plan(held) and plan is not None and plan is not held:
+                # a blank record on the group key (a claim an earlier build of this branch left): the copy's plan
+                for name in RG.PLAN_FIELDS:
+                    setattr(held, name, getattr(plan, name))
+                held.last_updated = plan.last_updated
+                out["plans_filled"] += 1
+                filled = True
+            if filled:
                 held.row_version = int(held.row_version or 1) + 1
                 session.add(held)
-                out["tickets_filled"] += 1
             else:
                 out["kept"] += 1
             continue
-        if plan is None:
+        if plan is None and ticket is None:  # only blank records: nothing to move, none is written (R4)
+            out["blank"] += 1
             continue
+        plan = plan if plan is not None else ticket  # a ticket-only resource: its ticket, no plan
         # field by field (review 6064356833 M2): the plan from the record that holds one, the ticket from the ticket
         # holder; both origins named, so the downgrade writes each part back to where it came from
         origin = plan.asset_key + (f"|{ticket.asset_key}" if ticket is not None and ticket is not plan else "")

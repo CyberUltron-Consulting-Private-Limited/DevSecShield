@@ -6,9 +6,11 @@ Create Date: 2026-11-25 19:30:00.000000
 
 A resource two sources read (two IAM roles on one account) now has one remediation key, its group key
 (``remediation_group.group_key``), whichever source's row a view shows. Plans and Jira tickets stored before that
-sit on one source's own key. Upgrade: ``remediation_backfill.backfill_all`` copies each such resource's plan (the
-primary ``remediation_group.resolve`` picks: the copy holding a ticket, else the first by key order) to its group
-key, with the ticket holder's ticket. The originals are kept. Idempotent; each team in its own savepoint.
+sit on one source's own key. Upgrade: ``remediation_backfill.backfill_all`` copies each such resource's plan to its
+group key, merged field by field as ``remediation_group.resolve`` shows it: the plan of the most recently updated
+record that holds one, the ticket of the ticket holder. A blank record (status "open", no wave, owner, due date or
+note: a released ticket claim's leftover) is not a plan and is never written to a group key (PR #499 review
+6065677758 M1). The originals are kept. Idempotent; each team in its own savepoint.
 
 Downgrade: every record the upgrade inserted writes its current plan and ticket back to the original it was copied
 from, and is deleted.
