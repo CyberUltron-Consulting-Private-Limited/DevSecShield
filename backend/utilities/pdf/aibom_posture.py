@@ -64,8 +64,31 @@ def current_scores(scores: Any) -> Any:
     module = engine_posture()
     score = module.posture_score(*(int(counts[k]) for k in keys))
     grade, band = module.posture_grade(score)
-    return {**scores, "risk_normalized": float(score), "risk_grade": grade, "risk_band": band,
-            "risk_label": module.posture_label(band)}
+    out = {**scores, "risk_normalized": float(score), "risk_grade": grade, "risk_band": band,
+           "risk_label": module.posture_label(band)}
+    if scores.get("completeness") == "partial":
+        # a scanner did not finish: the grade stays withheld (review 6063080163 of #498, R4-M2)
+        out.update(risk_grade=GRADE_WITHHELD, risk_label=WITHHELD_LABEL)
+    return out
+
+
+GRADE_WITHHELD = "—"
+WITHHELD_LABEL = "Grade withheld: scan incomplete"
+
+
+def scan_completeness(bom: Any) -> dict | None:
+    """``{status: "partial", scanner_errors, notebooks_unreadable}`` from an AI BOM's metadata properties when the
+    scan did not read everything, else None (review 6063080163 of #498, R4-M2): the page, the PDF and the dashboard
+    say so instead of presenting a complete inventory."""
+    meta = bom.get("metadata") if isinstance(bom, dict) else None
+    props = {str(p.get("name")): str(p.get("value")) for p in (meta or {}).get("properties") or []
+             if isinstance(p, dict)}
+    errors = props.get("aibom:scanner_errors")
+    notebooks = props.get("aibom:notebooks_unreadable")
+    if not errors and not notebooks:
+        return None
+    return {"status": "partial" if errors else "complete_with_warnings", "scanner_errors": errors,
+            "notebooks_unreadable": notebooks}
 
 
 __all__ = ["current_scores", "engine_posture", "posture_risk"]

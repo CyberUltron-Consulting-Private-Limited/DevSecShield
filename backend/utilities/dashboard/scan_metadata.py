@@ -434,6 +434,10 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan, regulatory_profile: dic
         from backend.utilities.compliance.aibom_applicability import page_view
 
         ai_bom_applicability = page_view(ai_bom_compliance, regulatory_profile)
+        # scanners that did not finish / notebooks read as raw text (review 6063080163 of #498, R4-M2)
+        from backend.utilities.pdf.aibom_posture import scan_completeness
+
+        ai_bom_completeness = scan_completeness(ai_bom_json)
         rbi_csf_rollup = None
         certin_posture = None
         if ai_bom_compliance:
@@ -465,6 +469,7 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan, regulatory_profile: dic
             "ai_bom_graph_expanded": ai_bom_graph_expanded,
             "ai_bom_scores": ai_bom_scores,
             "ai_bom_applicability": ai_bom_applicability,
+            "ai_bom_completeness": ai_bom_completeness,
             "ai_bom_spdx": ai_bom_spdx,
             "ai_bom_sarif": ai_bom_sarif,
             "rbi_csf_rollup": rbi_csf_rollup,

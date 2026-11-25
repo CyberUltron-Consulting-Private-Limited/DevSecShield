@@ -102,7 +102,13 @@ import {
   type Graph as AiBomGraph,
   type Scores as AiBomScores,
 } from "@/components/ai-bom/AiBomVisualizations";
-import { licenceLabel, unnamedModelHint, type AiBomApplicability } from "@/components/ai-bom/aibomDisplay";
+import {
+  completenessNotice,
+  licenceLabel,
+  unnamedModelHint,
+  type AiBomApplicability,
+  type AiBomCompleteness,
+} from "@/components/ai-bom/aibomDisplay";
 import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRollup";
 import { CertInLanePosture } from "@/components/certin/CertInLanePosture";
 import { type CertInRollupData } from "@/components/certin/certinShared";
@@ -838,12 +844,25 @@ export default function AiBomResults({
           {/* Dashboard Summary */}
           {dashboard && cardData && (
             <div className="space-y-6">
+              {/* Scan completeness: a scanner that did not finish withholds the grade (review 6063080163, R4-M2) */}
+              {completenessNotice(meta?.ai_bom_completeness as AiBomCompleteness | undefined) && (
+                <div
+                  role="status"
+                  data-testid="aibom-completeness-notice"
+                  className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200"
+                >
+                  {completenessNotice(meta?.ai_bom_completeness as AiBomCompleteness | undefined)}
+                </div>
+              )}
               {/* Summary Cards */}
               {/* eight per row only from 2xl (1536 px): at 1366 the sidebar leaves ~120 px a tile and labels were cut
                   ("Unlicense…", "Governanc…"; staging QA round 2, N3) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8 gap-4" data-testid="aibom-summary-tiles">
                 {[
-                  { label: "AI Assets", value: cardData.total_ai_assets, icon: Bot, color: "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400" },
+                  { label: "AI Assets", value: cardData.total_ai_assets, icon: Bot, color: "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400",
+                    // a partial scan's inventory may be short (R4-M2)
+                    hint: (meta?.ai_bom_completeness as AiBomCompleteness | undefined)?.status === "partial" ? "Partial: scan incomplete" : undefined,
+                    testId: "aibom-partial-hint" },
                   { label: "Models", value: cardData.total_models, icon: Bot, color: "bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400",
                     // ChatOpenAI() with no model runs the library default: said, never a silent 0 (#498 round 3)
                     hint: unnamedModelHint(meta?.ai_bom_json as Record<string, unknown> | undefined, {

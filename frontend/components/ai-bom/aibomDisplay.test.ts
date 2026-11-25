@@ -11,6 +11,7 @@ import {
   isHealthcareBom,
   licenceLabel,
   unnamedModelHint,
+  completenessNotice,
 } from "./aibomDisplay";
 import { inventoryModelNames } from "./modelCardDisplay";
 
@@ -102,5 +103,12 @@ assert.equal(
 );
 assert.equal(unnamedModelHint(PLAIN_BOM), null);
 assert.equal(unnamedModelHint(undefined), null);
+
+// review 6063080163 R4-M2: a scanner that did not finish is said, and the grade withheld
+assert.equal(completenessNotice(null), null);
+assert.equal(
+  completenessNotice({ status: "partial", scanner_errors: "model-ref: RuntimeError (unexpected)", notebooks_unreadable: "a.ipynb" }),
+  "Scan incomplete: grade withheld. Did not finish: model-ref: RuntimeError (unexpected). Notebooks read as raw text (not valid notebooks): a.ipynb.",
+);
 
 console.log("aibomDisplay tests passed");

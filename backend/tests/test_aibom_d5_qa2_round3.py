@@ -125,3 +125,29 @@ def test_unidentified_models_count_the_same_on_the_list_the_scan_and_the_team_vi
     cards = team.get("card_data", team)
     # gpt-4o is one model across both scans; each scan's unidentified ChatOpenAI stays its own
     assert (cards["total_models"], cards["total_unidentified_models"]) == (3, 2)
+
+
+def test_a_partial_scan_is_said_on_the_page_and_the_pdf_and_withholds_the_grade(page, tmp_path, monkeypatch):
+    """Review 6063080163 of #498, R4-M2: a scanner that did not finish (and notebooks read as raw text) reach the
+    results page (ai_bom_completeness) and the PDF ("Scan completeness"), and no clean grade is given."""
+    import json as _json
+
+    http, _engine, _team, get = page
+    payload = _repo(tmp_path, {
+        "app.py": "from openai import OpenAI\nc = OpenAI()\nr = c.chat.completions.create(model=\"gpt-4o\", messages=[])\n",
+        "bad.ipynb": '{"cells": {"a": 1}}',
+    })
+    props = payload["ai_bom_json"]["metadata"]["properties"]
+    props.append({"name": "aibom:scanner_errors", "value": "model-ref: KeyError (unexpected)"})
+    payload["ai_bom_scores"] = {**payload["ai_bom_scores"], "completeness": "partial"}
+    body, base = get(payload)
+    meta = body["scan_metadata"]
+    assert meta["ai_bom_completeness"] == {"status": "partial", "scanner_errors": "model-ref: KeyError (unexpected)",
+                                           "notebooks_unreadable": "bad.ipynb"}
+    assert (meta["ai_bom_scores"]["risk_grade"], meta["ai_bom_scores"]["risk_label"]) == (
+        "—", "Grade withheld: scan incomplete")
+    text = PROFILE._pdf_text(http.get(f"{base}/export", headers=AUTH).content)
+    assert "Scan completeness Partial: grade withheld. Did not finish: model-ref: KeyError (unexpected)" in text
+    assert "Notebooks read as raw text (not valid notebooks) bad.ipynb" in text
+    assert "Grade withheld: scan incomplete" in text
+    assert _json.dumps(meta).count("Low risk") == 0

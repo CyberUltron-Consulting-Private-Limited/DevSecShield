@@ -2645,6 +2645,8 @@ export interface AiBomScanMetadata {
     binding?: string[]
     not_applicable?: { framework: string; label: string }[]
   } | null
+  /** Scanners that did not finish / notebooks read as raw text (backend aibom_posture.scan_completeness) */
+  ai_bom_completeness?: { status?: string; scanner_errors?: string | null; notebooks_unreadable?: string | null } | null
   ai_bom_spdx?: Record<string, unknown>
   ai_bom_sarif?: Record<string, unknown>
   rbi_csf_rollup?: Record<string, unknown> | null

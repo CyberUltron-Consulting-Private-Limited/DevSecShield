@@ -21,6 +21,7 @@ from backend.utilities.dashboard.aibom_provider import resolve_aibom_provider
 from backend.utilities.dashboard.rbi_posture import build_rbi_csf_rollup
 from backend.utilities.dashboard.risk_scale import average_risk_of
 from backend.utilities.pdf.report_context import ReportContext, details_note, join_parts
+from backend.utilities.pdf import aibom_posture as AIBOM_POSTURE
 from backend.utilities.pdf.report_branding import (
     report_generated,
     append_report_masthead,
@@ -171,9 +172,10 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
             )
         )
 
+    scope_payload = raw if raw else (scan_results if isinstance(scan_results, dict) else {})
     scope_rows = [
         ("Average risk score (0–10)", f"{avg_risk:.1f}"),
-        *_bom_scope_rows(raw if raw else (scan_results if isinstance(scan_results, dict) else {})),
+        *_bom_scope_rows(scope_payload),
     ]
 
     overview = [
@@ -212,7 +214,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         project_name="AI BOM Findings",
         scan_time=format_scan_duration(duration),
         # the grade never claims a worse posture than the worst severity found (same formula as the engine's score)
-        risk_score_fn=compute_posture_risk_score,
+        risk_score_fn=_withheld(compute_posture_risk_score, scope_payload),
         meta_chips=[
             ("Scan type", "AI BOM"),
             ("Total assets", str(total)),
@@ -345,6 +347,12 @@ def _bom_scope_rows(payload: Any) -> List[tuple]:
             rows.append(("Model weight files", str(kinds.count("weights"))))
         rows.append(("AI services and endpoints", str(len(bom.get("services") or []))))
     props = _bom_props(payload)
+    # Scan completeness first: a scanner that did not finish, or notebooks read as raw text (R4-M2)
+    if props.get("aibom:scanner_errors"):
+        rows.insert(0, ("Scan completeness", "Partial: grade withheld. Did not finish: "
+                        + props["aibom:scanner_errors"]))
+    if props.get("aibom:notebooks_unreadable"):
+        rows.append(("Notebooks read as raw text (not valid notebooks)", props["aibom:notebooks_unreadable"]))
     coverage = props.get("aibom:licence_coverage", "")
     if "/" in coverage:  # unknown licences stated in aggregate (review 6037909737 of #498, M7)
         resolved, _, total = coverage.partition("/")
@@ -359,6 +367,19 @@ def _bom_scope_rows(payload: Any) -> List[tuple]:
         if props.get(key):
             rows.append((label, props[key]))
     return rows
+
+
+def _withheld(score_fn: Any, payload: Any) -> Any:
+    """The headline grade function, withholding the grade when a scanner did not finish (review 6063080163 of #498,
+    R4-M2): the score is printed as provisional and the grade cell reads "—", never a clean A."""
+    if not (_bom_props(payload).get("aibom:scanner_errors")):
+        return score_fn
+
+    def fn(critical: int, high: int, medium: int, low: int) -> tuple:
+        score, _grade, _band = score_fn(critical, high, medium, low)
+        return score, AIBOM_POSTURE.GRADE_WITHHELD, AIBOM_POSTURE.WITHHELD_LABEL
+
+    return fn
 
 
 def _model_props(comp: dict) -> Dict[str, str]:

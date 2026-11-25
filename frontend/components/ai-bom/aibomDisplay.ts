@@ -93,6 +93,27 @@ export function unnamedModelHint(
   return `${calls}: library default or configuration${library ? ` (${library})` : ""}`;
 }
 
+/** The server's ``ai_bom_completeness`` (backend aibom_posture.scan_completeness): scanners that did not finish and
+ * notebooks read as raw text (review 6063080163 of #498, R4-M2). */
+export type AiBomCompleteness = {
+  status?: string;
+  scanner_errors?: string | null;
+  notebooks_unreadable?: string | null;
+};
+
+/** The warning banner over the tiles; null when the scan read everything. A partial scan withholds the grade. */
+export function completenessNotice(c: AiBomCompleteness | null | undefined): string | null {
+  if (!c) return null;
+  const parts: string[] = [];
+  if (c.scanner_errors) {
+    parts.push(`Scan incomplete: grade withheld. Did not finish: ${c.scanner_errors}.`);
+  }
+  if (c.notebooks_unreadable) {
+    parts.push(`Notebooks read as raw text (not valid notebooks): ${c.notebooks_unreadable}.`);
+  }
+  return parts.length ? parts.join(" ") : null;
+}
+
 const MAX_LABEL = 24;
 
 /** A short label for a licence id (at most ``max`` characters); the full id belongs in the tooltip / title. */
