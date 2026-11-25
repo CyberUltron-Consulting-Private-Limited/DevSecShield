@@ -803,7 +803,8 @@ F = os.environ["FAKE_DIR"]; a = sys.argv[1:]; P = os.environ["CHOLA_IMAGE_PREFIX
 open(F + "/docker.log", "a").write("docker " + " ".join(a) + "\n")
 st = json.load(open(F + "/state.json"))
 def save(): json.dump(st, open(F + "/state.json", "w"))
-if a[0] in ("info", "ps", "rm") or a[:2] in (["image", "inspect"], ["image", "ls"]): sys.exit(0)
+if st.get("absent") and (a[:2] == ["image", "inspect"] or a[0] == "pull") and a[-1].endswith(":" + st["absent"]): sys.exit(1)
+if a[0] in ("info", "ps", "rm", "pull") or a[:2] in (["image", "inspect"], ["image", "ls"]): sys.exit(0)
 if a[0] == "run":  # alembic_offline: run --rm --network none --entrypoint PY IMAGE -m alembic --config INI <cmd>
     i = a.index("-m"); tag = a[i - 1].rsplit(":", 1)[1]; cmd = a[i + 4:]
     if cmd[0] == "heads": print(st["heads"][tag] + " (head)")
@@ -3091,7 +3092,7 @@ def test_deploy_from_run_relays_through_s3_with_no_local_copy(fake_world, ci_run
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
 @pytest.mark.parametrize("env, words", [
-    ({"FAKE_JOB_RC": "1"}, "keeps them until the next relay overwrites them"),
+    ({"FAKE_JOB_RC": "1"}, "are deleted on exit"),
     ({"FAKE_S3_CP": "deny"}, "relaying artifact chola-image-backend to s3://devsecshield-storage/releases/"),
 ])
 def test_relay_failures_stop_before_anything_starts(fake_world, ci_run, env, words):
@@ -3099,7 +3100,22 @@ def test_relay_failures_stop_before_anything_starts(fake_world, ci_run, env, wor
     assert proc.returncode == 1 and words in proc.stderr, proc.stderr[-2000:]
     log = fake_world.log()
     assert "job-start deploy" not in log and "start-backup-job" not in log and "remote.sh render" not in log
-    assert not (fake_world.dir / "s3del.log").exists()  # kept for a look; overwritten by the next relay
+    # review 6058312786 N2: what this relay put (or began to put) under releases/<sha12>/ goes on exit too
+    tag = ci_run.sha[:12]
+    deleted = (fake_world.dir / "s3del.log").read_text().split()
+    assert deleted and all(k.startswith(f"releases/{tag}/") for k in deleted)
+    if "FAKE_S3_CP" in env:
+        assert deleted == [f"releases/{tag}/chola-image-backend.zip"]
+    else:
+        assert len(deleted) == 5
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
+def test_relay_objects_stay_while_a_load_job_may_still_run(fake_world, ci_run):
+    # the tunnel drops while following relay-load (the fake's first job-follow fails) and is given up at once
+    proc = fake_world("images", "--sha", ci_run.sha, "--from-run", "42", CHOLA_SSH_RETRIES="1")
+    assert proc.returncode == 1
+    assert not (fake_world.dir / "s3del.log").exists() and "may still be loading from s3://" in proc.stderr, proc.stderr
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
@@ -3144,18 +3160,30 @@ if a == ["load"]:
     desc = json.loads(rd("index.json"))["manifests"][0]
     man = json.loads(rd("blobs/sha256/" + desc["digest"][7:]))
     cfg = json.loads(rd("blobs/sha256/" + man["config"]["digest"][7:]))
-    name = (desc.get("annotations") or {}).get("io.containerd.image.name")
+    if os.environ.get("FAKE_STORE") == "graphdriver":  # overlay2: only a docker-save manifest.json names images
+        names = t.getnames()
+        if "manifest.json" not in names: print("open manifest.json: no such file", file=sys.stderr); sys.exit(1)
+        save = json.loads(rd("manifest.json"))[0]
+        assert all(x in names for x in [save["Config"]] + save["Layers"]), save
+        cfg = json.loads(rd(save["Config"]))
+        name = save["RepoTags"][0]
+    else:
+        name = (desc.get("annotations") or {}).get("io.containerd.image.name")
     if name and not os.environ.get("FAKE_LOAD_UNNAMED"):
         st[name] = {"os": cfg["os"], "arch": cfg["architecture"],
                     "rev": os.environ.get("FAKE_LOAD_REV") or cfg["config"]["Labels"].get("org.opencontainers.image.revision", ""),
                     "id": man["config"]["digest"]}
         print("Loaded image: " + name)
     json.dump(st, open(st_path, "w")); sys.exit(0)
+if a[:2] == ["image", "rm"]:
+    st.pop(a[-1], None); json.dump(st, open(st_path, "w")); sys.exit(0)
 if a[:2] == ["image", "inspect"]:
     ref = a[-1]
     if ref not in st: sys.exit(1)
     i = st[ref]
-    if "-f" in a and "{{.Id}}" in a[a.index("-f") + 1]: print(f"{i['os']}/{i['arch']} {i['rev']} {i['id']}")
+    fmt = a[a.index("-f") + 1] if "-f" in a else ""
+    if fmt.startswith("{{.Id}} "): print(f"{i['id']} {i['rev']}")
+    elif "{{.Id}}" in fmt: print(f"{i['os']}/{i['arch']} {i['rev']} {i['id']}")
     elif "-f" in a: print(f"{i['os']}/{i['arch']}")
     sys.exit(0)
 sys.exit(0)
@@ -3216,12 +3244,14 @@ def relay_instance(tmp_path):
         def images():
             p = tmp_path / "images.json"
             return json.loads(p.read_text()) if p.exists() else {}
+    R.env = env
     return R
 
 
-def test_relay_load_checks_and_loads_every_image_and_the_archive(relay_instance):
+@pytest.mark.parametrize("store", ["containerd", "graphdriver"])
+def test_relay_load_checks_and_loads_every_image_and_the_archive(relay_instance, store):
     r = relay_instance
-    proc = r.load(*(r.spec[c] for c in artifacts.COMPONENTS), r.spec["infra"])
+    proc = r.load(*(r.spec[c] for c in artifacts.COMPONENTS), r.spec["infra"], FAKE_STORE=store)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     images = r.images()
     tag = RELAY_SHA[:12]
@@ -3235,6 +3265,18 @@ def test_relay_load_checks_and_loads_every_image_and_the_archive(relay_instance)
     gets = [line for line in (r.dir / "aws.log").read_text().splitlines() if "get-object" in line]
     assert len(gets) == 5 and all("--expected-bucket-owner 935951870001" in g for g in gets)
     assert "docker pull" not in (r.dir / "docker.log").read_text()
+    # review 6058312786 N4: pull --local accepts exactly what relay-load checked, and nothing else
+    env = r.env
+    ok = run(["bash", str(REMOTE), "pull", tag, "--local"], env={**env, "FAKE_STORE": store})
+    assert "the relayed image (" in ok.stdout and "is not on the instance" not in ok.stderr, ok.stdout + ok.stderr
+    st = r.images()
+    st[f"reg.example/devsec-chola/scan-worker:{tag}"]["id"] = "sha256:" + "9" * 64  # replaced behind the relay's back
+    (r.dir / "images.json").write_text(json.dumps(st))
+    bad = run(["bash", str(REMOTE), "pull", tag, "--local"], env=env)
+    assert bad.returncode == 1 and "scan-worker:" + tag + " is 'sha256:" + "9" * 64 in bad.stderr and "not accepted" in bad.stderr
+    (r.dir / "base" / "state" / "relay" / tag).write_text("")
+    none = run(["bash", str(REMOTE), "pull", tag, "--local"], env=env)
+    assert none.returncode == 1 and "was not loaded by the S3 relay on this instance" in none.stderr
 
 
 @pytest.mark.parametrize("case, words", [
@@ -3265,7 +3307,7 @@ def test_relay_load_refusals(relay_instance, case, words):
         spec = spec.replace("releases/", "other/")
     proc = r.load(spec, **extra)
     assert proc.returncode == 1 and words in proc.stderr, proc.stdout + proc.stderr
-    assert not any(k.endswith(RELAY_SHA[:12]) for k in r.images()) or case in ("unnamed", "docker-other")
+    assert not any(k.endswith(RELAY_SHA[:12]) for k in r.images())  # a refused image is removed again (N4)
     if case == "bad-spec":
         assert not (r.dir / "aws.log").exists()  # every spec is checked before anything is downloaded
     leftovers = list((r.dir / "releases").iterdir()) if (r.dir / "releases").exists() else []
@@ -3306,7 +3348,7 @@ def test_pull_local_never_pulls(tmp_path):
     (tmp_path / "bin" / "docker").write_text('#!/bin/sh\necho "docker $*" >> "' + str(tmp_path) + '/d.log"\n'
                                              'case "$1 $2" in "image inspect") exit 1;; "info --format") echo /tmp;; esac\nexit 0\n')
     proc = run(["bash", str(REMOTE), "pull", "aaaaaaaaaaaa", "--local"], env=env)
-    assert proc.returncode == 1 and "nothing is pulled from ECR in that mode" in proc.stderr
+    assert proc.returncode == 1 and "was not loaded by the S3 relay on this instance" in proc.stderr, proc.stderr
     assert " pull " not in (tmp_path / "d.log").read_text()
 
 
@@ -3406,3 +3448,69 @@ def test_workflow_runs_on_the_commit_and_uses_its_own_helpers():
     assert 'if [ "$sha" != "$GITHUB_SHA" ]; then' in text
     assert "tools/" not in text and "path: target" not in text
     assert text.count("deploy/chola-prod/ci_images.sh ") == 10
+
+
+# ------------------------------------------------------------------------------------------------ review 6058312786
+def test_oci_name_writes_both_the_index_name_and_a_docker_save_manifest(tmp_path):
+    sha = "e" * 40
+    digest = _oci_layout(tmp_path / "l", sha)
+    ref = "935951870001.dkr.ecr.ap-south-1.amazonaws.com/devsec-chola/scan-worker:eeeeeeeeeeee"
+    artifacts.oci_name(str(tmp_path / "l"), ref)
+    idx = json.loads((tmp_path / "l" / "index.json").read_text())["manifests"][0]
+    assert idx["digest"] == digest and idx["annotations"]["io.containerd.image.name"] == ref
+    man = json.loads((tmp_path / "l" / "blobs" / "sha256" / digest[7:]).read_text())
+    save = json.loads((tmp_path / "l" / "manifest.json").read_text())
+    assert save == [{"Config": "blobs/sha256/" + man["config"]["digest"][7:], "RepoTags": [ref],
+                     "Layers": ["blobs/sha256/" + x["digest"][7:] for x in man["layers"]]}]
+    assert artifacts.oci_check(str(tmp_path / "l"), digest, sha)[0] == digest  # the image itself is unchanged
+    with pytest.raises(artifacts.Refused, match="not an image reference with a tag"):
+        artifacts.oci_name(str(tmp_path / "l"), "no-tag")
+
+
+def test_relay_load_on_overlay2_needs_the_docker_save_manifest(relay_instance):
+    """Negative control for N1: a layout tar without manifest.json does not load on the graphdriver store."""
+    r = relay_instance
+    text = REMOTE.read_text()
+    assert 'tar -C "$1" -cf - oci-layout index.json manifest.json blobs | d load' in text
+    proc = r.load(r.spec["backend"], FAKE_STORE="graphdriver")
+    assert proc.returncode == 0, proc.stderr
+    patched = r.dir / "remote-without-manifest.sh"
+    patched.write_text(text.replace("oci-layout index.json manifest.json blobs", "oci-layout index.json blobs"))
+    (r.dir / "images.json").unlink()
+    proc = run(["bash", str(patched), "relay-load", RELAY_SHA, r.spec["backend"]],
+               env={**r.env, "FAKE_STORE": "graphdriver", "CHOLA_BASE_DIR": str(r.dir / "base2")})
+    assert proc.returncode == 1 and r.images() == {}
+
+
+@pytest.mark.parametrize("driver, want", [('[["driver-type","io.containerd.snapshotter.v1"]]', "containerd"),
+                                          ("[]", "graphdriver overlay2")])
+def test_preflight_reports_the_image_store(tmp_path, driver, want):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "docker").write_text(f"#!/bin/sh\ncase \"$*\" in *DriverStatus*) echo '{driver}';; *Driver*) echo overlay2;; esac\n")
+    (bin_dir / "docker").chmod(0o755)
+    proc = _source(tmp_path, "store_kind", env={"PATH": f"{bin_dir}:{os.environ['PATH']}"})
+    assert proc.stdout.strip() == want, proc.stderr
+    assert 'log "image store: $(image_store) ($(store_kind))' in REMOTE.read_text()
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
+def test_rollback_plans_and_checks_images_before_the_backup(fake_world):
+    proc = fake_world("rollback", "--yes")
+    assert proc.returncode == 0, proc.stdout[-2000:] + proc.stderr[-2000:]
+    log = fake_world.log()
+    assert log.index("remote.sh ecr-login") < log.index("remote.sh rollback --plan") < log.index("start-backup-job") \
+        < log.index("job-start rollback")
+    proc = fake_world("rollback", "--yes", FAKE_REMOTE_FAIL="rollback --plan")
+    assert proc.returncode == 1 and "no backup was taken" in proc.stderr
+    assert fake_world.log().count("start-backup-job") == 1  # only the first, successful rollback took one
+
+
+def test_rollback_plan_refuses_a_target_neither_here_nor_in_ecr(instance):
+    st = instance.state()
+    st["absent"] = B12
+    (instance.dir / "state.json").write_text(json.dumps(st))
+    proc = instance.remote("rollback", "--plan")
+    assert proc.returncode == 1 and f"the images of {B12}" in proc.stderr
+    assert "neither on the instance nor in ECR: relay that commit again first" in proc.stderr
+    assert instance.tag() == C12 and instance.state()["ups"] == []

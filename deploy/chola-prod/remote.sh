@@ -189,6 +189,10 @@ image_store() { # the directory `docker pull` / `docker load` fill: containerd's
     printf '%s\n' "${root}"
   fi
 }
+store_kind() { # containerd (Docker's containerd image store) or graphdriver (overlay2 and the like)
+  if d info --format '{{json .DriverStatus}}' 2>/dev/null | grep -q io.containerd.snapshotter; then echo containerd
+  else echo "graphdriver $(d info --format '{{.Driver}}' 2>/dev/null || echo '?')"; fi
+}
 disk_check() { # CHOLA_MIN_FREE_GB (default 15) free where images are stored AND where volumes are
   local min=${CHOLA_MIN_FREE_GB:-15} p avail bad=0
   for p in "$(image_store)" "$(d info --format '{{.DockerRootDir}}')"; do
@@ -260,7 +264,7 @@ cmd_preflight() {
   else
     log "data volume: ${root} is $(findmnt -n -o SOURCE,FSTYPE,SIZE,AVAIL -T "${root}" | tr -s ' ')"
   fi
-  log "image store: $(image_store)"
+  log "image store: $(image_store) ($(store_kind)); the S3 relay loads OCI layouts with a docker-save manifest.json on either"
   disk_check || bad=1
   if [[ -f "${ENV_FILE}" ]]; then log "deployed tag: $(env_get DSS_TAG none)"; else log "not deployed yet (no ${ENV_FILE})"; fi
   log "data volumes present: $(volume_state)"
@@ -541,7 +545,8 @@ oci_load() { # <layout dir> <ref>: Docker 25+ loads an OCI layout archive (its i
   local major
   major="$(d version --format '{{.Server.Version}}' 2>/dev/null | cut -d. -f1)"
   if [[ "${major}" =~ ^[0-9]+$ ]] && ((major >= 25)); then
-    tar -C "$1" -cf - oci-layout index.json blobs | d load >/dev/null || die "docker load of $2 failed"
+    # index.json (containerd image store) and manifest.json (graphdriver store) both name it
+    tar -C "$1" -cf - oci-layout index.json manifest.json blobs | d load >/dev/null || die "docker load of $2 failed"
   elif command -v skopeo >/dev/null 2>&1; then
     "${SUDO[@]}" skopeo copy --quiet "oci:$1" "docker-daemon:$2" || die "skopeo copy of $2 failed"
   else
@@ -594,9 +599,19 @@ cmd_relay_load() { # <sha40> image:<component>:<key>:<zip sha256>:sha256:<hex> .
       got="$(d image inspect -f '{{.Os}}/{{.Architecture}} {{index .Config.Labels "org.opencontainers.image.revision"}} {{.Id}}' "${ref}" 2>/dev/null)" ||
         die "Docker has no ${ref} after the load"
       want="linux/amd64 ${sha}"
-      [[ "${got% *}" == "${want}" ]] || die "${ref} in Docker is '${got% *}', not '${want}'"
-      [[ "${got##* }" == "${config}" || "${got##* }" == "${alg}:${hex}" ]] ||
-        die "${ref} in Docker is ${got##* }, neither the checked config ${config} nor the manifest ${alg}:${hex}"
+      if [[ "${got% *}" != "${want}" ]]; then
+        d image rm -f "${ref}" >/dev/null 2>&1 || true
+        die "${ref} in Docker is '${got% *}', not '${want}'; removed again"
+      fi
+      if [[ "${got##* }" != "${config}" && "${got##* }" != "${alg}:${hex}" ]]; then
+        d image rm -f "${ref}" >/dev/null 2>&1 || true
+        die "${ref} in Docker is ${got##* }, neither the checked config ${config} nor the manifest ${alg}:${hex}; removed again"
+      fi
+      # what pull --local accepts later: exactly this id and this revision under this name
+      mkdir -p "${STATE_DIR}/relay"
+      { grep -v "^${ref} " "${STATE_DIR}/relay/${tag}" 2>/dev/null || true; printf '%s %s %s\n' "${ref}" "${got##* }" "${sha}"; } \
+        >"${STATE_DIR}/relay/${tag}.new"
+      mv "${STATE_DIR}/relay/${tag}.new" "${STATE_DIR}/relay/${tag}"
       log "${ref} loaded: ${alg}:${hex} (linux/amd64, revision ${tag}); zip and layout deleted"
     else
       IFS=: read -r _ key zsum hex <<<"${spec}"
@@ -646,6 +661,16 @@ frontend_url_ok() { # <image>: the browser bundle carries https://API_HOST (read
   [[ "${hit:-0}" =~ ^[1-9] ]] || die "$1 was built for another API URL (no https://${API_HOST} in its bundle); not starting it"
 }
 
+relayed_ok() { # <ref> <tag>: the image under ref is the one relay-load checked (same id, revision label = the commit)
+  local rec got
+  rec="$({ awk -v r="$1" '$1 == r { print $2, $3 }' "${STATE_DIR}/relay/$2" 2>/dev/null || true; } | tail -n 1)"
+  [[ -n "${rec}" ]] || die "$1 was not loaded by the S3 relay on this instance (nothing is pulled from ECR in that mode)"
+  got="$(d image inspect -f '{{.Id}} {{index .Config.Labels "org.opencontainers.image.revision"}}' "$1" 2>/dev/null)" ||
+    die "$1 is not on the instance (the relay loads it; nothing is pulled from ECR in that mode)"
+  [[ "${got}" == "${rec}" ]] || die "$1 is '${got}' in Docker, the relay checked '${rec}': not accepted"
+  log "$1: the relayed image (${rec%% *})"
+}
+
 cmd_pull() { # <tag> [--local]: --local (the S3 relay loaded them) never pulls, it only checks
   local tag=${1:?usage: remote.sh pull <tag> [--local]} local_only=0 r ref arch
   [[ "${2:-}" != --local ]] || local_only=1
@@ -654,7 +679,9 @@ cmd_pull() { # <tag> [--local]: --local (the S3 relay loaded them) never pulls, 
   disk_check || die "not enough disk to pull (above)"
   for r in "${APP_REPOS[@]}"; do
     ref="$(image_of "${r}" "${tag}")"
-    if d image inspect "${ref}" >/dev/null 2>&1; then
+    if ((local_only)); then
+      relayed_ok "${ref}" "${tag}"
+    elif d image inspect "${ref}" >/dev/null 2>&1; then
       log "${ref} already here"
     else
       ((!local_only)) || die "${ref} is not on the instance (the relay loads it; nothing is pulled from ECR in that mode)"
@@ -1003,9 +1030,20 @@ rollback_plan() {
   esac
   [[ -n "${ROLLBACK_PREVIOUS}" && "${ROLLBACK_PREVIOUS}" != none ]] ||
     die "no previous tag recorded for ${ROLLBACK_CURRENT} in ${HISTORY_FILE}"
+  local -a absent=()
+  local pulled=0
   for r in "${APP_REPOS[@]}"; do
-    d image inspect "$(image_of "${r}" "${ROLLBACK_PREVIOUS}")" >/dev/null 2>&1 || cmd_pull "${ROLLBACK_PREVIOUS}"
+    d image inspect "$(image_of "${r}" "${ROLLBACK_PREVIOUS}")" >/dev/null 2>&1 && continue
+    # not here (retention removed it, or it was relayed): only ECR can still have it
+    pulled=1
+    d pull -q --platform linux/amd64 "$(image_of "${r}" "${ROLLBACK_PREVIOUS}")" >/dev/null 2>&1 || absent+=("${r}")
   done
+  if ((${#absent[@]})); then
+    die "the images of ${ROLLBACK_PREVIOUS} (${absent[*]}) are neither on the instance nor in ECR: relay that commit" \
+      "again first (chola-prod.sh images --sha ${ROLLBACK_PREVIOUS} --from-run <run>), or rollback --to another" \
+      "release; nothing was changed"
+  fi
+  if ((pulled)); then cmd_pull "${ROLLBACK_PREVIOUS}"; fi # what came from ECR: linux/amd64 and the frontend URL checked
   ROLLBACK_HEAD="$(tag_head "${ROLLBACK_PREVIOUS}")" || die "cannot read the Alembic head of ${ROLLBACK_PREVIOUS}"
   [[ -n "${ROLLBACK_HEAD}" ]] || die "no Alembic head known for ${ROLLBACK_PREVIOUS}"
   ROLLBACK_DB="$(db_revision)" || die "cannot read the database's Alembic revision"

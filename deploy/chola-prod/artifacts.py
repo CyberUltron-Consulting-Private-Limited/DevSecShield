@@ -21,7 +21,8 @@ Standard library only, Python 3.8+. One contract, used on both sides:
       label is --revision; each --label K=V is set; --digest is the manifest's digest. Prints "<digest> <bytes>
       <config digest>".
   artifacts.py oci-name --layout D --ref REGISTRY/REPO:TAG
-      Names the layout's image for docker load (index.json annotations; the image's digest does not change).
+      Names the layout's image for docker load on both image stores: index.json annotations (containerd) and a
+      docker-save manifest.json (graphdriver/overlay2). The image's digest does not change.
   artifacts.py hash-pipe --out F  < in > out
       Copies stdin to stdout and writes "<sha256> <bytes>" to F (the S3 relay hashes what it uploads, in the stream).
   artifacts.py manifest-init --out F --commit SHA --api-url URL [--repository R] [--run-id N] [--run-attempt N]
@@ -450,8 +451,10 @@ def manifest_set_infra(path, artifact, file_path, images):
 
 
 def oci_name(layout, ref):
-    """Name the layout's one image for `docker load` (io.containerd.image.name; the tag in ref.name). index.json is no
-    part of the image: its digest does not change."""
+    """Name the layout's one image for `docker load` on either image store. The containerd store reads index.json's
+    io.containerd.image.name (and ref.name); the graphdriver (overlay2) store reads a docker-save manifest.json
+    ([{"Config", "RepoTags", "Layers"}], the shape `docker save` writes since Docker 25, gzip layers accepted). Neither
+    file is part of the image: its digest does not change."""
     if not re.match(r"^[a-z0-9][a-z0-9./_-]*(:[0-9]+)?/[a-z0-9./_-]+:[A-Za-z0-9._-]+$", ref):
         raise Refused(f"not an image reference with a tag: {ref!r}")
     index = _load_json(os.path.join(layout, "index.json"), "index.json")
@@ -462,6 +465,13 @@ def oci_name(layout, ref):
     desc["annotations"] = dict(desc.get("annotations") or {}, **{
         "io.containerd.image.name": ref, "org.opencontainers.image.ref.name": ref.rsplit(":", 1)[1]})
     _write_index(layout, desc)
+    manifest = _load_json(_blob_path(layout, desc["digest"]), "the image manifest")
+    blob = lambda d: "blobs/sha256/" + d["digest"][7:]
+    save = [{"Config": blob(manifest["config"]), "RepoTags": [ref], "Layers": [blob(x) for x in manifest["layers"]]}]
+    tmp = os.path.join(layout, ".manifest.json.new")
+    with open(tmp, "w") as fh:
+        json.dump(save, fh)
+    os.replace(tmp, os.path.join(layout, "manifest.json"))
 
 
 def hash_pipe(src, dst):

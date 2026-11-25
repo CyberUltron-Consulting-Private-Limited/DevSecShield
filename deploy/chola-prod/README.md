@@ -281,22 +281,27 @@ What the run does (the steps are in `ci_images.sh`):
    - it downloads the zip (bucket owner pinned) and checks its sha256;
    - it extracts the zip (only OCI layout names are accepted) and checks the layout against the manifest's digest
      (every blob's sha256, linux/amd64, the revision label, and the API URL label for the frontend);
-   - it names the image `<ECR prefix>/<repo>:<sha12>` in `index.json` (this does not change the image's digest) and
-     `docker load`s it. Docker 25+ loads an OCI layout; on an older Docker the kit uses `skopeo` only if the instance
-     has it;
-   - it checks what Docker now holds: linux/amd64, the label, and an id equal to the config or manifest digest;
+   - it names the image `<ECR prefix>/<repo>:<sha12>` in `index.json` (read by the containerd image store) and in a
+     docker-save `manifest.json` (read by the graphdriver/overlay2 store), which does not change the image's digest,
+     and `docker load`s it. Docker 25+ loads it on either store (preflight reports which one the instance has); on an
+     older Docker the kit uses `skopeo` only if the instance has it;
+   - it checks what Docker now holds: linux/amd64, the label, and an id equal to the config or manifest digest. A
+     mismatch removes the image again (`docker image rm`) before the job stops. What passed is recorded in
+     `state/relay/<sha12>`, and `pull <tag> --local` accepts only an image with exactly that id and revision;
    - it deletes the zip and the files, whether the step succeeded or failed.
 
    The release archive gets the same treatment: sha256 of the zip, then sha256 of `release.tar.gz` against the
    manifest, then `docker load`, then the pins and architectures. It is relayed only when the instance lacks a pinned
    image, or with `--force-infra`.
-3. The S3 objects are deleted after a successful load. After a failed load they stay until the next relay overwrites
-   them.
+3. The S3 objects under `releases/<sha12>/` are deleted after the load, and also when the relay fails (from the
+   kit's exit trap). Only if the load job may still be running (Ctrl-C, a lost tunnel) are they kept, with a warning
+   that names the prefix to delete once it has ended.
 4. The deploy then never runs `ecr-login`. `remote.sh pull <tag> --local` only checks the images (and the frontend's
    API URL), and fails if one is missing. Compose already has `pull_policy: never`.
 
 The relayed images are **not in ECR**. A rollback uses the images kept on the instance (the deploy keeps the
-previous and the last good release); a rollback to a release that is not on the instance any more would try ECR.
+previous and the last good release). `rollback` plans first, before its backup: when the target's images are neither
+on the instance nor in ECR, it stops there ("relay that commit again first"), and no backup is taken.
 
 **`--to-ecr`.** The kit copies each image to ECR with crane, one at a time:
 - it streams the artifact into a local layout and checks it (`oci-check`);

@@ -197,6 +197,11 @@ cleanup() {
         "aws s3api delete-object --bucket ${BUCKET} --key ${S3_PROBE_KEY}"
     fi
   fi
+  if ((${#RELAY_KEYS[@]})) && ((!DRY)); then # a relay that did not finish: its S3 objects go too, unless its load
+    # job may still be running on the instance (Ctrl-C, lost tunnel): it still reads them
+    if [[ -z "${CURRENT_JOB}" ]]; then relay_cleanup || true
+    else warn "job ${CURRENT_JOB} may still be loading from s3://${BUCKET}/releases/${SHA12}/: those objects are kept; delete them once it ended (aws s3 rm --recursive s3://${BUCKET}/releases/${SHA12}/)"; fi
+  fi
   if [[ -n "${WORK}" && -d "${WORK}" ]]; then
     if ((SSH_READY && !DRY)); then ssh "${SSH_OPTS[@]}" -O exit "${SSH_USER}@${INSTANCE_ID}" >/dev/null 2>&1 || true; fi
     # the SSH key, the mail source copy, the merged secret JSON, the release archive, the isolated Docker config
@@ -1096,7 +1101,8 @@ relay_cleanup() { # delete what this run put under releases/<sha12>/
   local k
   for k in "${RELAY_KEYS[@]}"; do
     aws --region "${REGION}" s3api delete-object --bucket "${BUCKET}" --key "${k}" --expected-bucket-owner "${ACCOUNT}" \
-      >/dev/null 2>"${WORK}/err" || warn "could not delete s3://${BUCKET}/${k} ($(tail -n 1 "${WORK}/err")); the next relay overwrites it"
+      >/dev/null 2>"${WORK:-/nonexistent}/relay-del.err" ||
+      warn "could not delete s3://${BUCKET}/${k} ($(tail -n 1 "${WORK:-/nonexistent}/relay-del.err" 2>/dev/null)); delete it by hand: aws s3api delete-object --bucket ${BUCKET} --key ${k}"
   done
   RELAY_KEYS=()
 }
@@ -1141,7 +1147,7 @@ relay_from_run() { # <images|infra>: images = the four images (and the archive w
   done 3<<<"${lines}"
   ((${#specs[@]})) || die "nothing to relay"
   if ! remote_job relay-load "${SHA}" "${specs[@]}"; then
-    die "loading the relayed artifacts on the instance failed (above); s3://${BUCKET}/releases/${SHA12}/ keeps them until the next relay overwrites them"
+    die "loading the relayed artifacts on the instance failed (above); their S3 objects under s3://${BUCKET}/releases/${SHA12}/ are deleted on exit"
   fi
   relay_cleanup
   RELAYED=1
@@ -1493,7 +1499,7 @@ cmd_rollback() {
   confirm "Roll back"
   step "rollback"
   aws_identity
-  cmd_backup
+  # the plan first: it proves the target's images are on the instance or in ECR before any backup is taken
   remote_step "nothing was rolled back yet: re-run the rollback" ecr-login
   local rc=0
   local -a to=()
@@ -1512,8 +1518,9 @@ cmd_rollback() {
     [[ "${a}" == downgrade ]] || die "aborted; nothing was changed"
     ALLOW_DOWNGRADE=1
   elif [[ "${rc}" != 0 && "${rc}" != 3 ]]; then
-    die "cannot plan the rollback (above); nothing was changed"
+    die "cannot plan the rollback (above); nothing was changed (no backup was taken)"
   fi
+  cmd_backup
   local -a args=()
   ((ALLOW_DOWNGRADE)) && args=(--allow-downgrade)
   remote_job rollback ${args[@]+"${args[@]}"} ${to[@]+"${to[@]}"} || die "the rollback failed on the instance (above)"
