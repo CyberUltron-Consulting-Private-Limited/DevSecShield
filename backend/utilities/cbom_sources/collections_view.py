@@ -279,33 +279,43 @@ def collection_history(session: Any, team_id: int, sources: Mapping[int, Any]) -
     finished (``first_scanned``) and the latest attempt whatever its status (``last_attempt_*``: run, job, status,
     reason, time). D1's Sources rows print it (staging QA2 Q1-02).
 
-    Aggregated in SQL (#497 review M3: reading every job's params was 2.1 s and 529 MB at 60k jobs): one GROUP BY per
-    source (a deleted source's detached jobs by the uid their params kept) for the success count, the first success
-    and the newest creation time, then the jobs created at those times (the newest of each source, created_at then
-    id), of which only status, error and outcome are read."""
+    Aggregated in SQL (#497 review M3: reading every job's params was 2.1 s and 529 MB at 60k jobs): one statement for
+    the per-source totals (success count, first success, newest creation time), grouped by source id over the history
+    index (``ix_cbomcollectionjob_team_source_hist``: no row and no params read) plus, UNION ALL, a deleted source's
+    detached jobs grouped by the uid their params kept; then one statement for each source's newest job, found by
+    (source, created_at) on the same index, of which only status, error and outcome are read."""
     import sqlalchemy as sa
 
     from backend.new_models import CbomCollectionJob as J
 
     base = (J.team_id == team_id, J.kind == "collect", J.run_id.is_not(None))  # type: ignore[union-attr]
     ok = J.status == "success"
-    # one key per source: its id, else (a deleted source's detached jobs) the uid its params kept, else its name
+    done_at = sa.case((ok, sa.func.coalesce(J.finished_at, J.created_at)), else_=None)
+    measures = (sa.func.sum(sa.case((ok, 1), else_=0)), sa.func.min(done_at), sa.func.max(J.created_at))
+    # a detached job (its source deleted): the uid its params kept, else its name
     uid = J.params["source_uid"].as_string()  # type: ignore[index]
     name = J.params["source_name"].as_string()  # type: ignore[index]
-    group = sa.case((J.source_id.is_not(None), sa.literal("i:") + sa.cast(J.source_id, sa.String)),  # type: ignore[union-attr]
-                    (uid.is_not(None), sa.literal("u:") + uid), else_=sa.literal("n:") + sa.func.coalesce(name, ""))
-    done_at = sa.case((ok, sa.func.coalesce(J.finished_at, J.created_at)), else_=None)
-    totals = session.execute(sa.select(group, sa.func.sum(sa.case((ok, 1), else_=0)), sa.func.min(done_at),
-                                       sa.func.max(J.created_at)).where(*base).group_by(group)).all()
-    newest_at = sorted({t[3] for t in totals if t[3] is not None})
+    detached = sa.case((uid.is_not(None), sa.literal("u:") + uid), else_=sa.literal("n:") + sa.func.coalesce(name, ""))
+    attached_q = (sa.select(J.source_id, sa.literal(None, sa.String).label("g"), *measures)
+                  .where(*base, J.source_id.is_not(None)).group_by(J.source_id))  # type: ignore[union-attr]
+    detached_q = (sa.select(sa.literal(None, sa.Integer).label("source_id"), detached.label("g"), *measures)
+                  .where(*base, J.source_id.is_(None)).group_by(detached))  # type: ignore[union-attr]
+    totals = [(f"i:{sid}" if sid is not None else g, sid, scans, first, newest)
+              for sid, g, scans, first, newest in session.execute(sa.union_all(attached_q, detached_q)).all()]
+    pairs = sorted({(sid, newest) for _k, sid, _s, _f, newest in totals if sid is not None and newest is not None})
+    loose = sorted({newest for _k, sid, _s, _f, newest in totals if sid is None and newest is not None})
     latest: dict[str, Any] = {}  # group -> its newest job (created_at, then id), status / error / outcome only
-    for start in range(0, len(newest_at), 500):
-        for row in session.execute(sa.select(group, J.id, J.run_id, J.status, J.error, J.outcome, J.created_at,
-                                             J.finished_at).where(*base, J.created_at.in_(newest_at[start:start + 500]))
-                                   ).all():  # type: ignore[union-attr]
-            held = latest.get(row[0])
-            if held is None or (row[6], row[1]) > (held[6], held[1]):
-                latest[row[0]] = row
+    for start in range(0, max(len(pairs), len(loose)), 250):
+        found = [sa.and_(J.source_id.is_(None), J.created_at.in_(loose[start:start + 250]))]  # type: ignore[union-attr]
+        if pairs[start:start + 250]:
+            found.append(sa.tuple_(J.source_id, J.created_at).in_(pairs[start:start + 250]))
+        for row in session.execute(sa.select(J.source_id, detached, J.id, J.run_id, J.status, J.error, J.outcome,
+                                             J.created_at, J.finished_at).where(*base, sa.or_(*found))).all():
+            key = f"i:{row[0]}" if row[0] is not None else row[1]
+            held = latest.get(key)
+            if held is None or (row[7], row[2]) > (held[6], held[1]):
+                latest[key] = (key, *row[2:])
+    totals = [(key, scans, first, newest) for key, _sid, scans, first, newest in totals]
     rows = []
     for key, scans, first, newest in totals:
         row = latest.get(key)

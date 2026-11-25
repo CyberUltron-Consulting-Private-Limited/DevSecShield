@@ -22,9 +22,12 @@ stored spelling decides the old key, so a source last collected before #481 move
 (``asset_key`` and ``observation_key``), the risk register row, the open Q0 item ``asset:<key>`` and the estate links.
 Nothing is removed or inserted, so the register and D13 keep their history.
 
-When: ``backfill_due`` (the scheduler, at start, per team until done: every source's latest job, deleted ones too,
-before any new run) and ``estate.record_run`` (each written source's stored rows first: a source the backfill has
-not reached yet). Each source is locked as the store locks it.
+When: at deploy, in the database migration (``q109certkey001``, ``migrate_all``): every team, every source's latest
+job, deleted ones too, before the new release serves a request, so no reader ever computes a key the store does not
+hold yet; each team marked done. Fallbacks, both idempotent: ``backfill_due`` (the scheduler at start: a team the
+migration could not move, which it leaves unmarked) and ``estate.record_run`` (each written source's stored rows
+first: rows an older worker wrote during a rolling deploy). Each source is locked as the store locks it. The
+migration's downgrade moves the keys back (``reverse``) and clears the marks.
 
 Drift needs no migration: both runs of a comparison are keyed from their stored rows with the current rule.
 Idempotent: a key already moved maps to nothing.
@@ -128,8 +131,9 @@ def _rename_asset(session: Any, team_id: int, ref: str, old: str, new: str) -> i
         session.execute(sa.update(eo).where(eo.c.id == mine[0]).values(asset_key=new))
     left = session.execute(sa.select(sa.func.count()).select_from(eo).where(
         eo.c.team_id == team_id, eo.c.asset_key == old)).scalar_one()
-    old_row = session.execute(sa.select(ea).where(ea.c.team_id == team_id, ea.c.asset_key == old)).first()
-    new_row = session.execute(sa.select(ea).where(ea.c.team_id == team_id, ea.c.asset_key == new)).first()
+    cols = (ea.c.id, ea.c.first_seen_at, ea.c.first_seen_run_id)  # only these: the migration runs this code against
+    old_row = session.execute(sa.select(*cols).where(ea.c.team_id == team_id, ea.c.asset_key == old)).first()  # the
+    new_row = session.execute(sa.select(*cols).where(ea.c.team_id == team_id, ea.c.asset_key == new)).first()  # schema
     if old_row is None:
         return 1
     if new_row is None and not left:  # the asset itself moves: every row keyed by it follows
@@ -142,9 +146,10 @@ def _rename_asset(session: Any, team_id: int, ref: str, old: str, new: str) -> i
                                                 gq.c.closed_at.is_(None)).values(item_key=f"asset:{new}"))
         session.execute(sa.update(el).where(el.c.team_id == team_id, el.c.asset_key == old).values(asset_key=new))
         return 1
-    if new_row is None:  # another source still holds the old key: the new asset starts as a copy of it
-        values = {c.name: getattr(old_row, c.name) for c in ea.columns if c.name != "id"}
-        session.execute(sa.insert(ea).values(**{**values, "asset_key": new}))
+    if new_row is None:  # another source still holds the old key: the new asset starts as a copy of it (the columns
+        live = sa.Table(ea.name, sa.MetaData(), autoload_with=session.connection())  # the database has at this revision)
+        full = session.execute(sa.select(live).where(live.c.id == old_row.id)).one()._mapping
+        session.execute(sa.insert(live).values(**{**{k: v for k, v in full.items() if k != "id"}, "asset_key": new}))
         return 1
     if old_row.first_seen_at is not None and (new_row.first_seen_at is None
                                               or old_row.first_seen_at < new_row.first_seen_at):
@@ -157,14 +162,19 @@ def _rename_asset(session: Any, team_id: int, ref: str, old: str, new: str) -> i
     return 1
 
 
-def migrate_source(session: Any, team_id: int, ref: str, rows: Any) -> dict[str, int]:
+def migrate_source(session: Any, team_id: int, ref: str, rows: Any, *, reverse: bool = False) -> dict[str, int]:
     """Move every stored key of one source that the identity rule changed, from its STORED latest rows (#497 review
-    M1); the caller holds the source's lock and commits. Idempotent: a moved key maps to nothing."""
+    M1); the caller holds the source's lock and commits. Idempotent: a moved key maps to nothing. ``reverse`` (the
+    migration's downgrade): every key back to the identity before Q1-09."""
     from backend.utilities.cbom_sources import identity as ID
 
     rows = [r for r in rows if r.asset_type != "coverage"]
-    out = {"estate": 0, **remap(session, team_id, {ref: ID.rekeyed_observations(rows, ref)})}
-    for old, new in estate_moves(rows, ref).items():
+    observations, estate = ID.rekeyed_observations(rows, ref), estate_moves(rows, ref)
+    if reverse:
+        observations = {new: old for old, new in observations.items()}
+        estate = {new: old for old, new in estate.items()}
+    out = {"estate": 0, **remap(session, team_id, {ref: observations})}
+    for old, new in estate.items():
         out["estate"] += _rename_asset(session, team_id, ref, old, new)
     return out
 
@@ -173,7 +183,7 @@ MARK = "identity_migration_qa2:team:"  # cbomopscounter name prefix: a team whos
 _DONE: set[int] = set()  # teams this process saw done (no query per tick once everything moved)
 
 
-def backfill_team(session: Any, team_id: int) -> dict[str, int]:
+def backfill_team(session: Any, team_id: int, *, reverse: bool = False) -> dict[str, int]:
     """Every source of the team (deleted ones included), from its latest stored job, under the store's lock."""
     import sqlalchemy as sa
 
@@ -193,7 +203,7 @@ def backfill_team(session: Any, team_id: int) -> dict[str, int]:
             CbomCollectedAsset.attempt == (attempt or 1), sa.or_(
                 CbomCollectedAsset.asset_type.in_(sorted(E.AK.CERT_TYPES)),  # type: ignore[attr-defined]
                 CbomCollectedAsset.cdx_type == "certificate"))).all()
-        found = migrate_source(session, team_id, ref, rows)
+        found = migrate_source(session, team_id, ref, rows, reverse=reverse)
         out["sources"] += 1
         for k, v in found.items():
             out[k] = out.get(k, 0) + v
@@ -201,7 +211,8 @@ def backfill_team(session: Any, team_id: int) -> dict[str, int]:
 
 
 def backfill_due(engine: Any, now: Any = None, *, teams: int = 20) -> dict[str, int]:
-    """The scheduler's one-off pass (at start, before any new run): up to ``teams`` teams not marked done, one
+    """The scheduler's fallback for the deploy migration (``migrate_all``, which marks every team it moved): at start,
+    before any new run, up to ``teams`` teams not marked done (a team whose migration failed), one
     transaction each, then marked done (``cbomopscounter``). Safe to run twice or in two processes: a key already
     moved maps to nothing, and each source is locked as the store locks it."""
     import sqlalchemy as sa
@@ -232,4 +243,42 @@ def backfill_due(engine: Any, now: Any = None, *, teams: int = 20) -> dict[str, 
     return out
 
 
-__all__ = ["MARK", "backfill_due", "backfill_team", "estate_moves", "migrate_source", "remap"]
+def migrate_all(connection: Any, now: Any = None, *, reverse: bool = False) -> dict[str, int]:
+    """The deploy migration (``q109certkey001``): every team with a stored source, each in its own savepoint on the
+    migration's connection (one transaction with the revision stamp). Upgrade: moves the keys and marks the team done
+    (``MARK``). Downgrade (``reverse``): moves them back and clears the mark. A team whose move fails is rolled back to
+    its savepoint, logged and left unmarked (the scheduler's ``backfill_due`` retries it), so one bad team never
+    blocks the deploy. Returns the totals and the teams that failed."""
+    import sqlalchemy as sa
+    from sqlmodel import Session
+
+    from backend.new_models import CbomEstateSource, CbomOpsCounter
+    from backend.utilities.cbom_sources.common import log, utcnow
+
+    oc = CbomOpsCounter.__table__
+    out = {"teams": 0, "failed": 0, "sources": 0, "estate": 0, "observations": 0, "assignments": 0}
+    teams = sorted(t for (t,) in connection.execute(sa.select(CbomEstateSource.team_id).distinct()).all())
+    for team_id in teams:
+        point = connection.begin_nested()
+        try:
+            with Session(bind=connection) as session:  # joins the savepoint: its commit releases only its own
+                found = backfill_team(session, team_id, reverse=reverse)
+                session.commit()
+            connection.execute(sa.delete(oc).where(oc.c.name == f"{MARK}{team_id}"))
+            if not reverse:
+                connection.execute(sa.insert(oc).values(name=f"{MARK}{team_id}", value=1, updated_at=now or utcnow()))
+            point.commit()
+        except Exception as exc:  # noqa: BLE001 - one team never blocks the deploy; the scheduler retries it
+            point.rollback()
+            out["failed"] += 1
+            log("cbom sources identity key migration FAILED", team=team_id, reverse=reverse, error=type(exc).__name__)
+            continue
+        _DONE.discard(team_id)
+        out["teams"] += 1
+        for k in ("sources", "estate", "observations", "assignments"):
+            out[k] += found.get(k, 0)
+    log("cbom sources identity key migration", reverse=reverse, **out)
+    return out
+
+
+__all__ = ["MARK", "backfill_due", "backfill_team", "estate_moves", "migrate_all", "migrate_source", "remap"]

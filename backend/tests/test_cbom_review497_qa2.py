@@ -102,3 +102,28 @@ def test_collection_history_is_two_aggregate_statements(deleted_world):
     assert lab["last_attempt_status"] == "success" and lab["last_attempt_run_id"] == 2
     gone = [v for v in history.values() if v["scans"] == 1]
     assert len(gone) == 1 and gone[0]["last_attempt_run_id"] == 1  # the deleted source, by its params' uid
+
+
+def test_collection_history_reads_the_totals_and_the_newest_jobs_from_the_history_index(deleted_world):
+    """Tracker "source history query too slow at scale": the per-source totals come from the history index alone (no
+    job row, no params JSON) and each source's newest job is found by (source, created_at) on it. PostgreSQL, 60
+    sources x 1000 runs (60k jobs, 88 MB): 70 ms before the index, 39 ms with it (index-only scan, 0 heap fetches)."""
+    statements: list[tuple[str, tuple]] = []
+    engine = deleted_world.engine
+
+    def seen(_conn, _cursor, statement, parameters, *_rest) -> None:
+        statements.append((statement, parameters))
+
+    with Session(engine) as s:
+        sources = {x.id: x for x in s.exec(select(CbomCollectionSource)).all()}
+        sa.event.listen(engine, "before_cursor_execute", seen)
+        try:
+            CV.collection_history(s, 1, sources)
+        finally:
+            sa.event.remove(engine, "before_cursor_execute", seen)
+    reads = [(q, p) for q, p in statements if q.lstrip().upper().startswith("SELECT")]
+    with engine.connect() as conn:
+        plans = [" ".join(str(r[-1]) for r in conn.exec_driver_sql("EXPLAIN QUERY PLAN " + q, p)) for q, p in reads]
+    # totals by source on the index (SQLite has no INCLUDE; on PostgreSQL the same plan is an index-only scan)
+    assert "USING INDEX ix_cbomcollectionjob_team_source_hist (team_id=? AND source_id>?)" in plans[0], plans[0]
+    assert "SCAN cbomcollectionjob" not in plans[1], plans[1]  # newest jobs: a search (by key on PostgreSQL)

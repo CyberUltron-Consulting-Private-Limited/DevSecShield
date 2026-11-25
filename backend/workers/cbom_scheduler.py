@@ -41,7 +41,8 @@ def tick(engine, now=None, *, summaries: bool = True) -> dict[str, Any]:
     if DRIFT.HEAVY.acquire(blocking=False):
         try:
             DRIFT.TICK_WANTS_HEAVY.clear()
-            try:  # #497 review M1: the stored keys the certificate identity rule changed, once per team, at start
+            try:  # #497 review M1: the stored keys the certificate identity rule changed move in the deploy migration
+                # (q109certkey001); this pass moves a team that migration left unmarked (its move failed), once
                 from backend.utilities.cbom_sources.identity_migration import backfill_due
 
                 out["identity_keys"] = backfill_due(engine, now)

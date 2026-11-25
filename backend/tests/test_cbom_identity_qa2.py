@@ -293,3 +293,131 @@ def test_a_json_map_name_and_its_dn_give_one_cross_key():
     plain = E.AK.Observation(kind="certificate", facts={**facts, "subject": CN_SUBJECT, "issuer": CN_SUBJECT},
                              location="z", target="t")
     assert E.AK.legacy_asset_key(plain) == E.AK.asset_key(plain)  # a DN-text name keys as before: no KEY_VERSION bump
+
+
+# ----------------------------------------------------------------------------- the deploy migration (q109certkey001)
+VERSIONS = _REPO_ROOT / "prod_database_migrations/migrations/versions"
+
+
+def _migration(name: str):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(name.split("_")[0], VERSIONS / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _step(engine, name: str, direction: str) -> None:
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+
+    with engine.begin() as conn:
+        with Operations.context(MigrationContext.configure(conn)):
+            getattr(_migration(name), direction)()
+
+
+def _held(world: World) -> tuple[set[str], list[str], list[tuple[str, str]], set[str]]:
+    from backend.new_models import CbomOpsCounter
+
+    with Session(world.engine) as s:
+        assignments = [(a.asset_key, a.status) for a in s.exec(select(CbomRemediationAssignment))]
+        marks = {c.name for c in s.exec(select(CbomOpsCounter)) if c.name.startswith(M.MARK)}
+    return set(world.assets()), [o.observation_key for o in world.observations()], assignments, marks
+
+
+@pytest.fixture(params=["sqlite", pytest.param("postgresql", marks=pytest.mark.skipif(
+    not __import__("os").environ.get("CBOM_TEST_PG_URL"), reason="set CBOM_TEST_PG_URL to run against PostgreSQL"))])
+def deployed(request, tmp_path):
+    import os
+
+    from sqlmodel import SQLModel, create_engine
+
+    if request.param == "sqlite":
+        engine = _sqlite(tmp_path / "deploy.db")
+    else:
+        engine = create_engine(os.environ["CBOM_TEST_PG_URL"])
+        SQLModel.metadata.drop_all(engine)
+        SQLModel.metadata.create_all(engine)
+    M._DONE.clear()
+    yield World(engine)
+    M._DONE.clear()
+    if request.param != "sqlite":
+        SQLModel.metadata.drop_all(engine)
+    engine.dispose()
+
+
+@pytest.mark.parametrize("dated", [True, False], ids=["cross key", "per-source key"])
+def test_the_deploy_migration_moves_every_stored_key_and_its_downgrade_moves_them_back(deployed: World, monkeypatch,
+                                                                                         dated):
+    """Q1-09 / tracker D1: the keys move in the deploy migration, before the release serves a request and before any
+    run, for a source last collected before #481 (stored as JSON): the accepted risk and the first-seen run stay with
+    the asset. The downgrade moves them back; up again moves them again."""
+    src = deployed.source("aws_account", "stgqa-aws-ap-south-1")
+    run52, old_asset, old_obs = _store(deployed, src, dated, monkeypatch)
+    new_asset, new_obs = _expected_keys(deployed, dated)
+    assert old_asset != new_asset and old_obs != new_obs
+    mark = {f"{M.MARK}1"}
+
+    _step(deployed.engine, "q109certkey001_cert_identity_keys", "upgrade")
+    assert _held(deployed) == ({new_asset}, [new_obs], [(new_obs, "accepted_risk")], mark)
+    assert deployed.assets()[new_asset].first_seen_run_id == run52
+    assert M.backfill_due(deployed.engine)["teams"] == 0  # marked: the scheduler's fallback has nothing to do
+
+    _step(deployed.engine, "q109certkey001_cert_identity_keys", "downgrade")
+    assert _held(deployed) == ({old_asset}, [old_obs], [(old_obs, "accepted_risk")], set())
+    assert deployed.assets()[old_asset].first_seen_run_id == run52
+
+    _step(deployed.engine, "q109certkey001_cert_identity_keys", "upgrade")
+    _step(deployed.engine, "q109certkey001_cert_identity_keys", "upgrade")  # idempotent
+    assert _held(deployed) == ({new_asset}, [new_obs], [(new_obs, "accepted_risk")], mark)
+    seen = []  # the first run after deploy reads CN=: nothing removed, nothing inserted, nothing left to move
+    E.register_hook(hook := (lambda s, write: seen.append(write)))
+    try:
+        deployed.finalise(deployed.run({src: {"rows": [_pca_row(CN_SUBJECT, dated)]}}))
+    finally:
+        E.unregister_hook(hook)
+    assert seen[0].counts["removed"] == 0 and seen[0].counts["inserted"] == 0 and seen[0].rekeyed == []
+    assert not any(seen[0].identity_moves.values())
+    assert set(deployed.assets()) == {new_asset} and deployed.assets()[new_asset].first_seen_run_id == run52
+
+
+def test_a_team_the_migration_cannot_move_never_blocks_the_deploy_and_the_scheduler_moves_it(deployed: World,
+                                                                                            monkeypatch):
+    src = deployed.source("aws_account", "stgqa-aws-ap-south-1")
+    _run52, old_asset, old_obs = _store(deployed, src, False, monkeypatch)
+    new_asset, new_obs = _expected_keys(deployed, False)
+    real = M.backfill_team
+
+    def broken(session, team_id, **kw):
+        real(session, team_id, **kw)  # writes, then fails: the team's savepoint must undo them
+        raise RuntimeError("boom")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(M, "backfill_team", broken)
+        _step(deployed.engine, "q109certkey001_cert_identity_keys", "upgrade")  # no exception: the deploy goes on
+    assert _held(deployed) == ({old_asset}, [old_obs], [(old_obs, "accepted_risk")], set())
+    assert M.backfill_due(deployed.engine)["teams"] == 1
+    assert _held(deployed) == ({new_asset}, [new_obs], [(new_obs, "accepted_risk")], {f"{M.MARK}1"})
+
+
+def test_the_history_index_migration_round_trips(tmp_path):
+    import sqlalchemy as sa
+
+    engine = sa.create_engine(f"sqlite:///{tmp_path / 'h.db'}")
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE cbomcollectionjob (id integer PRIMARY KEY, team_id integer, source_id integer,"
+                             " run_id integer, kind varchar(16), status varchar(16), created_at datetime,"
+                             " finished_at datetime)"))
+
+    def names() -> set[str]:
+        with engine.begin() as conn:
+            return {i["name"] for i in sa.inspect(conn).get_indexes("cbomcollectionjob")}
+
+    for direction, held in (("upgrade", True), ("downgrade", False), ("upgrade", True)):
+        _step(engine, "q102hist001_collect_history_index", direction)
+        assert ("ix_cbomcollectionjob_team_source_hist" in names()) is held
+    engine.dispose()
+    chain = {(_migration(n).revision, _migration(n).down_revision) for n in (
+        "q102hist001_collect_history_index", "q109certkey001_cert_identity_keys")}
+    assert chain == {("q102hist001", "rsched1trig001"), ("q109certkey001", "q102hist001")}
