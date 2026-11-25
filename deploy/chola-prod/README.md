@@ -28,6 +28,9 @@ browser --HTTPS--> ALB devsec-chola-prod-alb (ACM, both host names) --HTTP :80--
 | `deploy/chola-prod/nginx/` | site template + entrypoint script (host routing, real IP and scheme from the ALB subnets only, security headers) |
 | `deploy/chola-prod/remote.sh` | the instance side, run over SSH by chola-prod.sh |
 | `deploy/chola-prod/kit.py` | secret merge, env rendering (stdlib only) |
+| `deploy/chola-prod/artifacts.py` | images from a CI run: streaming artifact unzip, OCI layout check, the run's manifest (stdlib only; the workflow uses the same file) |
+| `deploy/chola-prod/host/` | the container IMDS block: script, systemd unit, Docker drop-in ([Instance metadata (IMDS)](#instance-metadata-imds)) |
+| `.github/workflows/chola-prod-images.yml` | the CI run that packages one commit's images as artifacts ([Images from a CI run](#images-from-a-ci-run)) |
 | `deploy/chola-prod/smtp_check.py` | SMTP login test (authenticates, sends nothing) |
 | `backend/tests/test_chola_prod_kit.py` | tests of all of the above (run by CI's backend job) |
 
@@ -70,9 +73,10 @@ Treat these as exposed and rotate them:
   script refuses another account.
 * **Docker** with **buildx** (Docker Desktop is fine). On Apple Silicon the frontend is built for linux/amd64 under
   emulation (10-20 min). About 15 GB free for images and the release archive. GHCR and ECR logins go into a throwaway
-  Docker config in the scratch directory (deleted on exit), never into your credential store.
+  Docker config in the scratch directory (deleted on exit), never into your credential store. **Not needed with
+  `--from-run`** ([Images from a CI run](#images-from-a-ci-run)).
 * **gh** signed in with the `read:packages` scope (`gh auth refresh -s read:packages`): the backend and worker
-  images come from GHCR.
+  images come from GHCR. With `--from-run`, gh only reads the run and its artifacts (`gh api`).
 * **git**: a checkout of this repository that contains this folder. The mail login is read from
   `origin/ansh:backend/.env` (`OUTLOOK_EMAIL`, `OUTLOOK_PASSWORD`) **only** on the first setup (app-secrets has no mail
   keys yet) or with `--refresh-mail`; the kit fetches it with an explicit refspec
@@ -85,10 +89,11 @@ Treat these as exposed and rotate them:
 
 `preflight` proves what the first deploy needs and stops with the reason when something is missing:
 
-* the instance is running, **IMDSv2 required and hop limit 1** (otherwise any container, e.g. the DAST worker's
-  browser, could obtain the instance role's credentials, which read every `devsec-chola/prod/*` secret; the app does
-  not use the role). Anything else fails unless `--allow-imds` is passed. The infra team sets it
-  (`aws ec2 modify-instance-metadata-options --http-tokens required --http-put-response-hop-limit 1`).
+* the instance is running with **IMDSv2 required** (IMDSv1 fails unless `--allow-imds`), and **containers cannot reach
+  the metadata service**: with hop limit 1 AWS stops them; with the hop limit 2 this instance has, only when the
+  host's container IMDS block is installed and works ([Instance metadata (IMDS)](#instance-metadata-imds)). Otherwise
+  any container, e.g. the DAST worker's browser, could obtain the instance role's credentials, which read every
+  `devsec-chola/prod/*` secret (the app does not use the role).
 * the target group (HTTP, 80, `/nginx-health`), the four secrets, the four ECR repositories, `s3://devsecshield-storage`
   owned by 935951870001 (`head-bucket --expected-bucket-owner`; every S3 call of the kit pins the owner), the backup
   vault, and **iam:PassRole on the backup role plus backup:StartBackupJob** (IAM policy simulation; if your user may
@@ -104,7 +109,8 @@ Treat these as exposed and rotate them:
   that run a preflight at the same moment (`preflight`, `deploy`, also by two owners) can delete each other's probe,
   and the instance then reports a failed S3 read that looks like a permission problem: run one at a time), `/var/lib/docker` on its own volume, **15 GB free where
   images are stored** (containerd's root with Docker 29's containerd image store, else Docker's root) **and** where
-  the volumes are, and an IMDS token probe from a container;
+  the volumes are, IMDSv2 on the host, the container IMDS block's rule and unit (with hop limit > 1), and an IMDS
+  token probe from a container that must fail;
 * that the mail login will be found (app-secrets, else origin/ansh, else `--mail-prompt`).
 
 Also ask the infra team for:
@@ -119,7 +125,7 @@ cd <your DevSecShield checkout> && git fetch origin
 export AWS_PROFILE=<profile of AnshSinghal-Cyberultron>
 
 scripts/deploy/chola-prod.sh preflight --sha <commit>        # changes nothing that runs; writes + deletes one S3 probe object
-scripts/deploy/chola-prod.sh host-setup                       # ONLY if preflight says the instance has no AWS CLI
+scripts/deploy/chola-prod.sh host-setup                       # once: AWS CLI (if missing) + the container IMDS block
 scripts/deploy/chola-prod.sh --dry-run deploy --sha <commit>  # every step it will take; nothing is run or read
 scripts/deploy/chola-prod.sh deploy --sha <commit>            # asks you to type 'chola' (or --yes)
 ```
@@ -127,7 +133,8 @@ scripts/deploy/chola-prod.sh deploy --sha <commit>            # asks you to type
 `--dry-run` runs no AWS, SSH, Docker, registry or `git fetch` command and reads no secret; its summary marks every step
 "skipped (dry-run)". `deploy` runs, in order, stopping at the first failure:
 
-1. **preflight** (above).
+1. **IMDS block** (`remote.sh imds-block`, idempotent: installed or refreshed on every deploy), then **preflight**
+   (above).
 2. **secrets**: `devsec-chola/prod/app-secrets` (empty at first) gets every missing value generated with the OS CSPRNG
    (`JWT_SECRET_KEY`, `JWT_REFRESH_SECRET_KEY`, `ENCRYPTION_KEY` (Fernet), `CERTIN_HMAC_SECRET`, `PG_USER_PASS`,
    `MONGO_INITDB_ROOT_PASSWORD`, `RABBIT_ADMIN_PASSWORD`, `QDRANT_API_KEY`) and, on the first setup, the mail login
@@ -137,7 +144,8 @@ scripts/deploy/chola-prod.sh deploy --sha <commit>            # asks you to type
    whether database or queue volumes exist (yes/no; any other answer stops it): if they do, it never generates
    `PG_USER_PASS`, `MONGO_INITDB_ROOT_PASSWORD`, `RABBIT_ADMIN_PASSWORD`, `ENCRYPTION_KEY` or `CERTIN_HMAC_SECRET` (the
    data depends on them) and refuses when one is missing or empty: restore the `AWSPREVIOUS` version instead.
-3. **images**: backend, scan-worker and dast-worker are pulled from GHCR for linux/amd64 (`<prefix>-<sha12>`; the OCI
+3. **images** (with `--from-run`: from the CI run instead, [Images from a CI run](#images-from-a-ci-run)): backend,
+   scan-worker and dast-worker are pulled from GHCR for linux/amd64 (`<prefix>-<sha12>`; the OCI
    revision label must be the commit), the frontend is **built** from the commit's own tree (`git archive`) for
    linux/amd64 with `NEXT_PUBLIC_BACKEND_URL=https://chola-api.zeroshield.ai` and checked to contain that URL; all
    four are pushed to `935951870001.dkr.ecr.ap-south-1.amazonaws.com/devsec-chola/{devsecshield-backend,devsecshield-frontend,scan-worker,dast-worker}:<sha12>`.
@@ -151,6 +159,9 @@ scripts/deploy/chola-prod.sh deploy --sha <commit>            # asks you to type
    (`INFRA_IMAGES` in chola-prod.sh) for linux/amd64, `docker save`d under their tags to
    `s3://devsecshield-storage/releases/release.tar` (`put-object --expected-bucket-owner`), downloaded on the instance
    to `/var/lib/docker/releases/`, checked against their sha256, `docker load`ed and deleted. Skipped when present.
+   With `--from-run`, the archive is the run's `chola-infra` artifact (the same pins, gzip-compressed) instead.
+   Then **imds-check**: the container token probe runs again (the infrastructure images it needs are there now)
+   and must fail, before the backup and before anything starts.
 6. **backup**: `pg_dump` and `mongodump` into `/var/lib/docker/dss-backups/` (on the data volume; last 3 kept; no
    password on any command line: mongodump reads a 0600 config file inside its container), then the on-demand AWS
    Backup job of `vol-02a57fae6510bb790` (14 days, the production tags); waits for `COMPLETED`, stops on `FAILED` /
@@ -201,8 +212,53 @@ left, a deploy takes it from the history (never "none") or from the last release
 from the ALB while the backend restarts. A change to `nginx/` or the aibom overlay alone also recreates nginx and the
 backend-image services (a content-hash label; bind mounts are otherwise invisible to Compose; it works through sudo).
 
-Single steps can be run on their own: `secrets`, `images --sha S`, `infra [--force-infra]`, `backup`, `verify`,
-`smtp-test`, `status`, `logs [--service backend] [--tail 500]`, `attach --job <id>`.
+Single steps can be run on their own: `secrets`, `images --sha S [--from-run RUN]`,
+`infra [--force-infra] [--from-run RUN]`, `backup`, `verify`, `smtp-test`, `status`,
+`logs [--service backend] [--tail 500]`, `attach --job <id>`.
+
+### Images from a CI run
+
+Two ways to get a commit's images into ECR; both end with the same four tags
+(`devsec-chola/{devsecshield-backend,devsecshield-frontend,scan-worker,dast-worker}:<sha12>`), and the instance checks
+both the same way (linux/amd64, the frontend's API URL).
+
+| | GHCR path (default; the owner's laptop) | `--from-run RUN` (a machine that cannot pull GHCR or Docker Hub) |
+|---|---|---|
+| backend, scan-worker, dast-worker | `docker pull` from GHCR (`dev-<sha12>` / `staging-<sha12>` / `manual-<sha12>`) | the same GHCR images, copied by the run byte for byte (same digests) |
+| frontend | built here with buildx for `https://chola-api.zeroshield.ai` | built by the run the same way |
+| infrastructure archive | `docker pull` by digest + `docker save` here | the run's `release.tar.gz` (same pins) |
+| needs here | Docker + buildx, gh with `read:packages`, ~15 GB | gh (`gh api`), crane (or curl to fetch the pinned one), about the largest image's size free (~1.5 GB), **no Docker** |
+
+1. **Run the workflow** `.github/workflows/chola-prod-images.yml` for the commit (it needs green **Publish images
+   (GHCR)** for it first):
+   ```sh
+   # from the default branch (GitHub offers workflow_dispatch only for workflows that are on it)
+   gh api -X POST repos/CyberUltron-Consulting-Private-Limited/DevSecShield/actions/workflows/chola-prod-images.yml/dispatches \
+     -f ref=main -f 'inputs[sha]=<40-character commit>'
+   # or, before the workflow is on the default branch: push a branch named after the commit (any branch that has
+   # the workflow file; delete it afterwards)
+   git push origin <branch with the workflow>:refs/heads/chola-prod-images/<40-character commit>
+   ```
+   It pulls the three GHCR images (`crane pull --format=oci --platform linux/amd64`: their linux/amd64 manifests, byte
+   for byte), builds the frontend for linux/amd64 with `NEXT_PUBLIC_BACKEND_URL=https://chola-api.zeroshield.ai` (the
+   same build arguments and labels as the kit; the bundle must contain the URL), pulls the pinned `INFRA_IMAGES` and
+   `docker save`s them compressed, and uploads six artifacts, kept **3 days**: `chola-image-{backend,frontend,
+   scan-worker,dast-worker}` (each an OCI image layout, checked with `artifacts.py oci-check`: one linux/amd64 image,
+   every blob's sha256, `org.opencontainers.image.revision` = the commit), `chola-infra` (`release.tar.gz`) and
+   `chola-manifest` (`manifest.json`: the commit, each image's source ref, index and linux/amd64 digests and revision,
+   the archive's sha256 and pins). Its token has `contents: read` and `packages: read` only.
+2. **Deploy from it**: `chola-prod.sh deploy --sha <commit> --from-run <run id>` (also `preflight --sha S --from-run
+   RUN`, `images --sha S --from-run RUN`, `infra --from-run RUN`). The kit checks the run (that workflow,
+   `completed`/`success`), reads the manifest (its commit must be `--sha`, the frontend's API URL this kit's, the
+   archive's pins this kit's `INFRA_IMAGES`), then for each image, **one at a time**: streams the artifact zip from
+   `gh api .../actions/artifacts/<id>/zip` through `artifacts.py unzip-stream` straight into a layout (no zip file on
+   disk; names other than an OCI layout's are refused), checks it again (`oci-check`: the manifest's digest, every
+   blob's sha256, linux/amd64, the revision label), pushes it with `crane push` (ECR login with
+   `aws ecr get-login-password | crane auth login`, in the throwaway config), compares the digest ECR stored, and
+   **deletes the layout** before the next download. A tag already in ECR with the run's digest is skipped; with
+   another digest it is kept (tags are written once) and the summary says so. crane is used from PATH; without it,
+   `v0.22.1` is downloaded into the scratch directory and used only when its sha256 is the one pinned in the script.
+   Free space is checked before each download (`CHOLA_WORK_PARENT` moves the scratch directory).
 
 ## 3. First administrator (ansh@zeroshield.ai)
 
@@ -297,6 +353,41 @@ Rotation (details: `docs/security/secret-rotation.md`): change the value in Secr
 * app-user / cbom-collector keys: new key, update the secret, deploy, delete the old key.
 * Never delete `app-secrets`: Secrets Manager keeps the previous version as `AWSPREVIOUS`.
 
+## Instance metadata (IMDS)
+
+The instance keeps **`HttpPutResponseHopLimit` 2** (the infra team's setting; it is not changed by this kit). With 2,
+a container's IMDSv2 token request survives the Docker bridge hop, and the instance role reads every
+`devsec-chola/prod/*` secret. The application does not need the role (it uses the app-user keys), and the host's AWS
+CLI must keep it (ECR login, S3 release archive, Secrets Manager). So the **host** drops container traffic to the
+metadata service:
+
+* `/usr/local/sbin/devsec-chola-imds-block` (from `host/`) inserts, idempotently, `-d 169.254.169.254/32 -m comment
+  --comment devsec-chola-imds -j DROP` at the top of the **`DOCKER-USER`** chain (and the `FORWARD -j DOCKER-USER` jump
+  if missing). Container traffic is forwarded through the host, so it passes `FORWARD` and `DOCKER-USER`; the host's
+  own requests go through `OUTPUT` and still reach IMDS. Docker never flushes `DOCKER-USER`. Compose networks and the
+  default bridge are covered alike (the rule matches the destination, not an interface). A container with
+  `network_mode: host` would not be covered; this stack has none.
+* **IPv6**: when the instance's `HttpProtocolIpv6` is `enabled`, the same rule for `fd00:ec2::254` goes into
+  `ip6tables` (the kit reads the option with `describe-instances` and writes `IPV6=enabled` to
+  `/etc/default/devsec-chola-imds-block`). Disabled (today): no IPv6 rule is needed.
+* **Persistence**: `devsec-chola-imds-block.service` (oneshot, `After=docker.service`, `PartOf=docker.service`,
+  `WantedBy=docker.service multi-user.target`) runs it after every Docker start and restart, so a reboot or
+  `systemctl restart docker` puts it back; the drop-in `docker.service.d/devsec-chola-imds-block.conf` also runs it as
+  Docker's `ExecStartPre` (failure ignored there), so containers that come back on their own after a reboot never see
+  a gap. Installing it runs `daemon-reload` and starts the unit; **Docker itself is not restarted**.
+* **Installed by** `host-setup` and, idempotently, by **every deploy** before its preflight (`remote.sh imds-block`).
+* **Checked**: with a hop limit above 1 (or an unreadable one) the instance preflight requires the rule (IPv4, and
+  IPv6 when enabled), the enabled unit with its script and drop-in, and a raw IMDSv2 token `PUT` from a bridge-network
+  container (`qdrant/qdrant:v1.13.5`, 8 s timeout) that must **fail**; a probe that did not run is a failure, never a
+  pass. Before the infrastructure images are loaded the probe cannot run yet: preflight says so, and the deploy runs
+  `remote.sh imds-check` after loading them, which requires the probe, before the backup and before anything starts.
+  IMDSv1 (`HttpTokens` optional) is refused outright (the host itself would hand out credentials). `--allow-imds`
+  turns each of these failures into a warning; not advised.
+* To check by hand on the instance: `sudo iptables -S DOCKER-USER`, `systemctl status devsec-chola-imds-block`.
+  To remove it: `sudo systemctl disable --now devsec-chola-imds-block`, delete the three files and the rule
+  (`sudo iptables -D DOCKER-USER -d 169.254.169.254/32 -m comment --comment devsec-chola-imds -j DROP`), then
+  `sudo systemctl daemon-reload`; preflight fails afterwards while the hop limit is 2.
+
 ## 7. Troubleshooting
 
 * **EICE tunnel** (`SSH ... through EC2 Instance Connect failed`): the AWS error is printed. AccessDenied: the user lacks
@@ -344,8 +435,9 @@ Rotation (details: `docs/security/secret-rotation.md`): change the value in Secr
 * **S3 and Bedrock use the app-user keys, not the instance role.** The code builds its S3 client and every Bedrock
   client from `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` explicitly and fails without them
   (`backend/utilities/db/s3_utils.py`, `backend/utilities/ai/llm.py`, `RabbitMQ/worker/helpers/context/s3_utils.py`,
-  `base_utilities.py`, `base_agent.py`), so the instance role cannot be used without code changes; the IMDS hop limit
-  then only matters for security (must be 1). The CBOM AI assistant uses the same keys (`CBOM_AI_AWS_CREDENTIALS=env`).
+  `base_utilities.py`, `base_agent.py`), so the instance role cannot be used without code changes; IMDS then only
+  matters for security: containers must not reach it (hop limit 1, or the host's container IMDS block with the hop
+  limit 2 this instance has). The CBOM AI assistant uses the same keys (`CBOM_AI_AWS_CREDENTIALS=env`).
   No MinIO: real S3, bucket `devsecshield-storage` (the code's default bucket).
 * **Least privilege per container**: the backend-image services, the scan/CI-CD workers and the DAST worker each get
   only the variables their code reads (one env file each); the frontend and nginx get none. `BACKEND_WORKERS` is in
