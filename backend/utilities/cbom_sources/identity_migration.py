@@ -214,33 +214,20 @@ def _pg(session: Any) -> bool:
     return session.get_bind().dialect.name == "postgresql"
 
 
-def _temp(session: Any, name: str, columns: str, rows: list[dict[str, Any]]) -> None:
-    """A temporary table holding ``rows`` (a multi-row INSERT, batched by SQLAlchemy), analysed on PostgreSQL so the
-    updates below join it by key."""
+def _temp(session: Any, name: str, columns: list[Any], rows: list[dict[str, Any]]) -> Any:
+    """A temporary table (SQLAlchemy Core, no SQL text) holding ``rows``, inserted in batches; analysed on
+    PostgreSQL. The caller drops it (``table.drop``)."""
     import sqlalchemy as sa
 
-    session.execute(sa.text(f"CREATE TEMPORARY TABLE {name} ({columns})"))
-    if rows:
-        table = sa.table(name, *(sa.column(k) for k in rows[0]))
-        for chunk in _chunks(rows, 5000):
-            session.execute(sa.insert(table).values(chunk))
-    if _pg(session):
-        session.execute(sa.text(f"ANALYZE {name}"))
-
-
-def _set_from(session: Any, target: str, column: str, value: str, temp: str, on: str, where: str,
-              params: dict[str, Any] | None = None) -> int:
-    """``UPDATE target SET column = <temp row's value>`` for the target rows ``on`` matches: ``UPDATE … FROM`` on
-    PostgreSQL (one hash join), a correlated sub-select on SQLite. ``on`` / ``where`` name the target ``x`` and the
-    temporary table ``t``."""
-    import sqlalchemy as sa
-
-    if _pg(session):
-        sql = f"UPDATE {target} x SET {column} = {value} FROM {temp} t WHERE {on} AND {where}"
-    else:
-        sql = (f"UPDATE {target} AS x SET {column} = (SELECT {value} FROM {temp} t WHERE {on} AND {where}) "
-               f"WHERE EXISTS (SELECT 1 FROM {temp} t WHERE {on} AND {where})")
-    return session.execute(sa.text(sql), params or {}).rowcount or 0
+    table = sa.Table(name, sa.MetaData(), *columns, prefixes=["TEMPORARY"])
+    table.create(session.connection())
+    for chunk in _chunks(rows, 5000):
+        session.execute(sa.insert(table), chunk)
+    if _pg(session):  # statistics, so the updates join it by key; constant statements (no SQL is built from data)
+        analyze = {"q109_obs": lambda: sa.text("ANALYZE q109_obs"), "q109_asset": lambda: sa.text("ANALYZE q109_asset"),
+                   "q109_new": lambda: sa.text("ANALYZE q109_new"), "q109_seen": lambda: sa.text("ANALYZE q109_seen")}
+        session.execute(analyze[name]())
+    return table
 
 
 def migrate_team(session: Any, team_id: int, *, refs: Iterable[str] | None = None, since_job: int = 0,
@@ -301,35 +288,37 @@ _PRESENCE_RANK = {"present": 0, "not_read": 1, "removed": 2}  # which observatio
 
 def _move_observations(session: Any, team_id: int, rows: list[dict[str, Any]]) -> tuple[int, int]:
     """The observation keys, then the observations' estate keys, then the estate asset rows and every row keyed by
-    them. A constant number of statements over two temporary tables. Returns (observations, estate assets) moved."""
+    them. A constant number of SQLAlchemy Core statements over temporary tables (``UPDATE … FROM``). Returns (observations, estate assets) moved."""
     import sqlalchemy as sa
 
-    from backend.new_models import CbomEstateAsset, CbomEstateObservation
+    from backend.new_models import (CbomEstateAsset, CbomEstateLink, CbomEstateObservation, CbomQ0Gap,
+                                    CbomRiskRegister)
 
-    eo, ea = CbomEstateObservation.__table__, CbomEstateAsset.__table__  # reads only; the writes are set-based SQL
-    T, A = "q109_obs", "q109_asset"
+    eo, ea = CbomEstateObservation.__table__, CbomEstateAsset.__table__
+    rr, el, gq = CbomRiskRegister.__table__, CbomEstateLink.__table__, CbomQ0Gap.__table__
+    s64, s255 = sa.String(64), sa.String(255)
     # an observation whose new estate key the source already holds (stored, or an earlier row of this batch) merges
     claimed: set[tuple[str, str]] = set()
     news = [{"ref": ref, "k": key} for ref, key in sorted({(r["ref"], r["enew"]) for r in rows if r["enew"]})]
     if news:
-        N = "q109_new"
-        _temp(session, N, "ref VARCHAR(255), k VARCHAR(64), PRIMARY KEY (ref, k)", news)
-        claimed.update((ref, key) for ref, key in session.execute(sa.text(
-            f"SELECT n.ref, n.k FROM {N} n JOIN cbomestateobservation o ON o.team_id = :t AND o.source_ref = n.ref "
-            f"AND o.asset_key = n.k"), {"t": team_id}).all())
-        session.execute(sa.text(f"DROP TABLE {N}"))
+        n_t = _temp(session, "q109_new", [sa.Column("ref", s255, primary_key=True),
+                                          sa.Column("k", s64, primary_key=True)], news)
+        claimed.update((ref, key) for ref, key in session.execute(sa.select(n_t.c.ref, n_t.c.k).select_from(n_t.join(
+            eo, sa.and_(eo.c.team_id == team_id, eo.c.source_ref == n_t.c.ref, eo.c.asset_key == n_t.c.k)))).all())
+        n_t.drop(session.connection())
     rows.sort(key=lambda r: (r.pop("rank"), r["id"]))  # a present observation keeps its row, a removed one merges
     for r in rows:
         r["act"] = None
         if r["enew"]:
             r["act"] = "drop" if (r["ref"], r["enew"]) in claimed else "move"
             claimed.add((r["ref"], r["enew"]))
-    _temp(session, T, "id INTEGER PRIMARY KEY, ref VARCHAR(255), okey VARCHAR(40), eold VARCHAR(64), "
-                      "enew VARCHAR(64), act VARCHAR(8)", rows)
-    moved_o = _set_from(session, "cbomestateobservation", "observation_key", "t.okey", T, "t.id = x.id",
-                        "t.okey IS NOT NULL")
-    session.execute(sa.text(f"DELETE FROM cbomestateobservation WHERE id IN (SELECT id FROM {T} WHERE act = 'drop')"))
-    _set_from(session, "cbomestateobservation", "asset_key", "t.enew", T, "t.id = x.id", "t.act = 'move'")
+    o_t = _temp(session, "q109_obs", [sa.Column("id", sa.Integer, primary_key=True, autoincrement=False),
+                                      sa.Column("ref", s255), sa.Column("okey", sa.String(40)), sa.Column("eold", s64),
+                                      sa.Column("enew", s64), sa.Column("act", sa.String(8))], rows)
+    moved_o = session.execute(sa.update(eo).values(observation_key=o_t.c.okey).where(
+        o_t.c.id == eo.c.id, o_t.c.okey.is_not(None))).rowcount or 0
+    session.execute(sa.delete(eo).where(eo.c.id.in_(sa.select(o_t.c.id).where(o_t.c.act == "drop"))))
+    session.execute(sa.update(eo).values(asset_key=o_t.c.enew).where(o_t.c.id == eo.c.id, o_t.c.act == "move"))
     # the estate asset rows: one decision per (old, new) pair, from three reads
     pairs = list(dict.fromkeys((r["eold"], r["enew"]) for r in rows if r["act"]))  # best observation first
     olds, newk = sorted({o for o, _n in pairs}), sorted({n for _o, n in pairs})
@@ -366,41 +355,44 @@ def _move_observations(session: Any, team_id: int, rows: list[dict[str, Any]]) -
                 best = (o.first_seen_at, o.first_seen_run_id)
             first[new] = best
         acts.append({"old": old, "new": new, "act": act, "lead": lead})
-    _temp(session, A, "old VARCHAR(64) PRIMARY KEY, new VARCHAR(64), act VARCHAR(8), lead INTEGER", acts)
-    tid = {"t": team_id}
-    merged = f"(SELECT old FROM {A} WHERE act = 'merge')"
+    a_t = _temp(session, "q109_asset", [sa.Column("old", s64, primary_key=True), sa.Column("new", s64),
+                                        sa.Column("act", sa.String(8)), sa.Column("lead", sa.Integer)], acts)
+    joined = ("rename", "merge")
     # copies first (they read the old row), then renames, then the merges' first seen, links, register, Q0, deletes
     if any(a["act"] == "copy" for a in acts):
-        cols = [c["name"] for c in sa.inspect(session.connection()).get_columns("cbomestateasset")
-                if c["name"] not in ("id", "asset_key")]
-        names = ", ".join(cols)
-        session.execute(sa.text(
-            f"INSERT INTO cbomestateasset ({names}, asset_key) SELECT {', '.join('e.' + c for c in cols)}, a.new "
-            f"FROM cbomestateasset e JOIN {A} a ON a.old = e.asset_key WHERE e.team_id = :t AND a.act = 'copy'"), tid)
-    _set_from(session, "cbomestateasset", "asset_key", "t.new", A, "t.old = x.asset_key",
-              "x.team_id = :t AND t.act = 'rename'", tid)
+        live = sa.Table(ea.name, sa.MetaData(), autoload_with=session.connection())  # the columns at this revision
+        cols = [c for c in live.c if c.name not in ("id", "asset_key")]
+        session.execute(sa.insert(live).from_select(
+            [c.name for c in cols] + ["asset_key"],
+            sa.select(*cols, a_t.c.new).select_from(live.join(a_t, a_t.c.old == live.c.asset_key))
+            .where(live.c.team_id == team_id, a_t.c.act == "copy")))
+    session.execute(sa.update(ea).values(asset_key=a_t.c.new).where(
+        a_t.c.old == ea.c.asset_key, ea.c.team_id == team_id, a_t.c.act == "rename"))
     seen = [{"new": k, "at": at, "run": run} for k, (at, run) in first.items() if at is not None]
     if seen:  # a merge keeps the earliest first seen of the rows it joins
-        S = "q109_seen"
-        _temp(session, S, "new VARCHAR(64) PRIMARY KEY, at TIMESTAMP, run INTEGER", seen)
-        for column, value in (("first_seen_at", "t.at"), ("first_seen_run_id", "t.run")):
-            _set_from(session, "cbomestateasset", column, value, S, "t.new = x.asset_key", "x.team_id = :t", tid)
-        session.execute(sa.text(f"DROP TABLE {S}"))
-    _set_from(session, "cbomestatelink", "asset_key", "t.new", A, "t.old = x.asset_key",
-              "x.team_id = :t AND t.act IN ('rename', 'merge')", tid)
-    _set_from(session, "cbomriskregister", "item_key", "t.new", A, "t.old = x.item_key",
-              "x.team_id = :t AND t.lead = 1 AND t.act IN ('rename', 'merge') AND NOT EXISTS (SELECT 1 FROM "
-              "cbomriskregister r2 WHERE r2.team_id = :t AND r2.item_key = t.new)", tid)
-    _set_from(session, "cbomq0gap", "item_key", "'asset:' || t.new", A, "x.item_key = 'asset:' || t.old",
-              "x.team_id = :t AND x.closed_at IS NULL AND t.lead = 1 AND t.act IN ('rename', 'merge') AND NOT EXISTS "
-              "(SELECT 1 FROM cbomq0gap g2 WHERE g2.team_id = :t AND g2.item_kind = x.item_kind AND "
-              "g2.closed_at IS NULL AND g2.item_key = 'asset:' || t.new)", tid)
-    session.execute(sa.text(f"DELETE FROM cbomriskregister WHERE team_id = :t AND item_key IN "
-                            f"{merged}"), tid)
-    session.execute(sa.text(f"DELETE FROM cbomestateasset WHERE team_id = :t AND asset_key IN "
-                            f"{merged}"), tid)
-    for name in (T, A):
-        session.execute(sa.text(f"DROP TABLE {name}"))
+        s_t = _temp(session, "q109_seen", [sa.Column("new", s64, primary_key=True), sa.Column("at", sa.DateTime),
+                                           sa.Column("run", sa.Integer)], seen)
+        session.execute(sa.update(ea).values(first_seen_at=s_t.c.at, first_seen_run_id=s_t.c.run).where(
+            s_t.c.new == ea.c.asset_key, ea.c.team_id == team_id))
+        s_t.drop(session.connection())
+    session.execute(sa.update(el).values(asset_key=a_t.c.new).where(
+        a_t.c.old == el.c.asset_key, el.c.team_id == team_id, a_t.c.act.in_(joined)))
+    rr2 = rr.alias("rr2")
+    session.execute(sa.update(rr).values(item_key=a_t.c.new).where(
+        a_t.c.old == rr.c.item_key, rr.c.team_id == team_id, a_t.c.lead == 1, a_t.c.act.in_(joined),
+        ~sa.exists(sa.select(rr2.c.id).where(rr2.c.team_id == team_id, rr2.c.item_key == a_t.c.new))))
+    g2 = gq.alias("g2")
+    prefix = sa.literal("asset:", sa.String)
+    session.execute(sa.update(gq).values(item_key=prefix + a_t.c.new).where(
+        gq.c.item_key == prefix + a_t.c.old, gq.c.team_id == team_id, gq.c.closed_at.is_(None), a_t.c.lead == 1,
+        a_t.c.act.in_(joined), ~sa.exists(sa.select(g2.c.id).where(
+            g2.c.team_id == team_id, g2.c.item_kind == gq.c.item_kind, g2.c.closed_at.is_(None),
+            g2.c.item_key == prefix + a_t.c.new))))
+    merged = sa.select(a_t.c.old).where(a_t.c.act == "merge")
+    session.execute(sa.delete(rr).where(rr.c.team_id == team_id, rr.c.item_key.in_(merged)))
+    session.execute(sa.delete(ea).where(ea.c.team_id == team_id, ea.c.asset_key.in_(merged)))
+    for table in (o_t, a_t):
+        table.drop(session.connection())
     return moved_o, sum(1 for a in acts if a["act"] != "seen")
 
 
@@ -484,16 +476,16 @@ def migrate_all(connection: Any, now: Any = None, *, reverse: bool = False) -> d
     import sqlalchemy as sa
     from sqlmodel import Session
 
-    from backend.new_models import CbomEstateSource, CbomOpsCounter
+    from backend.new_models import CbomCollectionJob, CbomEstateSource, CbomOpsCounter
     from backend.utilities.cbom_sources.common import log, utcnow
 
     started = time.monotonic()
     oc = CbomOpsCounter.__table__
     out = {"teams": 0, "failed": 0, "sources": 0, "estate": 0, "observations": 0, "assignments": 0}
     if connection.dialect.name == "postgresql":
-        connection.execute(sa.text(f"SET LOCAL lock_timeout = '{LOCK_TIMEOUT}'"))
+        connection.execute(sa.text("SET LOCAL lock_timeout = '30s'"))  # LOCK_TIMEOUT
     teams = sorted(t for (t,) in connection.execute(sa.select(CbomEstateSource.team_id).distinct()).all())
-    high = int(connection.execute(sa.text("SELECT max(id) FROM cbomcollectionjob")).scalar() or 0)
+    high = int(connection.execute(sa.select(sa.func.max(CbomCollectionJob.id))).scalar() or 0)
     log("cbom sources identity key migration started", reverse=reverse, teams=len(teams))
     for i, team_id in enumerate(teams, 1):
         t0 = time.monotonic()
