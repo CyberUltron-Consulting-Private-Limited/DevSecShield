@@ -14,6 +14,7 @@ import {
   completenessNotice,
   bandChip,
   scannersNotFinished,
+  candidateList,
 } from "./aibomDisplay";
 import { inventoryModelNames } from "./modelCardDisplay";
 
@@ -124,5 +125,21 @@ assert.equal(
   scannersNotFinished("net-env: RuntimeError (unexpected); docker: OSError"),
   "the network/endpoint and container scanners did not finish",
 );
+
+// review 6066180782 of #498, R7-M1: a model chosen at run time is one model; its candidates are a collapsed list
+const forty = Array.from({ length: 40 }, (_, i) => ({ name: `llama3.1:${i + 1}b`, provider: "Ollama" }));
+const c40 = candidateList(forty)!;
+assert.equal(c40.total, 40);
+assert.equal(c40.summary, "40 candidates");
+assert.deepEqual(c40.shown.slice(0, 2), ["llama3.1:1b (Ollama)", "llama3.1:2b (Ollama)"]);
+assert.equal(c40.shown.length, 10);
+assert.equal(c40.more, 30);
+assert.equal(c40.all.length, 40);
+const mixed = candidateList([{ name: "gpt-4o", provider: "OpenAI" }, { name: "phi3:mini", provider: "Ollama" }])!;
+assert.deepEqual(mixed.shown, ["gpt-4o (OpenAI)", "phi3:mini (Ollama)"]);
+assert.equal(mixed.more, 0);
+assert.equal(candidateList(undefined), null);
+assert.equal(candidateList([]), null);
+assert.equal(candidateList([{ name: "x" } as unknown as { name: string; provider: string }])?.shown[0], "x (unknown)");
 
 console.log("aibomDisplay tests passed");

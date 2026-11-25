@@ -171,3 +171,32 @@ export function licenceLabel(id: string, max: number = MAX_LABEL): string {
   const text = id.startsWith("LicenseRef-") ? id.slice("LicenseRef-".length).replace(/-/g, " ") : id;
   return text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
 }
+
+/** A candidate of a model chosen at run time (engine row ``model_candidates``). */
+export type ModelCandidate = { name: string; provider: string };
+
+/** Candidates shown before the rest collapse into "and N more" (the PDF names the same ten). */
+export const CANDIDATES_SHOWN = 10;
+
+/**
+ * A model chosen at run time (``ollama.chat(model=OPTIONS[choice])``) is ONE model; its candidates are evidence, shown
+ * as a collapsed list: the first ten as "name (provider)", the rest as a count, all of them on expanding
+ * (review 6066180782 of #498, R7-M1). Null when the finding has none.
+ */
+export function candidateList(cands: ModelCandidate[] | null | undefined): {
+  total: number;
+  summary: string;
+  shown: string[];
+  more: number;
+  all: string[];
+} | null {
+  if (!Array.isArray(cands) || cands.length === 0) return null;
+  const all = cands.map((c) => `${c?.name ?? "?"} (${c?.provider || "unknown"})`);
+  return {
+    total: all.length,
+    summary: `${all.length} candidate${all.length === 1 ? "" : "s"}`,
+    shown: all.slice(0, CANDIDATES_SHOWN),
+    more: Math.max(0, all.length - CANDIDATES_SHOWN),
+    all,
+  };
+}

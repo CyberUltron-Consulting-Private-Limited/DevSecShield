@@ -73,6 +73,22 @@ def _impact_color(impact: str):
     return severity_color(impact)
 
 
+#: candidates named on a finding card before "and N more" (the page's collapsed list shows the same ten first)
+CANDIDATES_SHOWN = 10
+
+
+def candidates_text(v: dict) -> str | None:
+    """"40 candidates: a (Ollama), b (OpenAI) … and 30 more" for a model chosen at run time (``model_candidates``,
+    review 6066180782 of #498, R7-M1): one model, its candidates listed as evidence; None for any other row."""
+    cands = v.get("model_candidates") if isinstance(v, dict) else None
+    if not isinstance(cands, list) or not cands:
+        return None
+    items = [f"{c.get('name')} ({c.get('provider') or 'unknown'})" for c in cands if isinstance(c, dict)]
+    rest = len(items) - CANDIDATES_SHOWN
+    return f"{len(items)} candidates: " + ", ".join(items[:CANDIDATES_SHOWN]) + (
+        f" and {rest} more" if rest > 0 else "")
+
+
 def _asset_name(v: dict) -> str:
     """Tolerate both frontend (asset_name) and stored (component_name) field names."""
     return v.get("asset_name") or v.get("component_name") or ""
@@ -279,6 +295,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                         ("Version", str(v.get("version") or "—")),
                         ("Risk category", str(v.get("risk_category") or "—")),
                         ("Where it was found", finding_location(v)),
+                        *([("Candidates", cands)] if (cands := candidates_text(v)) else []),
                     ],
                     description=str(v.get("description") or ""),
                     evidence=str(v.get("snippet") or ""),

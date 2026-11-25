@@ -2625,6 +2625,8 @@ export interface AiBomFinding {
   location?: string
   snippet?: string
   remediation?: RemediationData | null
+  /** A model chosen at run time: its candidates, each with its provider (one model, review 6066180782 of #498) */
+  model_candidates?: { name: string; provider: string }[]
 }
 
 /** AI BOM scan metadata from backend get_scan_metadata (ai_bom branch) */

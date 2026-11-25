@@ -103,6 +103,7 @@ import {
   type Scores as AiBomScores,
 } from "@/components/ai-bom/AiBomVisualizations";
 import {
+  candidateList,
   completenessNotice,
   licenceLabel,
   unnamedModelHint,
@@ -1726,6 +1727,25 @@ export default function AiBomResults({
                         <p className="text-sm font-mono text-zinc-700 dark:text-zinc-300 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 rounded-md border border-zinc-200 dark:border-zinc-700 break-all">{selectedFinding.location}</p>
                       </div>
                     )}
+
+                    {(() => {
+                      // a model chosen at run time: one model, its candidates collapsed (review 6066180782 of #498)
+                      const cands = candidateList(selectedFinding.model_candidates);
+                      if (!cands) return null;
+                      return (
+                        <div>
+                          <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Chosen at run time from {cands.summary}</div>
+                          <details className="text-sm text-zinc-700 dark:text-zinc-300">
+                            <summary className="cursor-pointer break-words">
+                              {cands.shown.join(", ")}{cands.more > 0 ? ` and ${cands.more} more` : ""}
+                            </summary>
+                            <ul className="mt-2 max-h-48 overflow-y-auto list-disc pl-5 font-mono text-xs break-all">
+                              {cands.all.map((c) => <li key={c}>{c}</li>)}
+                            </ul>
+                          </details>
+                        </div>
+                      );
+                    })()}
 
                     {selectedFinding.description && (
                       <div>
