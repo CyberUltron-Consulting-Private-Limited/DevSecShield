@@ -63,6 +63,12 @@ _VENDOR_API: dict[str, str] = {
     "Amazon": "bedrock",  # Titan / Nova run on Amazon Bedrock only
     "DeepSeek": "deepseek",
 }
+# A Hugging Face Hub model (``model:hub_id``) is downloaded and run by the
+# application through one of these libraries; its maker's API does not serve it.
+_HUB_LOADERS: tuple[str, ...] = (
+    "transformers", "sentence-transformers", "diffusers", "pyannote-audio",
+    "pyannote.audio", "llama-cpp-python", "vllm", "huggingface-hub",
+)
 # Vendor -> other platforms that serve its models (beyond its own API).
 _SERVES: dict[str, tuple[str, ...]] = {
     "OpenAI": ("azure",),
@@ -141,8 +147,13 @@ class ModelGraphLinker(Scanner):
                 continue  # a card already wired this model — don't second-guess it
 
             vendor = (model.publisher or "").strip()
+            hub = bool(props.get("model:hub_id"))
             sdk_ref = next(
-                (frameworks[s] for s in _VENDOR_SDK.get(vendor, ()) if s in frameworks),
+                (
+                    frameworks[s]
+                    for s in (_HUB_LOADERS if hub else _VENDOR_SDK.get(vendor, ()))
+                    if s in frameworks
+                ),
                 None,
             )
             if sdk_ref is not None:
@@ -159,8 +170,10 @@ class ModelGraphLinker(Scanner):
                 )
                 continue
             model.properties = props
-            if sdk_ref is not None:
-                continue  # served through its SDK at an endpoint the scan did not see
+            if sdk_ref is not None or hub:
+                # served through its SDK at an endpoint the scan did not see, or
+                # open weights from the Hub that the application runs itself
+                continue
 
             # Nothing else is known: a provider node for the vendor + served_by.
             if vendor not in vendor_nodes:
@@ -212,6 +225,16 @@ class ModelGraphLinker(Scanner):
             return "bedrock", services["bedrock"]
         if hint and hint in services:
             return hint, services[hint]
+        if props.get("model:hub_id"):
+            # open weights from the Hub: served only by a gateway or the Hugging Face
+            # Inference API that the model's own file calls, never by its maker's API
+            # (openai/whisper-large-v3 is not the OpenAI API's whisper-1)
+            hosted = [
+                (k, r)
+                for k, r in by_file.get(props.get("discovery:source", ""), [])
+                if k in ("gateway", "huggingface")
+            ]
+            return hosted[0] if hosted else ("", None)
         own = _VENDOR_API.get(vendor)
         able = _SERVES.get(vendor, ())
         local = [

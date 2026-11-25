@@ -387,6 +387,25 @@ def test_only_real_version_words_follow_a_version(
 
 
 def test_alibaba_provider_is_not_local(tmp_path: pathlib.Path) -> None:
+    # A Qwen model the code names with no serving service: the endpoint-less
+    # "Alibaba" provider node is Alibaba's, never "local". (Weights loaded with
+    # from_pretrained("Qwen/…") are run by the application itself and get no
+    # provider node at all since #498 round 3: see test_aibom_d5_qa2_round3.py.)
+    _write(
+        tmp_path,
+        {"app/llm.py": 'def ask(client):\n'
+         '    return client.chat(model="qwen2.5-72b-instruct", messages=[])\n'},
+    )
+    rows = {
+        r["component_name"]: r["source"]
+        for r in scan_to_devsecshield(tmp_path, level=4)["results"]
+    }
+    assert rows["Alibaba"] == "alibaba"
+
+
+def test_qwen_weights_from_the_hub_have_no_provider_node(
+    tmp_path: pathlib.Path,
+) -> None:
     _write(
         tmp_path,
         {
@@ -395,7 +414,10 @@ def test_alibaba_provider_is_not_local(tmp_path: pathlib.Path) -> None:
         },
     )
     rows = {
-        r["component_name"]: r["source"]
+        r["component_name"]: r
         for r in scan_to_devsecshield(tmp_path, level=4)["results"]
     }
-    assert rows["Alibaba"] == "alibaba"
+    assert "Alibaba" not in rows
+    # run by the application (not an external provider), its licence unknown offline
+    assert rows["Qwen2.5-1.5B-Instruct"]["component_type"] == "local_model_file"
+    assert rows["Qwen2.5-1.5B-Instruct"]["license_status"] == "unknown"

@@ -95,6 +95,29 @@ _KB: tuple[tuple[str, dict], ...] = (
             "lineage": [],
         },
     ),
+    # ── OpenAI Whisper open weights (the Hub checkpoints openai/whisper-tiny …
+    # -large-v3-turbo: "license: apache-2.0" on their model cards). The API model
+    # ``whisper-1`` matches none of these tokens and keeps OpenAI's terms. ──
+    *(
+        (
+            token,
+            {
+                "approach_type": "supervised",
+                "task": "automatic-speech-recognition",
+                "architecture_family": "transformer (encoder-decoder)",
+                "model_architecture": "Whisper",
+                "license": "Apache-2.0",
+                "lineage": [],
+            },
+        )
+        for token in (
+            "whisper-tiny",
+            "whisper-base",
+            "whisper-small",
+            "whisper-medium",
+            "whisper-large",
+        )
+    ),
     # ── proprietary, hosted ──
     (
         "gpt-4",

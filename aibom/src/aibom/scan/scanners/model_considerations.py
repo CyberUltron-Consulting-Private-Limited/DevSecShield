@@ -56,6 +56,20 @@ def _external(services: list) -> list:
     ]
 
 
+def _api_served(comp: ModelComponent, services: list) -> bool:
+    """A Mistral model that a provider's API serves (Mistral, Bedrock, Azure, Vertex,
+    Groq …: the linker records it as ``model:provider``) is used under that
+    provider's terms. A self-hosted OpenAI-compatible gateway (vLLM / LiteLLM in
+    front of the weights) sets no provider: the open-weights licence still applies
+    (review of #498 round 3: mistral-7b behind ``http://vllm.internal:8000`` read
+    LicenseRef-proprietary)."""
+    return (
+        comp.publisher == "Mistral"
+        and bool((comp.properties or {}).get("model:provider"))
+        and bool(_external(services))
+    )
+
+
 def _alias(name: str) -> str | None:
     if name.lower().endswith("-latest"):
         return (
@@ -96,7 +110,7 @@ class ModelConsiderations(Scanner):
             if not comp.bom_ref.startswith("modelref-"):
                 continue  # a carded model: its author's card says what is known
             services = [by_ref[r] for r in served.get(comp.bom_ref, [])]
-            if comp.publisher == "Mistral" and _external(services):
+            if _api_served(comp, services):
                 # served by an API (Mistral, Bedrock, Azure …): used under the
                 # provider's commercial terms, not an open-weights licence (review
                 # 6037909737 of #498, M6)
@@ -139,7 +153,7 @@ class ModelConsiderations(Scanner):
             if text
         ]
         # an open-weights licence's excluded uses do not apply to an API-served model
-        api_served = comp.publisher == "Mistral" and bool(external)
+        api_served = _api_served(comp, services)
         out_of_scope = [] if api_served else list(kb.get("out_of_scope") or [])
         if not (use_cases or limitations or out_of_scope):
             return None

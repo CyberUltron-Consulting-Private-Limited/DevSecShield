@@ -188,6 +188,8 @@ def _ai_package(
         comment=_MENTION_COMMENT.get(rtype or ""),
         suppliedBy=supplier,
         software_packageVersion=comp.version,
+        # the Hub purl (pkg:huggingface/<org>/<name>), as CycloneDX carries it
+        software_packageUrl=comp.purl,
         software_primaryPurpose="model",
         ai_typeOfModel=type_of_model or None,
         ai_limitation=limitations,

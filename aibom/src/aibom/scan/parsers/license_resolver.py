@@ -73,6 +73,10 @@ _LICENSE_MAP: dict[str, str] = {
     "botocore": "Apache-2.0",
     "groq": "Apache-2.0",
     "replicate": "Apache-2.0",
+    # PyPI JSON, 25 Nov 2026: faiss-cpu / faiss-gpu 1.16.0 license_expression "MIT"
+    # (the FAISS vector index; alejandro-ao/ask-multiple-pdfs, #498 round 3)
+    "faiss-cpu": "MIT",
+    "faiss-gpu": "MIT",
     "cohere": "MIT",
     "mistralai": "Apache-2.0",
     "google-generativeai": "Apache-2.0",

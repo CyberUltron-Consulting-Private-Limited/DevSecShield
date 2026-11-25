@@ -367,6 +367,11 @@ def _finding_license(comp: AIComponent) -> str:
     spdx = resolve_license(name)
     if spdx:
         return spdx
+    if kind == "model" and (comp.bom_ref or "").startswith("modelref-"):
+        # a model the code references, with no licence the knowledge base knows
+        # (MODEL_LICENSE_UNKNOWN): unknown, never "not declared" (nothing was read
+        # that could declare one; #498 round 3, pyannote/speaker-diarization-3.1)
+        return LICENSE_UNKNOWN
     return "LicenseRef-not-declared"
 
 

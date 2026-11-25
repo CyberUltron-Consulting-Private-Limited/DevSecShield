@@ -183,15 +183,53 @@ _SDK_CLIENTS: tuple[tuple[str, str, str, str, str], ...] = (
         "Cohere API", "Cohere", "https://api.cohere.com",
     ),
 )
+# LangChain's chat / LLM / embedding wrappers are clients of the same vendor APIs
+# (``ChatOpenAI()`` calls https://api.openai.com/v1 unless given another base URL):
+# the most common way an application calls a model (review of #498 round 3:
+# alejandro-ao/ask-multiple-pdfs calls OpenAI only through ``ChatOpenAI()`` and
+# ``OpenAIEmbeddings()``, and the BOM had no AI service). Python packages
+# ``langchain*`` and the JS ``@langchain/*`` / ``langchain/*`` modules.
+_LANGCHAIN_IMPORT = (
+    r"""(?:^|\n)\s*(?:from|import)\s+langchain[\w.]*\b|"""
+    r"""from\s+['"](?:@langchain/[\w-]+|langchain(?:/[\w/-]+)?)['"]|"""
+    r"""require\(\s*['"](?:@langchain/[\w-]+|langchain(?:/[\w/-]+)?)['"]\s*\)"""
+)
+_LANGCHAIN_CLIENTS: tuple[tuple[str, str, str, str], ...] = (
+    (r"ChatOpenAI|OpenAIEmbeddings|OpenAI", "OpenAI API", "OpenAI",
+     "https://api.openai.com/v1"),
+    (r"ChatAnthropic|AnthropicLLM", "Anthropic API", "Anthropic",
+     "https://api.anthropic.com"),
+    (r"ChatGoogleGenerativeAI|GoogleGenerativeAIEmbeddings|GoogleGenerativeAI",
+     "Google Gemini API", "Google", "https://generativelanguage.googleapis.com"),
+    (r"ChatGroq", "Groq API", "Groq", "https://api.groq.com"),
+    (r"ChatMistralAI|MistralAIEmbeddings", "Mistral API", "Mistral",
+     "https://api.mistral.ai"),
+    (r"ChatCohere|CohereEmbeddings|CohereRerank", "Cohere API", "Cohere",
+     "https://api.cohere.com"),
+)
+_SDK_CLIENTS = _SDK_CLIENTS + tuple(
+    (_LANGCHAIN_IMPORT, rf"(?<!\w)(?:new\s+)?(?:{names})\s*\(", label, vendor, url)
+    for names, label, vendor, url in _LANGCHAIN_CLIENTS
+)
+# LangChain's Bedrock wrappers are Amazon Bedrock Runtime clients
+_LANGCHAIN_IMPORT_RE = re.compile(_LANGCHAIN_IMPORT, re.IGNORECASE)
+_LANGCHAIN_BEDROCK = re.compile(
+    r"(?<!\w)(?:new\s+)?(?:ChatBedrock(?:Converse)?|BedrockChat|BedrockLLM|"
+    r"BedrockEmbeddings|Bedrock)\s*\("
+)
 # Azure OpenAI: always Azure (never the OpenAI API); the endpoint is the literal
 # ``azure_endpoint`` when there is one, else unknown, with the environment variable
 # that holds it recorded (review 6037909737 of #498, M2)
 _AZURE_IMPORT = re.compile(
     r"""(?:^|\n)\s*(?:from\s+openai\b|import\s+openai\b)|from\s+['"]openai['"]|"""
-    r"""from\s+['"]@azure/openai['"]""",
+    r"""from\s+['"]@azure/openai['"]|""" + _LANGCHAIN_IMPORT,
     re.IGNORECASE,
 )
-_AZURE_CALL = re.compile(r"(?<!\w)(?:new\s+)?(?:Async)?AzureOpenAI\s*\(")
+# the SDK's AzureOpenAI and LangChain's AzureChatOpenAI / AzureOpenAIEmbeddings
+_AZURE_CALL = re.compile(
+    r"(?<!\w)(?:new\s+)?(?:(?:Async)?AzureOpenAI|AzureChatOpenAI|AzureOpenAIEmbeddings)"
+    r"\s*\("
+)
 _AZURE_ENDPOINT = re.compile(
     r"""\b(?:azure_endpoint|endpoint|baseURL)\s*[=:]\s*(?:['"](?P<url>https?://[^'"]+)['"]|"""
     r"""(?:os\.environ(?:\.get)?\s*[\[(]|os\.getenv\s*\(|process\.env\.)\s*['"]?"""
@@ -212,7 +250,9 @@ _SDK_RES = [
 # A ``**kwargs`` / ``...spread`` argument: the base URL may be in it, so it is unknown
 _SPREAD = re.compile(r"(?<![\w*])\*\*\s*\w|\.\.\.\s*\w")
 _OTHER_BASE = re.compile(
-    r"\b(?:base_url|baseURL|api_base|vertexai)\s*[=:]", re.IGNORECASE
+    r"\b(?:base_url|baseURL|api_base|openai_api_base|anthropic_api_url|vertexai)"
+    r"\s*[=:]",
+    re.IGNORECASE,
 )
 _DEFINITION = re.compile(r"\b(?:class|def|function|interface|type)\s+$")
 # module-level configuration that points the legacy SDK elsewhere (openai.api_base = …)
@@ -474,7 +514,11 @@ def _services_in(
                           source, host="aiplatform")
         comp.properties["discovery:method"] = "sdk-client"
         out.append(comp)
-    if _BEDROCK_SDK.search(code) or _ANTHROPIC_BEDROCK.search(bare):
+    if (
+        _BEDROCK_SDK.search(code)
+        or _ANTHROPIC_BEDROCK.search(bare)
+        or (_LANGCHAIN_IMPORT_RE.search(code) and _LANGCHAIN_BEDROCK.search(bare))
+    ):
         region = _BEDROCK_REGION.search(code)
         if region:
             host = f"bedrock-runtime.{region.group('region').lower()}.amazonaws.com"

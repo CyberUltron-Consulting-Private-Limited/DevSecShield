@@ -21,8 +21,14 @@ from typing import Any
 
 from aibom.model.component import ModelCard, ModelComponent, PedigreeAncestor
 from aibom.scan.parsers import model_kb
+from aibom.scan.parsers.code_text import language_of
 from aibom.scan.parsers.licenses import license_choice
-from aibom.scan.parsers.model_refs import find_model_refs_ctx, parse_bedrock_id
+from aibom.scan.parsers.model_refs import (
+    find_hf_repo_ids,
+    find_model_refs_ctx,
+    hf_purl,
+    parse_bedrock_id,
+)
 from aibom.scan.path_roles import (
     evidence_rank,
     is_doc_path,
@@ -142,6 +148,18 @@ _BLOCK_START = re.compile(
     r"^\s*(?:class|def|async\s+def|function|export\s+(?:async\s+)?function)\b"
 )
 _HINT_LINES = 15
+# An import names a library, not where a reference is sent: ``from langchain_aws
+# import ChatBedrock`` above ``ChatOpenAI(model="gpt-4o")`` is no Bedrock hint
+# (review of #498 round 3).
+_IMPORT_LINE = re.compile(
+    r"^\s*(?:from\s+\S+\s+import\b|import\s|const\s+\w+\s*=\s*require\(|"
+    r"(?:const|let|var)\s*\{[^}]*\}\s*=\s*require\()"
+)
+# A client given a literal base URL on the reference's own line is a gateway of
+# its own (the net-env scanner makes it an "AI gateway" service)
+_LITERAL_BASE_HINT = re.compile(
+    r"""\b(?:base_url|api_base|baseURL|openai_api_base)['"]?\s*[=:]\s*['"]https?://"""
+)
 
 
 def _gateway_hint(text: str, name: str) -> str | None:
@@ -158,11 +176,32 @@ def _gateway_hint(text: str, name: str) -> str | None:
     for back, line in enumerate(reversed(lines[-_HINT_LINES:])):
         if back == 0:
             line = line.replace(name, " ")  # "openrouter/…" ids aside, the id itself
+            rest = text[idx + len(name) :].split("\n", 1)[0]
+            if _LITERAL_BASE_HINT.search(line + rest):
+                return "gateway"
+        if _IMPORT_LINE.match(line):
+            continue
         hits = _GATEWAY_HINT.findall(line)
         if hits:
             return hits[-1].lower()
         if back and _BLOCK_START.match(line):
             return None
+    return None
+
+
+# Source files whose comments are read as comments (a reference there is a
+# mention, never usage): Python and ``#``-comment configuration, JavaScript /
+# TypeScript. Markdown, JSON and notebooks are not masked.
+_HASH_COMMENT = {".py", ".pyi", ".yaml", ".yml", ".toml", ".env", ".sh", ".cfg"}
+_JS_SOURCE = {".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"}
+
+
+def _source_lang(path: Path) -> str | None:
+    suffix = path.suffix.lower()
+    if suffix in _JS_SOURCE:
+        return language_of(path.name)
+    if suffix in _HASH_COMMENT or is_env_file(path):
+        return "py"
     return None
 
 
@@ -205,7 +244,23 @@ class ModelRefScanner(Scanner):
             except ValueError:
                 source = path.name
             rank = evidence_rank(path)
-            refs = dict(find_model_refs_ctx(text))  # name -> (vendor, reference_type)
+            lang = _source_lang(path)
+            # name -> (vendor, reference_type)
+            refs = dict(find_model_refs_ctx(text, lang))
+            # Hugging Face Hub ids the code loads: the family name the dictionary
+            # found keeps its name and gains the Hub id (its purl); an id of a family
+            # the dictionary does not know is a model under its Hub id
+            hub_of: dict[str, str] = {}
+            known = {n.lower(): n for n in refs}
+            for hub_id, hub_vendor in find_hf_repo_ids(text, lang).items():
+                tail = hub_id.split("/", 1)[1]
+                name = known.get(hub_id.lower()) or known.get(tail.lower())
+                if name is None:
+                    name = hub_id
+                    refs[name] = (hub_vendor, "usage")
+                else:
+                    refs[name] = (refs[name][0], "usage")
+                hub_of[name] = hub_id
             for name, (vendor, rtype) in refs.items():
                 kind = role or rtype
                 low = name.lower()
@@ -217,7 +272,11 @@ class ModelRefScanner(Scanner):
                     # (m11): discovery:source names the strongest evidence
                     seen[low] = {"name": name, "vendor": vendor, "type": kind,
                                  "source": source, "rank": rank,
-                                 "gateway": _gateway_hint(text, name)}
+                                 "gateway": _gateway_hint(text, name),
+                                 "hub": hub_of.get(name)
+                                 or (entry or {}).get("hub")}
+                elif hub_of.get(name) and not entry.get("hub"):
+                    entry["hub"] = hub_of[name]
         for kind in ("catalog", "test"):
             n = sum(1 for v in seen.values() if v["type"] == kind)
             if n:
@@ -234,11 +293,19 @@ class ModelRefScanner(Scanner):
             # Card fields: known-model KB only. Unknown models stay "—".
             kb = model_kb.lookup(name)
             card_fields = kb if kb is not None else {}
-            # License: KB (model-specific) wins, else the vendor map.
-            spdx = (kb.get("license") if kb else None) or _MODEL_LICENSE_BY_VENDOR.get(
-                vendor
+            hub = entry.get("hub")
+            # License: KB (model-specific) wins, else the vendor map. A Hub model's
+            # licence is its own card's (open weights): the vendor's hosted-model
+            # terms never apply to it (``openai/whisper-large-v3`` is no proprietary
+            # OpenAI API model), so without a KB entry it is unknown.
+            spdx = (kb.get("license") if kb else None) or (
+                None if hub else _MODEL_LICENSE_BY_VENDOR.get(vendor)
             )
             props = {"model:reference_type": rtype, "discovery:source": source}
+            if hub:
+                # read by the model-graph linker: a Hub model is loaded from the Hub
+                # and run by the application (never "served by" its maker's API)
+                props["model:hub_id"] = hub
             bedrock = parse_bedrock_id(name)
             if bedrock is not None:
                 # a Bedrock model id: the vendor makes it, Amazon Bedrock serves it
@@ -253,6 +320,7 @@ class ModelRefScanner(Scanner):
                 name=name,
                 publisher=vendor,
                 licenses=[license_choice(spdx)] if spdx else None,
+                purl=hf_purl(hub) if hub else None,
                 # usage = the code loads/calls it; catalog = listed in a
                 # supported-model registry / doc / example; test = test code only
                 # (catalog and test are NOT models in use).

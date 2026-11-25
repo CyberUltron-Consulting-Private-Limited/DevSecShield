@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import re
 
+from aibom.scan.parsers.code_text import mask
+
 # (pattern, vendor). Bounded by (?<![\w-]) / (?![\w-]) so we capture the whole
 # model token and never a substring of a longer identifier. A leading '/' or '.'
 # is allowed before (namespaced refs) because those are not in [\w-].
@@ -277,14 +279,34 @@ def _classify(line: str, prev: str, before: str = "") -> str:
     return "catalog"
 
 
-def find_model_refs_ctx(text: str) -> dict[str, tuple[str, str]]:
+def _in_comment(text: str, lang: str | None) -> list[bool] | None:
+    """Per character: whether it is inside a comment of ``lang`` source (``py``:
+    ``#``; ``js``: ``//`` and ``/* */``; strings are never comments), or None when
+    the text is not source code (Markdown, JSON …)."""
+    if lang is None:
+        return None
+    code, _bare = mask(text, lang)
+    return [a != b for a, b in zip(code, text, strict=True)]
+
+
+def find_model_refs_ctx(
+    text: str, lang: str | None = None
+) -> dict[str, tuple[str, str]]:
     """Map each model reference to ``(vendor, reference_type)``.
 
     ``reference_type`` is ``"usage"`` (the code loads/calls the model) or
     ``"catalog"`` (the name appears in a supported-model list/registry/doc). A
     name seen in BOTH contexts is promoted to ``"usage"`` (real use dominates).
     De-dup is case-insensitive; first occurrence's casing is kept.
+
+    ``lang`` (``py`` / ``js``, :func:`aibom.scan.parsers.code_text.language_of`)
+    marks ``text`` as source code: a reference inside a comment, such as the
+    commented-out ``# llm = HuggingFaceHub(repo_id="google/flan-t5-xxl")`` or a
+    trailing ``# or model="gpt-4-turbo"``, is a mention (catalog), never usage,
+    whatever call it names (review of #498 round 3: ask-multiple-pdfs counted a
+    commented-out instructor-xl as a model in use).
     """
+    commented = _in_comment(text, lang)
     lines = text.splitlines()
     # Map each match to the line it occurs on via cumulative offsets.
     offsets: list[int] = []
@@ -312,7 +334,10 @@ def find_model_refs_ctx(text: str) -> dict[str, tuple[str, str]]:
         line = lines[li] if li < len(lines) else ""
         prev = lines[li - 1] if li > 0 else ""
         start = offsets[li] if offsets else 0
-        rtype = _classify(line, prev, text[start:pos])
+        if commented is not None and pos < len(commented) and commented[pos]:
+            rtype = "catalog"
+        else:
+            rtype = _classify(line, prev, text[start:pos])
         casing.setdefault(low, name)
         if low not in found:
             found[low] = (vendor, rtype)
@@ -321,4 +346,105 @@ def find_model_refs_ctx(text: str) -> dict[str, tuple[str, str]]:
     return {casing[low]: v for low, v in found.items()}
 
 
-__all__ = ["find_model_refs", "find_model_refs_ctx", "parse_bedrock_id"]
+# ── Hugging Face Hub repository ids ──────────────────────────────────────────
+# The identifier an open-weights model is published under is its Hub repository id
+# ``<org>/<name>`` (``openai/whisper-large-v3``, ``pyannote/speaker-diarization-3.1``),
+# the id OWASP's AIBOM guidance and the purl ``huggingface`` type use. The family
+# dictionary above knows a fixed set of families; an id in a Hub loading context is
+# a model whatever its family. Recognised only where the code loads it from the Hub:
+# the first argument of a loader (``from_pretrained("…")``, ``pipeline(…,
+# model="…")``, ``SentenceTransformer("…")``, ``hf_hub_download(repo_id="…")``, a
+# LangChain ``HuggingFace*(model_name="…")``) or the default of a command-line
+# option named for a model (``add_argument("--model-name", default="…")``). A
+# provider-prefixed route such as LiteLLM's ``model="openai/gpt-4o"`` is not a Hub id
+# and is not matched (no loader around it).
+_HF_LOADER = (
+    r"(?:\.from_pretrained|\bpipeline|\bSentenceTransformer|\bCrossEncoder|"
+    r"\bhf_hub_download|\bsnapshot_download|\bInferenceClient|\bHuggingFace\w*)"
+)
+_HF_STR = r"""(?:'[^'\n]*'|"[^"\n]*")"""
+_HF_ID = (
+    r"""['"](?P<org>[A-Za-z0-9][\w.-]{0,95})/(?P<name>[A-Za-z0-9][\w.-]{0,95})['"]"""
+)
+_HF_REF = re.compile(
+    rf"""(?:{_HF_LOADER}\s*\((?:[^()'"]|{_HF_STR}){{0,400}}?"""
+    r"""(?:\b(?:model|model_name|model_id|repo_id|pretrained_model_name_or_path|"""
+    r"""model_name_or_path|checkpoint)\s*=\s*)?|"""
+    rf"""\b(?:add_argument|option)\s*\(\s*['"]-{{1,2}}[\w-]*model[\w-]*['"]"""
+    rf"""(?:[^()'"]|{_HF_STR}){{0,400}}?\bdefault\s*=\s*)"""
+    + _HF_ID,
+    re.IGNORECASE,
+)
+# ``<dir>/<name>`` strings that are local paths, not Hub repositories, and MIME types
+_HF_NOT_ORG = frozenset({
+    "models", "model", "checkpoints", "checkpoint", "ckpt", "ckpts", "output",
+    "outputs", "data", "weights", "saved_models", "pretrained", "tmp", "runs",
+    "results", "src", "local", "cache", "artifacts", "application", "text", "image",
+    "audio", "video", "multipart",
+})
+_HF_FILE = re.compile(
+    r"\.(?:py|json|jsonl|txt|csv|bin|pt|pth|ckpt|safetensors|gguf|ggml|onnx|yaml|"
+    r"yml|pkl|h5|tflite|model|zip|tar|gz)$",
+    re.IGNORECASE,
+)
+# Hub organisation -> the model's publisher, where the org is not the maker's name
+_HF_ORG_VENDOR = {
+    "openai": "OpenAI", "meta-llama": "Meta", "facebook": "Meta",
+    "mistralai": "Mistral",
+    "google": "Google", "google-bert": "Google", "microsoft": "Microsoft",
+    "qwen": "Alibaba", "alibaba-nlp": "Alibaba", "deepseek-ai": "DeepSeek",
+    "anthropic": "Anthropic", "cohereforai": "Cohere", "coherelabs": "Cohere",
+    "baai": "HuggingFace", "intfloat": "HuggingFace", "thenlper": "HuggingFace",
+    "sentence-transformers": "sentence-transformers", "nomic-ai": "Nomic",
+    "jinaai": "Jina", "hkunlp": "HKUNLP", "amazon": "Amazon", "nvidia": "NVIDIA",
+    "stabilityai": "Stability AI", "tiiuae": "TII", "bigscience": "BigScience",
+}
+
+
+def hf_vendor(org: str) -> str:
+    """The publisher of a Hub model from its organisation (the org itself when it is
+    not a known maker's alias)."""
+    return _HF_ORG_VENDOR.get(org.lower(), org)
+
+
+def find_hf_repo_ids(text: str, lang: str | None = None) -> dict[str, str]:
+    """``{"<org>/<name>": vendor}`` for every Hugging Face Hub repository id the text
+    loads (see ``_HF_REF``). When ``lang`` marks the text as source code, an id in a
+    comment, or a "loader" call written inside a string, is not a load.
+    First occurrence's casing is kept; de-dup is case-insensitive."""
+    masked = mask(text, lang) if lang is not None else None
+    found: dict[str, str] = {}
+    seen: set[str] = set()
+    for m in _HF_REF.finditer(text):
+        org, name = m.group("org"), m.group("name")
+        if masked is not None and (
+            masked[0][m.start("org")] != text[m.start("org")]  # in a comment
+            or masked[1][m.start()] != text[m.start()]  # the "loader" is in a string
+        ):
+            continue
+        if org.lower() in _HF_NOT_ORG or _HF_FILE.search(name) or ".." in name:
+            continue
+        hub_id = f"{org}/{name}"
+        if hub_id.lower() in seen:
+            continue
+        seen.add(hub_id.lower())
+        family = find_model_refs(name)
+        found[hub_id] = next(iter(family.values())) if family else hf_vendor(org)
+    return found
+
+
+def hf_purl(hub_id: str) -> str:
+    """The package URL of a Hub model (purl type ``huggingface``: namespace = the
+    organisation, name = the repository, both case-sensitive)."""
+    org, _, name = hub_id.partition("/")
+    return f"pkg:huggingface/{org}/{name}"
+
+
+__all__ = [
+    "find_hf_repo_ids",
+    "find_model_refs",
+    "find_model_refs_ctx",
+    "hf_purl",
+    "hf_vendor",
+    "parse_bedrock_id",
+]
