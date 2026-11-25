@@ -111,7 +111,8 @@ def _jira(monkeypatch, created: list):
 
     searched: list[str] = []
     monkeypatch.setattr(RT.JIRA, "create_issue_in_project", fake_create)
-    monkeypatch.setattr(RT.JIRA, "find_issue_by_label", lambda url, tok, label, jira_email=None: searched.append(label))
+    monkeypatch.setattr(RT.JIRA, "find_issue_by_label", lambda url, tok, label, jira_email=None, project=None:
+                        searched.append(label))
     monkeypatch.setattr(RT, "_jira_creds", lambda team: ("qa@example.com", "token", "https://jira.example"))
     return searched
 
@@ -148,7 +149,8 @@ def test_a_new_issue_carries_the_resource_label_and_a_search_reads_every_copy_la
         item = _item(s, first, ID.node_label(_row(s, first, a_id, "cdn_tls")), "cdn_tls")
     searched = _jira(monkeypatch, [])
     RT._jira_issue("https://jira.example", "t", "e", "SEC", "Task", item, {}, first, search_first=True)
-    assert searched[0] == RT.label_for(item["group_key"]) == RT.label_for(item["asset_key"])
+    assert searched[0] == RT.resource_label(item["group_key"], None)  # the resource's label (team-scoped, 6064356833)
+    assert item["asset_key"] == item["group_key"]
     with Session(engine) as s:
         copies = {_own_key(_row(s, first, a_id, "cdn_tls"), "srcA"), _own_key(_row(s, first, b_id, "cdn_tls"), "srcB")}
     assert {RT.label_for(k) for k in copies} <= set(searched)
@@ -204,16 +206,18 @@ def test_team_view_and_waves_give_one_status_for_one_resource(engine):
 
 
 def test_an_explicit_open_plan_on_the_group_key_wins_everywhere(engine):
-    """The group key's own record is the primary: an explicit "open" on it is not overridden by another copy."""
+    """An explicit "open" (a reopen) newer than another copy's "done" is the plan shown, everywhere."""
     from backend.utilities.cbom_sources import collections_view as CV
 
     first, _second, a_id, b_id = _two_runs(engine)
     with Session(engine) as s:
         a_row, b_row = _row(s, first, a_id), _row(s, first, b_id)
         item = _item(s, first, ID.node_label(a_row))
-        s.add(CbomRemediationAssignment(team_id=1, asset_key=item["group_key"], source_ref="srcA", status="open"))
+        # a reopen: the newest plan wins (review 6064356833 M2: the most recently updated record holding a plan)
+        s.add(CbomRemediationAssignment(team_id=1, asset_key=item["group_key"], source_ref="srcA", status="open",
+                                        last_updated=dt.datetime(2026, 11, 25)))
         s.add(CbomRemediationAssignment(team_id=1, asset_key=_own_key(b_row, "srcB"), source_ref="srcB",
-                                        status="done"))
+                                        status="done", last_updated=dt.datetime(2026, 11, 20)))
         s.commit()
         assert _item(s, first, ID.node_label(a_row))["assignment"]["status"] == "open"
         kept = CV.resolve([], CV.load_sources_result(s, 1, now=NOW).rows).sources_rows

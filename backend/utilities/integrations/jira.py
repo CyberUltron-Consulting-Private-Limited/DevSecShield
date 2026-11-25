@@ -4,6 +4,7 @@ from requests.exceptions import ConnectTimeout, HTTPError, Timeout, RequestExcep
 import requests
 from requests.auth import HTTPBasicAuth
 import json
+import re
 from urllib.parse import urlparse
 import socket
 console = Console()
@@ -242,15 +243,23 @@ def find_issue_by_label(
     jira_token: str,
     label: str,
     jira_email: str = "support@zeroshield.ai",
+    project: str | None = None,
 ) -> str | None:
-    """Key of the newest issue carrying ``label`` (None when there is none). Jira Cloud's ``/search/jql``, falling
-    back to ``/search`` for Jira versions without it. Raises ``JiraError`` like ``create_issue_in_project``."""
+    """Key of the newest issue carrying ``label`` (None when there is none), in ``project`` (a project key or numeric
+    id) when given: a label is searched in the team's configured project only, never across the whole Jira site
+    (PR #499 review 6064356833 M1: another team's or another environment's issue is never taken as this one's).
+    Jira Cloud's ``/search/jql``, falling back to ``/search`` for Jira versions without it. Raises ``JiraError`` like
+    ``create_issue_in_project``."""
     validate_jira_url(jira_url)
     if not label or any(ch in label for ch in ' "\\'):
         raise ValueError("label: no spaces, quotes or backslashes")
+    if project is not None and not re.fullmatch(r"[A-Z][A-Z0-9_]*|[0-9]+", str(project)):
+        raise ValueError("project: a project key or a numeric project id")
     auth = HTTPBasicAuth(jira_email, jira_token)
     headers = {"Accept": "application/json", "Content-Type": "application/json"}
-    body = json.dumps({"jql": f'labels = "{label}" ORDER BY created DESC', "fields": ["key"], "maxResults": 1})
+    scope = f'project = "{project}" AND ' if project else ""
+    body = json.dumps({"jql": f'{scope}labels = "{label}" ORDER BY created DESC', "fields": ["key"],
+                       "maxResults": 1})
     response = None
     for path in ("/rest/api/3/search/jql", "/rest/api/3/search"):
         try:

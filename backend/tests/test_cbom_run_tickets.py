@@ -74,7 +74,7 @@ class FakeJira:
             raise RT.JIRA.JiraError("timeout", "Jira request timed out. Please try again.")
         return {"id": str(10000 + n), "key": f"SEC-{n}"}
 
-    def find(self, jira_url, jira_token, label, jira_email=None):
+    def find(self, jira_url, jira_token, label, jira_email=None, project=None):
         self.searches.append(label)
         hits = [i["key"] for i in self.issues if label in i["labels"]]
         return hits[-1] if hits else None
@@ -158,10 +158,11 @@ def test_run_tickets_idempotent(api, runs, jira):
     assert [e["ticket_key"] for e in later["existing"]] == ["SEC-1", "SEC-2"]
     assert [c["ticket_key"] for c in later["created"]] == ["SEC-3"]
     assert len(jira.calls) == 3  # one Jira issue per stable key, never one per run
-    # every issue carries the asset's label (what a retry after a timeout searches for)
-    assert [c["labels"] for c in jira.calls] == [[f"zs-asset-{k}"] for k in
-                                                 [body["created"][0]["asset_key"], body["created"][1]["asset_key"],
-                                                  later["created"][0]["asset_key"]]]
+    # every issue carries its resource's own label (what a retry after a timeout searches for): one per resource, in
+    # the team's project; a resource with a cross-source identity is labelled from its team-scoped group key and the
+    # team's salt (PR #499 review 6064356833 M1), any other from its own key
+    labels = [c["labels"][0] for c in jira.calls]
+    assert len(set(labels)) == 3 and all(label.startswith("zs-asset-") for label in labels)
     with Session(runs["engine"]) as s:
         rows = s.exec(select(CbomRemediationAssignment)).all()
         assert sorted(r.ticket_key for r in rows) == ["SEC-1", "SEC-2", "SEC-3"]
@@ -348,10 +349,10 @@ def _status_put_during_a_slow_ticket(api, engine, world_runs, jira):
     tls, = _ids(world_runs, "run1", TLS)
     key = next(i["asset_key"] for i in api("GET", f"/1/cbom/sources/runs/{run1}/remediation").json()["items"]
                if i["asset_id"] == tls)
-    jira.delay = 1.5
+    jira.delay = 3.0
     worker = threading.Thread(target=RT.create_tickets, args=(engine, 1, 1, run1, RT.TicketBody(asset_ids=[tls])))
     worker.start()
-    time.sleep(0.4)  # the claim is committed and the fake Jira call is running
+    time.sleep(1.2)  # the claim is committed (after the run's resource resolution) and the fake Jira call is running
     t0 = time.monotonic()
     put = api("PUT", "/1/cbom/remediation", json={"run_id": run1, "items": [{"asset_key": key, "status": "in_progress"}]})
     waited = time.monotonic() - t0
@@ -390,7 +391,8 @@ def test_timeout_then_retry_opens_one_issue(api, runs, jira, monkeypatch):
         s.commit()
     later = RT.create_tickets(runs["engine"], 1, 1, run1, RT.TicketBody(asset_ids=[tls]))
     assert [(e["asset_id"], e["ticket_key"]) for e in later["existing"]] == [(tls, "SEC-1")] and later["created"] == []
-    assert len(jira.calls) == 1 and jira.searches == [f"zs-asset-{later['existing'][0]['asset_key']}"]
+    # the retry searched for the label the timed-out create used (the resource's label), in the team's project
+    assert len(jira.calls) == 1 and jira.searches[0] == jira.calls[0]["labels"][0]
     with Session(runs["engine"]) as s:
         row = s.exec(select(CbomRemediationAssignment)).one()
     assert (row.ticket_key, row.ticket_state, row.ticket_claim) == ("SEC-1", "created", None)

@@ -223,11 +223,12 @@ moves the stored certificate keys, store writes also re-key rows an older-releas
 closes the window per team. The deploy recreates every container after `migrate`, so no older writer is left; one
 that wrote after the window would leave a duplicate `removed` asset and a Q0 item closed as `observation`. Raise the
 variable before any rollout that keeps the old release running for more than a day. Migrations that build an index
-`CONCURRENTLY` (`q102hist001`, `q110linkuq001`) wait for older transactions; `q110linkuq001` gives up after 3 x 60 s:
+`CONCURRENTLY` (`q102hist001`, `q110linkuq001`) wait for older transactions; `q110linkuq001` gives up after 3 attempts:
 end the idle-in-transaction sessions and deploy again (deploy/staging/README.md, "Migrations that build an index
 CONCURRENTLY").
-Worst-case total wait for `q110linkuq001`: about 3.5 minutes (3 attempts x 60 s `lock_timeout` plus 2 x 10 s
-pauses between them = 200 s, plus dropping each failed attempt's invalid index).
+Worst-case total wait for `q110linkuq001` with a transaction that stays open: about 4.5 minutes. Attempt 1 waits
+60 s to build; attempts 2 and 3 each wait 60 s to drop the INVALID index it left; two 10 s pauses; one final 60 s
+wait to drop it: 4 x 60 s + 2 x 10 s = 260 s. Each wait is cut at 60 s (`lock_timeout`); end the session and rerun.
 
 ### Images from a CI run
 

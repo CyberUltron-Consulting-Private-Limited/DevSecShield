@@ -570,8 +570,8 @@ def remediation_statuses(session: Any, team_id: int, rows: list[SourcesRow]) -> 
     for item in rows:
         groups.setdefault(item.identity, []).append(item)
         gk = RG.row_group_key(item.node_type, item.target, item.row.get("location"), item.facts,
-                              network=item.collection.network_scope, machine=item.collection.machine_scope,
-                              cluster=item.collection.source_ref)
+                              team_id=team_id, network=item.collection.network_scope,
+                              machine=item.collection.machine_scope, cluster=item.collection.source_ref)
         if gk:
             group_keys.setdefault(item.identity, set()).add(gk)
     keys = list(dict.fromkeys([*(item.asset_key for item in rows), *(k for ks in group_keys.values() for k in ks)]))

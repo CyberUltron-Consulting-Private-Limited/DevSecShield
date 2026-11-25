@@ -18,8 +18,9 @@ those items here: every open estate asset item (``detail.estate``) whose estate 
 asset in a write without hooks (its register row is still there: ``estate backfill`` without hooks, an operator path).
 No ``q0_closed`` event is written by the migration.
 
-Runbook: the CONCURRENTLY build waits for every transaction older than it; each attempt waits at most
-``LOCK_TIMEOUT`` (60 s), three attempts. If the ``migrate`` one-shot fails on it, end the idle-in-transaction sessions
+Runbook: the CONCURRENTLY build waits for every transaction older than it; each step of an attempt (dropping an
+INVALID index left before, building) waits at most ``LOCK_TIMEOUT`` (60 s), three attempts, then one cleanup drop:
+4 x 60 s + 2 x 10 s = 260 s in the worst case. If the ``migrate`` one-shot fails on it, end the idle-in-transaction sessions
 (``pg_stat_activity``) and run the deploy again (deploy/staging/README.md, "Migrations that build an index
 CONCURRENTLY").
 
@@ -107,38 +108,54 @@ def _valid(bind):
                                 "WHERE c.relname = :name"), {"name": NAME}).scalar()
 
 
+def _drop_invalid(bind, *, concurrently: bool = True) -> None:
+    """Drop the index if a failed build left it INVALID (under the same ``lock_timeout``: may raise)."""
+    if _valid(bind) is False:
+        op.drop_index(NAME, table_name='cbomestatelink', postgresql_concurrently=concurrently, if_exists=True)
+
+
 def build_concurrently(bind) -> None:
     """PostgreSQL, in an autocommit block: build the unique index CONCURRENTLY (as ``q102hist001``), retry-safe. The
     build waits for every transaction older than it, so each attempt runs under ``lock_timeout`` (``LOCK_TIMEOUT``,
     #504 review 6062542062 nit): an idle-in-transaction connection makes it fail fast instead of holding the
-    ``migrate`` one-shot. A failed attempt (that timeout, or a duplicate written meanwhile) drops the INVALID index it
-    leaves, removes duplicates again and retries after ``RETRY_SECONDS``, ``ATTEMPTS`` times; then the error is raised
-    (runbook: deploy/staging/README.md "Migrations that build an index CONCURRENTLY")."""
+    ``migrate`` one-shot.
+
+    One attempt = drop the INVALID index an earlier attempt or run left, remove duplicates again, build. Any lock
+    timeout or duplicate in ANY of those steps fails that attempt only (PR #499 review 6064356833 m2: the drop at the
+    start of an attempt used to raise out of the loop, so a held transaction got one build attempt, not three), and
+    the next one starts after ``RETRY_SECONDS``, ``ATTEMPTS`` times. After the last failure the INVALID index is
+    dropped (non-concurrently, still under ``lock_timeout``: it succeeds as soon as nothing holds a lock on the table,
+    so a transaction that only kept an old snapshot leaves no INVALID index) and the error is raised (runbook:
+    deploy/staging/README.md "Migrations that build an index CONCURRENTLY").
+
+    Worst case with a transaction that holds the table and stays open: attempt 1 waits ``LOCK_TIMEOUT`` (60 s) to
+    build; attempts 2 and 3 each wait ``LOCK_TIMEOUT`` to drop the INVALID index it left; two ``RETRY_SECONDS`` (10 s)
+    pauses; one final cleanup wait: 4 x 60 + 2 x 10 = 260 s, about 4.5 minutes."""
     import time
 
     bind.execute(sa.text("SELECT set_config('lock_timeout', :value, false)"), {"value": LOCK_TIMEOUT})
+    failure: Exception | None = None
     try:
         for attempt in range(1, ATTEMPTS + 1):
-            valid = _valid(bind)
-            if valid is True:
-                return
-            if valid is False:  # an interrupted or failed build: drop it, build again
-                op.drop_index(NAME, table_name='cbomestatelink', postgresql_concurrently=True, if_exists=True)
-            dedupe(bind)  # a duplicate written since the transactional pass (an older worker's key move)
             try:
+                valid = _valid(bind)
+                if valid is True:
+                    return
+                _drop_invalid(bind)  # an interrupted or failed build: drop it, build again
+                dedupe(bind)  # a duplicate written since the transactional pass (an older worker's key move)
                 op.create_index(NAME, 'cbomestatelink', COLUMNS, unique=True, postgresql_concurrently=True,
                                 if_not_exists=True)
                 return
-            except (sa.exc.IntegrityError, sa.exc.OperationalError):
-                try:  # best effort: the drop waits for the same transactions (the next attempt or run drops it)
-                    if _valid(bind) is False:
-                        op.drop_index(NAME, table_name='cbomestatelink', postgresql_concurrently=True,
-                                      if_exists=True)
-                except sa.exc.OperationalError:
-                    pass
-                if attempt == ATTEMPTS:
-                    raise
-                time.sleep(RETRY_SECONDS)
+            except (sa.exc.IntegrityError, sa.exc.OperationalError) as exc:
+                failure = exc
+                if attempt < ATTEMPTS:
+                    time.sleep(RETRY_SECONDS)
+        try:  # leave no INVALID index when the table is free to drop it
+            _drop_invalid(bind, concurrently=False)
+        except sa.exc.OperationalError:
+            pass  # still held: the next run drops it first
+        assert failure is not None
+        raise failure
     finally:
         bind.execute(sa.text("RESET lock_timeout"))
 

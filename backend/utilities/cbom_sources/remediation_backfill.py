@@ -15,11 +15,13 @@ What it does, per team (one savepoint each, like ``identity_migration.migrate_al
    source uid the job snapshotted (a deleted source's jobs keep it), and the row's group key
    (``remediation_group.row_group_key``, with the job's scope) noted for every key wanted; the walk stops when every
    key is placed;
-3. per group key, ``remediation_group.resolve`` over the copies picks the primary (the copy holding a ticket, else the
-   first by key order: the precedence every surface already shows) and the ticket holder;
-4. no record on the group key yet: one is INSERTED, a copy of the primary (wave, owner, target date, status, note,
-   done time, created time, so time-to-remediate is kept) with the ticket of the ticket holder, and
-   ``source_ref = "group-backfill:<the primary's key>"``.  A record already on the group key is the primary
+3. per group key, ``remediation_group.resolve`` over the copies picks, field by field, the record whose PLAN is shown
+   (the most recently updated one that holds a plan) and the one whose TICKET is shown: the precedence every surface
+   already shows (review 6064356833 M2); a second ticket key is a conflict, logged with the key not shown;
+4. no record on the group key yet: one is INSERTED with the plan record's plan (wave, owner, target date, status,
+   note, done time, created time, so time-to-remediate is kept) and the ticket holder's ticket, and
+   ``source_ref = "group-backfill:<plan key>[|<ticket key>]"``.  A record whose rows were all purged is left where it
+   is and counted ``unplaced`` (logged).  A record already on the group key is the primary
    (``resolve``'s first rule) and is left as it is, except that a ticket a copy holds is filled in when it has none.
 
 Nothing is lost or duplicated: the originals are kept unchanged (an older release still reads them), the group record
@@ -39,13 +41,12 @@ from collections.abc import Iterable
 from typing import Any
 
 MARK = "group-backfill:"  # source_ref prefix of a record this backfill inserted; the rest is the original's key
-_PLAN_FIELDS = ("wave", "owner", "target_date", "status", "note", "done_at")
-_TICKET_FIELDS = ("ticket_key", "ticket_url", "ticket_state")
 
 
-def _rows_by_key(session: Any, team_id: int, wanted: set[str]) -> dict[str, str | None]:
-    """own key -> group key for every wanted key whose row is still stored (newest job first; stops when all are
-    placed).  A key whose row was purged maps to nothing and is left alone."""
+def _rows_by_key(session: Any, team_id: int, wanted: set[str]) -> tuple[dict[str, str | None], set[str]]:
+    """(own key -> group key for every wanted key whose row is still stored; the wanted keys that ARE a stored row's
+    group key).  Newest job first; stops when every wanted key is placed.  A key whose rows were purged is in
+    neither: it stays where it is (``unplaced``)."""
     from types import SimpleNamespace
 
     import sqlalchemy as sa
@@ -62,8 +63,9 @@ def _rows_by_key(session: Any, team_id: int, wanted: set[str]) -> dict[str, str 
     from backend.utilities.cbom_sources import resource_identity as RI
 
     out: dict[str, str | None] = {}
+    seen: set[str] = set()
     if not wanted:
-        return out
+        return out, seen
     sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
         CbomCollectionSource.team_id == team_id)).all()}
     nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
@@ -89,51 +91,69 @@ def _rows_by_key(session: Any, team_id: int, wanted: set[str]) -> dict[str, str 
                 row = SimpleNamespace(asset_key=asset_key, asset_type=kind, cdx_type=cdx, target=target,
                                       location=location, facts=facts)
                 own = ID.stable_key("node", ref, ID.node_identity(row))
-                if own in wanted and own not in out:
-                    out[own] = RG.row_group_key(kind, target, location, facts, network=network, machine=machine,
-                                                cluster=ref)
-        if len(out) == len(wanted):
+                if own in out:
+                    continue
+                group = RG.row_group_key(kind, target, location, facts, team_id=team_id, network=network,
+                                         machine=machine, cluster=ref)
+                if own in wanted:
+                    out[own] = group
+                if group in wanted:
+                    seen.add(group)  # a record already on a group key (a re-run): placed, not "unplaced"
+        if all(k in out or k in seen for k in wanted):
             break
-    return out
+    return out, seen
 
 
 def backfill_team(session: Any, team_id: int) -> dict[str, int]:
-    """Upgrade one team (module docstring, steps 1-4).  Returns its counts."""
+    """Upgrade one team (module docstring, steps 1-4).  Returns its counts; logs what it could not place (``unplaced``:
+    a record whose rows were purged) and the ticket keys it had to choose between (``ticket_conflicts``)."""
     from sqlmodel import select
 
     from backend.new_models import CbomRemediationAssignment as A
     from backend.utilities.cbom_sources import remediation_group as RG
+    from backend.utilities.cbom_sources.common import log
 
     found = {a.asset_key: a for a in session.exec(select(A).where(A.team_id == team_id, A.scope == "node")).all()}
     wanted = {k for k, a in found.items() if not str(a.source_ref or "").startswith(MARK)}
-    placed = _rows_by_key(session, team_id, wanted)
+    placed, on_group = _rows_by_key(session, team_id, wanted)
     groups: dict[str, list[str]] = {}
     for own, group in placed.items():
         if group and group != own:
             groups.setdefault(group, []).append(own)
-    out = {"groups": len(groups), "inserted": 0, "tickets_filled": 0, "kept": 0}
+    unplaced = sorted(k for k in wanted if k not in placed and k not in on_group)
+    out = {"groups": len(groups), "inserted": 0, "tickets_filled": 0, "kept": 0, "unplaced": len(unplaced),
+           "ticket_conflicts": 0}
+    if unplaced:  # their rows are gone: they stay where they are, reachable only if the same source reads them again
+        log("cbom remediation group backfill unplaced", team=team_id, count=len(unplaced),
+            keys=",".join(k[:12] for k in unplaced[:50]))
     for group, members in sorted(groups.items()):
         resolved = RG.resolve(found, [group], members, sorted(members)[0])
+        plan, ticket = resolved.assignment, resolved.ticket
+        if resolved.conflicts:  # two Jira issues for one resource (made before this rule): name the one not shown
+            out["ticket_conflicts"] += 1
+            log("cbom remediation group backfill ticket conflict", team=team_id, group=group[:12],
+                shown=resolved.ticket_key, not_shown=",".join(resolved.conflicts))
         held = found.get(group)
-        if held is not None:  # the group key's record is the primary already; fill a missing ticket only
-            if not held.ticket_key and resolved.ticket is not None:
-                for name in _TICKET_FIELDS:
-                    setattr(held, name, getattr(resolved.ticket, name))
+        if held is not None:  # a record on the group key already: fill a missing ticket only, never its plan
+            if not held.ticket_key and ticket is not None and ticket is not held:
+                for name in RG.TICKET_FIELDS:
+                    setattr(held, name, getattr(ticket, name))
                 held.row_version = int(held.row_version or 1) + 1
                 session.add(held)
                 out["tickets_filled"] += 1
             else:
                 out["kept"] += 1
             continue
-        primary, ticket = resolved.assignment, resolved.ticket
-        if primary is None:
+        if plan is None:
             continue
-        values = {"team_id": team_id, "asset_key": group, "scope": "node",
-                  "source_ref": f"{MARK}{primary.asset_key}"[:255], "label": primary.label,
-                  **{name: getattr(primary, name) for name in _PLAN_FIELDS},
-                  **{name: getattr(ticket, name) if ticket is not None else None for name in _TICKET_FIELDS},
-                  "updated_by_user_id": primary.updated_by_user_id, "row_version": 1,
-                  "created_at": primary.created_at, "last_updated": primary.last_updated}
+        # field by field (review 6064356833 M2): the plan from the record that holds one, the ticket from the ticket
+        # holder; both origins named, so the downgrade writes each part back to where it came from
+        origin = plan.asset_key + (f"|{ticket.asset_key}" if ticket is not None and ticket is not plan else "")
+        values = {"team_id": team_id, "asset_key": group, "scope": "node", "source_ref": f"{MARK}{origin}"[:255],
+                  "label": plan.label, **{name: getattr(plan, name) for name in RG.PLAN_FIELDS},
+                  **{name: getattr(ticket, name) if ticket is not None else None for name in RG.TICKET_FIELDS},
+                  "updated_by_user_id": plan.updated_by_user_id, "row_version": 1,
+                  "created_at": plan.created_at, "last_updated": plan.last_updated}
         if _insert(session, values):
             out["inserted"] += 1
     return out
@@ -153,18 +173,26 @@ def _insert(session: Any, values: dict[str, Any]) -> bool:
 
 
 def reverse_team(session: Any, team_id: int) -> dict[str, int]:
-    """Downgrade one team: each inserted record writes its plan and ticket back to its original, then goes."""
+    """Downgrade one team: each inserted record writes its plan back to the record it took the plan from and its
+    ticket to the record it took the ticket from (``source_ref`` "group-backfill:<plan key>[|<ticket key>]"), then
+    goes."""
     from sqlmodel import select
 
     from backend.new_models import CbomRemediationAssignment as A
+    from backend.utilities.cbom_sources import remediation_group as RG
 
     out = {"restored": 0, "removed": 0}
     rows = session.exec(select(A).where(A.team_id == team_id, A.source_ref.startswith(MARK))).all()  # type: ignore
     for group_row in rows:
-        origin_key = str(group_row.source_ref)[len(MARK):]
-        origin = session.exec(select(A).where(A.team_id == team_id, A.asset_key == origin_key)).first()
-        if origin is not None:
-            for name in (*_PLAN_FIELDS, *_TICKET_FIELDS, "last_updated"):
+        plan_key, _sep, ticket_key = str(group_row.source_ref)[len(MARK):].partition("|")
+        targets = [(plan_key, (*RG.PLAN_FIELDS, *([] if ticket_key else RG.TICKET_FIELDS), "last_updated"))]
+        if ticket_key:
+            targets.append((ticket_key, (*RG.TICKET_FIELDS, "last_updated")))
+        for key, names in targets:
+            origin = session.exec(select(A).where(A.team_id == team_id, A.asset_key == key)).first()
+            if origin is None:
+                continue
+            for name in names:
                 setattr(origin, name, getattr(group_row, name))
             origin.row_version = int(origin.row_version or 1) + 1
             session.add(origin)
@@ -187,7 +215,7 @@ def backfill_all(connection: Any, *, reverse: bool = False, teams: Iterable[int]
     started = time.monotonic()
     found = sorted(t for (t,) in connection.execute(sa.select(A.team_id).where(A.scope == "node").distinct()).all())
     wanted = found if teams is None else [t for t in found if t in set(teams)]
-    totals: dict[str, int] = {"teams": 0, "failed": 0}
+    totals: dict[str, int] = {"teams": 0, "failed": 0, "unplaced": 0, "ticket_conflicts": 0}
     for team_id in wanted:
         point = connection.begin_nested()
         try:

@@ -451,8 +451,8 @@ def resolve_run(session: Session, team_id: int, run: CbomCollectionRun, *, only:
                 row = SimpleNamespace(asset_key=asset_key, asset_type=kind, cdx_type=cdx, target=target,
                                       location=location, facts=facts)
                 own[int(aid)] = ID.stable_key("node", ref, ID.node_identity(row))
-                group[int(aid)] = RG.row_group_key(kind, target, location, facts, network=network, machine=machine,
-                                                   cluster=ref)
+                group[int(aid)] = RG.row_group_key(kind, target, location, facts, team_id=team_id, network=network,
+                                                   machine=machine, cluster=ref)
     members: dict[int, list[int]] = {}
     for aid in own:
         kept = fold.dropped.get(aid, aid)

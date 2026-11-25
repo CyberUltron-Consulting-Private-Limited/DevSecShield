@@ -38,11 +38,13 @@ MIGRATION = "q111remgroup001_remediation_group_keys"
 @pytest.fixture(params=["sqlite", pytest.param("postgresql", marks=pytest.mark.skipif(
     not os.environ.get("CBOM_TEST_PG_URL"), reason="set CBOM_TEST_PG_URL to run against PostgreSQL"))])
 def engine(request, tmp_path):
+    from backend.tests.test_cbom_posture_review_6064356833 import pg_test_url
+
     RI.clear_cache()
     if request.param == "sqlite":
         engine = create_engine(f"sqlite:///{tmp_path / 'backfill.db'}", connect_args={"check_same_thread": False})
-    else:
-        engine = create_engine(os.environ["CBOM_TEST_PG_URL"])
+    else:  # it drops every table: only a database whose name says "test" (review 6064356833 note)
+        engine = create_engine(pg_test_url())
         SQLModel.metadata.drop_all(engine)
     SQLModel.metadata.create_all(engine)
     yield engine

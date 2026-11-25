@@ -45,6 +45,7 @@ from backend.new_models import (
     CbomScanNode,
     Team,
 )
+from backend.utilities.cbom_sources import identity as ID
 from backend.utilities.cbom_sources import waves as WAVES
 from backend.utilities.cbom_sources.common import iso_z, log
 from backend.utilities.integrations import jira as JIRA
@@ -283,17 +284,25 @@ def _finish(engine, team_id: int, asset_key: str, claim: str, user_id: int, *, k
         return session.exec(select(_M).where(_M.team_id == team_id, _M.asset_key == asset_key)).first()
 
 
+def resource_label(group_key: str, salt: str | None) -> str:
+    """The Jira label of a resource: from its team-scoped group key and the team's own random salt in this deployment
+    (``cbomcollectionsettings.aws_external_id``, generated per team per environment), so two teams, or staging and
+    production on one Jira site, never share a label (review 6064356833 M1).  The salt is hashed, never printed."""
+    return label_for(ID.stable_key("jira", str(salt or ""), group_key))
+
+
 def _jira_issue(url: str, token: str, email: str, project: str, issue_type: str, item: dict[str, Any],
-                detail: dict[str, Any], run_id: int, search_first: bool) -> tuple[str, bool]:
+                detail: dict[str, Any], run_id: int, search_first: bool,
+                salt: str | None = None) -> tuple[str, bool]:
     """(issue key, found by search). No database session is open here."""
-    # one label per RESOURCE (its group key, else its own key), so a retry or another run finds the same issue
-    # whichever source's row is shown (review 6060688856 M2); a search also reads the labels of the resource's
-    # other keys, which issues made before this rule carry
-    label = label_for(item.get("group_key") or item["asset_key"])
+    # one label per RESOURCE (its team-scoped group key, else its own key), so a retry or another run finds the same
+    # issue whichever source's row is shown (review 6060688856 M2); a search, in the team's project only, also reads
+    # the labels of the resource's other keys, which issues made before this rule carry
+    label = resource_label(item["group_key"], salt) if item.get("group_key") else label_for(item["asset_key"])
     if search_first:
         others = [item.get("own_key"), item["asset_key"], *(item.get("alias_keys") or ())]
         for candidate in dict.fromkeys([label, *(label_for(k) for k in others if k)]):
-            found = JIRA.find_issue_by_label(url, token, candidate, jira_email=email)
+            found = JIRA.find_issue_by_label(url, token, candidate, jira_email=email, project=project)
             if found:
                 return found, True
     summary, description = ticket_text(run_id, item, detail)
@@ -323,6 +332,7 @@ def create_tickets(engine, team_id: int, user_id: int, run_id: int, body: Ticket
         if not project:
             raise HTTPException(status_code=400, detail=NO_PROJECT)
         issue_type = (settings.jira_issue_type if settings is not None else None) or DEFAULT_ISSUE_TYPE
+        salt = settings.aws_external_id if settings is not None else None
         rows = {r.id: r for r in session.exec(select(CbomCollectedAsset).where(
             CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run.id,
             CbomCollectedAsset.id.in_(body.asset_ids))).all()}  # type: ignore[union-attr]
@@ -370,7 +380,8 @@ def create_tickets(engine, team_id: int, user_id: int, run_id: int, body: Ticket
             out["deferred"].append({"asset_id": asset_id, "asset_key": item["asset_key"], "reason": IN_PROGRESS})
             continue
         try:
-            key, found = _jira_issue(url, token, email, project, issue_type, item, detail, run_id, search_first)
+            key, found = _jira_issue(url, token, email, project, issue_type, item, detail, run_id, search_first,
+                                     salt)
         except Exception as exc:  # noqa: BLE001
             uncertain = getattr(exc, "kind", None) in ("timeout", "http_5xx")
             if not uncertain:  # nothing was created: let the next request try at once
