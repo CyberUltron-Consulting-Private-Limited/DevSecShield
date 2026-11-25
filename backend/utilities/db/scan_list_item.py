@@ -196,7 +196,7 @@ def return_sbom_sca_list_item(scan : Scan) -> dict:
         "repo_url": scan.scan_metadata["repo_url"] if scan.scan_metadata and "repo_url" in scan.scan_metadata else None,
         "zip_file_used": scan.scan_metadata["zip_file_used"] if scan.scan_metadata and "zip_file_used" in scan.scan_metadata else None,
         "branch": scan.scan_metadata["branch"] if scan.scan_metadata and "branch" in scan.scan_metadata else None, 
-        "average_risk_score" : average_risk_score, **_posture(scan, total_critical, total_high, total_medium, total_low, incomplete=sbom_rows.is_incomplete(scan.scan_data)),
+        "average_risk_score" : average_risk_score, **_posture(scan, total_critical, total_high, total_medium, total_low, incomplete=sbom_rows.is_incomplete(scan.scan_data), unverified=sbom_rows.unverified_counts(scan.scan_data)),
     }
 
 
@@ -481,7 +481,7 @@ def return_cbom_list_item(scan : Scan) -> dict:
         "average_risk_score" : average_risk_score,
         "total_weak_algorithms": total_weak,
         "total_quantum_vulnerable": total_quantum_vulnerable,
-        "scan_binaries": scan.scan_metadata.get("scan_binaries", False) if scan.scan_metadata else False,
+        "scan_binaries": scan.scan_metadata.get("scan_binaries", False) if scan.scan_metadata else False, **_cbom_gate(scan, summary.severity),
     }
 
 
@@ -560,9 +560,20 @@ def average_risk_0_10(total_critical: int, total_high: int, total_medium: int, t
                                     "low": total_low})
 
 
-def _posture(scan: Scan, critical: int, high: int, medium: int, low: int, *, incomplete: bool = False) -> dict:
+def _posture(scan: Scan, critical: int, high: int, medium: int, low: int, *, incomplete: bool = False,
+             unverified: dict | None = None) -> dict:
     """``risk_posture`` and ``risk_posture_status``: the scan's one 0-100 risk score, grade and words
     (``risk_scale.posture``); no score until the scan succeeded, nor for a finished scan whose result is incomplete.
     Added next to the older fields, which keep their values."""
     return risk_scale.posture_field({"critical": critical, "high": high, "medium": medium, "low": low},
-                                    judged=scan.scan_status == "success", incomplete=incomplete)
+                                    judged=scan.scan_status == "success", incomplete=incomplete, unverified=unverified)
+
+
+def _cbom_gate(scan: Scan, severity: dict) -> dict:
+    """The CBOM row's one risk score, gated on success like every product (review 6064315680 of #505, 4): a failed,
+    running or cancelled scan has no score. It also nulls the flat ``risk_score`` / ``risk_grade`` / ``risk_label`` the
+    CBOM row carries once #500 is merged (spread before this, so these win): the page shows "—", never "0 · A"."""
+    out = _posture(scan, *(int(severity.get(k, 0) or 0) for k in ("critical", "high", "medium", "low")))
+    if out[risk_scale.STATUS_KEY] == "not_scored":
+        out.update({"risk_score": None, "risk_grade": None, "risk_label": None})
+    return out

@@ -30,7 +30,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
-import { RISK_TIER_LABELS, matchesRiskTier, postureScore, riskCellHint, riskCellText, riskTone } from "@/utils/riskPosture";
+import { RISK_TIER_LABELS, matchesRiskTier, postureScore, postureSortValue, riskCellHint, riskCellNote, riskCellText, riskTone } from "@/utils/riskPosture";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, CheckCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, MinusCircle, Shield, AlertTriangle, Activity, BookOpen, Crosshair, ChevronDown, ArrowUpDown, Check, Filter, DollarSign, TrendingUp, TrendingDown } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { singleFlight } from "@/utils/single_flight";
@@ -700,8 +700,9 @@ export default function SBOMSCAPage() {
     .sort((a, b) => {
       if (sortBy === "created_asc") return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       if (sortBy === "created_desc") return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      const scoreA = getDisplayRiskScore(a) ?? -1;
-      const scoreB = getDisplayRiskScore(b) ?? -1;
+      // the score, then the uncapped weighted sum: scans the score cannot tell apart (4 Highs vs 1000) still sort
+      const scoreA = postureSortValue(a);
+      const scoreB = postureSortValue(b);
       if (sortBy === "risk_desc") return scoreB - scoreA;
       if (sortBy === "risk_asc") return scoreA - scoreB;
       const credA = a.estimated_credits != null ? Number(a.estimated_credits) : -1;
@@ -989,6 +990,11 @@ export default function SBOMSCAPage() {
                               </TableCell>
                               <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm tabular-nums">
                                 {riskCellText(conversation)}
+                                {riskCellNote(conversation) && (
+                                  <span className="block text-[11px] text-amber-600 dark:text-amber-400" data-testid="sbom-row-unverified">
+                                    {riskCellNote(conversation)}
+                                  </span>
+                                )}
                               </TableCell>
                               <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm max-w-[160px]" title={conversation.repo_url ?? undefined}>
                                 {conversation.zip_file_used ? (

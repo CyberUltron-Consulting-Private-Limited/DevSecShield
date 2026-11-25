@@ -30,7 +30,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
-import { RISK_TIER_LABELS, matchesRiskTier, postureScore, riskCellHint, riskCellText, riskTone } from "@/utils/riskPosture";
+import { RISK_TIER_LABELS, matchesRiskTier, postureScore, postureSortValue, riskCellHint, riskCellText, riskTone } from "@/utils/riskPosture";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, Play, CheckCircle, XCircle, CalendarPlus, CalendarCheck, Search, X, Shield, Percent, Bug, ChevronDown, ArrowUpDown, Check, Filter, DollarSign, TrendingUp, TrendingDown, AlertTriangle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { singleFlight } from "@/utils/single_flight";
@@ -562,8 +562,9 @@ export default function LLMPage() {
     .sort((a, b) => {
       if (sortBy === "created_asc") return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       if (sortBy === "created_desc") return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      const scoreA = getDisplayRiskScore(a) ?? -1;
-      const scoreB = getDisplayRiskScore(b) ?? -1;
+      // the score, then the uncapped weighted sum: scans the score cannot tell apart (4 Highs vs 1000) still sort
+      const scoreA = postureSortValue(a);
+      const scoreB = postureSortValue(b);
       if (sortBy === "risk_desc") return scoreB - scoreA;
       if (sortBy === "risk_asc") return scoreA - scoreB;
       const credA = a.estimated_credits != null ? Number(a.estimated_credits) : -1;

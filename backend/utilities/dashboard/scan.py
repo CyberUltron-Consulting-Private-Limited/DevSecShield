@@ -962,6 +962,7 @@ def generate_scan_dashboard(
                     # the scan's one 0-100 risk score over its known vulnerabilities (risk_scale.posture);
                     # "incomplete", never 0 / A, without an inventoried package or with only guessed-version matches
                     **_risk_posture(severity_counts, judged=_succeeded(scan), incomplete=sbom_is_incomplete(
+                        (scan.scan_data or {}) if scan else (scan_results or {})), unverified=sbom_unverified(
                         (scan.scan_data or {}) if scan else (scan_results or {}))),
                     "total_reachable_issues": total_reachable,
                     "total_unverified_version_findings": len(unverified),
@@ -1475,12 +1476,13 @@ def generate_scan_dashboard(
         raise e
 
 
-def _risk_posture(impact_counts, *, judged: bool = True, incomplete: bool = False) -> dict:
+def _risk_posture(impact_counts, *, judged: bool = True, incomplete: bool = False, unverified=None) -> dict:
     """``{"risk_posture": ..., "risk_posture_status": ...}``: the one 0-100 risk score of these counts per impact
     (``risk_scale.posture``); no score for a scan that did not succeed or whose result is incomplete."""
     from backend.utilities.dashboard import risk_scale
 
-    return risk_scale.posture_field(dict(impact_counts or {}), judged=judged, incomplete=incomplete)
+    return risk_scale.posture_field(dict(impact_counts or {}), judged=judged, incomplete=incomplete,
+                                    unverified=unverified)
 
 
 def _succeeded(scan) -> bool:
@@ -1493,3 +1495,9 @@ def sbom_is_incomplete(scan_data) -> bool:
     from backend.utilities.dashboard.sbom_rows import is_incomplete
 
     return is_incomplete(scan_data)
+
+
+def sbom_unverified(scan_data) -> dict:
+    from backend.utilities.dashboard.sbom_rows import unverified_counts
+
+    return unverified_counts(scan_data)

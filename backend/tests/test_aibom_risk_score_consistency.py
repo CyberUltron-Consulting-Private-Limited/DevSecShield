@@ -55,8 +55,11 @@ def test_pdf_grade_and_engine_score_are_one_function(engine_posture_score):
             assert grade not in ("F", "D"), counts
         if not critical and not high and not medium:
             assert grade in ("A", "B"), counts
-        if critical:  # with a critical finding nothing is capped: the shared grade stands
-            assert (score, grade, band) == compute_risk_score(*counts)
+        if critical:  # with a critical finding nothing is capped; the floor makes it at least 70 / F (#505 round 2)
+            uncapped = compute_risk_score(*counts)[0]
+            assert score == max(70, uncapped) and grade == "F", counts
+        elif high:  # a High and no Critical: within 50-69, D (the floor and the cap)
+            assert 50 <= score <= 69 and grade == "D", counts
 
 
 def _rows(medium: int, low: int) -> list[dict]:

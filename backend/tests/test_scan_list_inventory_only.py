@@ -287,7 +287,7 @@ def test_pdf_counts_vulnerabilities_and_lists_the_other_packages(monkeypatch: py
 
     assert seen["overview"]["Total vulnerabilities"] == "1"
     assert seen["overview"]["Packages affected"] == "1"
-    assert seen["overview"]["Risk score"] == "20 / 100 · grade B · Moderate risk"  # one High (risk_scale.posture)
+    assert seen["overview"]["Risk score"] == "50 / 100 · grade D · High risk"  # one High: the floor (risk_scale.posture)
     assert seen["severity"] == {"High": 1}
     assert seen["catalog"] == 1  # the findings catalog and Detailed Findings: the vulnerability only
     text = _pdf_haystack(str(out))

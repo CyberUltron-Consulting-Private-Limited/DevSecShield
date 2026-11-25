@@ -1553,6 +1553,14 @@ def compute_risk_score(critical: int, high: int, medium: int, low: int) -> Tuple
     return score, "A", "Low risk"
 
 
+# The method of compute_posture_risk_score (aibom/src/aibom/score/posture.py), printed under the headline.
+POSTURE_METHOD = (
+    "0 to 100 = 4 x (10 per Critical + 5 per High + 2 per Medium + 1 per Low), at most 100, set by the worst "
+    "severity found: any Critical scores at least 70 (F), any High at least 50 and at most 69 (D), Medium at most 49, "
+    "Low only at most 29. Grades: A under 15, B 15-29, C 30-49, D 50-69, F 70 or more."
+)
+
+
 def compute_posture_risk_score(critical: int, high: int, medium: int, low: int) -> Tuple[int, str, str]:
     """The AI BOM grade: ``compute_risk_score`` bounded by the worst severity present (no Critical -> at most D, no
     Critical/High -> at most C, Low only -> at most B, nothing -> A). Computed by the engine's own function and table
@@ -1939,12 +1947,13 @@ def append_executive_summary(
     ctx: Any = None,
     risk_score_fn: Optional[Callable[[int, int, int, int], Tuple[int, str, str]]] = None,
     unverified: int = 0,
-    risk_incomplete: Optional[str] = None,
+    risk_override: Optional[Tuple[Any, str, str]] = None,
 ) -> None:
     """``unverified``: findings listed in the catalogue but left out of the counts and the grade (an SBOM match on
     a version read from a manifest range); the headline says how many, so it agrees with the catalogue.
-    ``risk_incomplete``: why the scan cannot be scored (``risk_scale`` status "incomplete"); the headline then reads
-    "—" and that reason, never grade A."""
+    ``risk_override``: ``(score, grade, words)`` to print instead of ``risk_score_fn``'s: ``("—", "—", "Incomplete
+    scan")`` for a scan that cannot be scored, or an SBOM's worst-case score over its unverified matches, its words
+    marked "(unverified)" (``risk_scale`` statuses; review 6064315680 of #505)."""
     styles = styles or get_report_styles()
     meta = REPORT_META.get(report_key, REPORT_META["sast"])
     shaped = ctx is not None and ctx.options.shapes_content
@@ -1999,8 +2008,8 @@ def append_executive_summary(
                 break
 
     risk_score, risk_grade, risk_band = (risk_score_fn or compute_risk_score)(critical, high, medium, low)
-    if risk_incomplete:
-        risk_score, risk_grade, risk_band = "—", "—", risk_incomplete  # type: ignore[assignment]
+    if risk_override:
+        risk_score, risk_grade, risk_band = risk_override
 
     story.append(
         build_kpi_grid(
@@ -2046,6 +2055,9 @@ def append_executive_summary(
     guide_bits: List[Any] = [
         Paragraph(intro, styles["body"]),
         Paragraph(f"<b>How to read:</b> {escape_html(how_to_read)}", styles["muted"]),
+        # the one 0-100 score's method, where the headline is it (every product's PDF but the CBOM board report)
+        *([Paragraph(f"<b>Risk score:</b> {escape_html(POSTURE_METHOD)}", styles["muted"])]
+          if risk_score_fn is compute_posture_risk_score else []),
         Paragraph(
             f"<b>Platform:</b> {BRAND_NAME} · <font color='#0F766E'><b>{BRAND_URL}</b></font>",
             styles["muted"],

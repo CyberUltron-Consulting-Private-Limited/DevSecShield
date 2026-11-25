@@ -20,6 +20,10 @@ export interface ComplianceApplicability {
   not_applicable?: { framework: string; label: string }[];
 }
 
+// TODO(#498): #498 adds the same `groupsForFrameworks` to frameworkLabels.ts for the AI BOM page. Once both PRs are on
+// dev, frameworkLabels.ts should re-export this one (`export { groupsForFrameworks } from "./teamApplicability"`) so
+// there is a single copy (review 6064315680 of #505, finding 7).
+
 /** Indian regulators in chip order, by the framework keys that belong to them. */
 const INDIA_REGULATORS: [string, RegExp][] = [
   ["CERT-In", /^cert_in_/],

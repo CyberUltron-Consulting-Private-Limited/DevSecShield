@@ -16,8 +16,10 @@ import {
   matchesRiskTier,
   postureOf,
   postureScore,
+  postureSortValue,
   postureStatus,
   riskCellHint,
+  riskCellNote,
   riskCellText,
   riskScoreHint,
   riskScoreText,
@@ -78,6 +80,47 @@ test("a finished scan that cannot be scored reads incomplete; a failed or runnin
   assert.equal(postureStatus({ risk_posture: null, risk_posture_status: "incomplete" }), "incomplete");
   assert.equal(postureScore({ risk_posture: null, risk_posture_status: "incomplete" }), null);  // no filter tier keeps it
   for (const tier of ["critical", "high", "medium", "low"] as const) assert.equal(matchesRiskTier(null, tier), false);
+});
+
+test("round 2 (review 6064315680): a no-score status is never read from #500's flat CBOM fields", () => {
+  // a failed CBOM scan after #500 merges: flat 0 / A next to the gate's not_scored
+  const failed = { risk_score: 0, risk_grade: "A", risk_label: "Low risk", risk_posture: null, risk_posture_status: "not_scored" };
+  assert.equal(postureOf(failed), null);
+  assert.equal(riskCellText(failed), "—");
+  assert.equal(postureScore(failed), null);
+  // no status (an older backend with #500's fields only): the flat fields are still read
+  assert.equal(postureOf({ risk_score: 56, risk_grade: "D" })?.score, 56);
+});
+
+test("round 2: guessed-version matches are flagged, and only-guessed scans keep a tier", () => {
+  const unv = { risk_posture: { score: 100, grade: "F", label: "Critical risk", weighted: 100 }, risk_posture_status: "unverified",
+                risk_unverified: { count: 10, worst: "critical" } };
+  assert.equal(riskCellText(unv), "100 · F (unverified)");
+  assert.equal(postureScore(unv), 100);
+  assert.ok(matchesRiskTier(postureScore(unv), "critical"));
+  assert.match(riskCellHint(unv) ?? "", /^worst case of guessed-version matches/);
+  const noted = { risk_posture: { score: 4, grade: "A", label: "Low risk", weighted: 1 }, risk_posture_status: "scored",
+                  risk_unverified: { count: 10, worst: "critical" } };
+  assert.equal(riskCellText(noted), "4 · A");
+  assert.equal(riskCellNote(noted), "unverified: 10 guessed-version matches (worst: Critical)");
+  assert.equal(riskCellHint(noted), "of 100 · Low risk · unverified: 10 guessed-version matches (worst: Critical)");
+  assert.equal(riskCellNote({ risk_unverified: null }), null);
+});
+
+test("round 2: the floor puts one Critical in the Critical tier, and the weighted sum breaks score ties", () => {
+  assert.equal(gradeOf(70).grade, "F");
+  assert.ok(matchesRiskTier(70, "critical"));
+  const four = { risk_posture: { score: 69, grade: "D", label: "High risk", weighted: 20 } };
+  const many = { risk_posture: { score: 69, grade: "D", label: "High risk", weighted: 5000 } };
+  const critical = { risk_posture: { score: 70, grade: "F", label: "Critical risk", weighted: 10 } };
+  assert.ok(postureSortValue(many) > postureSortValue(four));
+  assert.ok(postureSortValue(critical) > postureSortValue(many));  // the score first
+  assert.equal(postureSortValue({ risk_posture: null }), -1);
+  for (const page of ["sbom_sca", "dast", "sast", "llm", "iac"]) {
+    const src = read(`frontend/app/[team_id]/${page}/page.tsx`);
+    assert.match(src, /const scoreA = postureSortValue\(a\);/, `${page}: sorts on the score then the weighted sum`);
+  }
+  assert.match(read("frontend/app/[team_id]/sbom_sca/page.tsx"), /riskCellNote\(conversation\)/);
 });
 
 const PAGES = ["sbom_sca", "dast", "sast", "llm", "iac"] as const;

@@ -81,9 +81,12 @@ def posture(impact_counts: Mapping[str, int]) -> dict[str, Any]:
 
     engine = engine_posture()
     c = _severity_counts(impact_counts)
-    score = int(engine.posture_score(c["critical"], c["high"], c["medium"], c["low"]))
+    args = (c["critical"], c["high"], c["medium"], c["low"])
+    score = int(engine.posture_score(*args))
     grade, band = engine.posture_grade(score)
-    return {"score": score, "grade": str(grade), "label": str(engine.posture_label(band)), "band": str(band)}
+    # ``weighted``: the uncapped 10C + 5H + 2M + 1L, the lists' second sort key (4 Highs and 1000 are both 69 / D)
+    return {"score": score, "grade": str(grade), "label": str(engine.posture_label(band)), "band": str(band),
+            "weighted": int(engine.posture_weighted(*args))}
 
 
 def posture_of(impacts: Iterable[Any]) -> dict[str, Any]:
@@ -96,21 +99,66 @@ def posture_of(impacts: Iterable[Any]) -> dict[str, Any]:
 
 
 STATUS_KEY = "risk_posture_status"
-# "scored": the scan completed and the score stands (0 / A only for a completed scan with no finding); "incomplete":
-# it finished but did not cover what a score needs (an SBOM with no package inventoried, or only matches on guessed
-# versions), shown "incomplete", never A; "not_scored": pending, running, failed or cancelled, shown "—".
-STATUSES = ("scored", "incomplete", "not_scored")
+# "scored": the scan completed and the score stands (0 / A only for a completed scan with no finding); "unverified":
+# an SBOM whose only vulnerabilities are matches on versions guessed from a range: the worst-case score over them,
+# marked unverified, so the scan still meets the filter tier it could be in (review 6064315680 of #505, finding 5);
+# "incomplete": it finished but did not cover what a score needs (an SBOM with no package inventoried), shown
+# "incomplete", never A; "not_scored": pending, running, failed or cancelled, shown "—".
+STATUSES = ("scored", "unverified", "incomplete", "not_scored")
+UNVERIFIED_KEY = "risk_unverified"
 
 
-def posture_field(impact_counts: Mapping[str, int], *, judged: bool = True, incomplete: bool = False) -> dict[str, Any]:
+def posture_field(impact_counts: Mapping[str, int], *, judged: bool = True, incomplete: bool = False,
+                  unverified: Mapping[str, int] | None = None) -> dict[str, Any]:
     """``{"risk_posture": posture(...), "risk_posture_status": "scored"}`` to spread into a list row or a card. No
     score (``None``) when the scan has no result to judge (``judged=False``: pending, running, failed) or its result is
-    incomplete: such a row shows "—" or "incomplete", never "0 · A"."""
+    incomplete: such a row shows "—" or "incomplete", never "0 · A".
+
+    ``unverified``: an SBOM's matches on guessed versions per severity, never in the confirmed score. They add
+    ``risk_unverified`` = ``{"count", "worst"}`` (the note "unverified: N guessed-version matches (worst: Critical)");
+    when they are the only vulnerabilities, the score is their worst case, status "unverified"."""
     if not judged:
         return {POSTURE_KEY: None, STATUS_KEY: "not_scored"}
     if incomplete:
         return {POSTURE_KEY: None, STATUS_KEY: "incomplete"}
-    return {POSTURE_KEY: posture(impact_counts), STATUS_KEY: "scored"}
+    out: dict[str, Any] = {POSTURE_KEY: posture(impact_counts), STATUS_KEY: "scored"}
+    if unverified is not None:
+        guessed = _severity_counts(unverified)
+        n = sum(guessed.values())
+        worst = next((sev for sev in SEVERITIES if guessed[sev] > 0), None)
+        out[UNVERIFIED_KEY] = {"count": n, "worst": worst} if n else None
+        if n and not sum(_severity_counts(impact_counts).values()):
+            out = {**out, POSTURE_KEY: posture(guessed), STATUS_KEY: "unverified"}
+    return out
 
-__all__ = ["IMPACT_RISK", "POSTURE_KEY", "RISK_BANDS", "SEVERITIES", "STATUSES", "STATUS_KEY", "average_risk", "average_risk_of", "impact_risk",
+
+def unverified_note(unverified: Mapping[str, Any] | None) -> str | None:
+    """"unverified: 10 guessed-version matches (worst: Critical)"; None without any."""
+    if not unverified or not unverified.get("count"):
+        return None
+    n = int(unverified["count"])
+    worst = str(unverified.get("worst") or "").capitalize()
+    return f"unverified: {n} guessed-version match{'es' if n != 1 else ''}" + (f" (worst: {worst})" if worst else "")
+
+
+def gate_dashboard(scan_type: str, dashboard: Any, scan_status: Any) -> Any:
+    """A results page's dashboard for a scan that did not succeed carries no score (review 6064315680 of #505, 4):
+    ``risk_posture`` null and ``not_scored`` on its card (and at the top, where SAST and IaC keep it), and the CBOM
+    card's flat ``risk_score`` / ``risk_grade`` / ``risk_label`` (#500) nulled. A successful scan's is unchanged."""
+    if str(scan_status or "").lower() == "success" or not isinstance(dashboard, Mapping):
+        return dashboard
+    nothing = {POSTURE_KEY: None, STATUS_KEY: "not_scored"}
+    out = dict(dashboard)
+    if POSTURE_KEY in out:
+        out.update(nothing)
+    card = out.get("card_data")
+    if isinstance(card, Mapping):
+        card = {**card, **nothing}
+        if scan_type == "cbom":
+            card.update({"risk_score": None, "risk_grade": None, "risk_label": None})
+        out["card_data"] = card
+    return out
+
+
+__all__ = ["IMPACT_RISK", "POSTURE_KEY", "RISK_BANDS", "SEVERITIES", "STATUSES", "STATUS_KEY", "UNVERIFIED_KEY", "gate_dashboard", "unverified_note", "average_risk", "average_risk_of", "impact_risk",
            "posture", "posture_field", "posture_of", "risk_band"]

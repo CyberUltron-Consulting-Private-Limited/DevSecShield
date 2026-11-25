@@ -77,11 +77,11 @@ const TEXT = {
     why: "Shows how many audit requirements the misconfigurations touch.",
     example: "One issue mapped to 2 controls: 2.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:590-592, backend/utilities/dashboard/risk_scale.py:76-117, frontend/utils/riskPosture.ts:22-28, frontend/app/[team_id]/iac/page.tsx:317-320 — risk_scale.posture over the issues of successful IaC scans
+  // src: backend/utilities/dashboard/risk_rollup.py:1-17,123-149, backend/utilities/dashboard/risk_scale.py:76-117, frontend/utils/riskPosture.ts:22-28, frontend/app/[team_id]/iac/page.tsx:317-320 — risk_rollup.team_posture: the latest successful scan per target, then risk_scale.posture over the issues of successful IaC scans
   "iac.kpi.avg_risk": {
-    what: "The one risk score over all issues of successful IaC scans, as on each scan's row, results page and PDF: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), capped by the worst severity (no Critical: 69 at most, no High either: 49, Low only: 29). Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+.",
+    what: "The current risk: the issues of the latest successful scan of each repository and branch, scored as one: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), set by the worst severity: any Critical 70+, any High 50–69, Medium at most 49, Low only 29. Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+.",
     why: "One number and grade to compare infrastructure risk over time, as every product shows it.",
-    example: "Half Critical, half Low (1 each): 4 × 11 = 44, grade C (Elevated risk).",
+    example: "One Critical and one Low in the latest scans: 4 × 11 = 44, raised to 70 by the Critical, grade F.",
   },
   // src: backend/utilities/dashboard/scan_list.py:466-478, backend/utilities/dashboard/scan_list.py:584-589 — totals per impact
   "iac.chart.severity": {

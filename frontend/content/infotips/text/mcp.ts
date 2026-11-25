@@ -51,11 +51,11 @@ const TEXT = {
     why: "Critical MCP issues can let an AI agent act beyond its intended reach.",
     example: "A tool that runs shell commands from model input.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:1401-1403, backend/utilities/dashboard/risk_scale.py:76-117, frontend/utils/riskPosture.ts:22-28, frontend/app/[team_id]/mcp/page.tsx:259-262 — risk_scale.posture over every MCP finding of successful scans
+  // src: backend/utilities/dashboard/risk_rollup.py:1-17,123-149, backend/utilities/dashboard/risk_scale.py:76-117, frontend/utils/riskPosture.ts:22-28, frontend/app/[team_id]/mcp/page.tsx:259-262 — risk_rollup.team_posture: the latest successful scan per target, then risk_scale.posture over every MCP finding of successful scans
   "mcp.kpi.avg_risk": {
-    what: "The one risk score over all MCP findings, as on each scan's row, results page and PDF: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), capped by the worst severity (no Critical: 69 at most, no High either: 49, Low only: 29). Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+.",
+    what: "The current risk: the findings of the latest successful scan of each server, scored as one: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), set by the worst severity: any Critical 70+, any High 50–69, Medium at most 49, Low only 29. Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+.",
     why: "One number and grade to compare MCP risk over time, as every product shows it.",
-    example: "One Critical and one Medium finding: 4 × 12 = 48, grade C (Elevated risk).",
+    example: "One Critical and one Medium in the latest scans: 4 × 12 = 48, raised to 70 by the Critical, grade F.",
   },
   // src: backend/utilities/dashboard/scan_list.py:1293-1294, backend/utilities/dashboard/scan_list.py:1369 — status started
   "mcp.kpi.active": {
@@ -161,9 +161,9 @@ const TEXT = {
   },
   // src: backend/utilities/db/scan_list_item.py:284,563-568, backend/utilities/dashboard/risk_scale.py:76-117, frontend/utils/riskPosture.ts:22-28, frontend/app/[team_id]/mcp/page.tsx:1019 — the row's risk_posture
   "mcp.table.risk": {
-    what: "This scan's one risk score and grade, as on its results page and PDF: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), capped by the worst severity (no Critical: 69 at most, no High either: 49, Low only: 29). Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+. A dash when the scan did not succeed.",
+    what: "This scan's one risk score and grade, as on its results page and PDF: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), set by the worst severity: any Critical 70+, any High 50–69, Medium at most 49, Low only 29. Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+. A dash when the scan did not succeed.",
     why: "Lets you compare scans by overall risk on the scale every product uses.",
-    example: "1 High and 1 Low finding: 4 × 6 = 24, grade B, shown 24 · B.",
+    example: "1 High and 1 Low finding: 4 × 6 = 24, raised to 50 by the High, shown 50 · D.",
   },
   // src: backend/utilities/db/scan_list_item.py:204-215, backend/utilities/db/scan_list_item.py:284-289 — tools, prompts and resources the server exposed
   "mcp.table.discovery": {

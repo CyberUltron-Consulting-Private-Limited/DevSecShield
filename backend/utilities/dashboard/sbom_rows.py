@@ -94,15 +94,23 @@ def _components(data: dict) -> list[dict[str, Any]]:
 
 def is_incomplete(scan_data: Any) -> bool:
     """Whether a finished SBOM scan cannot be scored: it inventoried no package (no stored component and no result
-    row: nothing was matched, so "no vulnerability" means nothing), or every vulnerability it matched is on a version
-    guessed from a range (listed, not counted, review 6028132826 M2) so the zero is not a clean result. Its risk score is
-    "incomplete", never 0 / A."""
+    row: nothing was matched, so "no vulnerability" means nothing). Its risk score is "incomplete", never 0 / A. Matches
+    on guessed versions are not incompleteness: they are scored as "unverified" (``unverified_counts``)."""
     data = scan_data if isinstance(scan_data, dict) else {}
     rows = [r for r in data.get("results") or [] if isinstance(r, dict)]
-    if not _components(data) and not rows:  # every row is a package (an inventory row or a vulnerable one)
-        return True
-    return not severity_rows(rows) and bool(unverified_version_rows(rows))
+    return not _components(data) and not rows  # every row is a package (an inventory row or a vulnerable one)
 
 
-__all__ = ["component_licence_categories", "is_incomplete", "is_inventory_row", "is_unverified_version", "severity_findings", "severity_rows",
+def unverified_counts(scan_data: Any) -> dict[str, int]:
+    """The matches on versions guessed from a range per severity (listed, not in the confirmed score, review
+    6028132826 M2): the "unverified" note and the worst-case score of a scan that has nothing else."""
+    data = scan_data if isinstance(scan_data, dict) else {}
+    counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    for row in unverified_version_rows(data.get("results") or []):
+        key = str(row.get("impact") or "").strip().lower()
+        if key in counts:
+            counts[key] += 1
+    return counts
+
+__all__ = ["component_licence_categories", "is_incomplete", "unverified_counts", "is_inventory_row", "is_unverified_version", "severity_findings", "severity_rows",
            "unverified_version_rows", "vulnerability_findings", "vulnerability_rows"]

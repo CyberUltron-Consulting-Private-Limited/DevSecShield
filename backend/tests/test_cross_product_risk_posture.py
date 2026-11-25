@@ -71,20 +71,25 @@ def _scan(scan_type, impacts, status="success"):
 
 LIST_ITEM = {"sast": return_sast_list_item, "sbom_sca": return_sbom_sca_list_item, "dast": return_dast_list_item,
              "llm": return_llm_list_item, "iac": return_iac_list_item, "mcp": return_mcp_list_item}
-# impacts -> (score, grade, label): the engine's posture function, capped by the worst severity
+# impacts -> (score, grade, label): the engine's posture function, capped by the worst severity and floored by it
+# (any Critical: at least 70 / F, any High: at least 50 / D; review 6064315680 of #505, finding 3)
 CASES = [
     ([], (0, "A", "Low risk")),
     (["Low"] * 3, (12, "A", "Low risk")),
     (["Low"] * 7, (28, "B", "Moderate risk")),
     (["Medium"] * 4, (32, "C", "Elevated risk")),
+    (["High"], (50, "D", "High risk")),  # floor: was 20 / B
     (["High"] * 15, (69, "D", "High risk")),  # uncapped: 300 -> 100 / F
-    (["Critical", "Low"], (44, "C", "Elevated risk")),
+    (["Critical"], (70, "F", "Critical risk")),  # floor: was 40 / C, in the "Medium" filter
+    (["Critical", "Low"], (70, "F", "Critical risk")),  # floor: was 44 / C
     (["Critical"] * 2, (80, "F", "Critical risk")),
 ]
+WEIGHT = {"Critical": 10, "High": 5, "Medium": 2, "Low": 1}
 
 
-def _expected(score, grade, label):
-    return {"score": score, "grade": grade, "label": label, "band": label.split(" ")[0].lower()}
+def _expected(score, grade, label, impacts=()):
+    return {"score": score, "grade": grade, "label": label, "band": label.split(" ")[0].lower(),
+            "weighted": sum(WEIGHT[i] for i in impacts)}
 
 
 # ------------------------------------------------------------------------------------------------- the one helper
@@ -92,10 +97,10 @@ def _expected(score, grade, label):
 def test_posture_is_the_engine_function(impacts, want):
     counts = {s: impacts.count(s.title()) for s in risk_scale.SEVERITIES}
     assert posture_risk(counts["critical"], counts["high"], counts["medium"], counts["low"]) == want
-    assert risk_scale.posture(counts) == _expected(*want)
-    assert risk_scale.posture_of(impacts) == _expected(*want)
+    assert risk_scale.posture(counts) == _expected(*want, impacts)
+    assert risk_scale.posture_of(impacts) == _expected(*want, impacts)
     # the keys may be stored as "Critical" (SAST risk_metrics) or "critical"; an impact outside the four is not counted
-    assert risk_scale.posture({**{s.title(): n for s, n in counts.items()}, "Info": 9}) == _expected(*want)
+    assert risk_scale.posture({**{s.title(): n for s, n in counts.items()}, "Info": 9}) == _expected(*want, impacts)
 
 
 def test_the_grade_bands_are_the_engine_table():
@@ -114,7 +119,7 @@ def test_the_grade_bands_are_the_engine_table():
 @pytest.mark.parametrize("impacts,want", CASES)
 def test_every_list_row_carries_the_one_score(scan_type, impacts, want):
     row = LIST_ITEM[scan_type](_scan(scan_type, impacts))
-    assert row[risk_scale.POSTURE_KEY] == _expected(*want), (scan_type, impacts)
+    assert row[risk_scale.POSTURE_KEY] == _expected(*want, impacts), (scan_type, impacts)
     assert row[risk_scale.STATUS_KEY] == "scored"
 
 
@@ -168,7 +173,7 @@ def test_the_tiles_show_the_score_of_the_rows(mongo, impacts, want):
         scan = _scan(scan_type, impacts)
         _store(mongo, scan, impacts)
         got = tile(scan)[risk_scale.POSTURE_KEY]
-        assert got == LIST_ITEM[scan_type](scan)[risk_scale.POSTURE_KEY] == _expected(*want), scan_type
+        assert got == LIST_ITEM[scan_type](scan)[risk_scale.POSTURE_KEY] == _expected(*want, impacts), scan_type
 
 
 def test_a_team_without_a_successful_scan_has_no_tile_score(mongo):
@@ -188,7 +193,7 @@ def test_the_results_page_shows_the_score_of_the_row(mongo, monkeypatch, impacts
         _store(mongo, scan, impacts)
         dash = _per_scan(scan_type, scan, monkeypatch)
         got = (dash if scan_type in ("sast", "iac") else dash["card_data"])[risk_scale.POSTURE_KEY]
-        assert got == LIST_ITEM[scan_type](scan)[risk_scale.POSTURE_KEY] == _expected(*want), scan_type
+        assert got == LIST_ITEM[scan_type](scan)[risk_scale.POSTURE_KEY] == _expected(*want, impacts), scan_type
 
 
 def _per_scan(scan_type, scan, monkeypatch):
@@ -271,8 +276,8 @@ GUESSED = {"title": "CVE in pillow", "dependency": "pillow==10.0", "impact": "Hi
     # finished but nothing inventoried: "no vulnerability" means nothing
     ("no package", _sbom([]), "incomplete"),
     ("no results key", _sbom(None), "incomplete"),
-    # every match on a guessed version (listed, not counted): the zero is not clean
-    ("guessed versions only", _sbom([dict(INVENTORY_ROW), dict(GUESSED)]), "incomplete"),
+    # every match on a guessed version (listed, not counted): not clean, not hidden either: the worst case, unverified
+    ("guessed versions only", _sbom([dict(INVENTORY_ROW), dict(GUESSED)]), "unverified"),
     # failed, cancelled or still running, with or without partial rows: no score
     ("failed with rows", _sbom([dict(INVENTORY_ROW)], status="failure"), "not_scored"),
     ("cancelled", _sbom([], status="cancelled"), "not_scored"),
@@ -283,6 +288,8 @@ def test_an_sbom_scan_reads_0_a_only_when_it_completed_clean(mongo, label, scan,
     assert row[risk_scale.STATUS_KEY] == want_status, label
     if want_status == "scored":
         assert row[risk_scale.POSTURE_KEY] == _expected(0, "A", "Low risk"), label
+    elif want_status == "unverified":  # one guessed High: 50 / D, marked unverified, never A
+        assert row[risk_scale.POSTURE_KEY]["score"] == 50 and row[risk_scale.POSTURE_KEY]["grade"] == "D", label
     else:
         assert row[risk_scale.POSTURE_KEY] is None, label  # never A
     if scan.scan_data.get("results") is not None:
@@ -296,7 +303,7 @@ def test_an_sbom_scan_reads_0_a_only_when_it_completed_clean(mongo, label, scan,
 def test_the_sbom_tile_scores_the_complete_scans_only(mongo):
     clean, empty = _sbom([dict(INVENTORY_ROW), *_rows(["High"])]), _sbom([])
     tile = scan_list_mod.generate_sbom_sca_dashboard_data([clean, empty])["card_data"]
-    assert tile[risk_scale.STATUS_KEY] == "scored" and tile[risk_scale.POSTURE_KEY]["score"] == 20
+    assert tile[risk_scale.STATUS_KEY] == "scored" and tile[risk_scale.POSTURE_KEY]["score"] == 50
 
 
 def test_a_failed_scan_with_data_has_no_score_on_its_results_page(mongo):
@@ -312,8 +319,7 @@ def test_the_sbom_pdf_says_incomplete_never_a(tmp_path):
 
     from backend.utilities.pdf.combined import generate_pdf_for_type, prepare_pdf_export_payload
 
-    for name, payload in (("empty", {"duration_of_scan": 1, "results": []}),
-                          ("guessed", {"duration_of_scan": 1, "results": [dict(INVENTORY_ROW), dict(GUESSED)]})):
+    for name, payload in (("empty", {"duration_of_scan": 1, "results": []}),):
         out = str(tmp_path / f"{name}.pdf")
         generate_pdf_for_type("sbom_sca", prepare_pdf_export_payload("sbom_sca", payload), out)
         first = pdf_pages_text(Path(out).read_bytes())[0]

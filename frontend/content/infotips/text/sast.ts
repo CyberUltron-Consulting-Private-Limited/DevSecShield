@@ -75,11 +75,11 @@ const TEXT = {
     why: "Shows which scans had activity today, including ones that are still waiting.",
     example: "A scan queued since yesterday counts here once anyone opens the scan list today.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:871-874, backend/utilities/dashboard/risk_scale.py:76-95, frontend/utils/riskPosture.ts:22-28, frontend/app/[team_id]/sast/page.tsx:542-545 — risk_scale.posture over every finding of successful SAST scans
+  // src: backend/utilities/dashboard/risk_rollup.py:1-17,123-149, backend/utilities/dashboard/risk_scale.py:76-95, frontend/utils/riskPosture.ts:22-28, frontend/app/[team_id]/sast/page.tsx:542-545 — risk_rollup.team_posture: the latest successful scan per target, then risk_scale.posture over every finding of successful SAST scans
   "sast.avg_risk": {
-    what: "The one risk score over all findings of successful SAST scans, as on each scan's row, results page and PDF: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), capped by the worst severity (no Critical: 69 at most, no High either: 49, Low only: 29). Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+.",
+    what: "The current risk: the findings of the latest successful scan of each repository and branch, scored as one: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), set by the worst severity: any Critical 70+, any High 50–69, Medium at most 49, Low only 29. Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+.",
     why: "One number and grade to compare the overall risk of your code over time, as every product shows it.",
-    example: "1 Critical and 3 Low findings: 4 × 13 = 52, grade D (High risk).",
+    example: "The latest scan of a repository has 1 Critical and 3 Low: 4 × 13 = 52, raised to 70, grade F.",
   },
   // src: backend/utilities/dashboard/scan_list.py:690-709, backend/utilities/dashboard/scan_list.py:796-806 — totals per severity over successful scans
   "sast.chart.severity": {
@@ -197,9 +197,9 @@ const TEXT = {
   },
   // src: backend/utilities/db/scan_list_item.py:82,563-567, backend/utilities/dashboard/risk_scale.py:76-95, frontend/utils/riskPosture.ts:22-28, frontend/app/[team_id]/sast/page.tsx:101-105,1539 — the row's risk_posture (the older risk_score field is a weighted sum, not shown)
   "sast.table.risk": {
-    what: "This scan's one risk score and grade, as on its results page and PDF: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), capped by the worst severity (no Critical: 69 at most, no High either: 49, Low only: 29). Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+. Empty (—) when the scan did not succeed.",
+    what: "This scan's one risk score and grade, as on its results page and PDF: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), set by the worst severity: any Critical 70+, any High 50–69, Medium at most 49, Low only 29. Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+. Empty (—) when the scan did not succeed.",
     why: "Lets you compare scans by overall risk on the scale every product uses.",
-    example: "2 High and 2 Low findings: 4 × 12 = 48, grade C, shown 48 · C.",
+    example: "2 High and 2 Low findings: 4 × 12 = 48, raised to 50 by the Highs, shown 50 · D.",
   },
   // src: backend/utilities/db/scan_list_item.py:38-41 — repo_type or zip_file
   "sast.table.type": {

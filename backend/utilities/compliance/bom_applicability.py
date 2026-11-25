@@ -27,6 +27,9 @@ from typing import Any
 from backend.utilities.cbom_sources import regulated_entity
 
 KEY = "compliance_applicability"
+# Carries ``{"profile": <team profile or None>, "declared": bool}`` into the SBOM PDF payload (never rendered as text);
+# a payload without it (an older caller, a test) lists every framework, as before.
+PDF_PROFILE_KEY = "_dss_bom_applicability_profile"
 SCAN_TYPES = ("cbom", "sbom_sca")
 UNDECLARED = "regulated entity not set"
 
@@ -129,6 +132,28 @@ def with_run_applicability(parity: Any, risk_model: Any) -> Any:
     return {**parity, "scan_metadata": {**meta, KEY: view}}
 
 
+def with_pdf_profile(scan_type: str, payload: Any, session: Any, team_id: int) -> Any:
+    """The PDF payload plus the team's profile for ``scan_type`` (``team_profile_for``), so the PDF lists the same
+    frameworks as the page (review 6064315680 of #505, 6). A failure to read it leaves the payload as it was."""
+    if not isinstance(payload, Mapping):
+        return payload
+    try:
+        team, declared = team_profile_for(session, team_id, scan_type)
+    except Exception:  # the report still renders, with every framework (as before this view)
+        logging.getLogger(__name__).warning("compliance applicability: team profile not read for the PDF", exc_info=True)
+        return payload
+    return {**payload, PDF_PROFILE_KEY: {"profile": team, "declared": declared}}
+
+
+def pdf_view(scan_type: str, payload: Any, compliance: Any) -> dict[str, Any] | None:
+    """``page_view`` for a PDF payload that carries the team's profile; None without one (every framework)."""
+    carried = payload.get(PDF_PROFILE_KEY) if isinstance(payload, Mapping) else None
+    if not isinstance(carried, Mapping):
+        return None
+    team = carried.get("profile") if isinstance(carried.get("profile"), Mapping) else None
+    return page_view(scan_type, compliance, team, declared=bool(carried.get("declared")))
+
+
 def with_applicability(scan_type: str, scan_metadata: Any, engine: Any, team_id: int) -> Any:
     """``scan_metadata`` plus ``compliance_applicability`` for a CBOM or SBOM scan with a compliance report; anything
     else unchanged. A failure to read the profile leaves the metadata as it was (the page then shows every
@@ -149,5 +174,5 @@ def with_applicability(scan_type: str, scan_metadata: Any, engine: Any, team_id:
     return {**scan_metadata, KEY: page_view(scan_type, compliance, team, declared=declared)}
 
 
-__all__ = ["KEY", "LABELS", "SCAN_TYPES", "UNDECLARED", "binds", "page_view", "profile_of_risk_model",
+__all__ = ["KEY", "LABELS", "PDF_PROFILE_KEY", "pdf_view", "with_pdf_profile", "SCAN_TYPES", "UNDECLARED", "binds", "page_view", "profile_of_risk_model",
            "profile_sentence", "team_profile_for", "with_applicability", "with_run_applicability"]

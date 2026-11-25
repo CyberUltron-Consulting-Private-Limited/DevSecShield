@@ -8,7 +8,7 @@ from fastapi import HTTPException , status
 from backend.utilities.db.findings import get_findings_for_scan_id
 from backend.utilities.dashboard.remediation_metrics import get_remediation_metrics
 from backend.utilities.dashboard.finding_metrics import get_issue_status_metrics, get_mttr_per_day
-from backend.utilities.dashboard import risk_scale
+from backend.utilities.dashboard import risk_rollup, risk_scale
 from backend.utilities.dashboard.sbom_license import (
     LICENSE_CATEGORIES,
     resolve_sbom_license_category,
@@ -16,7 +16,6 @@ from backend.utilities.dashboard.sbom_license import (
 )
 from backend.utilities.dashboard.sbom_rows import (
     component_licence_categories,
-    is_incomplete,
     severity_rows,
     unverified_version_rows,
     vulnerability_findings,
@@ -223,7 +222,7 @@ def generate_dast_dashboard_data(scans: list[Scan]) -> dict:
     dast_scans = [s for s in scans if s.scan_type == "dast"]
     success_dast = [s for s in dast_scans if s.scan_status == "success"]
     all_findings: list = []
-    for scan in dast_scans:
+    for scan in success_dast:  # a failed or running scan's findings reach no tile (review 6064315680 of #505, 2)
         all_findings.extend(get_findings_for_scan_id(scan_id=scan.id))
 
     severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
@@ -302,8 +301,8 @@ def generate_dast_dashboard_data(scans: list[Scan]) -> dict:
         "total_medium_issues": total_medium,
         "total_low_issues": total_low,
         "average_risk_score": average_risk_score,
-        # the one 0-100 risk score over these findings (risk_scale.posture): the tile shows it, as the list rows
-        **risk_scale.posture_field(severity_counts, judged=bool(success_dast)),
+        # the one 0-100 risk score of the latest successful scan per target (risk_rollup), as their list rows
+        **risk_rollup.team_posture("dast", dast_scans),
     }
     SEVERITY_KEYS = ("critical", "high", "medium", "low")
     severity_distribution = {k: severity_counts.get(k, 0) for k in SEVERITY_KEYS}
@@ -589,8 +588,8 @@ def generate_iac_dashboard_data(scans: list[Scan]) -> dict:
         "coverage_percentage": coverage_pct,
         "total_policy_violations": total_policy_violations,
         "average_risk_score": average_risk_score,
-        # the one 0-100 risk score over these findings (risk_scale.posture): the tile shows it, as the list rows
-        **risk_scale.posture_field(severity_counts, judged=any(s.scan_status == "success" for s in iac_scans)),
+        # the one 0-100 risk score of the latest successful scan per target (risk_rollup), as their list rows
+        **risk_rollup.team_posture("iac", iac_scans),
     }
 
     severity_distribution = {
@@ -873,9 +872,8 @@ def generate_sast_dashboard_data(scans: list[Scan]) -> dict:
         "risks_per_day": risks_per_day,
         "risk_totals": risk_totals,
         "average_risk_score": average_risk_score,
-        # the one 0-100 risk score over these findings (risk_scale.posture): the tile shows it, as the list rows
-        **risk_scale.posture_field({"critical": critical_t, "high": high_t, "medium": medium_t, "low": low_t},
-                                   judged=success_scans > 0),
+        # the one 0-100 risk score of the latest successful scan per target (risk_rollup), as their list rows
+        **risk_rollup.team_posture("sast", [s for s in scans if s.scan_type == "sast"]),
         "total_issues": total_issues,
         "critical_count": critical_t,
         "owasp_by_category": owasp_by_category,
@@ -1102,11 +1100,8 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
         "total_license_risks": total_license_risks,
         "total_high_risk_licenses": total_high_license,
         "average_risk_score": average_risk_score,
-        # the one 0-100 risk score over the known vulnerabilities (risk_scale.posture): the tile shows it, as the rows
-        **risk_scale.posture_field(
-            severity_counts, judged=any(s.scan_status == "success" for s in sbom_scans),
-            # only incomplete successful scans (no package inventoried, or only guessed-version matches): no score
-            incomplete=not any(s.scan_status == "success" and not is_incomplete(s.scan_data) for s in sbom_scans)),
+        # the one 0-100 risk score of the latest successful scan per target (risk_rollup), as their list rows
+        **risk_rollup.team_posture("sbom_sca", sbom_scans),
         "total_reachable_issues": total_reachable,
         "total_unverified_version_findings": unverified_total,
     }
@@ -1326,7 +1321,8 @@ def generate_mcp_dashboard_data(scans: list[Scan]) -> dict:
         else:
             scan_status_distribution["not_started"] += 1
 
-        vulns_with_cat = _mcp_vulns(scan)
+        # a failed or running scan's findings reach no tile (review 6064315680 of #505, 2)
+        vulns_with_cat = _mcp_vulns(scan) if status == "success" else []
         if not vulns_with_cat:
             continue
         date_key = str(scan.created_at.date()) if scan.created_at else ""
@@ -1400,8 +1396,8 @@ def generate_mcp_dashboard_data(scans: list[Scan]) -> dict:
         "total_scans": len(mcp_scans),
         "total_critical_issues": total_critical,
         "average_risk_score": average_risk_score,
-        # the one 0-100 risk score over these findings (risk_scale.posture): the tile shows it, as the list rows
-        **risk_scale.posture_field(severity_distribution, judged=scan_status_distribution["success"] > 0),
+        # the one 0-100 risk score of the latest successful scan per target (risk_rollup), as their list rows
+        **risk_rollup.team_posture("mcp", mcp_scans),
         "total_active_scans": total_active_scans,
         "total_resolved_issues": total_resolved_past_7_days,
     }
@@ -1669,8 +1665,8 @@ def generate_llm_dashboard_data(scans: list[Scan]) -> dict:
     card_data = {
         "total_scans": success_scans,
         "average_risk_score": average_risk_score,
-        # the one 0-100 risk score over these findings (risk_scale.posture): the tile shows it, as the list rows
-        **risk_scale.posture_field(risk_level_distribution, judged=success_scans > 0),
+        # the one 0-100 risk score of the latest successful scan per target (risk_rollup), as their list rows
+        **risk_rollup.team_posture("llm", [s for s in scans if s.scan_type == "llm"]),
         "total_critical_vulnerabilities": total_critical,
         "total_vulnerabilities": total_vulns,
         "owasp_compliance_score": owasp_compliance_score,
@@ -1755,6 +1751,18 @@ def rollup_code_rows(scans: list[Scan], view: Any) -> dict[int, list]:
             rows.append(row)
         out[scan.id] = rows
     return out
+
+
+def _gate_cbom_tile(counted: list, sources: Any, out: dict) -> dict:
+    """The CBOM tile's one risk score, gated like every product (review 6064315680 of #505, 4): with no successful
+    code scan and no Sources row counted, no score, and the flat ``risk_score`` / ``risk_grade`` / ``risk_label`` (#500)
+    are nulled: "—", never "0 · A" for a team whose scans failed."""
+    judged = bool(counted) or bool(getattr(sources, "rows", None))
+    card = dict(out.get("card_data") or {})
+    card.update(risk_scale.posture_field(out.get("severity_distribution") or {}, judged=judged))
+    if not judged:
+        card.update({"risk_score": None, "risk_grade": None, "risk_label": None})
+    return {**out, "card_data": card}
 
 
 def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None, *, team_id: int | None = None,
@@ -1865,7 +1873,7 @@ def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None, *, team
         population = RECON.for_dashboard(view, register_summary, view.asset_occurrences, sources)
     except Exception as exc:  # noqa: BLE001  # pragma: no cover - defensive
         console.print(f"CBOM population reconciliation failed: {type(exc).__name__}", style="bold red")
-    return {
+    return _gate_cbom_tile(counted, sources, {
         "population": population,
         "sources": {
             "collections": len(sources.collections),
@@ -1899,7 +1907,7 @@ def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None, *, team
             "total_not_started": total_not_started,
             "total_ignored": total_ignored,
         },
-    }
+    })
 
 
 AI_BOM_RISK_SCORE_FOR_IMPACT = {"critical": 10.0, "high": 7.5, "medium": 5.0, "low": 2.5}

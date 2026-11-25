@@ -57,11 +57,11 @@ const TEXT = {
     why: "Strong copyleft or source-available licenses can force you to publish code or change your product.",
     example: "A package licensed GPL-2.0-only.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:1100-1102, backend/utilities/dashboard/risk_scale.py:76-95, frontend/utils/riskPosture.ts:22-28, frontend/app/[team_id]/sbom_sca/page.tsx:284-287 — risk_scale.posture over the known vulnerabilities of successful scans; inventory rows left out (#46)
+  // src: backend/utilities/dashboard/risk_rollup.py:1-17,123-149, backend/utilities/dashboard/risk_scale.py:76-95, frontend/utils/riskPosture.ts:22-28, frontend/app/[team_id]/sbom_sca/page.tsx:284-287 — risk_rollup.team_posture: the latest successful scan per target, then risk_scale.posture over the known vulnerabilities of successful scans; inventory rows left out (#46)
   "sbom.kpi.avg_risk": {
-    what: "The one risk score over the known vulnerabilities of successful scans, as on each scan's row, results page and PDF: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), capped by the worst severity (no Critical: 69 at most, no High either: 49, Low only: 29). Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+. Packages without a known vulnerability are not counted.",
+    what: "The current risk: the known vulnerabilities of the latest successful scan of each repository and branch, scored as one: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), set by the worst severity: any Critical 70+, any High 50–69, Medium at most 49, Low only 29. Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+. Packages without a known vulnerability are not counted.",
     why: "One number and grade to compare dependency risk over time, as every product shows it.",
-    example: "15 High and no Critical vulnerabilities: 4 × 75 = 300, capped at 69, grade D (High risk).",
+    example: "Rescanned 4 times, the latest scan has 15 High: 4 × 75 = 300, capped at 69, grade D; the older scans do not add up.",
   },
   // src: backend/utilities/dashboard/scan_list.py:999-1002, backend/utilities/dashboard/sbom_license.py:382-392, RabbitMQ/worker/helpers/context/schema.py:34, RabbitMQ/worker/helpers/tools/sca_sbom_agent/main.py:137-158, RabbitMQ/worker/helpers/tools/sca_sbom_agent/parser.py:128-155 — reachability is a label the AI model sets from the Grype match text (id, severity, description, package, fix, locations); no source file is in its context
   "sbom.kpi.reachable": {
@@ -125,9 +125,9 @@ const TEXT = {
   },
   // src: backend/utilities/db/scan_list_item.py:199,563-567, backend/utilities/dashboard/risk_scale.py:76-95, frontend/utils/riskPosture.ts:22-28, frontend/app/[team_id]/sbom_sca/page.tsx:115-118,991 — the row's risk_posture; — before success
   "sbom.table.risk": {
-    what: "This scan's one risk score and grade, as on its results page and PDF: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), capped by the worst severity (no Critical: 69 at most, no High either: 49, Low only: 29). Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+. \"incomplete\" when no package was inventoried or every match is on a guessed version; — when the scan did not succeed.",
+    what: "This scan's one risk score and grade, as on its results page and PDF: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), set by the worst severity: any Critical 70+, any High 50–69, Medium at most 49, Low only 29. Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+. \"incomplete\" when no package was inventoried or every match is on a guessed version; — when the scan did not succeed.",
     why: "Lets you compare scans by overall risk on the scale every product uses.",
-    example: "1 Critical and 1 Low vulnerability: 4 × 11 = 44, grade C, shown 44 · C.",
+    example: "1 Critical and 1 Low vulnerability: 4 × 11 = 44, raised to 70 by the Critical, shown 70 · F.",
   },
   // src: backend/utilities/db/scan_list_item.py:195-197 — repo_url, or zip upload, or SBOM file
   "sbom.table.source": {
@@ -175,9 +175,9 @@ const TEXT = {
   },
   // src: backend/utilities/dashboard/scan.py:956-957, backend/utilities/dashboard/risk_scale.py:76-95, frontend/utils/riskPosture.ts:22-28, frontend/components/SbomResults.tsx:338-341 — risk_scale.posture over this scan's known vulnerabilities; inventory rows left out (#46)
   "sbom.res.kpi.avg_risk": {
-    what: "This scan's one risk score over its known vulnerabilities, as on its list row and PDF: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), capped by the worst severity (no Critical: 69 at most, no High either: 49, Low only: 29). Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+. Packages with no known vulnerability are not counted.",
+    what: "This scan's one risk score over its known vulnerabilities, as on its list row and PDF: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), set by the worst severity: any Critical 70+, any High 50–69, Medium at most 49, Low only 29. Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+. Packages with no known vulnerability are not counted.",
     why: "One number and grade to compare this scan with others.",
-    example: "1 Critical and 3 Low vulnerabilities: 4 × 13 = 52, grade D (High risk).",
+    example: "1 Critical and 3 Low vulnerabilities: 4 × 13 = 52, raised to 70 by the Critical, grade F.",
   },
   // src: backend/utilities/dashboard/scan.py:843-846, RabbitMQ/worker/helpers/context/schema.py:34, RabbitMQ/worker/helpers/tools/sca_sbom_agent/main.py:137-158 — the AI model's label; no source file in its context
   "sbom.res.kpi.reachable": {

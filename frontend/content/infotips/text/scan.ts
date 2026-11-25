@@ -107,9 +107,9 @@ const TEXT = {
   },
   // src: backend/utilities/db/scan_list_item.py:146,436,563-568, backend/utilities/dashboard/risk_scale.py:76-117, frontend/utils/riskPosture.ts:22-28, frontend/app/[team_id]/iac/page.tsx:127-129,1025, frontend/app/[team_id]/dast/page.tsx:119-121,928 — the row's risk_posture; — before success
   "scan.table.risk": {
-    what: "This scan's one risk score and grade, as on its results page and PDF: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), capped by the worst severity (no Critical: 69 at most, no High either: 49, Low only: 29). Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+. A dash when the scan did not succeed.",
+    what: "This scan's one risk score and grade, as on its results page and PDF: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), set by the worst severity: any Critical 70+, any High 50–69, Medium at most 49, Low only 29. Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+. A dash when the scan did not succeed.",
     why: "Lets you compare scans by overall risk on the scale every product uses.",
-    example: "1 High and 1 Low finding: 4 × 6 = 24, grade B, shown 24 · B.",
+    example: "1 High and 1 Low finding: 4 × 6 = 24, raised to 50 by the High, shown 50 · D.",
   },
   // src: frontend/utils/riskPosture.ts:40-56, frontend/app/[team_id]/sbom_sca/page.tsx:120-122,828, frontend/app/[team_id]/dast/page.tsx:122-124,764, frontend/app/[team_id]/llm/page.tsx:120-122,764, frontend/app/[team_id]/iac/page.tsx:131-133,848, frontend/app/[team_id]/ai_bom/page.tsx:114-121,719, backend/utilities/dashboard/risk_scale.py:16-17 — grade-band tiers on the 0-100 lists, 0-10 tiers on the lists that still show a decimal; a null score matches no tier
   "scan.filter.risk": {
