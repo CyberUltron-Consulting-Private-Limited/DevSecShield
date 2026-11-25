@@ -38,6 +38,13 @@ from backend.utilities.cbom_sources.settings import get_or_create_settings
 from zs_scan_node import api as node_api
 
 needs_pg = F.needs_pg
+
+
+def _row_lock(statement: str) -> bool:
+    """A row-locking SELECT: FOR UPDATE, or the FOR NO KEY UPDATE the run row is taken with (``J.RUN_ROW_LOCK``)."""
+    return "FOR UPDATE" in statement or "FOR NO KEY UPDATE" in statement
+
+
 api, world = F.api, F.world  # the SQLite world and API client fixtures, used by name
 DAY_US = 86_400 * 1_000_000
 
@@ -509,7 +516,7 @@ def test_c1_300_successful_job_ends_at_the_tail_take_no_run_row_lock():
     engine = F._pg_world()
     node_id, run_id, jobs = _pg_fleet(engine, 300, kind="discovery")
     seen: list[str] = []
-    listener = lambda *a: seen.append(a[2]) if "cbomcollectionrun" in a[2] and "FOR UPDATE" in a[2] else None  # noqa: E731
+    listener = lambda *a: seen.append(a[2]) if "cbomcollectionrun" in a[2] and _row_lock(a[2]) else None  # noqa: E731
     event.listen(engine, "before_cursor_execute", listener)
     try:
         with _LockSampler(engine) as sampler:
@@ -914,7 +921,7 @@ def test_d1_closed_window_jobs_are_never_locked_or_hinted():
 
     def after(conn, cursor, statement, params, context, executemany):
         stats["statements"] += 1
-        if "FOR UPDATE" in statement:
+        if _row_lock(statement):
             stats["locked"] += max(cursor.rowcount, 0)
 
     event.listen(engine, "after_cursor_execute", after)
