@@ -30,7 +30,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
-import { RISK_TIER_LABELS, matchesRiskTier, postureOf, postureScore, riskScoreHint, riskScoreText, riskTone } from "@/utils/riskPosture";
+import { RISK_TIER_LABELS, matchesRiskTier, postureScore, riskCellHint, riskCellText, riskTone } from "@/utils/riskPosture";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, CheckCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, MinusCircle, Shield, AlertTriangle, Activity, BookOpen, Crosshair, ChevronDown, ArrowUpDown, Check, Filter, DollarSign, TrendingUp, TrendingDown } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { singleFlight } from "@/utils/single_flight";
@@ -283,8 +283,8 @@ function SBOMSCAScanListDashboard({ dashboardData }: { dashboardData: SBOMSCADas
               <div>
                 {/* the one risk score (0-100, grade, words) over the known vulnerabilities, as the rows and the PDF */}
                 <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Risk score <InfoTip id="sbom.kpi.avg_risk" /></p>
-                <p className="text-xl font-bold text-zinc-900 dark:text-white" data-testid="sbom-kpi-risk-score">{riskScoreText(postureOf(card))}</p>
-                {riskScoreHint(postureOf(card)) && <p className="text-[11px] text-zinc-500">{riskScoreHint(postureOf(card))}</p>}
+                <p className="text-xl font-bold text-zinc-900 dark:text-white" data-testid="sbom-kpi-risk-score">{riskCellText(card)}</p>
+                {riskCellHint(card) && <p className="text-[11px] text-zinc-500">{riskCellHint(card)}</p>}
               </div>
             </div>
           </CardContent>
@@ -988,7 +988,7 @@ export default function SBOMSCAPage() {
                                 ) : "—"}
                               </TableCell>
                               <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm tabular-nums">
-                                {riskScoreText(postureOf(conversation))}
+                                {riskCellText(conversation)}
                               </TableCell>
                               <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm max-w-[160px]" title={conversation.repo_url ?? undefined}>
                                 {conversation.zip_file_used ? (

@@ -67,6 +67,7 @@ import { useExportPdf } from "@/components/reports/ExportPdfDialog";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
 import { RESULTS_HEADER } from "@/components/resultsHeaderLayout";
+import { riskCellHint, riskCellText, riskTone, postureScore } from "@/utils/riskPosture";
 
 // IAC agent output format (from worker_iac_agent_results_testing.json): flat array of vulnerabilities
 type OwaspOrComplianceItem = Record<string, string>;
@@ -689,6 +690,23 @@ function IACResultsAgentView({
             </div>
           </CardContent>
         </Card>
+        {/* the scan's one risk score (0-100, grade, words), as its list row and its PDF headline */}
+        {dashboard && "risk_metrics" in dashboard && (
+          <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3 min-w-0 overflow-hidden" data-testid="iac-res-risk-score">
+            <CardContent className="p-0 min-w-0 overflow-hidden">
+              <div className="flex flex-col items-start gap-2 min-w-0 overflow-hidden">
+                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${riskTone(postureScore(dashboard as IACScanDashboardData)).box}`}>
+                  <Shield className={`h-4 w-4 ${riskTone(postureScore(dashboard as IACScanDashboardData)).icon}`} />
+                </div>
+                <div className="min-w-0 overflow-hidden">
+                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Risk score</p>
+                  <p className="text-xl font-bold text-zinc-900 dark:text-white truncate">{riskCellText(dashboard as IACScanDashboardData)}</p>
+                  {riskCellHint(dashboard as IACScanDashboardData) && <p className="text-[11px] text-zinc-500 truncate">{riskCellHint(dashboard as IACScanDashboardData)}</p>}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
         {dashboard && "risk_metrics" in dashboard && (() => {
           const risk = (dashboard as IACScanDashboardData).risk_metrics ?? {};
           const order = ["Critical", "High", "Medium", "Low"] as const;

@@ -1939,9 +1939,12 @@ def append_executive_summary(
     ctx: Any = None,
     risk_score_fn: Optional[Callable[[int, int, int, int], Tuple[int, str, str]]] = None,
     unverified: int = 0,
+    risk_incomplete: Optional[str] = None,
 ) -> None:
     """``unverified``: findings listed in the catalogue but left out of the counts and the grade (an SBOM match on
-    a version read from a manifest range); the headline says how many, so it agrees with the catalogue."""
+    a version read from a manifest range); the headline says how many, so it agrees with the catalogue.
+    ``risk_incomplete``: why the scan cannot be scored (``risk_scale`` status "incomplete"); the headline then reads
+    "—" and that reason, never grade A."""
     styles = styles or get_report_styles()
     meta = REPORT_META.get(report_key, REPORT_META["sast"])
     shaped = ctx is not None and ctx.options.shapes_content
@@ -1996,6 +1999,8 @@ def append_executive_summary(
                 break
 
     risk_score, risk_grade, risk_band = (risk_score_fn or compute_risk_score)(critical, high, medium, low)
+    if risk_incomplete:
+        risk_score, risk_grade, risk_band = "—", "—", risk_incomplete  # type: ignore[assignment]
 
     story.append(
         build_kpi_grid(

@@ -95,11 +95,22 @@ def posture_of(impacts: Iterable[Any]) -> dict[str, Any]:
     return posture(counts)
 
 
-def posture_field(impact_counts: Mapping[str, int], *, judged: bool = True) -> dict[str, Any]:
-    """``{"risk_posture": posture(...)}`` to spread into a list row or a card; ``None`` when the scan has no result to
-    judge (pending, running, failed): such a row shows "—", never "0 · A"."""
-    return {POSTURE_KEY: posture(impact_counts) if judged else None}
+STATUS_KEY = "risk_posture_status"
+# "scored": the scan completed and the score stands (0 / A only for a completed scan with no finding); "incomplete":
+# it finished but did not cover what a score needs (an SBOM with no package inventoried, or only matches on guessed
+# versions), shown "incomplete", never A; "not_scored": pending, running, failed or cancelled, shown "—".
+STATUSES = ("scored", "incomplete", "not_scored")
 
 
-__all__ = ["IMPACT_RISK", "POSTURE_KEY", "RISK_BANDS", "SEVERITIES", "average_risk", "average_risk_of", "impact_risk",
+def posture_field(impact_counts: Mapping[str, int], *, judged: bool = True, incomplete: bool = False) -> dict[str, Any]:
+    """``{"risk_posture": posture(...), "risk_posture_status": "scored"}`` to spread into a list row or a card. No
+    score (``None``) when the scan has no result to judge (``judged=False``: pending, running, failed) or its result is
+    incomplete: such a row shows "—" or "incomplete", never "0 · A"."""
+    if not judged:
+        return {POSTURE_KEY: None, STATUS_KEY: "not_scored"}
+    if incomplete:
+        return {POSTURE_KEY: None, STATUS_KEY: "incomplete"}
+    return {POSTURE_KEY: posture(impact_counts), STATUS_KEY: "scored"}
+
+__all__ = ["IMPACT_RISK", "POSTURE_KEY", "RISK_BANDS", "SEVERITIES", "STATUSES", "STATUS_KEY", "average_risk", "average_risk_of", "impact_risk",
            "posture", "posture_field", "posture_of", "risk_band"]

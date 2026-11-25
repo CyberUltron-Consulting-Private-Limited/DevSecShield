@@ -51,11 +51,11 @@ const TEXT = {
     why: "Critical MCP issues can let an AI agent act beyond its intended reach.",
     example: "A tool that runs shell commands from model input.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:1346-1349, backend/utilities/dashboard/scan_list.py:1368 — each finding weight/4*10, averaged
+  // src: backend/utilities/dashboard/scan_list.py:1401-1403, backend/utilities/dashboard/risk_scale.py:76-117, frontend/utils/riskPosture.ts:22-28, frontend/app/[team_id]/mcp/page.tsx:259-262 — risk_scale.posture over every MCP finding of successful scans
   "mcp.kpi.avg_risk": {
-    what: "Average over all MCP findings, 0 to 10: Critical counts 10, High 7.5, Medium 5, Low 2.5.",
-    why: "One number to compare MCP risk over time.",
-    example: "One Critical and one Medium: 7.5.",
+    what: "The one risk score over all MCP findings, as on each scan's row, results page and PDF: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), capped by the worst severity (no Critical: 69 at most, no High either: 49, Low only: 29). Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+.",
+    why: "One number and grade to compare MCP risk over time, as every product shows it.",
+    example: "One Critical and one Medium finding: 4 × 12 = 48, grade C (Elevated risk).",
   },
   // src: backend/utilities/dashboard/scan_list.py:1293-1294, backend/utilities/dashboard/scan_list.py:1369 — status started
   "mcp.kpi.active": {
@@ -159,11 +159,11 @@ const TEXT = {
     why: "Tells you which server the findings belong to.",
     example: "example for https://mcp.example.com.",
   },
-  // src: backend/utilities/db/scan_list_item.py:205-266, backend/utilities/db/scan_list_item.py:556-559, backend/utilities/dashboard/risk_scale.py:16,25-31, frontend/app/[team_id]/mcp/page.tsx:1007-1011,949 — the mean of 10/7.5/5/2.5 per finding, one decimal (the app's one 0-10 scale, risk_scale, #35); 0 without findings
+  // src: backend/utilities/db/scan_list_item.py:284,563-568, backend/utilities/dashboard/risk_scale.py:76-117, frontend/utils/riskPosture.ts:22-28, frontend/app/[team_id]/mcp/page.tsx:1019 — the row's risk_posture
   "mcp.table.risk": {
-    what: "This scan's severity-weighted average, 0 to 10, on the same scale as the dashboard: Critical 10, High 7.5, Medium 5, Low 2.5, averaged over its findings and rounded to one decimal. 0 when it found nothing or did not succeed.",
-    why: "Lets you compare scans by overall severity.",
-    example: "1 High and 1 Low finding: (7.5 + 2.5) / 2 = 5.0.",
+    what: "This scan's one risk score and grade, as on its results page and PDF: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), capped by the worst severity (no Critical: 69 at most, no High either: 49, Low only: 29). Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+. A dash when the scan did not succeed.",
+    why: "Lets you compare scans by overall risk on the scale every product uses.",
+    example: "1 High and 1 Low finding: 4 × 6 = 24, grade B, shown 24 · B.",
   },
   // src: backend/utilities/db/scan_list_item.py:204-215, backend/utilities/db/scan_list_item.py:284-289 — tools, prompts and resources the server exposed
   "mcp.table.discovery": {

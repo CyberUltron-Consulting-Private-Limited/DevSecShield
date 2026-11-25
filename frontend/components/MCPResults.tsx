@@ -76,6 +76,7 @@ import {
 } from "@/components/ui/chart";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, XAxis, YAxis } from "recharts";
 import { RESULTS_HEADER } from "@/components/resultsHeaderLayout";
+import { postureScore, riskCellHint, riskCellText, riskTone } from "@/utils/riskPosture";
 
 // ----- Agent format -----
 export interface MCPVulnerabilityAgent {
@@ -325,8 +326,6 @@ function MCPDashboardCharts({ dashboard }: { dashboard: MCPDashboardData }) {
   const hasAssetCompliance = assetComplianceAreaData.length > 0;
   const hasOwaspLlm = owaspLlmData.length > 0;
 
-  const overallRiskScore = cardData?.overall_risk_score != null ? Number(cardData.overall_risk_score) : null;
-
   return (
     <div className="space-y-6">
       {hasCardData && (
@@ -334,12 +333,15 @@ function MCPDashboardCharts({ dashboard }: { dashboard: MCPDashboardData }) {
           <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
             <CardContent className="p-0">
               <div className="flex flex-col items-start gap-2">
-                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${overallRiskScore != null && overallRiskScore >= 7 ? "bg-red-500/15 dark:bg-red-500/10" : overallRiskScore != null && overallRiskScore >= 5 ? "bg-amber-500/15 dark:bg-amber-500/10" : "bg-green-500/15 dark:bg-green-500/10"}`}>
-                  <Gauge className={`h-4 w-4 ${overallRiskScore != null && overallRiskScore >= 7 ? "text-red-500" : overallRiskScore != null && overallRiskScore >= 5 ? "text-amber-500" : "text-green-500"}`} />
+                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${riskTone(postureScore(cardData)).box}`}>
+                  <Gauge className={`h-4 w-4 ${riskTone(postureScore(cardData)).icon}`} />
                 </div>
                 <div>
+                  {/* the scan's one risk score (0-100, grade, words), as its list row and its PDF; overall_risk_score
+                      keeps its 0-10 value for older clients */}
                   <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Risk score</p>
-                  <p className="text-xl font-bold text-zinc-900 dark:text-white">{cardData.overall_risk_score ?? "—"}</p>
+                  <p className="text-xl font-bold text-zinc-900 dark:text-white" data-testid="mcp-res-risk-score">{riskCellText(cardData)}</p>
+                  {riskCellHint(cardData) && <p className="text-[11px] text-zinc-500">{riskCellHint(cardData)}</p>}
                 </div>
               </div>
             </CardContent>

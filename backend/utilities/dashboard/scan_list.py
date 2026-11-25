@@ -16,6 +16,7 @@ from backend.utilities.dashboard.sbom_license import (
 )
 from backend.utilities.dashboard.sbom_rows import (
     component_licence_categories,
+    is_incomplete,
     severity_rows,
     unverified_version_rows,
     vulnerability_findings,
@@ -587,6 +588,8 @@ def generate_iac_dashboard_data(scans: list[Scan]) -> dict:
         "coverage_percentage": coverage_pct,
         "total_policy_violations": total_policy_violations,
         "average_risk_score": average_risk_score,
+        # the one 0-100 risk score over these findings (risk_scale.posture): the tile shows it, as the list rows
+        **risk_scale.posture_field(severity_counts, judged=any(s.scan_status == "success" for s in iac_scans)),
     }
 
     severity_distribution = {
@@ -1099,7 +1102,10 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
         "total_high_risk_licenses": total_high_license,
         "average_risk_score": average_risk_score,
         # the one 0-100 risk score over the known vulnerabilities (risk_scale.posture): the tile shows it, as the rows
-        **risk_scale.posture_field(severity_counts, judged=any(s.scan_status == "success" for s in sbom_scans)),
+        **risk_scale.posture_field(
+            severity_counts, judged=any(s.scan_status == "success" for s in sbom_scans),
+            # only incomplete successful scans (no package inventoried, or only guessed-version matches): no score
+            incomplete=not any(s.scan_status == "success" and not is_incomplete(s.scan_data) for s in sbom_scans)),
         "total_reachable_issues": total_reachable,
         "total_unverified_version_findings": unverified_total,
     }
@@ -1268,6 +1274,7 @@ def generate_mcp_dashboard_data(scans: list[Scan]) -> dict:
 
     scan_status_distribution = {"not_started": 0, "started": 0, "success": 0, "failure": 0}
     risk_score_trend: dict[str, float] = {}
+    risk_posture_trend: dict[str, int] = {}
     risks_over_time: dict[str, dict[str, int]] = {}
     severity_distribution = {"critical": 0, "high": 0, "medium": 0, "low": 0}
     environment_risk_analysis = {"development": 0, "production": 0, "staging": 0}
@@ -1368,6 +1375,8 @@ def generate_mcp_dashboard_data(scans: list[Scan]) -> dict:
             category_risk_count[cat] += 1
         if vulns_with_cat:
             risk_score_trend[server_label] = round(scan_risk_sum / len(vulns_with_cat), 1)
+            if status == "success":  # the server's one 0-100 risk score (risk_scale.posture), as its list row
+                risk_posture_trend[server_label] = risk_scale.posture(temp_sev)["score"]
         if date_key:
             if date_key not in risks_over_time:
                 risks_over_time[date_key] = {"critical": 0, "high": 0, "medium": 0, "low": 0}
@@ -1390,6 +1399,8 @@ def generate_mcp_dashboard_data(scans: list[Scan]) -> dict:
         "total_scans": len(mcp_scans),
         "total_critical_issues": total_critical,
         "average_risk_score": average_risk_score,
+        # the one 0-100 risk score over these findings (risk_scale.posture): the tile shows it, as the list rows
+        **risk_scale.posture_field(severity_distribution, judged=scan_status_distribution["success"] > 0),
         "total_active_scans": total_active_scans,
         "total_resolved_issues": total_resolved_past_7_days,
     }
@@ -1444,6 +1455,7 @@ def generate_mcp_dashboard_data(scans: list[Scan]) -> dict:
         "card_data": card_data,
         "scan_status_distribution": scan_status_distribution,
         "risk_score_trend": risk_score_trend,
+        "risk_posture_trend": risk_posture_trend,
         "risks_over_time": risks_over_time,
         "severity_distribution": severity_distribution,
         "environment_risk_analysis": environment_risk_analysis,

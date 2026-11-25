@@ -23,7 +23,9 @@ from backend.utilities.dashboard import scan as scan_mod
 from backend.utilities.dashboard import scan_list as scan_list_mod
 from backend.utilities.db.scan_list_item import (
     return_dast_list_item,
+    return_iac_list_item,
     return_llm_list_item,
+    return_mcp_list_item,
     return_sast_list_item,
     return_sbom_sca_list_item,
 )
@@ -42,11 +44,20 @@ def _rows(impacts):
              "compliance_controls": {}, "owasp_top_10": {}} for i, imp in enumerate(impacts)]
 
 
+INVENTORY_ROW = {"title": "Inventory: left-pad", "dependency": "left-pad==1.3.0", "impact": "Low", "inventory_only": True,
+                 "description": "", "compliance_controls": {}, "owasp_top_10": {}}
+
+
 def _results(scan_type, impacts):
     if scan_type == "sast":
         return [{"logical_component_title": "app", "vulnerabilities": _rows(impacts)}]
     if scan_type == "llm":
         return {"vulnerabilities": _rows(impacts), "model_vulnerabilities": {}}
+    if scan_type == "mcp":
+        return {"tools": [{"tool_name": "fetch", "tool_risk_level": "high", "tool_category": "web",
+                           "vulnerabilities": _rows(impacts)}], "prompts": [], "resources": []}
+    if scan_type == "sbom_sca":  # a package was inventoried: the scan covered something (an inventory row, not counted)
+        return [dict(INVENTORY_ROW), *_rows(impacts)]
     return _rows(impacts)
 
 
@@ -59,7 +70,7 @@ def _scan(scan_type, impacts, status="success"):
 
 
 LIST_ITEM = {"sast": return_sast_list_item, "sbom_sca": return_sbom_sca_list_item, "dast": return_dast_list_item,
-             "llm": return_llm_list_item}
+             "llm": return_llm_list_item, "iac": return_iac_list_item, "mcp": return_mcp_list_item}
 # impacts -> (score, grade, label): the engine's posture function, capped by the worst severity
 CASES = [
     ([], (0, "A", "Low risk")),
@@ -104,12 +115,15 @@ def test_the_grade_bands_are_the_engine_table():
 def test_every_list_row_carries_the_one_score(scan_type, impacts, want):
     row = LIST_ITEM[scan_type](_scan(scan_type, impacts))
     assert row[risk_scale.POSTURE_KEY] == _expected(*want), (scan_type, impacts)
+    assert row[risk_scale.STATUS_KEY] == "scored"
 
 
 @pytest.mark.parametrize("scan_type", sorted(LIST_ITEM))
 def test_a_scan_without_a_result_has_no_score_yet(scan_type):
-    for status in ("pending", "started", "failure"):
-        assert LIST_ITEM[scan_type](_scan(scan_type, [], status=status))[risk_scale.POSTURE_KEY] is None
+    for status in ("pending", "started", "failure", "cancelled"):
+        for impacts in ([], ["High"]):  # a failed scan with partial data has no score either, never A
+            row = LIST_ITEM[scan_type](_scan(scan_type, impacts, status=status))
+            assert row[risk_scale.POSTURE_KEY] is None and row[risk_scale.STATUS_KEY] == "not_scored", (status, impacts)
 
 
 def test_the_older_fields_keep_their_values():
@@ -147,6 +161,8 @@ def test_the_tiles_show_the_score_of_the_rows(mongo, impacts, want):
         "dast": lambda s: scan_list_mod.generate_dast_dashboard_data([s])["card_data"],
         "sast": lambda s: scan_list_mod.generate_sast_dashboard_data([s]),
         "llm": lambda s: scan_list_mod.generate_llm_dashboard_data([s])["card_data"],
+        "iac": lambda s: scan_list_mod.generate_iac_dashboard_data([s])["card_data"],
+        "mcp": lambda s: scan_list_mod.generate_mcp_dashboard_data([s])["card_data"],
     }
     for scan_type, tile in tiles.items():
         scan = _scan(scan_type, impacts)
@@ -160,16 +176,18 @@ def test_a_team_without_a_successful_scan_has_no_tile_score(mongo):
     assert scan_list_mod.generate_sbom_sca_dashboard_data([])["card_data"][risk_scale.POSTURE_KEY] is None
     assert scan_list_mod.generate_llm_dashboard_data([])["card_data"][risk_scale.POSTURE_KEY] is None
     assert scan_list_mod.generate_sast_dashboard_data([])[risk_scale.POSTURE_KEY] is None
+    assert scan_list_mod.generate_iac_dashboard_data([])["card_data"][risk_scale.POSTURE_KEY] is None
+    assert scan_list_mod.generate_mcp_dashboard_data([])["card_data"][risk_scale.POSTURE_KEY] is None
 
 
 # ------------------------------------------------------------------------------------------------- per-scan dashboards
 @pytest.mark.parametrize("impacts,want", [c for c in CASES if c[0]])
 def test_the_results_page_shows_the_score_of_the_row(mongo, monkeypatch, impacts, want):
-    for scan_type in ("sast", "sbom_sca", "dast", "llm"):
+    for scan_type in ("sast", "sbom_sca", "dast", "llm", "iac", "mcp"):
         scan = _scan(scan_type, impacts)
         _store(mongo, scan, impacts)
         dash = _per_scan(scan_type, scan, monkeypatch)
-        got = (dash if scan_type == "sast" else dash["card_data"])[risk_scale.POSTURE_KEY]
+        got = (dash if scan_type in ("sast", "iac") else dash["card_data"])[risk_scale.POSTURE_KEY]
         assert got == LIST_ITEM[scan_type](scan)[risk_scale.POSTURE_KEY] == _expected(*want), scan_type
 
 
@@ -189,6 +207,10 @@ def _payload(scan_type, n_high):
         payload = {"duration_of_scan": 1, "metadata": {}, "results": {"model_vulnerabilities": {}, "vulnerabilities": [
             {"title": f"Prompt injection {i}", "impact": "High", "description": "d",
              "owasp_top_10_llm": {"LLM01": "Prompt Injection"}, "suggested_fix": "isolate"} for i in range(n_high)]}}
+    elif scan_type == "mcp":
+        payload = {"duration_of_scan": 1, "results": {"tools": [{"tool_name": "fetch", "vulnerabilities": [
+            {"title": f"Tool exposes secrets {i}", "impact": "High", "description": "d", "suggested_fix": "redact"}
+            for i in range(n_high)]}]}}
     elif scan_type == "sbom_sca":
         payload = {"duration_of_scan": 1, "results": [
             {"title": f"CVE in pkg{i}", "dependency": f"pkg{i}==1.0.0", "impact": "High", "description": "d",
@@ -198,7 +220,7 @@ def _payload(scan_type, n_high):
     return payload
 
 
-@pytest.mark.parametrize("scan_type", ["sast", "dast", "llm", "sbom_sca"])
+@pytest.mark.parametrize("scan_type", ["sast", "dast", "llm", "sbom_sca", "iac", "mcp"])
 def test_the_pdf_headline_is_the_one_score(scan_type, tmp_path):
     from backend.utilities.pdf.combined import (
         generate_pdf_for_type,
@@ -228,3 +250,84 @@ def test_the_sbom_pdf_overview_has_the_one_score_not_the_0_10_average(tmp_path, 
     sbom_sca_pdf.generate_pdf(_payload("sbom_sca", 15), str(tmp_path / "sbom.pdf"))
     assert seen["Risk score"] == "69 / 100 · grade D · High risk"
     assert "Average risk score (0–10)" not in seen
+
+
+# ------------------------------------------------------------------------------------------------- SBOM: 0 / A only when complete
+def _sbom(results, status="success", **data):
+    scan = _scan("sbom_sca", [], status=status)
+    scan.scan_data = {"results": results, "duration_of_scan": 2.0, "metadata": {}, **data}
+    return scan
+
+
+GUESSED = {"title": "CVE in pillow", "dependency": "pillow==10.0", "impact": "High", "version_guessed_from": ">=10.0",
+           "description": "d", "compliance_controls": {}, "owasp_top_10": {}}
+
+
+@pytest.mark.parametrize("label,scan,want_status", [
+    # completed, a package inventoried, no vulnerability: a real clean result, 0 / A
+    ("clean", _sbom([dict(INVENTORY_ROW)]), "scored"),
+    ("clean, stored SBOM only", _sbom([], sbom_json={"components": [{"name": "left-pad", "purl": "pkg:npm/left-pad@1.3.0"}]}),
+     "scored"),
+    # finished but nothing inventoried: "no vulnerability" means nothing
+    ("no package", _sbom([]), "incomplete"),
+    ("no results key", _sbom(None), "incomplete"),
+    # every match on a guessed version (listed, not counted): the zero is not clean
+    ("guessed versions only", _sbom([dict(INVENTORY_ROW), dict(GUESSED)]), "incomplete"),
+    # failed, cancelled or still running, with or without partial rows: no score
+    ("failed with rows", _sbom([dict(INVENTORY_ROW)], status="failure"), "not_scored"),
+    ("cancelled", _sbom([], status="cancelled"), "not_scored"),
+    ("running", _sbom([dict(INVENTORY_ROW)], status="started"), "not_scored"),
+])
+def test_an_sbom_scan_reads_0_a_only_when_it_completed_clean(mongo, label, scan, want_status):
+    row = return_sbom_sca_list_item(scan)
+    assert row[risk_scale.STATUS_KEY] == want_status, label
+    if want_status == "scored":
+        assert row[risk_scale.POSTURE_KEY] == _expected(0, "A", "Low risk"), label
+    else:
+        assert row[risk_scale.POSTURE_KEY] is None, label  # never A
+    if scan.scan_data.get("results") is not None:
+        card = scan_mod.generate_scan_dashboard(scan_type="sbom_sca", scan_object=scan)["card_data"]
+        assert (card[risk_scale.STATUS_KEY], card[risk_scale.POSTURE_KEY]) == (
+            row[risk_scale.STATUS_KEY], row[risk_scale.POSTURE_KEY]), label
+    tile = scan_list_mod.generate_sbom_sca_dashboard_data([scan])["card_data"]
+    assert tile[risk_scale.STATUS_KEY] == want_status, label
+
+
+def test_the_sbom_tile_scores_the_complete_scans_only(mongo):
+    clean, empty = _sbom([dict(INVENTORY_ROW), *_rows(["High"])]), _sbom([])
+    tile = scan_list_mod.generate_sbom_sca_dashboard_data([clean, empty])["card_data"]
+    assert tile[risk_scale.STATUS_KEY] == "scored" and tile[risk_scale.POSTURE_KEY]["score"] == 20
+
+
+def test_a_failed_scan_with_data_has_no_score_on_its_results_page(mongo):
+    for scan_type in ("sast", "dast", "llm", "iac", "mcp"):
+        scan = _scan(scan_type, ["High"], status="failure")
+        dash = scan_mod.generate_scan_dashboard(scan_type=scan_type, scan_object=scan)
+        card = dash if scan_type in ("sast", "iac") else dash["card_data"]
+        assert card[risk_scale.POSTURE_KEY] is None and card[risk_scale.STATUS_KEY] == "not_scored", scan_type
+
+
+def test_the_sbom_pdf_says_incomplete_never_a(tmp_path):
+    from support.pdf_text import pdf_pages_text
+
+    from backend.utilities.pdf.combined import generate_pdf_for_type, prepare_pdf_export_payload
+
+    for name, payload in (("empty", {"duration_of_scan": 1, "results": []}),
+                          ("guessed", {"duration_of_scan": 1, "results": [dict(INVENTORY_ROW), dict(GUESSED)]})):
+        out = str(tmp_path / f"{name}.pdf")
+        generate_pdf_for_type("sbom_sca", prepare_pdf_export_payload("sbom_sca", payload), out)
+        first = pdf_pages_text(Path(out).read_bytes())[0]
+        assert "Risk score\n—\nIncomplete scan" in first, (name, first[:1200])
+        assert "\nA\nRisk score" not in first and "Low risk" not in first, name
+    out = str(tmp_path / "clean.pdf")
+    generate_pdf_for_type("sbom_sca", prepare_pdf_export_payload("sbom_sca", {"duration_of_scan": 1,
+                                                                             "results": [dict(INVENTORY_ROW)]}), out)
+    assert "A\nRisk score\n0\nLow risk" in pdf_pages_text(Path(out).read_bytes())[0]
+
+
+def test_the_mcp_trend_is_the_one_score_per_server(mongo):
+    scan = _scan("mcp", ["High"] * 15)
+    scan.scan_metadata = {"server_url": "https://tools.example.com/mcp"}
+    dash = scan_list_mod.generate_mcp_dashboard_data([scan])
+    assert list(dash["risk_posture_trend"].values()) == [69]
+    assert list(dash["risk_score_trend"].values()) == [7.5]  # the older 0-10 field, unchanged

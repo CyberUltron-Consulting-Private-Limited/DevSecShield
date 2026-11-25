@@ -53,8 +53,13 @@ export function matchesRiskTier(score: number | null, tier: RiskTier): boolean {
   return score < 15;
 }
 
+/** The backend's `risk_posture_status`: "scored", "incomplete" (finished but not enough to score: an SBOM with no
+ * package inventoried, or only matches on guessed versions) or "not_scored" (pending, running, failed). */
+export type RiskPostureStatus = "scored" | "incomplete" | "not_scored";
+
 type MaybePosture = {
   risk_posture?: RiskPosture | null;
+  risk_posture_status?: RiskPostureStatus | string | null;
   risk_score?: unknown;
   risk_grade?: unknown;
   risk_label?: unknown;
@@ -87,6 +92,26 @@ export function postureOf(item: MaybePosture): RiskPosture | null {
 /** The 0-100 score the lists filter and sort by; null without one. */
 export function postureScore(item: MaybePosture): number | null {
   return postureOf(item)?.score ?? null;
+}
+
+/** The status of a row or a card: "incomplete" only when the backend says so; a score is "scored"; else "not_scored". */
+export function postureStatus(item: MaybePosture): RiskPostureStatus {
+  if (item?.risk_posture_status === "incomplete") return "incomplete";
+  return postureOf(item) ? "scored" : "not_scored";
+}
+
+/** What a list cell or a tile shows: "56 · D", "incomplete" for a finished scan that cannot be scored, else "—". Never
+ * an A for a scan that failed or did not cover enough. */
+export function riskCellText(item: MaybePosture): string {
+  const status = postureStatus(item);
+  if (status === "incomplete") return "incomplete";
+  return riskScoreText(postureOf(item));
+}
+
+/** The line under a tile's number: "of 100 · High risk", the reason for "incomplete", or null. */
+export function riskCellHint(item: MaybePosture): string | null {
+  if (postureStatus(item) === "incomplete") return "Scan incomplete: not enough to score";
+  return riskScoreHint(postureOf(item));
 }
 
 /** "56 · D" for a table cell or a tile; "—" without a score. */

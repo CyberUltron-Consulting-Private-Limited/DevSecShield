@@ -97,51 +97,8 @@ def _page_source(page: str) -> str:
     return (REPO / "frontend" / "app" / "[team_id]" / page / "page.tsx").read_text(encoding="utf-8")
 
 
-def _page_tiers(page: str) -> dict[str, tuple[float, float]]:
-    """[low, high) per tier, as the page's matchesRiskScoreFilter tests them."""
-    src = _page_source(page)
-    num = r"(\d+(?:\.\d+)?)"
-    found = {
-        "critical": re.search(r'filter === "critical"\) return score >= ' + num + ";", src),
-        "high": re.search(r'filter === "high"\) return score >= ' + num + " && score < " + num + ";", src),
-        "medium": re.search(r'filter === "medium"\) return score >= ' + num + " && score < " + num + ";", src),
-        "low": re.search(r'filter === "low"\) return score < ' + num + ";", src),
-    }
-    missing = [k for k, m in found.items() if m is None]
-    assert not missing, f"{page}/page.tsx: matchesRiskScoreFilter changed shape ({missing}); update this test"
-    return {
-        "critical": (float(found["critical"].group(1)), math.inf),
-        "high": (float(found["high"].group(1)), float(found["high"].group(2))),
-        "medium": (float(found["medium"].group(1)), float(found["medium"].group(2))),
-        "low": (-math.inf, float(found["low"].group(1))),
-    }
-
-
-def _page_displays_the_score_as_sent(page: str) -> bool:
-    """getDisplayRiskScore only clamps to 0-10 and rounds to one decimal: it does not rescale the backend's number."""
-    body = re.search(r"function getDisplayRiskScore\([^)]*\)[^{]*\{(.*?)\n\}", _page_source(page), re.S)
-    assert body, f"{page}/page.tsx: getDisplayRiskScore not found; update this test"
-    return re.fullmatch(
-        r"\s*if \(c\.average_risk_score == null\) return null;\s*"
-        r"return Math\.round\(Math\.min\(10, Math\.max\(0, (?:Number\()?c\.average_risk_score\)?\)\) \* 10\) / 10;\s*",
-        body.group(1)) is not None
-
-
-def _tier_on_page(page: str, score) -> str | None:
-    """The Risk score filter tier that keeps this row on the page (None: hidden by every tier)."""
-    if score is None:
-        return None
-    shown = math.floor(min(10.0, max(0.0, float(score))) * 10 + 0.5) / 10  # Math.round(x * 10) / 10
-    tiers = [t for t, (lo, hi) in _page_tiers(page).items() if lo <= shown < hi]
-    assert len(tiers) == 1, (page, shown, tiers)
-    return tiers[0]
-
-
-# The SBOM and DAST pages filter on the one 0-100 risk score since the cross-product score change
-# (test_the_sbom_and_dast_filters_use_the_one_score below); the IaC page keeps the 0-10 tiers.
-PAGES_WITH_A_FILTER = {
-    "iac": (iac_scan, return_iac_list_item),
-}
+# The SBOM, DAST and IaC pages filter on the one 0-100 risk score since the cross-product score change
+# (test_the_list_filters_use_the_one_score below); the 0-10 average stays on the API.
 # impacts of one scan -> the tier its Risk score must fall in (one finding counts Critical 10 ... Low 2.5)
 CASES = [
     (["Critical"], 10.0, "critical"),
@@ -160,14 +117,6 @@ def test_the_four_lists_are_on_one_0_to_10_scale():
                            (mcp_scan, return_mcp_list_item), (dast_scan, return_dast_list_item)]:
         for impacts, score, _tier in CASES:
             assert item_of(build(impacts))["average_risk_score"] == score, (build.__name__, impacts)
-
-
-@pytest.mark.parametrize("page", sorted(PAGES_WITH_A_FILTER))
-def test_the_critical_and_high_filters_match_scans(page):
-    assert _page_displays_the_score_as_sent(page), f"{page}/page.tsx rescales the score: the backend sends 0-10"
-    build, item_of = PAGES_WITH_A_FILTER[page]
-    for impacts, _score, tier in CASES:
-        assert _tier_on_page(page, item_of(build(impacts))["average_risk_score"]) == tier, (page, impacts)
 
 
 def test_table_and_dashboard_show_the_same_number_for_a_scan(mongo):
@@ -220,8 +169,9 @@ def _util_tiers() -> dict[str, tuple[float, float]]:
 
 
 @pytest.mark.parametrize("page,build,item_of", [("sbom_sca", sbom_scan, return_sbom_sca_list_item),
-                                                ("dast", dast_scan, return_dast_list_item)])
-def test_the_sbom_and_dast_filters_use_the_one_score(page, build, item_of):
+                                                ("dast", dast_scan, return_dast_list_item),
+                                                ("iac", iac_scan, return_iac_list_item)])
+def test_the_list_filters_use_the_one_score(page, build, item_of):
     src = _page_source(page)
     assert "return matchesRiskTier(score, filter);" in src and "return postureScore(c);" in src, page
     tiers = _util_tiers()

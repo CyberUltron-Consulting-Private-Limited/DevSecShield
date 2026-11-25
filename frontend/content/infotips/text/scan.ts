@@ -105,15 +105,15 @@ const TEXT = {
     why: "Findings apply to this branch only.",
     example: "main.",
   },
-  // src: backend/utilities/db/scan_list_item.py:95-117, backend/utilities/db/scan_list_item.py:384-417, backend/utilities/db/scan_list_item.py:556-559, backend/utilities/dashboard/risk_scale.py:16,25-31, frontend/app/[team_id]/iac/page.tsx:123-126,959, frontend/app/[team_id]/dast/page.tsx:115-118,870 — IaC and DAST: the mean of 10/7.5/5/2.5 per finding, one decimal (the app's one 0-10 scale, risk_scale, #35); 0 without findings
+  // src: backend/utilities/db/scan_list_item.py:146,436,563-568, backend/utilities/dashboard/risk_scale.py:76-117, frontend/utils/riskPosture.ts:22-28, frontend/app/[team_id]/iac/page.tsx:127-129,1025, frontend/app/[team_id]/dast/page.tsx:119-121,928 — the row's risk_posture; — before success
   "scan.table.risk": {
-    what: "This scan's severity-weighted average, 0 to 10, on the same scale as the dashboard and the Risk score filter: Critical 10, High 7.5, Medium 5, Low 2.5, averaged over its findings and rounded to one decimal. 0 when it found nothing or did not succeed.",
-    why: "Lets you compare scans by overall severity.",
-    example: "1 High and 1 Low finding: (7.5 + 2.5) / 2 = 5.",
+    what: "This scan's one risk score and grade, as on its results page and PDF: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), capped by the worst severity (no Critical: 69 at most, no High either: 49, Low only: 29). Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+. A dash when the scan did not succeed.",
+    why: "Lets you compare scans by overall risk on the scale every product uses.",
+    example: "1 High and 1 Low finding: 4 × 6 = 24, grade B, shown 24 · B.",
   },
-  // src: frontend/utils/riskPosture.ts:40-56, frontend/app/[team_id]/sbom_sca/page.tsx:120-122,828, frontend/app/[team_id]/dast/page.tsx:122-124,764, frontend/app/[team_id]/llm/page.tsx:120-122,764, frontend/app/[team_id]/iac/page.tsx:128-135,838, frontend/app/[team_id]/ai_bom/page.tsx:114-121,719, backend/utilities/dashboard/risk_scale.py:16-17 — grade-band tiers on the 0-100 lists, 0-10 tiers on the lists that still show a decimal; a null score matches no tier
+  // src: frontend/utils/riskPosture.ts:40-56, frontend/app/[team_id]/sbom_sca/page.tsx:120-122,828, frontend/app/[team_id]/dast/page.tsx:122-124,764, frontend/app/[team_id]/llm/page.tsx:120-122,764, frontend/app/[team_id]/iac/page.tsx:131-133,848, frontend/app/[team_id]/ai_bom/page.tsx:114-121,719, backend/utilities/dashboard/risk_scale.py:16-17 — grade-band tiers on the 0-100 lists, 0-10 tiers on the lists that still show a decimal; a null score matches no tier
   "scan.filter.risk": {
-    what: "Shows only scans whose Risk score is in a tier. A score shown with a grade (56 · D: SBOM, DAST, LLM) is 0-100 and the tiers are grades: Critical = F (70+), High = D (50–69), Medium = C or B (15–49), Low = A (under 15). A decimal score (7.5) is 0-10: Critical 9+, High 7–9, Medium 5–7, Low under 5. A scan without a score (a dash) is hidden by any tier.",
+    what: "Shows only scans whose Risk score is in a tier. A score shown with a grade (56 · D: SBOM, DAST, LLM, IaC) is 0-100 and the tiers are grades: Critical = F (70+), High = D (50–69), Medium = C or B (15–49), Low = A (under 15). A decimal score (7.5) is 0-10: Critical 9+, High 7–9, Medium 5–7, Low under 5. A scan without a score (a dash) is hidden by any tier.",
     why: "Focuses the list on the riskiest scans.",
     example: "On the SBOM list, High keeps a scan scored 69 · D (15 High vulnerabilities) and hides one scored 80 · F (2 Critical).",
   },

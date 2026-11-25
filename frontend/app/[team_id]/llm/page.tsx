@@ -30,7 +30,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
-import { RISK_TIER_LABELS, matchesRiskTier, postureOf, postureScore, riskScoreHint, riskScoreText, riskTone } from "@/utils/riskPosture";
+import { RISK_TIER_LABELS, matchesRiskTier, postureScore, riskCellHint, riskCellText, riskTone } from "@/utils/riskPosture";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, Play, CheckCircle, XCircle, CalendarPlus, CalendarCheck, Search, X, Shield, Percent, Bug, ChevronDown, ArrowUpDown, Check, Filter, DollarSign, TrendingUp, TrendingDown, AlertTriangle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { singleFlight } from "@/utils/single_flight";
@@ -303,8 +303,8 @@ function ScanListDashboardLLM({ dashboardData }: { dashboardData: LLMListDashboa
           </CardHeader>
           <CardContent>
             {/* the one risk score (0-100, grade, words) over the findings, as the rows and the PDF */}
-            <div className="text-2xl font-bold text-zinc-900 dark:text-white" data-testid="llm-kpi-risk-score">{riskScoreText(postureOf(card))}</div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">{riskScoreHint(postureOf(card)) ?? "Security posture"}</p>
+            <div className="text-2xl font-bold text-zinc-900 dark:text-white" data-testid="llm-kpi-risk-score">{riskCellText(card)}</div>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">{riskCellHint(card) ?? "Security posture"}</p>
           </CardContent>
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
@@ -925,7 +925,7 @@ export default function LLMPage() {
                                 ) : "—"}
                               </TableCell>
                               <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm tabular-nums">
-                                {riskScoreText(postureOf(conversation))}
+                                {riskCellText(conversation)}
                               </TableCell>
                               <TableCell className="text-zinc-600 dark:text-zinc-400">
                                 {conversation.model_type ? (

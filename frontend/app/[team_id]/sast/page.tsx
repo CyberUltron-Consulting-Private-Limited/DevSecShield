@@ -31,7 +31,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
-import { RISK_TIER_LABELS, matchesRiskTier, postureOf, postureScore, riskScoreHint, riskScoreText, riskTone } from "@/utils/riskPosture";
+import { RISK_TIER_LABELS, matchesRiskTier, postureOf, postureScore, riskCellHint, riskCellText, riskTone } from "@/utils/riskPosture";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Play, CheckCircle, XCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, AlertTriangle, TrendingUp, TrendingDown, Bug, Shield, CircleDot, Timer, Clock, Crosshair, Activity, Percent, DollarSign, Check, ChevronDown, ChevronRight, Filter, ArrowUpDown, Info } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { singleFlight } from "@/utils/single_flight";
@@ -376,7 +376,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
         issues: r.issues,
         // the scan's one 0-100 risk score (risk_posture); an older backend's row has none: "—"
         riskScore: postureScore(r) ?? 0,
-        riskText: riskScoreText(postureOf(r)),
+        riskText: riskCellText(r),
         trend: r.trend,
         language: r.language,
       }));
@@ -413,7 +413,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
           zipFileUsed,
           issues: total,
           riskScore: postureScore(s) ?? 0,
-          riskText: riskScoreText(postureOf(s)),
+          riskText: riskCellText(s),
           trend: "—" as string,
           language: displayLang,
         };
@@ -541,8 +541,8 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
               </div>
               <div>
                 <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Risk score <InfoTip id="sast.avg_risk" /></p>
-                <p className="text-xl font-bold text-zinc-900 dark:text-white" data-testid="sast-kpi-risk-score">{riskScoreText(teamPosture)}</p>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">{riskScoreHint(teamPosture) ?? "Security posture"}</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white" data-testid="sast-kpi-risk-score">{riskCellText(dashboardData)}</p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">{riskCellHint(dashboardData) ?? "Security posture"}</p>
               </div>
             </div>
           </CardContent>
@@ -1536,7 +1536,7 @@ export default function SASTPage() {
                               ) : "—"}
                             </TableCell>
                             <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm tabular-nums">
-                              {riskScoreText(postureOf(conversation))}
+                              {riskCellText(conversation)}
                             </TableCell>
                             <TableCell className="text-sm">
                               {conversation.scan_type != null && conversation.scan_type !== "" ? (
@@ -1695,7 +1695,7 @@ export default function SASTPage() {
                                                 </div>
                                                 <div>
                                                   <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Risk Score <InfoTip id="sast.table.risk" /></p>
-                                                  <p className="text-sm font-bold text-zinc-900 dark:text-white">{riskScoreText(postureOf(conversation))}</p>
+                                                  <p className="text-sm font-bold text-zinc-900 dark:text-white">{riskCellText(conversation)}</p>
                                                 </div>
                                               </div>
                                             );

@@ -6,6 +6,8 @@
  */
 import "../cbom/results/__tests__/cssStub";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { test } from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -104,4 +106,26 @@ test("the SBOM matrix: same filtering and chip naming", async () => {
   const before = render(React.createElement(SbomComplianceCoverage, { compliance: SBOM as never }));
   assert.match(before, />India \/ CERT-In \/ SEBI</);
   assert.doesNotMatch(before, /applicability-note/);
+});
+
+test("a Sources run's compliance section: the same chip and note from its /parity view", () => {
+  const run = (view: ComplianceApplicability | null) => render(React.createElement(
+    ComplianceApplicabilityContext.Provider, { value: view },
+    React.createElement(CbomCryptoCharts, { distributions: null, parts: ["compliance"], variant: "run", compliance: CBOM as never,
+      findings: [], inventory: [], showCodeHeatmap: false, readinessScope: "run" }),
+  ));
+  const before = run(null);
+  assert.match(before, />India \/ CERT-In \/ SEBI</);
+  assert.doesNotMatch(before, /applicability-note/);
+  const html = run(BANK_CBOM);
+  assert.match(html, />India \/ CERT-In</);
+  assert.doesNotMatch(html, /India \/ CERT-In \/ SEBI/);
+  assert.match(html, /data-testid="cbom-applicability-note">[^<]*Not applicable to it: SEBI CSCRF, EU DORA\.</);
+});
+
+test("the run page provides the /parity view to its compliance section", () => {
+  const src = fs.readFileSync(path.join(__dirname, "..", "CbomResults.tsx"), "utf8");
+  assert.match(src, /<ComplianceApplicabilityContext\.Provider value=\{cbomApplicability\}><ComplianceView ctx=\{ctx\} \/>/);
+  // a run's scanMetadata is /parity's, so cbomApplicability reads its compliance_applicability
+  assert.match(src, /const scanMetadata = run \? run\.parity\?\.scan_metadata \?\? null : scanMetadataProp;/);
 });

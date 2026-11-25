@@ -185,12 +185,14 @@ def test_results_dashboard_without_a_vulnerability_has_no_average(monkeypatch: p
 @pytest.mark.parametrize("source", ["frontend/components/SbomResults.tsx", "frontend/app/[team_id]/sbom_sca/page.tsx"])
 def test_the_avg_risk_cards_show_a_dash_without_a_vulnerability(source):
     """Both Risk score cards (results page, list dashboard) show the one 0-100 score (risk_posture) through the shared
-    util, which writes "—" when the backend sent none. A successful scan without a known vulnerability has a score:
-    0 · A (Low risk), as on its row and in its PDF (the 0-10 average_risk_score stays None on the API, #46)."""
+    util, which writes "—" when the backend sent none and "incomplete" when the scan finished without inventorying a
+    package. A completed scan with packages and no known vulnerability has a score: 0 · A (Low risk), as on its row
+    and in its PDF (the 0-10 average_risk_score stays None on the API, #46)."""
     text = (REPO / source).read_text(encoding="utf-8")
-    assert re.search(r"\{riskScoreText\(postureOf\(card\)\)\}", text), source
+    assert re.search(r"\{riskCellText\(card\)\}", text), source
     util = (REPO / "frontend" / "utils" / "riskPosture.ts").read_text(encoding="utf-8")
     assert 'return p ? `${p.score} · ${p.grade}` : "—";' in util
+    assert 'if (status === "incomplete") return "incomplete";' in util  # a scan with no package: never A
 
 
 # ------------------------------------------------------------------------------------------------ stored findings

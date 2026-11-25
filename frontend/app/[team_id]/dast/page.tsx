@@ -30,7 +30,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
-import { RISK_TIER_LABELS, matchesRiskTier, postureOf, postureScore, riskScoreHint, riskScoreText, riskTone } from "@/utils/riskPosture";
+import { RISK_TIER_LABELS, matchesRiskTier, postureScore, riskCellHint, riskCellText, riskTone } from "@/utils/riskPosture";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, Search, X, Shield, AlertTriangle, Check, ScanSearch, Target, Percent, AlertCircle, Activity, Filter, ChevronDown, ArrowUpDown, DollarSign, TrendingUp, TrendingDown } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { singleFlight } from "@/utils/single_flight";
@@ -274,8 +274,8 @@ function DASTDashboard({ dashboardData }: { dashboardData: DASTListDashboardData
               <div>
                 {/* the one risk score (0-100, grade, words) over the findings, as the rows and the PDF */}
                 <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Risk score <InfoTip id="dast.kpi.avg_risk" /></p>
-                <p className="text-xl font-bold text-zinc-900 dark:text-white" data-testid="dast-kpi-risk-score">{riskScoreText(postureOf(card))}</p>
-                {riskScoreHint(postureOf(card)) && <p className="text-[11px] text-zinc-500">{riskScoreHint(postureOf(card))}</p>}
+                <p className="text-xl font-bold text-zinc-900 dark:text-white" data-testid="dast-kpi-risk-score">{riskCellText(card)}</p>
+                {riskCellHint(card) && <p className="text-[11px] text-zinc-500">{riskCellHint(card)}</p>}
               </div>
             </div>
           </CardContent>
@@ -925,7 +925,7 @@ export default function DASTPage() {
                                 ) : "—"}
                               </TableCell>
                               <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm tabular-nums">
-                                {riskScoreText(postureOf(scan))}
+                                {riskCellText(scan)}
                               </TableCell>
                               <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm max-w-[140px] truncate" title={scan.target_url ?? undefined}>
                                 {scan.target_url ?? "—"}

@@ -662,7 +662,11 @@ export default function CbomResults({
       case "inventory": return <SectionView section={s} onBack={back} loading={resultsPending}><InventoryView ctx={ctx} /></SectionView>;
       case "migration": return <SectionView section={s} onBack={back} loading={resultsPending}><MigrationView ctx={ctx} /></SectionView>;
       case "compliance":
-        return <SectionView section={s} onBack={back} loading={resultsPending || r.parityState === "loading"}><ComplianceView ctx={ctx} /></SectionView>;
+        // the run's matrix: the frameworks that bind the team and chips named after them (/parity
+        // compliance_applicability), as the code scan page
+        return <SectionView section={s} onBack={back} loading={resultsPending || r.parityState === "loading"}>
+          <ComplianceApplicabilityContext.Provider value={cbomApplicability}><ComplianceView ctx={ctx} /></ComplianceApplicabilityContext.Provider>
+        </SectionView>;
       case "remediation": return <SectionView section={s} onBack={back}><RemediationView ctx={ctx} /></SectionView>;
     }
   };

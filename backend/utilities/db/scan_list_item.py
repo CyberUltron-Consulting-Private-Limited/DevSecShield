@@ -143,7 +143,7 @@ def return_iac_list_item(scan : Scan) -> dict:
         "zip_file_used": scan.scan_metadata["zip_file_used"] if scan.scan_metadata and "zip_file_used" in scan.scan_metadata else None,
         "branch": scan.scan_metadata["branch"] if scan.scan_metadata and "branch" in scan.scan_metadata else None,
         "cloud_provider" : [ iac_context["mode"] for iac_context in scan.scan_metadata["iac_contexts"] ] if scan.scan_metadata and "iac_contexts" in scan.scan_metadata else [] , 
-        "average_risk_score" : average_risk_score,
+        "average_risk_score" : average_risk_score, **_posture(scan, total_critical, total_high, total_medium, total_low),
         "coverage_percentage" : coverage_percentage,
         "environment" : scan.scan_metadata["environment"] if scan.scan_metadata and "environment" in scan.scan_metadata else None,
     }
@@ -196,7 +196,7 @@ def return_sbom_sca_list_item(scan : Scan) -> dict:
         "repo_url": scan.scan_metadata["repo_url"] if scan.scan_metadata and "repo_url" in scan.scan_metadata else None,
         "zip_file_used": scan.scan_metadata["zip_file_used"] if scan.scan_metadata and "zip_file_used" in scan.scan_metadata else None,
         "branch": scan.scan_metadata["branch"] if scan.scan_metadata and "branch" in scan.scan_metadata else None, 
-        "average_risk_score" : average_risk_score, **_posture(scan, total_critical, total_high, total_medium, total_low),
+        "average_risk_score" : average_risk_score, **_posture(scan, total_critical, total_high, total_medium, total_low, incomplete=sbom_rows.is_incomplete(scan.scan_data)),
     }
 
 
@@ -281,7 +281,7 @@ def return_mcp_list_item(scan : Scan) -> dict:
         "info": scan.info, # sometimes maybe None or sometimes may be { "current" : 20 } where 20 is the progress percentage
         'risk_data': risk_data,
         "server" : scan.scan_metadata["server_url"].split(".")[-2].replace("https://","").replace("http://","") if scan.scan_metadata and "server_url" in scan.scan_metadata else None,
-        "average_risk_score" : average_risk_score,
+        "average_risk_score" : average_risk_score, **_posture(scan, total_critical, total_high, total_medium, total_low),
         "discovery_metrics" : {
             "total_tools" : total_tools,
             "total_prompts" : total_prompts,
@@ -560,8 +560,9 @@ def average_risk_0_10(total_critical: int, total_high: int, total_medium: int, t
                                     "low": total_low})
 
 
-def _posture(scan: Scan, critical: int, high: int, medium: int, low: int) -> dict:
-    """``risk_posture``: the scan's one 0-100 risk score, grade and words (``risk_scale.posture``); None until the scan
-    succeeded. Added next to the older fields, which keep their values."""
+def _posture(scan: Scan, critical: int, high: int, medium: int, low: int, *, incomplete: bool = False) -> dict:
+    """``risk_posture`` and ``risk_posture_status``: the scan's one 0-100 risk score, grade and words
+    (``risk_scale.posture``); no score until the scan succeeded, nor for a finished scan whose result is incomplete.
+    Added next to the older fields, which keep their values."""
     return risk_scale.posture_field({"critical": critical, "high": high, "medium": medium, "low": low},
-                                    judged=scan.scan_status == "success")
+                                    judged=scan.scan_status == "success", incomplete=incomplete)

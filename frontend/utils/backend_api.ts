@@ -130,6 +130,8 @@ export interface SastConversation {
     risk_score?: number | null
     /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
     risk_posture?: RiskPosture | null
+    /** "incomplete": finished but not enough to score (shown "incomplete", never A); absent: older backend */
+    risk_posture_status?: string | null
     code_coverage?: number | null
     /** github, gitlab, bitbucket, zip_file */
     scan_type?: string | null
@@ -157,6 +159,8 @@ export interface TopRepoByRiskItem {
     risk_score: number
     /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
     risk_posture?: RiskPosture | null
+    /** "incomplete": finished but not enough to score (shown "incomplete", never A); absent: older backend */
+    risk_posture_status?: string | null
     trend: string
     language: string
 }
@@ -172,6 +176,8 @@ export interface ScanListDashboardData {
     average_risk_score?: number
     /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
     risk_posture?: RiskPosture | null
+    /** "incomplete": finished but not enough to score (shown "incomplete", never A); absent: older backend */
+    risk_posture_status?: string | null
     total_issues?: number
     critical_count?: number
     owasp_by_category?: { category: string; count: number }[]
@@ -260,6 +266,8 @@ export interface SastDashboardData {
   risk_scores_per_finding?: Record<string, number>;
   /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
   risk_posture?: RiskPosture | null;
+  /** "incomplete": finished but not enough to score (shown "incomplete", never A); absent: older backend */
+  risk_posture_status?: string | null;
 }
 
 /** SAST scan metadata from backend get_scan_metadata (SAST branch) */
@@ -364,6 +372,8 @@ export interface SbomScanDashboardData {
     average_risk_score: number | null
     /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
     risk_posture?: RiskPosture | null
+    /** "incomplete": finished but not enough to score (shown "incomplete", never A); absent: older backend */
+    risk_posture_status?: string | null
     total_reachable_issues: number
     /** matches on a version guessed from a manifest range: listed, not counted (review 6028132826 M2) */
     total_unverified_version_findings?: number
@@ -396,6 +406,10 @@ export interface SbomScanDashboardData {
 
 /** IAC single-scan dashboard from backend generate_scan_dashboard (scan.py IAC branch) */
 export interface IACScanDashboardData {
+  /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
+  risk_posture?: RiskPosture | null
+  /** "incomplete": finished but not enough to score (shown "incomplete", never A); absent: older backend */
+  risk_posture_status?: string | null
   risk_metrics?: Record<string, number>
   owasp_top_10_metrics?: Record<string, number>
   compliance_controls_metrics?: Record<string, number>
@@ -596,6 +610,8 @@ export interface LLMCardData {
     average_risk_score: number
     /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
     risk_posture?: RiskPosture | null
+    /** "incomplete": finished but not enough to score (shown "incomplete", never A); absent: older backend */
+    risk_posture_status?: string | null
     total_critical_vulnerabilities: number
     total_vulnerabilities: number
     owasp_compliance_score: number
@@ -647,6 +663,8 @@ export interface LLMScanListItem {
     average_risk_score?: number | null
     /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
     risk_posture?: RiskPosture | null
+    /** "incomplete": finished but not enough to score (shown "incomplete", never A); absent: older backend */
+    risk_posture_status?: string | null
     model_type?: string | null
     model_name?: string | null
     attack_iterations?: number | null
@@ -863,6 +881,10 @@ export interface MCPDashboardData {
     /** Summary cards */
     card_data?: {
         overall_risk_score?: number
+        /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
+        risk_posture?: RiskPosture | null
+        /** "incomplete": finished but not enough to score (shown "incomplete", never A); absent: older backend */
+        risk_posture_status?: string | null
         total_findings?: number
         exploitability_index?: number
         attack_surface?: number
@@ -912,6 +934,8 @@ export interface LLMDashboardData {
         risk_score: number
         /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
         risk_posture?: RiskPosture | null
+        /** "incomplete": finished but not enough to score (shown "incomplete", never A); absent: older backend */
+        risk_posture_status?: string | null
         scan_duration: number
         policy_violations: number
     }
@@ -983,6 +1007,10 @@ const getMCPConversationMessages = async ({ queryKey }: { queryKey: ['mcp-conver
 }
 
 export interface MCPConversation {
+    /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
+    risk_posture?: RiskPosture | null
+    /** "incomplete": finished but not enough to score (shown "incomplete", never A); absent: older backend */
+    risk_posture_status?: string | null
     id: number
     title: string
     created_at: string
@@ -1002,6 +1030,10 @@ export interface MCPConversation {
 
 /** MCP list dashboard card_data from backend generate_mcp_dashboard_data */
 export interface MCPListCardData {
+    /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
+    risk_posture?: RiskPosture | null
+    /** "incomplete": finished but not enough to score (shown "incomplete", never A); absent: older backend */
+    risk_posture_status?: string | null
     total_scans: number
     total_critical_issues: number
     average_risk_score: number
@@ -1014,6 +1046,8 @@ export interface MCPListDashboardData {
     card_data: MCPListCardData
     scan_status_distribution: { not_started: number; started: number; success: number; failure: number }
     risk_score_trend: Record<string, number>
+    /** per server, the one 0-100 risk score (absent: older backend) */
+    risk_posture_trend?: Record<string, number>
     risks_over_time: Record<string, { critical: number; high: number; medium: number; low: number }>
     severity_distribution: { critical: number; high: number; medium: number; low: number }
     environment_risk_analysis: { development: number; production: number; staging: number }
@@ -1541,6 +1575,10 @@ export {
 
 /** List item from GET /{team_id}/iac/scans (same shape as SAST list) */
 export interface IACConversation {
+    /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
+    risk_posture?: RiskPosture | null
+    /** "incomplete": finished but not enough to score (shown "incomplete", never A); absent: older backend */
+    risk_posture_status?: string | null
     id: number
     title: string
     created_at: string
@@ -1564,6 +1602,10 @@ export interface IACConversation {
 
 /** IAC list dashboard card_data from backend generate_iac_dashboard_data */
 export interface IACListCardData {
+    /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
+    risk_posture?: RiskPosture | null
+    /** "incomplete": finished but not enough to score (shown "incomplete", never A); absent: older backend */
+    risk_posture_status?: string | null
     total_scans: number
     total_issues: number
     total_critical_issues: number
@@ -1762,6 +1804,8 @@ export interface SCASBOMConversation {
     average_risk_score?: number | null
     /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
     risk_posture?: RiskPosture | null
+    /** "incomplete": finished but not enough to score (shown "incomplete", never A); absent: older backend */
+    risk_posture_status?: string | null
 }
 
 /** Card counts returned by list SBOM/SCA scans (same shape as SastListCardData) */
@@ -1809,6 +1853,8 @@ export interface SBOMSCADashboardData {
         average_risk_score: number | null
         /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
         risk_posture?: RiskPosture | null
+        /** "incomplete": finished but not enough to score (shown "incomplete", never A); absent: older backend */
+        risk_posture_status?: string | null
         total_reachable_issues: number
         total_unverified_version_findings?: number
     }
@@ -3443,6 +3489,8 @@ export interface DASTListItem {
     average_risk_score: number
     /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
     risk_posture?: RiskPosture | null
+    /** "incomplete": finished but not enough to score (shown "incomplete", never A); absent: older backend */
+    risk_posture_status?: string | null
     urls_scanned: number
     coverage_percentage: number
 }
@@ -3458,6 +3506,8 @@ export interface DASTListDashboardData {
         average_risk_score: number
         /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
         risk_posture?: RiskPosture | null
+        /** "incomplete": finished but not enough to score (shown "incomplete", never A); absent: older backend */
+        risk_posture_status?: string | null
     }
     severity_distribution: { critical: number; high: number; medium: number; low: number }
     issues_over_time: Record<string, { critical: number; high: number; medium: number; low: number }>
@@ -3483,6 +3533,8 @@ export interface DASTSingleScanDashboard {
         average_risk_score: number
         /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
         risk_posture?: RiskPosture | null
+        /** "incomplete": finished but not enough to score (shown "incomplete", never A); absent: older backend */
+        risk_posture_status?: string | null
         urls_scanned: number
         coverage_percentage: number
     }

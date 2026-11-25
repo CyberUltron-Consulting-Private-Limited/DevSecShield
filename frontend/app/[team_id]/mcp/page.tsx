@@ -30,6 +30,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
+import { postureScore, riskCellHint, riskCellText, riskTone } from "@/utils/riskPosture";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, Play, CheckCircle, XCircle, Search, X, Shield, Activity, AlertTriangle, ChevronDown, ArrowUpDown, Check, CalendarPlus, CalendarCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { singleFlight } from "@/utils/single_flight";
@@ -91,7 +92,10 @@ const PIE_COLORS = ["hsl(142 71% 45%)", "hsl(217 91% 60%)", "hsl(0 72% 51%)", "h
 function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboardData }) {
   const card = dashboardData.card_data ?? { total_scans: 0, total_critical_issues: 0, average_risk_score: 0, total_active_scans: 0, total_resolved_issues: 0 };
   const scanStatus = dashboardData.scan_status_distribution ?? { not_started: 0, started: 0, success: 0, failure: 0 };
-  const riskScoreTrend = dashboardData.risk_score_trend ?? {};
+  // per server, the one 0-100 risk score (risk_posture_trend); an older backend's 0-10 averages otherwise
+  const postureTrend = (dashboardData as { risk_posture_trend?: Record<string, number> }).risk_posture_trend;
+  const riskScoreTrend = postureTrend ?? dashboardData.risk_score_trend ?? {};
+  const trendMax = postureTrend ? 100 : 10;
   const risksOverTime = dashboardData.risks_over_time ?? {};
   const severityDist = dashboardData.severity_distribution ?? { critical: 0, high: 0, medium: 0, low: 0 };
   const envRisk = dashboardData.environment_risk_analysis ?? { development: 0, production: 0, staging: 0 };
@@ -248,12 +252,14 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
         <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
           <CardContent className="p-0">
             <div className="flex flex-col items-start gap-2">
-              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${card.average_risk_score >= 7 ? "bg-red-500/15" : card.average_risk_score >= 5 ? "bg-amber-500/15" : "bg-green-500/15"}`}>
-                <Shield className={`h-4 w-4 ${card.average_risk_score >= 7 ? "text-red-500" : card.average_risk_score >= 5 ? "text-amber-500" : "text-green-500"}`} />
+              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${riskTone(postureScore(card)).box}`}>
+                <Shield className={`h-4 w-4 ${riskTone(postureScore(card)).icon}`} />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Avg Risk Score <InfoTip id="mcp.kpi.avg_risk" /></p>
-                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.average_risk_score} / 10</p>
+                {/* the one risk score (0-100, grade, words) over the findings, as the rows and the PDF */}
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Risk score <InfoTip id="mcp.kpi.avg_risk" /></p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white" data-testid="mcp-kpi-risk-score">{riskCellText(card)}</p>
+                {riskCellHint(card) && <p className="text-[11px] text-zinc-500">{riskCellHint(card)}</p>}
               </div>
             </div>
           </CardContent>
@@ -327,7 +333,7 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
                 <AreaChart data={riskScoreTrendData}>
                   <CartesianGrid vertical={false} />
                   <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => String(v).length > 10 ? `${String(v).slice(0, 10)}...` : v} />
-                  <YAxis tickLine={false} axisLine={false} domain={[0, 10]} />
+                  <YAxis tickLine={false} axisLine={false} domain={[0, trendMax]} />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   <Area type="monotone" dataKey="value" fill="#2563eb" stroke="#2563eb" fillOpacity={0.4} />
                 </AreaChart>
@@ -1010,9 +1016,7 @@ export default function MCPPage() {
                               {conversation.server ?? "—"}
                             </TableCell>
                             <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">
-                              {conversation.average_risk_score != null
-                                ? Number(conversation.average_risk_score).toFixed(1)
-                                : "—"}
+                              {riskCellText(conversation)}
                             </TableCell>
                             <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">
                               {conversation.discovery_metrics

@@ -93,7 +93,7 @@ import { teamCompliance, type ComplianceApplicability } from "@/components/compl
 import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRollup";
 import { CertInLanePosture } from "@/components/certin/CertInLanePosture";
 import { InfoTip } from "@/components/ui/info-tip";
-import { postureOf, riskScoreHint, riskScoreText, riskTone } from "@/utils/riskPosture";
+import { riskCellHint, riskCellText } from "@/utils/riskPosture";
 import { type CertInRollupData } from "@/components/certin/certinShared";
 import { RESULTS_HEADER } from "@/components/resultsHeaderLayout";
 
@@ -337,8 +337,8 @@ function SbomDashboardCharts({ dashboard }: { dashboard: SbomScanDashboardData }
             <div className="min-w-0">
               {/* the scan's one risk score (0-100, grade, words), as its list row and its PDF */}
               <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1">Risk score <InfoTip id="sbom.res.kpi.avg_risk" /></p>
-              <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums" data-testid="sbom-res-risk-score">{riskScoreText(postureOf(card))}</p>
-              {riskScoreHint(postureOf(card)) && <p className="text-[11px] text-zinc-500">{riskScoreHint(postureOf(card))}</p>}
+              <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums" data-testid="sbom-res-risk-score">{riskCellText(card)}</p>
+              {riskCellHint(card) && <p className="text-[11px] text-zinc-500">{riskCellHint(card)}</p>}
             </div>
           </CardContent>
         </Card>

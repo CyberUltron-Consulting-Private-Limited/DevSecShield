@@ -247,7 +247,7 @@ def generate_scan_dashboard(
                 "policy_violations": policy_violations,
                 "risk_scores_per_finding": risk_scores_per_finding,
                 # the scan's one 0-100 risk score (risk_scale.posture), as its list row and its PDF
-                **_risk_posture(risk_metrics),
+                **_risk_posture(risk_metrics, judged=_succeeded(scan)),
             }
     
 
@@ -420,6 +420,8 @@ def generate_scan_dashboard(
                 "issues_by_severity": issues_by_severity_out,
                 "average_risk_score_per_category": dict(average_risk_score_per_category),
                 "risk_scores_per_finding": risk_scores_per_finding,
+                # the scan's one 0-100 risk score (risk_scale.posture), as its list row and its PDF
+                **_risk_posture(issues_by_severity_out, judged=_succeeded(scan)),
                 "compliance_failure_trends": dict(compliance_failure_trends),
                 "average_resolution_time": average_resolution_time,
             }
@@ -593,6 +595,8 @@ def generate_scan_dashboard(
             return {
                 "card_data": {
                     "overall_risk_score": overall_risk_score,
+                    # the scan's one 0-100 risk score (risk_scale.posture), as its list row and its PDF
+                    **_risk_posture(severity_distribution, judged=_succeeded(scan)),
                     "total_findings": total_findings_count,
                     "exploitability_index": exploitability_index,
                     "attack_surface": attack_surface,
@@ -748,7 +752,7 @@ def generate_scan_dashboard(
                     "risk_score": risk_score,
                     # the scan's one 0-100 risk score (risk_scale.posture), as its list row and its PDF; risk_score
                     # above keeps its 0-10 meaning for older clients
-                    **_risk_posture(vulnerability_breakdown),
+                    **_risk_posture(vulnerability_breakdown, judged=_succeeded(scan)),
                     "scan_duration": duration_of_scan,
                     "policy_violations": policy_violations,
                 },
@@ -955,8 +959,10 @@ def generate_scan_dashboard(
                     "total_license_risks": total_license_risks,
                     "total_high_risk_licenses": total_high_risk_licenses,
                     "average_risk_score": average_risk_score,
-                    # the scan's one 0-100 risk score over its known vulnerabilities (risk_scale.posture)
-                    **_risk_posture(severity_counts),
+                    # the scan's one 0-100 risk score over its known vulnerabilities (risk_scale.posture);
+                    # "incomplete", never 0 / A, without an inventoried package or with only guessed-version matches
+                    **_risk_posture(severity_counts, judged=_succeeded(scan), incomplete=sbom_is_incomplete(
+                        (scan.scan_data or {}) if scan else (scan_results or {}))),
                     "total_reachable_issues": total_reachable,
                     "total_unverified_version_findings": len(unverified),
                 },
@@ -1196,7 +1202,7 @@ def generate_scan_dashboard(
                     "total_low_issues": total_low,
                     "average_risk_score": average_risk_score,
                     # the scan's one 0-100 risk score (risk_scale.posture), as its list row and its PDF
-                    **_risk_posture(severity_counts),
+                    **_risk_posture(severity_counts, judged=_succeeded(scan)),
                     "urls_scanned": urls_scanned,
                     "coverage_percentage": coverage_percentage,
                 },
@@ -1469,8 +1475,21 @@ def generate_scan_dashboard(
         raise e
 
 
-def _risk_posture(impact_counts) -> dict:
-    """``{"risk_posture": ...}``: the one 0-100 risk score of these counts per impact (``risk_scale.posture``)."""
+def _risk_posture(impact_counts, *, judged: bool = True, incomplete: bool = False) -> dict:
+    """``{"risk_posture": ..., "risk_posture_status": ...}``: the one 0-100 risk score of these counts per impact
+    (``risk_scale.posture``); no score for a scan that did not succeed or whose result is incomplete."""
     from backend.utilities.dashboard import risk_scale
 
-    return risk_scale.posture_field(dict(impact_counts or {}))
+    return risk_scale.posture_field(dict(impact_counts or {}), judged=judged, incomplete=incomplete)
+
+
+def _succeeded(scan) -> bool:
+    """A scan row that did not succeed (failed, cancelled, still running with partial data) has no score; results
+    passed without a row (an export, a test) are a finished scan's."""
+    return scan is None or str(getattr(scan, "scan_status", "") or "").lower() == "success"
+
+
+def sbom_is_incomplete(scan_data) -> bool:
+    from backend.utilities.dashboard.sbom_rows import is_incomplete
+
+    return is_incomplete(scan_data)

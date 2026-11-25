@@ -15,7 +15,7 @@ from reportlab.lib.units import inch
 from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, TableStyle
 
 from backend.utilities.dashboard.risk_scale import posture
-from backend.utilities.dashboard.sbom_rows import is_inventory_row, is_unverified_version
+from backend.utilities.dashboard.sbom_rows import is_incomplete, is_inventory_row, is_unverified_version
 from backend.utilities.pdf.report_context import ReportContext, details_note, join_parts
 from backend.utilities.pdf.report_branding import (
     report_generated,
@@ -517,6 +517,8 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     # the one 0-100 risk score (risk_scale.posture): the number, grade and words of the headline, the list row and the
     # dashboard tile (it replaces the 0-10 average this row printed)
     risk = posture(by_severity)
+    # the rows this report reads, with the stored SBOM when the payload carries it (risk_scale status "incomplete")
+    incomplete = is_incomplete({**(raw if isinstance(raw, dict) else {}), "results": rows})
     styles = get_report_styles()
     scan_time = format_scan_duration(duration)
 
@@ -536,7 +538,8 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         ("Unverified version (not counted)", str(unverified)),
         ("Packages affected", str(len(unique_packages))),
         ("Likely fixable via upgrade/update", str(fixable_count)),
-        ("Risk score", f"{risk['score']} / 100 · grade {risk['grade']} · {risk['label']}"),
+        ("Risk score", "Incomplete scan (no package inventoried, or only matches on guessed versions)" if incomplete
+         else f"{risk['score']} / 100 · grade {risk['grade']} · {risk['label']}"),
         ("Report generated", report_generated(long=True)),
     ]
     summary: List[Any] = []
@@ -563,6 +566,8 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         ],
         ctx=ctx,
         unverified=unverified,  # review 6032108510 m2: the headline agrees with the catalogue
+        # no package inventoried, or only matches on guessed versions: "incomplete", never grade A (risk_scale)
+        risk_incomplete="Incomplete scan" if incomplete else None,
       )
 
     catalog_part: List[Any] = []

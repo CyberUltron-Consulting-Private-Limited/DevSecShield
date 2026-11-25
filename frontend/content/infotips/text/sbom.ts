@@ -125,7 +125,7 @@ const TEXT = {
   },
   // src: backend/utilities/db/scan_list_item.py:199,563-567, backend/utilities/dashboard/risk_scale.py:76-95, frontend/utils/riskPosture.ts:22-28, frontend/app/[team_id]/sbom_sca/page.tsx:115-118,991 — the row's risk_posture; — before success
   "sbom.table.risk": {
-    what: "This scan's one risk score and grade, as on its results page and PDF: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), capped by the worst severity (no Critical: 69 at most, no High either: 49, Low only: 29). Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+. Empty (—) when the scan did not succeed.",
+    what: "This scan's one risk score and grade, as on its results page and PDF: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), capped by the worst severity (no Critical: 69 at most, no High either: 49, Low only: 29). Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+. \"incomplete\" when no package was inventoried or every match is on a guessed version; — when the scan did not succeed.",
     why: "Lets you compare scans by overall risk on the scale every product uses.",
     example: "1 Critical and 1 Low vulnerability: 4 × 11 = 44, grade C, shown 44 · C.",
   },

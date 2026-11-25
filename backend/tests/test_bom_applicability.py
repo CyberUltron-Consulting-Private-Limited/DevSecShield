@@ -125,3 +125,29 @@ def test_get_scan_adds_the_view():
     body = src[src.index("async def get_scan("):src.index("def _payload_section(")]
     assert "scan_metadata = bom_applicability.with_applicability(type, scan_metadata, engine, team_id)" in body
     assert body.index("with_applicability") < body.index('"scan_metadata": scan_metadata')
+
+
+# ------------------------------------------------------------------------------------------------- Sources run /parity
+def test_a_sources_run_parity_gets_the_same_view_as_the_code_page():
+    parity = {"run_id": 9, "scan_metadata": {"cbom_compliance": CBOM, "rbi_csf_rollup": None}, "state": "ready"}
+    out = ba.with_run_applicability(parity, {"regulated_entity": "bank"})
+    view = out["scan_metadata"][ba.KEY]
+    assert view == ba.page_view("cbom", CBOM, BANK)
+    assert "sebi_cscrf_cbom" not in view["binding"] and view["basis"] == "Commercial bank in India, not SEBI-regulated"
+    # nothing removed, and the cached parity object is not changed
+    assert out["scan_metadata"]["cbom_compliance"] is CBOM and out["state"] == "ready"
+    assert ba.KEY not in parity["scan_metadata"]
+    # no declared entity: the NBFC default, said so (as the code page and the CBOM PDF)
+    nbfc = ba.with_run_applicability(parity, {})["scan_metadata"][ba.KEY]
+    assert nbfc["basis"].endswith("(default: no regulated entity declared)")
+    # no compliance report (an engine-less server): unchanged
+    bare = {"run_id": 9, "scan_metadata": {"cbom_compliance": None}}
+    assert ba.with_run_applicability(bare, {"regulated_entity": "bank"}) is bare
+
+
+def test_the_parity_route_adds_the_view():
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parents[1] / "routers" / "cbom_sources.py").read_text(encoding="utf-8")
+    body = src[src.index("def _run_parity("):src.index("@router.get(BASE + \"/runs/{run_id}/parity\"")]
+    assert "return with_run_applicability(parity, settings.risk_model)" in body

@@ -16,6 +16,9 @@ import {
   matchesRiskTier,
   postureOf,
   postureScore,
+  postureStatus,
+  riskCellHint,
+  riskCellText,
   riskScoreHint,
   riskScoreText,
   riskTone,
@@ -65,7 +68,19 @@ test("postureOf reads risk_posture, or the CBOM's flat fields, never an older nu
   assert.equal(riskTone(29).icon, "text-green-500");
 });
 
-const PAGES = ["sbom_sca", "dast", "sast", "llm"] as const;
+test("a finished scan that cannot be scored reads incomplete; a failed or running one reads a dash; never A", () => {
+  const p = { score: 0, grade: "A", label: "Low risk", band: "low" };
+  assert.equal(riskCellText({ risk_posture: p, risk_posture_status: "scored" }), "0 · A");
+  assert.equal(riskCellText({ risk_posture: null, risk_posture_status: "incomplete" }), "incomplete");
+  assert.equal(riskCellHint({ risk_posture: null, risk_posture_status: "incomplete" }), "Scan incomplete: not enough to score");
+  assert.equal(riskCellText({ risk_posture: null, risk_posture_status: "not_scored" }), "—");
+  assert.equal(riskCellText({ risk_posture: null }), "—");
+  assert.equal(postureStatus({ risk_posture: null, risk_posture_status: "incomplete" }), "incomplete");
+  assert.equal(postureScore({ risk_posture: null, risk_posture_status: "incomplete" }), null);  // no filter tier keeps it
+  for (const tier of ["critical", "high", "medium", "low"] as const) assert.equal(matchesRiskTier(null, tier), false);
+});
+
+const PAGES = ["sbom_sca", "dast", "sast", "llm", "iac"] as const;
 
 test("the SBOM, DAST, SAST and LLM list pages filter, sort, show and tile the one score", () => {
   for (const page of PAGES) {
@@ -73,7 +88,7 @@ test("the SBOM, DAST, SAST and LLM list pages filter, sort, show and tile the on
     assert.match(src, /from "@\/utils\/riskPosture"/, `${page}: imports the shared util`);
     assert.match(src, /matchesRiskTier\(/, `${page}: filters on the grade bands`);
     assert.match(src, /postureScore\(/, `${page}: sorts on the 0-100 score`);
-    assert.match(src, /riskScoreText\(/, `${page}: the table cell and tile say "56 · D"`);
+    assert.match(src, /riskCellText\(/, `${page}: the table cell and tile say "56 · D" (or "incomplete")`);
     for (const tier of Object.keys(RISK_TIER_LABELS)) {
       assert.ok(src.includes(`{RISK_TIER_LABELS.${tier}}`), `${page}: the ${tier} filter item reads the shared label`);
     }
@@ -84,10 +99,20 @@ test("the SBOM, DAST, SAST and LLM list pages filter, sort, show and tile the on
   }
 });
 
-test("the SBOM, DAST, SAST and LLM results pages show the one score", () => {
-  for (const file of ["SbomResults", "DASTResults", "SASTResults", "LLMResults"]) {
+test("the MCP list page shows and tiles the one score (it has no risk filter)", () => {
+  const src = read("frontend/app/[team_id]/mcp/page.tsx");
+  assert.match(src, /from "@\/utils\/riskPosture"/);
+  assert.match(src, /riskCellText\(conversation\)/);
+  assert.match(src, /riskCellText\(card\)/);
+  assert.doesNotMatch(src, /average_risk_score\} \/ 10|Number\(conversation\.average_risk_score\)/);
+  assert.match(src, /risk_posture_trend/);
+});
+
+test("every results page shows the one score", () => {
+  for (const file of ["SbomResults", "DASTResults", "SASTResults", "LLMResults", "IACResults", "MCPResults"]) {
     const src = read(`frontend/components/${file}.tsx`);
     assert.match(src, /from "@\/utils\/riskPosture"/, `${file}: imports the shared util`);
-    assert.match(src, /postureOf\(/, `${file}: reads risk_posture`);
+    assert.match(src, /postureOf\(|riskCellText\(/, `${file}: reads risk_posture`);
   }
+  assert.doesNotMatch(read("frontend/components/MCPResults.tsx"), /\{cardData\.overall_risk_score \?\? "—"\}/);
 });

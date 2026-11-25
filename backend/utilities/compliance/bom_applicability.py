@@ -102,13 +102,31 @@ def _settings_risk_model(session: Any, team_id: int) -> Mapping[str, Any] | None
 def team_profile_for(session: Any, team_id: int, scan_type: str) -> tuple[dict[str, Any] | None, bool]:
     """``(profile, declared)``: the profile a ``scan_type`` page filters by (see the module docstring) and whether the
     team declared it. (PR #498's ``regulated_entity.declared_team_profile`` reads the same row the same way.)"""
-    model = _settings_risk_model(session, team_id)
+    return profile_of_risk_model(_settings_risk_model(session, team_id), scan_type)
+
+
+def profile_of_risk_model(risk_model: Any, scan_type: str) -> tuple[dict[str, Any] | None, bool]:
+    """``team_profile_for`` from a settings row's ``risk_model`` already read (the Sources run endpoints hold it)."""
+    model = risk_model if isinstance(risk_model, Mapping) else None
     declared = model is not None and bool(str(model.get(regulated_entity.SETTINGS_KEY) or "").strip())
     if declared:
         return regulated_entity.profile_of(model), True
     if scan_type == "cbom":
-        return regulated_entity.profile_of(model), False  # the NBFC default, as the CBOM PDF and board report
+        return regulated_entity.profile_of(model), False
     return None, False
+
+
+def with_run_applicability(parity: Any, risk_model: Any) -> Any:
+    """A Sources run's ``/parity`` answer (its ``scan_metadata``: the code page's sections) plus
+    ``scan_metadata.compliance_applicability`` for its ``cbom_compliance``, by the team's profile, as a CBOM code scan's
+    ``get_scan``: the run page shows the same frameworks and chips as the code page and the CBOM PDF. The cached
+    parity is not changed (a copy is returned)."""
+    meta = parity.get("scan_metadata") if isinstance(parity, Mapping) else None
+    if not isinstance(meta, Mapping) or not isinstance(meta.get("cbom_compliance"), Mapping):
+        return parity
+    team, declared = profile_of_risk_model(risk_model, "cbom")
+    view = page_view("cbom", meta["cbom_compliance"], team, declared=declared)
+    return {**parity, "scan_metadata": {**meta, KEY: view}}
 
 
 def with_applicability(scan_type: str, scan_metadata: Any, engine: Any, team_id: int) -> Any:
@@ -131,5 +149,5 @@ def with_applicability(scan_type: str, scan_metadata: Any, engine: Any, team_id:
     return {**scan_metadata, KEY: page_view(scan_type, compliance, team, declared=declared)}
 
 
-__all__ = ["KEY", "LABELS", "SCAN_TYPES", "UNDECLARED", "binds", "page_view", "profile_sentence", "team_profile_for",
-           "with_applicability"]
+__all__ = ["KEY", "LABELS", "SCAN_TYPES", "UNDECLARED", "binds", "page_view", "profile_of_risk_model",
+           "profile_sentence", "team_profile_for", "with_applicability", "with_run_applicability"]

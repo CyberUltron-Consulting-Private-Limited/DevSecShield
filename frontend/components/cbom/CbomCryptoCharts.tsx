@@ -1308,7 +1308,14 @@ function CbomComplianceMatrix({
   // regulate), when the page has the server's view; without one, every framework and the pinned chips, as before
   const team = teamCompliance(compliance, FRAMEWORK_GROUPS_CBOM_WITH_INDIA, useContext(ComplianceApplicabilityContext));
   if (variant === "run") {
-    return <ComplianceScorecards compliance={team.compliance} groups={team.groups} onAttest={onAttest} />;
+    const cards = <ComplianceScorecards compliance={team.compliance} groups={team.groups} onAttest={onAttest} />;
+    if (!team.note) return cards;
+    return (
+      <div className="space-y-2" data-testid="cbom-compliance-team">
+        {cards}
+        <p className="text-xs text-zinc-500" data-testid="cbom-applicability-note">{team.note}</p>
+      </div>
+    );
   }
   const matrix = (
     <ComplianceMatrix

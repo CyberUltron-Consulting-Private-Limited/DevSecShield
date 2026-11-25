@@ -95,7 +95,7 @@ import FindingSelectionMenu from "@/components/finding-selection-menu";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
 import Link from "next/link";
 import { RESULTS_HEADER } from "@/components/resultsHeaderLayout";
-import { postureOf, riskScoreHint, riskScoreText, riskTone } from "@/utils/riskPosture";
+import { postureOf, riskCellHint, riskCellText, riskTone } from "@/utils/riskPosture";
 
 /** DAST finding as returned by backend (get_findings_for_scan_type dast branch) */
 export interface DASTFinding {
@@ -772,8 +772,8 @@ export default function DASTResults({
                 </div>
                 {/* the scan's one risk score (0-100, grade, words), as its list row and its PDF */}
                 <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Risk score</p>
-                <p className="text-xl font-bold text-zinc-900 dark:text-white" data-testid="dast-res-risk-score">{riskScoreText(postureOf(card))}</p>
-                {riskScoreHint(postureOf(card)) && <p className="text-[11px] text-zinc-500">{riskScoreHint(postureOf(card))}</p>}
+                <p className="text-xl font-bold text-zinc-900 dark:text-white" data-testid="dast-res-risk-score">{riskCellText(card)}</p>
+                {riskCellHint(card) && <p className="text-[11px] text-zinc-500">{riskCellHint(card)}</p>}
               </div>
             </CardContent>
           </Card>
