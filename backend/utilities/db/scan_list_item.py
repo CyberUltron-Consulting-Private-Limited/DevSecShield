@@ -552,7 +552,18 @@ def return_ai_bom_list_item(scan : Scan) -> dict:
         "branch": scan.scan_metadata["branch"] if scan.scan_metadata and "branch" in scan.scan_metadata else None,
         "average_risk_score" : average_risk_score,
         "scan_binaries": scan.scan_metadata.get("scan_binaries", False) if scan.scan_metadata else False,
+        # a scanner did not finish: the list marks the scan partial (review 6063929550 of #498, R5-M2)
+        "completeness": _ai_bom_completeness(scan),
     }
+
+
+def _ai_bom_completeness(scan: Scan) -> str | None:
+    """"partial" or "complete" for a successful AI BOM scan, None otherwise."""
+    if scan.scan_status != "success" or not isinstance(scan.scan_data, dict):
+        return None
+    from backend.utilities.pdf.aibom_posture import scan_data_partial
+
+    return "partial" if scan_data_partial(scan.scan_data) else "complete"
 
 
 # Kept at the end of the file so the functions above keep their line numbers (the (i) tips cite them).

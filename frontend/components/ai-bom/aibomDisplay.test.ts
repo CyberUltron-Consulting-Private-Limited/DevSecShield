@@ -12,6 +12,8 @@ import {
   licenceLabel,
   unnamedModelHint,
   completenessNotice,
+  bandChip,
+  scannersNotFinished,
 } from "./aibomDisplay";
 import { inventoryModelNames } from "./modelCardDisplay";
 
@@ -108,7 +110,19 @@ assert.equal(unnamedModelHint(undefined), null);
 assert.equal(completenessNotice(null), null);
 assert.equal(
   completenessNotice({ status: "partial", scanner_errors: "model-ref: RuntimeError (unexpected)", notebooks_unreadable: "a.ipynb" }),
-  "Scan incomplete: grade withheld. Did not finish: model-ref: RuntimeError (unexpected). Notebooks read as raw text (not valid notebooks): a.ipynb.",
+  "Scan incomplete: grade withheld because the model reference scanner did not finish. Compliance verdicts are based " +
+    "on an incomplete scan. Notebooks read as raw text (not valid notebooks): a.ipynb.",
+);
+
+// review 6063929550 of #498, R5-M2: a partial scan's band chip never reads LOW; customer scanner wording (nit)
+assert.deepEqual(bandChip({ risk_band: "withheld", completeness: "partial" }), { label: "GRADE WITHHELD", withheld: true });
+assert.deepEqual(bandChip({ risk_band: "low", completeness: "partial" }), { label: "GRADE WITHHELD", withheld: true });
+assert.deepEqual(bandChip({ risk_band: "low" }), { label: "LOW", withheld: false });
+assert.deepEqual(bandChip({}), { label: "—", withheld: false });
+assert.equal(scannersNotFinished("net-env: RuntimeError (unexpected)"), "the network/endpoint scanner did not finish");
+assert.equal(
+  scannersNotFinished("net-env: RuntimeError (unexpected); docker: OSError"),
+  "the network/endpoint and container scanners did not finish",
 );
 
 console.log("aibomDisplay tests passed");

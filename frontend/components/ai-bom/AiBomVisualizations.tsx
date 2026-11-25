@@ -79,6 +79,7 @@ import { pickBomGraph } from "@/components/bom/layout";
 import type { BomGraph } from "@/components/bom/types";
 import {
   applicabilityNote,
+  bandChip,
   bindingCompliance,
   governanceSubtitle,
   type AiBomApplicability,
@@ -140,6 +141,8 @@ export interface Graph {
 export interface Scores {
   risk_normalized?: number;
   risk_band?: string;
+  /** "partial" when a scanner did not finish: grade and band withheld (review 6063929550 of #498, R5-M2) */
+  completeness?: string;
   by_component?: Record<string, number>;
 }
 type Json = Record<string, unknown>;
@@ -246,6 +249,7 @@ export function RiskHeatmap({ scores }: { scores?: Scores }) {
   const tone = (v: number) =>
     v / max <= 0.34 ? C.low : v / max <= 0.66 ? C.medium : C.high;
   const band = scores?.risk_band;
+  const chip = bandChip(scores);
   return (
     <Card>
       <CardHeader>
@@ -255,16 +259,17 @@ export function RiskHeatmap({ scores }: { scores?: Scores }) {
         <CardDescription>
           Normalized risk{" "}
           <span className="font-semibold text-zinc-700 dark:text-zinc-300">
-            {scores?.risk_normalized ?? 0}/100
+            {scores?.risk_normalized ?? 0}/100{chip.withheld ? " (provisional)" : ""}
           </span>{" "}
           ·{" "}
           <span
             className="rounded px-1.5 py-0.5 text-xs font-semibold text-white"
-            style={{ background: bandColor(band) }}
+            style={{ background: chip.withheld ? "#71717a" : bandColor(band) }}
+            data-testid="aibom-risk-band"
           >
-            {(band ?? "low").toUpperCase()}
+            {chip.label}
           </span>{" "}
-          band (locked scale)
+          {chip.withheld ? "(scan incomplete)" : "band (locked scale)"}
         </CardDescription>
       </CardHeader>
       <CardContent>

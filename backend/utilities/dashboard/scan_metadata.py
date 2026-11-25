@@ -428,7 +428,9 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan, regulatory_profile: dic
                 # #498, M5)
                 from backend.utilities.pdf.aibom_posture import current_scores
 
-                ai_bom_scores = current_scores(scan.scan_data["ai_bom_scores"])
+                # a partial scan, by its scores or its BOM's metadata, has grade and band withheld (review 6063929550 of
+                # #498, R5-M2)
+                ai_bom_scores = current_scores(scan.scan_data["ai_bom_scores"], ai_bom_json)
 
         # the frameworks that bind the team (the PDF and the evidence pack show the same; review 6037909737 of #498, M3)
         from backend.utilities.compliance.aibom_applicability import page_view

@@ -51,29 +51,42 @@ def posture_risk(critical: int, high: int, medium: int, low: int) -> Tuple[int, 
     return int(score), str(grade), str(label)
 
 
-def current_scores(scores: Any) -> Any:
+def current_scores(scores: Any, bom: Any = None) -> Any:
     """A stored AI BOM ``ai_bom_scores`` with its headline recomputed from its own ``severity_counts`` by the engine's
     posture function: a scan stored before a posture change shows on the page what the PDF and the API compute now
-    (Rule P; review 6037909737 of #498, M5). Anything without four severity counts is returned unchanged."""
+    (Rule P; review 6037909737 of #498, M5). Anything without four severity counts keeps its stored headline.
+
+    A partial scan (the scores say so, or the stored BOM's metadata does) has its grade AND band withheld, so no
+    surface reads "LOW" for a scan that did not finish (review 6063929550 of #498, R5-M2)."""
     if not isinstance(scores, dict):
         return scores
+    out = dict(scores)
     counts = scores.get("severity_counts")
     keys = ("critical", "high", "medium", "low")
-    if not isinstance(counts, dict) or not all(isinstance(counts.get(k), (int, float)) for k in keys):
-        return scores
-    module = engine_posture()
-    score = module.posture_score(*(int(counts[k]) for k in keys))
-    grade, band = module.posture_grade(score)
-    out = {**scores, "risk_normalized": float(score), "risk_grade": grade, "risk_band": band,
-           "risk_label": module.posture_label(band)}
-    if scores.get("completeness") == "partial":
-        # a scanner did not finish: the grade stays withheld (review 6063080163 of #498, R4-M2)
-        out.update(risk_grade=GRADE_WITHHELD, risk_label=WITHHELD_LABEL)
+    if isinstance(counts, dict) and all(isinstance(counts.get(k), (int, float)) for k in keys):
+        module = engine_posture()
+        score = module.posture_score(*(int(counts[k]) for k in keys))
+        grade, band = module.posture_grade(score)
+        out.update(risk_normalized=float(score), risk_grade=grade, risk_band=band,
+                   risk_label=module.posture_label(band))
+    if is_partial(scores, bom):
+        out.update(completeness="partial", risk_grade=GRADE_WITHHELD, risk_label=WITHHELD_LABEL,
+                   risk_band=BAND_WITHHELD)
     return out
+
+
+def is_partial(scores: Any = None, bom: Any = None) -> bool:
+    """True when a scanner did not finish: the stored scores say ``completeness: partial`` or the BOM's metadata
+    carries ``aibom:scan_completeness=partial`` / ``aibom:scanner_errors``."""
+    if isinstance(scores, dict) and scores.get("completeness") == "partial":
+        return True
+    info = scan_completeness(bom)
+    return bool(info and info.get("status") == "partial")
 
 
 GRADE_WITHHELD = "—"
 WITHHELD_LABEL = "Grade withheld: scan incomplete"
+BAND_WITHHELD = "withheld"
 
 
 def scan_completeness(bom: Any) -> dict | None:
@@ -85,10 +98,54 @@ def scan_completeness(bom: Any) -> dict | None:
              if isinstance(p, dict)}
     errors = props.get("aibom:scanner_errors")
     notebooks = props.get("aibom:notebooks_unreadable")
-    if not errors and not notebooks:
+    partial = bool(errors) or props.get("aibom:scan_completeness") == "partial"
+    if not partial and not notebooks:
         return None
-    return {"status": "partial" if errors else "complete_with_warnings", "scanner_errors": errors,
+    return {"status": "partial" if partial else "complete_with_warnings", "scanner_errors": errors,
             "notebooks_unreadable": notebooks}
 
 
-__all__ = ["current_scores", "engine_posture", "posture_risk"]
+#: customer-facing names of the engine's scanners (aibom/src/aibom/scan/scanners, ``name``): a report says "the
+#: network/endpoint scanner did not finish", the exception class goes to a footnote (review 6063929550 of #498, nit)
+SCANNER_LABELS = {
+    "cloud-iac": "cloud infrastructure-as-code",
+    "code-import": "AI library import",
+    "docker": "container",
+    "licence-coverage": "licence coverage",
+    "live-cloud": "live cloud",
+    "model-considerations": "model considerations",
+    "model-file": "model file",
+    "model-graph-link": "model linking",
+    "model-ref": "model reference",
+    "model-repo": "model repository",
+    "net-env": "network/endpoint",
+    "requirements": "dependency manifest",
+    "secret": "secret",
+    "unnamed-models": "unidentified model",
+}
+
+
+def scanners_not_finished(errors: Any) -> tuple[str, str]:
+    """``("the network/endpoint scanner did not finish", "net-env: RuntimeError (unexpected)")`` from the BOM's
+    ``aibom:scanner_errors``: a sentence for the customer and the technical detail for a footnote."""
+    parts = [p.strip() for p in str(errors or "").split(";") if p.strip()]
+    if not parts:
+        return "", ""
+    names = [SCANNER_LABELS.get(p.split(":", 1)[0].strip(), p.split(":", 1)[0].strip()) for p in parts]
+    if len(names) == 1:
+        sentence = f"the {names[0]} scanner did not finish"
+    else:
+        sentence = f"the {', '.join(names[:-1])} and {names[-1]} scanners did not finish"
+    return sentence, "; ".join(parts)
+
+
+def scan_data_partial(scan_data: Any) -> bool:
+    """True when a stored AI BOM scan is partial, by its scores or its BOM's metadata: the scan list, the team
+    dashboard and its tile mark it (review 6063929550 of #498, R5-M2)."""
+    if not isinstance(scan_data, dict):
+        return False
+    return is_partial(scan_data.get("ai_bom_scores"), scan_data.get("ai_bom_json"))
+
+
+__all__ = ["current_scores", "engine_posture", "is_partial", "posture_risk", "scan_completeness", "scan_data_partial",
+           "scanners_not_finished"]

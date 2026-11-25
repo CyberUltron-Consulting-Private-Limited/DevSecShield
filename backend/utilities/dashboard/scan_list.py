@@ -1891,6 +1891,8 @@ def _ai_bom_results(scan: Scan) -> list:
 
 def generate_ai_bom_dashboard_data(scans: list[Scan]) -> dict:
     """Aggregate AI-BOM dashboard data across all scans for the scan-list page."""
+    from backend.utilities.pdf.aibom_posture import scan_data_partial
+
     severity_distribution = {"critical": 0, "high": 0, "medium": 0, "low": 0}
     asset_type_distribution: dict[str, int] = defaultdict(int)
     provider_distribution: dict[str, int] = defaultdict(int)
@@ -1901,6 +1903,8 @@ def generate_ai_bom_dashboard_data(scans: list[Scan]) -> dict:
     top_risks_entries: list[dict] = []
 
     total_ai_assets = 0
+    # scans a scanner did not finish: the team dashboard and its tile mark them (review 6063929550 of #498, R5-M2)
+    partial_scan_ids: list = []
     # Distinct entity sets (count UNIQUE entities, not detection rows).
     # e.g. an OpenAI SDK imported in 4 files is ONE external provider, not 4.
     # Sets span ALL scans so the aggregate dashboard de-dupes across scans too.
@@ -1915,6 +1919,8 @@ def generate_ai_bom_dashboard_data(scans: list[Scan]) -> dict:
     for scan in scans:
         if scan.scan_status != "success":
             continue
+        if scan_data_partial(scan.scan_data):
+            partial_scan_ids.append(scan.id)
         results = _ai_bom_results(scan)
         if not results:
             continue
@@ -2075,7 +2081,9 @@ def generate_ai_bom_dashboard_data(scans: list[Scan]) -> dict:
             "total_unlicensed_assets": total_unlicensed_assets,
             "governance_readiness_score": governance_readiness_score,
             "average_risk_score": round(average_risk_score * 10) / 10,
+            "partial_scans": len(partial_scan_ids),
         },
+        "partial_scan_ids": partial_scan_ids,
         "remediation_metrics": remediation_metrics,
         "remediation_actions_required": {
             "total_findings": all_findings_count,

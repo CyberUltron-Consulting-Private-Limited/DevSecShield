@@ -147,7 +147,9 @@ def test_a_partial_scan_is_said_on_the_page_and_the_pdf_and_withholds_the_grade(
     assert (meta["ai_bom_scores"]["risk_grade"], meta["ai_bom_scores"]["risk_label"]) == (
         "—", "Grade withheld: scan incomplete")
     text = PROFILE._pdf_text(http.get(f"{base}/export", headers=AUTH).content)
-    assert "Scan completeness Partial: grade withheld. Did not finish: model-ref: KeyError (unexpected)" in text
+    # customer wording; the scanner id and exception class in the footnote (review 6063929550 of #498, nit)
+    assert "Scan completeness Partial: grade withheld because the model reference scanner did not finish" in text
+    assert "model-ref: KeyError (unexpected)" in text
     assert "Notebooks read as raw text (not valid notebooks) bad.ipynb" in text
     assert "Grade withheld: scan incomplete" in text
     assert _json.dumps(meta).count("Low risk") == 0

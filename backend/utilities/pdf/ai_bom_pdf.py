@@ -349,8 +349,11 @@ def _bom_scope_rows(payload: Any) -> List[tuple]:
     props = _bom_props(payload)
     # Scan completeness first: a scanner that did not finish, or notebooks read as raw text (R4-M2)
     if props.get("aibom:scanner_errors"):
-        rows.insert(0, ("Scan completeness", "Partial: grade withheld. Did not finish: "
-                        + props["aibom:scanner_errors"]))
+        # customer wording, the technical detail as a footnote row (review 6063929550 of #498, nit)
+        sentence, detail = AIBOM_POSTURE.scanners_not_finished(props["aibom:scanner_errors"])
+        rows.insert(0, ("Scan completeness", f"Partial: grade withheld because {sentence}; compliance verdicts are "
+                                             "based on an incomplete scan.¹"))
+        rows.insert(1, ("¹ Technical detail (for support)", detail))
     if props.get("aibom:notebooks_unreadable"):
         rows.append(("Notebooks read as raw text (not valid notebooks)", props["aibom:notebooks_unreadable"]))
     coverage = props.get("aibom:licence_coverage", "")

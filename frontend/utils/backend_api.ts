@@ -1215,6 +1215,8 @@ export interface TeamDashboardCardData {
     total_findings: number
     total_started_scans: number
     total_completed_scans: number
+    /** completed AI BOM scans a scanner did not finish (review 6063929550 of #498, R5-M2) */
+    total_partial_scans?: number
     total_not_started_scans: number
     total_fixed_findings: number
     remediation_percentage: number
@@ -2673,7 +2675,11 @@ export interface AiBomScanDashboardData {
     total_unidentified_models?: number
     governance_readiness_score: number
     average_risk_score: number
+    /** scans a scanner did not finish (review 6063929550 of #498, R5-M2); absent: older backend */
+    partial_scans?: number
   }
+  /** ids of the partial scans counted in card_data.partial_scans */
+  partial_scan_ids?: number[]
   remediation_metrics: {
     mean_time_to_remediate: [number, number, number]
     critical_issues_fixed: number
@@ -2720,6 +2726,8 @@ export interface AIBOMConversation {
   total_unlicensed_assets: number | null
   zip_file_used: boolean | null
   ai_bom_file_used: boolean | null
+  /** "partial" when a scanner did not finish (review 6063929550 of #498, R5-M2); null for an unfinished scan */
+  completeness?: "partial" | "complete" | null
   /** Progress payload from worker; often `{ current: number }`, not a display string. */
   info: ScanInfoField | string | null
   risk_data: {

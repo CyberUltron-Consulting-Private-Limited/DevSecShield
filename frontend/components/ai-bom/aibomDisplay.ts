@@ -106,12 +106,61 @@ export function completenessNotice(c: AiBomCompleteness | null | undefined): str
   if (!c) return null;
   const parts: string[] = [];
   if (c.scanner_errors) {
-    parts.push(`Scan incomplete: grade withheld. Did not finish: ${c.scanner_errors}.`);
+    // customer wording; the technical detail stays available in the title (review 6063929550 of #498, nit)
+    parts.push(
+      `Scan incomplete: grade withheld because ${scannersNotFinished(c.scanner_errors)}. ` +
+        "Compliance verdicts are based on an incomplete scan.",
+    );
   }
   if (c.notebooks_unreadable) {
     parts.push(`Notebooks read as raw text (not valid notebooks): ${c.notebooks_unreadable}.`);
   }
   return parts.length ? parts.join(" ") : null;
+}
+
+/** Customer-facing scanner names (backend aibom_posture.SCANNER_LABELS, the engine's scanner ``name``s). */
+export const SCANNER_LABELS: Record<string, string> = {
+  "cloud-iac": "cloud infrastructure-as-code",
+  "code-import": "AI library import",
+  docker: "container",
+  "licence-coverage": "licence coverage",
+  "live-cloud": "live cloud",
+  "model-considerations": "model considerations",
+  "model-file": "model file",
+  "model-graph-link": "model linking",
+  "model-ref": "model reference",
+  "model-repo": "model repository",
+  "net-env": "network/endpoint",
+  requirements: "dependency manifest",
+  secret: "secret",
+  "unnamed-models": "unidentified model",
+};
+
+/** "the network/endpoint scanner did not finish" from ``aibom:scanner_errors`` ("net-env: RuntimeError (unexpected)"). */
+export function scannersNotFinished(errors: string): string {
+  const names = errors
+    .split(";")
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => {
+      const id = p.split(":")[0].trim();
+      return SCANNER_LABELS[id] ?? id;
+    });
+  if (names.length === 0) return "a scanner did not finish";
+  if (names.length === 1) return `the ${names[0]} scanner did not finish`;
+  return `the ${names.slice(0, -1).join(", ")} and ${names[names.length - 1]} scanners did not finish`;
+}
+
+/** The risk band chip: a partial scan reads "grade withheld", never a band word such as LOW (review 6063929550 of
+ * #498, R5-M2); a missing band is "—", not "low". */
+export function bandChip(scores: { risk_band?: string; completeness?: string } | null | undefined): {
+  label: string;
+  withheld: boolean;
+} {
+  if (scores?.completeness === "partial" || scores?.risk_band === "withheld") {
+    return { label: "GRADE WITHHELD", withheld: true };
+  }
+  return { label: scores?.risk_band ? scores.risk_band.toUpperCase() : "—", withheld: false };
 }
 
 const MAX_LABEL = 24;
