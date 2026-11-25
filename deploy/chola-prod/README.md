@@ -217,6 +217,16 @@ Single steps can be run on their own: `secrets`, `images --sha S [--from-run RUN
 `infra [--force-infra] [--from-run RUN]`, `backup`, `verify`, `smtp-test`, `status`,
 `logs [--service backend] [--tail 500]`, `attach --job <id>`.
 
+**Certificate identity re-key window** (`CBOM_IDENTITY_WINDOW_HOURS`, in the backend env; default 24, clamped to
+1..720 hours, a non-number, `inf`, `NaN` or negative value is refused and logged once): after the deploy migration
+moves the stored certificate keys, store writes also re-key rows an older-release process wrote, until the scheduler
+closes the window per team. The deploy recreates every container after `migrate`, so no older writer is left; one
+that wrote after the window would leave a duplicate `removed` asset and a Q0 item closed as `observation`. Raise the
+variable before any rollout that keeps the old release running for more than a day. Migrations that build an index
+`CONCURRENTLY` (`q102hist001`, `q110linkuq001`) wait for older transactions; `q110linkuq001` gives up after 3 x 60 s:
+end the idle-in-transaction sessions and deploy again (deploy/staging/README.md, "Migrations that build an index
+CONCURRENTLY").
+
 ### Images from a CI run
 
 Three ways to get a commit's images onto the instance. Each one checks the images the same way (linux/amd64, revision
