@@ -14,7 +14,7 @@ from typing import Any
 
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
-from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer
+from reportlab.platypus import CondPageBreak, PageBreak, Paragraph, SimpleDocTemplate, Spacer
 
 from backend.utilities.pdf.report_branding import (
     append_executive_summary,
@@ -292,6 +292,23 @@ def trigger_text(run: dict[str, Any]) -> str:
     return f"scheduled (schedule #{run['schedule_id']}, since deleted)" if run.get("schedule_id") else "scheduled"
 
 
+# staging QA2 Q1-14: one parenthesis said every not-compared source was "collected completely in only one of the two
+# runs", also for a source outside the scheduled run's scope and for one collected for the first time
+_NOT_COMPARED_WORDS = (("outside_scope", "outside this run's scope"), ("first_collection", "collected only once"),
+                       ("outside_baseline_scope", "outside the baseline run's scope"),
+                       ("incomplete", "not collected completely in both runs"))
+
+
+def not_compared_text(counts: dict[str, Any]) -> str:
+    """" (2 outside this run's scope, 1 collected only once)"; "" when nothing is uncompared. A diff recorded before
+    the reasons were counted keeps the old wording."""
+    if not int(counts.get("not_compared_sources", 0) or 0):
+        return ""
+    parts = [f"{int(counts.get(f'not_compared_{code}', 0) or 0)} {words}" for code, words in _NOT_COMPARED_WORDS
+             if int(counts.get(f"not_compared_{code}", 0) or 0)]
+    return f" ({', '.join(parts)})" if parts else " (collected completely in only one of the two runs)"
+
+
 def append_drift_section(story: list[Any], drift: dict[str, Any], styles: dict) -> None:
     """S4: what changed since the previous comparable run, from ``drift_report.run_drift`` (the ``/diff`` numbers)."""
     base = drift.get("baseline")
@@ -310,7 +327,7 @@ def append_drift_section(story: list[Any], drift: dict[str, Any], styles: dict) 
                      f"{base.get('finished_at') or '—'}"),
         ("This run", f"Run #{run.get('id')} · {trigger_text(run)}"),
         ("Sources compared", f"{counts.get('compared_sources', 0)} compared, {counts.get('not_compared_sources', 0)} "
-                             "not compared (collected completely in only one of the two runs)"),
+                             f"not compared{not_compared_text(counts)}"),
         ("Rules", "re-judged with the current rules" if rules.get("reclassified")
          else ("rules changed between the runs" if rules.get("rules_changed") else "same rules")),
         *([("Compared", (f"when the run's drift was recorded, {drift['recorded_at']} (the diff endpoint compares "
@@ -325,6 +342,8 @@ def append_drift_section(story: list[Any], drift: dict[str, Any], styles: dict) 
          ["Assets changed", str(counts.get("changed", 0))], ["Findings opened (new)", str(counts.get("opened", 0))],
          ["Findings resolved (closed)", str(counts.get("resolved", 0))],
          ["Not read this time (kept at last known state)", str(counts.get("not_read", 0))],
+         ["Collector changes (not drift: how a collector reports an asset changed)",
+          str(counts.get("collector_changes", 0))],
          ["Q0 Unknown closed (graded Q1-Q4 now)", str(q0.get("closed", 0))],
          ["Q0 Unknown opened", str(q0.get("opened", 0))],
          ["Risk-register Q0 gaps this run closed", str(q0.get("register_closed_total", 0))],
@@ -338,10 +357,13 @@ def append_drift_section(story: list[Any], drift: dict[str, Any], styles: dict) 
             return
         total = int(counts.get(key, len(items)) or 0)
         story.append(Spacer(1, 8))
+        table = styled_data_table(columns, [row(i) for i in items[:DRIFT_ROWS]], styles=styles,
+                                  col_widths=[1.1 * inch, 1.9 * inch, 2.6 * inch, DRIFT_TABLE_W - 5.6 * inch])
+        # the heading never stands alone at a page foot (#497 review nit); a long table still splits after it
+        story.append(CondPageBreak(1.4 * inch))
         story.append(Paragraph(escape_html(f"{title} ({total})"), styles["table_label"]))
         story.append(Spacer(1, 3))
-        story.append(styled_data_table(columns, [row(i) for i in items[:DRIFT_ROWS]], styles=styles,
-                                       col_widths=[1.1 * inch, 1.9 * inch, 2.6 * inch, DRIFT_TABLE_W - 5.6 * inch]))
+        story.append(table)
         if total > min(len(items), DRIFT_ROWS):
             story.append(_p(f"Showing {min(len(items), DRIFT_ROWS)} of {total}; drift.json in the evidence pack "
                             "and the diff endpoint list more.", styles, "muted"))
@@ -358,6 +380,14 @@ def append_drift_section(story: list[Any], drift: dict[str, Any], styles: dict) 
     listing("Findings resolved", "resolved", ["Severity", "Code", "Asset", "Source"], finding)
     listing("Assets added", "added", ["Q-grade", "Type", "Asset", "Source"], asset)
     listing("Assets removed", "removed", ["Q-grade", "Type", "Asset", "Source"], asset)
+
+    def collector(i: dict[str, Any]) -> list[Any]:
+        before = i.get("label_before")
+        label = f"{short(before, 60)} → {short(i.get('label'), 60)}" if before else short(i.get("label"), FINDING_CHARS)
+        return [_p(i.get("code"), styles, "mono_cell"), _p(i.get("direction"), styles), _p(label, styles),
+                _p(i.get("source_name"), styles)]
+
+    listing("Collector changes (not drift)", "collector_changes", ["Code", "Change", "Asset", "Source"], collector)
     skipped = [s for s in drift.get("sources") or [] if s.get("status") != "compared"]
     if skipped:
         story.append(_p("Not compared: " + "; ".join(f"{s.get('name')} ({s.get('reason')})"

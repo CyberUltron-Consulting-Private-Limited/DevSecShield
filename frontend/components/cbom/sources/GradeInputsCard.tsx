@@ -8,7 +8,7 @@ import { useState } from "react";
 
 import { getCbomEvidence, getCbomSourcesSettings, listCbomSources } from "@/utils/backend_api";
 
-import { moscaText } from "@/components/cbom/grade/inputs";
+import { moscaDefaultsText, moscaText } from "@/components/cbom/grade/inputs";
 import { cbomSourcesKeys } from "./keys";
 import { pluralize } from "./logic";
 import RegulatedEntitySelect from "./RegulatedEntitySelect";
@@ -33,7 +33,7 @@ export default function GradeInputsCard({ teamId, isAdmin }: { teamId: number; i
         <div className="flex flex-wrap items-center gap-2" data-testid="grade-inputs-mosca" data-mosca={moscaText(mosca)}>
           <span className="text-zinc-700 dark:text-zinc-300">Mosca X/Y/Z (years):</span>
           <span className="font-mono">{moscaText(mosca)}</span>
-          {!set && <StatusBadge tone="amber">Not set: quantum-vulnerable assets grade as Unknown</StatusBadge>}
+          {!set && <StatusBadge tone="amber"><span data-testid="grade-inputs-defaults">{moscaDefaultsText(mosca)}</span></StatusBadge>}
           {isAdmin ? (
             <button type="button" className="text-xs text-blue-600 dark:text-blue-400 cursor-pointer"
                     data-testid="grade-inputs-mosca-edit" onClick={() => setEdit(!edit)}>

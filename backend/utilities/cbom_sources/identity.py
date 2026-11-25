@@ -9,6 +9,16 @@ Diffs, drift events, finding resolution and remediation assignments all compare 
   the asset key) but must show as "renewed", not as one certificate removed and another added. The location is kept
   because one host can serve two different certificates for the same subject (two ports, or a chain entry); it is
   stable across renewal (an endpoint and chain position, a file path, an ARN or a Kubernetes secret).
+  - A certificate whose location is a cloud resource id (an ARN, an Azure resource or Key Vault id, a GCP resource
+    name, an OCID: ``asset_keys.cloud_resource_id``) is identified by (target, location) alone: the id names exactly
+    one certificate or CA, and the subject is free text the provider API formats (staging QA2 Q1-09: #481 changed the
+    AWS Private CA subject from ``{"CommonName": ...}`` to ``CN=...`` and run #54 showed the same CA removed + added,
+    its QUANTUM_VULNERABLE resolved and opened again). Not the fingerprint or serial: both change on renewal.
+  - The subject and issuer of every other certificate are compared as normalised DNs (``canonical_dn``): attribute
+    order, spacing and case ignored, and a subject a collector stored as an attribute map (AWS ``ASN1Subject`` JSON)
+    read as the RFC 4514 DN it denotes, so every spelling of one name is one identity.
+  - ``legacy_node_identity`` is the identity before this rule; ``rekeyed_observations`` maps the stored keys it gave
+    to the new ones (the estate store and the remediation assignments move along, ``identity_migration``).
 * Code-scan row: (asset type, file, title, bom-ref without a trailing line marker). Misuse refs end in ``-l<line>``
   (``crypto_misuse_scan``) and IaC key-material rows name their location ``<file>:<line>`` (Terraform / Kubernetes
   key specs, SQL Server keys), so an unrelated edit above them would otherwise look like remove + add; both line
@@ -21,6 +31,7 @@ Diffs, drift events, finding resolution and remediation assignments all compare 
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from typing import Any, Mapping
 
@@ -60,12 +71,65 @@ def is_certificate(row: CbomCollectedAsset) -> bool:
     return row.cdx_type == CERT_CDX or row.asset_type in ("certificate", "k8s_certificate")
 
 
-def node_identity(row: CbomCollectedAsset) -> str:
+def mapping_dn(value: Any) -> str | None:
+    """The RFC 4514 DN an attribute map denotes (a dict, or the JSON text of one, as AWS returns ``ASN1Subject``;
+    ``cert_estate.dn_from_mapping``, the AWS collector's own formatter), else None (a DN text, or anything else)."""
+    mapping: Any = value if isinstance(value, Mapping) else None
+    if mapping is None and isinstance(value, str) and value.lstrip().startswith("{"):
+        try:
+            mapping = json.loads(value)
+        except ValueError:
+            mapping = None
+    if not isinstance(mapping, Mapping):
+        return None
+    from backend.utilities.cbom_sources.cert_estate import dn_from_mapping
+
+    return dn_from_mapping(mapping) or None
+
+
+def canonical_dn(value: Any) -> str:
+    """A subject or issuer as compared: an attribute map becomes its RFC 4514 DN (``mapping_dn``); a DN is then read
+    order- and spacing-insensitive (``asset_keys.norm_dn``: ``CN=Corp CA, O=Corp`` = ``o=corp,cn=corp ca``, #497 review
+    6057627810 nit), any other text lower case with whitespace collapsed. ``identity_migration`` freezes this rule
+    for the key migration (the stored keys of the earlier rule move there)."""
+    from backend.utilities.cbom_sources.asset_keys import norm_dn
+
+    return norm_dn(mapping_dn(value) or value)
+
+
+def legacy_node_identity(row: CbomCollectedAsset) -> str:
+    """The identity before staging QA2 Q1-09 (free-text subject and issuer, also for a cloud certificate): what the
+    stored keys of earlier runs were made from. Only ``rekeyed_observations`` reads it."""
     facts = row.facts or {}
     if is_certificate(row) and (facts.get("subject") or facts.get("issuer")):
         return "|".join(("cert", _norm(row.target), _norm(row.location), _norm(facts.get("subject")),
                          _norm(facts.get("issuer"))))
     return "key|" + row.asset_key
+
+
+def node_identity(row: CbomCollectedAsset) -> str:
+    facts = row.facts or {}
+    if is_certificate(row) and (facts.get("subject") or facts.get("issuer")):
+        from backend.utilities.cbom_sources.asset_keys import cloud_resource_id
+
+        if cloud_resource_id(row.location):  # the id names one certificate: the subject text never re-keys it
+            return "|".join(("cert", _norm(row.target), _norm(row.location)))
+        return "|".join(("cert", _norm(row.target), _norm(row.location), canonical_dn(facts.get("subject")),
+                         canonical_dn(facts.get("issuer"))))
+    return "key|" + row.asset_key
+
+
+def rekeyed_observations(rows: Any, source_ref: str) -> dict[str, str]:
+    """``{key before Q1-09: key now}`` (``stable_key("node", ...)``) for the rows of one source whose identity the
+    rule changed; empty for everything else (every non-certificate row, every DN-text certificate off the cloud)."""
+    out: dict[str, str] = {}
+    for row in rows:
+        if not is_certificate(row):
+            continue
+        old, new = legacy_node_identity(row), node_identity(row)
+        if old != new:
+            out[stable_key("node", source_ref, old)] = stable_key("node", source_ref, new)
+    return out
 
 
 def node_label(row: CbomCollectedAsset) -> str:
@@ -109,5 +173,5 @@ def code_source_ref(scan_metadata: Mapping[str, Any] | None, title: str, scan_id
     return key, label
 
 
-__all__ = ["code_identity", "code_label", "code_source_ref", "is_certificate", "job_source_name", "job_source_ref",
-           "node_identity", "node_label", "stable_key"]
+__all__ = ["canonical_dn", "mapping_dn", "code_identity", "code_label", "code_source_ref", "is_certificate", "job_source_name",
+           "job_source_ref", "legacy_node_identity", "node_identity", "node_label", "rekeyed_observations", "stable_key"]

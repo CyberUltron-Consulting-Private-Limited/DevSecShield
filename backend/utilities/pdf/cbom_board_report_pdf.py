@@ -72,7 +72,9 @@ from backend.utilities.dashboard.cbom_team_rollup import (
     VALID,
     AssetAgg,
     TeamCbomView,
+    current_collections,
     posture_active,
+    removed_collections,
 )
 from backend.utilities.pdf import cbom_deliverable_text as authored
 from backend.utilities.pdf import cbom_kb_text as kb_text
@@ -155,7 +157,7 @@ READINESS_NOTE = (
 QGRADE_HEADING = "Quantum risk grades (D12)"
 QGRADE_LEAD = (
     "Grades from the quantum risk register (D12): {total} distinct assets. Q1 Critical to Q4 Low rank quantum risk "
-    "under the team's Mosca inputs; Q0 Unknown means the platform could not grade the asset, never that it is safe."
+    "{mosca}; Q0 Unknown means the platform could not grade the asset, never that it is safe."
 )
 QGRADE_NOT_LOADED = "The quantum risk register (D12) could not be loaded for this report."
 CERT_DATE_NOTE = (
@@ -200,8 +202,8 @@ REMEDIATION_NOTE = (
 NO_ISSUES_RISKS = "No current asset carries a finding."
 NO_ISSUES_REMEDIATION = "No findings to remediate."
 PQC_FAMILIES_LEAD = (
-    "Every current quantum-vulnerable asset ({total}, as in section 3: algorithms, certificates, keys and "
-    "protocols), grouped by the post-quantum target its use calls for: key establishment moves to {kem}, "
+    "Every current quantum-vulnerable asset occurrence ({total} occurrences, as in section 3: algorithms, "
+    "certificates, keys and protocols), grouped by the post-quantum target its use calls for: key establishment moves to {kem}, "
     "signatures, certificates and signing keys to {sig} (national security systems under CNSA 2.0: {kem5} and "
     "{sig5}). A code-scan algorithm keeps the target its scan recorded."
 )
@@ -248,7 +250,7 @@ _SINGULAR = re.compile(
 _TREND_ROWS = (  # (snapshot field, label, lower is better)
     ("grade", "Posture grade", True),
     ("score", "Risk score", True),
-    ("issues", "Issue assets", True),
+    ("issues", "Issue occurrences", True),  # the snapshot's "issues" counts occurrences (QA2 Q1-07)
     ("critical", "Critical issue assets", True),
     ("high", "High issue assets", True),
     ("quantum_vulnerable", "Quantum-vulnerable occurrences", True),
@@ -482,6 +484,7 @@ class GovernanceMetrics:
     quantum_vulnerable: int
     legacy_scans: int  # current sources whose latest scan is in legacy format
     mosca_missing: int = 0  # register assets graded Q0 because the Mosca inputs are not set (D12)
+    mosca_defaults: int = 0  # register assets graded on a default Mosca input (QA2 Q1-06: the team set none)
 
 
 def _register_summary(view: TeamCbomView) -> dict[str, Any] | None:
@@ -501,6 +504,7 @@ def governance_metrics(view: TeamCbomView) -> GovernanceMetrics:
         quantum_vulnerable=int(view.pqc_vulnerable),
         legacy_scans=int(view.compliance_legacy_excluded),
         mosca_missing=int(reasons.get("mosca_missing", 0) or 0),
+        mosca_defaults=int((authored.mosca_basis(view) or {}).get("defaults_used", 0) or 0),
     )
 
 
@@ -517,6 +521,7 @@ def governance_rows(view: TeamCbomView) -> list[list[str]]:
         "quantum_vulnerable": metrics.quantum_vulnerable,
         "legacy_scans": metrics.legacy_scans,
         "mosca_missing": metrics.mosca_missing,
+        "mosca_defaults": metrics.mosca_defaults,
     }
     live = {
         "owners": _count(metrics.unique_certs, "unique certificate"),
@@ -524,9 +529,11 @@ def governance_rows(view: TeamCbomView) -> list[list[str]]:
         "pqc": _count(metrics.quantum_vulnerable, "quantum-vulnerable occurrence"),
         "legacy": f"{_count(metrics.legacy_scans, 'source')} in legacy format",
         "mosca": f"{_count(metrics.mosca_missing, 'asset')} Q0 for missing inputs",
+        "mosca_defaults": f"{_count(metrics.mosca_defaults, 'asset')} graded on defaults",
     }
     counts = {"owners": metrics.unique_certs, "attestations": metrics.attestations_outstanding,
-              "legacy": metrics.legacy_scans, "mosca": metrics.mosca_missing}
+              "legacy": metrics.legacy_scans, "mosca": metrics.mosca_missing,
+              "mosca_defaults": metrics.mosca_defaults}
     rows = []
     for key, template in authored.GOVERNANCE_ACTIONS:
         if key in authored.GOVERNANCE_HIDE_WHEN_ZERO and counts.get(key, 0) <= 0:
@@ -646,7 +653,7 @@ def scan_rows(view: TeamCbomView) -> list[list[str]]:
         ]
         for scan in included
     ]
-    for found in sorted(view.collections or (), key=lambda c: (c.label.casefold(), c.key)):
+    for found in sorted(current_collections(view), key=lambda c: (c.label.casefold(), c.key)):
         rows.append([f"Run #{found.run_id}", f"{labels.get(found.key, found.label)}\nCBOM Sources collection",
                      fmt_date_utc(found.observed_at), "Full", "Current"])
     return rows
@@ -811,6 +818,16 @@ def _grade_card(posture: PostureGrade, styles: Styles, width: float) -> Table:
     return card
 
 
+def removed_register_text(view: TeamCbomView) -> str | None:
+    """The register assets only deleted sources read: outside the register's total (#497 review M2, Rule P)."""
+    found = (_register_summary(view) or {}).get("removed_from_scope")
+    n = int((found or {}).get("total", 0) or 0) if isinstance(found, dict) else 0
+    if not n:
+        return None
+    return (f"Not counted: {_count(n, 'asset')} only deleted sources read (removed from scope; listed in D12 section G "
+            "and named in D1).")
+
+
 def _issue_breakdown(view: TeamCbomView) -> tuple[int, str]:
     """``(issue assets, "Critical 1 · High 23 · Medium 5 · Low 0")``; unknown impacts as Other."""
     known = [int(view.issue_by_impact.get(level, 0) or 0) for level in IMPACT_LEVELS]
@@ -819,6 +836,16 @@ def _issue_breakdown(view: TeamCbomView) -> tuple[int, str]:
     if total > sum(known):
         parts.append(f"Other {total - sum(known)}")
     return total, " \u00b7 ".join(parts)
+
+
+def issue_counts_text(view: TeamCbomView) -> str:
+    """"812 distinct issue assets (942 occurrences)": the ONE wording of the two counts (staging QA2 Q1-07). An issue
+    occurrence is a current asset row with a finding (``issue_by_impact``, the grade input); a distinct issue asset is
+    one asset however many sources observed it (``issue_assets``, the risk table)."""
+    distinct = len(issue_assets(view))
+    occurrences, _breakdown = _issue_breakdown(view)
+    return (f"{distinct} distinct issue asset{'' if distinct == 1 else 's'} "
+            f"({occurrences} occurrence{'' if occurrences == 1 else 's'})")
 
 
 def _worst_tone(view: TeamCbomView) -> str:
@@ -864,7 +891,7 @@ def _quantum_sentence(view: TeamCbomView) -> str:
 def _scope_counts(view: TeamCbomView) -> tuple[int, int, int]:
     """(code sources, code scans, CBOM Sources collections). ``merge_collections`` adds each collection to
     ``view.sources`` and to ``view.included``, so the code part is what is left."""
-    collections = len(view.collections or ())
+    collections = len(current_collections(view))  # a deleted source's collection is not counted (QA2 Q1-01)
     code_sources = sum(1 for source in view.sources if source.kind != SOURCE_SOURCES)
     return code_sources, max(int(view.included) - collections, 0), collections
 
@@ -902,7 +929,7 @@ def _summary_paragraphs(view: TeamCbomView, posture: PostureGrade) -> list[str]:
         (
             f"{scope_sentence(view)}, the platform inventoried "
             f"{_count(view.asset_occurrences, 'cryptographic asset occurrence')}. Findings were "
-            f"raised on {total} of them: {findings}."
+            f"raised on {total} of them: {issue_counts_text(view)}; occurrences by impact: {findings}."
         ),
         (
             f"Posture grade {posture.grade} ({posture.band}, score {posture.score} of "
@@ -915,6 +942,12 @@ def _summary_paragraphs(view: TeamCbomView, posture: PostureGrade) -> list[str]:
     if line is not None:
         paragraphs.append(line)
     paragraphs.append(population.reconciliation_line(view))
+    removed = removed_collections(view)
+    if removed:  # staging QA2 Q1-01: the deleted sources are named, never counted
+        names = ", ".join(c.label for c in sorted(removed, key=lambda c: c.label.casefold())[:5])
+        more = f" and {len(removed) - 5} more" if len(removed) > 5 else ""
+        paragraphs.append(f"Removed from scope and not counted in any figure of this report: the last collections of "
+                          f"{_count(len(removed), 'deleted source')} ({names}{more}; listed in D1).")
     return paragraphs
 
 
@@ -938,7 +971,8 @@ def _summary_section(view: TeamCbomView, posture: PostureGrade, styles: Styles, 
                             str(view.asset_occurrences),
                             "current occurrences across all sources",
                         ),
-                        ("Issue assets", str(total), breakdown, _worst_tone(view)),
+                        ("Issue assets", str(len(issue_assets(view))),
+                         f"distinct ({total} occurrences): {breakdown}", _worst_tone(view)),
                     ],
                     rest,
                     max_per_row=2,
@@ -1019,11 +1053,11 @@ def _risks_section(view: TeamCbomView, styles: Styles):
     )
     shown = min(len(issues), TOP_RISKS)
     if len(issues) > shown:
-        lead = f"Top {shown} of {len(issues)} issue assets"
+        lead = f"Top {shown} of {issue_counts_text(view)}"
     elif len(issues) == 1:
-        lead = "The only issue asset is listed"
+        lead = f"The only issue asset is listed ({issue_counts_text(view)})"
     else:
-        lead = f"All {len(issues)} issue assets are listed"
+        lead = f"All {issue_counts_text(view)} are listed"
     return [*story, _gap(3), _para(f"{lead}, {RISKS_ORDER_NOTE}.", styles, "muted")]
 
 
@@ -1050,11 +1084,17 @@ def _quantum_section(view: TeamCbomView, styles: Styles, w: float):
     if rows is None:
         return [*story, _para(QGRADE_NOT_LOADED, styles, "muted")]
     total = int((_register_summary(view) or {}).get("total", 0) or 0)
-    story += [_para(QGRADE_LEAD.format(total=total), styles), _gap(3),
+    story += [_para(QGRADE_LEAD.format(total=total, mosca=authored.mosca_basis_text(view)), styles), _gap(3),
               dense_table(["Quantum risk grade", "Assets"], rows, [400, 140])]
+    meaning = authored.mosca_meaning_text(view)  # X, Y, Z, the rule and the defaults' sources (#497 m2)
+    if meaning:
+        story += [_gap(3), _para(meaning, styles, "muted")]
     reasons = q0_reason_text(view)
     if reasons:
         story += [_gap(3), _para(reasons, styles, "muted")]
+    removed = removed_register_text(view)
+    if removed:
+        story += [_gap(2), _para(removed, styles, "muted")]
     return story
 
 
@@ -1265,6 +1305,10 @@ def _grade_appendix(view: TeamCbomView, posture: PostureGrade, styles: Styles):
         _para(authored.GRADE_FORMULA, styles),
         _gap(3),
         _para(_grade_input_text(view), styles),
+        _gap(3),
+        _para(f"This report holds {issue_counts_text(view)}; the table counts the occurrences"
+              + (", plus the resources with configuration posture findings." if posture_active(view) else "."),
+              styles, "muted"),
         _gap(6),
     ]
     line = configuration_posture_line(view)
@@ -1286,7 +1330,7 @@ def _grade_appendix(view: TeamCbomView, posture: PostureGrade, styles: Styles):
             band=posture.band,
         )
         story += [
-            dense_table(["Impact", "Issue assets", "Weight", "Points"], rows, [150, 130, 130, 130]),
+            dense_table(["Impact", "Issue occurrences", "Weight", "Points"], rows, [150, 130, 130, 130]),
             _gap(4),
             _para(worked, styles),
         ]

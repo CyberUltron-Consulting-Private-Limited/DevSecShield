@@ -409,11 +409,25 @@ def _cert_analysis(facts: Mapping[str, Any]) -> tuple[tuple[LinkKey, ...], dict[
         return links, _attr_sets(attrs)
 
 
-def _cert_analysis_of(fields: tuple[Any, ...]) -> tuple[tuple[LinkKey, ...], dict[str, frozenset[str]]]:
+def _name_text(raw: Any, raw_names: bool) -> Any:
+    """A subject or issuer as its DN: an attribute map (AWS ``ASN1Subject``, a dict or its JSON text) is read as the
+    RFC 4514 DN it denotes (``identity.mapping_dn``), so the spelling a collector used never changes the key (#497
+    review M1: ``{"CommonName": ...}`` and ``CN=...`` were two keys). ``raw_names``: as before that rule (only the
+    key migration reads it). No KEY_VERSION bump: every DN-text name keys exactly as before."""
+    if raw_names or not (isinstance(raw, Mapping) or (isinstance(raw, str) and raw.lstrip()[:1] == "{")):
+        return raw
+    from backend.utilities.cbom_sources.identity import mapping_dn
+
+    return mapping_dn(raw) or raw
+
+
+def _cert_analysis_of(fields: tuple[Any, ...], raw_names: bool = False
+                      ) -> tuple[tuple[LinkKey, ...], dict[str, frozenset[str]]]:
     facts = dict(zip(_CERT_FIELDS, fields))
     out: list[LinkKey] = []
     after = utc_second(facts.get("not_after"))
-    subject_raw, issuer_raw = facts.get("subject"), facts.get("issuer")
+    subject_raw = _name_text(facts.get("subject"), raw_names)
+    issuer_raw = _name_text(facts.get("issuer"), raw_names)
     subject_dn, subject_cn, subject_is_dn = _dn_forms(subject_raw if isinstance(subject_raw, str) else str(subject_raw or ""))
     issuer_dn, issuer_cn, issuer_is_dn = _dn_forms(issuer_raw if isinstance(issuer_raw, str) else str(issuer_raw or ""))
     serial = norm_serial(facts.get("serial") if facts.get("serial") not in (None, "") else facts.get("serial_number"))
@@ -478,6 +492,18 @@ def asset_key(obj: Any) -> str | None | NotCorrelated:
     """The cross-source key of one observation (pure). See the module docstring for the three kinds of answer."""
     obs = observation(obj)
     links = link_keys(obs)
+    if links:
+        return min(links, key=lambda k: _RANK[k.basis]).key
+    return NOT_CORRELATED if _requires_correlation(obs) else None
+
+
+def legacy_asset_key(obj: Any) -> str | None | NotCorrelated:
+    """``asset_key`` as it was before an attribute-map name was read as its DN (#497 review M1): the stored keys of
+    rows written then. Only the key migration (``identity_migration``) reads it."""
+    obs = observation(obj)
+    if not is_certificate(obs):
+        return asset_key(obs)
+    links, _attrs = _cert_analysis_of(tuple(obs.facts.get(name) for name in _CERT_FIELDS), raw_names=True)
     if links:
         return min(links, key=lambda k: _RANK[k.basis]).key
     return NOT_CORRELATED if _requires_correlation(obs) else None
