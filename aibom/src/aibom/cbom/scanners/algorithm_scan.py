@@ -223,8 +223,9 @@ def _detect_assets(
         at_line: dict[tuple[int, str], str] = {}  # (line, key) -> display name, to find a composite
         inner: list[tuple[_Asset, int, str, str | None]] = []
         found: list[dict[str, Any]] = []
+        same_lang = reads.get(lang or "")
         dets = detect_crypto(
-            text, lang, external, config_evidence=found, project_reads=reads.get(lang)
+            text, lang, external, config_evidence=found, project_reads=same_lang
         )
         if config_evidence is not None:
             config_evidence.extend({"location": rel, **e} for e in found)
