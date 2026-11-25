@@ -442,8 +442,10 @@ def scope_corrections(session: Session, team_id: int, *, run_id: int | None = No
                       job_id: int | None = None) -> dict[int, tuple[int | None, bool | None, bool | None]]:
     """``verdict_corrections`` of one team / run / job scope, kept in a small per-process cache (review 6060527885
     m1: the asset list does not re-classify every symmetric row on each request). Stored assets are written once and
-    never changed, so the key is the scope, its candidate rows' count and highest id, and the grade model (which
-    hashes this module, so a rule change is a new key)."""
+    never changed, so the key is the scope, its candidate rows' count, highest id, newest write time and job-id sum,
+    and the grade model (which hashes this module, so a rule change is a new key). The write time and the job sum make
+    a reused id (SQLite without AUTOINCREMENT gives a deleted highest id to the next row) a new key (review
+    6061787002)."""
     from backend.utilities.cbom_sources import qgrade as QG
 
     conditions = [CbomCollectedAsset.team_id == team_id]
@@ -451,10 +453,13 @@ def scope_corrections(session: Session, team_id: int, *, run_id: int | None = No
         conditions.append(CbomCollectedAsset.run_id == run_id)
     if job_id is not None:
         conditions.append(CbomCollectedAsset.job_id == job_id)
-    count, top = session.exec(select(func.count(), func.max(CbomCollectedAsset.id)).where(
+    count, top, newest, jobs = session.exec(select(
+            func.count(), func.max(CbomCollectedAsset.id), func.max(CbomCollectedAsset.created_at),
+            func.sum(CbomCollectedAsset.job_id)).where(
         *conditions, CbomCollectedAsset.quantum_vulnerable.is_not(None),  # type: ignore[union-attr]
         CbomCollectedAsset.asset_type.notin_(sorted(_NOT_SYMMETRIC_TYPES | {"coverage"})))).one()  # type: ignore[union-attr]
-    key = (team_id, run_id, job_id, int(count or 0), int(top or 0), QG.GRADE_MODEL_VERSION)
+    key = (team_id, run_id, job_id, int(count or 0), int(top or 0), str(newest), int(jobs or 0),
+           QG.GRADE_MODEL_VERSION)
     with _CORRECTIONS_LOCK:
         hit = _CORRECTIONS.get(key)
         if hit is not None:

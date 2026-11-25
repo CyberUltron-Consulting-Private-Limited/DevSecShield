@@ -920,11 +920,18 @@ def _present_removed(session: Session, team_id: int) -> int:
     """Register rows still ``present`` whose grade comes from a deleted source's last collection and that no later
     run has settled yet (so ``removed_from_scope`` does not hold them): in the register's total, not in the team view
     (the roll-up drops a deleted source's rows). The reconciliation names them, so its chain closes."""
+    from backend.new_models import CbomEstateObservation
+
     live = sa.select(CbomCollectionSource.source_uid).where(CbomCollectionSource.team_id == team_id,
                                                             CbomCollectionSource.source_uid.is_not(None))  # type: ignore[union-attr]
+    eo = CbomEstateObservation.__table__  # type: ignore[attr-defined]
+    # an asset a live source still reads is a view occurrence through that source (the certificate a deleted vault
+    # and a live Kubernetes source both read): it is not "in the total, not in the view" (review 6061787002 M1)
+    read_live = sa.exists(sa.select(eo.c.id).where(eo.c.team_id == _RT.c.team_id, eo.c.asset_key == _RT.c.item_key,
+                                                   eo.c.presence == "present", eo.c.source_ref.in_(live)))
     return int(session.execute(sa.select(sa.func.count()).select_from(_RT).where(
         _RT.c.team_id == team_id, _RT.c.presence == "present", _RT.c.source_ref.is_not(None),
-        _RT.c.source_ref.not_in(live), ~_removed_condition(team_id))).scalar_one())
+        _RT.c.source_ref.not_in(live), ~_removed_condition(team_id), ~read_live)).scalar_one())
 
 
 def _removed_presence(session: Session, team_id: int) -> dict[str, int]:

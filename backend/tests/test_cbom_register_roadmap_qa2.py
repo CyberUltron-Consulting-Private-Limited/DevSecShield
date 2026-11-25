@@ -1124,3 +1124,94 @@ def test_round3_n3_the_model_regrade_audit_row_has_a_readable_label(tmp_path):
         s.commit()
     (event,) = [e for e in R._audit_list(w.engine, 1, 50)["events"] if e["action"] == "register_model_regrade"]
     assert event["label"] == "Risk register re-graded under a new grade model"
+
+
+# ============================================================================ review 6061787002 (confirm review)
+def test_confirm_m1_a_certificate_a_live_source_still_reads_is_not_counted_twice(tmp_path, monkeypatch):
+    """M1: a live Kubernetes source and a vault both read one certificate; the vault also holds an RSA key. The vault
+    is deleted and no run has settled it yet. Only the vault's key is "in the register's total, not in the view"; the
+    certificate is a view occurrence through the live source. On 36ae25ef present_removed_sources was 2 and D1, D12,
+    D14 and the dashboard printed "Unexplained difference -1"."""
+    from backend.new_models import CbomCollectionSource
+    from backend.utilities.cbom_sources.collections_view import load_sources_result
+    from backend.utilities.dashboard import scan_list
+
+    w = World(_sqlite(tmp_path / "live-and-deleted.db"))
+    k8s, vault = w.source("kubernetes", "k8s-live"), w.source("vault", "old-vault")
+    shared = {**cert("pay.example.com:443", "ns/tls", **CERT_FACTS), "qv": True, "impact": "High",
+              "codes": ["WEAK_KEY_SIZE", "QUANTUM_VULNERABLE"]}
+    key = {"type": "private_key", "target": "vault", "location": "secret/rsa", "name": "rsa-key", "algorithm": "RSA",
+           "qv": True, "codes": ["QUANTUM_VULNERABLE"], "facts": {"key_alg": "RSA", "key_size": 2048}}
+    w.finalise(w.run({k8s: {"rows": [shared]}}))
+    w.finalise(w.run({vault: {"rows": [{**shared, "location": "pki/pay"}, key]}}))  # the later read grades the cert
+    with Session(w.engine) as s:  # removal.py: the jobs and rows are detached, the source row goes
+        s.execute(sa.update(CbomCollectionJob).where(CbomCollectionJob.source_id == vault).values(source_id=None))
+        s.execute(sa.update(CbomCollectedAsset).where(CbomCollectedAsset.source_id == vault).values(source_id=None))
+        s.execute(sa.delete(CbomCollectionSource).where(CbomCollectionSource.id == vault))
+        s.commit()
+    now = dt.datetime(2026, 11, 20, 9, tzinfo=UTC)
+    with Session(w.engine) as s:
+        summary = REG.summary(s, 1, now.replace(tzinfo=None))
+    assert summary["present_removed_sources"] == 1, summary["present_removed_sources"]  # the vault's key only
+    view = _view(w, now)
+    for slug in ("scope-baseline-register", "quantum-risk-register", "board-executive-report"):
+        assert "Unexplained" not in _text(slug, view), slug
+    monkeypatch.setattr(scan_list, "get_findings_for_scan_id", lambda **_kw: [])
+    with Session(w.engine) as s:
+        board = scan_list.generate_cbom_dashboard_data([], load_sources_result(s, 1, now), team_id=1,
+                                                       register_summary=summary, now=now)
+    assert not any("Unexplained" in step["text"] for step in board["population"]["steps"])
+
+
+def test_confirm_minor_the_run_list_classifies_each_run_once(tmp_path, monkeypatch):
+    """Minor: the Scans table column reads the per-run cached corrections; a second load re-classifies nothing (it
+    measured 3.3 s at 100k rows on PostgreSQL when it classified on every load)."""
+    from backend.utilities.cbom_sources import posture as P
+    from backend.utilities.cbom_sources import run_list as RL
+
+    w, run = _parity_team(tmp_path)
+    with Session(w.engine) as s:
+        first = RL.grouped_counts(s, 1, [run])[run]["risk_data"]["total_quantum_vulnerable"]
+        calls = []
+        real = P.verdict_corrections
+        monkeypatch.setattr(P, "verdict_corrections", lambda *a, **k: calls.append(1) or real(*a, **k))
+        second = RL.grouped_counts(s, 1, [run])[run]["risk_data"]["total_quantum_vulnerable"]
+    assert first == second and calls == []
+
+
+def test_confirm_nit_the_id_filter_has_stable_bind_names():
+    """Nit: the same filter shape binds the same parameter names on every request (SQLAlchemy's compiled cache)."""
+    from backend.utilities.cbom_sources import inventory as INV
+
+    def names(expr) -> list[str]:
+        return sorted(str(b.key) for b in sa.sql.visitors.iterate(expr)
+                      if isinstance(b, sa.sql.elements.BindParameter))
+
+    ids = list(range(1, 12_001))  # three chunks
+    assert names(INV._ids_in(ids, "away")) == names(INV._ids_in(ids, "away")) == [
+        "zs_away_ids_0", "zs_away_ids_1", "zs_away_ids_2"]
+
+
+def test_confirm_nit_a_reused_sqlite_id_is_not_served_from_the_cache(tmp_path):
+    """Nit: SQLite gives a deleted highest id to the next row. A symmetric key replaced by an RSA key under the same id
+    (same count, same highest id) must not reuse the cached corrections."""
+    from backend.utilities.cbom_sources import posture as P
+
+    w = World(_sqlite(tmp_path / "reuse.db"))
+    aws = w.source("aws_account", "aws-prod")
+    row = {"type": "managed_key", "target": "arn:k/1", "location": "kms", "name": "aes", "algorithm": "AES",
+           "qv": True, "codes": ["QUANTUM_VULNERABLE"], "facts": {"key_size": 256}}
+    run = w.run({aws: {"rows": [row]}})
+    with Session(w.engine) as s:
+        first = P.scope_corrections(s, 1, run_id=run)
+        (aid,) = first
+        old = s.get(CbomCollectedAsset, aid)
+        values = {c: getattr(old, c) for c in ("team_id", "run_id", "source_id", "attempt", "asset_key", "cdx_type",
+                                                "target", "location", "facts")}
+        s.delete(old)
+        s.commit()
+        s.add(CbomCollectedAsset(**values, id=aid, job_id=old.job_id, asset_type="managed_key", name="rsa",
+                                 algorithm="RSA_2048", quantum_vulnerable=True, finding_codes=["QUANTUM_VULNERABLE"],
+                                 created_at=old.created_at + dt.timedelta(minutes=1)))
+        s.commit()
+        assert P.scope_corrections(s, 1, run_id=run) == {}  # the RSA key keeps its verdict: nothing to correct

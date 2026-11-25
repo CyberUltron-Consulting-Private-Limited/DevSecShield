@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import datetime as _dt
 import hashlib
-import itertools
 import json
 import re
 import uuid
@@ -72,19 +71,16 @@ def changed_today(session: Session, scope, now: _dt.datetime) -> dict[int, dict[
 _ID_CHUNK = 5_000
 
 
-def _ids_in(ids: list[int]):
+def _ids_in(ids: list[int], role: str):
     """``id IN (...)`` over any number of asset ids without one bind parameter per id (review 6060527885 m1: PostgreSQL
-    caps a statement at 65,535 parameters, SQLite at its compile-time limit): the ids are integers this module read
-    from the database, rendered as literals, in chunks of ``_ID_CHUNK`` OR-ed together."""
-    parts = []
-    for start in range(0, len(ids), _ID_CHUNK):
-        chunk = [int(i) for i in ids[start:start + _ID_CHUNK]]
-        parts.append(CbomCollectedAsset.id.in_(  # type: ignore[union-attr]
-            bindparam(f"zs_ids_{next(_ID_NAMES)}", value=chunk, expanding=True, literal_execute=True)))
+    caps a statement at 65,535 parameters, SQLite at its compile-time limit): one expanding parameter per chunk of
+    ``_ID_CHUNK``, its integers rendered as literals at execution, OR-ed together. The parameter names depend only on
+    ``role`` and the chunk's position (review 6061787002: stable names, so SQLAlchemy's compiled cache hits)."""
+    parts = [CbomCollectedAsset.id.in_(  # type: ignore[union-attr]
+        bindparam(f"zs_{role}_ids_{n}", value=[int(i) for i in ids[start:start + _ID_CHUNK]], expanding=True,
+                  literal_execute=True))
+        for n, start in enumerate(range(0, len(ids), _ID_CHUNK))]
     return parts[0] if len(parts) == 1 else or_(*parts)
-
-
-_ID_NAMES = itertools.count(1)  # unique bind names within one statement (names only, never values)
 
 
 def _filtered(query, *, asset_type: str | None, impact: str | None, quantum: bool | None, text: str | None,
@@ -110,8 +106,8 @@ def _filtered(query, *, asset_type: str | None, impact: str | None, quantum: boo
         into = sorted(a for a, (_r, _old, new) in corrected.items() if new is quantum)
         stored = CbomCollectedAsset.quantum_vulnerable == quantum
         if away:
-            stored = and_(stored, ~_ids_in(away))
-        query = query.where(or_(stored, _ids_in(into)) if into else stored)
+            stored = and_(stored, ~_ids_in(away, "away"))
+        query = query.where(or_(stored, _ids_in(into, "into")) if into else stored)
     if source_id:
         query = query.where(CbomCollectedAsset.source_id == source_id)
     if text:
