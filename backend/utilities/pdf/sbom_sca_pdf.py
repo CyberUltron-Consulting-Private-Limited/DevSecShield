@@ -14,7 +14,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, TableStyle
 
-from backend.utilities.dashboard.risk_scale import average_risk_of
+from backend.utilities.dashboard.risk_scale import posture
 from backend.utilities.dashboard.sbom_rows import is_inventory_row, is_unverified_version
 from backend.utilities.pdf.report_context import ReportContext, details_note, join_parts
 from backend.utilities.pdf.report_branding import (
@@ -23,6 +23,7 @@ from backend.utilities.pdf.report_branding import (
     COLOR_WHITE,
     append_bom_compliance_sections,
     append_executive_summary,
+    compute_posture_risk_score,
     append_findings_catalog,
     build_finding_section,
     count_label,
@@ -513,8 +514,9 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         ):
             fixable_count += 1
 
-    # the app's one 0-10 scale (#35): the same number as the dashboards' Avg risk score card
-    avg_risk = average_risk_of(v.get("impact") for v in counted)
+    # the one 0-100 risk score (risk_scale.posture): the number, grade and words of the headline, the list row and the
+    # dashboard tile (it replaces the 0-10 average this row printed)
+    risk = posture(by_severity)
     styles = get_report_styles()
     scan_time = format_scan_duration(duration)
 
@@ -534,7 +536,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         ("Unverified version (not counted)", str(unverified)),
         ("Packages affected", str(len(unique_packages))),
         ("Likely fixable via upgrade/update", str(fixable_count)),
-        ("Average risk score (0–10)", f"{avg_risk:.1f}" if avg_risk is not None else "N/A"),
+        ("Risk score", f"{risk['score']} / 100 · grade {risk['grade']} · {risk['label']}"),
         ("Report generated", report_generated(long=True)),
     ]
     summary: List[Any] = []
@@ -549,6 +551,9 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         styles=styles,
         project_name="SBOM / SCA Dependencies",
         scan_time=scan_time,
+        # one headline formula for every BOM PDF: the engine's posture score with its worst-severity cap (the AI BOM
+        # and the CBOM use it too; staging QA Q2-01), not the uncapped compute_risk_score
+        risk_score_fn=compute_posture_risk_score,
         meta_chips=[
             # the strip holds 4 chips: a scan with matches on range-guessed versions says so first (review M2)
             ("Unverified version", f"{unverified} not counted") if unverified else ("Scan type", "SBOM / SCA"),

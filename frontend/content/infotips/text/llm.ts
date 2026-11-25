@@ -81,11 +81,11 @@ const TEXT = {
     why: "Only these scans contribute to the risk numbers on this page.",
     example: "5 scans succeeded.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:1619-1626 — weight/4*10 per finding, averaged
+  // src: backend/utilities/dashboard/scan_list.py:1658-1660, backend/utilities/dashboard/risk_scale.py:76-95, frontend/utils/riskPosture.ts:22-28, frontend/app/[team_id]/llm/page.tsx:304-307 — risk_scale.posture over the findings of successful LLM scans
   "llm.kpi.avg_risk": {
-    what: "Average over all findings of successful LLM scans, 0 to 10: Critical counts 10, High 7.5, Medium 5, Low 2.5.",
-    why: "One number to compare model risk over time.",
-    example: "One Critical and one Low: 6.3.",
+    what: "The one risk score over all findings of successful LLM scans, as on each scan's row, results page and PDF: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), capped by the worst severity (no Critical: 69 at most, no High either: 49, Low only: 29). Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+.",
+    why: "One number and grade to compare model risk over time, as every product shows it.",
+    example: "One Critical and one Low finding: 4 × 11 = 44, grade C (Elevated risk).",
   },
   // src: backend/utilities/dashboard/scan_list.py:1564-1567, backend/utilities/dashboard/scan_list.py:1617-1618 — findings of successful scans
   "llm.kpi.vulns": {
@@ -177,11 +177,11 @@ const TEXT = {
     why: "Shows at a glance how serious this scan's findings are.",
     example: "1 red, 0 orange, 3 amber, 2 blue.",
   },
-  // src: backend/utilities/db/scan_list_item.py:335-341 — 0-10 weighted per scan
+  // src: backend/utilities/db/scan_list_item.py:371,563-567, backend/utilities/dashboard/risk_scale.py:76-95, frontend/utils/riskPosture.ts:22-28, frontend/app/[team_id]/llm/page.tsx:115-118,928 — the row's risk_posture
   "llm.table.risk": {
-    what: "This scan's severity-weighted average, 0 to 10: Critical 4, High 3, Medium 2, Low 1, averaged over its findings, divided by 4 and multiplied by 10.",
-    why: "Lets you compare scans by overall severity.",
-    example: "1 Critical and 1 Medium: (4+2)/2 = 3, so 7.5.",
+    what: "This scan's one risk score and grade, as on its results page and PDF: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), capped by the worst severity (no Critical: 69 at most, no High either: 49, Low only: 29). Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+. Empty (—) when the scan did not succeed.",
+    why: "Lets you compare scans by overall risk on the scale every product uses.",
+    example: "1 Critical and 1 Medium finding: 4 × 12 = 48, grade C, shown 48 · C.",
   },
 } as const satisfies TipAreaText;
 

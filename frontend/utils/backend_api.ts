@@ -7,6 +7,7 @@ import { toast } from "@/utils/toast";
 import { readBlobErrorDetail, saveBlob } from "@/utils/download";
 import { toQuery, type ReportOptions, type ReportScanType } from "@/utils/reportOptions";
 import { checkLogoFile } from "@/utils/teamBranding";
+import type { RiskPosture } from "@/utils/riskPosture";
 
 
 // -------------------------------------------------------------- Start scan payload types (matches backend schemas) --------------------------------------------------------------
@@ -127,6 +128,8 @@ export interface SastConversation {
     app_lang?: string | null
     /** Weighted sum (critical*4 + high*3 + medium*2 + low*1); use with risk_data for 0–10 score */
     risk_score?: number | null
+    /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
+    risk_posture?: RiskPosture | null
     code_coverage?: number | null
     /** github, gitlab, bitbucket, zip_file */
     scan_type?: string | null
@@ -152,6 +155,8 @@ export interface TopRepoByRiskItem {
     zip_file_used: boolean
     issues: number
     risk_score: number
+    /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
+    risk_posture?: RiskPosture | null
     trend: string
     language: string
 }
@@ -165,6 +170,8 @@ export interface ScanListDashboardData {
     /** Pre-computed by backend when available */
     risk_totals?: { severity: string; count: number }[]
     average_risk_score?: number
+    /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
+    risk_posture?: RiskPosture | null
     total_issues?: number
     critical_count?: number
     owasp_by_category?: { category: string; count: number }[]
@@ -251,6 +258,8 @@ export interface SastDashboardData {
   remediation_metrics?: SastRemediationMetrics;
   policy_violations?: Record<string, number>;
   risk_scores_per_finding?: Record<string, number>;
+  /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
+  risk_posture?: RiskPosture | null;
 }
 
 /** SAST scan metadata from backend get_scan_metadata (SAST branch) */
@@ -353,6 +362,8 @@ export interface SbomScanDashboardData {
     total_license_risks: number
     total_high_risk_licenses: number
     average_risk_score: number | null
+    /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
+    risk_posture?: RiskPosture | null
     total_reachable_issues: number
     /** matches on a version guessed from a manifest range: listed, not counted (review 6028132826 M2) */
     total_unverified_version_findings?: number
@@ -583,6 +594,8 @@ export {
 export interface LLMCardData {
     total_scans: number
     average_risk_score: number
+    /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
+    risk_posture?: RiskPosture | null
     total_critical_vulnerabilities: number
     total_vulnerabilities: number
     owasp_compliance_score: number
@@ -632,6 +645,8 @@ export interface LLMScanListItem {
     info?: ScanInfoField | null
     risk_data?: ScanRiskData | null
     average_risk_score?: number | null
+    /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
+    risk_posture?: RiskPosture | null
     model_type?: string | null
     model_name?: string | null
     attack_iterations?: number | null
@@ -895,6 +910,8 @@ export interface LLMDashboardData {
         total_vulnerabilities_found: number
         pass_rate: number
         risk_score: number
+        /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
+        risk_posture?: RiskPosture | null
         scan_duration: number
         policy_violations: number
     }
@@ -1743,6 +1760,8 @@ export interface SCASBOMConversation {
     zip_file_used?: boolean | null
     branch?: string | null
     average_risk_score?: number | null
+    /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
+    risk_posture?: RiskPosture | null
 }
 
 /** Card counts returned by list SBOM/SCA scans (same shape as SastListCardData) */
@@ -1788,6 +1807,8 @@ export interface SBOMSCADashboardData {
         total_license_risks: number
         total_high_risk_licenses: number
         average_risk_score: number | null
+        /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
+        risk_posture?: RiskPosture | null
         total_reachable_issues: number
         total_unverified_version_findings?: number
     }
@@ -3420,6 +3441,8 @@ export interface DASTListItem {
     risk_data: { total_critical: number; total_high: number; total_medium: number; total_low: number }
     target_url: string | null
     average_risk_score: number
+    /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
+    risk_posture?: RiskPosture | null
     urls_scanned: number
     coverage_percentage: number
 }
@@ -3433,6 +3456,8 @@ export interface DASTListDashboardData {
         total_medium_issues: number
         total_low_issues: number
         average_risk_score: number
+        /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
+        risk_posture?: RiskPosture | null
     }
     severity_distribution: { critical: number; high: number; medium: number; low: number }
     issues_over_time: Record<string, { critical: number; high: number; medium: number; low: number }>
@@ -3456,6 +3481,8 @@ export interface DASTSingleScanDashboard {
         total_medium_issues: number
         total_low_issues: number
         average_risk_score: number
+        /** the one 0-100 risk score, grade and words (backend risk_scale.posture; utils/riskPosture.ts); absent: older backend */
+        risk_posture?: RiskPosture | null
         urls_scanned: number
         coverage_percentage: number
     }

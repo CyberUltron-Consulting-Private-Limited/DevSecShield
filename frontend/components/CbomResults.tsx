@@ -73,6 +73,7 @@ import {
 } from "@/components/cbom/CbomCryptoCharts";
 import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRollup";
 import { CertHygieneSection } from "@/components/cbom/certificates/CertHygiene";
+import { bindingCompliance, ComplianceApplicabilityContext, type ComplianceApplicability } from "@/components/compliance/teamApplicability";
 import { CodeChanges } from "@/components/cbom/sources/ChangesPanel";
 import { CodeWavesPanel } from "@/components/cbom/sources/WavesControls";
 import { CertInLanePosture } from "@/components/certin/CertInLanePosture";
@@ -558,6 +559,11 @@ export default function CbomResults({
     return g && Array.isArray(g.nodes) ? g : null;
   }, [data, scanMetadata]);
 
+  // The team's view of the compliance frameworks (backend bom_applicability; absent on a Sources run and on an older
+  // backend: every framework and the pinned chips, as before).
+  const cbomApplicability = (scanMetadata as { compliance_applicability?: ComplianceApplicability | null } | null)
+    ?.compliance_applicability ?? null;
+
   // Tri-state compliance matrix (F3). Same source precedence as the
   // distributions/graph — present only on reconciled aibom-lane scans; the
   // matrix renders only when it carries ≥1 framework object.
@@ -565,8 +571,9 @@ export default function CbomResults({
     const fromData = (data as Record<string, unknown> | null)?.cbom_compliance;
     const fromMeta = (scanMetadata as Record<string, unknown> | null)?.cbom_compliance;
     const c = (fromData ?? fromMeta) as CbomCompliance | undefined;
-    return c && typeof c === "object" ? c : null;
-  }, [data, scanMetadata]);
+    // only the frameworks that bind the team (server compliance_applicability), here and in the compliance mapping
+    return c && typeof c === "object" ? bindingCompliance(c, cbomApplicability) ?? null : null;
+  }, [data, scanMetadata, cbomApplicability]);
 
   // Compliance mapping (#270): one view over the tri-state checks (code scans and runs) and, for a run, the knowledge
   // base clauses its findings touch; every asset count drills into the findings table.
@@ -919,6 +926,7 @@ export default function CbomResults({
           )}
           {/* Crypto-asset charts (aibom CBOM lane) */}
           {cryptoDistributions && (
+            <ComplianceApplicabilityContext.Provider value={cbomApplicability}>
             <CbomCryptoCharts
               distributions={cryptoDistributions}
               graph={cryptoGraph}
@@ -932,6 +940,7 @@ export default function CbomResults({
               showCodeHeatmap
               readinessScope="code"
             />
+            </ComplianceApplicabilityContext.Provider>
           )}
           {/* the code scan's changes and waves: never on a run (they read and write code scan #<id>, and a run's id is not one) */}
           {!run && cryptoDistributions && Number.isFinite(tid) && tid > 0 && Number.isFinite(sid) && sid > 0 && (

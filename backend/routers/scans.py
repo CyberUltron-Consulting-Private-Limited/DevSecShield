@@ -21,6 +21,7 @@ from backend.get_db import get_db, get_mongo_client_db
 from backend.mongo_models import ActiveContextLog, MessageLog
 from backend.new_models import Scan
 from backend.utilities.dashboard.scan_metadata import get_scan_metadata
+from backend.utilities.compliance import bom_applicability
 from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
 # from backend.utilities.celery.celery_connection import get_status_and_update_db
 from backend.utilities.db.functions import get_messages_from_scan, return_scan_list_for_type, update_status_of_scan_in_main_db 
@@ -460,6 +461,8 @@ async def get_scan(
                     # the rows every backend counter reads (cbom_metrics: the PDF, the scan list): the page's
                     # readiness gauge counts them by the same rule (lab UI r1 F3)
                     scan_result = [page_row(row) for row in scan_result]
+        # the CBOM / SBOM compliance matrix shows the frameworks that bind the team (bom_applicability)
+        scan_metadata = bom_applicability.with_applicability(type, scan_metadata, engine, team_id)
         data = {
                 "title": scan.title,
                 "scan_metadata": scan_metadata,

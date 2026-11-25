@@ -184,10 +184,13 @@ def test_results_dashboard_without_a_vulnerability_has_no_average(monkeypatch: p
 
 @pytest.mark.parametrize("source", ["frontend/components/SbomResults.tsx", "frontend/app/[team_id]/sbom_sca/page.tsx"])
 def test_the_avg_risk_cards_show_a_dash_without_a_vulnerability(source):
-    """Both Avg risk score cards (results page, list dashboard) show the backend's None as "—", explained on hover."""
+    """Both Risk score cards (results page, list dashboard) show the one 0-100 score (risk_posture) through the shared
+    util, which writes "—" when the backend sent none. A successful scan without a known vulnerability has a score:
+    0 · A (Low risk), as on its row and in its PDF (the 0-10 average_risk_score stays None on the API, #46)."""
     text = (REPO / source).read_text(encoding="utf-8")
-    assert re.search(r'title=\{card\.average_risk_score == null \? "No known vulnerabilities" : undefined\}>'
-                     r'\{card\.average_risk_score == null \? "—" : ', text), source
+    assert re.search(r"\{riskScoreText\(postureOf\(card\)\)\}", text), source
+    util = (REPO / "frontend" / "utils" / "riskPosture.ts").read_text(encoding="utf-8")
+    assert 'return p ? `${p.score} · ${p.grade}` : "—";' in util
 
 
 # ------------------------------------------------------------------------------------------------ stored findings
@@ -282,7 +285,7 @@ def test_pdf_counts_vulnerabilities_and_lists_the_other_packages(monkeypatch: py
 
     assert seen["overview"]["Total vulnerabilities"] == "1"
     assert seen["overview"]["Packages affected"] == "1"
-    assert seen["overview"]["Average risk score (0–10)"] == "7.5"  # one High on the app's 0-10 scale (#35)
+    assert seen["overview"]["Risk score"] == "20 / 100 · grade B · Moderate risk"  # one High (risk_scale.posture)
     assert seen["severity"] == {"High": 1}
     assert seen["catalog"] == 1  # the findings catalog and Detailed Findings: the vulnerability only
     text = _pdf_haystack(str(out))

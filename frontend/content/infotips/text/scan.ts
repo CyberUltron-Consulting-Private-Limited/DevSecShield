@@ -111,11 +111,11 @@ const TEXT = {
     why: "Lets you compare scans by overall severity.",
     example: "1 High and 1 Low finding: (7.5 + 2.5) / 2 = 5.",
   },
-  // src: frontend/app/[team_id]/sbom_sca/page.tsx:118-125,818, frontend/app/[team_id]/iac/page.tsx:128-135,838, frontend/app/[team_id]/dast/page.tsx:120-127,766, frontend/app/[team_id]/ai_bom/page.tsx:114-121,719, frontend/app/[team_id]/llm/page.tsx:123-130,760, frontend/app/[team_id]/cbom/page.tsx:120-127,928, backend/utilities/db/scan_list_item.py:556-559, backend/utilities/dashboard/risk_scale.py:16-17 — tiers on the Risk score column, which is 0-10 on every list (#35); a null score matches no tier
+  // src: frontend/utils/riskPosture.ts:40-56, frontend/app/[team_id]/sbom_sca/page.tsx:120-122,828, frontend/app/[team_id]/dast/page.tsx:122-124,764, frontend/app/[team_id]/sast/page.tsx:108-110,1270, frontend/app/[team_id]/llm/page.tsx:120-122,764, frontend/app/[team_id]/iac/page.tsx:128-135,838, frontend/app/[team_id]/ai_bom/page.tsx:114-121,719, backend/utilities/dashboard/risk_scale.py:16-17 — grade-band tiers on the 0-100 lists, 0-10 tiers on the lists that still show a decimal; a null score matches no tier
   "scan.filter.risk": {
-    what: "Shows only scans whose Risk score (0 to 10) is in a tier: Critical 9 or more, High 7 to 9, Medium 5 to 7, Low under 5. A scan without a score (shown as a dash) is hidden by any tier.",
+    what: "Shows only scans whose Risk score is in a tier. A score shown with a grade (56 · D: SBOM, DAST, SAST, LLM) is 0-100 and the tiers are grades: Critical = F (70+), High = D (50–69), Medium = C or B (15–49), Low = A (under 15). A decimal score (7.5) is 0-10: Critical 9+, High 7–9, Medium 5–7, Low under 5. A scan without a score (a dash) is hidden by any tier.",
     why: "Focuses the list on the riskiest scans.",
-    example: "High keeps a scan scored 7.5 (mostly High findings) and hides one scored 9.4 (mostly Critical).",
+    example: "On the SBOM list, High keeps a scan scored 69 · D (15 High vulnerabilities) and hides one scored 80 · F (2 Critical).",
   },
   // src: frontend/app/[team_id]/sbom_sca/page.tsx:699-712, frontend/app/[team_id]/iac/page.tsx:719-732, frontend/app/[team_id]/dast/page.tsx:637-650, frontend/app/[team_id]/ai_bom/page.tsx:601-614, frontend/app/[team_id]/llm/page.tsx:568-581, frontend/app/[team_id]/cbom/page.tsx:668-681,971 — sorts the loaded rows; missing values count as -1
   "scan.filter.sort": {

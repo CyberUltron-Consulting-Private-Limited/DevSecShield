@@ -246,6 +246,8 @@ def generate_scan_dashboard(
                 "remediation_metrics": remediation_metrics,
                 "policy_violations": policy_violations,
                 "risk_scores_per_finding": risk_scores_per_finding,
+                # the scan's one 0-100 risk score (risk_scale.posture), as its list row and its PDF
+                **_risk_posture(risk_metrics),
             }
     
 
@@ -744,6 +746,9 @@ def generate_scan_dashboard(
                     "total_vulnerabilities_found": n_vulns,
                     "pass_rate": pass_rate,
                     "risk_score": risk_score,
+                    # the scan's one 0-100 risk score (risk_scale.posture), as its list row and its PDF; risk_score
+                    # above keeps its 0-10 meaning for older clients
+                    **_risk_posture(vulnerability_breakdown),
                     "scan_duration": duration_of_scan,
                     "policy_violations": policy_violations,
                 },
@@ -950,6 +955,8 @@ def generate_scan_dashboard(
                     "total_license_risks": total_license_risks,
                     "total_high_risk_licenses": total_high_risk_licenses,
                     "average_risk_score": average_risk_score,
+                    # the scan's one 0-100 risk score over its known vulnerabilities (risk_scale.posture)
+                    **_risk_posture(severity_counts),
                     "total_reachable_issues": total_reachable,
                     "total_unverified_version_findings": len(unverified),
                 },
@@ -1188,6 +1195,8 @@ def generate_scan_dashboard(
                     "total_medium_issues": total_medium,
                     "total_low_issues": total_low,
                     "average_risk_score": average_risk_score,
+                    # the scan's one 0-100 risk score (risk_scale.posture), as its list row and its PDF
+                    **_risk_posture(severity_counts),
                     "urls_scanned": urls_scanned,
                     "coverage_percentage": coverage_percentage,
                 },
@@ -1458,3 +1467,10 @@ def generate_scan_dashboard(
     except Exception as e:
         console.print(f"Error in generate_scan_dashboard: {e}",style="bold red")
         raise e
+
+
+def _risk_posture(impact_counts) -> dict:
+    """``{"risk_posture": ...}``: the one 0-100 risk score of these counts per impact (``risk_scale.posture``)."""
+    from backend.utilities.dashboard import risk_scale
+
+    return risk_scale.posture_field(dict(impact_counts or {}))

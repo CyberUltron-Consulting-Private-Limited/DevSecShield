@@ -51,6 +51,7 @@ import {
 } from "@/components/ui/chart";
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, RadialBarChart, RadialBar, PieChart, Pie, Cell, Bar, BarChart, XAxis, YAxis, CartesianGrid } from "recharts";
 import { RESULTS_HEADER } from "@/components/resultsHeaderLayout";
+import { postureOf, riskScoreHint, riskScoreText, riskTone } from "@/utils/riskPosture";
 
 // LLM Benchmark agent output: list of vulnerabilities (FinalLLMBenchmarkingVulnerabilities.vulnerabilities)
 // Schema: title, description, impact, owasp_top_10_llm, compliance_controls, suggested_fix
@@ -649,7 +650,10 @@ export default function LLMResults({ data, dashboard, findings, scanMetadata, co
               <Activity className="h-4 w-4 text-zinc-500 shrink-0" />
             </CardHeader>
             <CardContent className="px-4 pb-4 pt-0">
-              <p className="text-xl font-semibold tabular-nums truncate">{dashboardData.card_data.risk_score ?? "—"}</p>
+              {/* the scan's one risk score (0-100, grade, words), as its list row and its PDF; card_data.risk_score
+                  keeps its 0-10 value for older clients */}
+              <p className="text-xl font-semibold tabular-nums truncate" data-testid="llm-res-risk-score">{riskScoreText(postureOf(dashboardData.card_data))}</p>
+              {riskScoreHint(postureOf(dashboardData.card_data)) && <p className="text-[11px] text-zinc-500 truncate">{riskScoreHint(postureOf(dashboardData.card_data))}</p>}
             </CardContent>
           </Card>
           <Card className="border-zinc-200 dark:border-zinc-800 min-w-0 overflow-hidden py-4 gap-2">

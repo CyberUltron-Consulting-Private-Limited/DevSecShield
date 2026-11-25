@@ -30,6 +30,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
+import { RISK_TIER_LABELS, matchesRiskTier, postureOf, postureScore, riskScoreHint, riskScoreText, riskTone } from "@/utils/riskPosture";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, CheckCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, MinusCircle, Shield, AlertTriangle, Activity, BookOpen, Crosshair, ChevronDown, ArrowUpDown, Check, Filter, DollarSign, TrendingUp, TrendingDown } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { singleFlight } from "@/utils/single_flight";
@@ -83,7 +84,7 @@ import { IfAllowed } from "@/components/rbac/team-access";
 
 type ScanStatus = "pending" | "started" | "retry" | "failure" | "success" | "not_started" | "cancelled";
 
-/** Risk score tiers for filtering: Critical ≥9, High 7–9, Medium 5–7, Low <5 */
+/** Risk score tiers for filtering: on the 0-100 grade bands (utils/riskPosture.ts) */
 type RiskScoreFilter = "all" | "critical" | "high" | "medium" | "low";
 type TableSortBy =
   | "none"
@@ -112,19 +113,13 @@ const SORT_BY_LABELS: Record<TableSortBy, string> = {
   credits_asc: "Credits (low first)",
 };
 
+/** The scan's one 0-100 risk score (risk_posture), as its tile, its results page and its PDF; null: no score. */
 function getDisplayRiskScore(c: SCASBOMConversation): number | null {
-  if (c.average_risk_score == null) return null;
-  return Math.round(Math.min(10, Math.max(0, c.average_risk_score)) * 10) / 10;
+  return postureScore(c);
 }
 
 function matchesRiskScoreFilter(score: number | null, filter: RiskScoreFilter): boolean {
-  if (filter === "all") return true;
-  if (score == null) return false;
-  if (filter === "critical") return score >= 9;
-  if (filter === "high") return score >= 7 && score < 9;
-  if (filter === "medium") return score >= 5 && score < 7;
-  if (filter === "low") return score < 5;
-  return true;
+  return matchesRiskTier(score, filter);
 }
 
 // ─── Dashboard Tab ──────────────────────────────────────────────────────────────
@@ -282,12 +277,14 @@ function SBOMSCAScanListDashboard({ dashboardData }: { dashboardData: SBOMSCADas
         <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
           <CardContent className="p-0">
             <div className="flex flex-col items-start gap-2">
-              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${(card.average_risk_score ?? 0) >= 7 ? "bg-red-500/15 dark:bg-red-500/10" : (card.average_risk_score ?? 0) >= 5 ? "bg-amber-500/15 dark:bg-amber-500/10" : "bg-green-500/15 dark:bg-green-500/10"}`}>
-                <Activity className={`h-4 w-4 ${(card.average_risk_score ?? 0) >= 7 ? "text-red-500" : (card.average_risk_score ?? 0) >= 5 ? "text-amber-500" : "text-green-500"}`} />
+              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${riskTone(postureScore(card)).box}`}>
+                <Activity className={`h-4 w-4 ${riskTone(postureScore(card)).icon}`} />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Avg Risk Score <InfoTip id="sbom.kpi.avg_risk" /></p>
-                <p className="text-xl font-bold text-zinc-900 dark:text-white" title={card.average_risk_score == null ? "No known vulnerabilities" : undefined}>{card.average_risk_score == null ? "—" : card.average_risk_score.toFixed(1)}</p>
+                {/* the one risk score (0-100, grade, words) over the known vulnerabilities, as the rows and the PDF */}
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Risk score <InfoTip id="sbom.kpi.avg_risk" /></p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white" data-testid="sbom-kpi-risk-score">{riskScoreText(postureOf(card))}</p>
+                {riskScoreHint(postureOf(card)) && <p className="text-[11px] text-zinc-500">{riskScoreHint(postureOf(card))}</p>}
               </div>
             </div>
           </CardContent>
@@ -828,19 +825,19 @@ export default function SBOMSCAPage() {
                         </DropdownMenuItem>
                         <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("critical")}>
                           {riskScoreFilter === "critical" ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4 text-red-500" />}
-                          Critical (≥9)
+                          {RISK_TIER_LABELS.critical}
                         </DropdownMenuItem>
                         <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("high")}>
                           {riskScoreFilter === "high" ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4 text-orange-500" />}
-                          High (7–9)
+                          {RISK_TIER_LABELS.high}
                         </DropdownMenuItem>
                         <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("medium")}>
                           {riskScoreFilter === "medium" ? <Check className="h-4 w-4" /> : <Shield className="h-4 w-4 text-amber-500" />}
-                          Medium (5–7)
+                          {RISK_TIER_LABELS.medium}
                         </DropdownMenuItem>
                         <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("low")}>
                           {riskScoreFilter === "low" ? <Check className="h-4 w-4" /> : <Shield className="h-4 w-4 text-blue-500" />}
-                          Low (&lt;5)
+                          {RISK_TIER_LABELS.low}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -991,7 +988,7 @@ export default function SBOMSCAPage() {
                                 ) : "—"}
                               </TableCell>
                               <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm tabular-nums">
-                                {getDisplayRiskScore(conversation) != null ? getDisplayRiskScore(conversation) : "—"}
+                                {riskScoreText(postureOf(conversation))}
                               </TableCell>
                               <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm max-w-[160px]" title={conversation.repo_url ?? undefined}>
                                 {conversation.zip_file_used ? (

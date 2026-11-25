@@ -137,10 +137,10 @@ def _tier_on_page(page: str, score) -> str | None:
     return tiers[0]
 
 
+# The SBOM and DAST pages filter on the one 0-100 risk score since the cross-product score change
+# (test_the_sbom_and_dast_filters_use_the_one_score below); the IaC page keeps the 0-10 tiers.
 PAGES_WITH_A_FILTER = {
-    "sbom_sca": (sbom_scan, return_sbom_sca_list_item),
     "iac": (iac_scan, return_iac_list_item),
-    "dast": (dast_scan, return_dast_list_item),
 }
 # impacts of one scan -> the tier its Risk score must fall in (one finding counts Critical 10 ... Low 2.5)
 CASES = [
@@ -192,3 +192,40 @@ def test_a_scan_without_findings_keeps_0_on_iac_mcp_and_dast():
     assert return_mcp_list_item(mcp_scan([]))["average_risk_score"] == 0
     assert return_dast_list_item(dast_scan([]))["average_risk_score"] == 0
     assert return_sbom_sca_list_item(sbom_scan([]))["average_risk_score"] is None
+
+
+# the shared util's tiers (frontend/utils/riskPosture.ts matchesRiskTier), on the posture grade bands
+POSTURE_CASES = [
+    (["Critical", "Critical"], "critical"),  # 80 / F
+    (["High"] * 15, "high"),  # 69 / D (capped: no Critical)
+    (["Medium"] * 4, "medium"),  # 32 / C
+    (["Low"] * 7, "medium"),  # 28 / B
+    (["Low"] * 3, "low"),  # 12 / A
+]
+
+
+def _util_tiers() -> dict[str, tuple[float, float]]:
+    src = (REPO / "frontend" / "utils" / "riskPosture.ts").read_text(encoding="utf-8")
+    body = re.search(r"export function matchesRiskTier\(.*?\n\}", src, re.DOTALL)
+    assert body, "riskPosture.ts: matchesRiskTier not found; update this test"
+    num = r"(\d+)"
+    b = body.group(0)
+    crit = re.search(r'tier === "critical"\) return score >= ' + num, b)
+    high = re.search(r'tier === "high"\) return score >= ' + num + " && score < " + num, b)
+    med = re.search(r'tier === "medium"\) return score >= ' + num + " && score < " + num, b)
+    low = re.search(r"return score < " + num + ";", b)
+    assert crit and high and med and low, "matchesRiskTier changed shape; update this test"
+    return {"critical": (float(crit.group(1)), math.inf), "high": (float(high.group(1)), float(high.group(2))),
+            "medium": (float(med.group(1)), float(med.group(2))), "low": (-math.inf, float(low.group(1)))}
+
+
+@pytest.mark.parametrize("page,build,item_of", [("sbom_sca", sbom_scan, return_sbom_sca_list_item),
+                                                ("dast", dast_scan, return_dast_list_item)])
+def test_the_sbom_and_dast_filters_use_the_one_score(page, build, item_of):
+    src = _page_source(page)
+    assert "return matchesRiskTier(score, filter);" in src and "return postureScore(c);" in src, page
+    tiers = _util_tiers()
+    for impacts, tier in POSTURE_CASES:
+        score = item_of(build(impacts))["risk_posture"]["score"]
+        kept = [t for t, (lo, hi) in tiers.items() if lo <= score < hi]
+        assert kept == [tier], (page, impacts, score, kept)

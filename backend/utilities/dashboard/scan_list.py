@@ -8,6 +8,7 @@ from fastapi import HTTPException , status
 from backend.utilities.db.findings import get_findings_for_scan_id
 from backend.utilities.dashboard.remediation_metrics import get_remediation_metrics
 from backend.utilities.dashboard.finding_metrics import get_issue_status_metrics, get_mttr_per_day
+from backend.utilities.dashboard import risk_scale
 from backend.utilities.dashboard.sbom_license import (
     LICENSE_CATEGORIES,
     resolve_sbom_license_category,
@@ -299,6 +300,8 @@ def generate_dast_dashboard_data(scans: list[Scan]) -> dict:
         "total_medium_issues": total_medium,
         "total_low_issues": total_low,
         "average_risk_score": average_risk_score,
+        # the one 0-100 risk score over these findings (risk_scale.posture): the tile shows it, as the list rows
+        **risk_scale.posture_field(severity_counts, judged=bool(success_dast)),
     }
     SEVERITY_KEYS = ("critical", "high", "medium", "low")
     severity_distribution = {k: severity_counts.get(k, 0) for k in SEVERITY_KEYS}
@@ -771,6 +774,8 @@ def generate_sast_dashboard_data(scans: list[Scan]) -> dict:
                 "zip_file_used": bool(meta.get("zip_file_used")),
                 "issues": total_issues,
                 "risk_score": risk_score,
+                # the scan's one 0-100 risk score (risk_scale.posture); the list ranks the repos by it
+                **risk_scale.posture_field({"critical": c, "high": h, "medium": m, "low": l}),
                 "trend": "—",
                 "language": display_lang,
             })
@@ -841,7 +846,7 @@ def generate_sast_dashboard_data(scans: list[Scan]) -> dict:
     ]
 
     # top_repos_by_risk top 5
-    top_repos_by_risk = sorted(top_repos_candidates, key=lambda x: -x["risk_score"])[:5]
+    top_repos_by_risk = sorted(top_repos_candidates, key=lambda x: -x["risk_posture"]["score"])[:5]
 
     card_data = {
         "pending_scans": pending_scans,
@@ -864,6 +869,9 @@ def generate_sast_dashboard_data(scans: list[Scan]) -> dict:
         "risks_per_day": risks_per_day,
         "risk_totals": risk_totals,
         "average_risk_score": average_risk_score,
+        # the one 0-100 risk score over these findings (risk_scale.posture): the tile shows it, as the list rows
+        **risk_scale.posture_field({"critical": critical_t, "high": high_t, "medium": medium_t, "low": low_t},
+                                   judged=success_scans > 0),
         "total_issues": total_issues,
         "critical_count": critical_t,
         "owasp_by_category": owasp_by_category,
@@ -1090,6 +1098,8 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
         "total_license_risks": total_license_risks,
         "total_high_risk_licenses": total_high_license,
         "average_risk_score": average_risk_score,
+        # the one 0-100 risk score over the known vulnerabilities (risk_scale.posture): the tile shows it, as the rows
+        **risk_scale.posture_field(severity_counts, judged=any(s.scan_status == "success" for s in sbom_scans)),
         "total_reachable_issues": total_reachable,
         "total_unverified_version_findings": unverified_total,
     }
@@ -1646,6 +1656,8 @@ def generate_llm_dashboard_data(scans: list[Scan]) -> dict:
     card_data = {
         "total_scans": success_scans,
         "average_risk_score": average_risk_score,
+        # the one 0-100 risk score over these findings (risk_scale.posture): the tile shows it, as the list rows
+        **risk_scale.posture_field(risk_level_distribution, judged=success_scans > 0),
         "total_critical_vulnerabilities": total_critical,
         "total_vulnerabilities": total_vulns,
         "owasp_compliance_score": owasp_compliance_score,

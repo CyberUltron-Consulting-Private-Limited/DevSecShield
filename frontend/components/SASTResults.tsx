@@ -86,6 +86,7 @@ import { Progress } from "@/components/ui/progress";
 import { InfoTip } from "@/components/ui/info-tip";
 import { criticalFixedPct } from "@/components/cbom/remediationKpis";
 import { RESULTS_HEADER } from "@/components/resultsHeaderLayout";
+import { postureOf, riskScoreHint, riskScoreText, riskTone } from "@/utils/riskPosture";
 
 // Agent output format (from worker_sast_agent_results_testing.json)
 type OwaspOrComplianceItem = Record<string, string>;
@@ -268,9 +269,25 @@ function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
   const hasRiskScoresData = riskScoresAreaData.length > 0;
 
   const criticalCount = riskMetrics["Critical"] ?? 0;
+  const posture = postureOf(dashboard);
 
   return (
     <div className="space-y-6">
+      {/* the scan's one risk score (0-100, grade, words), as its list row and its PDF headline */}
+      {posture && (
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3" data-testid="sast-res-risk-score">
+          <CardContent className="p-0 flex items-center gap-3">
+            <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${riskTone(posture.score).box}`}>
+              <Shield className={`h-4 w-4 ${riskTone(posture.score).icon}`} />
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Risk score <InfoTip id="sast.table.risk" /></p>
+              <p className="text-xl font-bold text-zinc-900 dark:text-white tabular-nums">{riskScoreText(posture)}</p>
+              <p className="text-[11px] text-zinc-500">{riskScoreHint(posture)}</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
       {/* Row: Radial (OWASP) + Radar + CVEs area chart */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="border-zinc-200 dark:border-zinc-800">

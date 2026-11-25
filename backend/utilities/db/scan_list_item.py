@@ -79,7 +79,7 @@ def return_sast_list_item(scan : Scan) -> dict:
         "repo_url": scan.scan_metadata["repo_url"] if scan.scan_metadata and "repo_url" in scan.scan_metadata else None,
         "branch": scan.scan_metadata["branch"] if scan.scan_metadata and "branch" in scan.scan_metadata else None,
         "app_lang": scan.scan_metadata["app_lang"] if scan.scan_metadata and "app_lang" in scan.scan_metadata else None,
-        "risk_score": total_critical * 4 + total_high * 3 + total_medium * 2 + total_low * 1,
+        "risk_score": total_critical * 4 + total_high * 3 + total_medium * 2 + total_low * 1, **_posture(scan, total_critical, total_high, total_medium, total_low),
         "code_coverage": code_coverage,
         "scan_type": scan_type,
 
@@ -196,7 +196,7 @@ def return_sbom_sca_list_item(scan : Scan) -> dict:
         "repo_url": scan.scan_metadata["repo_url"] if scan.scan_metadata and "repo_url" in scan.scan_metadata else None,
         "zip_file_used": scan.scan_metadata["zip_file_used"] if scan.scan_metadata and "zip_file_used" in scan.scan_metadata else None,
         "branch": scan.scan_metadata["branch"] if scan.scan_metadata and "branch" in scan.scan_metadata else None, 
-        "average_risk_score" : average_risk_score,
+        "average_risk_score" : average_risk_score, **_posture(scan, total_critical, total_high, total_medium, total_low),
     }
 
 
@@ -368,7 +368,7 @@ def return_llm_list_item(scan : Scan) -> dict:
 
         "info": scan.info,
         "risk_data": risk_data,
-        "average_risk_score": round(average_risk_score * 10) / 10 if total > 0 else 0.0,
+        "average_risk_score": round(average_risk_score * 10) / 10 if total > 0 else 0.0, **_posture(scan, total_critical, total_high, total_medium, total_low),
         "model_type": scan_meta.get("model_type"),
         "model_name": model_name,
         "attack_iterations": scan_meta.get("generations"),
@@ -433,7 +433,7 @@ def return_dast_list_item(scan : Scan) -> dict:
         "info": scan.info, # sometimes maybe None or sometimes may be { "current" : 20 } where 20 is the progress percentage
         'risk_data': risk_data,
         "target_url": scan.scan_metadata["target_url"] if scan.scan_metadata and "target_url" in scan.scan_metadata else None,
-        "average_risk_score" : average_risk_score,
+        "average_risk_score" : average_risk_score, **_posture(scan, total_critical, total_high, total_medium, total_low),
         "urls_scanned": urls_scanned,
         "coverage_percentage": (urls_scanned / (urls_scanned + urls_not_scanned)) * 100 if urls_scanned + urls_not_scanned > 0 else 0,
     }
@@ -558,3 +558,10 @@ def average_risk_0_10(total_critical: int, total_high: int, total_medium: int, t
     """A scan's Risk score on the app's one 0-10 scale (``risk_scale``, #35); None without findings."""
     return risk_scale.average_risk({"critical": total_critical, "high": total_high, "medium": total_medium,
                                     "low": total_low})
+
+
+def _posture(scan: Scan, critical: int, high: int, medium: int, low: int) -> dict:
+    """``risk_posture``: the scan's one 0-100 risk score, grade and words (``risk_scale.posture``); None until the scan
+    succeeded. Added next to the older fields, which keep their values."""
+    return risk_scale.posture_field({"critical": critical, "high": high, "medium": medium, "low": low},
+                                    judged=scan.scan_status == "success")

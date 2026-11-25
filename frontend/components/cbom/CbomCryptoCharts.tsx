@@ -20,7 +20,7 @@
  * payload is present (legacy worker scans carry none).
  */
 
-import { useId, useMemo, useState } from "react";
+import { useContext, useId, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -76,6 +76,7 @@ import { filterFindingsByRelatedRefs } from "@/utils/relatedFindingMatch";
 import type { QuantumFields } from "@/components/cbom/quantumFilter";
 import { ComplianceMatrix, type AttestHandler, type Compliance } from "@/components/compliance/ComplianceMatrix";
 import { FRAMEWORK_GROUPS_CBOM_WITH_INDIA } from "@/components/compliance/frameworkLabels";
+import { ComplianceApplicabilityContext, teamCompliance } from "@/components/compliance/teamApplicability";
 import {
   distinctPqcFixes,
   enrichPqcMigrationFromFindings,
@@ -1303,21 +1304,31 @@ function CbomComplianceMatrix({
   /** "run" (12-A): one scorecard per framework, a click opens its requirements inline */
   variant?: "run";
 }) {
+  // the frameworks that bind the team and chips named after them ("India / CERT-In" for a bank SEBI does not
+  // regulate), when the page has the server's view; without one, every framework and the pinned chips, as before
+  const team = teamCompliance(compliance, FRAMEWORK_GROUPS_CBOM_WITH_INDIA, useContext(ComplianceApplicabilityContext));
   if (variant === "run") {
-    return <ComplianceScorecards compliance={compliance} groups={FRAMEWORK_GROUPS_CBOM_WITH_INDIA} onAttest={onAttest} />;
+    return <ComplianceScorecards compliance={team.compliance} groups={team.groups} onAttest={onAttest} />;
   }
-  return (
+  const matrix = (
     <ComplianceMatrix
-      compliance={compliance}
+      compliance={team.compliance}
       title="Crypto compliance readiness"
       icon="scale"
-      groups={FRAMEWORK_GROUPS_CBOM_WITH_INDIA}
+      groups={team.groups}
       defaultGroup="all"
       enableFailingOnly
       enableAttestation
       onAttest={onAttest}
       className="border-zinc-200 dark:border-zinc-800 col-span-full"
     />
+  );
+  if (!team.note) return matrix;
+  return (
+    <div className="col-span-full space-y-2" data-testid="cbom-compliance-team">
+      {matrix}
+      <p className="text-xs text-zinc-500" data-testid="cbom-applicability-note">{team.note}</p>
+    </div>
   );
 }
 
