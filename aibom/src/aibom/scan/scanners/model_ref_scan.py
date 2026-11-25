@@ -227,6 +227,17 @@ def _client_hint(text: str, idx: int) -> str | None:
     return None
 
 
+# LiteLLM provider prefix -> the linker's service key (net-env PROVIDER_KEY values)
+_LITELLM_PROVIDER_KEY = {
+    "openai": "openai", "anthropic": "anthropic", "gemini": "google",
+    "vertex_ai": "vertex", "mistral": "mistral", "groq": "groq",
+    "together_ai": "together", "deepseek": "deepseek", "cohere": "cohere",
+    "cohere_chat": "cohere", "xai": "xai", "openrouter": "openrouter",
+    "bedrock": "bedrock", "azure": "azure",
+}
+_ROUTE_PREFIX = re.compile(r"""['"](?P<prov>[\w-]+)/(?:[\w.-]+/)*$""")
+
+
 def _gateway_hint(text: str, name: str) -> str | None:
     """The gateway named nearest a reference, within its code block, or None."""
     # the reference itself, never the same text inside a longer id
@@ -237,6 +248,14 @@ def _gateway_hint(text: str, name: str) -> str | None:
     if found is None:
         return None
     idx = found.start()
+    # a LiteLLM route names its provider in its own prefix (``"openai/gpt-4o"``,
+    # ``"together_ai/meta-llama/…"``): that decides, before any nearby hint (review
+    # 6066180782 of #498, R7-M3: gpt-4o after a groq/ route was "served by Groq")
+    route = _ROUTE_PREFIX.search(text[max(0, idx - 200) : idx])
+    if route is not None:
+        key = _LITELLM_PROVIDER_KEY.get(route.group("prov").lower())
+        if key:
+            return key
     client = _client_hint(text, idx)
     if client is not None:
         return client
@@ -284,50 +303,122 @@ def _walk(root: Path) -> Iterator[Path]:
     )
 
 
+#: directories that hold vendored / third-party code, never the application's own
+#: (review 6066180782 of #498, m1); ``vendor`` / ``node_modules`` are pruned by the walk
+_VENDORED_DIRS = frozenset({"third_party", "third-party", "thirdparty", "external",
+                            "extern", "vendor", "vendored", "_vendor"})
+_DOC_DIRS = frozenset({"docs", "doc"})
+#: a directory with one of these is a package root (monorepo scoping, m2)
+_MANIFESTS = ("pyproject.toml", "setup.py", "setup.cfg", "package.json")
+
+
+def _vendored(path: Path, root: Path) -> bool:
+    """Third-party code shipped in the repository: under third_party/, external/,
+    extern/, vendor/ …, or a ``libs/<pkg>/`` / ``lib/<pkg>/`` with its own manifest."""
+    try:
+        parts = path.relative_to(root).parts[:-1]
+    except ValueError:
+        return False
+    if any(p.lower() in _VENDORED_DIRS for p in parts):
+        return True
+    for i, part in enumerate(parts[:-1]):
+        if part.lower() in ("libs", "lib"):
+            pkg = root.joinpath(*parts[: i + 2])
+            if any((pkg / m).is_file() for m in _MANIFESTS):
+                return True
+    return False
+
+
 def _application_file(path: Path, root: Path) -> bool:
-    """Not a test, a doc, an example / sample file or an env template."""
+    """Not a test, a doc (also a ``.py`` under docs/), an example / sample file, an
+    env template or vendored third-party code."""
+    try:
+        parts = path.relative_to(root).parts[:-1]
+    except ValueError:
+        parts = ()
     return not (is_test_path(path, root) or is_doc_path(path)
-                or is_example_path(path, root) or is_env_template(path))
+                or is_example_path(path, root) or is_env_template(path)
+                or any(p.lower() in _DOC_DIRS for p in parts)
+                or _vendored(path, root))
 
 
-def repo_uses_ollama(root: Path) -> bool:
-    """Whether the application uses Ollama: real code or deployment use only (review
-    6065595627 of #498, R6-M1). Application source that imports the SDK, uses a
-    LangChain / LiteLLM Ollama class or route, or calls the REST API; a compose /
+def package_root(path: Path, root: Path, cache: dict[Path, str] | None = None) -> str:
+    """The repository-relative directory of the nearest package manifest above
+    ``path`` ("" for the repository root): one package of a monorepo."""
+    cache = {} if cache is None else cache
+    here = path.parent
+    seen: list[Path] = []
+    found = ""
+    while True:
+        if here in cache:
+            found = cache[here]
+            break
+        seen.append(here)
+        if here == root or root not in here.parents:
+            found = ""
+            break
+        if any((here / m).is_file() for m in _MANIFESTS):
+            found = here.relative_to(root).as_posix()
+            break
+        here = here.parent
+    for d in seen:
+        cache[d] = found
+    return found
+
+
+ALL_PACKAGES = "*"
+
+
+def repo_uses_ollama(root: Path) -> set[str]:
+    """The packages whose application uses Ollama: real code or deployment use only
+    (review 6065595627 of #498, R6-M1). Application source that imports the SDK, uses
+    a LangChain / LiteLLM Ollama class or route, or calls the REST API; a compose /
     Kubernetes / Dockerfile that runs ``ollama/ollama`` or a LiteLLM proxy route;
     OLLAMA_HOST in the application's real environment (``.env``, its own workload's
-    ``env``). Docs, tests, examples, env templates, a plain "ollama" string and a
-    declared-but-never-imported dependency (package.json and requirements alike) are
-    not evidence."""
+    ``env``). Docs (also ``.py`` under docs/), tests, examples, env templates,
+    vendored third-party code, a plain "ollama" string and a declared-but-never-
+    imported dependency are not evidence.
+
+    Evidence is scoped to the package (the nearest manifest root, review 6066180782
+    of #498, m2): one package's Ollama never makes another package's constants
+    models in use. Deployment files and env at the repository root configure every
+    package (:data:`ALL_PACKAGES`)."""
     from aibom.scan.scanners.net_env_scan import CONFLICT, env_values
 
-    configs: list[tuple[str, str]] = []
+    cache: dict[Path, str] = {}
+    found: set[str] = set()
+    configs: dict[str, list[tuple[str, str]]] = {}
     dockerfiles = walk_files(root, _SKIP_DIRS, lambda p: p.name.lower().startswith(
         "dockerfile") or p.name.lower().endswith(".dockerfile"))
     for path in [*_walk(root), *dockerfiles]:
         if not _application_file(path, root):
             continue
+        pkg = package_root(path, root, cache)
         text = read_text(path, _MAX_BYTES)
         if text is None:
             continue
         suffix = path.suffix.lower()
         if suffix == ".ipynb":
             if ollama_code_evidence(notebook_text(text)[0], "py"):
-                return True
+                found.add(pkg)
         elif suffix in _CODE_EVIDENCE:
             if ollama_code_evidence(text, language_of(path.name)):
-                return True
+                found.add(pkg)
         elif (suffix in (".yaml", ".yml") or path in dockerfiles) and (
             ollama_deploy_evidence(text)
         ):
-            return True
+            found.add(pkg or ALL_PACKAGES)
         if is_env_file(path) or suffix in (".yaml", ".yml"):
             try:
-                configs.append((path.relative_to(root).as_posix(), text))
+                rel = path.relative_to(root).as_posix()
             except ValueError:
-                configs.append((path.name, text))
-    env = env_values(configs, root.name)
-    return "OLLAMA_HOST" in env or "OLLAMA_HOST" + CONFLICT in env
+                rel = path.name
+            configs.setdefault(pkg, []).append((rel, text))
+    for pkg, files in configs.items():
+        env = env_values(files, root.name)
+        if "OLLAMA_HOST" in env or "OLLAMA_HOST" + CONFLICT in env:
+            found.add(pkg or ALL_PACKAGES)
+    return found
 
 
 #: the client classes of Ollama calls (net-env ``_SDK_MODEL_CALLS`` and LangChain)
@@ -352,10 +443,13 @@ class ModelRefScanner(Scanner):
         # listed 71 "models", 6 real). Dropping them instead turned every gap in the
         # usage patterns into data loss (review of #487 M1).
         seen: dict[str, dict[str, Any]] = {}
+        # one entry per candidate set chosen at run time (R7-M1)
+        groups: dict[tuple[str, ...], dict[str, Any]] = {}
         loose_tags: set[str] = set()
         # does the repository use Ollama at all (an SDK import / call, a LangChain
         # wrapper, the REST API, OLLAMA_HOST, the container image, a LiteLLM route)?
-        uses_ollama = repo_uses_ollama(ctx.root)
+        ollama_packages = repo_uses_ollama(ctx.root)
+        package_cache: dict[Path, str] = {}
         # module-level dicts / constants and settings classes of the application, for
         # models chosen by a lookup (review 6065595627 of #498, R6-M2)
         literals = ProjectLiterals.from_root(
@@ -365,6 +459,8 @@ class ModelRefScanner(Scanner):
             text = read_text(path, _MAX_BYTES)
             if text is None:
                 continue
+            uses_ollama = ALL_PACKAGES in ollama_packages or (
+                package_root(path, ctx.root, package_cache) in ollama_packages)
             if is_test_path(path, ctx.root):
                 role = "test"
             elif is_doc_path(path) or is_example_path(path, ctx.root):
@@ -401,9 +497,10 @@ class ModelRefScanner(Scanner):
                     refs[name] = (refs[name][0], "usage")
                 hub_of[name] = hub_id
             # a model chosen by a lookup (``ollama.chat(model=OPTIONS["fast"])``,
-            # ``ChatOpenAI(model=CFG["m"])``): the value the project's literals give,
-            # or, for a key known only at run time, every model the dict holds as a
-            # low-confidence candidate of that call (review 6065595627 of #498, R6-M2)
+            # ``ChatOpenAI(model=CFG["m"])``): the value the project's literals give
+            # (review 6065595627 of #498, R6-M2). A key known only at run time makes
+            # the call ONE model in use whose candidates are evidence, never models
+            # of their own (review 6066180782 of #498, R7-M1: see _candidate_groups)
             looked: dict[str, tuple[bool, str]] = {}  # name -> (candidate, call)
             looked_tags: list[str] = []
             suffix = path.suffix.lower()
@@ -415,6 +512,10 @@ class ModelRefScanner(Scanner):
                     text, "notebook.py" if suffix == ".ipynb" else path.name, literals)
                 for cls, names, exact, call in calls:
                     ollama_call = cls in _OLLAMA_CLASSES
+                    if not exact:
+                        _add_candidates(groups, names, cls, ollama_call, uses_ollama,
+                                        f"{call} in {source}", source)
+                        continue
                     for value in names:
                         if ollama_call or (valid_tag(value) and uses_ollama):
                             found = {value: ("", "usage")}
@@ -514,6 +615,16 @@ class ModelRefScanner(Scanner):
                     if entry.get("lookup") and (mine is None or not mine[0]):
                         # a literal use or an exact lookup elsewhere: not a candidate
                         entry["lookup"] = (False, entry["lookup"][1])
+        # a value that is only a candidate of a run-time choice (a dict value that the
+        # loose-literal reading took for usage) is a catalogue mention: the call's one
+        # entry counts it (R7-M1)
+        candidate_names = {n.lower() for g in groups.values() for n in g["names"]}
+        for low_name, entry in seen.items():
+            if entry["type"] == "usage" and entry.get("loose") and (
+                low_name in candidate_names
+            ):
+                entry["type"] = "catalog"
+                entry["ollama"] = None
         for kind in ("catalog", "test"):
             n = sum(1 for v in seen.values() if v["type"] == kind)
             if n:
@@ -603,6 +714,136 @@ class ModelRefScanner(Scanner):
                         "library with an unresolved license)."
                     ),
                 )
+        _emit_candidate_groups(ctx, groups)
 
 
-__all__ = ["ModelRefScanner"]
+# -------------------------------------------------------------- run-time choices
+
+#: candidates shown in the reason / evidence text before "and N more"
+CANDIDATE_SHOWN = 10
+_HOSTED_TERMS_VENDORS = frozenset(
+    v for v, lic in _MODEL_LICENSE_BY_VENDOR.items() if lic == "LicenseRef-proprietary"
+)
+
+
+def _candidate_provider(value: str, ollama_call: bool, uses_ollama: bool) -> str:
+    """Who runs a candidate: "Ollama" for an Ollama tag (or a bare family named in an
+    Ollama call), "Ollama Cloud" for a ``-cloud`` tag, else the vendor the model
+    dictionary names, else "unknown"."""
+    name = value.split(":", 1)[0]
+    if valid_tag(value) and (ollama_call or uses_ollama):
+        return "Ollama Cloud" if is_cloud_tag(value) else "Ollama"
+    if ollama_call and ":" not in value and ollama_family(name)[0] is not None and (
+        not find_model_refs_ctx(f'model="{value}"\n', "py")
+    ):
+        return "Ollama"
+    found = find_model_refs_ctx(f'model="{value}"\n', "py")
+    vendor = next((v for v, _t in found.values() if v), "")
+    return vendor or "unknown"
+
+
+def _add_candidates(
+    groups: dict[tuple[str, ...], dict[str, Any]],
+    names: list[str],
+    cls: str,
+    ollama_call: bool,
+    uses_ollama: bool,
+    call: str,
+    source: str,
+) -> None:
+    """Record one run-time choice (``ollama.chat(model=OPTIONS[choice])``): calls on
+    the same candidate set are one entry with every call site."""
+    key = tuple(sorted({n.lower() for n in names}))
+    group = groups.get(key)
+    if group is None:
+        group = groups[key] = {
+            "names": list(dict.fromkeys(names)),
+            "providers": [_candidate_provider(n, ollama_call, uses_ollama)
+                          for n in dict.fromkeys(names)],
+            "calls": [], "sources": [], "classes": set(),
+        }
+    if call not in group["calls"]:
+        group["calls"].append(call)
+    if source not in group["sources"]:
+        group["sources"].append(source)
+    group["classes"].add(cls)
+
+
+def candidate_summary(names: list[str], providers: list[str]) -> str:
+    """``"a (Ollama), b (OpenAI) … and 30 more"``: the first candidates, then the rest
+    as a count."""
+    shown = [f"{n} ({p})" for n, p in zip(names, providers, strict=False)]
+    head = ", ".join(shown[:CANDIDATE_SHOWN])
+    rest = len(shown) - CANDIDATE_SHOWN
+    return head + (f" and {rest} more" if rest > 0 else "")
+
+
+def _emit_candidate_groups(
+    ctx: ScanContext, groups: dict[tuple[str, ...], dict[str, Any]]
+) -> None:
+    """One model in use per run-time choice (review 6066180782 of #498, R7-M1, the
+    coordinator's design): ``unidentified model (one of N candidates)``. Its
+    candidates are evidence (``model:candidates``, each with its own provider), never
+    components of their own; counts and compliance see one model, needs-information.
+
+    Where it runs (R7-M2): every candidate an Ollama tag, the Ollama server of the
+    call; every candidate one hosted vendor's, that vendor's API; a mix, unknown, so
+    no hosted model is ever put on the local server."""
+    used: set[str] = set()
+    ordered = sorted(groups.values(), key=lambda g: (g["sources"][0], g["calls"][0]))
+    for group in ordered:
+        names, providers = group["names"], group["providers"]
+        n = len(names)
+        name = f"unidentified model (one of {n} candidates)"
+        if name.lower() in used:
+            expr = group["calls"][0].split("(model=", 1)[-1].split(")", 1)[0]
+            name = f"unidentified model (one of {n} candidates, {expr})"
+        used.add(name.lower())
+        kinds = set(providers)
+        props = {
+            "model:reference_type": "usage",
+            "model:identified": "false",
+            "model:selection": "candidates",
+            "model:candidate_count": str(n),
+            "model:candidates": "; ".join(
+                f"{c} ({p})" for c, p in zip(names, providers, strict=False)),
+            "model:unidentified_reason": (
+                f"chosen at run time from {n} candidates: "
+                f"{candidate_summary(names, providers)}"
+            ),
+            "discovery:source": group["sources"][0],
+            "discovery:sources": ",".join(group["sources"]),
+            "discovery:method": "config-lookup",
+            "discovery:confidence": "low",
+            "discovery:snippet": "; ".join(group["calls"])[:500],
+        }
+        publisher: str | None = None
+        licence: str | None = None
+        if kinds == {"Ollama"}:
+            props["model:served_via"] = "ollama"
+            props["model:weights"] = "open"
+            props["model:candidate_hosting"] = "self-hosted"
+            licences = {ollama_family(c)[1] for c in names}
+            if len(licences) == 1:
+                licence = next(iter(licences))
+        elif len(kinds) == 1 and next(iter(kinds)) not in ("unknown", "Ollama Cloud"):
+            publisher = next(iter(kinds))
+            props["model:candidate_hosting"] = "hosted"
+            if publisher in _HOSTED_TERMS_VENDORS:
+                licence = "LicenseRef-proprietary"
+        else:
+            # mixed (hosted and Ollama tags) or unknown: where it runs is not known
+            props["model:candidate_hosting"] = "mixed"
+            props["model:server"] = "unknown"
+        comp = ModelComponent(
+            bom_ref="modelref-unidentified-candidates-" + _slug(name),
+            name=name,
+            publisher=publisher,
+            licenses=[license_choice(licence)] if licence else None,
+            properties=props,
+        )
+        comp.model_card.task = "chat/completion"
+        ctx.add_component(comp)
+
+
+__all__ = ["ModelRefScanner", "candidate_summary"]

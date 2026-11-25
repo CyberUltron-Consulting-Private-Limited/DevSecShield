@@ -414,6 +414,13 @@ class ProjectIndex:
                     raw[idx] if 0 <= idx < len(raw) and "=" not in raw[idx] else "")
                 if pick[:1] in "'\"" and pick[-1:] == pick[:1] and len(pick) > 2:
                     return True
+                # a constant the calling file assigns a literal to, or imports
+                # (``ask(DEFAULT_MODEL)``): one model, no unidentified twin
+                # (review 6066180782 of #498, m4)
+                if re.fullmatch(r"[A-Za-z_]\w*", pick) and (re.search(
+                    rf"(?m)^\s*{re.escape(pick)}\s*(?::[^=\n]+)?=\s*['\"]", code2
+                ) or pick in self.constants):
+                    return True
         return False
 
 
@@ -828,7 +835,8 @@ class NetEnvScanner(Scanner):
         # lookups resolve against application code only (not tests or examples)
         index.literals = ProjectLiterals([
             (src, t) for p_, t, src in files
-            if not (is_test_path(p_, ctx.root) or is_example_path(p_, ctx.root))])
+            if not (is_test_path(p_, ctx.root) or is_example_path(p_, ctx.root))],
+            ctx.root)
         _INDEX.append(index)
         try:
             self._scan_files(ctx, files, env, seen, excluded, unnamed)

@@ -313,7 +313,23 @@ def _served_model_licence(comp: AIComponent, result: ScanResult | None) -> str:
     return LICENSE_UNKNOWN
 
 
+def _candidates(comp: AIComponent) -> list[dict[str, str]] | None:
+    raw = (comp.properties or {}).get("model:candidates")
+    if comp.kind != "model" or not raw:
+        return None
+    out: list[dict[str, str]] = []
+    for item in raw.split("; "):
+        name, _, provider = item.rpartition(" (")
+        out.append(
+            {"name": name or item, "provider": provider.rstrip(")") or "unknown"})
+    return out
+
+
 def _provider_served(comp: AIComponent, result: ScanResult | None) -> bool:
+    if (comp.properties or {}).get("model:candidate_hosting") in ("mixed", "hosted"):
+        # a run-time choice that may run a hosted model: potentially outside the
+        # trust boundary, never a weight file (review 6066180782 of #498, R7-M2)
+        return True
     provider = (comp.properties or {}).get("model:provider")
     if provider:
         return provider not in ("ollama", "local")
@@ -546,6 +562,10 @@ def _finding_from_component(comp: AIComponent, result: ScanResult) -> dict[str, 
             if comp.kind == "model"
             else None
         ),
+        # the candidates of a model chosen at run time (``OPTIONS[choice]``), each
+        # with its provider: evidence of the one entry, never models of their own
+        # (review 6066180782 of #498, R7-M1); None for any other row
+        "model_candidates": _candidates(comp),
         # populated model-card fields (None if absent) — the dashboard's
         # governance-readiness score credits models that carry BOTH a license + card.
         "model_card": _card_summary(comp),

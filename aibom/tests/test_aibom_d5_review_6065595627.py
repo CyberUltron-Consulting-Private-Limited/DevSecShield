@@ -170,23 +170,21 @@ def test_a_nested_subscript_resolves(tmp_path) -> None:
     assert not any(n.startswith("unidentified") for n in _models(result))
 
 
-def test_a_dynamic_key_lists_the_candidates_at_low_confidence(tmp_path) -> None:
+def test_a_dynamic_key_is_one_model_with_its_candidates_as_evidence(tmp_path) -> None:
+    # round 8 (review 6066180782, R7-M1, the coordinator's design) replaces the
+    # round-7 candidate rows: one entry per call, the candidates are evidence
     result = _scan(tmp_path, {"app.py": (
         "import ollama, sys\n"
         'OPTIONS = {"fast": "phi3:mini", "smart": "llama3.1:70b"}\n'
         "choice = sys.argv[1]\n"
         "ollama.chat(model=OPTIONS[choice], messages=[])\n"
     )})
-    models = _models(result)
-    assert {"phi3:mini", "llama3.1:70b"} <= _in_use(result)
-    for tag in ("phi3:mini", "llama3.1:70b"):
-        props = models[tag].properties or {}
-        assert props.get("discovery:confidence") == "low"
-        assert props.get("model:selection") == "candidate"
-        assert props.get("discovery:source") == "app.py"
-        assert "ollama.chat" in props.get("discovery:snippet", "")
-    # no extra unidentified entry for the same call
-    assert not any(n.startswith("unidentified") for n in models)
+    assert _in_use(result) == {"unidentified model (one of 2 candidates)"}
+    props = _models(result)["unidentified model (one of 2 candidates)"].properties or {}
+    assert props["model:candidates"] == "phi3:mini (Ollama); llama3.1:70b (Ollama)"
+    assert props["discovery:confidence"] == "low"
+    assert props["discovery:source"] == "app.py"
+    assert "ollama.chat" in props["discovery:snippet"]
 
 
 def test_an_unresolvable_subscript_is_an_unidentified_model_not_no_model(tmp_path) -> None:

@@ -61,7 +61,11 @@ def _lit(node: ast.AST) -> object:
 class _Module:
     """Module-level literals, classes' literal attribute defaults and instances."""
 
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str, source: str = "") -> None:
+        self.source = source
+        # name -> the literal path of the JSON / YAML / TOML file loaded into it
+        # (``CFG = json.load(open("config.json"))``; review 6066180782 of #498, m3)
+        self.config_paths: dict[str, str] = {}
         self.values: dict[str, object] = {}
         self.classes: dict[str, dict[str, object]] = {}
         self.instances: dict[str, str] = {}
@@ -70,6 +74,7 @@ class _Module:
             tree = ast.parse(text)
         except (SyntaxError, ValueError, RecursionError, MemoryError):
             return
+        self.config_paths = _config_loads(tree)
         for node in tree.body:
             if isinstance(node, (ast.Assign, ast.AnnAssign)):
                 targets = (
@@ -110,10 +115,70 @@ class _Module:
                     self.imports["@mod:" + local] = alias.name.rsplit(".", 1)[-1]
 
 
+_LOADERS = frozenset({
+    ("json", "load"), ("json", "loads"), ("yaml", "safe_load"), ("yaml", "load"),
+    ("yaml", "full_load"), ("tomllib", "load"), ("toml", "load"),
+})
+
+
+def _open_path(node: ast.AST) -> str | None:
+    """``open("p")`` / ``Path("p").read_text()`` / ``Path("p").open()`` -> "p"."""
+    if not isinstance(node, ast.Call):
+        return None
+    func = node.func
+    if isinstance(func, ast.Name) and func.id == "open" and node.args:
+        arg = node.args[0]
+        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+            return arg.value
+    if isinstance(func, ast.Attribute) and func.attr in ("read_text", "open") and (
+        isinstance(func.value, ast.Call)
+    ):
+        inner = func.value
+        if isinstance(inner.func, ast.Name) and inner.func.id == "Path" and inner.args:
+            arg = inner.args[0]
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                return arg.value
+    return None
+
+
+def _config_loads(tree: ast.AST) -> dict[str, str]:
+    """``name -> path`` for every ``name = json.load(open("p"))`` /
+    ``yaml.safe_load(f)`` inside ``with open("p") as f`` in the module."""
+    handles: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.With, ast.AsyncWith)):
+            for item in node.items:
+                path = _open_path(item.context_expr)
+                if path and isinstance(item.optional_vars, ast.Name):
+                    handles[item.optional_vars.id] = path
+    out: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Call):
+            continue
+        call = node.value
+        func = call.func
+        if not (isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name)
+                and (func.value.id, func.attr) in _LOADERS and call.args):
+            continue
+        arg = call.args[0]
+        path = _open_path(arg) or (
+            handles.get(arg.id) if isinstance(arg, ast.Name) else None)
+        if path is None:
+            continue
+        for t in node.targets:
+            if isinstance(t, ast.Name):
+                out[t.id] = path
+    return out
+
+
 class ProjectLiterals:
     """The application's Python modules, by module name (file stem)."""
 
-    def __init__(self, files: list[tuple[str, str]]) -> None:
+    def __init__(
+        self, files: list[tuple[str, str]], root: Path | None = None
+    ) -> None:
+        self.root = root
+        self._configs: dict[str, object] = {}
         self.modules: dict[str, _Module] = {}
         self._by_text: dict[int, _Module] = {}
         for source, text in files:
@@ -122,7 +187,7 @@ class ProjectLiterals:
             stem = Path(source).stem
             if stem == "__init__":
                 stem = Path(source).parent.name or stem
-            module = _Module(text)
+            module = _Module(text, source)
             self._by_text[hash(text)] = module
             self.modules.setdefault(stem, module)
 
@@ -137,7 +202,7 @@ class ProjectLiterals:
             text = read_text(path, _MAX_BYTES)
             if text is not None:
                 files.append((path.relative_to(root).as_posix(), text))
-        return cls(files)
+        return cls(files, root)
 
     def _module(self, code: str) -> _Module:
         key = hash(code)
@@ -150,11 +215,53 @@ class ProjectLiterals:
     def _name(self, here: _Module, name: str) -> object:
         """The literal a name holds: in the file, else in the module it is
         imported from (one hop)."""
+        if name in here.config_paths:
+            return self._config(here, here.config_paths[name])
         if name in here.values:
             return here.values[name]
         source = here.imports.get(name)
         if source and source in self.modules:
             return self.modules[source].values.get(name, _DYN)
+        return _DYN
+
+    def _config(self, here: _Module, rel: str) -> object:
+        """The parsed JSON / YAML / TOML file a module loads by a literal path,
+        relative to the module's directory or the repository root."""
+        if self.root is None or ".." in Path(rel).parts or Path(rel).is_absolute():
+            return _DYN
+        for base in (Path(here.source).parent, Path()):
+            key = (base / rel).as_posix()
+            if key in self._configs:
+                return self._configs[key]
+            path = self.root / base / rel
+            try:
+                if not path.is_file() or path.is_symlink() or (
+                    path.stat().st_size > _MAX_BYTES
+                ):
+                    continue
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            value: object = _DYN
+            try:
+                if path.suffix.lower() == ".json":
+                    import json
+
+                    value = json.loads(text)
+                elif path.suffix.lower() == ".toml":
+                    import tomllib
+
+                    value = tomllib.loads(text)
+                else:
+                    import yaml
+
+                    value = yaml.safe_load(text)
+            except Exception:  # noqa: BLE001 - an unreadable config is unresolved
+                value = _DYN
+            if not isinstance(value, (dict, list)):
+                value = _DYN
+            self._configs[key] = value
+            return value
         return _DYN
 
     def _attr(self, here: _Module, obj: str, attr: str) -> object:

@@ -197,6 +197,11 @@ class ModelGraphLinker(Scanner):
             hint = props.pop("discovery:gateway", None)
             if model.bom_ref in already_linked:
                 continue  # a card already wired this model — don't second-guess it
+            if props.get("model:server") == "unknown":
+                # a run-time choice among hosted and Ollama models: where it runs is
+                # not known, so it is served by nothing (review 6066180782, R7-M2)
+                model.properties = props
+                continue
 
             served_via = props.get("model:served_via")
             if served_via:

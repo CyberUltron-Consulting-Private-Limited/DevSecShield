@@ -61,6 +61,8 @@ _FINDING_FIELDS = {
     "component_kind", "license_status",
     # additive (#498 round 4): False for a model the code uses without naming it
     "model_identified",
+    # additive (#498 round 8): the candidates of a model chosen at run time
+    "model_candidates",
 }
 _LOCKED_KEYS = {"results", "ai_bom_json", "ai_bom_compliance", "duration_of_scan"}
 _ADDITIVE_KEYS = {"ai_bom_spdx", "ai_bom_sarif", "ai_bom_graph", "ai_bom_scores"}
