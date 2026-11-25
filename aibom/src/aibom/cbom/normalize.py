@@ -173,6 +173,8 @@ def _finding(comp: AIComponent, result: ScanResult) -> dict[str, Any]:
         "confidence": props.get("crypto:confidence"),
         # "unconfirmed": a setting no crypto call is proven to read (Low, not scored)
         "config_status": props.get("crypto:configStatus"),
+        # an unconfirmed setting's severity if proven read: #505's worst case
+        "unverified_severity": props.get("crypto:unverifiedSeverity"),
         "finding_codes": codes,
         "description": _finding_description(comp, result),
         "location": props.get("crypto:source") or props.get("discovery:source") or "",

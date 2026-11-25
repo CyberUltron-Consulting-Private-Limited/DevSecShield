@@ -12,6 +12,7 @@ import {
   activeRunIds,
   changedRunStatuses,
   displayRiskScore,
+  riskNote,
   riskScoreCell,
   liveRunFromDetail,
   refundedHint,
@@ -127,6 +128,30 @@ test("risk tiers on the one risk score (posture grade bands) across kinds, never
   assert.equal(riskScoreCell({ risk_score: 56, risk_grade: "D" }), "56 · D");
   assert.equal(riskScoreCell({ risk_score: null, risk_grade: null }), "—");
   assert.equal(matchesRiskTier(null, "low"), false);
+});
+
+test("#505's statuses (re-review 6066152368): unverified, incomplete, and the higher tier for filter and sort", () => {
+  const worst = (score: number, grade: string) => ({ count: 2, worst: "critical", note: "unverified: 2 unconfirmed settings (worst: Critical)",
+    worst_case: { score, grade, label: "", band: "" } });
+  const rows = mergeResultRows(
+    [
+      // confirmed 4 · A with two unconfirmed Criticals: shown 4 · A, also found under "Critical", sorted by 80
+      scan(1, { risk_score: 4, risk_grade: "A", risk_posture_status: "scored", risk_unverified: worst(80, "F") }),
+      // only unconfirmed: the worst case, marked
+      scan(2, { risk_score: 20, risk_grade: "B", risk_posture_status: "unverified", risk_unverified: worst(20, "B") }),
+      scan(3, { risk_score: 50, risk_grade: "D", risk_posture_status: "scored" }),
+    ],
+    [run(4, { risk_score: null, risk_grade: null, risk_posture_status: "incomplete" })],
+  );
+  assert.deepEqual(new Set(keys(filterAndSortRows(rows, f({ risk: "critical" })))), new Set(["scan-1"]));
+  assert.deepEqual(keys(filterAndSortRows(rows, f({ risk: "low" }))), [], "a confirmed A with unverified Criticals is not only Low");
+  assert.deepEqual(keys(filterAndSortRows(rows, f({ risk: "medium" }))), ["scan-2"]);
+  assert.deepEqual(keys(filterAndSortRows(rows, f({ sort: "risk_desc" }))).slice(0, 3), ["scan-1", "scan-3", "scan-2"]);
+  const byKey = new Map(rows.map((r) => [r.key, r]));
+  assert.equal(riskScoreCell(byKey.get("scan-1")!), "4 · A");
+  assert.equal(riskScoreCell(byKey.get("scan-2")!), "20 · B unverified");
+  assert.equal(riskScoreCell(byKey.get("run-4")!), "incomplete");
+  assert.equal(riskNote(byKey.get("scan-1")!), "unverified: 2 unconfirmed settings (worst: Critical)");
 });
 
 test("the three sorts work across kinds", () => {

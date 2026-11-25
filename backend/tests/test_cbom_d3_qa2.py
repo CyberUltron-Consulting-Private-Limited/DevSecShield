@@ -99,7 +99,8 @@ def test_sbom_and_ai_bom_pdfs_use_the_capped_headline():
     # the CBOM headline prints the summary's posture score over the SCORED findings (test code excluded, review
     # 6061095673), the same capped function through cbom_metrics.risk_posture
     src = (_REPO / "backend" / "utilities" / "pdf" / "cbom_pdf.py").read_text()
-    assert 'risk_score_fn=lambda *_c: (risk["risk_score"], risk["risk_grade"], risk["risk_label"])' in src
+    # the label carries " (unverified)" when the score is the unconfirmed settings' worst case (6066152368)
+    assert 'risk_score_fn=lambda *_c: (risk["risk_score"], risk["risk_grade"], risk["risk_label"] + marked)' in src
 
 
 # ----------------------------------------------------------------------------- G-D3-6 broken today

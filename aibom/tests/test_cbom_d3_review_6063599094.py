@@ -35,7 +35,7 @@ def _keys(text: str, lang: str) -> tuple[set[str], list[dict]]:
 
 
 # ----------------------------------------------------------------------------- 1
-def test_an_unconfirmed_setting_is_listed_low_and_not_scored(tmp_path):
+def test_an_unconfirmed_setting_is_listed_low_outside_the_confirmed_score(tmp_path):
     out = _scan(
         tmp_path, {"app/conf.py": "EXPORT = {'format': 'csv', 'checksum': 'md5'}\n"}
     )
@@ -46,7 +46,12 @@ def test_an_unconfirmed_setting_is_listed_low_and_not_scored(tmp_path):
     assert row["impact"] == "Low"
     assert "unconfirmed (configuration only)" in row["description"].lower()
     scores = out["cbom_scores"]
-    assert (scores["risk_normalized"], scores["risk_grade"]) == (0.0, "A")
+    # round 7 (re-review 6066152368, #505's rule): never a clean A; the confirmed
+    # score has nothing, so the headline is the setting's worst case, "unverified"
+    assert scores["risk_posture_status"] == "unverified" and scores["risk_grade"] != "A"
+    assert scores["severity_counts"] == dict.fromkeys(
+        ("critical", "high", "medium", "low"), 0
+    )
     comp = next(c for c in out["cbom_json"]["components"] if c["name"] == "MD5")
     props = {p["name"]: p["value"] for p in comp.get("properties", [])}
     assert props["crypto:configStatus"] == "unconfirmed"

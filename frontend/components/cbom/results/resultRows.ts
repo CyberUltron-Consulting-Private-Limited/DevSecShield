@@ -10,7 +10,7 @@
  * disappear from the table.
  */
 import type { CbomSourcesRun } from "@/components/cbom/resultOrigin";
-import type { CBOMConversation, CBOMListResponse, CbomRun, RunListRow } from "@/utils/backend_api";
+import type { CBOMConversation, CBOMListResponse, CbomRun, RiskUnverified, RunListRow } from "@/utils/backend_api";
 import { isActiveStatus, isUnifiedStatus, runToUnified } from "./statusBuckets";
 
 export type ResultKind = "scan" | "run";
@@ -39,6 +39,10 @@ interface ResultRowBase {
   risk_score: number | null;
   risk_grade: string | null;
   risk_label: string | null;
+  /** #505's risk_posture_status: scored / unverified / incomplete / not_scored (null from an older backend) */
+  risk_posture_status: string | null;
+  /** the unverified note and worst case (unconfirmed settings), or null */
+  risk_unverified: RiskUnverified | null;
   estimated_credits: number | null;
   owner_user_email: string | null;
   owner_user_full_name: string | null;
@@ -108,6 +112,8 @@ export function scanRow(scan: CBOMConversation): ScanResultRow {
     risk_score: num(scan.risk_score),
     risk_grade: scan.risk_grade ?? null,
     risk_label: scan.risk_label ?? null,
+    risk_posture_status: scan.risk_posture_status ?? null,
+    risk_unverified: scan.risk_unverified ?? null,
     estimated_credits: num(scan.estimated_credits),
     owner_user_email: scan.owner_user_email ?? null,
     owner_user_full_name: scan.owner_user_full_name ?? null,
@@ -141,6 +147,8 @@ export function runRow(run: RunListRow): RunResultRow {
     risk_score: num(run.risk_score),
     risk_grade: run.risk_grade ?? null,
     risk_label: run.risk_label ?? null,
+    risk_posture_status: run.risk_posture_status ?? null,
+    risk_unverified: run.risk_unverified ?? null,
     estimated_credits: netCredits(charged, refunded),
     owner_user_email: run.owner_user_email ?? null,
     owner_user_full_name: run.owner_user_full_name ?? null,
@@ -196,6 +204,8 @@ export function runRowsFromSourcesRuns(entries: readonly CbomSourcesRun[] | null
       risk_score: null,
       risk_grade: null,
       risk_label: null,
+      risk_posture_status: null,
+      risk_unverified: null,
       estimated_credits: null,
       owner_user_email: null,
       owner_user_full_name: null,
@@ -243,11 +253,29 @@ export function displayRiskScore(row: Pick<ResultRow, "risk_score">): number | n
   return Math.round(Math.min(100, Math.max(0, row.risk_score)));
 }
 
-/** "56 · D" for the table cell (grade when the backend sent it). */
-export function riskScoreCell(row: Pick<ResultRow, "risk_score" | "risk_grade">): string {
+/** "56 · D" for the table cell (grade when the backend sent it); "… unverified" when the score is the worst case of
+ * unconfirmed settings, "incomplete" for a partial run, "—" without a score (#505's statuses). */
+export function riskScoreCell(row: Pick<ResultRow, "risk_score" | "risk_grade"> & Partial<Pick<ResultRow, "risk_posture_status">>): string {
+  if (row.risk_posture_status === "incomplete") return "incomplete";
   const score = displayRiskScore(row);
   if (score == null) return "—";
-  return row.risk_grade ? `${score} · ${row.risk_grade}` : `${score}`;
+  const text = row.risk_grade ? `${score} · ${row.risk_grade}` : `${score}`;
+  return row.risk_posture_status === "unverified" ? `${text} unverified` : text;
+}
+
+/** "unverified: 2 unconfirmed settings (worst: Critical)" beside a confirmed score; null without any. */
+export function riskNote(row: Pick<ResultRow, "risk_unverified" | "risk_posture_status">): string | null {
+  if (row.risk_posture_status === "unverified") return null;  // the score itself is the worst case, already marked
+  return row.risk_unverified?.note ?? null;
+}
+
+/** The score the risk filter and sort read: the higher of the confirmed score and the unverified worst case (#505:
+ * 1 confirmed Low + 10 unconfirmed Criticals is shown 4 · A and also found under "Critical"). */
+export function tierRiskScore(row: Pick<ResultRow, "risk_score" | "risk_unverified">): number | null {
+  const score = displayRiskScore(row);
+  const worst = row.risk_unverified?.worst_case?.score;
+  if (typeof worst !== "number") return score;
+  return Math.max(score ?? 0, Math.round(Math.min(100, Math.max(0, worst))));
 }
 
 /** Risk tiers on the posture grade bands: Critical = F (>= 70), High = D (50-69), Medium = C and B (15-49),
@@ -283,7 +311,7 @@ export function filterAndSortRows(rows: readonly ResultRow[], f: ResultFilters):
   const out = rows.filter((r) => {
     if (!matchesSearch(r, f.search)) return false;
     if (f.status !== "all" && r.scan_status !== f.status) return false;
-    return matchesRiskTier(displayRiskScore(r), f.risk);
+    return matchesRiskTier(tierRiskScore(r), f.risk);
   });
   if (f.sort === "none") return out;
   // rows without a value ("—") sort last in both directions
@@ -293,7 +321,7 @@ export function filterAndSortRows(rows: readonly ResultRow[], f: ResultFilters):
     if (va == null || vb == null) return va == null ? (vb == null ? 0 : 1) : -1;
     return dir * (va - vb);
   };
-  const score = (r: ResultRow) => displayRiskScore(r);
+  const score = (r: ResultRow) => tierRiskScore(r);
   const credits = (r: ResultRow) => r.estimated_credits;
   const cmp: Record<Exclude<TableSortBy, "none">, (a: ResultRow, b: ResultRow) => number> = {
     created_asc: (a, b) => -newestFirst(a, b),

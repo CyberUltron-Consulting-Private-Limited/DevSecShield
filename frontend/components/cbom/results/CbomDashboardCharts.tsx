@@ -104,13 +104,19 @@ export function mttrText(totalDays: number, totalFixed: number | null | undefine
  * fits one line in the seven-tile row at 1366 px (Playwright run, round 2). */
 export function riskScoreText(c: KpiCardData): string {
   if (c.risk_posture_status === "not_scored") return "—";
+  if (c.risk_posture_status === "incomplete") return "incomplete";  // a partial run (#505)
   if (typeof c.risk_score !== "number") return "N/A";
-  return c.risk_grade ? `${c.risk_score} · ${c.risk_grade}` : `${c.risk_score}`;
+  const text = c.risk_grade ? `${c.risk_score} · ${c.risk_grade}` : `${c.risk_score}`;
+  // the worst case of settings no crypto call is proven to read (re-review 6066152368)
+  return c.risk_posture_status === "unverified" ? `${text} unverified` : text;
 }
-/** "of 100 · High risk": the 0-100 scale of the score and the API's label. */
+/** "of 100 · High risk": the 0-100 scale of the score and the API's label, with #505's unverified note beside a
+ * confirmed score ("unverified: 1 unconfirmed setting (worst: High)"). */
 export function riskScoreHint(c: KpiCardData): string | null {
   if (typeof c.risk_score !== "number") return null;
-  return c.risk_label ? `of 100 · ${c.risk_label}` : "of 100";
+  const hint = c.risk_label ? `of 100 · ${c.risk_label}` : "of 100";
+  const note = c.risk_posture_status !== "unverified" ? c.risk_unverified?.note : null;
+  return note ? `${hint} · ${note}` : hint;
 }
 /** The seven KPI tiles (label, icon, colours, tip, raw value): one definition for the code scan's dashboard and the
  * Sources run summary (views/SummaryKpis.tsx), so the two cannot drift. */

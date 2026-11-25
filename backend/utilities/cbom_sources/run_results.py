@@ -892,10 +892,13 @@ def run_results(session: Session, run: CbomCollectionRun, *, team_id: int, risk_
     actions, metrics = _remediation(session, team_id, computed.finding_keys)  # never cached
     certs = computed.certificates
     dashboard = {**computed.dashboard, "remediation_actions_required": actions, "remediation_metrics": metrics}
-    if str(run.status or "") not in RUN_SCORED_STATUSES:
-        # an open, failed or cancelled run's tile has no score (re-review 6064703319): "not_scored", shown "—"
+    status = str(run.status or "")
+    if status not in RUN_SCORED_STATUSES or status == "partial":
+        # an open, failed or cancelled run's tile has no score (re-review 6064703319): "not_scored", shown "—"; a
+        # partial run's is "incomplete" (#505, re-review 6066152368)
         card = dict(dashboard.get("card_data") or {})
-        dashboard["card_data"] = {**card, **risk_fields({}, judged=False)}
+        dashboard["card_data"] = {**card, **risk_fields({}, judged=status in RUN_SCORED_STATUSES,
+                                                        incomplete=status == "partial")}
     return {
         "run": run_detail,
         "dashboard": dashboard,

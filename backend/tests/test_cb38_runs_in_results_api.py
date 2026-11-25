@@ -188,12 +188,9 @@ def test_b1_scan_list_includes_runs(api, world, no_mongo, api_run):
     assert p["risk_data"] == {"total_critical": 1, "total_high": 2, "total_medium": 1, "total_low": 1,
                               "total_informational": 2, "total_quantum_vulnerable": 4}
     assert p["average_risk_score"] == M.average_risk({"critical": 1, "high": 2, "medium": 1, "low": 1}) == 6.0
-    # PR #500 takeover: the list shows the one risk score (posture), as a code scan's row and the results page
-    want = M.risk_posture({"critical": 1, "high": 2, "medium": 1, "low": 1})
-    assert (p["risk_score"], p["risk_grade"], p["risk_label"]) == (want["risk_score"], want["risk_grade"],
-                                                                    want["risk_label"])
-    assert p["risk_posture"] == {"score": p["risk_score"], "grade": p["risk_grade"], "label": p["risk_label"],
-                                 "band": want["risk_band"]}
+    # a partial run is "incomplete", no grade, as #505 (re-review 6066152368); its counts stay listed
+    assert (p["risk_score"], p["risk_grade"], p["risk_label"], p["risk_posture"]) == (None, None, None, None)
+    assert p["risk_posture_status"] == "incomplete"
     assert p["asset_count"] == 9 and p["endpoints_probed"] == 2  # coverage rows count as rows of the run (#159)
     assert p["title"] == f"Sources run #{partial} · srv-partial"
     assert p["sources"] == [{"id": p["sources"][0]["id"], "name": "srv-partial", "kind": "linux_servers"}]
@@ -207,9 +204,8 @@ def test_b1_scan_list_includes_runs(api, world, no_mongo, api_run):
 
     q = by_id[queued]  # a run with no assets yet
     assert q["asset_count"] == 0 and q["average_risk_score"] == 0.0 and sum(q["risk_data"].values()) == 0
-    # an open run has no score, never "0 · A" (re-review 6064703319); a partial run finished with what it collected
+    # an open run has no score, never "0 · A" (re-review 6064703319)
     assert (q["risk_score"], q["risk_posture"], q["risk_posture_status"]) == (None, None, "not_scored")
-    assert p["risk_posture_status"] == "scored"
 
     real = by_id[api_run]  # judged by the real classifier through the node API
     assert real["asset_count"] == 3 and real["endpoints_probed"] == 1
@@ -223,7 +219,8 @@ def test_b1_scan_list_includes_runs(api, world, no_mongo, api_run):
                      "status_reason",  # FIX-B3: why a run is partial / failed (additive)
                      "risk_score", "risk_grade", "risk_label",  # PR #500 takeover: the one risk score
                      "risk_posture",  # the same number as #505's posture object (re-review 6063599094)
-                     "risk_posture_status"}  # "not_scored" for an open / failed / cancelled run (6064703319)
+                     "risk_posture_status",
+                     "risk_unverified"}  # #505's unverified note and worst case (re-review 6066152368)  # "not_scored" for an open / failed / cancelled run (6064703319)
     assert all(set(r) == expected_keys for r in rows)
 
 

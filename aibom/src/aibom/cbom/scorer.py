@@ -91,17 +91,12 @@ def finding_severity_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
     for row in rows:
         if not isinstance(row, dict):
             continue
-        codes = [c for c in row.get("finding_codes") or [] if isinstance(c, str) and c]
         unscored = row.get("code_context") == "test" or (
             row.get("config_status") == "unconfirmed"
         )
         if unscored:
             continue  # listed, labelled "test code" / "unconfirmed", never scored
-        if (
-            "finding_codes" in row
-            and not codes
-            and not (row.get("weak") is True or row.get("quantum_vulnerable") is True)
-        ):
+        if not _is_finding(row):
             continue  # clean inventory
         impact = str(row.get("impact") or "").strip().lower()
         counts[impact if impact in counts else "low"] += 1
@@ -120,7 +115,14 @@ def posture_scores(
     sum stays in ``risk_total`` and ``by_flag`` / ``by_component`` /
     ``component_severity`` are unchanged."""
     counts = finding_severity_counts(rows)
-    score = posture_score(**counts)
+    guessed = unverified_severity_counts(rows)
+    headline, status = counts, "scored"
+    n = sum(guessed.values())
+    if n and not sum(counts.values()):
+        # only unconfirmed weak crypto: its worst case, marked unverified, never a
+        # clean A (#505's ``risk_posture_status``; re-review 6066152368)
+        headline, status = guessed, "unverified"
+    score = posture_score(**headline)
     grade, band = posture_grade(score)
     return {
         **scores,
@@ -130,11 +132,57 @@ def posture_scores(
         "risk_label": posture_label(band),
         "severity_counts": counts,
         "risk_scale": "posture",
+        "risk_posture_status": status,
+        "risk_unverified": _unverified(counts, guessed) if n else None,
     }
+
+
+def _is_finding(row: dict[str, Any]) -> bool:
+    """A row with a finding code, or one still marked weak or quantum-vulnerable."""
+    codes = [c for c in row.get("finding_codes") or [] if isinstance(c, str) and c]
+    return not (
+        "finding_codes" in row
+        and not codes
+        and not (row.get("weak") is True or row.get("quantum_vulnerable") is True)
+    )
+
+
+def unverified_severity_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    """Unconfirmed settings (outside test code) by the severity each would have if a
+    crypto call were proven to read it (``unverified_severity``; the row's own impact
+    for rows stored without it)."""
+    counts = dict.fromkeys(_SEVERITIES, 0)
+    for row in rows:
+        if not isinstance(row, dict) or row.get("config_status") != "unconfirmed":
+            continue
+        if row.get("code_context") == "test" or not _is_finding(row):
+            continue  # test code stays unscored; clean inventory is no finding
+        sev = str(row.get("unverified_severity") or row.get("impact") or "").lower()
+        counts[sev if sev in counts else "low"] += 1
+    return counts
+
+
+def _posture_of(counts: dict[str, int]) -> dict[str, Any]:
+    score = posture_score(**counts)
+    grade, band = posture_grade(score)
+    return {"score": score, "grade": grade, "label": posture_label(band), "band": band}
+
+
+def _unverified(sure: dict[str, int], guessed: dict[str, int]) -> dict[str, Any]:
+    """#505's ``risk_unverified``: how many, the worst, the worst case (confirmed and
+    unconfirmed together, which the lists' risk filter and sort read) and the note."""
+    n = sum(guessed.values())
+    worst = next((sev for sev in _SEVERITIES if guessed[sev]), None)
+    note = f"unverified: {n} unconfirmed setting{'s' if n != 1 else ''}"
+    if worst:
+        note += f" (worst: {worst.capitalize()})"
+    both = {k: sure[k] + guessed[k] for k in _SEVERITIES}
+    return {"count": n, "worst": worst, "worst_case": _posture_of(both), "note": note}
 
 
 __all__ = [
     "finding_severity_counts",
+    "unverified_severity_counts",
     "posture_scores",
     "score_crypto",
     "_CBOM_WEIGHTS_PATH",

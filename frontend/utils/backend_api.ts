@@ -15,6 +15,15 @@ export type RepoMode = "github" | "gitlab" | "bitbucket";
 export type Mode = RepoMode | "unknown";
 export type SastAppLang = "python" | "javascript" | "java" | "php" | "c" | "ruby" | "rust" | "swift" | "csharp" | "kotlin";
 
+/** #505's ``risk_unverified`` on a CBOM scan: settings no crypto call is proven to read, kept out of the confirmed
+ * score; ``worst_case`` (confirmed and unconfirmed together) is what the risk filter and sort read. */
+export interface RiskUnverified {
+  count: number
+  worst: string | null
+  note: string
+  worst_case: { score: number; grade: string; label: string; band: string }
+}
+
 export interface GithubContextSchema {
   mode: "github";
   repo_url: string;
@@ -2214,6 +2223,8 @@ export interface CbomScanDashboardData {
     risk_label?: string | null
     /** "not_scored" for a scan or run that did not succeed: no score, shown "—" (as #505's risk_posture_status) */
     risk_posture_status?: string | null
+    /** #505's unverified note and worst case (unconfirmed settings; re-review 6066152368) */
+    risk_unverified?: RiskUnverified | null
   }
   remediation_metrics: {
     mean_time_to_remediate: [number, number, number]
@@ -2260,6 +2271,8 @@ export interface CBOMConversation {
   risk_label?: string | null
   /** "not_scored" for a scan that did not succeed: no score, shown "—" */
   risk_posture_status?: string | null
+  /** #505's unverified note and worst case (unconfirmed settings; re-review 6066152368) */
+  risk_unverified?: RiskUnverified | null
   branch: string | null
   repo_url: string | null
   owner_user_email: string | null
@@ -2337,6 +2350,8 @@ export interface CBOMDashboardData {
     risk_label?: string | null
     /** "not_scored" for a scan or run that did not succeed: no score, shown "—" (as #505's risk_posture_status) */
     risk_posture_status?: string | null
+    /** #505's unverified note and worst case (unconfirmed settings; re-review 6066152368) */
+    risk_unverified?: RiskUnverified | null
   }
 }
 
@@ -2378,8 +2393,10 @@ export interface RunListRow {
   risk_score?: number | null
   risk_grade?: string | null
   risk_label?: string | null
-  /** "not_scored" for a run that has not finished, failed or was cancelled: no score, shown "—" */
+  /** "not_scored" for a run that has not finished, failed or was cancelled: no score, shown "—"; "incomplete" for a
+   * partial run */
   risk_posture_status?: string | null
+  risk_unverified?: RiskUnverified | null
   sources: { id: number; name: string; kind: string }[]
   repo_url: null
   branch: null
@@ -2705,6 +2722,8 @@ export interface AiBomScanDashboardData {
     risk_label?: string | null
     /** "not_scored" for a scan or run that did not succeed: no score, shown "—" (as #505's risk_posture_status) */
     risk_posture_status?: string | null
+    /** #505's unverified note and worst case (unconfirmed settings; re-review 6066152368) */
+    risk_unverified?: RiskUnverified | null
   }
   remediation_metrics: {
     mean_time_to_remediate: [number, number, number]

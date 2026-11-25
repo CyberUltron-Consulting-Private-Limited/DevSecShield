@@ -12,7 +12,7 @@ import types
 
 import pytest
 
-from tests.test_cbom_d3_review_6063599094 import APP, TEST_ONLY, UNCONFIRMED, _row
+from tests.test_cbom_d3_review_6063599094 import APP, TEST_ONLY, _row
 
 NOT_SCORED = {"risk_score": None, "risk_grade": None, "risk_label": None, "risk_posture": None,
               "risk_posture_status": "not_scored"}
@@ -62,7 +62,7 @@ def _run(status: str) -> types.SimpleNamespace:
 
 
 @pytest.mark.parametrize(("status", "scored"), [("queued", False), ("running", False), ("failed", False),
-                                                ("cancelled", False), ("done", True), ("partial", True)])
+                                                ("cancelled", False), ("done", True)])
 def test_a_sources_run_row_is_scored_only_when_it_finished(status, scored, monkeypatch):
     from backend.utilities.cbom_sources import run_list
 
@@ -101,6 +101,7 @@ def test_the_pdf_labels_each_test_code_and_unconfirmed_row(tmp_path):
     assert "Scoring Listed, not scored: unconfirmed (configuration only)" in text
 
 
-def test_the_unconfirmed_and_test_rows_stay_out_of_the_pdf_headline(tmp_path):
-    text = _pdf_text({"results": UNCONFIRMED + TEST_ONLY, "duration_of_scan": 1.0}, tmp_path)
+def test_the_test_rows_stay_out_of_the_pdf_headline(tmp_path):
+    # round 7: an unconfirmed setting alone is no longer 0 / A (re-review 6066152368); test code alone still is
+    text = _pdf_text({"results": TEST_ONLY, "duration_of_scan": 1.0}, tmp_path)
     assert "A Risk score 0 Low risk" in text

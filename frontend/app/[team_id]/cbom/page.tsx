@@ -59,6 +59,7 @@ import { originLabel, sourcesRunsHref } from "@/components/cbom/resultOrigin";
 import {
   filterAndSortRows,
   displayRiskScore,
+  riskNote,
   riskScoreCell,
   rowsFromListResponse,
   activeRunIds,
@@ -1205,8 +1206,14 @@ export default function CBOMPage() {
                                   <span title={run?.limited ? "Open the run's results for its findings" : undefined}>—</span>
                                 )}
                               </TableCell>
-                              <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm tabular-nums">
+                              <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm tabular-nums" title={riskNote(row) ?? undefined}>
                                 {riskScoreCell(row)}
+                                {/* #505's note beside a confirmed score (re-review 6066152368); the filter and sort read the worst case */}
+                                {riskNote(row) ? (
+                                  <span className="block text-[11px] leading-tight text-amber-700 dark:text-amber-300" data-testid="cbom-risk-unverified">
+                                    {riskNote(row)}
+                                  </span>
+                                ) : null}
                               </TableCell>
                               <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm max-w-[180px]" title={run ? run.sources.map((s) => s.name).join(", ") : (conversation?.repo_url ?? undefined)}>
                                 {run ? (

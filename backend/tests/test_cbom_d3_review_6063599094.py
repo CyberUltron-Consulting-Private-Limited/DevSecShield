@@ -43,12 +43,15 @@ def _surfaces(rows: list[dict], monkeypatch) -> dict[str, dict]:
     }
 
 
-def test_an_unconfirmed_setting_alone_scores_zero_a(monkeypatch):
+def test_an_unconfirmed_setting_alone_is_never_a_clean_a(monkeypatch):
+    """Round 7 (re-review 6066152368, #505's rule): no confirmed finding, so the score is the unconfirmed setting's
+    worst case, status "unverified"; the confirmed counts stay empty."""
     summary = summarize_code_rows(UNCONFIRMED)
-    assert (summary.risk["risk_score"], summary.risk["risk_grade"]) == (0, "A")
-    assert summary.findings == 1 and summary.findings_unconfirmed == 1, "listed, not scored"
+    # its worst case is Low here (the row carries no stronger severity): 4 / A, but marked unverified, never 0 / A
+    assert summary.risk["risk_posture_status"] == "unverified" and summary.risk["risk_score"] > 0
+    assert summary.findings == 1 and summary.findings_unconfirmed == 1 and sum(summary.scored.values()) == 0
     for name, s in _surfaces(UNCONFIRMED, monkeypatch).items():
-        assert (s["risk_score"], s["risk_grade"]) == (0, "A"), name
+        assert (s["risk_posture_status"], s["risk_score"]) == ("unverified", summary.risk["risk_score"]), name
 
 
 def test_a_test_code_only_scan_is_zero_a_everywhere(monkeypatch, tmp_path):
@@ -85,4 +88,5 @@ def test_pdf_states_the_unconfirmed_rule_and_counts_them(tmp_path):
     risk = summarize_code_rows(APP).risk
     assert f"{risk['risk_grade']} Risk score {risk['risk_score']} {risk['risk_label']}" in text
     assert "unconfirmed (configuration only)" in text
-    assert "Unconfirmed settings (configuration only; listed, not scored) 1" in text
+    assert "Unconfirmed settings (configuration only; not in the confirmed score) 1" in text
+    assert "Unverified unverified: 1 unconfirmed setting (worst: Low)" in text

@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any
@@ -183,13 +183,38 @@ _IMPORT_AS = re.compile(r"\b([A-Za-z_]\w*)\s+as\s+([A-Za-z_]\w*)")
 _REQUIRE_RENAME = re.compile(r"\b([A-Za-z_]\w*)\s*:\s*([A-Za-z_]\w*)\s*[,}]")
 
 
-class _Reader:
-    __slots__ = ("path", "imports", "words")
+# a typed declaration: Java ``SecProps props;`` / ``private SecProps props =``, TS
+# ``props: SecProps``: a read through ``props`` reads a ``SecProps``
+_JAVA_TYPED = re.compile(r"\b([A-Z]\w*)(?:<[^<>]*>)?\s+([a-z_]\w*)\s*[;=,)]")
+_TS_TYPED = re.compile(r"\b([a-z_]\w*)\s*:\s*([A-Z]\w*)\b")
 
-    def __init__(self, path: str, imports: str, words: frozenset[str]) -> None:
+
+class _Reader:
+    __slots__ = ("path", "imports", "words", "source")
+
+    def __init__(
+        self, path: str, imports: str, words: frozenset[str], source: Path
+    ) -> None:
         self.path = path
         self.imports = imports  # the file's import / require lines
         self.words = words  # every identifier the file names
+        self.source = source
+
+
+class _Proof:
+    """``prove(binding, owners)`` for one settings file, with ``uses(name)``: where
+    another file that imports it uses a registry of that name."""
+
+    def __init__(
+        self,
+        prove: Callable[[str, tuple[str, ...]], str | None],
+        uses: Callable[[str], str | None],
+    ) -> None:
+        self._prove = prove
+        self.uses = uses
+
+    def __call__(self, binding: str, owners: tuple[str, ...]) -> str | None:
+        return self._prove(binding, owners)
 
 
 class ProjectReads:
@@ -204,8 +229,14 @@ class ProjectReads:
     leaf-name match (any ``x.digest``) proves nothing."""
 
     def __init__(self, walk: FileWalk) -> None:
-        # lang -> name -> [(reader, line, qualifier)]
-        self.sites: dict[str, dict[str, list[tuple[_Reader, int, str | None]]]] = {}
+        self.walk = walk
+        # lang -> name -> [(reader, line, qualifier, typed)]: ``typed`` when the
+        # qualifier is the declared type of the variable read through
+        self.sites: dict[
+            str, dict[str, list[tuple[_Reader, int, str | None, bool]]]
+        ] = {}
+        # lang -> every file (its imports and identifiers): registry uses
+        self.readers: dict[str, list[_Reader]] = {}
         # lang -> alias -> the names it renames (a package re-export or an import)
         self.aliases: dict[str, dict[str, set[str]]] = {}
         for path in _iter_source_files(walk):
@@ -221,6 +252,7 @@ class ProjectReads:
             ]
             imports = "\n".join(ln for ln in lines if _IMPORT_LINE.match(ln))
             renames = self.aliases.setdefault(lang or "", {})
+            local: dict[str, str] = {}  # this file's renamed names -> the originals
             for ln in imports.split("\n"):
                 found = _IMPORT_AS.findall(ln)
                 if "require" in ln:
@@ -228,19 +260,32 @@ class ProjectReads:
                 for original, alias in found:
                     if original != alias:
                         renames.setdefault(alias, set()).add(original)
+                        local[alias.lower()] = original.lower()
+            words = frozenset(re.findall(r"[A-Za-z_]\w*", text))
+            reader = _Reader(walk.rel(path), imports, words, path)
+            self.readers.setdefault(lang or "", []).append(reader)
             sites = crypto_read_sites(lines)
             if not sites:
                 continue
-            words = frozenset(re.findall(r"[A-Za-z_]\w*", text))
-            reader = _Reader(walk.rel(path), imports, words)
+            typed = {
+                var: cls
+                for cls, var in _JAVA_TYPED.findall(text)
+                if cls not in ("String", "Object", "Integer", "Boolean")
+            }
+            typed.update(dict(_TS_TYPED.findall(text)))
             by_name = self.sites.setdefault(lang or "", {})
             for name, line, qualifier in sites:
-                by_name.setdefault(name, []).append((reader, line, qualifier))
+                kind = typed.get(qualifier or "")
+                entry = (reader, line, kind or qualifier, kind is not None)
+                by_name.setdefault(name, []).append(entry)
+                if qualifier is None and name in local:
+                    # ``const { digest: alg } = require('./config')`` then
+                    # ``createHash(alg)`` reads ``digest`` (re-review 6066152368)
+                    by_name.setdefault(local[name], []).append(entry)
 
-    def for_file(
-        self, lang: str | None, rel: str
-    ) -> Callable[[str, tuple[str, ...]], str | None]:
-        """``prove(binding, owners) -> "path:line" | None`` for ``rel``'s settings."""
+    def for_file(self, lang: str | None, rel: str) -> _Proof:
+        """``prove(binding, owners) -> "path:line" | None`` for ``rel``'s settings,
+        with ``uses(registry name)``."""
         by_name = self.sites.get(lang or "", {})
         renames = self.aliases.get(lang or "", {})
         stem = Path(rel).stem
@@ -250,11 +295,17 @@ class ProjectReads:
 
         def prove(binding: str, owners: tuple[str, ...]) -> str | None:
             real = [o for o in owners if o and o not in _NOT_OWNERS]
-            for reader, line, qualifier in by_name.get(binding, ()):
+            for reader, line, qualifier, typed in by_name.get(binding, ()):
                 if reader.path == rel:
                     continue
                 # a renamed import reads the original (``AppCfg.HASH`` reads Cfg's)
                 names = {qualifier, *renames.get(qualifier or "", ())} - {None}
+                if typed:
+                    # read through a variable of a declared type: that type only
+                    # (a ``props`` of another class proves nothing; 6066152368)
+                    if any(q in real for q in names):
+                        return f"{reader.path}:{line}"
+                    continue
                 linked = (
                     (imported is not None and bool(imported.search(reader.imports)))
                     or any(q in real for q in names)
@@ -264,7 +315,103 @@ class ProjectReads:
                     return f"{reader.path}:{line}"
             return None
 
-        return prove
+        def uses(name: str) -> str | None:
+            """A use of the registry ``name`` in a file that imports ``rel``'s
+            module and names it (``from lib.reg import HASHES``)."""
+            for reader in self.readers.get(lang or "", ()):
+                if reader.path == rel or name not in reader.words:
+                    continue
+                if imported is None or not imported.search(reader.imports):
+                    continue
+                text = self.walk.read_text(reader.source) or ""
+                word = re.compile(rf"(?<![\w.]){re.escape(name)}(?!\w)")
+                for n, ln in enumerate(text.split("\n"), start=1):
+                    if word.search(ln) and not _IMPORT_LINE.match(ln.strip()):
+                        return f"{reader.path}:{n}"
+            return None
+
+        return _Proof(prove, uses)
+
+
+# node-config (``config/default.json``, ``config/production.yaml``): settings files a
+# program reads with ``config.get('security.hashAlgorithm')`` (re-review 6066152368)
+_NODE_CONFIG = re.compile(r"(?:^|/)config/[^/]+\.(json|ya?ml)$", re.I)
+_JSON_OPEN = re.compile(r'^\s*"([^"]+)"\s*:\s*\{\s*$')
+_JSON_LEAF = re.compile(r'^\s*"([^"]+)"\s*:\s*"((?:[^"\\]|\\.){1,200})"\s*,?\s*$')
+_YAML_KEY = re.compile(
+    r"""^(\s*)("[^"]+"|'[^']+'|[A-Za-z_][\w.-]*)\s*:(?:\s+(.*?))?\s*$"""
+)
+_PLAIN_KEY = re.compile(r"[A-Za-z_$][\w$]*")
+
+
+def _js_key(key: str) -> str:
+    return key if _PLAIN_KEY.fullmatch(key) else json.dumps(key)
+
+
+def _config_line(path: list[str], leaf: str, value: str) -> str:
+    """One JS statement that puts ``leaf: value`` in an object owned by its parent
+    key, as the detector judges a JS settings module."""
+    parent = next((k for k in reversed(path) if _PLAIN_KEY.fullmatch(k)), None)
+    head = f"__config.{parent}" if parent else "module.exports"
+    return f"{head} = {{ {_js_key(leaf)}: {json.dumps(value)} }};"
+
+
+def node_config_js(text: str, ext: str) -> str:
+    """A node-config JSON / YAML file as JS, line for line: each string leaf on its
+    own line as ``__config.<parent> = { <leaf>: "<value>" };`` (other lines blank),
+    so findings keep the file's line numbers."""
+    out = [""] * len(text.split("\n"))
+    path: list[str] = []
+    if ext == "json":
+        for i, line in enumerate(text.split("\n")):
+            opened, leaf = _JSON_OPEN.match(line), _JSON_LEAF.match(line)
+            if opened:
+                path.append(opened.group(1))
+            elif leaf:
+                out[i] = _config_line(path, leaf.group(1), leaf.group(2))
+            closes = _STRING_OR_BRACE.sub(
+                lambda m: m.group(0) if m.group(0) == "}" else "", line
+            ).count("}")
+            for _ in range(min(closes, len(path))):
+                path.pop()
+        return "\n".join(out)
+    stack: list[tuple[int, str]] = []
+    for i, line in enumerate(text.split("\n")):
+        m = _YAML_KEY.match(line)
+        if not m or line.lstrip().startswith(("#", "-")):
+            continue
+        indent, key = len(m.group(1)), m.group(2).strip("\"'")
+        while stack and stack[-1][0] >= indent:
+            stack.pop()
+        value = re.sub(r"\s+#.*$", "", m.group(3) or "").strip()
+        if not value:
+            stack.append((indent, key))
+            continue
+        if value[:1] in "\"'" and value[-1:] == value[:1] and len(value) > 1:
+            value = value[1:-1]
+        if value and value[:1] not in "[{|>&*!":
+            out[i] = _config_line([k for _n, k in stack], key, value)
+    return "\n".join(out)
+
+
+_STRING_OR_BRACE = re.compile(r'"(?:[^"\\]|\\.)*"|\}')
+
+
+def _scan_inputs(walk: FileWalk) -> Iterator[tuple[Path, str | None, str, str, bool]]:
+    """``(path, language, rel, text, synthetic)``: the source files, then the
+    node-config JSON / YAML files read as JS settings modules."""
+    for path in _iter_source_files(walk):
+        text = walk.read_text(path)
+        if text is not None:
+            yield path, source_language(path), walk.rel(path), text, False
+    for path in walk.files(lambda p: bool(_NODE_CONFIG.search(p.as_posix()))):
+        rel = walk.rel(path)
+        text = walk.read_text(path)
+        if text is None or not _NODE_CONFIG.search(rel):
+            continue
+        ext = path.suffix.lower().lstrip(".")
+        js = node_config_js(text, "json" if ext == "json" else "yaml")
+        yield path, "javascript", rel, js, True
 
 
 def _detect_assets(
@@ -281,13 +428,12 @@ def _detect_assets(
     walk = walk or FileWalk(root)
     seen: dict[tuple[str, str], _Asset] = {}
     reads = ProjectReads(walk)
-    for path in _iter_source_files(walk):
-        lang = source_language(path)
-        rel = walk.rel(path)
-        text = walk.read_text(path)
-        if text is None:
-            continue
-        external = project.scope_for(rel, lang, text) if project is not None else None
+    for _path, lang, rel, text, synthetic in _scan_inputs(walk):
+        external = (
+            project.scope_for(rel, lang, text)
+            if project is not None and not synthetic
+            else None
+        )
         code_lines: list[str] | None = None
         at_line: dict[tuple[int, str], str] = {}  # (line, key) -> display name, to find a composite
         inner: list[tuple[_Asset, int, str, str | None]] = []

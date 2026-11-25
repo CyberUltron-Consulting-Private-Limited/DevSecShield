@@ -1358,8 +1358,10 @@ def crypto_read_sites(lines: list[str]) -> list[tuple[str, int, str | None]]:
             if len(line) <= _MAX_STRING_SCAN:
                 _note_alias(aliases, line)
             continue
-        if _DECL_LINE.match(line):
-            line = _after_params(line)  # a declaration's parameter list is no call
+        if _DECL_LINE.match(line) or _JAVA_METHOD_DECL.match(line):
+            # a declaration's parameter list is no call (also a Java method's:
+            # ``public String getHashAlgorithm() { return hashAlgorithm; }``)
+            line = _after_params(line)
         if not any(_is_crypto_callee(c) for c, _a in split_calls(_blank_strings(line))):
             _note_alias(aliases, line)
             continue
@@ -1371,6 +1373,11 @@ def crypto_read_sites(lines: list[str]) -> list[tuple[str, int, str | None]]:
     return sites
 
 
+_JAVA_METHOD_DECL = re.compile(
+    r"^\s*(?:@\w+\s+)*(?:(?:public|private|protected|static|final|synchronized"
+    r"|abstract|default|native)\s+)+[\w<>\[\],.? ]+?\s+[A-Za-z_]\w*\s*\([^()]*\)\s*"
+    r"(?:throws\s+[\w.,\s]+)?\{"
+)
 # ``[const|let|var|val|final|<Type>] name = <expression>`` (not ``==`` / ``=>``)
 _ALIAS_DECL = re.compile(
     r"^\s*(?:(?:const|let|var|val|final|private|static|String|auto)\s+)*"
@@ -1614,6 +1621,10 @@ class _ConfigLiterals:
         self.class_fields = (
             _class_fields(raw, self.stack_at) if lang == _PY and raw else {}
         )
+        # a Spring ``@ConfigurationProperties`` class: its String fields are app
+        # settings, proven by a read through that type (``props.getX()``)
+        spring = _SPRING_PROPS.search("\n".join(lines)) if lang == _JAVA else None
+        self.spring_class = spring.group(1) if spring else None
 
     def read_at(
         self,
@@ -1651,7 +1662,8 @@ class _ConfigLiterals:
             if any(b == name for _c, _d, b in self.stack_at[idx]):
                 continue  # inside the registry's own body
             return str(idx + 1)
-        return None
+        uses = getattr(self.project_reads, "uses", None)
+        return uses(name) if callable(uses) else None
 
     def _call_target_at(self, line_idx: int, callee: str | None) -> str | None:
         """The first argument of ``callee(`` when it is a plain name, also when the
@@ -1663,6 +1675,21 @@ class _ConfigLiterals:
             if re.search(rf"\b{re.escape(callee)}\s*\(", self.lines[j]):
                 joined = " ".join(self.lines[j:line_idx + 1])
                 return _call_target(joined, callee)
+        return None
+
+    def _assigned_at(self, line_idx: int, callee: str | None) -> str | None:
+        """The variable a call's result is assigned to (``const settings =
+        Object.assign(...)``, ``let`` / ``var`` / a later ``settings = ...``)."""
+        if not callee:
+            return None
+        pat = re.compile(
+            rf"(?:^|[^\w.$])([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*(?:await\s+)?"
+            rf"{re.escape(callee)}\s*\("
+        )
+        for j in range(line_idx, max(0, line_idx - 20) - 1, -1):
+            if re.search(rf"\b{re.escape(callee)}\s*\(", self.lines[j]):
+                m = pat.search(self.lines[j])
+                return m.group(1) if m else None
         return None
 
     def _flows(self, binding: str | None, owners: Sequence[str] = ()) -> bool:
@@ -1851,20 +1878,33 @@ class _ConfigLiterals:
             scalar = own is not None and (
                 (top[0] == "{" and not top[1]) or (top[0] == "(" and top[1])
             )
+            if (
+                self.spring_class and own and len(stack) == 1 and top[0] == "{"
+                and top[1] and _JAVA_STRING_FIELD.match(line)
+            ):
+                out.append((*span, own, SETTING, (self.spring_class,)))
+                continue
             if not scalar or own is None:
                 continue
             if calls and not self._record_setting(stack):
                 # an object handed to a call that is no crypto API
                 # (``Object.assign(settings, { cipher: ... })``): a setting only when
                 # a crypto call reads it through the call's target
-                target = self._call_target_at(line_idx, calls[-1])
-                if target and (
-                    self.read_at(own, (target,), qualified=True)
-                    or self.read_at(own, (target,))
+                # the target owns the merged setting, and so does the variable the
+                # result is assigned to (``const s = Object.assign({}, d, {...})``)
+                held = tuple(
+                    o for o in (
+                        self._call_target_at(line_idx, calls[-1]),
+                        self._assigned_at(line_idx, calls[-1]),
+                    ) if o
+                )
+                if held and (
+                    any(self.read_at(own, (o,), qualified=True) for o in held)
+                    or self.read_at(own, held)
                 ):
-                    # the target owns the setting: a read through it (or of the
-                    # setting's name by a crypto call) proves it
-                    out.append((*span, own, SETTING, (target,)))
+                    # a read through an owner (or of the setting's name by a crypto
+                    # call) proves it
+                    out.append((*span, own, SETTING, held))
                 else:
                     out.append((*span, own, MENTION, owners))
                 continue
@@ -1873,6 +1913,13 @@ class _ConfigLiterals:
 
 
 Judged = tuple[int, int, str, str, tuple[str, ...]]
+_SPRING_PROPS = re.compile(
+    r"@ConfigurationProperties\b[^\n]*\n(?:\s*@[^\n]*\n)*\s*"
+    r"(?:(?:public|final|open|data|abstract)\s+)*class\s+([A-Za-z_]\w*)"
+)
+_JAVA_STRING_FIELD = re.compile(
+    r"^\s*(?:(?:private|protected|public|final)\s+)*String\s+[A-Za-z_]\w*\s*="
+)
 REGISTRY = "registry"
 _REGISTRY_VALUE = re.compile(r"^\s*:\s*(?:new\s+)?([A-Za-z_][\w.]*)\s*(?=[(,}\s]|$)")
 _MEMBER_METHODS = frozenset({"includes", "indexOf", "contains", "containsKey", "has"})
@@ -2187,6 +2234,10 @@ def _string_constants(code: str) -> dict[str, str]:
     values: dict[str, set[str]] = {}
     for m in (*_JAVA_STR_DECL.finditer(code), *_KT_STR_DECL.finditer(code)):
         values.setdefault(m.group(1), set()).add(m.group(2))
+    # ``private final String t;`` then one ``this.t = "DES/ECB/PKCS5Padding";`` (a
+    # constructor): the field's value, when that is its only write (6066152368)
+    for m in _JAVA_FIELD_WRITE.finditer(code):
+        values.setdefault(m.group(1), set()).add(m.group(2))
     if not values:
         return _spring_defaults(code, {})
     aliases = {m.group(1): m.group(2) for m in _JAVA_ALIAS_DECL.finditer(code)}
@@ -2219,6 +2270,7 @@ def _spring_defaults(code: str, out: dict[str, str]) -> dict[str, str]:
     return out
 
 
+_JAVA_FIELD_WRITE = re.compile(r'\bthis\.([A-Za-z_]\w*)\s*=\s*"([^"\\\s]{1,80})"\s*;')
 _SPRING_VALUE_DEFAULT = re.compile(
     r'@Value\(\s*"\\?\$\{[^:}"]+:([^}"]{1,80})\}"\s*\)\s*'
     r"(?:(?:private|protected|public|final|static|lateinit|internal)\s+)*"
@@ -3113,7 +3165,8 @@ def detect_crypto(
     rules = RULES_BY_LANG.get(lang, ())
     java_ctx = _JavaContext(work_lines, external) if lang == _JAVA else None
     jwt_file = bool(_JWT_FILE.search(stripped)) and lang in (_PY, _JS, _JAVA)
-    keyword_lines = _keyword_list_lines(work_lines, lang) | _policy_list_lines(work_lines, lang)
+    policy_lines = _policy_list_lines(work_lines, lang)
+    keyword_lines = _keyword_list_lines(work_lines, lang) | policy_lines
     config = (
         _ConfigLiterals(
             [ln.strip() for ln in work_lines], lang, work_lines, project_reads
@@ -3157,6 +3210,10 @@ def detect_crypto(
         if not line or _IMPORT_RE.search(line) or _BARE_IMPORT_PATH.match(work) or _PACKAGE_DECL.match(work):
             continue  # imports are LIBRARY signals, handled by the scanner
         if line_no in keyword_lines:
+            if line_no in policy_lines:
+                # a deny-list's names are no use: listed as mentions (6066152368)
+                for m in _STR_LIT.finditer(line):
+                    _evidence(line_no, m.group(0)[1:-1], "deny-list")
             continue  # an element of a non-crypto keyword table, or of a deny-list
         if lang == _PY and len(line) <= _MAX_STRING_SCAN:
             esc = py_escaped_span(line)

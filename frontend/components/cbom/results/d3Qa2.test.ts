@@ -12,7 +12,7 @@ import { isBrokenToday, matchesQuantumFilter, quantumCounts } from "../quantumFi
 import { scanCertificates, teamCertificatesHref } from "../certificates/scanCertificates";
 import { weaknessBars } from "../CbomCryptoCharts";
 import { buildComplianceSummary } from "./complianceSummary";
-import { KPI_TILES, mttrText, riskScoreText } from "./CbomDashboardCharts";
+import { KPI_TILES, mttrText, riskScoreHint, riskScoreText } from "./CbomDashboardCharts";
 
 type Card = Parameters<typeof riskScoreText>[0];
 const card = (extra: Partial<Card>): Card => ({
@@ -29,6 +29,14 @@ assert.equal(tile.hint?.(c), "of 100 · Elevated risk");
 assert.equal(riskScoreText(card({})), "N/A", "an API without the score shows N/A, never the average");
 // re-review 6064703319 (5): a scan or run that did not succeed has no score: "—", never "0 · A"
 assert.equal(riskScoreText(card({ risk_score: null, risk_grade: null, risk_posture_status: "not_scored" })), "—");
+// re-review 6066152368: #505's statuses on the tile
+assert.equal(riskScoreText(card({ risk_score: null, risk_grade: null, risk_posture_status: "incomplete" })), "incomplete");
+assert.equal(riskScoreText(card({ risk_score: 20, risk_grade: "B", risk_label: "Moderate risk", risk_posture_status: "unverified" })),
+  "20 · B unverified");
+assert.equal(riskScoreHint(card({ risk_score: 4, risk_grade: "A", risk_label: "Low risk", risk_posture_status: "scored",
+  risk_unverified: { count: 1, worst: "high", note: "unverified: 1 unconfirmed setting (worst: High)",
+    worst_case: { score: 24, grade: "B", label: "Moderate risk", band: "moderate" } } })),
+  "of 100 · Low risk · unverified: 1 unconfirmed setting (worst: High)");
 assert.equal(riskScoreText(card({ risk_score: 0, risk_grade: "A", risk_label: "Low risk" })), "0 · A");
 
 // the backend fixture's engine score is what the tile prints (PDF / API / UI agree; backend test_cbom_d3_qa2)

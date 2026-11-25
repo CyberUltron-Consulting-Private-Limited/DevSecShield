@@ -317,7 +317,9 @@ def run_row(run: CbomCollectionRun, counts: dict[str, Any], jobs: dict[str, Any]
         "average_risk_score": average_risk(severity),
         # the one risk score (posture function), as a code scan's list row (PR #500 takeover)
         # a run that has not finished (queued, running) or failed / was cancelled has no score (re-review 6064703319)
-        **risk_fields(risk_posture(severity), judged=str(run.status or "") in RUN_SCORED_STATUSES),
+        # a partial run is "incomplete", as #505 (re-review 6066152368)
+        **risk_fields(risk_posture(severity), judged=str(run.status or "") in RUN_SCORED_STATUSES,
+                      incomplete=str(run.status or "") == "partial"),
         "sources": [{"id": s["id"], "name": s["name"], "kind": s["kind"]} for s in sources],
         "repo_url": None,
         "branch": None,

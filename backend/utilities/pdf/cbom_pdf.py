@@ -152,7 +152,10 @@ RISK_METHOD_TEXT = (
     "the worst severity found (no Critical: at most 69; no Critical or High: at most 49; Low only: at most 29). "
     "Findings in test, fixture or example code are listed and labelled \"test code\" but not counted in the "
     "score. A setting that names an algorithm but that no crypto call is proven to read (no import, owner or "
-    "same-file read links it to one) is listed as \"unconfirmed (configuration only)\", at Low, and not counted. "
+    "same-file read links it to one) is listed as \"unconfirmed (configuration only)\", at Low, and kept out of "
+    "the confirmed score: when a scan's only weak crypto is unconfirmed, the score is their worst case (the "
+    "severity each would have if read), marked \"unverified\"; otherwise the note \"unverified: N unconfirmed "
+    "settings (worst: X)\" stands beside the confirmed score. "
     "Configuration mentions (an algorithm named in a label, a comparison, a case label or an Enum member) "
     "are listed in the appendix and not counted."
 )
@@ -220,7 +223,9 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     quantum_safe_count = summary.quantum["quantum_safe"]
     broken_today = summary.quantum["broken_today"]  # the results table's "Broken today": not counted as quantum-safe
     risk = summary.risk  # the D3 risk score: the engine's posture function over these findings (Q2-01, Rule P)
-    risk_text = f"{risk['risk_score']} / 100 · grade {risk['risk_grade']} · {risk['risk_label']}"
+    unverified = risk.get("risk_unverified") or {}
+    marked = " (unverified)" if risk.get("risk_posture_status") == "unverified" else ""
+    risk_text = f"{risk['risk_score']} / 100 · grade {risk['risk_grade']} · {risk['risk_label']}{marked}"
     readiness = summary.readiness_pct  # one definition for every CBOM surface (cbom_metrics.quantum_readiness_pct)
     readiness_text = "n/a" if readiness is None else f"{readiness:.1f}%"  # as the team deliverables print it
     informational = summary.informational
@@ -260,7 +265,9 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                 ["Weak algorithms", str(summary.weak)],
                 ["Risk score", risk_text],
                 ["Findings in test code (listed, not scored)", str(summary.findings_in_test_code)],
-                ["Unconfirmed settings (configuration only; listed, not scored)", str(summary.findings_unconfirmed)],
+                ["Unconfirmed settings (configuration only; not in the confirmed score)",
+                 str(summary.findings_unconfirmed)],
+                ["Unverified", unverified.get("note") or "none"],
             ],
             [4.0 * inch, 1.5 * inch],
         )
@@ -306,7 +313,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         scan_time=format_scan_duration(duration),
         # the headline is the summary rows' number (the engine's posture function over the scored findings: test
         # code excluded), as the results page's KPI and the API
-        risk_score_fn=lambda *_c: (risk["risk_score"], risk["risk_grade"], risk["risk_label"]),
+        risk_score_fn=lambda *_c: (risk["risk_score"], risk["risk_grade"], risk["risk_label"] + marked),
         meta_chips=[
             ("Scan type", "CBOM"),
             ("Total findings", str(total)),

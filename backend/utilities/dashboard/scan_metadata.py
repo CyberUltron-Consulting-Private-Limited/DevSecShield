@@ -289,7 +289,9 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
                 cbom_scores = {**(cbom_scores if isinstance(cbom_scores, dict) else {}),
                                "risk_normalized": float(risk["risk_score"]), "risk_band": risk["risk_band"],
                                "risk_grade": risk["risk_grade"], "risk_label": risk["risk_label"],
-                               "severity_counts": risk["severity_counts"], "risk_scale": "posture"}
+                               "severity_counts": risk["severity_counts"], "risk_scale": "posture",
+                               "risk_posture_status": risk["risk_posture_status"],
+                               "risk_unverified": risk["risk_unverified"]}
             if "cbom_graph" in scan.scan_data:
                 cbom_graph = scan.scan_data["cbom_graph"]
             if "cbom_graph_compact" in scan.scan_data:

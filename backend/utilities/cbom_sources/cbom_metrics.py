@@ -84,7 +84,7 @@ def finding_severity(row: dict[str, Any]) -> str | None:
     return impact if impact in IMPACT_RISK else "low"
 
 
-def risk_posture(severity: dict[str, int]) -> dict[str, Any]:
+def risk_posture(severity: dict[str, int], unverified: dict[str, int] | None = None) -> dict[str, Any]:
     """The D3 risk score of a code scan from its findings by severity (staging QA Q2-01, Rule P): the engine's one
     posture function (``aibom/src/aibom/score/posture.py``, worst-severity cap; loaded by ``aibom_posture``), the same
     number, grade and words the engine stores in ``cbom_scores`` for these rows. The PDF headline, the PDF summary
@@ -92,27 +92,54 @@ def risk_posture(severity: dict[str, int]) -> dict[str, Any]:
     from backend.utilities.pdf.aibom_posture import posture_risk
 
     counts = {s: int(severity.get(s, 0) or 0) for s in SEVERITIES}
-    score, grade, label = posture_risk(counts["critical"], counts["high"], counts["medium"], counts["low"])
+    guessed = {s: int((unverified or {}).get(s, 0) or 0) for s in SEVERITIES}
+    n = sum(guessed.values())
+    # #505's rule (re-review 6066152368): unconfirmed settings stay out of the confirmed score; when they are the only
+    # weak crypto, the score is their worst case, status "unverified", never a clean A
+    headline, status = (guessed, "unverified") if n and not sum(counts.values()) else (counts, "scored")
+    score, grade, label = posture_risk(headline["critical"], headline["high"], headline["medium"], headline["low"])
     band = label.split(" ")[0].lower()
     return {"risk_score": score, "risk_grade": grade, "risk_label": label,
             "risk_band": band, "severity_counts": counts,
             # the same number in the shape of the app-wide ``risk_posture`` object (risk_scale.posture_field, #505)
-            "risk_posture": {"score": score, "grade": grade, "label": label, "band": band}}
+            "risk_posture": {"score": score, "grade": grade, "label": label, "band": band},
+            "risk_posture_status": status,
+            "risk_unverified": _unverified(counts, guessed) if n else None}
+
+
+def _unverified(sure: dict[str, int], guessed: dict[str, int]) -> dict[str, Any]:
+    """#505's ``risk_unverified``: how many unconfirmed settings, the worst severity one would have if read, the worst
+    case (the confirmed and unconfirmed findings together: the lists' risk filter and sort read it) and the note."""
+    from backend.utilities.pdf.aibom_posture import posture_risk
+
+    n = sum(guessed.values())
+    worst = next((s for s in SEVERITIES if guessed[s]), None)
+    both = {s: sure[s] + guessed[s] for s in SEVERITIES}
+    score, grade, label = posture_risk(both["critical"], both["high"], both["medium"], both["low"])
+    note = f"unverified: {n} unconfirmed setting{'s' if n != 1 else ''}" + (
+        f" (worst: {worst.capitalize()})" if worst else "")
+    return {"count": n, "worst": worst, "note": note,
+            "worst_case": {"score": score, "grade": grade, "label": label, "band": label.split(" ")[0].lower()}}
 
 
 RISK_FIELDS = ("risk_score", "risk_grade", "risk_label", "risk_posture")
+UNVERIFIED_KEY = "risk_unverified"
 # finished CBOM Sources runs (a partial run finished with what it collected)
 RUN_SCORED_STATUSES = frozenset({"done", "partial"})
 
 
-def risk_fields(risk: dict[str, Any], *, judged: bool = True) -> dict[str, Any]:
+def risk_fields(risk: dict[str, Any], *, judged: bool = True, incomplete: bool = False) -> dict[str, Any]:
     """The risk fields a list row or a card spreads, with ``risk_posture_status`` (#505's
     ``risk_scale.posture_field``): "scored" with the posture numbers, or, for a scan or run that did not succeed
     (pending, running, failed, cancelled), "not_scored" with every number null, shown "—" and never matched by the
     "Low (A)" filter (re-review 6064703319, 5)."""
     if not judged:
-        return {**dict.fromkeys(RISK_FIELDS), "risk_posture_status": "not_scored"}
-    return {**{k: risk[k] for k in RISK_FIELDS}, "risk_posture_status": "scored"}
+        return {**dict.fromkeys(RISK_FIELDS), "risk_posture_status": "not_scored", UNVERIFIED_KEY: None}
+    if incomplete:
+        # a partial Sources run finished without everything a score needs: "incomplete", never a grade (#505)
+        return {**dict.fromkeys(RISK_FIELDS), "risk_posture_status": "incomplete", UNVERIFIED_KEY: None}
+    return {**{k: risk[k] for k in RISK_FIELDS}, "risk_posture_status": risk.get("risk_posture_status", "scored"),
+            UNVERIFIED_KEY: risk.get(UNVERIFIED_KEY)}
 
 
 def average_risk(severity: dict[str, int]) -> float:
@@ -137,6 +164,9 @@ class CodeRowSummary:
         self.findings_in_test_code = 0
         # settings no crypto call is proven to read (re-review 6063599094): listed, Low, not scored
         self.findings_unconfirmed = 0
+        # their severity if a crypto call were proven to read them (the engine's ``unverified_severity``): #505's
+        # worst case
+        self.unverified = {s: 0 for s in SEVERITIES}
         self.algorithm_types: dict[str, int] = defaultdict(int)
         self.strengths = {"weak": 0, "moderate": 0, "strong": 0, "quantum_safe": 0}
         # the results table's Quantum column: Quantum-safe / Broken today / Quantum-vulnerable (one rule)
@@ -188,6 +218,8 @@ class CodeRowSummary:
                 self.findings_in_test_code += 1
             elif row.get("config_status") == "unconfirmed":
                 self.findings_unconfirmed += 1
+                worst = str(row.get("unverified_severity") or "").strip().lower()
+                self.unverified[worst if worst in self.unverified else severity] += 1
             else:
                 self.scored[severity] += 1
             for value in (row.get("owasp_top_10") or {}).values():
@@ -233,7 +265,7 @@ class CodeRowSummary:
     @property
     def risk(self) -> dict[str, Any]:
         """``risk_posture`` of these findings (test code excluded): the one D3 risk score."""
-        return risk_posture(self.scored)
+        return risk_posture(self.scored, self.unverified)
 
     def severity_distribution(self) -> dict[str, int]:
         """Findings by severity, plus the inventory rows under ``informational`` (never in a severity)."""

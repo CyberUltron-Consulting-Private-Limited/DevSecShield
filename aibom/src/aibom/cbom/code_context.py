@@ -65,6 +65,7 @@ def _path(props: dict[str, str]) -> str | None:
 UNCONFIRMED = "unconfirmed"
 UNCONFIRMED_LABEL = "unconfirmed (configuration only)"
 CONFIG_STATUS_PROP = "crypto:configStatus"
+UNVERIFIED_SEVERITY_PROP = "crypto:unverifiedSeverity"
 _UNCONFIRMED_PREFIX = (
     "Unconfirmed (configuration only): no crypto call is proven to read this "
     "setting, so it is Low and not scored. "
@@ -97,6 +98,21 @@ def mark_unconfirmed_settings(result: ScanResult) -> None:
             refs.add(comp.bom_ref)
     if not refs:
         return
+    # the severity each would have if a crypto call were proven to read it: the
+    # worst case #505's "unverified" score uses (re-review 6066152368)
+    from aibom.cbom.scorer import _CBOM_WEIGHTS_PATH
+    from aibom.score.scorer import score_result
+
+    trial = dataclasses.replace(result, scores={}, flags=list(result.flags))
+    score_result(trial, str(_CBOM_WEIGHTS_PATH), posture=False)
+    stacked = trial.scores.get("component_severity") or {}
+    for comp in result.components:
+        if comp.bom_ref in refs:
+            worst = stacked.get(comp.bom_ref)
+            if worst:
+                props = comp.properties or {}
+                props[UNVERIFIED_SEVERITY_PROP] = str(worst).lower()
+                comp.properties = props
     flags = []
     for f in result.flags:
         if f.target in refs and not f.message.startswith(_UNCONFIRMED_PREFIX):
@@ -133,6 +149,7 @@ def downgrade_test_code(result: ScanResult) -> None:
 
 __all__ = [
     "CONFIG_STATUS_PROP",
+    "UNVERIFIED_SEVERITY_PROP",
     "UNCONFIRMED",
     "UNCONFIRMED_LABEL",
     "is_unscored",
