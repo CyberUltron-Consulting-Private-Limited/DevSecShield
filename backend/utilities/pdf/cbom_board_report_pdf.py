@@ -330,7 +330,8 @@ def configuration_posture_line(view: TeamCbomView) -> str | None:
 def grade_counts(view: TeamCbomView) -> tuple[list[int], list[int], int]:
     """``(scored, unconfirmed, in_test)`` of the current issue assets by impact, the rule of every other surface
     (``risk_rollup.cbom_counts``): a finding in test, fixture or example code is listed, not scored; a setting no
-    crypto call is proven to read is "unverified". ``scored`` is ``issue_by_impact`` less those two."""
+    crypto call is proven to read is "unverified", counted at its worst-case severity (``unverified_severity``).
+    ``scored`` is ``issue_by_impact`` less those two."""
     scored = [int(view.issue_by_impact.get(level, 0) or 0) for level in IMPACT_LEVELS]
     unconfirmed = [0] * len(IMPACT_LEVELS)
     in_test = 0
@@ -342,7 +343,9 @@ def grade_counts(view: TeamCbomView) -> tuple[list[int], list[int], int]:
             in_test += 1
             scored[index] -= 1
         elif asset.config_status == "unconfirmed":
-            unconfirmed[index] += 1
+            # at its worst case (#500's ``unverified_severity``), never its Low row impact; an older row: its impact
+            worst = str(asset.unverified_severity or "").strip().capitalize()
+            unconfirmed[IMPACT_LEVELS.index(worst) if worst in IMPACT_LEVELS else index] += 1
             scored[index] -= 1
     return [max(0, n) for n in scored], unconfirmed, in_test
 

@@ -2326,7 +2326,7 @@ FROZEN_FIELDS = {
         "first_seen last_seen scan_count scan_ids latest_scan_id broken_today collector_codes clause_evidence "
         # code_context / config_status: #505 round 4 (the Board Report grades as the tile: test code not scored,
         # unconfirmed settings unverified; not compared)
-        "row_kind node_type asset_key also_at code_context config_status"
+        "row_kind node_type asset_key also_at code_context config_status unverified_severity"
     ),
     "CertAgg": (
         "key identity_strong name file_names subject_cn issuer_cn not_before not_after "

@@ -161,7 +161,10 @@ def _board_and_tile(rows):
 
 TEST_HIGHS = [_crypto("High", i, code_context="test", file_path=f"tests/t{i}.py", location=f"tests/t{i}.py")
               for i in range(6)]
-UNCONFIRMED_CRIT = [_crypto("Critical", 50, config_status="unconfirmed", location="conf/app.yaml")]
+# an unconfirmed MD5 setting as the engine stores it (#500): a Low row, High if a crypto call were proven to read it
+UNCONFIRMED_MD5 = [_crypto("Low", 50, config_status="unconfirmed", unverified_severity="high", location="conf/app.yaml")]
+# an older unconfirmed row without ``unverified_severity``: counted at its own impact
+UNCONFIRMED_OLD = [_crypto("Critical", 51, config_status="unconfirmed", location="conf/old.yaml")]
 
 
 def test_board_report_test_code_only_team_reads_0_a_as_the_tile():
@@ -173,29 +176,49 @@ def test_board_report_test_code_only_team_reads_0_a_as_the_tile():
 
 
 def test_board_report_unconfirmed_only_team_reads_its_worst_case_unverified():
-    """The reviewer's probe: 1 unconfirmed Critical setting read 70 · F scored on the Board Report, 0 · A elsewhere."""
-    grade, tile, row = _board_and_tile(UNCONFIRMED_CRIT)
-    assert (grade.score, grade.grade, grade.status) == (70, "F", "unverified")
-    assert grade.band == "Critical risk (unverified)"
+    """The reviewer's probe (review 6066887930 of #500): one unconfirmed MD5 is a Low row; its worst case is High, so
+    row, tile and Board Report read 50 · D "unverified (worst: High)", never 4 · A from the Low row impact."""
+    grade, tile, row = _board_and_tile(UNCONFIRMED_MD5)
+    assert (grade.score, grade.grade, grade.status) == (50, "D", "unverified")
+    assert grade.band == "High risk (unverified)"
     for got in (tile, row):
-        assert _sg(got) == (70, "F") and got[S] == "unverified"
-        assert got[U]["kind"] == "unconfirmed_setting" and got[U]["count"] == 1
-    assert risk_scale.unverified_note(row[U]) == "unverified: 1 unconfirmed setting (worst: Critical)"
+        assert _sg(got) == (50, "D") and got[S] == "unverified"
+        assert got[U]["kind"] == "unconfirmed_setting" and got[U]["count"] == 1 and got[U]["worst"] == "high"
+    assert risk_scale.unverified_note(row[U]) == "unverified: 1 unconfirmed setting (worst: High)"
+    old, old_tile, _row = _board_and_tile(UNCONFIRMED_OLD)  # no unverified_severity stored: its impact
+    assert (old.score, old.grade, old.status) == _sg(old_tile) + ("unverified",) == (70, "F", "unverified")
 
 
 def test_board_report_mixed_team_shows_the_confirmed_score_with_a_note():
-    grade, tile, row = _board_and_tile([_crypto("Low", 99)] + UNCONFIRMED_CRIT + TEST_HIGHS)
+    grade, tile, row = _board_and_tile([_crypto("Low", 99)] + UNCONFIRMED_MD5 + TEST_HIGHS)
     assert (grade.score, grade.grade, grade.status) == (4, "A", "scored")
-    assert grade.note == "unverified: 1 unconfirmed setting (worst: Critical)"
+    assert grade.note == "unverified: 1 unconfirmed setting (worst: High)"
     for got in (tile, row):
         assert _sg(got) == (4, "A") and got[S] == "scored"
         assert risk_scale.unverified_note(got[U]) == grade.note
-        assert got[U]["worst_case"]["score"] == 70  # what the filter and the sort read
+        assert got[U]["worst_case"]["score"] == 50  # what the filter and the sort read: 1 Low + 1 High
+
+
+def test_one_stored_scan_reads_one_score_and_one_note_everywhere(tmp_path):
+    """Review 6066887930 of #500: list row, tile, Board Report and (once #500's PDF scores the summary) the scan PDF
+    give one score and one note for the same stored scan, whichever PR lands first."""
+    rows = [_crypto("Low", 99)] + UNCONFIRMED_MD5 + TEST_HIGHS
+    grade, tile, row = _board_and_tile(rows)
+    assert (grade.score, grade.grade) == _sg(tile) == _sg(row) == (4, "A")
+    assert grade.note == risk_scale.unverified_note(tile[U]) == risk_scale.unverified_note(row[U])
+    from backend.utilities.cbom_sources.cbom_metrics import CodeRowSummary
+
+    summary = CodeRowSummary().add_rows(rows)
+    if hasattr(summary, "risk"):  # #500 merged: its summary is what the scan PDF and the results card print
+        risk = summary.risk
+        assert (risk["risk_score"], risk["risk_grade"]) == (4, "A")
+        note = risk_scale.unverified_note(risk.get(U) or risk.get("risk_posture", {}).get(U))
+        assert note in (None, grade.note)
 
 
 @pytest.mark.parametrize("rows", [
     [_crypto("High", 1)], [_crypto("Critical", 1), _crypto("Low", 2)], [_crypto("Medium", i) for i in range(8)],
-    TEST_HIGHS, UNCONFIRMED_CRIT, [_crypto("Low", 99)] + UNCONFIRMED_CRIT,
+    TEST_HIGHS, UNCONFIRMED_MD5, UNCONFIRMED_OLD, [_crypto("Low", 99)] + UNCONFIRMED_MD5,
 ])
 def test_board_report_equals_the_dashboard_tile(rows):
     grade, tile, _row = _board_and_tile(rows)

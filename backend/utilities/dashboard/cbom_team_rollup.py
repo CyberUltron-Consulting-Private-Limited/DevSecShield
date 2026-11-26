@@ -354,6 +354,9 @@ class AssetAgg:
     # scored, unconfirmed settings "unverified"; review 6066492618 of #505, 3)
     code_context: str | None = field(default=None, compare=False, repr=False)
     config_status: str | None = field(default=None, compare=False, repr=False)
+    # an unconfirmed setting's severity if a crypto call were proven to read it (#500's ``unverified_severity``,
+    # lower case): the Board Report counts it there, as the tile does
+    unverified_severity: str | None = field(default=None, compare=False, repr=False)
 
 
 @dataclass
@@ -1285,6 +1288,7 @@ def _asset_from_row(row: Mapping[str, Any], facts: ScanFacts) -> AssetAgg:
         latest_scan_id=facts.scan_id,
         code_context=_text(row.get("code_context")),
         config_status=_text(row.get("config_status")),
+        unverified_severity=_text(row.get("unverified_severity")),
     )
 
 

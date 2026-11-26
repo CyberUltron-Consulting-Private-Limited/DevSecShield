@@ -310,7 +310,7 @@ def cbom_counts(rows: Iterable[Any]) -> tuple[dict[str, int], dict[str, int], in
     """``(scored, unconfirmed, in_test)`` of a CBOM's rows: findings per severity as its risk score counts them (#500's
     ``CodeRowSummary.scored``: findings only, clean inventory is not one, nor a finding in test, fixture or example code
     ``code_context: test``), the settings no crypto call is proven to read (``config_status: unconfirmed``) per
-    severity, which are "unverified" (the cross-product rule: their worst case when they are all there is, else a
+    worst-case severity (``unverified_severity``), which are "unverified" (the cross-product rule: their worst case when they are all there is, else a
     note), and how many findings are in test code (listed, never scored)."""
     from backend.utilities.cbom_sources.cbom_metrics import finding_severity
     from backend.utilities.cbom_sources.cbom_rows import display_row
@@ -328,10 +328,25 @@ def cbom_counts(rows: Iterable[Any]) -> tuple[dict[str, int], dict[str, int], in
         if row.get("code_context") == "test":
             in_test += 1
         elif row.get("config_status") == "unconfirmed":
-            unconfirmed[severity] += 1
+            unconfirmed[unverified_severity(row, severity)] += 1
         else:
             scored[severity] += 1
+    # #500's one rule, once it is on this tree (cbom_metrics.unverified_counts): the same counts by contract
+    from backend.utilities.cbom_sources import cbom_metrics
+
+    helper = getattr(cbom_metrics, "unverified_counts", None)
+    if callable(helper):
+        counted = helper(rows) or {}
+        unconfirmed = {k: int(counted.get(k, 0) or 0) for k in SEVERITIES}
     return scored, unconfirmed, in_test
+
+
+def unverified_severity(row: Mapping[str, Any], fallback: str) -> str:
+    """The severity an unconfirmed setting would have if a crypto call were proven to read it (the engine's
+    ``unverified_severity``, #500: an unconfirmed MD5 is a Low row, High if read); the row's own severity for an older
+    row without it. Its worst case, never its row impact (review 6066887930 of #500)."""
+    worst = str(row.get("unverified_severity") or "").strip().lower()
+    return worst if worst in SEVERITIES else fallback
 
 
 def cbom_scored_counts(rows: Iterable[Any]) -> dict[str, int]:
@@ -348,5 +363,5 @@ def cbom_posture_field(rows: Iterable[Any]) -> dict[str, Any]:
     return risk_scale.posture_field(scored, unverified=unconfirmed, unverified_kind=risk_scale.KIND_UNCONFIRMED)
 
 
-__all__ = ["cbom_counts", "cbom_posture_field", "cbom_scored_counts", "project_name", "upload_key", "endpoint_for_record", "endpoint_key", "latest_successful", "repo_key", "sbom_team_posture",
+__all__ = ["unverified_severity", "cbom_counts", "cbom_posture_field", "cbom_scored_counts", "project_name", "upload_key", "endpoint_for_record", "endpoint_key", "latest_successful", "repo_key", "sbom_team_posture",
            "scan_counts", "target_key", "team_posture"]
