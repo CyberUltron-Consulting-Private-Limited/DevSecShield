@@ -18,6 +18,7 @@ a loaded JSON / YAML config counts once; a wrapper in another file counts once.
 
 from __future__ import annotations
 
+import json
 import pathlib
 
 import pytest
@@ -56,6 +57,13 @@ def _served(result, name: str) -> list[str]:
     return [by_ref[e.dst].name for e in result.edges if e.src == model.bom_ref and e.rel == REL_SERVED_BY]
 
 
+def _choice(result) -> str:
+    """The one run-time choice entry (its name is a stable hash since round 9)."""
+    (entry,) = [c for c in result.components if c.kind == "model"
+                and (c.properties or {}).get("model:selection") == "candidates"]
+    return entry.name
+
+
 def _rows(tmp_path, files) -> dict:
     return {r["component_name"]: r for r in scan_to_devsecshield(_repo(tmp_path, files), level=4)["results"]}
 
@@ -75,17 +83,18 @@ _MIXED = {"app.py": (
 
 def test_forty_candidates_are_one_model_in_use(tmp_path) -> None:
     result = _scan(tmp_path, _FORTY)
-    assert _in_use(result) == {"unidentified model (one of 40 candidates)"}
-    entry = _models(result)["unidentified model (one of 40 candidates)"]
+    name = _choice(result)
+    assert _in_use(result) == {name}
+    entry = _models(result)[name]
     props = entry.properties or {}
     assert props["model:identified"] == "false"
     assert props["model:selection"] == "candidates"
     assert props["model:candidate_count"] == "40"
-    assert props["model:candidates"].count("(Ollama)") == 40
+    assert [c["provider"] for c in json.loads(props["model:candidates"])] == ["Ollama"] * 40
     assert "PRICES[k]" in props["discovery:snippet"]
     # no candidate is a component of its own in use
     assert not any(n.startswith("llama3.1:") for n in _in_use(result))
-    assert _served(result, "unidentified model (one of 40 candidates)") == ["Ollama (local)"]
+    assert _served(result, name) == ["Ollama (local)"]
 
 
 def test_forty_candidates_count_once_in_rows_and_scores(tmp_path) -> None:
@@ -114,7 +123,7 @@ def test_forty_candidates_are_assessed_once_as_needs_information(tmp_path) -> No
 
 def test_the_cyclonedx_entry_carries_the_candidates_as_evidence(tmp_path) -> None:
     bom = emit_cyclonedx(_scan(tmp_path, _FORTY))
-    (entry,) = [c for c in bom["components"] if c.get("name") == "unidentified model (one of 40 candidates)"]
+    (entry,) = [c for c in bom["components"] if c.get("name", "").startswith("unidentified model (run-time choice")]
     props = {p["name"]: p["value"] for p in entry.get("properties", [])}
     assert props["model:candidate_count"] == "40"
     method = entry["evidence"]["identity"][0]["methods"][0]
@@ -126,27 +135,28 @@ def test_the_cyclonedx_entry_carries_the_candidates_as_evidence(tmp_path) -> Non
 def test_two_calls_on_the_same_dict_are_one_entry_with_both_call_sites(tmp_path) -> None:
     files = {"app.py": "import ollama, sys\n" + _PRICES + "k = sys.argv[1]\nollama.chat(model=PRICES[k], messages=[])\nollama.generate(model=PRICES[k], prompt='x')\nollama.chat(model=PRICES[k], messages=[])\n"}
     result = _scan(tmp_path, files)
-    assert _in_use(result) == {"unidentified model (one of 40 candidates)"}
+    assert _in_use(result) == {_choice(result)}
 
 
 # --------------------------------------------------------------------------- R7-M2
 
 
-def test_a_mixed_candidate_dict_never_puts_a_hosted_model_on_the_local_server(tmp_path) -> None:
+def test_a_mixed_candidate_dict_follows_the_ollama_client_and_lists_providers(tmp_path) -> None:
+    # round 9 (review 6066860842, R8-M2): the entry follows the client actually
+    # called; the hosted candidates are never models of their own
     result = _scan(tmp_path, _MIXED)
-    name = "unidentified model (one of 4 candidates)"
+    name = _choice(result)
     assert _in_use(result) == {name}
-    assert _served(result, name) == []  # the server is unknown
+    assert _served(result, name) == ["Ollama (local)"]
     for hosted in ("gpt-4o", "claude-3-5-sonnet-20241022"):
         model = _models(result).get(hosted)
         assert model is None or (model.properties or {}).get("model:reference_type") == "catalog"
         if model is not None:
             assert _served(result, hosted) == []
-    cands = (_models(result)[name].properties or {})["model:candidates"]
-    assert "gpt-4o (OpenAI)" in cands and "claude-3-5-sonnet-20241022 (Anthropic)" in cands
-    assert "phi3:mini (Ollama)" in cands and "llama3.1:8b (Ollama)" in cands
+    cands = {(c["name"], c["provider"]) for c in json.loads((_models(result)[name].properties or {})["model:candidates"])}
+    assert {("gpt-4o", "OpenAI"), ("claude-3-5-sonnet-20241022", "Anthropic"), ("phi3:mini", "Ollama"),
+            ("llama3.1:8b", "Ollama")} == cands
     rows = _rows(tmp_path / "rows", _MIXED)
-    assert rows[name]["component_type"] != "self_hosted_model"
     assert "gpt-4o" not in rows or rows["gpt-4o"]["component_type"] != "self_hosted_model"
 
 
@@ -156,7 +166,7 @@ def test_hosted_candidates_of_one_vendor_are_served_by_its_api(tmp_path) -> None
         'TIERS = {"a": "gpt-4o", "b": "gpt-4o-mini"}\n'
         "c.chat.completions.create(model=TIERS[sys.argv[1]], messages=[])\n"
     )})
-    name = "unidentified model (one of 2 candidates)"
+    name = _choice(result)
     assert _in_use(result) == {name}
     assert _served(result, name) == ["OpenAI API"]
 

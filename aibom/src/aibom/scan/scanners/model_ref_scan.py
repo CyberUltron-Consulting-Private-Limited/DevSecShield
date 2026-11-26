@@ -14,6 +14,7 @@ Bounded for big repos: only an extension allowlist is read, files over
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Iterator
 from pathlib import Path
@@ -41,12 +42,14 @@ from aibom.scan.parsers.ollama_tags import (
     valid_tag,
 )
 from aibom.scan.path_roles import (
+    MANIFESTS,
     evidence_rank,
     is_doc_path,
     is_env_file,
     is_env_template,
     is_example_path,
     is_test_path,
+    is_vendored_path,
 )
 from aibom.scan.registry import ScanContext, Scanner, register
 from aibom.scan.safe_files import read_text, walk_files
@@ -238,6 +241,24 @@ _LITELLM_PROVIDER_KEY = {
 _ROUTE_PREFIX = re.compile(r"""['"](?P<prov>[\w-]+)/(?:[\w.-]+/)*$""")
 
 
+#: hint for a LiteLLM model whose provider LiteLLM cannot infer: no service serves it
+LITELLM_UNROUTED = "litellm-unrouted"
+
+
+def _in_litellm_call(text: str, idx: int) -> bool:
+    """Whether ``idx`` is inside the arguments of a LiteLLM call."""
+    from aibom.scan.scanners.net_env_scan import _LITELLM_CALL, _LITELLM_IMPORT
+
+    if not _LITELLM_IMPORT.search(text):
+        return False
+    _code, bare = mask(text, "py")
+    for m in _LITELLM_CALL.finditer(bare, max(0, idx - 3000), idx):
+        args = call_arguments(bare, m.end() - 1)
+        if args is not None and m.end() <= idx <= m.end() + len(args):
+            return True
+    return False
+
+
 def _gateway_hint(text: str, name: str) -> str | None:
     """The gateway named nearest a reference, within its code block, or None."""
     # the reference itself, never the same text inside a longer id
@@ -256,6 +277,13 @@ def _gateway_hint(text: str, name: str) -> str | None:
         key = _LITELLM_PROVIDER_KEY.get(route.group("prov").lower())
         if key:
             return key
+    elif _in_litellm_call(text, idx):
+        # no prefix: LiteLLM routes the name by its own model map, never by an earlier
+        # route's provider (review 6066860842 of #498, R8-M1)
+        from aibom.scan.scanners.net_env_scan import litellm_default_provider
+
+        prov = litellm_default_provider(name)
+        return _LITELLM_PROVIDER_KEY.get(prov or "", LITELLM_UNROUTED)
     client = _client_hint(text, idx)
     if client is not None:
         return client
@@ -303,30 +331,10 @@ def _walk(root: Path) -> Iterator[Path]:
     )
 
 
-#: directories that hold vendored / third-party code, never the application's own
-#: (review 6066180782 of #498, m1); ``vendor`` / ``node_modules`` are pruned by the walk
-_VENDORED_DIRS = frozenset({"third_party", "third-party", "thirdparty", "external",
-                            "extern", "vendor", "vendored", "_vendor"})
 _DOC_DIRS = frozenset({"docs", "doc"})
-#: a directory with one of these is a package root (monorepo scoping, m2)
-_MANIFESTS = ("pyproject.toml", "setup.py", "setup.cfg", "package.json")
-
-
-def _vendored(path: Path, root: Path) -> bool:
-    """Third-party code shipped in the repository: under third_party/, external/,
-    extern/, vendor/ …, or a ``libs/<pkg>/`` / ``lib/<pkg>/`` with its own manifest."""
-    try:
-        parts = path.relative_to(root).parts[:-1]
-    except ValueError:
-        return False
-    if any(p.lower() in _VENDORED_DIRS for p in parts):
-        return True
-    for i, part in enumerate(parts[:-1]):
-        if part.lower() in ("libs", "lib"):
-            pkg = root.joinpath(*parts[: i + 2])
-            if any((pkg / m).is_file() for m in _MANIFESTS):
-                return True
-    return False
+#: a top-level directory under one of these is a package of its own, manifest or
+#: not (review 6066860842 of #498, m2)
+_PACKAGE_PARENTS = frozenset({"services", "apps", "packages"})
 
 
 def _application_file(path: Path, root: Path) -> bool:
@@ -339,12 +347,13 @@ def _application_file(path: Path, root: Path) -> bool:
     return not (is_test_path(path, root) or is_doc_path(path)
                 or is_example_path(path, root) or is_env_template(path)
                 or any(p.lower() in _DOC_DIRS for p in parts)
-                or _vendored(path, root))
+                or is_vendored_path(path, root))
 
 
 def package_root(path: Path, root: Path, cache: dict[Path, str] | None = None) -> str:
-    """The repository-relative directory of the nearest package manifest above
-    ``path`` ("" for the repository root): one package of a monorepo."""
+    """The repository-relative directory of the package ``path`` belongs to ("" for
+    the repository root): the nearest directory with a manifest, or a top-level
+    directory under services/, apps/ or packages/. One package of a monorepo."""
     cache = {} if cache is None else cache
     here = path.parent
     seen: list[Path] = []
@@ -357,7 +366,10 @@ def package_root(path: Path, root: Path, cache: dict[Path, str] | None = None) -
         if here == root or root not in here.parents:
             found = ""
             break
-        if any((here / m).is_file() for m in _MANIFESTS):
+        rel = here.relative_to(root).parts
+        if any((here / m).is_file() for m in MANIFESTS) or (
+            len(rel) == 2 and rel[0].lower() in _PACKAGE_PARENTS
+        ):
             found = here.relative_to(root).as_posix()
             break
         here = here.parent
@@ -367,22 +379,97 @@ def package_root(path: Path, root: Path, cache: dict[Path, str] | None = None) -
 
 
 ALL_PACKAGES = "*"
+_OLLAMA_IMAGE = re.compile(r"(?:^|/)ollama/ollama(?::|@|$)", re.IGNORECASE)
+
+
+def _compose_reach(text: str, root: Path, cache: dict[Path, str]) -> set[str] | None:
+    """The packages a repository-root compose file gives Ollama to (review 6066860842
+    of #498, m2): when it runs ``ollama/ollama``, the packages of the services it
+    builds or runs; and the packages of the services whose environment sets
+    OLLAMA_HOST. A service is a package by its ``build`` context (or dockerfile) or
+    by an image named after a package directory; ``build: .`` is every package. None
+    when the file is no compose file."""
+    if "services:" not in text:
+        return None
+    import yaml
+
+    try:
+        doc = yaml.safe_load(text)
+    except (yaml.YAMLError, ValueError, RecursionError):
+        return None
+    services = doc.get("services") if isinstance(doc, dict) else None
+    if not isinstance(services, dict) or not all(
+        isinstance(v, dict) for v in services.values()
+    ):
+        return None
+    from aibom.scan.scanners.net_env_scan import _container_env
+
+    runs_ollama = any(_OLLAMA_IMAGE.search(str(svc.get("image") or ""))
+                      for svc in services.values())
+    reach: set[str] = set()
+    for name, svc in services.items():
+        if _OLLAMA_IMAGE.search(str(svc.get("image") or "")):
+            continue
+        targets = _service_packages(str(name), svc, root, cache)
+        env = _container_env(svc.get("environment"))
+        sets_host = any(k == "OLLAMA_HOST" for k, _v in env)
+        if runs_ollama or sets_host:
+            reach |= targets
+    if runs_ollama and not reach:
+        reach.add(ALL_PACKAGES)  # nothing names the application: every package
+    return reach
+
+
+def _service_packages(
+    name: str, svc: dict, root: Path, cache: dict[Path, str]
+) -> set[str]:
+    build = svc.get("build")
+    dirs: list[str] = []
+    if isinstance(build, str):
+        dirs.append(build)
+    elif isinstance(build, dict):
+        context = str(build.get("context") or ".")
+        dockerfile = build.get("dockerfile")
+        if isinstance(dockerfile, str) and "/" in dockerfile:
+            dirs.append(f"{context}/{dockerfile.rsplit('/', 1)[0]}")
+        else:
+            dirs.append(context)
+    out: set[str] = set()
+    for d in dirs:
+        rel = Path(d.strip()).as_posix()  # Path drops a leading "./"
+        rel = "" if rel == "." else rel
+        if not rel or ".." in Path(rel).parts:
+            out.add(ALL_PACKAGES)
+            continue
+        out.add(package_root(root / rel / "_", root, cache) or ALL_PACKAGES)
+    if not dirs:
+        image = str(svc.get("image") or "").rsplit("/", 1)[-1]
+        image = image.split(":", 1)[0].split("@", 1)[0]
+        for cand in {image, name}:
+            for parent in ("", *_PACKAGE_PARENTS):
+                d = root / parent / cand if parent else root / cand
+                if cand and d.is_dir():
+                    pkg = package_root(d / "_", root, cache)
+                    if pkg:
+                        out.add(pkg)
+    return out
 
 
 def repo_uses_ollama(root: Path) -> set[str]:
     """The packages whose application uses Ollama: real code or deployment use only
     (review 6065595627 of #498, R6-M1). Application source that imports the SDK, uses
-    a LangChain / LiteLLM Ollama class or route, or calls the REST API; a compose /
-    Kubernetes / Dockerfile that runs ``ollama/ollama`` or a LiteLLM proxy route;
-    OLLAMA_HOST in the application's real environment (``.env``, its own workload's
-    ``env``). Docs (also ``.py`` under docs/), tests, examples, env templates,
-    vendored third-party code, a plain "ollama" string and a declared-but-never-
-    imported dependency are not evidence.
+    a LangChain / LiteLLM Ollama class or route, or calls the REST API (also through
+    a vendored client module it imports); a compose / Kubernetes / Dockerfile that
+    runs ``ollama/ollama`` or a LiteLLM proxy route; OLLAMA_HOST in the application's
+    real environment (``.env``, its own workload's ``env``). Docs (also ``.py`` under
+    docs/), tests, examples, env templates, vendored third-party code itself, a plain
+    "ollama" string and a declared-but-never-imported dependency are not evidence.
 
-    Evidence is scoped to the package (the nearest manifest root, review 6066180782
-    of #498, m2): one package's Ollama never makes another package's constants
-    models in use. Deployment files and env at the repository root configure every
-    package (:data:`ALL_PACKAGES`)."""
+    Evidence is scoped to the package (:func:`package_root`; reviews 6066180782 and
+    6066860842 of #498, m2): one package's Ollama never makes another package's
+    constants models in use. A root compose file reaches only the packages it builds
+    or runs; other root deployment files and env configure every package
+    (:data:`ALL_PACKAGES`)."""
     from aibom.scan.scanners.net_env_scan import CONFLICT, env_values
 
     cache: dict[Path, str] = {}
@@ -390,7 +477,18 @@ def repo_uses_ollama(root: Path) -> set[str]:
     configs: dict[str, list[tuple[str, str]]] = {}
     dockerfiles = walk_files(root, _SKIP_DIRS, lambda p: p.name.lower().startswith(
         "dockerfile") or p.name.lower().endswith(".dockerfile"))
-    for path in [*_walk(root), *dockerfiles]:
+    paths = [*_walk(root), *dockerfiles]
+    # vendored client modules that call Ollama: the application uses Ollama through
+    # them when it imports one (review 6066860842 of #498, m1)
+    vendored_clients: list[str] = []
+    for path in paths:
+        if path.suffix.lower() in (".py", ".pyi") and is_vendored_path(path, root):
+            text = read_text(path, _MAX_BYTES)
+            if text and ollama_code_evidence(text, "py"):
+                rel = path.relative_to(root).with_suffix("")
+                parts = rel.parts[:-1] if rel.name == "__init__" else rel.parts
+                vendored_clients.append(".".join(parts))
+    for path in paths:
         if not _application_file(path, root):
             continue
         pkg = package_root(path, root, cache)
@@ -402,8 +500,17 @@ def repo_uses_ollama(root: Path) -> set[str]:
             if ollama_code_evidence(notebook_text(text)[0], "py"):
                 found.add(pkg)
         elif suffix in _CODE_EVIDENCE:
-            if ollama_code_evidence(text, language_of(path.name)):
+            if ollama_code_evidence(text, language_of(path.name)) or any(
+                re.search(rf"(?m)^\s*(?:from\s+{re.escape(mod)}\s+import\b|"
+                          rf"import\s+{re.escape(mod)}\b)", text)
+                for mod in vendored_clients
+            ):
                 found.add(pkg)
+        elif suffix in (".yaml", ".yml") and not pkg and (
+            (reach := _compose_reach(text, root, cache)) is not None
+        ):
+            found |= reach  # a root compose file: only the packages it deploys
+            continue
         elif (suffix in (".yaml", ".yml") or path in dockerfiles) and (
             ollama_deploy_evidence(text)
         ):
@@ -459,6 +566,8 @@ class ModelRefScanner(Scanner):
             text = read_text(path, _MAX_BYTES)
             if text is None:
                 continue
+            if is_vendored_path(path, ctx.root):
+                continue  # third-party code: no models of the application (m1)
             uses_ollama = ALL_PACKAGES in ollama_packages or (
                 package_root(path, ctx.root, package_cache) in ollama_packages)
             if is_test_path(path, ctx.root):
@@ -510,11 +619,12 @@ class ModelRefScanner(Scanner):
                 direct = {n.lower() for n, (_v, t) in refs.items() if t == "usage"}
                 calls = lookup_model_calls(
                     text, "notebook.py" if suffix == ".ipynb" else path.name, literals)
-                for cls, names, exact, call in calls:
+                for cls, names, exact, call, pos in calls:
                     ollama_call = cls in _OLLAMA_CLASSES
                     if not exact:
-                        _add_candidates(groups, names, cls, ollama_call, uses_ollama,
-                                        f"{call} in {source}", source)
+                        _add_candidates(groups, names, ollama_call, uses_ollama,
+                                        f"{call} in {source}", source,
+                                        _call_client(text, pos, cls, ollama_call))
                         continue
                     for value in names:
                         if ollama_call or (valid_tag(value) and uses_ollama):
@@ -742,31 +852,58 @@ def _candidate_provider(value: str, ollama_call: bool, uses_ollama: bool) -> str
     return vendor or "unknown"
 
 
+#: a client class -> the provider key of the vendor API it calls by default
+_CLIENT_KEY = (
+    (re.compile(r"Azure"), "azure"), (re.compile(r"Bedrock"), "bedrock"),
+    (re.compile(r"OpenAI"), "openai"), (re.compile(r"Anthropic"), "anthropic"),
+    (re.compile(r"Google"), "google"), (re.compile(r"Groq"), "groq"),
+    (re.compile(r"Mistral"), "mistral"), (re.compile(r"Cohere"), "cohere"),
+)
+
+
+def _call_client(text: str, pos: int, cls: str, ollama_call: bool) -> str:
+    """Which client a run-time choice is sent through (review 6066860842 of #498,
+    R8-M2): "ollama"; the call-site client's endpoint ("host:…" / "env:…"); the
+    vendor API a vendor client calls by default ("key:openai"); or "generic" (LiteLLM,
+    whose provider comes from the model itself)."""
+    if ollama_call:
+        return "ollama"
+    if cls == "LiteLLM":
+        return "generic"
+    hint = _client_hint(text, pos + 1)
+    if hint == "ollama":
+        return "ollama"
+    if hint:
+        return hint
+    key = next((k for pat, k in _CLIENT_KEY if pat.search(cls)), None)
+    return f"key:{key}" if key else "generic"
+
+
 def _add_candidates(
     groups: dict[tuple[str, ...], dict[str, Any]],
     names: list[str],
-    cls: str,
     ollama_call: bool,
     uses_ollama: bool,
     call: str,
     source: str,
+    client: str,
 ) -> None:
     """Record one run-time choice (``ollama.chat(model=OPTIONS[choice])``): calls on
-    the same candidate set are one entry with every call site."""
-    key = tuple(sorted({n.lower() for n in names}))
+    the same candidate set through the same client are one entry with every call
+    site."""
+    key = (*sorted({n.lower() for n in names}), "@" + client)
     group = groups.get(key)
     if group is None:
         group = groups[key] = {
             "names": list(dict.fromkeys(names)),
             "providers": [_candidate_provider(n, ollama_call, uses_ollama)
                           for n in dict.fromkeys(names)],
-            "calls": [], "sources": [], "classes": set(),
+            "calls": [], "sources": [], "client": client,
         }
     if call not in group["calls"]:
         group["calls"].append(call)
     if source not in group["sources"]:
         group["sources"].append(source)
-    group["classes"].add(cls)
 
 
 def candidate_summary(names: list[str], providers: list[str]) -> str:
@@ -778,39 +915,51 @@ def candidate_summary(names: list[str], providers: list[str]) -> str:
     return head + (f" and {rest} more" if rest > 0 else "")
 
 
+def candidate_identity(names: list[str], call_site: str) -> str:
+    """A stable id of a run-time choice: a hash of the sorted candidate set and the
+    call site, never the count (review 6066860842 of #498, m3)."""
+    import hashlib
+
+    data = json.dumps([sorted({n.lower() for n in names}), call_site])
+    return hashlib.sha256(data.encode("utf-8")).hexdigest()[:10]
+
+
 def _emit_candidate_groups(
     ctx: ScanContext, groups: dict[tuple[str, ...], dict[str, Any]]
 ) -> None:
     """One model in use per run-time choice (review 6066180782 of #498, R7-M1, the
-    coordinator's design): ``unidentified model (one of N candidates)``. Its
-    candidates are evidence (``model:candidates``, each with its own provider), never
-    components of their own; counts and compliance see one model, needs-information.
+    coordinator's design): ``unidentified model (run-time choice <id>)``. Its
+    candidates are evidence (``model:candidates``, a JSON array of ``{name,
+    provider}``), never components of their own; counts and compliance see one
+    model, needs-information. The id is :func:`candidate_identity`.
 
-    Where it runs (R7-M2): every candidate an Ollama tag, the Ollama server of the
-    call; every candidate one hosted vendor's, that vendor's API; a mix, unknown, so
-    no hosted model is ever put on the local server."""
-    used: set[str] = set()
+    Where it runs follows the client actually called (review 6066860842 of #498,
+    R8-M2): an Ollama call is served by its Ollama server and self-hosted, the
+    hosted-looking names noted in the evidence; a vendor client by the endpoint it
+    calls (``model:client``, linked by the model-graph linker); a generic client
+    (LiteLLM) by an endpoint the scan cannot name, a possible external processor."""
     ordered = sorted(groups.values(), key=lambda g: (g["sources"][0], g["calls"][0]))
     for group in ordered:
         names, providers = group["names"], group["providers"]
         n = len(names)
-        name = f"unidentified model (one of {n} candidates)"
-        if name.lower() in used:
-            expr = group["calls"][0].split("(model=", 1)[-1].split(")", 1)[0]
-            name = f"unidentified model (one of {n} candidates, {expr})"
-        used.add(name.lower())
-        kinds = set(providers)
+        call_site = sorted(group["calls"])[0]
+        ident = candidate_identity(names, call_site)
+        name = f"unidentified model (run-time choice {ident})"
+        client = group["client"]
         props = {
             "model:reference_type": "usage",
             "model:identified": "false",
             "model:selection": "candidates",
             "model:candidate_count": str(n),
-            "model:candidates": "; ".join(
-                f"{c} ({p})" for c, p in zip(names, providers, strict=False)),
+            "model:candidates": json.dumps(
+                [{"name": c, "provider": p}
+                 for c, p in zip(names, providers, strict=False)]
+            ),
             "model:unidentified_reason": (
                 f"chosen at run time from {n} candidates: "
                 f"{candidate_summary(names, providers)}"
             ),
+            "model:client": client,
             "discovery:source": group["sources"][0],
             "discovery:sources": ",".join(group["sources"]),
             "discovery:method": "config-lookup",
@@ -819,24 +968,35 @@ def _emit_candidate_groups(
         }
         publisher: str | None = None
         licence: str | None = None
-        if kinds == {"Ollama"}:
+        kinds = set(providers)
+        if client == "ollama":
             props["model:served_via"] = "ollama"
             props["model:weights"] = "open"
-            props["model:candidate_hosting"] = "self-hosted"
-            licences = {ollama_family(c)[1] for c in names}
-            if len(licences) == 1:
-                licence = next(iter(licences))
-        elif len(kinds) == 1 and next(iter(kinds)) not in ("unknown", "Ollama Cloud"):
-            publisher = next(iter(kinds))
-            props["model:candidate_hosting"] = "hosted"
-            if publisher in _HOSTED_TERMS_VENDORS:
-                licence = "LicenseRef-proprietary"
+            hosted = [c for c, p in zip(names, providers, strict=False)
+                      if p != "Ollama"]
+            if hosted:
+                props["model:candidate_note"] = (
+                    "names that look hosted are not Ollama library tags; through this "
+                    "Ollama server they run only as Ollama Cloud models or not at all: "
+                    + ", ".join(hosted[:CANDIDATE_SHOWN])
+                    + (f" and {len(hosted) - CANDIDATE_SHOWN} more"
+                       if len(hosted) > CANDIDATE_SHOWN else "")
+                )
+            else:
+                licences = {ollama_family(c)[1] for c in names}
+                if len(licences) == 1:
+                    licence = next(iter(licences))
         else:
-            # mixed (hosted and Ollama tags) or unknown: where it runs is not known
-            props["model:candidate_hosting"] = "mixed"
-            props["model:server"] = "unknown"
+            if len(kinds) == 1 and next(iter(kinds)) not in (
+                "unknown", "Ollama", "Ollama Cloud"
+            ):
+                publisher = next(iter(kinds))
+                if publisher in _HOSTED_TERMS_VENDORS:
+                    licence = "LicenseRef-proprietary"
+            if client == "generic":
+                props["model:server"] = "unknown"
         comp = ModelComponent(
-            bom_ref="modelref-unidentified-candidates-" + _slug(name),
+            bom_ref=f"modelref-runtime-choice-{ident}",
             name=name,
             publisher=publisher,
             licenses=[license_choice(licence)] if licence else None,
@@ -846,4 +1006,4 @@ def _emit_candidate_groups(
         ctx.add_component(comp)
 
 
-__all__ = ["ModelRefScanner", "candidate_summary"]
+__all__ = ["ModelRefScanner", "candidate_identity", "candidate_summary"]

@@ -21,7 +21,7 @@ AUTH = R6.AUTH
 
 _PRICES = "PRICES = {" + ", ".join(f'"m{i}": "llama3.1:{i}b"' for i in range(1, 41)) + "}\n"
 _APP = "import ollama, sys\n" + _PRICES + "k = sys.argv[1]\nollama.chat(model=PRICES[k], messages=[])\n"
-_NAME = "unidentified model (one of 40 candidates)"
+_NAME = "unidentified model (run-time choice "  # a stable hash since round 9
 
 
 def _payload(tmp_path: Path) -> dict:
@@ -40,7 +40,8 @@ def test_the_page_gets_one_model_with_its_candidates(tmp_path, monkeypatch):
         {"_id": i, "finding_data": row, "finding_status": "open"} for i, row in enumerate(rows)])
     findings = findings_mod.get_findings_for_scan_type("ai_bom", 1)
     models = [f for f in findings if f.get("asset_kind") == "model"]
-    assert [f["asset_name"] for f in models] == [_NAME]
+    assert [f["asset_name"] for f in models] == [m["asset_name"] for m in models]
+    assert len(models) == 1 and models[0]["asset_name"].startswith(_NAME)
     cands = models[0]["model_candidates"]
     assert len(cands) == 40 and cands[0] == {"name": "llama3.1:1b", "provider": "Ollama"}
     assert all(f["model_candidates"] == [] for f in findings if f.get("asset_kind") != "model")

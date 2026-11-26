@@ -136,6 +136,31 @@ def _slug(name: str) -> str:
     return _SLUG.sub("-", name.lower()).strip("-") or "unknown"
 
 
+_UNKNOWN_ENDPOINT_REF = "cloud_service-ai-endpoint-unknown"
+
+
+def _unknown_endpoint(ctx: ScanContext, source: str) -> str:
+    """The "AI endpoint (endpoint unknown)" service (the ref net-env gives an
+    unreadable client endpoint): where a generic client's model runs is not known,
+    so it may be outside the trust boundary."""
+    if not ctx.has_ref(_UNKNOWN_ENDPOINT_REF):
+        ctx.add_component(
+            CloudServiceComponent(
+                bom_ref=_UNKNOWN_ENDPOINT_REF,
+                name="AI endpoint (endpoint unknown)",
+                publisher="unknown processor",
+                properties={
+                    "discovery:source": source,
+                    "discovery:method": "model-route",
+                    "service:kind": "gateway",
+                    "service:trust_zone": "unknown",
+                    "service:endpoint_basis": "unknown",
+                },
+            )
+        )
+    return _UNKNOWN_ENDPOINT_REF
+
+
 @register
 class ModelGraphLinker(Scanner):
     name = "model-graph-link"
@@ -197,10 +222,14 @@ class ModelGraphLinker(Scanner):
             hint = props.pop("discovery:gateway", None)
             if model.bom_ref in already_linked:
                 continue  # a card already wired this model — don't second-guess it
-            if props.get("model:server") == "unknown":
-                # a run-time choice among hosted and Ollama models: where it runs is
-                # not known, so it is served by nothing (review 6066180782, R7-M2)
-                model.properties = props
+            if (props.get("model:selection") == "candidates"
+                    and not props.get("model:served_via")) or (
+                        props.get("model:server") == "unknown"):
+                # a run-time choice / a generic client's model: served by the endpoint
+                # the call's client reaches; one the scan cannot name is "AI endpoint
+                # (endpoint unknown)", a possible external processor the vendor checks
+                # assess, never "na" (review 6066860842 of #498, R8-M2)
+                self._link_client(ctx, model, props, by_file, all_by_key)
                 continue
 
             served_via = props.get("model:served_via")
@@ -244,6 +273,8 @@ class ModelGraphLinker(Scanner):
                 )
                 continue
             model.properties = props
+            if hint == "litellm-unrouted":
+                continue  # LiteLLM cannot route the name: the provider is unknown
             if sdk_ref is not None or hub:
                 # served through its SDK at an endpoint the scan did not see, or
                 # open weights from the Hub that the application runs itself
@@ -268,6 +299,42 @@ class ModelGraphLinker(Scanner):
                     )
                 vendor_nodes[vendor] = ref
             ctx.add_edge(model.bom_ref, REL_SERVED_BY, vendor_nodes[vendor])
+
+    @staticmethod
+    def _link_client(
+        ctx: ScanContext,
+        model: AIComponent,
+        props: dict,
+        by_file: dict[str, list[tuple[str, str]]],
+        all_by_key: dict[str, list[str]],
+    ) -> None:
+        model.properties = props
+        client = props.get("model:client", "generic")
+        source = props.get("discovery:source", "")
+        same = by_file.get(source, [])
+        ref: str | None = None
+        key = ""
+        if props.get("model:server") != "unknown":
+            if client.startswith(("host:", "env:")):
+                exact = _resolve_hint(ctx, client)
+                if exact is not None:
+                    key, ref = exact
+            elif client.startswith("key:"):
+                want = client.split(":", 1)[1]
+                refs = [r for k, r in same if k == want] or all_by_key.get(want, [])
+                if refs:
+                    key, ref = want, refs[0]
+                else:
+                    # the vendor client points elsewhere (an endpoint the scan could
+                    # not read): that endpoint
+                    gw = [r for k, r in same if k == "gateway"]
+                    if gw:
+                        key, ref = "gateway", gw[0]
+        if ref is None:
+            key, ref = "gateway", _unknown_endpoint(ctx, source)
+        ctx.add_edge(model.bom_ref, REL_SERVED_BY, ref)
+        if key not in ("gateway", ""):
+            model.properties = {**props, "model:provider": key}
 
     @staticmethod
     def _link_served_via(
@@ -318,6 +385,8 @@ class ModelGraphLinker(Scanner):
         vendor's own API anywhere in the repository; else the one service in the
         repository that can serve the vendor (review 6037909737 of #498, M2)."""
         props = model.properties or {}
+        if hint == "litellm-unrouted":
+            return "", None  # never a neighbouring route's service (R8-M1)
         if props.get("model:provider") == "bedrock":
             if "bedrock" not in services:
                 # the id itself proves Bedrock; its regional endpoint is not known

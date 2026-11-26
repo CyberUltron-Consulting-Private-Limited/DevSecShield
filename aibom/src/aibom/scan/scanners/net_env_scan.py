@@ -54,6 +54,7 @@ from aibom.scan.path_roles import (
     is_env_template,
     is_example_path,
     is_test_path,
+    is_vendored_path,
 )
 from aibom.scan.registry import ScanContext, Scanner, register
 from aibom.scan.safe_files import read_text, walk_files
@@ -292,6 +293,10 @@ _SDK_MODEL_CALLS: tuple[tuple[re.Pattern[str], str, re.Pattern[str]], ...] = (
      re.compile(r"""\banthropic\b|@anthropic-ai/sdk""")),
     (re.compile(r"\bollama\.(?:chat|generate|embed|embeddings)\s*\("), "Ollama",
      re.compile(r"""\bollama\b""")),
+    # LiteLLM: a generic client, the provider comes from the model (review 6066860842)
+    (re.compile(r"(?<![\w.])(?:litellm\.)?a?(?:completion|embedding|text_completion)"
+                r"\s*\("), "LiteLLM",
+     re.compile(r"(?:^|\n)\s*(?:import\s+(?:[\w.]+\s*,\s*)*litellm\b|from\s+litellm\b)")),
 )
 _MODEL_VALUE = re.compile(
     r"\b(?:model|model_name|modelName|model_id|deployment_name|azure_deployment|"
@@ -555,7 +560,7 @@ def unidentified_calls(text: str, source: str) -> list[tuple[str, str, str]]:
         if _config_model(code, value, m.end() - 1) is None:
             continue
         if cls in _SDK_LIBRARY_CLASSES:
-            label = "chat" if cls == "Ollama" else "create"
+            label = {"Ollama": "chat", "LiteLLM": "completion"}.get(cls, "create")
             out.append((cls, _REASON_CONFIG, f"{cls} {label}(model={value[:60]})"))
         else:
             out.append((cls, _REASON_CONFIG, f"{cls}(model={value[:60]})"))
@@ -567,7 +572,7 @@ _SDK_LIBRARY_CLASSES = frozenset(cls for _re, cls, _imp in _SDK_MODEL_CALLS)
 
 def lookup_model_calls(
     text: str, source: str, literals: ProjectLiterals
-) -> list[tuple[str, list[str], bool, str]]:
+) -> list[tuple[str, list[str], bool, str, int]]:
     """``[(client class, model names, exact, call text)]``: model calls whose model
     argument is a lookup the project's literals resolve (review 6065595627 of #498,
     R6-M2): ``OPTIONS["fast"]`` gives its value (exact); ``OPTIONS[choice]`` gives
@@ -575,7 +580,7 @@ def lookup_model_calls(
     as models in use of that call; :func:`_config_model` then adds no unidentified
     model for the same call."""
     code, bare = mask(text, language_of(source))
-    out: list[tuple[str, list[str], bool, str]] = []
+    out: list[tuple[str, list[str], bool, str, int]] = []
     for cls, m, value in _model_calls(code, bare):
         if not value:
             continue
@@ -587,7 +592,7 @@ def lookup_model_calls(
             continue
         callee = re.search(r"[\w.]+$", code[: m.end() - 1])
         head = callee.group(0) if callee else cls
-        out.append((cls, got[0], got[1], f"{head}(model={value[:60]})"))
+        out.append((cls, got[0], got[1], f"{head}(model={value[:60]})", m.start()))
     return out
 
 
@@ -630,6 +635,10 @@ def unidentified_models(
             props["model:config_keys"] = ",".join(keys)
         if vendor == "local":
             props["model:served_via"] = "ollama"
+        elif cls == "LiteLLM":
+            # a generic client: the provider comes from the model, which is not
+            # known; a possible external processor (review 6066860842 of #498)
+            props["model:server"] = "unknown"
         comp = ModelComponent(
             bom_ref="modelref-unidentified-" + re.sub(r"[^a-z0-9]+", "-", cls.lower()),
             name=f"unidentified model ({cls})",
@@ -814,6 +823,8 @@ class NetEnvScanner(Scanner):
         unnamed: list[tuple[str, str, str, str]] = []
         files: list[tuple[Path, str, str]] = []
         for path in _scan_files(ctx.root):
+            if is_vendored_path(path, ctx.root):
+                continue  # third-party code: no services or models of the app (m1)
             text = read_text(path)
             if text is None:
                 continue
@@ -1351,6 +1362,33 @@ _LITELLM_HOSTED: dict[str, tuple[str, str, str]] = {
 }
 
 
+#: LiteLLM's own routing of an unprefixed model name (its model map / provider
+#: inference): name pattern -> provider prefix
+_LITELLM_DEFAULT_ROUTES: tuple[tuple[re.Pattern[str], str], ...] = tuple(
+    (re.compile(pat, re.IGNORECASE), prov) for pat, prov in (
+        (r"(?:gpt-|chatgpt-|o[1-9](?:$|-)|text-embedding-|davinci|babbage|"
+         r"dall-e|whisper-|tts-)", "openai"),
+        (r"claude-", "anthropic"),
+        (r"gemini-", "gemini"),
+        (r"(?:mistral-|open-mistral|open-mixtral|codestral|ministral|pixtral)",
+         "mistral"),
+        (r"command(?:-|$)", "cohere"),
+        (r"deepseek-", "deepseek"),
+        (r"grok-", "xai"),
+    )
+)
+
+
+def litellm_default_provider(model: str) -> str | None:
+    """The provider LiteLLM routes an unprefixed model name to, or None when it
+    cannot be inferred (the provider is then unknown, never a neighbouring
+    route's)."""
+    for pattern, prov in _LITELLM_DEFAULT_ROUTES:
+        if pattern.match(model):
+            return prov
+    return None
+
+
 def _litellm_route(
     prov: str, api_base: str | None, env: dict[str, str], source: str,
     api_base_env: str | None = None,
@@ -1398,8 +1436,15 @@ def _litellm_services(
             continue
         span = code[m.end() : m.end() + len(args_bare)]
         route = _LITELLM_MODEL.search(span)
-        if route is None:
-            continue
+        prov = route.group("prov") if route else None
+        if prov is None:
+            # an unprefixed model: LiteLLM routes it by its own model map (gpt-* to
+            # OpenAI, claude-* to Anthropic …; review 6066860842 of #498, R8-M1)
+            bare_model = re.search(r"""\bmodel\s*=\s*['"](?P<m>[^'"\s/]+)['"]""", span)
+            prov = (litellm_default_provider(bare_model.group("m"))
+                    if bare_model else None)
+            if prov is None:
+                continue
         base = re.search(r"""\b(?:api_base|base_url)\s*=\s*(?P<v>[^,\n)]+)""", span)
         literal = env_name = None
         if base:
@@ -1409,7 +1454,7 @@ def _litellm_services(
             else:
                 ref = _ENV_REF.search(value)
                 env_name = (ref.group("a") or ref.group("b")) if ref else "unknown"
-        comp = _litellm_route(route.group("prov"), literal, env, source, env_name)
+        comp = _litellm_route(prov, literal, env, source, env_name)
         if comp is not None:
             out.append(comp)
     return out

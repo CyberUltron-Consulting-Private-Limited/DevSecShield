@@ -121,34 +121,93 @@ _LOADERS = frozenset({
 })
 
 
-def _open_path(node: ast.AST) -> str | None:
-    """``open("p")`` / ``Path("p").read_text()`` / ``Path("p").open()`` -> "p"."""
+def _is_file_dir(node: ast.AST) -> bool:
+    """``os.path.dirname(__file__)`` / ``os.path.dirname(os.path.abspath(__file__))``
+    / ``Path(__file__).parent`` / ``Path(__file__).resolve().parent``: the module's
+    own directory."""
+    def is_file(n: ast.AST) -> bool:
+        if isinstance(n, ast.Name) and n.id == "__file__":
+            return True
+        if isinstance(n, ast.Call) and n.args and isinstance(
+            n.func, (ast.Attribute, ast.Name)
+        ):
+            name = n.func.attr if isinstance(n.func, ast.Attribute) else n.func.id
+            if name in ("abspath", "realpath", "Path", "PurePath"):
+                return is_file(n.args[0])
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and (
+            n.func.attr in ("resolve", "absolute") and not n.args
+        ):
+            return is_file(n.func.value)
+        return False
+
+    if isinstance(node, ast.Call) and node.args and isinstance(
+        node.func, ast.Attribute
+    ) and node.func.attr == "dirname":
+        return is_file(node.args[0])
+    if isinstance(node, ast.Attribute) and node.attr == "parent":
+        return is_file(node.value)
+    return False
+
+
+def _path_value(
+    node: ast.AST | None, names: dict[str, ast.AST], depth: int = 0
+) -> str | None:
+    """A literal path, or one built from the module's directory: ``"p"``,
+    ``os.path.join(os.path.dirname(__file__), "p")``, ``Path(__file__).parent /
+    "p"``, or a name assigned one of those (review 6066860842 of #498, m4). The
+    result is relative to the module's directory (or the repository root)."""
+    if node is None or depth > 4:
+        return None
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.Name) and node.id in names:
+        return _path_value(names[node.id], names, depth + 1)
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and (
+        node.func.attr == "join" and len(node.args) >= 2
+    ) and _is_file_dir(node.args[0]):
+        parts = [_path_value(a, names, depth + 1) for a in node.args[1:]]
+        return "/".join(parts) if all(parts) else None  # type: ignore[arg-type]
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+        if _is_file_dir(node.left):
+            return _path_value(node.right, names, depth + 1)
+        left = _path_value(node.left, names, depth + 1)
+        right = _path_value(node.right, names, depth + 1)
+        return f"{left}/{right}" if left and right else None
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and (
+        node.func.id in ("Path", "PurePath") and len(node.args) == 1
+    ):
+        return _path_value(node.args[0], names, depth + 1)
+    return None
+
+
+def _open_path(node: ast.AST, names: dict[str, ast.AST] | None = None) -> str | None:
+    """``open(<path>)`` / ``<path>.read_text()`` / ``<path>.open()`` -> the path
+    (see :func:`_path_value`)."""
+    names = names or {}
     if not isinstance(node, ast.Call):
         return None
     func = node.func
     if isinstance(func, ast.Name) and func.id == "open" and node.args:
-        arg = node.args[0]
-        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-            return arg.value
-    if isinstance(func, ast.Attribute) and func.attr in ("read_text", "open") and (
-        isinstance(func.value, ast.Call)
-    ):
-        inner = func.value
-        if isinstance(inner.func, ast.Name) and inner.func.id == "Path" and inner.args:
-            arg = inner.args[0]
-            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                return arg.value
+        return _path_value(node.args[0], names)
+    if isinstance(func, ast.Attribute) and func.attr in ("read_text", "open"):
+        return _path_value(func.value, names)
     return None
 
 
 def _config_loads(tree: ast.AST) -> dict[str, str]:
     """``name -> path`` for every ``name = json.load(open("p"))`` /
     ``yaml.safe_load(f)`` inside ``with open("p") as f`` in the module."""
+    names: dict[str, ast.AST] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(
+            node.targets[0], ast.Name
+        ):
+            names.setdefault(node.targets[0].id, node.value)
     handles: dict[str, str] = {}
     for node in ast.walk(tree):
         if isinstance(node, (ast.With, ast.AsyncWith)):
             for item in node.items:
-                path = _open_path(item.context_expr)
+                path = _open_path(item.context_expr, names)
                 if path and isinstance(item.optional_vars, ast.Name):
                     handles[item.optional_vars.id] = path
     out: dict[str, str] = {}
@@ -161,7 +220,7 @@ def _config_loads(tree: ast.AST) -> dict[str, str]:
                 and (func.value.id, func.attr) in _LOADERS and call.args):
             continue
         arg = call.args[0]
-        path = _open_path(arg) or (
+        path = _open_path(arg, names) or (
             handles.get(arg.id) if isinstance(arg, ast.Name) else None)
         if path is None:
             continue
@@ -332,6 +391,8 @@ class ProjectLiterals:
             return None
         if exact and len(names) > 1:
             exact = False  # the lookup ends on a collection: its models are candidates
+        if not exact and len(set(names)) == 1:
+            exact = True  # a set of one can only be that model (review 6066860842, m3)
         return list(dict.fromkeys(names)), exact
 
 

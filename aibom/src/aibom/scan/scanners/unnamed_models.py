@@ -68,7 +68,8 @@ class UnnamedModels(Scanner):
 
 
 # direct SDK calls (net-env ``_SDK_MODEL_CALLS``): the SDK package
-_SDK_LIBRARY = {"OpenAI": "openai", "Anthropic": "anthropic", "Ollama": "ollama"}
+_SDK_LIBRARY = {"OpenAI": "openai", "Anthropic": "anthropic", "Ollama": "ollama",
+                "LiteLLM": "litellm"}
 
 
 __all__ = ["UnnamedModels"]

@@ -20,6 +20,7 @@ tagged forms; partial verdicts are qualified whatever the verdict.
 
 from __future__ import annotations
 
+import json
 import pathlib
 
 import pytest
@@ -179,9 +180,11 @@ def test_a_dynamic_key_is_one_model_with_its_candidates_as_evidence(tmp_path) ->
         "choice = sys.argv[1]\n"
         "ollama.chat(model=OPTIONS[choice], messages=[])\n"
     )})
-    assert _in_use(result) == {"unidentified model (one of 2 candidates)"}
-    props = _models(result)["unidentified model (one of 2 candidates)"].properties or {}
-    assert props["model:candidates"] == "phi3:mini (Ollama); llama3.1:70b (Ollama)"
+    (name,) = _in_use(result)
+    assert name.startswith("unidentified model (run-time choice ")
+    props = _models(result)[name].properties or {}
+    assert json.loads(props["model:candidates"]) == [
+        {"name": "phi3:mini", "provider": "Ollama"}, {"name": "llama3.1:70b", "provider": "Ollama"}]
     assert props["discovery:confidence"] == "low"
     assert props["discovery:source"] == "app.py"
     assert "ollama.chat" in props["discovery:snippet"]

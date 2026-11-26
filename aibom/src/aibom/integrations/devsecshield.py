@@ -314,22 +314,26 @@ def _served_model_licence(comp: AIComponent, result: ScanResult | None) -> str:
 
 
 def _candidates(comp: AIComponent) -> list[dict[str, str]] | None:
+    """The candidates of a model chosen at run time, stored as a JSON array of
+    ``{name, provider}`` (review 6066860842 of #498, m5); None for any other row."""
     raw = (comp.properties or {}).get("model:candidates")
     if comp.kind != "model" or not raw:
         return None
-    out: list[dict[str, str]] = []
-    for item in raw.split("; "):
-        name, _, provider = item.rpartition(" (")
-        out.append(
-            {"name": name or item, "provider": provider.rstrip(")") or "unknown"})
-    return out
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(data, list):
+        return None
+    return [
+        {"name": str(c.get("name", "")),
+         "provider": str(c.get("provider") or "unknown")}
+        for c in data
+        if isinstance(c, dict)
+    ]
 
 
 def _provider_served(comp: AIComponent, result: ScanResult | None) -> bool:
-    if (comp.properties or {}).get("model:candidate_hosting") in ("mixed", "hosted"):
-        # a run-time choice that may run a hosted model: potentially outside the
-        # trust boundary, never a weight file (review 6066180782 of #498, R7-M2)
-        return True
     provider = (comp.properties or {}).get("model:provider")
     if provider:
         return provider not in ("ollama", "local")
