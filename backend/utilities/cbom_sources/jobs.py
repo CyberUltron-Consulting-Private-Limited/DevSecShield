@@ -590,10 +590,13 @@ def reconcile_running(session: Session, now: _dt.datetime, team_id: int | None =
     """Mark running the runs still "queued" that have a claimed job: a claim's ``mark_run_running`` skips a run row
     another transaction holds (a claim marking it that then rolled back, a closer settling the run's refunds).  One
     guarded UPDATE whose rows are taken ``RUN_ROW_LOCK`` (a row held now is marked by the next pass); the status lines
-    are logged after the caller commits.  Returns how many runs it marked."""
+    are logged after the caller commits.  A run a user asked to cancel (``cancelled_at`` set while its claimed jobs
+    wait for the node's stop confirmation) stays queued: the closer gives it its final status.  Returns how many runs
+    it marked."""
     claimed = (select(CbomCollectionJob.id).where(CbomCollectionJob.run_id == CbomCollectionRun.id,
                                                   CbomCollectionJob.status == "claimed").exists())
-    pick = select(CbomCollectionRun.id).where(CbomCollectionRun.status == "queued", claimed)
+    not_cancelled = CbomCollectionRun.cancelled_at.is_(None)  # type: ignore[union-attr]
+    pick = select(CbomCollectionRun.id).where(CbomCollectionRun.status == "queued", not_cancelled, claimed)
     if team_id is not None:
         pick = pick.where(CbomCollectionRun.team_id == team_id)
     pick = pick.order_by(CbomCollectionRun.id).limit(limit)
@@ -601,7 +604,7 @@ def reconcile_running(session: Session, now: _dt.datetime, team_id: int | None =
         pick = pick.with_for_update(**RUN_ROW_LOCK)
     R_ = CbomCollectionRun.__table__
     rows = session.exec(  # type: ignore[call-overload]
-        update(R_).where(R_.c.id.in_(pick), R_.c.status == "queued")
+        update(R_).where(R_.c.id.in_(pick), R_.c.status == "queued", R_.c.cancelled_at.is_(None))
         .values(status="running", last_updated=now, finished_at=None)
         .returning(R_.c.id, R_.c.team_id)).all()
     for run_id, run_team in rows:
@@ -611,7 +614,7 @@ def reconcile_running(session: Session, now: _dt.datetime, team_id: int | None =
 
 def mark_run_running(session: Session, run_id: int | None, now: _dt.datetime) -> None:
     """A job of the run was claimed: the run is running (one guarded UPDATE, only the first claim writes, and on
-    PostgreSQL no claim waits for another's lock on the run row)."""
+    PostgreSQL no claim waits for another's lock on the run row).  A run a user asked to cancel stays queued."""
     if run_id is None:
         return
     current = session.exec(select(CbomCollectionRun.status).where(CbomCollectionRun.id == run_id)).first()
@@ -623,11 +626,12 @@ def mark_run_running(session: Session, run_id: int | None, now: _dt.datetime) ->
         # the first claim's open transaction.  A row someone else is locking is being marked by them: skip it (if
         # that claim rolls back, the next claim marks the run).  FOR NO KEY UPDATE (``RUN_ROW_LOCK``): the other
         # claims in flight key-share the row, and FOR UPDATE skipped it for every one of them.  A row a closer or
-        # settler holds is skipped too; the reaper's ``reconcile_runs`` marks such a run running within one pass.
+        # settler holds is skipped too; the reaper's ``reconcile_running`` marks such a run running within one pass.
         target = CbomCollectionRun.id == select(CbomCollectionRun.id).where(
             CbomCollectionRun.id == run_id).with_for_update(**RUN_ROW_LOCK).scalar_subquery()
     if session.exec(update(CbomCollectionRun)
-                    .where(target, CbomCollectionRun.status.in_(("queued",)))  # type: ignore[attr-defined]
+                    .where(target, CbomCollectionRun.status.in_(("queued",)),  # type: ignore[attr-defined]
+                           CbomCollectionRun.cancelled_at.is_(None))  # type: ignore[union-attr]
                     .values(status="running", last_updated=now, finished_at=None)
                     .execution_options(synchronize_session=False)).rowcount:
         team = session.exec(select(CbomCollectionRun.team_id).where(CbomCollectionRun.id == run_id)).first()
@@ -709,7 +713,9 @@ def reap(session: Session, now: _dt.datetime, *, team_id: int | None = None, nod
     for parent_id in sorted(parents):  # a slice the reaper ended may have been its parent's last open one
         S.maybe_finalize(session, parent_id, now)
     moved += reconcile_runs(session, now, team_id=team_id)
-    reconcile_running(session, now, team_id=team_id)  # run rows, not jobs: not counted in ``moved``
+    marked = reconcile_running(session, now, team_id=team_id)  # run rows, not jobs: not counted in ``moved``
+    if stats is not None and marked:
+        stats["marked_running"] = stats.get("marked_running", 0) + marked
     return moved
 
 

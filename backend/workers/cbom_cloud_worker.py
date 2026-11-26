@@ -550,10 +550,12 @@ def reap_all(engine) -> int:
             swept = NA.sweep_nonces(session, now, every_s=0)
             session.commit()
             _PASSES[0] += 1
-            if moved or settled["jobs"] or _PASSES[0] % SUMMARY_EVERY == 0:
+            marked = stats.get("marked_running", 0)
+            if moved or settled["jobs"] or marked or _PASSES[0] % SUMMARY_EVERY == 0:
                 log("reap pass", at=int(time.time()), moved=moved, lease_expired=stats.get("lease_expired", 0),
                     expired=stats.get("expired", 0), node_offline=stats.get("node_offline", 0), max_runtime=stats.get("max_runtime", 0),
-                    cancel_unconfirmed=stats.get("cancel_unconfirmed", 0), refunds_settled=settled["jobs"],
+                    cancel_unconfirmed=stats.get("cancel_unconfirmed", 0), marked_running=marked,
+                    refunds_settled=settled["jobs"],
                     refunded_c=settled["centi"], nonces_swept=swept, **_queue_facts(session, now))
         except Exception as exc:
             session.rollback()
