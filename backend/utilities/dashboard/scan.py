@@ -1207,7 +1207,7 @@ def generate_scan_dashboard(
             # One set of numbers for every CBOM surface (cbom_metrics): findings by severity over FINDING rows only
             # (cbom_rows.is_finding), clean inventory under "informational", inventory distributions over every row,
             # app-wide 0-10 risk scale (critical=9, high=7, medium=5, low=2).
-            from backend.utilities.cbom_sources.cbom_metrics import summarize_code_rows
+            from backend.utilities.cbom_sources.cbom_metrics import risk_fields, summarize_code_rows
 
             summary = summarize_code_rows(results)
             total_crypto_assets = summary.crypto_assets  # the scan list and the PDF count the same rows
@@ -1229,6 +1229,7 @@ def generate_scan_dashboard(
                         compliance_controls_metrics[_label] += int(_fail)
 
             readiness = summary.readiness_pct
+            risk = summary.risk
 
             # Remediation metrics: the Mongo read path keeps finding rows only (old and new scans alike)
             findings = get_findings_for_scan_id(scan_id=scan_id, scan_type="cbom")
@@ -1255,6 +1256,12 @@ def generate_scan_dashboard(
                     "quantum_readiness_score": 0 if readiness is None else readiness,
                     "quantum_readiness_judged": readiness is not None,
                     "average_risk_score": summary.average_risk,
+                    # the D3 risk score (Q2-01, Rule P): the engine's posture function over these findings, the
+                    # number, grade and words of the PDF headline and of cbom_scores
+                    # none for a scan that did not succeed: "not_scored", shown "—" (re-review 6064703319)
+                    # (results passed without a scan row, or a row without a status, are a finished scan's)
+                    **risk_fields(risk, judged=str(getattr(scan, "scan_status", "success") or "").lower()
+                                  == "success"),
                 },
                 "severity_distribution": summary.severity_distribution(),
                 "algorithm_type_distribution": dict(summary.algorithm_types),
@@ -1409,6 +1416,7 @@ def generate_scan_dashboard(
 
             # Average risk score: the app's one 0-10 scale (risk_scale), the same number the AI BOM PDF prints
             from backend.utilities.dashboard.risk_scale import average_risk as _average_risk
+            from backend.utilities.pdf.aibom_posture import posture_risk as _posture_risk
 
             average_risk_score = _average_risk(severity_distribution) or 0.0
 
@@ -1442,6 +1450,11 @@ def generate_scan_dashboard(
                     "total_unlicensed_assets": total_unlicensed_assets,
                     "governance_readiness_score": governance_readiness_score,
                     "average_risk_score": round(average_risk_score * 10) / 10,
+                    # the one risk score (the engine's posture function, as the AI BOM PDF headline and summary),
+                    # shown by the results tile instead of the 0-10 average (PR #500 takeover)
+                    **dict(zip(("risk_score", "risk_grade", "risk_label"), _posture_risk(
+                        severity_distribution["critical"], severity_distribution["high"],
+                        severity_distribution["medium"], severity_distribution["low"]))),
                 },
                 "severity_distribution": severity_distribution,
                 "asset_type_distribution": dict(asset_type_distribution),

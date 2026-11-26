@@ -236,6 +236,9 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
                 "crypto_strength": fd.get("crypto_strength", ""),
                 "key_size": fd.get("key_size"),
                 "quantum_safe": fd.get("quantum_safe", False),
+                # with quantum_safe false and a weak strength, false here means "Broken today" (MD5), not
+                # quantum-vulnerable (G-D3-6); absent on rows stored before it
+                "quantum_vulnerable": fd.get("quantum_vulnerable"),
                 "location": fd.get("location", ""),
                 "snippet": fd.get("snippet", ""),
                 "remediation": finding.get("remediation", None),

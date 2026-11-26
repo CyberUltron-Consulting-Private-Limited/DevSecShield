@@ -129,7 +129,11 @@ def test_weak_and_quantum_findings_get_a_remediation() -> None:
     for r in rows:
         assert r["suggested_fix"], "every finding needs a remediation string"
     # a quantum-vulnerable row's fix names the PQC migration target
-    qv = next(r for r in rows if r["quantum_safe"] is False)
+    # quantum_safe False with quantum_vulnerable False is "broken today" (MD5, G-D3-6):
+    # no PQC target
+    qv = next(
+        r for r in rows if r["quantum_safe"] is False and r.get("quantum_vulnerable")
+    )
     assert qv["pqc_migration_target"]
     assert "post-quantum" in qv["suggested_fix"].lower()
 

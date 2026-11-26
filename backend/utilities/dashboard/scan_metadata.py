@@ -279,6 +279,19 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
                 cbom_compliance = scan.scan_data["cbom_compliance"]
             if "cbom_scores" in scan.scan_data:
                 cbom_scores = scan.scan_data["cbom_scores"]
+            if isinstance(cbom_scores, dict) and isinstance(scan.scan_data.get("results"), list):
+                # one D3 risk score (Q2-01, Rule P): a scan stored before the engine wrote the posture score carries
+                # the old flag-weight number; the API serves the engine's posture function over the scan's findings,
+                # the number the PDF and the results page show (equal to what the engine stores today)
+                from backend.utilities.cbom_sources.cbom_metrics import summarize_code_rows
+
+                risk = summarize_code_rows(scan.scan_data["results"]).risk
+                cbom_scores = {**(cbom_scores if isinstance(cbom_scores, dict) else {}),
+                               "risk_normalized": float(risk["risk_score"]), "risk_band": risk["risk_band"],
+                               "risk_grade": risk["risk_grade"], "risk_label": risk["risk_label"],
+                               "severity_counts": risk["severity_counts"], "risk_scale": "posture",
+                               "risk_posture_status": risk["risk_posture_status"],
+                               "risk_unverified": risk["risk_unverified"]}
             if "cbom_graph" in scan.scan_data:
                 cbom_graph = scan.scan_data["cbom_graph"]
             if "cbom_graph_compact" in scan.scan_data:
@@ -351,6 +364,13 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             "cbom_distributions": cbom_distributions,
             "cbom_compliance": cbom_compliance,
             "cbom_scores": cbom_scores,
+            # what the engine read as a mention, not a use (a label, a comparison, an Enum member): listed under
+            # "Configuration mentions (not counted)" on the results page and in the PDF appendix (capped list + total)
+            "config_evidence": (scan.scan_data.get("config_evidence")
+                                if isinstance(scan.scan_data, dict) else None) or [],
+            "config_evidence_total": int((scan.scan_data.get("config_evidence_total") or 0)
+                                         if isinstance(scan.scan_data, dict) else 0)
+            or len((scan.scan_data.get("config_evidence") if isinstance(scan.scan_data, dict) else None) or []),
             "cbom_graph": cbom_graph,
             "cbom_graph_compact": cbom_graph_compact,
             "cbom_graph_expanded": cbom_graph_expanded,

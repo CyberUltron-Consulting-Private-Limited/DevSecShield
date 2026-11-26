@@ -844,7 +844,8 @@ export default function AiBomResults({
                   { label: "High Risk", value: cardData.total_high_risk_assets, icon: ShieldAlert, color: "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400" },
                   { label: "Unlicensed", value: cardData.total_unlicensed_assets, icon: Scale, color: "bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400" },
                   { label: "Governance Ready", value: `${cardData.governance_readiness_score}%`, icon: Shield, color: "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400" },
-                  { label: "Avg Risk", value: cardData.average_risk_score?.toFixed(1) ?? "N/A", icon: Activity, color: "bg-pink-100 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400" },
+                  // the one risk score (posture, 0-100) the PDF prints, not the 0-10 average (PR #500 takeover)
+                  { label: "Risk score", value: typeof cardData.risk_score === "number" ? (cardData.risk_grade ? `${cardData.risk_score} · ${cardData.risk_grade}` : `${cardData.risk_score}`) : "N/A", icon: Activity, color: "bg-pink-100 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400" },
                 ].map((c) => (
                   <Card key={c.label} className="border-zinc-200 dark:border-zinc-800">
                     <CardContent className="pt-4 pb-4 flex items-center gap-3">

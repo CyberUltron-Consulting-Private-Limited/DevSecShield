@@ -149,7 +149,10 @@ def test_pqc_fixture_algorithm_oids() -> None:
     assert oids["FALCON-512"] is None
     assert oids["SLH-DSA-256"] is None
     assert oids["LMS"] is None
-    assert oids["XMSS"] is None
+    # XMSS: algid's identity (id-alg-xmss-hashsig), which the served CBOM always
+    # carried; the emitter now reads the
+    # graph's crypto:oid, so the two agree (staging QA Q2-04)
+    assert oids["XMSS"] == "1.3.6.1.5.5.7.6.34"
     assert oids["AES-256"] is None  # key size present, mode absent
 
 

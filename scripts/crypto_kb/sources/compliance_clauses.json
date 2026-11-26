@@ -2068,6 +2068,19 @@
     }
    ]
   },
+  "WEAK_KDF_COST": {
+   "clauses": [
+    "rbi-sfb-2026-para-139",
+    "rbi-pb-2026-para-139",
+    "rbi-ucb-2026-para-25",
+    "rbi-aifi-2026-para-135",
+    "rbi-cic-2026-para-135",
+    "rbi-cb-2026-para-140",
+    "rbi-nbfc-2026-para-118"
+   ],
+   "basis": "a scrypt cost below the published minimum (OWASP Password Storage Cheat Sheet: N = 2^17, r = 8, p = 1) is a configuration that does not follow internationally accepted guidance and is demonstrated to be insecure against offline guessing",
+   "rules": []
+  },
   "WEAK_KDF_ITERATIONS": {
    "clauses": [
     "rbi-sfb-2026-para-139",

@@ -18,7 +18,6 @@ from backend.utilities.dashboard.aibom_license import (
 )
 from backend.utilities.dashboard.aibom_provider import resolve_aibom_provider
 from backend.utilities.dashboard.rbi_posture import build_rbi_csf_rollup
-from backend.utilities.dashboard.risk_scale import average_risk_of
 from backend.utilities.pdf.report_context import ReportContext, details_note, join_parts
 from backend.utilities.pdf.report_branding import (
     report_generated,
@@ -144,8 +143,12 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         ):
             unlicensed += 1
 
-    # One scale with the dashboard card (risk_scale: Critical 10, High 7.5, Medium 5, Low 2.5).
-    avg_risk = average_risk_of(v.get("impact") for v in assets) or 0.0
+    # The one risk score (PR #500 takeover): the engine's posture function over the findings by severity, the same
+    # number, grade and words as the headline tile (compute_posture_risk_score), never a second 0-10 average.
+    sev = {k.strip().lower(): n for k, n in by_impact.items()}
+    risk_score, risk_grade, risk_label = compute_posture_risk_score(
+        sev.get("critical", 0), sev.get("high", 0), sev.get("medium", 0), sev.get("low", 0))
+    risk_text = f"{risk_score} / 100 · grade {risk_grade} · {risk_label}"
 
     styles = get_report_styles()
     doc = SimpleDocTemplate(
@@ -170,7 +173,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         )
 
     scope_rows = [
-        ("Average risk score (0–10)", f"{avg_risk:.1f}"),
+        ("Risk score", risk_text),
         *_bom_scope_rows(raw if raw else (scan_results if isinstance(scan_results, dict) else {})),
     ]
 
@@ -179,7 +182,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         ("Total AI assets", str(total)),
         ("Unlicensed assets", str(unlicensed)),
         ("External providers", str(len(by_provider))),
-        ("Average risk score (0–10)", f"{avg_risk:.1f}"),
+        ("Risk score", risk_text),
         ("Report generated", report_generated(long=True)),
     ]
     ctx = ctx or ReportContext()

@@ -47,7 +47,12 @@ def test_certin_pdf_section_contains_disclaimer_and_framework() -> None:
     )
     assert story, "expected CERT-In section content"
     texts = []
-    for item in story:
+    from reportlab.platypus import KeepTogether
+
+    flat = []
+    for item in story:  # the heading, its lead and the table are kept together now (staging QA Q2-10)
+        flat.extend(item._content if isinstance(item, KeepTogether) else [item])
+    for item in flat:
         t = getattr(item, "text", None) or getattr(item, "_argW", None)
         if isinstance(t, str):
             texts.append(t)
@@ -61,7 +66,7 @@ def test_certin_pdf_section_contains_disclaimer_and_framework() -> None:
     joined = " ".join(texts)
     assert "CERT-In" in joined
     assert "certification" in joined.lower() or "Advisory" in joined
-    assert "cert_in_cbom" in joined
+    assert "CERT-In CBOM (Guidelines v2.0)" in joined and "cert_in_cbom" not in joined  # a readable name (Q2-10)
     # Still builds a PDF without error
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf)

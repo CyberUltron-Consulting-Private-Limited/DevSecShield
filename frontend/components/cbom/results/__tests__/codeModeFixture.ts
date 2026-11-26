@@ -25,6 +25,8 @@ export const CODE_DASHBOARD = {
     total_crypto_assets: 5, total_crypto_vulnerabilities: 2, total_informational: 3, quantum_readiness_judged: true,
     total_weak_algorithms: 2, total_quantum_vulnerable: 1, total_certificates: 0, total_keys: 1, quantum_readiness_score: 40,
     average_risk_score: 6.8,
+    // the API's D3 risk score of these findings (1 High, 1 Medium): the engine's posture_risk(0, 1, 1, 0)
+    risk_score: 28, risk_grade: "B", risk_label: "Moderate risk",
   },
   remediation_metrics: { mean_time_to_remediate: [1, 2, 3], critical_issues_fixed: 0, remediation_velocity: 1, high_priority_backlog: 1 },
   remediation_actions_required: { total_findings: 2, total_fixed: 1, total_in_progress: 0, total_not_started: 1, total_ignored: 0 },

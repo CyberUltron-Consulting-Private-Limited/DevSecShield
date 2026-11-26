@@ -49,6 +49,13 @@ ADDED_AFTER_BASE = {
     # review of #491 m7: a Python KDF cost above the NIST floor but below the OWASP
     # minimum, Low
     "WEAK_KDF_ITERATIONS@note": 1,
+    # staging QA Q2-11: scrypt below its (N, r, p) minimum, its own code (Medium; Low at
+    # note)
+    "WEAK_KDF_COST": 4,
+    "WEAK_KDF_COST@note": 1,
+    # staging QA G-D3-6: a broken hash used only as a cache key / checksum with no
+    # secret input, Low
+    "WEAK_ALGORITHM@note": 1,
 }
 
 

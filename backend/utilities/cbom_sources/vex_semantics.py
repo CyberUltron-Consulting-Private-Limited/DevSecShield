@@ -66,7 +66,9 @@ from typing import Any, Callable, Iterable, Mapping
 
 from backend.utilities.cbom_sources import crypto_kb
 
-VEX_RULES = "cb22-1"
+# cb22-2 (staging QA A-13d): the code-scan VEX states only the vulnerabilities its BOM lists (the served CBOM carries
+# them in ``vulnerabilities[]``), names assets by BOM-Link, and writes no per-component not_affected stub
+VEX_RULES = "cb22-2"
 AFFECTS_CAP = 5_000  # affected assets listed per entry; the rest are counted (``affects_cut``)
 REMOVED_KEYS_CAP = 200
 _CODE_VEX_NS = uuid.uuid5(uuid.NAMESPACE_URL, "https://zeroshield.ai/cbom/code-scan/vex")
@@ -308,8 +310,12 @@ def grade_props(q_grades: Mapping[str | None, int], *, model_version: str | None
 
 
 def bom_link(serial: str, version: int | str, ref: str) -> str:
-    """A CycloneDX 1.6 BOM-Link to ``ref`` in another BOM: ``urn:cdx:<serial uuid>/<version>#<ref>``."""
-    return f"urn:cdx:{str(serial).removeprefix('urn:uuid:')}/{version}#{ref}"
+    """A CycloneDX 1.6 BOM-Link to ``ref`` in another BOM: ``urn:cdx:<serial uuid>/<version>#<ref>``, the fragment
+    percent-encoded (RFC 3986 section 3.5; review 6061095673), as the SBOM VEX writes it (``cert_in.vex``). Refs of the
+    usual alphabet (letters, digits, ``-._~``) read the same either way."""
+    from urllib.parse import quote
+
+    return f"urn:cdx:{str(serial).removeprefix('urn:uuid:')}/{version}#{quote(str(ref), safe='')}"
 
 
 # ----------------------------------------------------------------------------- drift-resolved findings
@@ -429,11 +435,13 @@ def _cve_ids(row: Mapping[str, Any]) -> list[str]:
 def code_scan_vulnerabilities(findings: list[Any], *, components: Iterable[str] = (),
                               resolved: Iterable[Mapping[str, Any]] = (), ref_of: Mapping[str, str] | None = None,
                               link_of: Callable[[Mapping[str, Any]], str | None] | None = None,
-                              truncated: bool = False, dropped: list[str] | None = None) -> list[dict[str, Any]]:
+                              truncated: bool = False, dropped: list[str] | None = None,
+                              ref_link: Callable[[str], str] | None = None) -> list[dict[str, Any]]:
     """A CBOM code scan's VEX entries: one per finding code (``code_basis(code, "code")``: never exploitable), one per
-    CVE (``in_triage``; the detail says whether it came from a library advisory or from the algorithm), one
-    ``resolved`` per code its drift resolved, and the CERT-In F5 ``not-affected:<ref>`` stub for each component with
-    no finding and no CVE (``components``: the BOM's refs, used when the scan stored no result rows).
+    CVE (``in_triage``; the detail says whether it came from a library advisory or from the algorithm) and one
+    ``resolved`` per code its drift resolved. A component with no finding and no CVE gets no entry: a not_affected
+    statement needs a justification, and "nothing was found" is none (staging QA A-13d). ``ref_link``: how an
+    affected asset is named (a BOM-Link into the scan's CBOM for the standalone VEX; the bare bom-ref inside the BOM).
 
     D11: when the BOM's refs are known (``components``), the VEX states only components the BOM holds: a result row
     whose ref the BOM does not hold (no ``bom_ref``, or a row the BOM left out) is not an affected asset, and an
@@ -442,7 +450,6 @@ def code_scan_vulnerabilities(findings: list[Any], *, components: Iterable[str] 
     in_bom = set(components)
     by_code: dict[str, list[str]] = {}
     by_cve: dict[str, dict[str, Any]] = {}
-    clean: list[str] = []
     for i, row in enumerate(findings):
         if not isinstance(row, dict):
             continue
@@ -460,11 +467,8 @@ def code_scan_vulnerabilities(findings: list[Any], *, components: Iterable[str] 
             hit = by_cve.setdefault(cid, {"refs": [], "library": False})
             hit["refs"].append(ref)
             hit["library"] = hit["library"] or library
-        if not codes and not cves:
-            clean.append(ref)
-    if not findings:
-        clean = components
     out: list[dict[str, Any]] = []
+    link = ref_link or (lambda r: r)
     taken: set[str] = set()
     for code, refs in sorted(by_code.items()):
         basis = code_basis(code, "code")
@@ -475,7 +479,7 @@ def code_scan_vulnerabilities(findings: list[Any], *, components: Iterable[str] 
         unique = list(dict.fromkeys(refs))
         out.append({"bom-ref": bom_ref, "id": f"ZS-CBOM-{code}",
                     "source": {"name": "DevSecShield CERT-In VEX", "url": ""},
-                    "analysis": analysis, "affects": [{"ref": r} for r in unique[:AFFECTS_CAP]],
+                    "analysis": analysis, "affects": [{"ref": link(r)} for r in unique[:AFFECTS_CAP]],
                     "properties": [prop("zs:vex_basis", basis), *affects_cut(min(len(unique), AFFECTS_CAP), len(unique))]})
     for cid, hit in sorted(by_cve.items()):
         unique = list(dict.fromkeys(hit["refs"]))
@@ -484,14 +488,11 @@ def code_scan_vulnerabilities(findings: list[Any], *, components: Iterable[str] 
         out.append({"bom-ref": bom_ref, "id": cid,
                     "source": {"name": "NVD", "url": f"https://nvd.nist.gov/vuln/detail/{cid}"},
                     "analysis": analysis_for(CVE, cve_detail=CODE_CVE_LIBRARY if hit["library"] else CODE_CVE_ALGORITHM),
-                    "affects": [{"ref": r} for r in unique[:AFFECTS_CAP]],
+                    "affects": [{"ref": link(r)} for r in unique[:AFFECTS_CAP]],
                     "properties": [prop("zs:vex_basis", CVE), *affects_cut(min(len(unique), AFFECTS_CAP), len(unique))]})
-    out += resolved_entries(resolved, ref_of or {}, namespace="code", baseline_name="scan", taken=taken,
+    ref_in_doc = {k: link(v) for k, v in (ref_of or {}).items()}
+    out += resolved_entries(resolved, ref_in_doc, namespace="code", baseline_name="scan", taken=taken,
                             link_of=link_of, truncated=truncated)
-    for ref in dict.fromkeys(clean):
-        out.append({"id": f"not-affected:{ref}", "source": {"name": "DevSecShield CERT-In VEX", "url": ""},
-                    "analysis": {"state": "not_affected", "detail": "No weakness or CVE found for this asset (CERT-In F5)"},
-                    "affects": [{"ref": ref}], "properties": [prop("zs:vex_basis", "no_finding")]})
     return out
 
 
@@ -499,15 +500,19 @@ def code_scan_vex(findings: list[Any], *, scan_id: int | None = None, now: _dt.d
                   components: Iterable[str] = (), resolved: Iterable[Mapping[str, Any]] = (),
                   ref_of: Mapping[str, str] | None = None,
                   link_of: Callable[[Mapping[str, Any]], str | None] | None = None, truncated: bool = False,
-                  supersedes: Any = None) -> dict[str, Any]:
+                  supersedes: Any = None, bom_serial: str | None = None, bom_version: int | str = 1
+                  ) -> dict[str, Any]:
     """The CycloneDX 1.6 VEX document of a CBOM code scan (what ``GET /{team}/cbom/scan/{id}/vex`` serves).
     ``serialNumber`` = uuid5(scan id : rules : content digest), so a rebuilt document with other content is another
     BOM; ``metadata.timestamp`` = when it was built; ``supersedes``: the stored document it replaces (its serial, or
-    its rules when it had none, in ``zs:supersedes``)."""
+    its rules when it had none, in ``zs:supersedes``). ``bom_serial`` / ``bom_version``: the served CBOM this VEX
+    speaks about; every affected asset is a BOM-Link into it (``urn:cdx:<serial>/<version>#<bom-ref>``), so the VEX
+    resolves on its own (staging QA A-13d)."""
     components = list(components)
     dropped: list[str] = []
+    ref_link = (lambda r: bom_link(bom_serial, bom_version, r)) if bom_serial else None
     vulns = code_scan_vulnerabilities(findings, components=components, resolved=resolved, ref_of=ref_of,
-                                      link_of=link_of, truncated=truncated, dropped=dropped)
+                                      link_of=link_of, truncated=truncated, dropped=dropped, ref_link=ref_link)
     states = Counter(v["analysis"]["state"] for v in vulns)
     digest = hashlib.sha256(json.dumps(vulns, sort_keys=True).encode()).hexdigest()
     old = None

@@ -25,6 +25,9 @@ export interface PqcGaugeInput {
   quantum_vulnerable: number;
   quantum_safe: number;
   readiness_pct: number | null;
+  /** algorithms broken today (MD5, SHA-1, DES ...): judged, not quantum-safe. A code scan's engine pqc.broken_today
+   * (PR #500 takeover); older engines and Sources runs omit it (a run's figures are posture's, Rule P) */
+  broken_today?: number;
   hybrid?: number;
   /** a Sources run's posture readiness_basis (why a readiness is withheld) */
   readiness_basis?: CbomReadinessBasis | null;
@@ -39,7 +42,7 @@ export function PqcReadinessGauge({ pqc, rows, scope = "code" }: {
   const counts = scope === "code" && rows && rows.length > 0 ? quantumCounts(rows) : null;
   const safe = counts ? counts.safe : pqc?.quantum_safe ?? 0;
   const vuln = counts ? counts.vulnerable : pqc?.quantum_vulnerable ?? 0;
-  const broken = counts ? counts.broken : 0;
+  const broken = counts ? counts.broken : pqc?.broken_today ?? 0;
   const total = safe + vuln + broken;
   const readiness = counts ? counts.readinessPct : pqc?.readiness_pct;
   const copy = pqcGaugeCopy(scope, readiness, pqc?.readiness_basis);

@@ -64,9 +64,22 @@ _ECC_CURVE_STRENGTH: tuple[tuple[str, int], ...] = (
 # grade a number for inventory + coverage; the "disallowed" judgement is a
 # separate concern owned by the C5 weak-algorithm deny-list + the framework
 # allowlist below (compliance ANDs strength>=floor WITH no-weak-flag).
+#
+# A hash's classical strength is its collision resistance as attacked today, not
+# half its output length (CycloneDX 1.6 ``classicalSecurityLevel``: "the
+# classical security level that a cryptographic algorithm provides (in bits)"):
+#   * MD5: 18. RFC 6151 Section 2 retires MD5 wherever collision resistance is
+#     needed (collisions are practical); published identical-prefix attacks find
+#     one in about 2^18 MD5 computations, not the 2^64 a 128-bit digest promises.
+#   * MD4: 2. RFC 6150 moves MD4 to Historic: collisions cost a few MD4
+#     computations.
+#   * SHA-1: 63. SHAttered (Stevens, Bursztein, Karpman, Albertini, Markov, 2017)
+#     found an identical-prefix collision in about 2^63.1 SHA-1 computations, and
+#     "SHA-1 is a Shambles" (Leurent, Peyrin, 2020) a chosen-prefix one in about
+#     2^63.4, not the 2^80 of a 160-bit digest.
 _LEGACY_STRENGTH: dict[str, int] = {
     "des": 56, "3des": 112, "rc2": 64, "rc4": 128, "blowfish": 128,
-    "md5": 64, "md4": 64, "sha1": 80,
+    "md5": 18, "md4": 2, "sha1": 63,
 }
 
 

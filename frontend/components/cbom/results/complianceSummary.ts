@@ -282,7 +282,9 @@ export function buildComplianceSummary(input: {
       counts,
       requirements,
       engineFrameworks: engine.map((e) => labelFramework(e.key)),
-      clausesTouched: kbClauses.length,
+      // a code scan has no knowledge-base clause rows: its clauses touched are the failing requirements listed, so the
+      // column agrees with "Assets affected" (staging QA N7: 0 clauses beside 4 assets)
+      clausesTouched: kbClauses.length ? kbClauses.length : engineRows.filter((c) => c.verdict === "fail").length,
       clausesNeedEvidence: needEvidence,
       unrecorded,
       assets,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   Bar,
   BarChart,
@@ -82,6 +83,8 @@ export function RbiCsfRollup({
   }, [rollup]);
 
   const [active, setActive] = useState<string | null>(null);
+  // phones: a narrower label column (labels wrap), so the bars keep most of the card (staging QA N6: ~30 px bars)
+  const narrow = useIsMobile();
 
   if (pillars.length === 0) return null;
 
@@ -145,10 +148,10 @@ export function RbiCsfRollup({
           </p>
         ) : (
         <ChartContainer config={cfg} className="aspect-auto h-[220px] w-full">
-          <BarChart data={chartData} layout="vertical" margin={{ top: 4, right: 16, bottom: 4, left: 8 }}>
+          <BarChart data={chartData} layout="vertical" margin={{ top: 4, right: narrow ? 4 : 16, bottom: 4, left: narrow ? 0 : 8 }}>
             <CartesianGrid horizontal={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
             <XAxis type="number" hide />
-            <YAxis dataKey="name" type="category" width={200} tickLine={false} axisLine={false} className="text-xs" />
+            <YAxis dataKey="name" type="category" width={narrow ? 104 : 200} tickLine={false} axisLine={false} className="text-xs" />
             <ChartTooltip content={<ChartTooltipContent />} />
             {(["pass", "pass_with_evidence", "fail", "out_of_scope", "not_bom_evidenceable", "na"] as const).map(
               (k, i, arr) => (

@@ -1,7 +1,7 @@
 {
  "advisory_data": {
   "advisories": 1169,
-  "age_days": 9,
+  "age_days": 10,
   "generated_at": "2026-11-14",
   "max_age_days": 30,
   "origin": "builtin",
@@ -79,12 +79,12 @@
    ]
   },
   "cert_in_cbom": {
-   "coverage": 0.909,
+   "coverage": 0.92,
    "fail": 2,
    "na": 0,
-   "not_bom_evidenceable": 21,
+   "not_bom_evidenceable": 18,
    "out_of_scope": 0,
-   "pass": 20,
+   "pass": 23,
    "pass_with_evidence": 0,
    "requirements": [
     {
@@ -154,24 +154,16 @@
      "verdict": "pass"
     },
     {
-     "attestable": true,
-     "evidence": "T9-Algorithms-Mode: 10/12 algorithm asset(s) lack crypto:mode; unknown \u2192 not BOM-evidenceable (Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification.)",
+     "attestable": false,
+     "evidence": "all 2 algorithm asset(s) carry crypto:mode",
      "id": "T9-Algorithms-Mode",
      "refs": [
-      "crypto-algo-argon2-app-kdf-py",
-      "crypto-algo-fernet-app-encryption-py",
-      "crypto-algo-hkdf-app-kdf-py",
-      "crypto-algo-hmac-sha256-app-encryption-py",
-      "crypto-algo-pbkdf2-app-encryption-py",
-      "crypto-algo-pbkdf2-app-kdf-py",
-      "crypto-algo-scrypt-app-kdf-py",
-      "crypto-algo-sha-256-app-encryption-py",
-      "crypto-algo-sha-256-app-kdf-py",
-      "crypto-algo-sha-512-app-kdf-py"
+      "crypto-algo-aes-128-cbc-app-encryption-py",
+      "crypto-algo-aes-cbc-app-kdf-py"
      ],
      "source": "Table 9 / Algorithms / Mode",
      "title": "Algorithm Mode",
-     "verdict": "not_bom_evidenceable"
+     "verdict": "pass"
     },
     {
      "attestable": true,
@@ -201,10 +193,9 @@
     },
     {
      "attestable": true,
-     "evidence": "T9-Algorithms-OID: crypto:oid not present on algorithm assets; unknown \u2192 not BOM-evidenceable (Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification.)",
+     "evidence": "T9-Algorithms-OID: 8/12 algorithm asset(s) lack crypto:oid; unknown \u2192 not BOM-evidenceable (Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification.)",
      "id": "T9-Algorithms-OID",
      "refs": [
-      "crypto-algo-aes-128-cbc-app-encryption-py",
       "crypto-algo-aes-cbc-app-kdf-py",
       "crypto-algo-argon2-app-kdf-py",
       "crypto-algo-fernet-app-encryption-py",
@@ -212,10 +203,7 @@
       "crypto-algo-hmac-sha256-app-encryption-py",
       "crypto-algo-pbkdf2-app-encryption-py",
       "crypto-algo-pbkdf2-app-kdf-py",
-      "crypto-algo-scrypt-app-kdf-py",
-      "crypto-algo-sha-256-app-encryption-py",
-      "crypto-algo-sha-256-app-kdf-py",
-      "crypto-algo-sha-512-app-kdf-py"
+      "crypto-algo-scrypt-app-kdf-py"
      ],
      "source": "Table 9 / Algorithms / OID",
      "title": "Algorithm OID",
@@ -507,22 +495,22 @@
      "verdict": "not_bom_evidenceable"
     },
     {
-     "attestable": true,
-     "evidence": "Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification. Process attestation for 8.4.1.5: Attest that CBOMs are generated in SPDX or CycloneDX formats..",
+     "attestable": false,
+     "evidence": "8.4.1.5: this CBOM is emitted in CycloneDX 1.6 (JSON and XML), validated against the CycloneDX schema (Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification.)",
      "id": "8.4.1.5",
      "refs": [],
      "source": "\u00a78.4.1.5",
      "title": "Emit CBOM in SPDX or CycloneDX",
-     "verdict": "not_bom_evidenceable"
+     "verdict": "pass"
     },
     {
-     "attestable": true,
-     "evidence": "Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification. Process attestation for 8.4.1.6: Attest that VEX documents are issued when cryptographic component vulnerabilities are discovered..",
+     "attestable": false,
+     "evidence": "8.4.1.6: a CycloneDX 1.6 VEX is issued with this CBOM (the VEX download and the evidence pack's vex.json) for its finding codes and matched CVEs (Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not constitute CERT-In certification.)",
      "id": "8.4.1.6",
      "refs": [],
      "source": "\u00a78.4.1.6",
      "title": "Issue VEX for crypto vulnerabilities",
-     "verdict": "not_bom_evidenceable"
+     "verdict": "pass"
     },
     {
      "attestable": true,
@@ -1431,8 +1419,22 @@
   "weakness": {
    "STATIC_IV": 1,
    "STATIC_SALT": 3,
-   "VULNERABLE_CRYPTO_LIBRARY": 1,
-   "WEAK_KDF_ITERATIONS": 2
+   "WEAK_KDF_COST": 1,
+   "WEAK_KDF_ITERATIONS": 1
+  },
+  "weakness_impacts": {
+   "STATIC_IV": {
+    "High": 1
+   },
+   "STATIC_SALT": {
+    "Medium": 3
+   },
+   "WEAK_KDF_COST": {
+    "Low": 1
+   },
+   "WEAK_KDF_ITERATIONS": {
+    "Low": 1
+   }
   }
  },
  "cbom_graph": {
@@ -1562,17 +1564,6 @@
     "primitive": null,
     "quantum_vulnerable": false,
     "weak": false
-   },
-   {
-    "asset_type": null,
-    "id": "crypto-advisory-pypi-cryptography-41-0",
-    "impact": "High",
-    "kind": "framework",
-    "label": "cryptography@>=41.0",
-    "location": "requirements.txt",
-    "primitive": null,
-    "quantum_vulnerable": false,
-    "weak": true
    },
    {
     "asset_type": "algorithm",
@@ -1964,11 +1955,6 @@
     "target": "crypto-algo-aes-cbc-app-kdf-py"
    },
    {
-    "rel": "declares",
-    "source": "folder:(repository root)",
-    "target": "crypto-advisory-pypi-cryptography-41-0"
-   },
-   {
     "rel": "contains",
     "source": "folder:app/",
     "target": "crypto-algo-aes-128-cbc-app-encryption-py"
@@ -2059,7 +2045,7 @@
    "families": 6,
    "folded_assets": 0,
    "folders": 1,
-   "libraries": 8,
+   "libraries": 7,
    "max_nodes": 40,
    "shown_assets": 17
   },
@@ -2078,17 +2064,6 @@
      "container-image-redis-7-2-alpine"
     ],
     "weak": false
-   },
-   {
-    "asset_type": null,
-    "id": "crypto-advisory-pypi-cryptography-41-0",
-    "impact": "High",
-    "kind": "framework",
-    "label": "cryptography@>=41.0",
-    "location": "requirements.txt",
-    "primitive": null,
-    "quantum_vulnerable": false,
-    "weak": true
    },
    {
     "asset_type": "algorithm",
@@ -2363,13 +2338,6 @@
     "label": "Keys and secrets (5)",
     "quantum_vulnerable": false,
     "weak": true
-   },
-   {
-    "asset_type": "location",
-    "count": 0,
-    "id": "folder:(repository root)",
-    "kind": "location",
-    "label": "(repository root)"
    },
    {
     "asset_type": "location",
@@ -2548,11 +2516,6 @@
     "target": "crypto-algo-aes-cbc-app-kdf-py"
    },
    {
-    "rel": "declares",
-    "source": "folder:(repository root)",
-    "target": "crypto-advisory-pypi-cryptography-41-0"
-   },
-   {
     "rel": "contains",
     "source": "folder:app/",
     "target": "crypto-algo-aes-128-cbc-app-encryption-py"
@@ -2643,7 +2606,7 @@
    "families": 6,
    "folded_assets": 0,
    "folders": 1,
-   "libraries": 8,
+   "libraries": 7,
    "max_nodes": 120,
    "shown_assets": 17
   },
@@ -2662,17 +2625,6 @@
      "container-image-redis-7-2-alpine"
     ],
     "weak": false
-   },
-   {
-    "asset_type": null,
-    "id": "crypto-advisory-pypi-cryptography-41-0",
-    "impact": "High",
-    "kind": "framework",
-    "label": "cryptography@>=41.0",
-    "location": "requirements.txt",
-    "primitive": null,
-    "quantum_vulnerable": false,
-    "weak": true
    },
    {
     "asset_type": "algorithm",
@@ -2950,13 +2902,6 @@
    },
    {
     "asset_type": "location",
-    "count": 0,
-    "id": "folder:(repository root)",
-    "kind": "location",
-    "label": "(repository root)"
-   },
-   {
-    "asset_type": "location",
     "count": 17,
     "id": "folder:app/",
     "kind": "location",
@@ -3048,13 +2993,13 @@
    }
   ],
   "meta": {
-   "clustered_members": 9,
+   "clustered_members": 8,
    "lane": "cbom",
    "max_nodes": 40,
    "raw_edge_count": 16,
-   "raw_node_count": 25,
+   "raw_node_count": 24,
    "view_edge_count": 16,
-   "view_node_count": 19
+   "view_node_count": 18
   },
   "nodes": [
    {
@@ -3076,23 +3021,6 @@
     "primitive": null,
     "quantum_vulnerable": false,
     "weak": false
-   },
-   {
-    "asset_type": null,
-    "cluster": true,
-    "cluster_count": 1,
-    "clustered_count": 1,
-    "id": "cluster:orphan:library",
-    "impact": "High",
-    "is_cluster": true,
-    "kind": "framework",
-    "label": "Unlinked library (1)",
-    "member_ids": [
-     "crypto-advisory-pypi-cryptography-41-0"
-    ],
-    "primitive": null,
-    "quantum_vulnerable": false,
-    "weak": true
    },
    {
     "asset_type": "related-crypto-material",
@@ -3469,6 +3397,10 @@
      {
       "name": "crypto:occurrences",
       "value": "16"
+     },
+     {
+      "name": "crypto:oid",
+      "value": "2.16.840.1.101.3.4.1.2"
      },
      {
       "name": "crypto:padding",
@@ -4256,7 +4188,7 @@
      },
      {
       "name": "zs:finding_code",
-      "value": "WEAK_KDF_ITERATIONS"
+      "value": "WEAK_KDF_COST"
      },
      {
       "name": "zs:impact",
@@ -4321,6 +4253,10 @@
      {
       "name": "crypto:occurrences",
       "value": "10"
+     },
+     {
+      "name": "crypto:oid",
+      "value": "2.16.840.1.101.3.4.2.1"
      },
      {
       "name": "crypto:primitive",
@@ -4415,6 +4351,10 @@
       "value": "21"
      },
      {
+      "name": "crypto:oid",
+      "value": "2.16.840.1.101.3.4.2.1"
+     },
+     {
       "name": "crypto:primitive",
       "value": "hash"
      },
@@ -4489,6 +4429,10 @@
      {
       "name": "crypto:occurrences",
       "value": "13"
+     },
+     {
+      "name": "crypto:oid",
+      "value": "2.16.840.1.101.3.4.2.3"
      },
      {
       "name": "crypto:primitive",
@@ -4891,81 +4835,6 @@
     "type": "cryptographic-asset"
    },
    {
-    "bom-ref": "crypto-advisory-pypi-cryptography-41-0",
-    "evidence": {
-     "occurrences": [
-      {
-       "line": 1,
-       "location": "requirements.txt"
-      }
-     ]
-    },
-    "name": "cryptography@>=41.0",
-    "properties": [
-     {
-      "name": "crypto:advisory",
-      "value": "CVE-2023-38325,CVE-2023-49083,CVE-2023-50782,CVE-2024-0727,CVE-2024-12797,CVE-2024-26130,CVE-2026-26007,CVE-2026-34073,CVE-2026-39892,CVE-2026-69247,CVE-2026-69248,CVE-2026-69249,GHSA-537c-gmf6-5ccf,GHSA-h4gh-qq45-vh27,GHSA-jm77-qphf-c4w8,GHSA-v8gr-m533-ghj9"
-     },
-     {
-      "name": "crypto:advisoryCount",
-      "value": "16"
-     },
-     {
-      "name": "crypto:dependencyScope",
-      "value": "direct"
-     },
-     {
-      "name": "crypto:ecosystem",
-      "value": "pypi"
-     },
-     {
-      "name": "crypto:language",
-      "value": "pip-requirements"
-     },
-     {
-      "name": "crypto:libraryRef",
-      "value": "crypto-lib-pyca-cryptography"
-     },
-     {
-      "name": "crypto:line",
-      "value": "1"
-     },
-     {
-      "name": "crypto:occurrenceCount",
-      "value": "1"
-     },
-     {
-      "name": "crypto:occurrences",
-      "value": "1"
-     },
-     {
-      "name": "crypto:role",
-      "value": "library"
-     },
-     {
-      "name": "crypto:version",
-      "value": ">=41.0"
-     },
-     {
-      "name": "crypto:vulnerable",
-      "value": "true"
-     },
-     {
-      "name": "discovery:source",
-      "value": "requirements.txt"
-     },
-     {
-      "name": "zs:finding_code",
-      "value": "VULNERABLE_CRYPTO_LIBRARY"
-     },
-     {
-      "name": "zs:impact",
-      "value": "High"
-     }
-    ],
-    "type": "library"
-   },
-   {
     "bom-ref": "crypto-lib-argon2-cffi",
     "evidence": {
      "occurrences": [
@@ -5324,7 +5193,7 @@
      "value": "6da5bf0343477d51cd203d6dea2eab899f995a8682ecfba025ef756286ca3449"
     }
    ],
-   "timestamp": "2026-11-23T20:18:31Z",
+   "timestamp": "2026-11-24T11:09:09Z",
    "tools": {
     "components": [
      {
@@ -5342,7 +5211,7 @@
     ]
    }
   },
-  "serialNumber": "urn:uuid:4b50d636-b44f-5926-847d-0ac2f30aebb9",
+  "serialNumber": "urn:uuid:75cd2e78-fb43-54db-aac1-a0257b7eaf94",
   "specVersion": "1.6",
   "version": 1
  },
@@ -5391,7 +5260,6 @@
  },
  "cbom_scores": {
   "by_component": {
-   "crypto-advisory-pypi-cryptography-41-0": 8.0,
    "crypto-algo-pbkdf2-app-encryption-py": 1.0,
    "crypto-algo-scrypt-app-kdf-py": 1.0,
    "crypto-material-initialization-vector-app-kdf-py-l28c49": 8.0,
@@ -5402,11 +5270,10 @@
   "by_flag": {
    "STATIC_IV": 8.0,
    "STATIC_SALT": 12.0,
-   "VULNERABLE_CRYPTO_LIBRARY": 8.0,
-   "WEAK_KDF_ITERATIONS": 2.0
+   "WEAK_KDF_COST": 1.0,
+   "WEAK_KDF_ITERATIONS": 1.0
   },
   "component_severity": {
-   "crypto-advisory-pypi-cryptography-41-0": "high",
    "crypto-algo-pbkdf2-app-encryption-py": "low",
    "crypto-algo-scrypt-app-kdf-py": "low",
    "crypto-material-initialization-vector-app-kdf-py-l28c49": "high",
@@ -5414,79 +5281,24 @@
    "crypto-material-salt-app-kdf-py-l13c52": "medium",
    "crypto-material-salt-app-kdf-py-l9c15": "medium"
   },
-  "flag_count": 7,
-  "risk_band": "low",
-  "risk_normalized": 26.8,
-  "risk_total": 30.0
+  "flag_count": 6,
+  "risk_band": "high",
+  "risk_grade": "D",
+  "risk_label": "High risk",
+  "risk_normalized": 52.0,
+  "risk_scale": "posture",
+  "risk_total": 22.0,
+  "severity_counts": {
+   "critical": 0,
+   "high": 1,
+   "low": 2,
+   "medium": 3
+  }
  },
  "duration_of_scan": 0.5,
- "kb_version": "2026.11.15.6",
+ "kb_version": "2026.11.24.8",
  "quantum_vulnerable_count": 0,
  "results": [
-  {
-   "algorithm_name": "cryptography@>=41.0",
-   "algorithm_type": "library",
-   "asset_type": null,
-   "bom_ref": "crypto-advisory-pypi-cryptography-41-0",
-   "compliance_controls": {
-    "NIST80053_SI": "NIST 800-53 - System and Information Integrity"
-   },
-   "container_format": null,
-   "crypto_strength": "weak",
-   "curve": null,
-   "cves": [
-    "CVE-2023-38325",
-    "CVE-2023-49083",
-    "CVE-2023-50782",
-    "CVE-2024-0727",
-    "CVE-2024-12797",
-    "CVE-2024-26130",
-    "CVE-2026-26007",
-    "CVE-2026-34073"
-   ],
-   "cwe": [
-    "CWE-1395"
-   ],
-   "description": "cryptography >=41.0 (direct, pypi) matches CVE-2023-38325: cryptography mishandles SSH certificates; CVE-2023-49083: cryptography vulnerable to NULL-dereference when loading PKCS7 certificates; CVE-2023-50782: Python Cryptography package vulnerable to Bleichenbacher timing oracle attack; CVE-2024-0727: Null pointer dereference in PKCS12 parsing; CVE-2024-12797: Vulnerable OpenSSL included in cryptography wheels; CVE-2024-26130: cryptography NULL pointer dereference with pkcs12.serialize_key_and_certificates when called with a non-matching certificate and private key and an hmac_hash override; CVE-2026-26007: cryptography Vulnerable to a Subgroup Attack Due to Missing Subgroup Validation for SECT Curves; CVE-2026-34073: cryptography has incomplete DNS name constraint enforcement on peer names; and 8 more. At least one advisory has no fixed release: replace the library. https://osv.dev/vulnerability/GHSA-cf7p-gm2m-833m",
-   "expired": false,
-   "finding_codes": [
-    "VULNERABLE_CRYPTO_LIBRARY"
-   ],
-   "hybrid": false,
-   "impact": "High",
-   "key_size": null,
-   "language": "pip-requirements",
-   "line": 1,
-   "location": "requirements.txt",
-   "material_kind": null,
-   "mode": null,
-   "nist_quantum_security_level": null,
-   "not_valid_after": null,
-   "occurrence_count": 1,
-   "occurrences": [
-    1
-   ],
-   "owasp_top_10": {
-    "VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
-   },
-   "parameter_set": null,
-   "parse_status": null,
-   "pqc_migration_roadmap": null,
-   "pqc_migration_target": null,
-   "primitive": null,
-   "protocol_version": null,
-   "quantum_safe": null,
-   "quantum_vulnerable": false,
-   "risk_score": 7.5,
-   "security_strength_bits": null,
-   "self_signed": false,
-   "snippet": "cryptography>=41.0\nargon2-cffi==23.1.0\nfastapi>=0.110",
-   "snippet_redactions": 0,
-   "snippet_start": 1,
-   "suggested_fix": "Upgrade to the fixed version named in the advisory.",
-   "title": "cryptography@>=41.0",
-   "weak": true
-  },
   {
    "algorithm_name": "initialization-vector (app/kdf.py:28)",
    "algorithm_type": "key",
@@ -5792,7 +5604,7 @@
    "description": "scrypt cost scrypt (line 17): N = 16,384, r = 8, p = 1, below the OWASP Password Storage minimum (N = 2^17 with r = 8, p = 1, or an equal-strength pair: 2^16 / p 2, 2^15 / p 3, 2^14 / p 5, 2^13 / p 10) (CWE-916).",
    "expired": false,
    "finding_codes": [
-    "WEAK_KDF_ITERATIONS"
+    "WEAK_KDF_COST"
    ],
    "hybrid": false,
    "impact": "Low",

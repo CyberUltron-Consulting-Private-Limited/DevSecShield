@@ -255,3 +255,20 @@ def test_one_quantum_readiness_definition_everywhere(run, mongo):
     # the definition: share of JUDGED assets that are not quantum-vulnerable; unknown is excluded, none judged = None
     assert quantum_readiness_pct(1, 4) == 75.0 and quantum_readiness_pct(0, 0) is None
     assert quantum_readiness_pct(4, 4) == 0.0 and quantum_readiness_pct(9, 4) == 0.0
+
+
+def test_list_row_list_tile_and_results_tile_show_the_one_risk_score(run, expected, mongo):
+    """PR #500 takeover: the scan list row, the list page's tile and the results page show the engine's posture score
+    (0-100, grade, words), the PDF's number, not the 0-10 average."""
+    from backend.utilities.cbom_sources.cbom_metrics import risk_posture
+    from backend.utilities.dashboard.scan import generate_scan_dashboard
+    from backend.utilities.dashboard.scan_list import generate_cbom_dashboard_data
+    from backend.utilities.db.scan_list_item import return_cbom_list_item
+
+    want = risk_posture(expected["severity"])
+    item = return_cbom_list_item(_scan(run))
+    multi = generate_cbom_dashboard_data([_scan(run)])["card_data"]
+    single = generate_scan_dashboard(scan_type="cbom", scan_object=_scan(run))["card_data"]
+    for surface in (item, multi, single):
+        assert (surface["risk_score"], surface["risk_grade"], surface["risk_label"]) == (
+            want["risk_score"], want["risk_grade"], want["risk_label"])

@@ -15,6 +15,17 @@ export type RepoMode = "github" | "gitlab" | "bitbucket";
 export type Mode = RepoMode | "unknown";
 export type SastAppLang = "python" | "javascript" | "java" | "php" | "c" | "ruby" | "rust" | "swift" | "csharp" | "kotlin";
 
+/** #505's ``risk_unverified`` on a CBOM scan: settings no crypto call is proven to read, kept out of the confirmed
+ * score; ``worst_case`` (confirmed and unconfirmed together) is what the risk filter and sort read. */
+export interface RiskUnverified {
+  /** what is unverified: "unconfirmed_setting" on a CBOM code scan (the contract #505 reads) */
+  kind?: string
+  count: number
+  worst: string | null
+  note: string
+  worst_case: { score: number; grade: string; label: string; band: string }
+}
+
 export interface GithubContextSchema {
   mode: "github";
   repo_url: string;
@@ -2083,6 +2094,12 @@ export {
 /** CBOM finding from backend get_findings_for_scan_type (cbom branch) */
 export interface CbomFinding {
   id: string
+  /** "test": found in test, fixture or example code; the engine lowered it to Low and the table labels it "test code" */
+  code_context?: string | null
+  /** "unconfirmed": a settings value no crypto call is proven to read (Low, not scored); labelled in the table */
+  config_status?: string | null
+  /** where the setting is read by a crypto call (``path:line``), when proven */
+  config_read_at?: string | null
   /** CycloneDX inventory bom-ref (charts → finding join); absent on legacy rows */
   bom_ref?: string | null
   title: string
@@ -2098,6 +2115,8 @@ export interface CbomFinding {
   crypto_strength?: string | null
   key_size?: number | null
   quantum_safe?: boolean | null
+  /** false with quantum_safe false and a weak strength: broken today (MD5), not quantum-vulnerable */
+  quantum_vulnerable?: boolean | null
   location?: string | null
   snippet?: string | null
   remediation?: RemediationData | null
@@ -2135,6 +2154,9 @@ export interface CbomScanMetadata {
   cbom_distributions?: Record<string, unknown> | null
   cbom_compliance?: Record<string, unknown> | null
   cbom_scores?: Record<string, unknown> | null
+  /** algorithm names the engine read as mentions, not uses (capped list) and their total (PR #500 review 6061095673) */
+  config_evidence?: Array<Record<string, unknown>> | null
+  config_evidence_total?: number | null
   // Normalized crypto dependency graph (nodes + edges), the peer of the AIBOM
   // lane's ai_bom_graph (I1). Pre-joined so the results-page dependency-graph
   // (F1) never re-walks the CycloneDX dependsOn/cryptoRefArray structure.
@@ -2197,6 +2219,14 @@ export interface CbomScanDashboardData {
     /** a Sources run's posture readiness_basis.status (absent on code scans) */
     quantum_readiness_status?: CbomReadinessBasis["status"]
     average_risk_score: number
+    /** the D3 risk score (0-100), its grade and words: the engine's posture function, as the PDF headline */
+    risk_score?: number | null
+    risk_grade?: string | null
+    risk_label?: string | null
+    /** "not_scored" for a scan or run that did not succeed: no score, shown "—" (as #505's risk_posture_status) */
+    risk_posture_status?: string | null
+    /** #505's unverified note and worst case (unconfirmed settings; re-review 6066152368) */
+    risk_unverified?: RiskUnverified | null
   }
   remediation_metrics: {
     mean_time_to_remediate: [number, number, number]
@@ -2222,6 +2252,8 @@ export interface CbomScanDashboardData {
     algorithm_type: string
     crypto_strength: string
     quantum_safe: boolean
+    /** the engine's quantum verdict; false with quantum_safe false is "Broken today" (absent on older responses) */
+    quantum_vulnerable?: boolean | null
     impact: string
   }>
 }
@@ -2235,6 +2267,14 @@ export interface CBOMConversation {
   last_updated: string
   estimated_credits: number | null
   average_risk_score: number | null
+  /** the one D3 risk score (posture, 0-100) with its grade and words; older backends omit it */
+  risk_score?: number | null
+  risk_grade?: string | null
+  risk_label?: string | null
+  /** "not_scored" for a scan that did not succeed: no score, shown "—" */
+  risk_posture_status?: string | null
+  /** #505's unverified note and worst case (unconfirmed settings; re-review 6066152368) */
+  risk_unverified?: RiskUnverified | null
   branch: string | null
   repo_url: string | null
   owner_user_email: string | null
@@ -2288,6 +2328,8 @@ export interface CBOMDashboardData {
     algorithm_type: string
     crypto_strength: string
     quantum_safe: boolean
+    /** the engine's quantum verdict; false with quantum_safe false is "Broken today" (absent on older responses) */
+    quantum_vulnerable?: boolean | null
     impact: string
     /** where the row came from: a code scan or a CBOM Sources run (absent on older responses) */
     origin?: CbomResultOrigin | null
@@ -2304,6 +2346,14 @@ export interface CBOMDashboardData {
     /** false: no asset has a quantum verdict; quantum_readiness_score is then a 0 placeholder (show "n/a") */
     quantum_readiness_judged?: boolean
     average_risk_score: number
+    /** the one risk score (posture, 0-100) over the team's findings, its grade and words; older backends omit it */
+    risk_score?: number | null
+    risk_grade?: string | null
+    risk_label?: string | null
+    /** "not_scored" for a scan or run that did not succeed: no score, shown "—" (as #505's risk_posture_status) */
+    risk_posture_status?: string | null
+    /** #505's unverified note and worst case (unconfirmed settings; re-review 6066152368) */
+    risk_unverified?: RiskUnverified | null
   }
 }
 
@@ -2341,6 +2391,14 @@ export interface RunListRow {
     total_quantum_vulnerable: number
   } | null
   average_risk_score: number | null
+  /** the one D3 risk score (posture, 0-100) with its grade and words; older backends omit it */
+  risk_score?: number | null
+  risk_grade?: string | null
+  risk_label?: string | null
+  /** "not_scored" for a run that has not finished, failed or was cancelled: no score, shown "—"; "incomplete" for a
+   * partial run */
+  risk_posture_status?: string | null
+  risk_unverified?: RiskUnverified | null
   sources: { id: number; name: string; kind: string }[]
   repo_url: null
   branch: null
@@ -2660,6 +2718,14 @@ export interface AiBomScanDashboardData {
     total_unlicensed_assets: number
     governance_readiness_score: number
     average_risk_score: number
+    /** the one risk score (posture, 0-100) the PDF prints, its grade and words; older backends omit it */
+    risk_score?: number | null
+    risk_grade?: string | null
+    risk_label?: string | null
+    /** "not_scored" for a scan or run that did not succeed: no score, shown "—" (as #505's risk_posture_status) */
+    risk_posture_status?: string | null
+    /** #505's unverified note and worst case (unconfirmed settings; re-review 6066152368) */
+    risk_unverified?: RiskUnverified | null
   }
   remediation_metrics: {
     mean_time_to_remediate: [number, number, number]

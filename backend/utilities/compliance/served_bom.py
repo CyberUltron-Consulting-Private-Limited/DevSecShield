@@ -59,12 +59,30 @@ def served_bom(scan_type: str, scan_id: int, data: dict, team_id: int, *,
     elif scan_type == "sbom_sca" and key:
         findings = data.get("results") if isinstance(data.get("results"), list) else None
         src = {**data, key: {**_stub_sbom_from_findings(findings), "serialNumber": scan_serial(scan_type, scan_id)}}
-    bom = bom_dict_from_scan_data(scan_type, src, subject_name=subject_name)
+    bom = bom_dict_from_scan_data(scan_type, src, subject_name=subject_name,
+                                  mosca=team_mosca(team_id) if scan_type == "cbom" else None)
     if not isinstance(bom, dict):
         return None
     if not (isinstance(bom.get("serialNumber"), str) and bom["serialNumber"]):
         bom = {**bom, "serialNumber": scan_serial(scan_type, scan_id)}
     return SIGN.stamp_subject(bom, SIGN.scan_facts(scan_type, scan_id, team_id), drop_all_zs=True)
+
+
+def team_mosca(team_id: int) -> dict[str, Any] | None:
+    """The team's Mosca X / Y / Z (``qgrade.mosca_of`` of its CBOM risk model), which a code-scan CBOM's quantum risk
+    grades read (``code_bom``); None when it cannot be read (the grade then uses the model's defaults and says so)."""
+    try:
+        from sqlmodel import Session, select
+
+        from backend.get_db import get_db
+        from backend.new_models import CbomCollectionSettings
+        from backend.utilities.cbom_sources.qgrade import mosca_of
+
+        with Session(get_db()) as session:
+            row = session.exec(select(CbomCollectionSettings).where(CbomCollectionSettings.team_id == team_id)).first()
+            return mosca_of(row.risk_model if row is not None else None)
+    except Exception:  # never costs the document its grade: the defaults are used and named
+        return None
 
 
 def bom_sha256(bom: dict[str, Any]) -> str:

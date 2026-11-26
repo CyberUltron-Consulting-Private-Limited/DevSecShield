@@ -386,7 +386,11 @@ def test_owasp_scrypt_alternatives_are_compliant(
             f"r={r}, p={p}, dklen=32)\n"
         },
     )
-    rows = _findings(_scan(tmp_path), "WEAK_KDF_ITERATIONS")
+    # scrypt is graded by its cost (N, r, p): WEAK_KDF_COST, never an iteration count
+    # (staging QA Q2-11)
+    out = _scan(tmp_path)
+    assert not _findings(out, "WEAK_KDF_ITERATIONS")
+    rows = _findings(out, "WEAK_KDF_COST")
     assert [r_["impact"] for r_ in rows] == (["Low"] if graded else [])
 
 

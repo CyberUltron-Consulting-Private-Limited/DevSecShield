@@ -59,6 +59,8 @@ import { originLabel, sourcesRunsHref } from "@/components/cbom/resultOrigin";
 import {
   filterAndSortRows,
   displayRiskScore,
+  riskNote,
+  riskScoreCell,
   rowsFromListResponse,
   activeRunIds,
   changedRunStatuses,
@@ -369,12 +371,14 @@ function CBOMScanListDashboard({ dashboardData }: { dashboardData: CBOMDashboard
         <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
           <CardContent className="p-0">
             <div className="flex flex-col items-start gap-2">
-              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${card.average_risk_score >= 7 ? "bg-red-500/15 dark:bg-red-500/10" : card.average_risk_score >= 5 ? "bg-amber-500/15 dark:bg-amber-500/10" : "bg-green-500/15 dark:bg-green-500/10"}`}>
-                <Activity className={`h-4 w-4 ${card.average_risk_score >= 7 ? "text-red-500" : card.average_risk_score >= 5 ? "text-amber-500" : "text-green-500"}`} />
+              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${(card.risk_score ?? 0) >= 50 ? "bg-red-500/15 dark:bg-red-500/10" : (card.risk_score ?? 0) >= 30 ? "bg-amber-500/15 dark:bg-amber-500/10" : "bg-green-500/15 dark:bg-green-500/10"}`}>
+                <Activity className={`h-4 w-4 ${(card.risk_score ?? 0) >= 50 ? "text-red-500" : (card.risk_score ?? 0) >= 30 ? "text-amber-500" : "text-green-500"}`} />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Avg Risk Score <InfoTip id="cbom.kpi.avg_risk" /></p>
-                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.average_risk_score?.toFixed(1) ?? "N/A"}</p>
+                {/* the one risk score (posture, 0-100) as the results page and the PDF, not the 0-10 average */}
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Risk score <InfoTip id="cbom.kpi.avg_risk" /></p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white">{typeof card.risk_score === "number" ? (card.risk_grade ? `${card.risk_score} · ${card.risk_grade}` : `${card.risk_score}`) : "N/A"}</p>
+                {typeof card.risk_score === "number" ? <p className="text-[11px] text-zinc-500">{card.risk_label ? `of 100 · ${card.risk_label}` : "of 100"}</p> : null}
               </div>
             </div>
           </CardContent>
@@ -1026,19 +1030,19 @@ export default function CBOMPage() {
                         </DropdownMenuItem>
                         <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("critical")}>
                           {riskScoreFilter === "critical" ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4 text-red-500" />}
-                          Critical (≥9)
+                          Critical (F, ≥70)
                         </DropdownMenuItem>
                         <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("high")}>
                           {riskScoreFilter === "high" ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4 text-orange-500" />}
-                          High (7–9)
+                          High (D, 50–69)
                         </DropdownMenuItem>
                         <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("medium")}>
                           {riskScoreFilter === "medium" ? <Check className="h-4 w-4" /> : <Shield className="h-4 w-4 text-amber-500" />}
-                          Medium (5–7)
+                          Medium (B–C, 15–49)
                         </DropdownMenuItem>
                         <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("low")}>
                           {riskScoreFilter === "low" ? <Check className="h-4 w-4" /> : <Shield className="h-4 w-4 text-blue-500" />}
-                          Low (&lt;5)
+                          Low (A, &lt;15)
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -1202,8 +1206,14 @@ export default function CBOMPage() {
                                   <span title={run?.limited ? "Open the run's results for its findings" : undefined}>—</span>
                                 )}
                               </TableCell>
-                              <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm tabular-nums">
-                                {score != null ? score : "—"}
+                              <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm tabular-nums" title={riskNote(row) ?? undefined}>
+                                {riskScoreCell(row)}
+                                {/* #505's note beside a confirmed score (re-review 6066152368); the filter and sort read the worst case */}
+                                {riskNote(row) ? (
+                                  <span className="block text-[11px] leading-tight text-amber-700 dark:text-amber-300" data-testid="cbom-risk-unverified">
+                                    {riskNote(row)}
+                                  </span>
+                                ) : null}
                               </TableCell>
                               <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm max-w-[180px]" title={run ? run.sources.map((s) => s.name).join(", ") : (conversation?.repo_url ?? undefined)}>
                                 {run ? (

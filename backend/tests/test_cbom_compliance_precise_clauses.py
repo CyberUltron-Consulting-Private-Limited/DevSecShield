@@ -247,6 +247,7 @@ ALLOW: dict[str, dict[str, set[tuple[str, str]]]] = {
         "WEAK_CIPHER_MODE": {RBI_140, *RBI_OTHERS, RBI_118},
         "WEAK_CIPHER_SUITE": {CERTIN_8422, NIST_TDEA, RBI_140, *RBI_OTHERS, SEBI_H5, RBI_118},
         "WEAK_KDF_ITERATIONS": {RBI_140, *RBI_OTHERS, RBI_118},
+        "WEAK_KDF_COST": {RBI_140, *RBI_OTHERS, RBI_118},  # scrypt cost below OWASP, as an iteration count (Q2-11)
         "WEAK_KEY_SIZE": {NIST_112, RBI_140, *RBI_OTHERS, RBI_118},
         "WEAK_PADDING": {NIST_PKCS1, RBI_140, *RBI_OTHERS, RBI_118},
         "WEAK_PROTOCOL": {CERTIN_8422, RBI_140, *RBI_OTHERS, SEBI_I, RBI_118},

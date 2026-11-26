@@ -64,7 +64,10 @@ def test_manuals_are_nbe(certin_cbom_result) -> None:
     }
     for n in range(1, 14):
         rid = f"8.4.1.{n}"
-        assert by_id[rid]["verdict"] == "not_bom_evidenceable", rid
+        # 8.4.1.5 (emit the CBOM in CycloneDX) and 8.4.1.6 (issue VEX): the scan's own
+        # outputs (staging QA N7)
+        want = "pass" if rid in ("8.4.1.5", "8.4.1.6") else "not_bom_evidenceable"
+        assert by_id[rid]["verdict"] == want, rid
 
 
 def test_core_identity_fields_pass(certin_cbom_result) -> None:

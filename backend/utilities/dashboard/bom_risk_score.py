@@ -51,6 +51,7 @@ _CBOM_FLAG_DELTA: dict[str, float] = {
     # CB-27 (Java literal flow): weight 4 like CUSTOM_CRYPTO
     "STATIC_SALT": 0.8,
     "WEAK_KDF_ITERATIONS": 0.8,
+    "WEAK_KDF_COST": 0.8,  # scrypt below its (N, r, p) minimum: weight 4 like WEAK_KDF_ITERATIONS
     # CB-28: weight 8 like WEAK_KEY_SIZE
     "WEAK_RSA_EXPONENT": 1.5,
 }
@@ -116,9 +117,11 @@ def cbom_finding_risk_score(fd: dict[str, Any] | None) -> float:
         score += sum(_CBOM_FLAG_DELTA.get(str(c), 0.4) for c in codes)
     if fd.get("weak") and not codes:
         score += 1.0
-    qv = fd.get("quantum_vulnerable")
-    qs = fd.get("quantum_safe")
-    if qv is True or qs is False:
+    from backend.utilities.cbom_sources.cbom_metrics import code_row_quantum_vulnerable
+
+    # the shared reader: MD5 stored as quantum_safe false + quantum_vulnerable false is broken today, not a quantum
+    # risk (G-D3-6); an explicit quantum_vulnerable true still counts when quantum_safe is missing
+    if fd.get("quantum_vulnerable") is True or code_row_quantum_vulnerable(fd) is True:
         if "QUANTUM_VULNERABLE" not in set(map(str, codes)):
             score += 0.9
     ssb = fd.get("security_strength_bits")

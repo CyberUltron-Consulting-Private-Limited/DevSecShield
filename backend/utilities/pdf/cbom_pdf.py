@@ -21,6 +21,7 @@ from backend.utilities.pdf.report_branding import (
     append_executive_summary,
     append_findings_catalog,
     build_finding_section,
+    enum_label,
     count_label,
     escape_html,
     finding_location,
@@ -31,6 +32,7 @@ from backend.utilities.pdf.report_branding import (
     mapping_rows,
     severity_color,
     split_scan_payload,
+    styled_data_table,
 )
 
 # Kept for callers that import it; the report itself uses the app-wide scale in cbom_metrics.IMPACT_RISK.
@@ -46,15 +48,19 @@ def _impact_color(impact: str):
     return severity_color(impact)
 
 
-def _quantum_label(quantum_safe: Any, strength: Any = None) -> str:
+def _quantum_label(row: dict[str, Any]) -> str:
     # The results page's Quantum column rule: an algorithm a quantum computer does not break but that is already
     # broken (MD5, SHA-1, DES, RC4, ECB ...) is "Broken today", never "Quantum-Safe" (the PDF said Quantum-Safe for
-    # every weak symmetric finding: lab UI run u2, round 5).
-    if quantum_safe is True and str(strength or "").lower() == "weak":
+    # every weak symmetric finding: lab UI run u2, round 5). The cbom_metrics readers decide, so the card agrees with
+    # p2's counts for both stored encodings of MD5 (G-D3-6).
+    from backend.utilities.cbom_sources.cbom_metrics import code_row_broken_today, code_row_quantum_vulnerable
+
+    if code_row_broken_today(row):
         return "Broken today (classically broken: replace now)"
-    if quantum_safe is True:
+    verdict = code_row_quantum_vulnerable(row)
+    if verdict is False:
         return "Quantum-Safe"
-    if quantum_safe is False:
+    if verdict is True:
         return "Quantum-Vulnerable"
     return "Unknown"
 
@@ -140,6 +146,46 @@ def advisory_text(raw: Any) -> str | None:
     return text
 
 
+# How the D3 risk score is computed (PR #500 review 6061095673): printed under the summary.
+RISK_METHOD_TEXT = (
+    "Risk score: 4 x (10 per Critical + 5 per High + 2 per Medium + 1 per Low finding), at most 100, capped by "
+    "the worst severity found (no Critical: at most 69; no Critical or High: at most 49; Low only: at most 29). "
+    "Findings in test, fixture or example code are listed and labelled \"test code\" but not counted in the "
+    "score. A setting that names an algorithm but that no crypto call is proven to read (no import, owner or "
+    "same-file read links it to one) is listed as \"unconfirmed (configuration only)\", at Low, and kept out of "
+    "the confirmed score: when a scan's only weak crypto is unconfirmed, the score is their worst case (the "
+    "severity each would have if read), marked \"unverified\"; otherwise the note \"unverified: N unconfirmed "
+    "settings (worst: X)\" stands beside the confirmed score. "
+    "Configuration mentions (an algorithm named in a label, a comparison, a case label or an Enum member) "
+    "are listed in the appendix and not counted."
+)
+CONFIG_MENTIONS_SHOWN = 50
+
+
+def append_config_mentions(story: List[Any], payload: Any, styles: Any) -> None:
+    """Appendix "Configuration mentions (not counted)": what the scan read as a mention, not a use."""
+    rows = payload.get("config_evidence") if isinstance(payload, dict) else None
+    if not isinstance(rows, list) or not rows:
+        return
+    total = int(payload.get("config_evidence_total") or len(rows))
+    story.append(PageBreak())
+    story.append(Paragraph("Configuration mentions (not counted)", styles["title"]))
+    shown = [r for r in rows if isinstance(r, dict)][:CONFIG_MENTIONS_SHOWN]
+    story.append(Paragraph(escape_html(
+        f"{total} place(s) name an algorithm without using it (a label, a comparison, a case label, an Enum "
+        f"member, code held in a string). They are not inventory and not counted; the first {len(shown)} are "
+        "listed."), styles["muted"]))
+    table = [
+        [Paragraph(escape_html(f"{r.get('location') or ''}:{r.get('line') or ''}"), styles["mono_cell"]),
+         escape_html(str(r.get("algorithm") or "")),
+         escape_html(str(r.get("binding") or "")),
+         Paragraph(escape_html(str(r.get("value") or "")[:80]), styles["table_cell"])]
+        for r in shown
+    ]
+    story.append(styled_data_table(["Location", "Algorithm", "Named as", "Text"], table, styles=styles,
+                                   col_widths=[2.2 * inch, 1.0 * inch, 1.2 * inch, 2.6 * inch]))
+
+
 def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = None, *, ctx: Optional[ReportContext] = None) -> str:
     """
     Generate a CBOM scan results PDF.
@@ -176,7 +222,10 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     quantum_vulnerable = summary.quantum["quantum_vulnerable"]
     quantum_safe_count = summary.quantum["quantum_safe"]
     broken_today = summary.quantum["broken_today"]  # the results table's "Broken today": not counted as quantum-safe
-    avg_risk = summary.average_risk
+    risk = summary.risk  # the D3 risk score: the engine's posture function over these findings (Q2-01, Rule P)
+    unverified = risk.get("risk_unverified") or {}
+    marked = " (unverified)" if risk.get("risk_posture_status") == "unverified" else ""
+    risk_text = f"{risk['risk_score']} / 100 · grade {risk['risk_grade']} · {risk['risk_label']}{marked}"
     readiness = summary.readiness_pct  # one definition for every CBOM surface (cbom_metrics.quantum_readiness_pct)
     readiness_text = "n/a" if readiness is None else f"{readiness:.1f}%"  # as the team deliverables print it
     informational = summary.informational
@@ -198,7 +247,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
             (
                 "Algorithm type distribution",
                 ["Algorithm type", "Count"],
-                [[alg_type.title(), str(cnt)] for alg_type, cnt in sorted(by_type.items(), key=lambda x: -x[1])],
+                [[enum_label(alg_type), str(cnt)] for alg_type, cnt in sorted(by_type.items(), key=lambda x: -x[1])],
                 [4.0 * inch, 1.5 * inch],
             )
         )
@@ -214,7 +263,11 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                 ["Broken today (classically broken, not quantum-safe)", str(broken_today)],
                 ["Quantum readiness", readiness_text],
                 ["Weak algorithms", str(summary.weak)],
-                ["Average risk score", f"{avg_risk:.1f} / 10"],
+                ["Risk score", risk_text],
+                ["Findings in test code (listed, not scored)", str(summary.findings_in_test_code)],
+                ["Unconfirmed settings (configuration only; not in the confirmed score)",
+                 str(summary.findings_unconfirmed)],
+                ["Unverified", unverified.get("note") or "none"],
             ],
             [4.0 * inch, 1.5 * inch],
         )
@@ -227,7 +280,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         ("Quantum-vulnerable", str(quantum_vulnerable)),
         ("Quantum-safe", str(quantum_safe_count)),
         ("Broken today", str(broken_today)),
-        ("Average risk score (0–10)", f"{avg_risk:.1f}"),
+        ("Risk score (0–100)", risk_text),
         ("Report generated", report_generated(long=True)),
     ]
     advisory = advisory_text(raw)
@@ -258,6 +311,9 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         extra_tables=extra_tables,
         project_name="CBOM Findings",
         scan_time=format_scan_duration(duration),
+        # the headline is the summary rows' number (the engine's posture function over the scored findings: test
+        # code excluded), as the results page's KPI and the API
+        risk_score_fn=lambda *_c: (risk["risk_score"], risk["risk_grade"], risk["risk_label"] + marked),
         meta_chips=[
             ("Scan type", "CBOM"),
             ("Total findings", str(total)),
@@ -266,6 +322,9 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         ],
         ctx=ctx,
       )
+    if ctx.has("summary"):
+        summary_part.append(Spacer(1, 0.12 * inch))
+        summary_part.append(Paragraph(escape_html(RISK_METHOD_TEXT), styles["muted"]))
     notes = scan_notes(raw if raw else scan_results)
     if notes and ctx.has("notes"):  # the import / coverage notes the results page shows above the table
         title, summary_line, lines = notes
@@ -278,7 +337,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     catalog_part: List[Any] = []
     catalog: List[List[Any]] = []
     for idx, v in shown if ctx.has("catalog") else ():
-        title = v.get("title") or v.get("algorithm_name") or f"Finding #{idx}"
+        title = _labelled_title(v, v.get("title") or v.get("algorithm_name") or f"Finding #{idx}")
         impact = count_label(finding_severity(v) or "low")  # the severity the counts use
         location = finding_location(v)
         catalog.append(
@@ -316,7 +375,8 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         details.append(Paragraph(escape_html(ctx.empty_text("No cryptographic findings were detected.")), styles["body"]))
     else:
         for idx, v in shown:
-            title = v.get("title") or v.get("algorithm_name") or f"Finding #{idx}"
+            title = _labelled_title(v, v.get("title") or v.get("algorithm_name") or f"Finding #{idx}")
+            unscored = scoring_label(v)
             impact = count_label(finding_severity(v) or "low")  # the severity the counts use
             strength = (v.get("crypto_strength") or "unknown").strip()
             alg_name = str(v.get("algorithm_name") or "—")
@@ -335,11 +395,12 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                     detail_rows=[
                         ("Severity", impact),
                         ("Algorithm", alg_name),
-                        ("Type", alg_type),
+                        ("Type", enum_label(alg_type) if alg_type != "—" else alg_type),
                         ("Key size", key_size_text),
-                        ("Strength", strength.title()),
-                        ("Quantum status", _quantum_label(v.get("quantum_safe"), strength)),
+                        ("Strength", enum_label(strength)),
+                        ("Quantum status", _quantum_label(v)),
                         ("Where it was found", location),
+                        *([("Scoring", f"Listed, not scored: {unscored}")] if unscored else []),
                         *([("CWE", ", ".join(map(str, v.get("cwe") or [])))] if v.get("cwe") else []),
                         *([("CVE", ", ".join(map(str, v.get("cves") or [])))] if v.get("cves") else []),
                     ],
@@ -359,6 +420,9 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     if ctx.has("compliance"):
         appendix_payload = raw if raw else (scan_results if isinstance(scan_results, dict) else {})
         append_bom_compliance_sections(story, appendix_payload, styles)
+    if ctx.has("details"):
+        append_config_mentions(story, raw if raw else (scan_results if isinstance(scan_results, dict) else {}),
+                               styles)
 
     doc.build(
         story,
@@ -366,6 +430,22 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         onLaterPages=make_footer_callback("cbom", ctx),
     )
     return output_path
+
+
+def scoring_label(v: dict) -> str | None:
+    """The results page's badge for a finding that is listed but not scored: "test code" (test, fixture or example
+    code) or "unconfirmed (configuration only)" (a setting no crypto call is proven to read); None when it is scored."""
+    if v.get("code_context") == "test":
+        return "test code"
+    if v.get("config_status") == "unconfirmed":
+        return "unconfirmed (configuration only)"
+    return None
+
+
+def _labelled_title(v: dict, title: Any) -> str:
+    """The finding's title with its badge, as the findings table on the results page (re-review 6064703319, 4)."""
+    label = scoring_label(v)
+    return f"{title} · {label}" if label else str(title)
 
 
 def create_title_page(canvas_obj, doc):

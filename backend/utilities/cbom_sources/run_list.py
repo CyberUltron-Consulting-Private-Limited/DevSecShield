@@ -32,7 +32,12 @@ from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionRun, CbomCollectionSource, User
 from backend.utilities.cbom_sources.run_status import status_reason
-from backend.utilities.cbom_sources.cbom_metrics import average_risk
+from backend.utilities.cbom_sources.cbom_metrics import (
+    RUN_SCORED_STATUSES,
+    average_risk,
+    risk_fields,
+    risk_posture,
+)
 from backend.utilities.cbom_sources.collections_view import NETWORK_TYPES, REMEDIATION_BUCKET
 from backend.utilities.build_info import utc_timestamp
 from backend.utilities.cbom_sources.common import console, iso_z, utcnow
@@ -310,6 +315,11 @@ def run_row(run: CbomCollectionRun, counts: dict[str, Any], jobs: dict[str, Any]
         "status_reason": status_reason(run.status, jobs.get("rows") or [])["status_reason"],
         "risk_data": risk,
         "average_risk_score": average_risk(severity),
+        # the one risk score (posture function), as a code scan's list row (PR #500 takeover)
+        # a run that has not finished (queued, running) or failed / was cancelled has no score (re-review 6064703319)
+        # a partial run is "incomplete", as #505 (re-review 6066152368)
+        **risk_fields(risk_posture(severity), judged=str(run.status or "") in RUN_SCORED_STATUSES,
+                      incomplete=str(run.status or "") == "partial"),
         "sources": [{"id": s["id"], "name": s["name"], "kind": s["kind"]} for s in sources],
         "repo_url": None,
         "branch": None,

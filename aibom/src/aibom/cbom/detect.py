@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -158,6 +158,13 @@ class Detection:
     # The algorithm is inferred, not read: ``Cipher.getInstance(<String parameter>)`` bound to the only cipher
     # transformation configured for the module (``defined_at`` names that configuration line).
     inferred: bool = False
+    # A settings value (a dict / object property, a record or class field default):
+    # the setting's name; ``config_read_at`` names the crypto call that reads it
+    # (``path:line``, or ``line`` in the same file); a setting no crypto call is
+    # proven to read is kept as a low-confidence asset (PR #500 review 6061095673).
+    config_binding: str | None = None
+    config_read_at: str | None = None
+    low_confidence: bool = False
 
 
 # --------------------------------------------------------------------------- #
@@ -408,7 +415,11 @@ LITERAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     # letter before "DSA" is the PQC form, graded separately as dilithium/sphincs).
     ("dsa", re.compile(r"(?<![-\w])DSA\b", _F)),
     ("pbkdf2", re.compile(r"\bPBKDF2", _F)),
-    ("scrypt", re.compile(r"\bscrypt\b", _F)),
+    # Node ``crypto.scryptSync`` too. scrypt / argon2 / bcrypt are plain words that UI
+    # labels and config keys use
+    # ("Scrypt Tier", ``kdf: "scrypt"``): these three count only in a call or API
+    # context (``_api_word_hits``).
+    ("scrypt", re.compile(r"\bscrypt(?:Sync)?\b", _F)),
     ("argon2", re.compile(r"\bargon2\b", _F)),
     ("bcrypt", re.compile(r"\bbcrypt\b", _F)),
     ("hkdf", re.compile(r"\bHKDF\b", _F)),
@@ -502,6 +513,11 @@ JS_LITERALS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("3des", re.compile(r"['\"]des-ede3-\w+['\"]|['\"]des3['\"]", _F)),
     # Node ``'des-cbc'`` but NOT the 3DES ``des-ede3`` spelling above.
     ("des", re.compile(r"['\"]des-(?:cbc|ecb|cfb|ofb)['\"]", _F)),
+    # Node OpenSSL Blowfish names: ``'bf-cbc'``, and a bare ``'bf'`` only as the
+    # cipher of ``createCipher[iv]`` (re-review 6066887930)
+    ("blowfish", re.compile(
+        r"['\"]bf-(?:cbc|ecb|cfb|ofb)['\"]"
+        r"|createCipher(?:iv)?\s*\(\s*['\"]bf['\"]", _F)),
     # WebCrypto ``{name:"AES-GCM"|"AES-CBC"|…}`` — no size digit, mode via suffix.
     ("aes", re.compile(r"\bAES-(?:GCM|CBC|CTR|KW|CCM)\b", _F)),
     # WebCrypto RSA identifiers + Node ``generateKeyPair[Sync]('rsa',…)`` (the
@@ -589,6 +605,8 @@ DOTNET_LITERALS: tuple[tuple[str, re.Pattern[str]], ...] = (
     # Hash provider classes (``new SHA1Managed()``, ``new MD5CryptoServiceProvider()``, ``SHA256Cng``): the class
     # suffix leaves no word boundary after the family, so the global ``\bMD5\b`` / ``\bSHA-?1\b`` never fire.
     ("md5", re.compile(r"\bMD5(?:CryptoServiceProvider|Cng)\b", _F)),
+    # BouncyCastle .NET engines: the class name is the algorithm (re-review 6066887930)
+    ("blowfish", re.compile(r"\bBlowfishEngine\b")),
     ("sha1", re.compile(r"\bSHA1(?:Managed|CryptoServiceProvider|Cng)\b", _F)),
     ("sha256", re.compile(r"\bSHA256(?:Managed|CryptoServiceProvider|Cng)\b", _F)),
     ("sha384", re.compile(r"\bSHA384(?:Managed|CryptoServiceProvider|Cng)\b", _F)),
@@ -1059,6 +1077,985 @@ def _is_prose(body: str) -> bool:
     return len(words) >= 3 and len(_WORD.findall(body)) >= 2 and not re.search(r"[/=;{}()]", body)
 
 
+# --------------------------------------------------------------------------- #
+# Labels and configuration words (staging QA Q2-02). In Kotlin / Java and JS / TS
+# a string literal with whitespace in it is a label, a message or a template
+# ("Scrypt Tier (GPU-Proof)", `Scrypt (${mb}MB RAM) + AES-256-GCM AEAD`), never an
+# API argument: JCA, Node, WebCrypto and JWT names have no spaces ("AES/GCM/
+# NoPadding", 'aes-256-gcm', "RSA-OAEP"). A command line passed to a shell
+# ("openssl enc -des3 ...") or a SQL statement keeps its words.
+# --------------------------------------------------------------------------- #
+_LABEL_LANGS = frozenset({_JAVA, _JS})
+_COMMAND_STRING = re.compile(
+    r"^\s*(?:openssl|ssh-keygen|keytool|gpg|certutil|select|insert|update|create)\b",
+    re.I,
+)
+
+
+def _is_label(body: str) -> bool:
+    return bool(re.search(r"\s", body.strip())) and not _COMMAND_STRING.match(body)
+
+
+# A string shown to the user: the value of a UI text property (Compose ``text =
+# "AES-256-GCM"``, DOM
+# ``el.textContent = "..."``, ``title: '...'``) or the argument of a UI / log call
+# (``Text("...")``,
+# ``console.log("...")``). It names an algorithm without using it, also without spaces.
+_UI_TEXT_BEFORE = re.compile(
+    r"(?:\b(?:text|label|title|subtitle|description|message|contentDescription|placeholder|tooltip|hint|caption"
+    r"|textContent|innerText|innerHTML|statusMessage)\s*[:=]\s*"
+    r"|\b(?:Text|makeText|alert|println|print|setText|showToast|toast|addAuditLog|updateStatus)\s*\(\s*"
+    r"|\b(?:console|Log|log|logger|Timber)\s*\.\s*\w+\s*\(\s*)$")
+
+
+def blank_labels(line: str, lang: str) -> str:
+    """``line`` with label strings (see above) blanked, in the Kotlin / Java and JS / TS
+    lanes only."""
+    if lang not in _LABEL_LANGS or len(line) > _MAX_STRING_SCAN:
+        return line
+
+    def blank(m: re.Match[str]) -> str:
+        lit = m.group(0)
+        shown = _is_label(lit[1:-1]) or _UI_TEXT_BEFORE.search(line[:m.start()])
+        return lit[0] + " " * (len(lit) - 2) + lit[-1] if shown else lit
+
+    return _STR_LIT.sub(blank, line)
+
+
+# Words that name a password KDF in labels and settings as often as in code. A hit
+# counts only where the code
+# calls or reaches the API: ``hashlib.scrypt(``, ``Scrypt.scrypt(``,
+# ``crypto.scryptSync(``, ``bcrypt.hashpw(``,
+# ``argon2.PasswordHasher``, ``SCrypt.generate(``, ``scrypt::scrypt(``, ``new SCrypt``;
+# or where the bare name is the
+# argument of a hashing call (passlib ``CryptContext(schemes=["bcrypt"])``). A settings
+# value (``kdf: "scrypt"``,
+# ``put("kdf", "scrypt")``) or a label is not a use of the algorithm.
+_API_WORD_KEYS = frozenset({"scrypt", "argon2", "bcrypt"})
+_API_AFTER = re.compile(r"^\s*(?:\(|\.|::)")
+_API_BEFORE = re.compile(r"(?:\.|::|\bnew\s+)$")
+_HASHING_CALLEE = re.compile(
+    r"crypt|hash|kdf|derive|password|getInstance|CryptContext", re.I
+)
+
+
+def _blank_strings(line: str) -> str:
+    return _STR_LIT.sub(
+        lambda m: m.group(0)[0] + " " * (len(m.group(0)) - 2) + m.group(0)[-1], line
+    )
+
+
+def _api_word_hit(pat: re.Pattern[str], line: str) -> bool:
+    """Whether ``pat`` (one of the ``_API_WORD_KEYS`` patterns) names the algorithm in
+    an API context on ``line``."""
+    if len(line) > _MAX_STRING_SCAN:
+        return any(_api_word_hit(pat, w) for w in _windows(line))
+    code = _blank_strings(line)
+    for m in pat.finditer(code):
+        if _API_AFTER.match(code[m.end():]) or _API_BEFORE.search(code[:m.start()]):
+            return True
+    for lit in _STR_LIT.finditer(line):
+        body = lit.group(0)[1:-1].strip()
+        if not pat.fullmatch(body):
+            continue
+        callee = re.search(r"([A-Za-z_][\w.]*)\s*\((?:[^()]*)$", line[:lit.start()])
+        if callee and _HASHING_CALLEE.search(callee.group(1)):
+            return True
+    return False
+
+
+# Sizes a bare number on the line may give (``RSA 2048``): only public-key families,
+# whose modulus or parameter
+# set is often a separate argument. A symmetric cipher, hash, MAC or KDF never takes its
+# size from an unrelated
+# integer (``KeyProfile("Key 10", 32, 512, ...)``: 512 MB of memory is no AES-512,
+# staging QA Q2-02).
+_SIZE_FROM_NAME = {
+    "aes": (128, 192, 256),
+    "camellia": (128, 192, 256),
+    "aria": (128, 192, 256),
+}  # valid sizes
+_KEYWORD_SIZE = re.compile(
+    r"key[_-]?size\s*=\s*(\d{3,5})|\b(?:bits?|length)\s*=\s*(\d{3,5})", re.I
+)
+_NO_BARE_SIZE = frozenset(
+    {
+        "aes",
+        "camellia",
+        "aria",
+        "des",
+        "3des",
+        "rc4",
+        "rc2",
+        "blowfish",
+        "chacha20",
+        "chacha20-poly1305",
+        "hmac",
+        "pbkdf2",
+        "scrypt",
+        "argon2",
+        "bcrypt",
+        "hkdf",
+        "md5",
+        "sha1",
+        "sha256",
+        "sha384",
+        "sha512",
+        "sha3_256",
+        "blake2b",
+        "blake2s",
+    }
+)
+
+
+def _literal_key_size(key: str, line: str, explicit: int | None) -> int | None:
+    """The key size a literal-lane hit on ``line`` states for ``key``."""
+    sized = _SIZED_KEY.match(key)
+    if sized:
+        return int(sized.group(2))
+    allowed = _SIZE_FROM_NAME.get(key)
+    if (
+        allowed is not None
+    ):  # the name's own size ("AES-256") is read where the asset is named, not here
+        kw = _KEYWORD_SIZE.search(line)
+        size = int(next(g for g in kw.groups() if g)) if kw else None
+        return size if size in allowed else None
+    if key in _NO_BARE_SIZE:
+        kw = _KEYWORD_SIZE.search(line)
+        return int(next(g for g in kw.groups() if g)) if kw else None
+    return explicit
+
+
+# --------------------------------------------------------------------------- #
+# Configuration literals (PR #500 takeover; review 6061095673). A string literal
+# that names an algorithm is judged by its shape:
+#
+# * a SETTING (a dict / object property, a record or class field default, an
+#   argument of the file's own settings record) is never dropped: it is an asset.
+#   When a crypto call anywhere in the project reads the setting's name
+#   (``Cipher.getInstance(cfg.spec)``, ``hashlib.new(CONFIG['digest'])``) the
+#   asset names that call (``config_read_at``); when no read is proven it is kept
+#   as a low-confidence asset, so recall never falls below the literal lane's;
+# * a MENTION (a label or message, a comparison, argparse ``choices``, a
+#   ``case`` / ``when`` label, a TypeScript union member, an Enum member) names
+#   an algorithm without passing it anywhere: configuration evidence, not an
+#   asset, unless the Enum member / choice is read by a crypto call;
+# * anything else (a call argument, a statement constant, an allow- or deny-list)
+#   keeps the rules it had.
+#
+# Crypto calls are recognised by identifier tokens (``createCipheriv`` -> create,
+# cipheriv; never a substring: ``assign`` is no ``sign``).
+# --------------------------------------------------------------------------- #
+_CONFIG_LANGS = frozenset({_PY, _JAVA, _JS})
+_CRYPTO_TOKENS = frozenset({
+    "crypt", "crypto", "cryptography", "encrypt", "decrypt", "encryptor",
+    "decryptor", "cipher", "ciphers", "cipheriv", "decipheriv", "hash", "hashes",
+    "hashlib", "hmac", "mac", "digest", "kdf", "derive", "pbkdf2", "pbkdf", "scrypt",
+    "argon2", "bcrypt", "sign", "signer", "signature", "verify", "verifier", "jwt",
+    "jws", "jwe", "jose", "ssl", "tls", "keygen", "keypair", "keyfactory", "keyspec",
+    "secretkey", "secretkeyspec", "keygenerator", "keypairgenerator", "aes", "rsa",
+    "ecdsa", "ecdh", "fernet", "subtle", "openssl", "getinstance", "messagedigest",
+    "pyjwt", "nacl", "sodium", "importkey", "exportkey", "generatekey", "derivekey",
+    "derivebits", "wrapkey", "unwrapkey", "jwk", "jwks", "pyjwk",
+})
+_SEGMENT_ONLY = frozenset({"crypto", "cryptography"})
+_DECL_LINE = re.compile(
+    r"^\s*(?:@\w+\s+)*(?:(?:data|private|public|protected|internal|open|abstract|"
+    r"static|final|async|export|override)\s+)*(?:class|fun|def|function|record|enum)\b"
+)
+_TOKEN_SPLIT = re.compile(r"[A-Z]+(?=[A-Z][a-z0-9])|[A-Z]?[a-z0-9]+|[A-Z]+")
+
+
+def _is_crypto_callee(chain: str | None) -> bool:
+    """Whether a callee chain names a crypto API, by identifier tokens: each dotted /
+    underscored segment, its camelCase words and adjacent word pairs."""
+    if not chain:
+        return False
+    for seg in re.split(r"[._\s]+", chain):
+        if not seg:
+            continue
+        low = seg.lower()
+        if low in _CRYPTO_TOKENS:
+            return True
+        words = [w.lower() for w in _TOKEN_SPLIT.findall(seg)]
+        # "crypto" names a crypto API only as a whole segment (``crypto.subtle``),
+        # not as a word of an app's own type (``CryptoCfg(...)``)
+        if any(w in _CRYPTO_TOKENS and w not in _SEGMENT_ONLY for w in words):
+            return True
+        if any(a + b in _CRYPTO_TOKENS for a, b in zip(words, words[1:], strict=False)):
+            return True
+    return False
+
+
+_LIBRARY_CONFIG_KEYS = frozenset({
+    "alg", "algorithm", "algorithms", "jwt_algorithm", "signing_algorithm",
+    "hash_algorithm", "hashalg", "digestmod", "hashfunc", "ciphers",
+    "cipher_suites", "ciphersuites", "ssl_ciphers", "ssl_cipher", "tls_ciphers",
+    "password_hashers", "schemes", "transformation", "kex", "kexalgorithms",
+    "macs", "hostkeyalgorithms", "signature_algorithm", "sigalgs", "curve",
+    "curves", "ecdh_curve",
+})
+_JS_LIBRARY_CONFIG_KEYS = frozenset({"name", "hash", "namedcurve"})
+_DECL_PAREN = re.compile(
+    r"(?:\bdef\s+\w+|\bfun\s+[\w.<>]+|\bclass\s+\w+(?:<[^>]*>)?|\bconstructor"
+    r"|\bfunction\s*\w*|\binit)\s*$"
+)
+_BINDING = re.compile(
+    r"""(?:["'`]([A-Za-z_][\w.-]*)["'`]|\b([A-Za-z_]\w*))"""
+    r"""\s*(?::\s*[\w.<>?\[\], ]+?\s*)?(?:(?<![=!<>])=(?![=>])|:(?!:))\s*$"""
+)
+_WORD_ID = re.compile(r"[A-Za-z_]\w*")
+_READ_CHAIN = re.compile(r"(?<![\w.])[A-Za-z_]\w*(?:\s*\.\s*[A-Za-z_]\w*)*")
+_VALUE_ATTRS = frozenset({"value", "name"})
+_SUBSCRIPT_KEY = re.compile(
+    r"""([A-Za-z_]\w*)\s*\[\s*["']([A-Za-z_][\w.-]*)["']\s*\]"""
+)
+_ASSIGN_LHS = re.compile(
+    r"^\s*(?:(?:val|var|const|let|final|private|static|public)\s+)*"
+    r"[\w.\[\]\"', ]+?(?::\s*[\w.<>?\[\], ]+?)?\s*(?<![=!<>+*/-])=(?![=>])"
+)
+_CALL_CHAIN = re.compile(r"[A-Za-z_][\w.]*\s*\(")
+_NOT_A_SETTING = re.compile(r"\s*(?:return|yield|throw|raise|assert)\b")
+_CASE_LABEL = re.compile(
+    r"^\s*case\b"
+    r"|^\s*[\"'`][^\"'`]*[\"'`]\s*(?:,\s*[\"'`][^\"'`]*[\"'`]\s*)*->"
+)
+_TS_TYPE = re.compile(r"^\s*(?:export\s+)?type\s+([A-Za-z_]\w*)(?:<[^>]*>)?\s*=")
+_COMPARE_BEFORE = re.compile(r"([A-Za-z_][\w.\[\]'\"]*)?\s*(?:===|!==|==|!=|<>)\s*$")
+_COMPARE_AFTER = re.compile(
+    r"^\s*(?:(?:===|!==|==|!=)\s*([A-Za-z_][\w.]*)?|\.(?:equals|equalsIgnoreCase|contentEquals)\s*\()"
+)
+_UNION_BAR = re.compile(r"(?:^|[^|])\|\s*$")
+_UNION_AFTER = re.compile(r"^\s*\|(?!\|)")
+_Frame = tuple[str, bool, "str | None"]  # bracket, declaration / block, key / callee
+_ENUM_BRACE = re.compile(r"\benum\b[^{;]*$")
+_ENUM_KEY = "__enum__"
+# A record type the file declares (Kotlin ``data class``, Java ``record``, a Python
+# ``@dataclass`` / NamedTuple / pydantic model): constructing one fills app settings.
+_RECORD_DECL = re.compile(
+    r"\b(?:data\s+class|record)\s+([A-Z]\w*)\s*[(<]"
+    r"|\bclass\s+([A-Z]\w*)\s*\((?:[\w.]*\.)?(?:NamedTuple|BaseModel|TypedDict"
+    r"|BaseSettings)\)"
+)
+_DATACLASS_DECO = re.compile(r"^\s*@(?:dataclasses\.)?dataclass\b")
+_PY_CLASS = re.compile(r"^\s*class\s+([A-Z]\w*)\b")
+_CALLEE = re.compile(r"([A-Za-z_][\w.]*)\s*$")
+_EXPR_BRACE = re.compile(r"(?:[=:(,\[?]|\breturn|=>)\s*$")
+_NOT_CALLEES = frozenset({
+    "if", "for", "while", "switch", "catch", "return", "in", "and", "or", "not",
+    "await", "yield", "function", "lambda", "elif", "when", "match",
+})
+
+
+def crypto_read_sites(lines: list[str]) -> list[tuple[str, int, str | None]]:
+    """``(name, line, qualifier)`` for each name a crypto call reads in a file: the
+    call's arguments, a comprehension's source, an attribute or a subscript key, with
+    the object it is read from (``Cipher.getInstance(cfg.spec)`` -> ``("spec", n,
+    "cfg")``; ``hashlib.new(CONFIG['digest'])`` -> ``("digest", n, "CONFIG")``;
+    ``hashlib.new(Hash.WEAK.value)`` -> ``("weak", n, "Hash")``). Names are lower-cased,
+    qualifiers keep their case. Not the assigned name (``cipher = Fernet(k)``) nor a
+    callee / receiver; a dotted read names its attribute, so ``Cipher.ENCRYPT_MODE``
+    reads no setting called "cipher"."""
+    sites: list[tuple[str, int, str | None]] = []
+    # one hop: ``const alg = config.get('security.hashAlgorithm')`` then
+    # ``createHash(alg)`` reads what ``alg`` was read from (the qualified reads only)
+    aliases: dict[str, list[tuple[str, str | None]]] = {}
+    for n, line in enumerate(lines, start=1):
+        if "(" not in line or len(line) > _MAX_STRING_SCAN:
+            if len(line) <= _MAX_STRING_SCAN:
+                _note_alias(aliases, line)
+            continue
+        if _DECL_LINE.match(line) or _JAVA_METHOD_DECL.match(line):
+            # a declaration's parameter list is no call (also a Java method's:
+            # ``public String getHashAlgorithm() { return hashAlgorithm; }``)
+            line = _after_params(line)
+        if not any(_is_crypto_callee(c) for c, _a in split_calls(_blank_strings(line))):
+            _note_alias(aliases, line)
+            continue
+        found = _expr_reads(_ASSIGN_LHS.sub("", line, count=1))
+        for name, qualifier in list(found):
+            if qualifier is None:
+                found.extend(aliases.get(name, ()))
+        sites.extend((name, n, qualifier) for name, qualifier in found)
+    return sites
+
+
+_JAVA_METHOD_DECL = re.compile(
+    r"^\s*(?:@\w+\s+)*(?:(?:public|private|protected|static|final|synchronized"
+    r"|abstract|default|native)\s+)+[\w<>\[\],.? ]+?\s+[A-Za-z_]\w*\s*\([^()]*\)\s*"
+    r"(?:throws\s+[\w.,\s]+)?\{"
+)
+# ``[const|let|var|val|final|<Type>] name = <expression>`` (not ``==`` / ``=>``)
+_ALIAS_DECL = re.compile(
+    r"^\s*(?:(?:const|let|var|val|final|private|static|String|auto)\s+)*"
+    r"([A-Za-z_]\w*)\s*(?::[^=]+)?(?<![=!<>])=(?![=>])\s*(.+)$"
+)
+_GETTER_MARK = "()"
+_GET_THEN_ATTR = re.compile(
+    r"""\.get\(\s*["']([A-Za-z_][\w.-]*)["']\s*\)\s*\.\s*([A-Za-z_]\w*)\b(?!\s*\()"""
+)
+# a Java bean getter (``props.getHashAlgorithm()``) reads the property
+_GETTER = re.compile(r"(?<![\w.])([A-Za-z_]\w*)\s*\.\s*get([A-Z]\w*)\s*\(\s*\)")
+
+
+def _note_alias(aliases: dict[str, list[tuple[str, str | None]]], line: str) -> None:
+    """Record ``name = <expression>``: the qualified reads of the expression."""
+    m = _ALIAS_DECL.match(line)
+    if m:
+        reads = _expr_reads(m.group(2))
+        aliases[m.group(1).lower()] = [r for r in reads if r[1] is not None]
+
+
+def _expr_reads(raw: str) -> list[tuple[str, str | None]]:
+    """``(name, qualifier)`` for each name an expression reads: dotted chains (the
+    attribute, with the object it is read from), subscript keys, bean getters, and
+    string keys; a dotted string key (node-config ``config.get('security.alg')``)
+    also reads its last segment through the one before it."""
+    out: list[tuple[str, str | None]] = []
+    blanked = _blank_strings(raw)
+    for m in _GETTER.finditer(blanked):
+        out.append((m.group(2).lower(), m.group(1) + _GETTER_MARK))
+    # node-config ``config.get('security').hashAlgorithm`` reads hashAlgorithm through
+    # ``security`` (re-review 6066887930)
+    for m in _GET_THEN_ATTR.finditer(raw):
+        out.append((m.group(2).lower(), m.group(1).rsplit(".", 1)[-1]))
+    code = _CALL_CHAIN.sub("(", blanked)
+    for m in _READ_CHAIN.finditer(code):
+        parts = [p.strip() for p in m.group(0).split(".")]
+        if len(parts) > 1 and parts[-1].lower() in _VALUE_ATTRS:
+            parts = parts[:-1]  # ``Hash.WEAK.value`` / ``.name`` read the member
+        out.append((parts[-1].lower(), parts[-2] if len(parts) > 1 else None))
+    for m in _SUBSCRIPT_KEY.finditer(raw):
+        out.append((m.group(2).lower(), m.group(1)))
+    for lit in _STR_LIT.finditer(raw):
+        body = lit.group(0)[1:-1]
+        if re.fullmatch(r"[A-Za-z_][\w.-]*", body):
+            out.append((body.lower(), None))
+            keys = body.split(".")
+            if len(keys) > 1 and all(keys):
+                out.append((keys[-1].lower(), keys[-2]))
+    return out
+
+
+def crypto_reads(lines: list[str]) -> dict[str, int]:
+    """Lower-cased names a crypto call reads in a file -> the first line that reads it
+    (:func:`crypto_read_sites`)."""
+    reads: dict[str, int] = {}
+    for name, line, _q in crypto_read_sites(lines):
+        reads.setdefault(name, line)
+    return reads
+
+
+def _after_params(line: str) -> str:
+    """A declaration line from just after its parameter list (a one-line body
+    ``function h(d) { return crypto.createHash(cfg.digest) }`` keeps its calls)."""
+    code = _blank_strings(line)
+    start = code.find("(")
+    depth = 0
+    for i in range(max(start, 0), len(code)):
+        if code[i] == "(":
+            depth += 1
+        elif code[i] == ")":
+            depth -= 1
+            if depth == 0:
+                return " " * (i + 1) + line[i + 1:]
+    return ""
+
+
+def _crypto_refs(lines: list[str]) -> set[str]:
+    return set(crypto_reads(lines))
+
+
+def _innermost_call(stack: list[_Frame]) -> str | None:
+    return next((b for ch, decl, b in reversed(stack) if ch == "(" and not decl), None)
+
+
+_PY_CLASS_LINE = re.compile(r"^class\s+([A-Za-z_]\w*)(\s*\(([^)]*)\))?")
+_PY_ENUM_BASE = re.compile(r"\b(?:Enum|IntEnum|StrEnum|Flag|IntFlag)\b")
+_PY_FIELD = re.compile(r"^([A-Za-z_]\w*)\s*(?::[^=]*)?(?<![=!<>])=(?!=)")
+
+
+def _class_fields(
+    raw: list[str], stack_at: list[list[_Frame]]
+) -> dict[int, tuple[str, bool, str]]:
+    """Line index -> (field name, in an Enum, class name), for each
+    ``name[: type] = ...`` line directly in a Python class body (not in a method).
+    Indentation decides the body."""
+    out: dict[int, tuple[str, bool, str]] = {}
+    classes: list[list[Any]] = []  # [class indent, body indent, is an Enum, name]
+    for idx, line in enumerate(raw):
+        text = line.strip()
+        if not text or text.startswith(("#", "@")) or stack_at[idx]:
+            continue  # blank, comment, decorator, or a bracket continuation
+        indent = len(line) - len(line.lstrip())
+        while classes and indent <= int(classes[-1][0] or 0):
+            classes.pop()
+        if classes and classes[-1][1] is None:
+            classes[-1][1] = indent
+        if classes and indent == classes[-1][1]:
+            m = _PY_FIELD.match(text)
+            if m:
+                out[idx] = (m.group(1).lower(), bool(classes[-1][2]), classes[-1][3])
+        cls = _PY_CLASS_LINE.match(text)
+        if cls:
+            enum = bool(cls.group(3) and _PY_ENUM_BASE.search(cls.group(3)))
+            classes.append([indent, None, enum, cls.group(1)])
+    return out
+
+
+def py_class_constants(raw: list[str]) -> dict[str, str]:
+    """``NAME -> quoted literal`` of Python class attributes set once to a plain
+    string literal (``ALG = "HS256"``), so ``self.ALG`` / ``cls.ALG`` / ``Cls.ALG``
+    can be read as that literal."""
+    flat = [ln.strip() for ln in raw]
+    stack_at: list[list[_Frame]] = []
+    depth: list[_Frame] = []
+    for line in flat:
+        stack_at.append(list(depth))
+        if len(line) <= _MAX_STRING_SCAN:
+            _ConfigLiterals._walk(line, _blank_strings(line), depth, len(line))
+    seen: dict[str, set[str]] = {}
+    for idx in _class_fields(raw, stack_at):
+        m = _PY_CONST.match(flat[idx])
+        if m:
+            seen.setdefault(m.group(1), set()).add(m.group(2))
+    return {n: next(iter(v)) for n, v in seen.items() if len(v) == 1}
+
+
+_PY_CONST = re.compile(
+    r"""^([A-Za-z_]\w*)\s*(?::[^=]*)?=\s*((["'])[^"'\\]{1,80}\3)\s*$"""
+)
+
+
+# Code carried in a Python string (a JS snippet, a shell line) or pasted with its
+# string escapes (``\"cipher\": \"AES-256-GCM\"``, EncDec server.py:379): its
+# calls are not Python calls and its names are no use.
+_EVIDENCE_NAME = re.compile(
+    r"\b(?:AES|3DES|DES|RC4|RC2|Blowfish|ChaCha20|MD5|MD4|SHA-?(?:1|224|256|384|512)"
+    r"|SHA3-\d+|HMAC|PBKDF2|scrypt|Argon2|bcrypt|RSA|ECDSA|ECDH|Ed25519|X25519"
+    r"|HS256|RS256|ES256)\b",
+    re.I,
+)
+_NESTED_QUOTE = re.compile(r"""^"[^"]*'[^']*'|^'[^']*"[^"]*"|\\["']""")
+_CODE_CHARS = re.compile(r"[(){};]|=>")
+
+
+def _py_embedded_code(body: str) -> bool:
+    """Whether a Python string literal's body is code in another language."""
+    inner = body[1:-1]
+    return bool(_CODE_CHARS.search(inner)) and bool(
+        _NESTED_QUOTE.search(body) or re.search(r"""\w\(\s*['"]""", inner)
+    )
+
+
+def py_escaped_span(line: str) -> tuple[int, int] | None:
+    """The span of text pasted with its string escapes (``\\"cipher\\": \\"AES\\"``):
+    from the first to the last backslash-escaped quote OUTSIDE every string literal.
+    A trailing line-continuation backslash is no escape, and an escaped quote inside
+    a literal (``b"k=\\"v\\""``) is the literal's own."""
+    code = _blank_strings(line).rstrip()
+    if code.endswith("\\"):
+        code = code[:-1]
+    hits = [m.start() for m in re.finditer(r"""\\["']""", code)]
+    if not hits:
+        return None
+    return hits[0], hits[-1] + 2
+
+
+def _record_types(lines: list[str]) -> set[str]:
+    out: set[str] = set()
+    deco = False
+    for line in lines:
+        m = _RECORD_DECL.search(line)
+        if m:
+            out.add(m.group(1) or m.group(2))
+        cls = _PY_CLASS.match(line)
+        if cls and deco:
+            out.add(cls.group(1))
+        deco = bool(_DATACLASS_DECO.match(line)) or (deco and not line.strip())
+    return out
+
+
+def _binding_raw(text: str) -> str | None:
+    m = _BINDING.search(text)
+    if not m:
+        return None
+    return (m.group(1) or m.group(2) or "") or None
+
+
+def _binding_before(text: str) -> str | None:
+    raw = _binding_raw(text)
+    return raw.lower() if raw else None
+
+
+_ADD_ARGUMENT = re.compile(
+    r"""add_argument\(\s*(?:["']-[\w-]*["']\s*,\s*)?["']--?([\w-]+)["']"""
+)
+_CHOICES = re.compile(r"\bchoices\s*=\s*[\[(]?\s*$")
+
+
+def _dest(line: str) -> str | None:
+    """The argparse destination of an ``add_argument("--hash-algo", ...)`` line."""
+    m = _ADD_ARGUMENT.search(line)
+    return m.group(1).replace("-", "_").lower() if m else None
+
+
+SETTING = "setting"
+MENTION = "mention"
+
+
+class _ConfigLiterals:
+    """How each string literal of a file is judged (above)."""
+
+    def __init__(
+        self,
+        lines: list[str],
+        lang: str,
+        raw: list[str] | None = None,
+        project_reads: Any = None,
+    ) -> None:
+        self.lang = lang
+        self.lines = lines
+        self.sites = crypto_read_sites(lines)
+        self.reads: dict[str, int] = {}
+        for name, n, _q in self.sites:
+            self.reads.setdefault(name, n)
+        # a ``prove(binding, owners) -> "path:line" | None`` of the other files of the
+        # project (algorithm_scan), or a plain name -> location map (unit tests)
+        self.project_reads = project_reads or {}
+        js_keys = _JS_LIBRARY_CONFIG_KEYS if lang == _JS else frozenset()
+        self.keys = _LIBRARY_CONFIG_KEYS | js_keys
+        self.records = _record_types(lines)
+        # the bracket stack at the start of each line
+        self.stack_at: list[list[_Frame]] = []
+        stack: list[_Frame] = []
+        for line in lines:
+            self.stack_at.append(list(stack))
+            if len(line) <= _MAX_STRING_SCAN:
+                self._walk(line, _blank_strings(line), stack, len(line))
+        self.class_fields = (
+            _class_fields(raw, self.stack_at) if lang == _PY and raw else {}
+        )
+        # a Spring ``@ConfigurationProperties`` class: its String fields are app
+        # settings, proven by a read through that type (``props.getX()``)
+        spring = _SPRING_PROPS.search("\n".join(lines)) if lang == _JAVA else None
+        self.spring_class = spring.group(1) if spring else None
+
+    def read_at(
+        self,
+        binding: str | None,
+        owners: Sequence[str] = (),
+        *,
+        qualified: bool = False,
+    ) -> str | None:
+        """Where a crypto call reads ``binding``: ``"<line>"`` in this file, else
+        ``"<path>:<line>"`` in another file LINKED to this one (it imports it, or
+        names one of ``owners``: the dict / object / class the setting belongs to),
+        else None. ``qualified``: in this file too, only a read through one of
+        ``owners`` (``settings.cipher`` for ``Object.assign(settings, {...})``)."""
+        if not binding:
+            return None
+        for name, n, qualifier in self.sites:
+            qualifier = qualifier.removesuffix(_GETTER_MARK) if qualifier else None
+            via_owner = bool(qualifier and qualifier in owners)
+            if name == binding and (not qualified or via_owner):
+                return str(n)
+        if callable(self.project_reads):
+            found = self.project_reads(binding, tuple(owners))
+            return str(found) if found else None
+        return self.project_reads.get(binding)
+
+    def registry_use(self, name: str) -> str | None:
+        """``"<line>"`` of the first use of the registry ``name`` outside its own
+        declaration (``HASHES[name](data)``, ``return _algorithms``), else None."""
+        word = re.compile(rf"(?<![\w.]){re.escape(name)}(?!\w)")
+        decl = re.compile(
+            rf"^\s*(?:[\w<>\[\], ]+\s+)?{re.escape(name)}\s*(?::[^=]*)?=(?!=)"
+        )
+        for idx, line in enumerate(self.lines):
+            if not word.search(_blank_strings(line)) or decl.match(line):
+                continue
+            if any(b == name for _c, _d, b in self.stack_at[idx]):
+                continue  # inside the registry's own body
+            return str(idx + 1)
+        uses = getattr(self.project_reads, "uses", None)
+        return uses(name) if callable(uses) else None
+
+    def object_text(self, line_idx: int, col: int) -> str:
+        """The text of the object literal holding the literal at ``col`` of line
+        ``line_idx`` (its other keys: ``{'algorithm': 'RSA', 'key_size': 1024}``)."""
+        line = self.lines[line_idx]
+        stack = list(self.stack_at[line_idx])
+        self._walk(line, _blank_strings(line), stack, col)
+        depth = len(stack)
+        start = line_idx
+        while (
+            start > 0
+            and len(self.stack_at[start]) >= depth
+            and line_idx - start < 30
+        ):
+            start -= 1
+        end = line_idx
+        while (
+            end + 1 < len(self.lines)
+            and len(self.stack_at[end + 1]) >= depth
+            and end - line_idx < 30
+        ):
+            end += 1
+        return " ".join(self.lines[start:end + 1])
+
+    def _call_target_at(self, line_idx: int, callee: str | None) -> str | None:
+        """The first argument of ``callee(`` when it is a plain name, also when the
+        call opened on an earlier line (``Object.assign(\n  settings,\n  {...}``)."""
+        if not callee:
+            return None
+        start = max(0, line_idx - 20)
+        for j in range(line_idx, start - 1, -1):
+            if re.search(rf"\b{re.escape(callee)}\s*\(", self.lines[j]):
+                joined = " ".join(self.lines[j:line_idx + 1])
+                return _call_target(joined, callee)
+        return None
+
+    def _assigned_at(self, line_idx: int, callee: str | None) -> str | None:
+        """The variable a call's result is assigned to (``const settings =
+        Object.assign(...)``, ``let`` / ``var`` / a later ``settings = ...``)."""
+        if not callee:
+            return None
+        pat = re.compile(
+            rf"(?:^|[^\w.$])([A-Za-z_$][\w$.]*)\s*(?::[^=]+)?=\s*(?:await\s+)?"
+            rf"{re.escape(callee)}\s*\("
+        )
+        ret = re.compile(rf"\breturn\s+(?:await\s+)?{re.escape(callee)}\s*\(")
+        for j in range(line_idx, max(0, line_idx - 20) - 1, -1):
+            if re.search(rf"\b{re.escape(callee)}\s*\(", self.lines[j]):
+                m = pat.search(self.lines[j])
+                if m:
+                    # ``module.exports = ...`` / ``app.settings = ...``: the member
+                    return m.group(1).rsplit(".", 1)[-1]
+                if ret.search(self.lines[j]):
+                    # ``return Object.assign(...)``: the function owns its result
+                    return self._enclosing_function(j)
+                return None
+        return None
+
+    def _enclosing_function(self, line_idx: int) -> str | None:
+        for j in range(line_idx, max(0, line_idx - 200) - 1, -1):
+            m = _FUNCTION_NAME.search(self.lines[j])
+            if m:
+                return next(g for g in m.groups() if g)
+        return None
+
+    def _flows(self, binding: str | None, owners: Sequence[str] = ()) -> bool:
+        if not binding:
+            return False
+        return binding in self.keys or self.read_at(binding, owners) is not None
+
+    @staticmethod
+    def _walk(raw: str, code: str, stack: list[_Frame], upto: int) -> None:
+        for i, ch in enumerate(code[:upto]):
+            if ch in "([{":
+                decl = ch == "(" and bool(_DECL_PAREN.search(code[:i]))
+                if ch == "(":
+                    callee = _CALLEE.search(code[:i])
+                    # the whole callee chain (``crypto.subtle.importKey``): its last
+                    # segment names the method, the rest the API it belongs to
+                    key = callee.group(1) if callee else None
+                    last = key.rsplit(".", 1)[-1] if key else None
+                    # a grouping paren (``(function () { ... })()``, ``x = (a, b)``)
+                    # passes nothing to a call
+                    decl = decl or last is None or last in _NOT_CALLEES
+                elif ch == "{" and _ENUM_BRACE.search(code[:i]):
+                    key, decl = _ENUM_KEY, True  # an enum body
+                else:
+                    key = _binding_raw(raw[:i])
+                    # a brace after ``)`` / a name / ``else`` / ``->`` opens a block
+                    # (a method, class or lambda body), not an object literal: the
+                    # bindings in it are statements
+                    decl = ch == "{" and not _EXPR_BRACE.search(code[:i])
+                    if decl and not code[:i].strip() and stack and (
+                        stack[-1][0] in "([" and not stack[-1][1]
+                    ):
+                        # a line that opens with ``{`` inside a call's arguments
+                        decl = False
+                stack.append((ch, decl, key))
+            elif ch in ")]}" and stack:
+                stack.pop()
+
+    @staticmethod
+    def _registry_entry(
+        code: str, end: int, stack: list[_Frame]
+    ) -> tuple[str, int] | None:
+        """``(registry name, end of the value)`` when the literal is a key of a dict
+        whose value is a crypto constructor or algorithm object (``{'md5':
+        hashlib.md5}``, PyJWT ``{'none': NoneAlgorithm()}``)."""
+        if not stack or stack[-1][0] != "{" or stack[-1][1]:
+            return None
+        m = _REGISTRY_VALUE.match(code[end:])
+        if not m:
+            return None
+        chain = m.group(1)
+        last = chain.rsplit(".", 1)[-1]
+        if not (_is_crypto_callee(chain) or last.endswith("Algorithm")):
+            return None
+        depth, stop = 0, len(code)
+        for i in range(end + m.end(1), len(code)):
+            ch = code[i]
+            if ch in "([{":
+                depth += 1
+            elif ch in ")]}":
+                if depth == 0:
+                    stop = i
+                    break
+                depth -= 1
+            elif ch == "," and depth == 0:
+                stop = i
+                break
+        return (stack[-1][2] or "registry"), stop
+
+    def _record_setting(self, stack: list[_Frame]) -> bool:
+        """Whether the innermost call is the constructor of a record type this file
+        declares (not a crypto API)."""
+        callee = _innermost_call(stack)
+        last = callee.rsplit(".", 1)[-1] if callee else None
+        return bool(last and last in self.records and not _is_crypto_callee(callee))
+
+    def judge(self, line_idx: int, line: str) -> list[Judged]:
+        """``(start, end, binding, SETTING | MENTION, owners)`` for the literals of
+        ``line`` that are settings or mentions (see above); other literals are not
+        listed. ``owners`` are the symbols the setting belongs to (the dict, object,
+        record or class), for the linked-read rule of :meth:`read_at`."""
+        if (
+            self.lang not in _CONFIG_LANGS
+            or len(line) > _MAX_STRING_SCAN
+            or not any(q in line for q in "\"'`")
+        ):
+            return []
+        statement = bool(_NOT_A_SETTING.match(line))
+        case_label = bool(_CASE_LABEL.match(line))
+        ts_type = _TS_TYPE.match(line) if self.lang == _JS else None
+        code = _blank_strings(line)
+        out: list[Judged] = []
+        field = self.class_fields.get(line_idx)
+        for lit in _STR_LIT.finditer(line):
+            span = (lit.start(), lit.end())
+            stack = list(self.stack_at[line_idx])
+            self._walk(line, code, stack, lit.start())
+            callee = _innermost_call(stack)
+            in_crypto_call = any(
+                _is_crypto_callee(b) for ch, d, b in stack if ch == "(" and not d
+            )
+            owners = tuple(b for _c, _d, b in stack if b and b != _ENUM_KEY)
+            before, after = code[:lit.start()], code[lit.end():]
+            if field is not None:
+                name, enum, cls = field
+                if in_crypto_call:
+                    continue
+                if enum:  # an Enum member: a mention, unless a crypto call reads it
+                    if not self._flows(name, (cls,)):
+                        out.append((*span, name, MENTION, (cls,)))
+                    continue
+                out.append((*span, name, SETTING, (cls,)))
+                continue
+            if in_crypto_call:
+                continue  # inside a crypto call's arguments: it flows into the call
+            if self.lang == _PY and _is_label(lit.group(0)[1:-1]):
+                # a label or message (whitespace in it): ``{"backend": "AES-256 ..."}``
+                outer = next((b for _c, _d, b in reversed(stack) if b), None)
+                out.append((*span, (outer or "label").lower(), MENTION, owners))
+                continue
+            cmp_before = _COMPARE_BEFORE.search(before)
+            cmp_after = _COMPARE_AFTER.match(after)
+            if cmp_before or cmp_after:
+                other = (cmp_before and cmp_before.group(1)) or (
+                    cmp_after and cmp_after.group(1)
+                )
+                out.append((*span, (other or "comparison").lower(), MENTION, owners))
+                continue
+            member_call = (
+                stack[-1][0] == "(" and not stack[-1][1]
+                and (stack[-1][2] or "").rsplit(".", 1)[-1] in _MEMBER_METHODS
+            ) if stack else False
+            if member_call or _membership(code, lit.start(), lit.end(), stack):
+                # an inline allow / deny check: ``['md5', 'sha1'].includes(alg)``,
+                # ``alg in ('md5', 'sha1')``, ``List.of("MD5").contains(alg)``
+                out.append((*span, "membership", MENTION, owners))
+                continue
+            if case_label and re.match(r"^\s*case\b[^:]*$", before):
+                out.append((*span, "case", MENTION, owners))
+                continue
+            if case_label and "->" in after:
+                out.append((*span, "when", MENTION, owners))
+                continue
+            if ts_type or (
+                self.lang == _JS
+                and (_UNION_BAR.search(before) or _UNION_AFTER.match(after))
+            ):
+                name = ts_type.group(1).lower() if ts_type else "type"
+                out.append((*span, name, MENTION, owners))
+                continue
+            registry = self._registry_entry(code, lit.end(), stack)
+            if registry is not None:
+                name, value_end = registry
+                out.append((lit.start(), value_end, name.lower(), REGISTRY, (name,)))
+                continue
+            enum_frame = any(b == _ENUM_KEY for _c, _d, b in stack)
+            callee = callee.rsplit(".", 1)[-1] if callee else None
+            if enum_frame and callee and callee[:1].isupper():
+                # an enum constant's argument (``DES("DES/ECB")``)
+                if not self._flows(callee.lower(), owners):
+                    out.append((*span, callee.lower(), MENTION, owners))
+                continue
+            container = next(
+                (b for c, _d, b in reversed(stack) if c in "[{(" and b), None
+            )
+            if (container or "").lower() == "choices" or _CHOICES.search(before):
+                dest = _dest(line) or "choices"
+                if not self._flows(dest, owners):
+                    out.append((*span, dest, MENTION, owners))
+                continue
+            if not stack or statement:
+                continue  # a statement, not a setting inside a container
+            calls = [b for ch, decl, b in stack if ch == "(" and not decl]
+            direct = stack[-1][0] == "(" and not stack[-1][1]
+            if direct and self._record_setting(stack):
+                # an argument of the file's own settings record (``KeyProfile(...,
+                # "AES-256-GCM", ...)``)
+                record = (calls[-1] or "").rsplit(".", 1)[-1]
+                out.append((*span, record.lower(), SETTING, (record,)))
+                continue
+            if direct:
+                continue  # a direct argument of a call: the call may use it
+            cut = max(before.rfind(c) for c in "([{,") + 1 if before else 0
+            own = _binding_before(line[cut:lit.start()])
+            top = stack[-1]
+            scalar = own is not None and (
+                (top[0] == "{" and not top[1]) or (top[0] == "(" and top[1])
+            )
+            if (
+                self.spring_class and own and len(stack) == 1 and top[0] == "{"
+                and top[1] and _JAVA_STRING_FIELD.match(line)
+            ):
+                out.append((*span, own, SETTING, (self.spring_class,)))
+                continue
+            if not scalar or own is None:
+                continue
+            if calls and not self._record_setting(stack):
+                # an object handed to a call that is no crypto API
+                # (``Object.assign(settings, { cipher: ... })``): a setting only when
+                # a crypto call reads it through the call's target
+                # the target owns the merged setting, and so does the variable the
+                # result is assigned to (``const s = Object.assign({}, d, {...})``)
+                held = tuple(
+                    o for o in (
+                        self._call_target_at(line_idx, calls[-1]),
+                        self._assigned_at(line_idx, calls[-1]),
+                    ) if o
+                )
+                if held and (
+                    any(self.read_at(own, (o,), qualified=True) for o in held)
+                    or self.read_at(own, held)
+                ):
+                    # a read through an owner (or of the setting's name by a crypto
+                    # call) proves it
+                    out.append((*span, own, SETTING, held))
+                else:
+                    out.append((*span, own, MENTION, owners))
+                continue
+            out.append((*span, own, SETTING, owners))
+        return out
+
+
+Judged = tuple[int, int, str, str, tuple[str, ...]]
+_FUNCTION_NAME = re.compile(
+    r"\bfunction\s*\*?\s*([A-Za-z_$][\w$]*)\s*\("
+    r"|\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?"
+    r"(?:function\b|\([^)]*\)\s*=>)"
+    r"|^\s*(?:async\s+)?([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*\{"
+    r"|\bdef\s+([A-Za-z_]\w*)\s*\("
+)
+_SPRING_PROPS = re.compile(
+    r"@ConfigurationProperties\b[^\n]*\n(?:\s*@[^\n]*\n)*\s*"
+    r"(?:(?:public|final|open|data|abstract)\s+)*class\s+([A-Za-z_]\w*)"
+)
+_JAVA_STRING_FIELD = re.compile(
+    r"^\s*(?:(?:private|protected|public|final)\s+)*String\s+[A-Za-z_]\w*\s*="
+)
+REGISTRY = "registry"
+_REGISTRY_VALUE = re.compile(r"^\s*:\s*(?:new\s+)?([A-Za-z_][\w.]*)\s*(?=[(,}\s]|$)")
+_MEMBER_METHODS = frozenset({"includes", "indexOf", "contains", "containsKey", "has"})
+# (a distinct name: the deny-list lane below has its own ``_MEMBER_AFTER``)
+_INLINE_MEMBER_AFTER = re.compile(
+    r"^\s*\.\s*(?:includes|indexOf|contains|containsKey|has|count)\s*\("
+)
+_SET_CTOR_MEMBER = re.compile(r"^\s*\)\s*\.\s*(?:has|includes|contains)\s*\(")
+_NEW_SET = re.compile(
+    r"\bnew\s+(?:Set|HashSet|TreeSet|LinkedHashSet)\s*(?:<[^>]*>)?\s*\(\s*$"
+)
+_KT_IN_FACTORY = re.compile(
+    r"(?:!in|\bin)\s+(?:listOf|setOf|arrayOf|mutableListOf|mutableSetOf|hashSetOf"
+    r"|linkedSetOf|sortedSetOf|arrayListOf)\s*$"
+)
+_IN_BEFORE = re.compile(r"\b(?:not\s+)?in\s*$")
+_LIST_FACTORY = re.compile(
+    r"\b(?:List|Set|Arrays|ImmutableSet|ImmutableList)\s*\.\s*(?:of|asList|copyOf)\s*$"
+)
+
+
+def _membership(code: str, start: int, end: int, stack: list[_Frame]) -> bool:
+    """Whether the literal sits in an inline container that is only tested for
+    membership: followed by ``.includes(`` / ``.contains(`` / ``.has(`` (also as
+    ``List.of(...)`` / ``Set.of(...)`` / ``Arrays.asList(...)``), or preceded by
+    ``in`` / ``not in``."""
+    if not stack:
+        return False
+    depth, close = 0, None
+    for i in range(end, len(code)):
+        ch = code[i]
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            if depth == 0:
+                close = i
+                break
+            depth -= 1
+    if close is None:
+        return False
+    depth, opened = 0, None
+    for i in range(start - 1, -1, -1):
+        ch = code[i]
+        if ch in ")]}":
+            depth += 1
+        elif ch in "([{":
+            if depth == 0:
+                opened = i
+                break
+            depth -= 1
+    if opened is None:
+        return False
+    head = code[:opened]
+    if code[opened] == "(" and _KT_IN_FACTORY.search(head):
+        return True  # Kotlin ``alg in listOf("MD5", "SHA-1")``
+    if code[opened] == "[" and _NEW_SET.search(head):
+        # ``new Set(['md5', 'sha1']).has(alg)``
+        return bool(_SET_CTOR_MEMBER.match(code[close + 1:]))
+    # a paren is a container only as ``List.of(`` / ``Set.of(`` / ``Arrays.asList(``
+    # or a tuple after ``in``
+    factory = _LIST_FACTORY.search(head) or _IN_BEFORE.search(head)
+    if code[opened] == "(" and not factory:
+        return False
+    return bool(
+        _INLINE_MEMBER_AFTER.match(code[close + 1:]) or _IN_BEFORE.search(head)
+    )
+
+
+def _call_target(line: str, callee: str | None) -> str | None:
+    """The first argument of ``callee(`` on ``line`` when it is a plain name."""
+    if not callee:
+        return None
+    m = re.search(rf"\b{re.escape(callee)}\s*\(\s*([A-Za-z_][\w.]*)\s*,", line)
+    return m.group(1).rsplit(".", 1)[-1] if m else None
+
+
 def blank_prose(line: str, lang: str) -> str:
     """``line`` with prose-like string literals (and JSX text in JS/TS) replaced by spaces of the same length."""
     def blank(m: re.Match) -> str:
@@ -1297,8 +2294,12 @@ def _string_constants(code: str) -> dict[str, str]:
     values: dict[str, set[str]] = {}
     for m in (*_JAVA_STR_DECL.finditer(code), *_KT_STR_DECL.finditer(code)):
         values.setdefault(m.group(1), set()).add(m.group(2))
+    # ``private final String t;`` then one ``this.t = "DES/ECB/PKCS5Padding";`` (a
+    # constructor): the field's value, when that is its only write (6066152368)
+    for m in _JAVA_FIELD_WRITE.finditer(code):
+        values.setdefault(m.group(1), set()).add(m.group(2))
     if not values:
-        return {}
+        return _spring_defaults(code, {})
     aliases = {m.group(1): m.group(2) for m in _JAVA_ALIAS_DECL.finditer(code)}
     # One pass each (not one regex per name): declarations of a String / val / var
     # named X (incl. parameters ``String X`` / Kotlin ``X: String``) and writes ``X =``.
@@ -1314,7 +2315,27 @@ def _string_constants(code: str) -> dict[str, str]:
         target = target.rsplit(".", 1)[-1]
         if name not in out and target in out and single(name):
             out[name] = out[target]
+    return _spring_defaults(code, out)
+
+
+def _spring_defaults(code: str, out: dict[str, str]) -> dict[str, str]:
+    """Spring ``@Value("${crypto.alg:DES/ECB/PKCS5Padding}") private String alg;``:
+    the property's default is the field's value unless the deployment overrides it
+    (review 6061095673); a field written anywhere in the file is not provable."""
+    for m in _SPRING_VALUE_DEFAULT.finditer(code):
+        default, name = m.group(1).strip(), m.group(2) or m.group(3)
+        written = re.search(rf"(?<![\w.]){re.escape(name)}\s*=(?!=)", code)
+        if default and name not in out and not written:
+            out[name] = default
     return out
+
+
+_JAVA_FIELD_WRITE = re.compile(r'\bthis\.([A-Za-z_]\w*)\s*=\s*"([^"\\\s]{1,80})"\s*;')
+_SPRING_VALUE_DEFAULT = re.compile(
+    r'@Value\(\s*"\\?\$\{[^:}"]+:([^}"]{1,80})\}"\s*\)\s*'
+    r"(?:(?:private|protected|public|final|static|lateinit|internal)\s+)*"
+    r"(?:String\s+([A-Za-z_]\w*)\s*;|(?:var|val)\s+([A-Za-z_]\w*)\s*:\s*String)"
+)
 
 
 _JAVA_FIELD_DEFAULT = re.compile(
@@ -1591,7 +2612,12 @@ _MEMBER_BEFORE = re.compile(r"\bin\s+(?:[\w$]+\.)?$")
 _MEMBER_AFTER = re.compile(r"^\s*\.\s*(?:contains|includes|has|containsKey|__contains__)\s*\(")
 _NEGATED_BEFORE = re.compile(r"(?:\bnot\s+in|!)\s*(?:[\w$]+\.)?$")
 _REJECTS = re.compile(
-    r"\b(?:raise|throw)\b|\breturn\s+(?:false|False|null|None|nil|undefined)\b|\b(?:abort|die|panic|reject)\s*\(")
+    r"\b(?:raise|throw)\b|\breturn\s+(?:false|False|null|None|nil|undefined)\b|\b(?:abort|die|panic|reject)\s*\("
+    # an HTTP error response rejects too (``return res.status(400).end()``, a
+    # ``res.sendStatus(403)`` on the next line, ``return;``; re-review 6066887930)
+    r"|\breturn\b.*\b(?:status|sendStatus)\s*\(\s*[45]\d\d\b"
+    r"|(?:[\w$]+\.)*(?:status|sendStatus)\s*\(\s*[45]\d\d\b"
+    r"|\breturn\s*;|\bprocess\.exit\s*\(")
 _CONDITIONAL = re.compile(r"\b(?:if|elif|unless|when)\b")
 _DENY_WORDS = frozenset({
     "weak", "insecure", "forbidden", "forbid", "disallowed", "disallow", "deny", "denied", "denylist",
@@ -2097,7 +3123,130 @@ def _substitute_python_constants(
     return used
 
 
-def detect_crypto(text: str, lang: str, external: Mapping[str, Any] | None = None) -> list[Detection]:
+# where crypto calls in OTHER files read a setting: ``prove(binding, owners)`` (the
+# scanner's linked reads), or a plain name -> ``path:line`` map (unit tests)
+ProjectProof = Mapping[str, str] | Callable[[str, tuple[str, ...]], str | None]
+
+
+def _tag_settings(
+    per_line: dict[str, Detection],
+    settings: list[tuple[int, int, str, tuple[str, ...]]],
+    lit_line: str,
+    pats_by_key: Mapping[str, list[re.Pattern[str]]],
+    config: _ConfigLiterals,
+) -> None:
+    """A detection the line names only inside a settings value carries the
+    setting's name, and either the crypto call that reads it or low confidence."""
+    rest = lit_line
+    for start, end, _b, _o in settings:
+        rest = rest[:start + 1] + " " * (end - start - 2) + rest[end - 1:]
+    for det in per_line.values():
+        pats = pats_by_key.get(det.key.split("-")[0], []) + pats_by_key.get(det.key, [])
+        if det.receiver_bound or not pats or any(p.search(rest) for p in pats):
+            continue  # named by a call, or outside the settings values
+        for start, end, binding, owners in settings:
+            body = lit_line[start:end]
+            if any(p.search(body) for p in pats):
+                det.config_binding = binding
+                read = config.read_at(binding, owners)
+                if read is None and binding in config.keys:
+                    read = "library-key"
+                det.config_read_at = read
+                det.low_confidence = read is None
+                break
+
+
+_SIZE_KEY = re.compile(
+    r"""\b(?:key_?size|key_?length|bits|modulus_?length|size)["']?\s*[:=]\s*"""
+    r"(\d{3,5})\b",
+    re.I,
+)
+_JCA_GUESS = ("Cipher", "MessageDigest", "Mac", "Signature", "KeyPairGenerator",
+              "KeyGenerator", "SecretKeyFactory")
+
+
+def _settings_assets(
+    per_line: dict[str, Detection],
+    settings: list[tuple[int, int, str, tuple[str, ...]]],
+    line: str,
+    line_no: int,
+    config: _ConfigLiterals,
+) -> None:
+    """Assets a setting names that the literal lane cannot spell (re-review
+    6066887930): ``{'algorithm': 'RSA', 'key_size': 1024}`` is RSA-1024 (a bare
+    ``'RSA'`` names nothing elsewhere), and a Spring ``@ConfigurationProperties``
+    field holding a JCA name (``"DES/ECB/PKCS5Padding"``) is that algorithm."""
+    for start, end, binding, owners in settings:
+        value = line[start + 1:end - 1].strip()
+        found: list[Detection] = []
+        if value.lower() == "rsa":
+            size = _SIZE_KEY.search(config.object_text(line_no - 1, start))
+            if size:
+                found.append(Detection(key="rsa", line_no=line_no,
+                                       key_size=int(size.group(1))))
+        elif config.spring_class and re.fullmatch(r"[\w./-]{2,80}", value):
+            for cls in _JCA_GUESS if "/" not in value else ("Cipher",):
+                assets = jca_assets(cls, value)
+                if assets:
+                    found.extend(
+                        Detection(key=k, line_no=line_no, variant=v, mode=md,
+                                  key_size=sz)
+                        for k, v, md, sz in assets
+                    )
+                    break
+        for det in found:
+            read = config.read_at(binding, owners)
+            if read is None and binding in config.keys:
+                read = "library-key"
+            if det.key in per_line:
+                _merge(per_line[det.key], det)
+                det = per_line[det.key]
+            else:
+                per_line[det.key] = det
+            det.config_binding = binding
+            det.config_read_at = read
+            det.low_confidence = read is None
+
+
+def _tag_registries(
+    per_line: dict[str, Detection],
+    registries: list[tuple[int, int, str, tuple[str, ...]]],
+    line: str,
+    line_no: int,
+    pats_by_key: Mapping[str, list[re.Pattern[str]]],
+    config: _ConfigLiterals,
+) -> None:
+    """One rule for algorithm registries (re-review 6064703319): each entry of a
+    dict whose values are crypto constructors or algorithm objects is an asset (a
+    real capability), confirmed by a use of the registry, else unconfirmed. A JWA
+    key (``'none'``, ``'HS256'``) names its algorithm."""
+    for start, end, binding, owners in registries:
+        body = line[start:end]
+        key = re.match(r"""^["'`]([^"'`]*)["'`]""", body)
+        added: set[str] = set()
+        if key and _JWA.match(key.group(1)):
+            for k, v in _jwa_assets(key.group(1)):
+                if k not in per_line:
+                    per_line[k] = Detection(key=k, line_no=line_no, variant=v)
+                added.add(k)
+        read = config.registry_use(owners[0] if owners else binding)
+        for det in per_line.values():
+            pats = pats_by_key.get(det.key.split("-")[0], []) + pats_by_key.get(
+                det.key, []
+            )
+            if det.key in added or any(p.search(body) for p in pats):
+                det.config_binding = binding
+                det.config_read_at = read
+                det.low_confidence = read is None
+
+
+def detect_crypto(
+    text: str,
+    lang: str,
+    external: Mapping[str, Any] | None = None,
+    config_evidence: list[dict[str, Any]] | None = None,
+    project_reads: ProjectProof | None = None,
+) -> list[Detection]:
     """Detect crypto usage in one source file's ``text`` (of language ``lang``).
 
     Runs the bounded 3-step match: prose-strip + call-split -> data-flow-lite
@@ -2107,6 +3256,13 @@ def detect_crypto(text: str, lang: str, external: Mapping[str, Any] | None = Non
     ``external`` maps the names this file uses that are constants of other project files
     (:meth:`aibom.cbom.project.ProjectIndex.scope_for`) to their definitions; a detection that reads one carries
     ``defined_at``.
+
+    ``config_evidence``, when given, receives one
+    ``{"line", "algorithm", "binding", "value"}`` per configuration literal that
+    names an algorithm without using it (a label, a comparison, a case label, an
+    Enum member: ``_ConfigLiterals``): not an asset. ``project_reads`` maps the names
+    crypto calls read in OTHER project files to ``path:line`` (``crypto_reads``), so
+    a setting read elsewhere is a proven asset.
     """
     stripped = strip_noncode(text)
     # Split on "\n" only: splitlines() also breaks on \f, \v, \x1c-\x1e, \x85, U+2028/9 and would shift
@@ -2126,7 +3282,44 @@ def detect_crypto(text: str, lang: str, external: Mapping[str, Any] | None = Non
     rules = RULES_BY_LANG.get(lang, ())
     java_ctx = _JavaContext(work_lines, external) if lang == _JAVA else None
     jwt_file = bool(_JWT_FILE.search(stripped)) and lang in (_PY, _JS, _JAVA)
-    keyword_lines = _keyword_list_lines(work_lines, lang) | _policy_list_lines(work_lines, lang)
+    policy_lines = _policy_list_lines(work_lines, lang)
+    keyword_lines = _keyword_list_lines(work_lines, lang) | policy_lines
+    config = (
+        _ConfigLiterals(
+            [ln.strip() for ln in work_lines], lang, work_lines, project_reads
+        )
+        if lang in _CONFIG_LANGS
+        else None
+    )
+    if lang == _PY:
+        # ``self.ALG`` / ``cls.ALG`` / ``Cls.ALG`` read a class attribute set to a
+        # literal: the call that reads it sees the literal (``jwt.encode(...,
+        # algorithm=self.ALG)``); the reads above were taken before this fold
+        consts = py_class_constants(work_lines)
+        if consts:
+            names = "|".join(map(re.escape, consts))
+            attr = re.compile(r"\b(?:self|cls|[A-Z]\w*)\.(" + names + r")\b")
+            work_lines = [
+                ln
+                if _PY_CONST.match(ln.strip())
+                else attr.sub(lambda m: consts[m.group(1)], ln)
+                for ln in work_lines
+            ]
+    pats = (*LITERAL_PATTERNS, *LITERAL_BY_LANG.get(lang, ()))
+    pats_by_key: dict[str, list[re.Pattern[str]]] = {}
+    for k, pat in pats:
+        pats_by_key.setdefault(k, []).append(pat)
+
+    def _evidence(line_no: int, text: str, binding: str) -> None:
+        if config_evidence is None or not text.strip():
+            return
+        named = [k for k, pat in pats if pat.search(text)]
+        if not named:  # a value in another language's spelling ('AES-GCM', 'DES')
+            hit = _EVIDENCE_NAME.search(text)
+            named = [hit.group(0).lower()] if hit else []
+        if named:
+            config_evidence.append({"line": line_no, "algorithm": named[0],
+                                    "binding": binding, "value": text.strip()[:80]})
 
     out: list[Detection] = []
     for line_no, work in enumerate(work_lines, start=1):
@@ -2134,11 +3327,35 @@ def detect_crypto(text: str, lang: str, external: Mapping[str, Any] | None = Non
         if not line or _IMPORT_RE.search(line) or _BARE_IMPORT_PATH.match(work) or _PACKAGE_DECL.match(work):
             continue  # imports are LIBRARY signals, handled by the scanner
         if line_no in keyword_lines:
+            if line_no in policy_lines:
+                # a deny-list's names are no use: listed as mentions (6066152368)
+                for m in _STR_LIT.finditer(line):
+                    _evidence(line_no, m.group(0)[1:-1], "deny-list")
             continue  # an element of a non-crypto keyword table, or of a deny-list
+        if lang == _PY and len(line) <= _MAX_STRING_SCAN:
+            esc = py_escaped_span(line)
+            if esc is not None:
+                # text pasted with its string escapes: no call, no use; only that
+                # span is skipped (a real call on the line stays)
+                _evidence(line_no, line[esc[0]:esc[1]], "escaped-code")
+                line = line[:esc[0]] + " " * (esc[1] - esc[0]) + line[esc[1]:]
+            embedded = [
+                m for m in _STR_LIT.finditer(line) if _py_embedded_code(m.group(0))
+            ]
+            for m in reversed(embedded):
+                _evidence(line_no, m.group(0)[1:-1], "embedded-code")
+                gap = " " * (m.end() - m.start() - 2)
+                line = line[:m.start() + 1] + gap + line[m.end() - 1:]
         per_line: dict[str, Detection] = {}
 
         # --- receiver+method rule lane ---
         calls = split_calls(line)
+        quoted = any(q in line for q in "\"'`")
+        if calls and quoted and len(line) <= _MAX_STRING_SCAN:
+            # a "call" spelled inside a string literal ("Scrypt (Memory-Hard)") is text,
+            # not a call
+            in_code = {chain for chain, _args in split_calls(_blank_strings(line))}
+            calls = [c for c in calls if c[0] in in_code]
         for rule in rules:
             if rule.receiver_re is not None and not rule.receiver_re.search(line):
                 continue
@@ -2157,7 +3374,29 @@ def detect_crypto(text: str, lang: str, external: Mapping[str, Any] | None = Non
         # Prose inside string literals / JSX text ("AES-256 encryption at rest", "MD5 is not allowed") names an
         # algorithm without using it: blank it for this lane only (API strings such as "AES/GCM/NoPadding" have
         # no spaces and stay).
-        lit_line = blank_prose(line, lang)
+        lit_line = blank_labels(blank_prose(line, lang), lang)
+        settings: list[tuple[int, int, str, tuple[str, ...]]] = []
+        registries: list[tuple[int, int, str, tuple[str, ...]]] = []
+        if config is not None:
+            for start, end, binding, kind, owners in config.judge(line_no - 1, line):
+                if kind == SETTING:
+                    settings.append((start, end, binding, owners))
+                    continue
+                if kind == REGISTRY:
+                    registries.append((start, end, binding, owners))
+                    continue
+                if lit_line[start + 1:end - 1].strip():
+                    _evidence(line_no, line[start + 1:end - 1], binding)
+                blank = " " * (end - start - 2)
+                lit_line = lit_line[:start + 1] + blank + lit_line[end - 1:]
+                # an Enum member / enum constant is named like the algorithm too
+                # (``MD5 = "md5"``, ``MD5("MD5")``): its name is no use either
+                lit_line = re.sub(
+                    rf"(?i)\b{re.escape(binding)}\b(?=\s*(?:[=(]|:\s*\w+\s*=))",
+                    lambda m: " " * len(m.group(0)),
+                    lit_line,
+                    count=1,
+                ) if re.fullmatch(r"\w+", binding) else lit_line
         if lang == _C and "_set_cipher_list" in lit_line:
             # CB-28: an OpenSSL cipher-list string is a TLS suite policy (the
             # protocol lane reads it, with ``!RC4`` / ``-3DES`` as removals), not a
@@ -2186,10 +3425,13 @@ def detect_crypto(text: str, lang: str, external: Mapping[str, Any] | None = Non
         for key, pat in (*LITERAL_PATTERNS, *LITERAL_BY_LANG.get(lang, ())):
             if not pat.search(lit_line):
                 continue
+            if key in _API_WORD_KEYS and not _api_word_hit(pat, lit_line):
+                # a label or a settings value names the KDF; nothing calls it here
+                continue
             lit = Detection(
                 key=key,
                 line_no=line_no,
-                key_size=explicit_ks,
+                key_size=_literal_key_size(key, lit_line, explicit_ks),
                 mode=mode,
                 curve=curve,
                 padding=_lang_padding(lit_line, lang, key),
@@ -2202,6 +3444,12 @@ def detect_crypto(text: str, lang: str, external: Mapping[str, Any] | None = Non
 
         _merge_sized_into_coarse(per_line)
         _mark_inner(per_line, line)
+        if settings and config is not None:
+            _tag_settings(per_line, settings, lit_line, pats_by_key, config)
+        if registries and config is not None:
+            _tag_registries(per_line, registries, line, line_no, pats_by_key, config)
+        if settings and config is not None:
+            _settings_assets(per_line, settings, line, line_no, config)
         for d in substituted.get(line_no, ()):
             keys = _value_keys(d.value, lang)
             for det in per_line.values():

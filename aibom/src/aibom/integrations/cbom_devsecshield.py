@@ -127,6 +127,13 @@ def _legacy_quantum_safe(row: dict[str, Any]) -> bool | None:
         return None
     if row.get("primitive") in (None, "", "unknown"):
         return None
+    if row.get("weak") and not row.get("quantum_vulnerable"):
+        # broken today (MD5, SHA-1, DES, ECB ...): not safe on any computer, so never
+        # quantum_safe true; with
+        # quantum_vulnerable false the results page, the dashboard and the PDF call it
+        # "Broken today"
+        # (cbom_metrics.code_row_broken_today) (staging QA G-D3-6)
+        return False
     return not row.get("quantum_vulnerable")
 
 

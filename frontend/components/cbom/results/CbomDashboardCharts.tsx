@@ -87,17 +87,50 @@ const riskScoreAreaChartConfig = {
 } satisfies ChartConfig;
 
 type KpiCardData = CbomScanDashboardData["card_data"];
+
+/** Whether a mean time to remediate exists: at least one finding was fixed. */
+export function mttrMeasured(totalFixed: number | null | undefined): boolean {
+  return typeof totalFixed === "number" && totalFixed > 0;
+}
+
+/** The mean time to remediate as the tile prints it: "—" while nothing is fixed. */
+export function mttrText(totalDays: number, totalFixed: number | null | undefined): string {
+  if (!mttrMeasured(totalFixed)) return "—";
+  return totalDays < 0.1 && totalDays >= 0 ? "<0.1 days" : `${totalDays.toFixed(1)} days`;
+}
+
+/** "52 · D" from the API's risk score and grade; "—" for a scan or run that did not succeed (``not_scored``, as the
+ * results list); "N/A" when an older API sent none. The scale and label go in the hint (riskScoreHint), so the value
+ * fits one line in the seven-tile row at 1366 px (Playwright run, round 2). */
+export function riskScoreText(c: KpiCardData): string {
+  if (c.risk_posture_status === "not_scored") return "—";
+  if (c.risk_posture_status === "incomplete") return "incomplete";  // a partial run (#505)
+  if (typeof c.risk_score !== "number") return "N/A";
+  const text = c.risk_grade ? `${c.risk_score} · ${c.risk_grade}` : `${c.risk_score}`;
+  // the worst case of settings no crypto call is proven to read (re-review 6066152368)
+  return c.risk_posture_status === "unverified" ? `${text} unverified` : text;
+}
+/** "of 100 · High risk": the 0-100 scale of the score and the API's label, with #505's unverified note beside a
+ * confirmed score ("unverified: 1 unconfirmed setting (worst: High)"). */
+export function riskScoreHint(c: KpiCardData): string | null {
+  if (typeof c.risk_score !== "number") return null;
+  const hint = c.risk_label ? `of 100 · ${c.risk_label}` : "of 100";
+  const note = c.risk_posture_status !== "unverified" ? c.risk_unverified?.note : null;
+  return note ? `${hint} · ${note}` : hint;
+}
 /** The seven KPI tiles (label, icon, colours, tip, raw value): one definition for the code scan's dashboard and the
  * Sources run summary (views/SummaryKpis.tsx), so the two cannot drift. */
 export const KPI_TILES: ReadonlyArray<{ key: string; label: string; icon: LucideIcon; box: string; tip: InfoTipId;
-  value: (c: KpiCardData) => number | string }> = [
+  value: (c: KpiCardData) => number | string; hint?: (c: KpiCardData) => string | null }> = [
   { key: "assets", label: "Crypto assets", value: (c) => c.total_crypto_assets, icon: Lock, box: "bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400", tip: "cbom.res.kpi.assets" },
   { key: "weak", label: "Weak", value: (c) => c.total_weak_algorithms, icon: ShieldAlert, box: "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400", tip: "cbom.res.kpi.weak" },
   { key: "qv", label: "Quantum vulnerable", value: (c) => c.total_quantum_vulnerable, icon: AlertTriangle, box: "bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400", tip: "cbom.res.kpi.qv" },
   { key: "certs", label: "Certificates", value: (c) => c.total_certificates, icon: ShieldCheck, box: "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400", tip: "cbom.res.kpi.certs" },
   { key: "keys", label: "Keys", value: (c) => c.total_keys, icon: Key, box: "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400", tip: "cbom.res.kpi.keys" },
   { key: "ready", label: "Quantum ready", value: (cardData) => readinessText(cardData), icon: Shield, box: "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400", tip: "cbom.res.kpi.ready" },
-  { key: "avg_risk", label: "Avg risk score", value: (c) => c.average_risk_score?.toFixed(1) ?? "N/A", icon: Activity, box: "bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400", tip: "cbom.res.kpi.avg_risk" },
+  // the D3 risk score (staging QA round 2, item 01; Rule P): the API's risk_score / risk_grade / risk_label, the engine's posture
+  // number the PDF headline prints; never recomputed here
+  { key: "avg_risk", label: "Risk score", value: riskScoreText, hint: riskScoreHint, icon: Activity, box: "bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400", tip: "cbom.res.kpi.avg_risk" },
 ];
 
 /** The parts of CbomDashboardCharts a caller can ask for (`parts`); all of them when `parts` is left out. */
@@ -230,9 +263,11 @@ export function CbomDashboardCharts({
   const notStartedPct = totalAll > 0 ? Math.round(((remediation?.total_not_started ?? 0) / totalAll) * 100) : 0;
   const ignoredPct = totalAll > 0 ? Math.round(((remediation?.total_ignored ?? 0) / totalAll) * 100) : 0;
 
+  // seven tiles in one row only from 2xl: at 1366 px (content ~1010 px) a seven-column row left ~40 px per value, so
+  // "56 · D" and labels such as "Quantum vulnerable" wrapped or were cut (Playwright run, staging QA round 2)
   const kpiCards = (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
-      {KPI_TILES.map((t) => ({ ...t, value: t.value(cardData) })).map(({ label, tip, value, icon: Icon, box }) => (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7 gap-4">
+      {KPI_TILES.map((t) => ({ ...t, value: t.value(cardData), hintText: t.hint?.(cardData) ?? null })).map(({ label, tip, value, hintText, icon: Icon, box }) => (
         <Card key={label} className="border-zinc-200 dark:border-zinc-800">
           <CardContent className="pt-4 pb-4 flex items-center gap-3">
             <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${box}`}>
@@ -244,6 +279,7 @@ export function CbomDashboardCharts({
                 <InfoTip id={tip} />
               </p>
               <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums">{value}</p>
+              {hintText && <p className="text-xs text-zinc-500 dark:text-zinc-400">{hintText}</p>}
             </div>
           </CardContent>
         </Card>
@@ -524,7 +560,9 @@ export function CbomDashboardCharts({
                 </linearGradient>
               </defs>
               <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
-              <XAxis dataKey="finding" tickLine={false} axisLine={false} tickMargin={8} minTickGap={16} height={40} interval={0} />
+              {/* padding: the first and last labels ("F1") are drawn whole, never clipped to "1" (staging QA N4) */}
+              <XAxis dataKey="finding" tickLine={false} axisLine={false} tickMargin={8} minTickGap={16} height={40} interval={0}
+                     padding={{ left: 16, right: 16 }} />
               <YAxis hide domain={[0, 10]} />
               <ChartTooltip
                 cursor={false}
@@ -559,8 +597,10 @@ export function CbomDashboardCharts({
             const [days, hours, minutes] = remediationKpis.mean_time_to_remediate;
             const totalDays = days + hours / 24 + minutes / (60 * 24);
             const targetDays = 3;
-            const progress = totalDays <= 0 ? 100 : Math.min(100, (targetDays / totalDays) * 100);
-            const delta = totalDays > 0 && targetDays > 0 ? `${Math.round(((totalDays - targetDays) / targetDays) * 100)}%` : "—";
+            // nothing fixed yet: there is no time to remediate to show (staging QA N4: "<0.1 days" with 0 fixed)
+            const measured = mttrMeasured(remediation?.total_fixed);
+            const progress = !measured ? 0 : totalDays <= 0 ? 100 : Math.min(100, (targetDays / totalDays) * 100);
+            const delta = measured && totalDays > 0 && targetDays > 0 ? `${Math.round(((totalDays - targetDays) / targetDays) * 100)}%` : "—";
             return (
               <div className="space-y-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
@@ -568,7 +608,7 @@ export function CbomDashboardCharts({
                 </div>
                 <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Mean time to remediate <InfoTip id="sast.res.remed.mttr" /></p>
                 <p className="text-2xl font-bold text-zinc-900 dark:text-white">
-                  {totalDays < 0.1 && totalDays >= 0 ? "<0.1 days" : `${totalDays.toFixed(1)} days`}
+                  {mttrText(totalDays, remediation?.total_fixed)}
                 </p>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {targetDays} days</p>
                 <div className="flex items-center gap-2">

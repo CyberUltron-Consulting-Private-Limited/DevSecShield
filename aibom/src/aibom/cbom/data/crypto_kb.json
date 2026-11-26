@@ -3657,7 +3657,7 @@
       "cves": [
        "CVE-2004-2761"
       ],
-      "match": "MD5"
+      "match": "signature over an? MD5|MD5 ?with ?RSA|MD5with|with ?MD5"
      },
      {
       "cves": [
@@ -4201,6 +4201,90 @@
      "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan"
     }
    },
+   "WEAK_KDF_COST": {
+    "attack": "scrypt's defence is that each password guess needs N x r x 128 bytes of memory and matching work; with a small N an attacker with stolen derived keys or encrypted data runs many more guesses in parallel on GPUs or dedicated hardware.",
+    "category": "code",
+    "clause_rules": [],
+    "clauses": [
+     "rbi-sfb-2026-para-139",
+     "rbi-pb-2026-para-139",
+     "rbi-ucb-2026-para-25",
+     "rbi-aifi-2026-para-135",
+     "rbi-cic-2026-para-135",
+     "rbi-cb-2026-para-140",
+     "rbi-nbfc-2026-para-118"
+    ],
+    "compliance": [
+     "key_mgmt"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-916"
+    ],
+    "default_impact": "Low",
+    "description": "A scrypt call's cost parameters are below the OWASP Password Storage minimum: N = 2^17 (128 MiB with r = 8) and p = 1, or an equal-strength pair (N = 2^16 with p = 2, 2^15 with p 3, 2^14 with p 5, 2^13 with p 10), at a block size r of 8 (a smaller r shrinks the memory each guess needs by r / 8). scrypt has no iteration count and takes no hash argument: its cost is the memory and work N, r and p set. A file with several calls is graded by its weakest call.",
+    "fix_class": {
+     "basis": "the scrypt cost parameters are fixed in the team's own source code: the code changes, then a rebuild and release",
+     "capability": false,
+     "class": "code-fixed"
+    },
+    "owasp": [
+     "crypto"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-916 is in OWASP's mapped CWE list",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-916 is in OWASP's mapped CWE list",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://www.rfc-editor.org/rfc/rfc7914",
+     "https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html"
+    ],
+    "remediation": {
+     "steps": [
+      {
+       "how": "hashlib.scrypt(password, salt=os.urandom(16), n=2**17, r=8, p=1, maxmem=256 * 1024 * 1024, dklen=32)",
+       "platform": "Python"
+      },
+      {
+       "how": "crypto.scryptSync(password, salt, 32, { N: 2 ** 17, r: 8, p: 1, maxmem: 256 * 1024 * 1024 })",
+       "platform": "Node.js"
+      },
+      {
+       "how": "SCrypt.generate(password, salt, 1 << 17, 8, 1, 32)",
+       "platform": "Java (Bouncy Castle)"
+      }
+     ],
+     "summary": "Raise the scrypt cost to at least N = 2^17 with r = 8 and p = 1 (OWASP; or an equal-strength pair such as N = 2^16 with p = 2), or use Argon2id, and keep the cost in configuration so it can rise."
+    },
+    "standards": [
+     "RFC 7914 (scrypt: N, r, p)",
+     "OWASP Password Storage Cheat Sheet (scrypt: N = 2^17, r = 8, p = 1)"
+    ],
+    "summary_rules": [],
+    "title": "Memory-hard KDF cost below the minimum (scrypt N, r, p)",
+    "verify": [
+     {
+      "command": "sed -n '{line}p' '{path}'",
+      "label": "Show the call"
+     }
+    ],
+    "vex_default": {
+     "basis": "static",
+     "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan"
+    }
+   },
    "WEAK_KDF_ITERATIONS": {
     "attack": "Each password guess costs the attacker only as many hash computations as the iteration count, so an offline attack on the derived keys or the encrypted data tries billions of passwords quickly.",
     "category": "code",
@@ -4223,7 +4307,7 @@
      "CWE-916"
     ],
     "default_impact": "Medium",
-    "description": "A constant iteration count below the minimum for the API reaches a password-based key derivation: below 1,000 for Java's PBEKeySpec / PBEParameterSpec (NIST SP 800-132), below 100,000 for .NET's Rfc2898DeriveBytes, whose constructors without a count use 1,000 (Microsoft rule CA5387). For a Python KDF call the captured cost is graded against NIST SP 800-132 (below 1,000 PBKDF2 iterations: Medium) and the OWASP Password Storage minimums (PBKDF2-HMAC-SHA256 600,000, -SHA512 210,000, -SHA1 1,300,000; scrypt N 2^17 with r 8 and p 1, or an equal-strength pair: 2^16 / p 2, 2^15 / p 3, 2^14 / p 5, 2^13 / p 10; Argon2id 19 MiB with 2 passes or an equivalent pair: Low). A file with several calls of one KDF is graded by its worst call, each against the minimum for its own hash.",
+    "description": "A constant iteration count below the minimum for the API reaches a password-based key derivation: below 1,000 for Java's PBEKeySpec / PBEParameterSpec (NIST SP 800-132), below 100,000 for .NET's Rfc2898DeriveBytes, whose constructors without a count use 1,000 (Microsoft rule CA5387). For a Python KDF call the captured cost is graded against NIST SP 800-132 (below 1,000 PBKDF2 iterations: Medium) and the OWASP Password Storage minimums (PBKDF2-HMAC-SHA256 600,000, -SHA512 210,000, -SHA1 1,300,000; Argon2id 19 MiB with 2 passes or an equivalent pair: Low). A file with several calls of one KDF is graded by its worst call, each against the minimum for its own hash. scrypt has no iteration count: its cost is WEAK_KDF_COST.",
     "fix_class": {
      "basis": "the salt or iteration count is fixed in the team's own source code: the code changes, then a rebuild and release",
      "capability": false,
@@ -4275,16 +4359,6 @@
      "OWASP Password Storage Cheat Sheet (PBKDF2-HMAC-SHA256: 600,000 iterations)"
     ],
     "summary_rules": [
-     {
-      "match": "^scrypt",
-      "steps": [
-       {
-        "how": "hashlib.scrypt(password, salt=os.urandom(16), n=2**17, r=8, p=1, dklen=32)",
-        "platform": "Python"
-       }
-      ],
-      "summary": "Raise the scrypt cost to at least N = 2^17 with r = 8 and p = 1 (OWASP; or an equal-strength pair such as N = 2^16 with p = 2), or use Argon2id, and keep the cost in configuration so it can rise."
-     },
      {
       "match": "^argon2",
       "steps": [
@@ -17281,7 +17355,7 @@
    }
   }
  },
- "kb_version": "2026.11.24.7",
+ "kb_version": "2026.11.24.8",
  "legacy_controls": {
   "access": {
    "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control",

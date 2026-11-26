@@ -137,7 +137,17 @@ def scan_crypto(
         posture=ctx.posture.freeze(assembly_failed=assembly_failed),
     )
     result.sort()
+    from aibom.cbom.code_context import downgrade_test_code, mark_unconfirmed_settings
+
+    # test code and unconfirmed settings are labelled and lowered BEFORE scoring, so
+    # they never weigh in
+    downgrade_test_code(result)
+    mark_unconfirmed_settings(result)
     score_crypto(result)  # C8: weight crypto flags -> result.scores (stacked severity)
+    from aibom.cbom.normalize import stamp_algorithm_oids
+
+    # crypto:oid on the graph: the CERT-In OID check and the CycloneDX oid agree
+    stamp_algorithm_oids(result)
     run_cbom_compliance(result)  # C7: fill the compliance seam (tri-state, graph-only)
     return result
 

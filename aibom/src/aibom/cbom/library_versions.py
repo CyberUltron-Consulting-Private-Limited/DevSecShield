@@ -66,16 +66,23 @@ class LibraryVersion:
         return props
 
 
-def _purl(ecosystem: str, name: str, version: str) -> str | None:
+def _purl(ecosystem: str, name: str, version: str | None) -> str | None:
+    """The package URL; without a version (``pkg:pypi/cryptography``) when only a range
+    is declared: the package is
+    known, its installed version is not (staging QA Q2-09)."""
     kind = _PURL_TYPE.get(ecosystem)
     if kind is None:
         return None
+    at = f"@{quote(version)}" if version else ""
     if kind == "maven" and ":" in name:
         group, artifact = name.split(":", 1)
-        return f"pkg:maven/{group}/{artifact}@{quote(version)}"
+        return f"pkg:maven/{group}/{artifact}{at}"
     if kind == "npm" and name.startswith("@"):
-        return f"pkg:npm/{quote(name, safe='/')}@{quote(version)}"
-    return f"pkg:{kind}/{name}@{quote(version)}"
+        return f"pkg:npm/{quote(name, safe='/')}{at}"
+    return f"pkg:{kind}/{name}{at}"
+
+
+purl_of = _purl
 
 
 def _python_lock_pins(walk: FileWalk) -> list[Pin]:
@@ -238,7 +245,7 @@ def resolve_library_versions(
             pin = ranges[label]
             out[label] = LibraryVersion(
                 None,
-                None,
+                _purl(pin.ecosystem, pin.name, None),
                 pin.path,
                 pin.declared,
                 "only a version range is declared and no lockfile resolves it",
@@ -252,4 +259,4 @@ def resolve_library_versions(
     return out
 
 
-__all__ = ["LibraryVersion", "resolve_library_versions"]
+__all__ = ["LibraryVersion", "purl_of", "resolve_library_versions"]

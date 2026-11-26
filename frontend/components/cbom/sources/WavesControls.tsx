@@ -33,12 +33,17 @@ export function WaveBadge({ item }: { item: CbomRemediationItem | undefined }) {
   if (!item || item.wave == null) return <span className="text-xs text-zinc-400">—</span>;
   const a = item.assignment;
   return (
-    <span className="inline-flex flex-col gap-0.5" data-testid={`wave-${item.asset_key}`}>
+    <span className="inline-flex min-w-0 max-w-full flex-col items-start gap-0.5" data-testid={`wave-${item.asset_key}`}>
+      {/* "Wave N" in the badge; "suggested" on its own line under it, so the badge stays narrow enough for a
+          390 px phone (PR #500 review 6061095673: "Wave 2 (suggested)" was 133 px wide in a 112 px column) */}
       <StatusBadge tone={WAVE_TONE[item.wave] ?? "zinc"} title={item.wave_source === "suggested" ? "Suggested by the rules" : "Assigned"}>
-        Wave {item.wave}{item.wave_source === "suggested" ? " (suggested)" : ""}
+        Wave {item.wave}
       </StatusBadge>
+      {item.wave_source === "suggested" && (
+        <span className="text-[11px] leading-tight text-zinc-500" data-testid={`wave-suggested-${item.asset_key}`}>suggested</span>
+      )}
       {(a?.owner || a?.target_date) && (
-        <span className="text-[11px] text-zinc-500">{[a?.owner, a?.target_date, a?.status ? STATUS_LABEL[a.status] : null].filter(Boolean).join(" · ")}</span>
+        <span className="text-[11px] text-zinc-500 break-words">{[a?.owner, a?.target_date, a?.status ? STATUS_LABEL[a.status] : null].filter(Boolean).join(" · ")}</span>
       )}
     </span>
   );
@@ -128,6 +133,46 @@ export function BulkAssignBar({ teamId, target, keys, onDone }: {
   );
 }
 
+/** The code scan's waves table. It fits a 390 px phone (PR #500 takeover): a fixed layout as wide as its card, Select /
+ * Asset / Wave on every screen, Impact and Owner hint as their own columns from sm (640 px) and under the asset name
+ * below it, so nothing scrolls sideways. */
+export function CodeWavesTable({ items, selected, onToggle }: {
+  items: CbomRemediationItem[]; selected: Set<string>; onToggle: (key: string) => void;
+}) {
+  return (
+    <table className="table-fixed w-full text-xs">
+      <thead className="sticky top-0 bg-white dark:bg-zinc-950">
+        <tr className="text-left text-zinc-500">
+          <th className="p-2 w-8"><span className="sr-only">Select</span><InfoTip id="cbsrc.waves.select" /></th>
+          <th className="p-2">Asset</th>
+          <th className="p-2 w-20 hidden sm:table-cell">Impact</th>
+          <th className="p-2 w-32">Wave</th>
+          <th className="p-2 w-36 hidden sm:table-cell">Owner hint</th>
+        </tr>
+      </thead>
+      <tbody>
+        {items.map((i) => (
+          <tr key={i.asset_key} className="border-t border-zinc-100 dark:border-zinc-800 align-top">
+            <td className="p-2">
+              {/* infotip-shared: one row of the selection; the Select column's tip explains it */}
+              <input type="checkbox" aria-label={`Select ${i.label}`} checked={selected.has(i.asset_key)} onChange={() => onToggle(i.asset_key)} />
+            </td>
+            <td className="p-2 min-w-0 w-full">
+              <Truncate text={i.label} className="font-mono" />
+              <span data-testid={`code-wave-meta-${i.asset_key}`} className="block sm:hidden text-zinc-500 truncate">
+                {i.impact ?? "—"}{i.owner_hint ? ` · ${i.owner_hint}` : ""}
+              </span>
+            </td>
+            <td className="p-2 hidden sm:table-cell">{i.impact ?? "—"}</td>
+            <td className="p-2"><WaveBadge item={i} /></td>
+            <td className="p-2 text-zinc-500 hidden sm:table-cell"><Truncate text={i.owner_hint ?? "—"} /></td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 /** Code-scan remediation plan: one row per asset (line-independent), suggested and assigned waves, bulk assign. */
 export function CodeWavesPanel({ teamId, scanId }: { teamId: number; scanId: number }) {
   const q = useQuery({
@@ -157,32 +202,8 @@ export function CodeWavesPanel({ teamId, scanId }: { teamId: number; scanId: num
         {/* the same legend as a run's waves: the code-scan plan uses the same suggested_wave rules (waves.WAVE_RULES) */}
         <WaveLegend byWave={q.data.by_wave} rules={q.data.rules} scope="code" />
         <BulkAssignBar teamId={teamId} target={{ scan_id: scanId }} keys={[...selected]} onDone={() => setSelected(new Set())} />
-        <div className="overflow-x-auto max-h-96 border rounded-md">
-          <table className="w-full text-xs">
-            <thead className="sticky top-0 bg-white dark:bg-zinc-950">
-              <tr className="text-left text-zinc-500">
-                <th className="p-2 w-6"><span className="sr-only">Select</span><InfoTip id="cbsrc.waves.select" /></th>
-                <th className="p-2">Asset</th>
-                <th className="p-2">Impact</th>
-                <th className="p-2">Wave</th>
-                <th className="p-2">Owner hint</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((i) => (
-                <tr key={i.asset_key} className="border-t border-zinc-100 dark:border-zinc-800">
-                  <td className="p-2">
-                    {/* infotip-shared: one row of the selection; the Select column's tip explains it */}
-                    <input type="checkbox" aria-label={`Select ${i.label}`} checked={selected.has(i.asset_key)} onChange={() => toggle(i.asset_key)} />
-                  </td>
-                  <td className="p-2 max-w-[360px]"><Truncate text={i.label} className="font-mono" /></td>
-                  <td className="p-2">{i.impact ?? "—"}</td>
-                  <td className="p-2"><WaveBadge item={i} /></td>
-                  <td className="p-2 text-zinc-500">{i.owner_hint ?? "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="max-h-96 overflow-y-auto border rounded-md">
+          <CodeWavesTable items={items} selected={selected} onToggle={toggle} />
         </div>
       </div>
     </SectionCard>

@@ -75,7 +75,13 @@ from backend.utilities.cbom_sources import collections_view as CV
 from backend.utilities.cbom_sources import crypto_kb
 from backend.utilities.cbom_sources import identity as ID
 from backend.utilities.cbom_sources import posture as POSTURE
-from backend.utilities.cbom_sources.cbom_metrics import INFORMATIONAL, average_risk
+from backend.utilities.cbom_sources.cbom_metrics import (
+    INFORMATIONAL,
+    RUN_SCORED_STATUSES,
+    average_risk,
+    risk_fields,
+    risk_posture,
+)
 from backend.utilities.cbom_sources.common import console, iso_z, utcnow
 
 ACTIVE_STATUSES = ("queued", "running")
@@ -269,6 +275,7 @@ class _Acc:
     controls: Counter = field(default_factory=Counter)
     primitives: Counter = field(default_factory=Counter)
     weakness: Counter = field(default_factory=Counter)
+    weakness_impacts: dict = field(default_factory=dict)  # code -> Counter of the asset's impact (the chart's colours)
     nist_levels: Counter = field(default_factory=Counter)  # levels of ready assets ("0" comes from posture)
     protocols: Counter = field(default_factory=Counter)
     expiry: dict = field(default_factory=lambda: {b: 0 for b in _EXPIRY_BUCKETS})
@@ -357,6 +364,7 @@ def _add(acc: _Acc, memo: _Memo, row: CbomCollectedAsset, view: dict[str, Any], 
         for code in codes:
             if code not in _NOT_WEAKNESS:
                 acc.weakness[code] += 1
+                acc.weakness_impacts.setdefault(code, Counter())[str(impact).capitalize()] += 1
 
     texts = [t for t in (row.algorithm, facts.get("key_alg"), facts.get("group"), facts.get("kex"),
                          facts.get("sig_alg")) if t]
@@ -506,6 +514,9 @@ def _assemble(acc: _Acc, posture: dict[str, Any], top_risks: list[dict[str, Any]
             "quantum_readiness_judged": readiness is not None,
             "quantum_readiness_status": basis.get("status"),
             "average_risk_score": average_risk(severity),
+            # the risk score tile: the engine's posture function over the same severity counts, as a code scan's
+            # (staging QA Q2-01; one KPI definition for both pages)
+            **risk_fields(risk_posture(severity)),
         },
         "severity_distribution": {**severity, INFORMATIONAL: assets - findings},
         "algorithm_type_distribution": dict(sorted(acc.algorithm_types.items())),
@@ -539,6 +550,8 @@ def _assemble(acc: _Acc, posture: dict[str, Any], top_risks: list[dict[str, Any]
     distributions = {
         "algorithms": dict(sorted(acc.primitives.items())),
         "weakness": dict(sorted(acc.weakness.items())),
+        # by impact, so the weak-crypto chart colours each bar by severity (staging QA N2), as a code scan's
+        "weakness_impacts": {code: dict(sorted(by.items())) for code, by in sorted(acc.weakness_impacts.items())},
         "weakness_labels": {code: _title(code) for code in sorted(acc.weakness)},
         "pqc": pqc,
         "certificates": calendar,
@@ -619,7 +632,8 @@ def _dashboard_top_risks(session: Session, team_id: int, risks: list[dict[str, A
     for risk in risks:
         row = by_id.get(risk.get("id"))
         item = {"algorithm_name": risk.get("name") or risk.get("location") or "", "algorithm_type": "configuration",
-                "crypto_strength": "not-applicable", "quantum_safe": False, "impact": risk.get("impact"),
+                "crypto_strength": "not-applicable", "quantum_safe": False, "quantum_vulnerable": None,
+                "impact": risk.get("impact"),
                 "risk_score": risk.get("score"), "asset_id": risk.get("id"), "location": risk.get("location"),
                 "exposure": risk.get("exposure"), "hndl": risk.get("hndl"), "source_name": risk.get("source_name"),
                 "pqc_class": None}
@@ -629,7 +643,11 @@ def _dashboard_top_risks(session: Session, team_id: int, risks: list[dict[str, A
             klass = POSTURE.graded_class(row, codes)[0]
             item.update({"algorithm_name": row.algorithm or row.name or item["algorithm_name"],
                          "algorithm_type": _algorithm_type(row), "crypto_strength": strength(klass, codes, memo),
-                         "quantum_safe": klass in _READY, "pqc_class": klass})
+                         "quantum_safe": klass in _READY, "pqc_class": klass,
+                         # the class's verdict (the results page's badge reads it, as for a code-scan row): judged
+                         # vulnerable or ready, else None (unknown / not applicable)
+                         "quantum_vulnerable": True if klass == "quantum-vulnerable" else
+                         (False if klass in _READY else None)})
         out.append(item)
     return out
 
@@ -873,9 +891,17 @@ def run_results(session: Session, run: CbomCollectionRun, *, team_id: int, risk_
                 _store(rid, _Entry(key=key, digest=digest, computed=computed, live=True, at=_monotonic()))
     actions, metrics = _remediation(session, team_id, computed.finding_keys)  # never cached
     certs = computed.certificates
+    dashboard = {**computed.dashboard, "remediation_actions_required": actions, "remediation_metrics": metrics}
+    status = str(run.status or "")
+    if status not in RUN_SCORED_STATUSES or status == "partial":
+        # an open, failed or cancelled run's tile has no score (re-review 6064703319): "not_scored", shown "—"; a
+        # partial run's is "incomplete" (#505, re-review 6066152368)
+        card = dict(dashboard.get("card_data") or {})
+        dashboard["card_data"] = {**card, **risk_fields({}, judged=status in RUN_SCORED_STATUSES,
+                                                        incomplete=status == "partial")}
     return {
         "run": run_detail,
-        "dashboard": {**computed.dashboard, "remediation_actions_required": actions, "remediation_metrics": metrics},
+        "dashboard": dashboard,
         "distributions": computed.distributions,
         "compliance": computed.compliance,
         "certificates_orphaned": certs["orphaned"],

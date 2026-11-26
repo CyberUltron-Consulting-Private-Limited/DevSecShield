@@ -30,7 +30,7 @@ import {
   Lock,
   ShieldCheck,
 } from "lucide-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import RemediationPanel from "@/components/RemediationPanel";
 import AiRemediationPanel from "@/components/cbom/results/AiRemediationPanel";
 import {
@@ -73,6 +73,8 @@ import {
 } from "@/components/cbom/CbomCryptoCharts";
 import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRollup";
 import { CertHygieneSection } from "@/components/cbom/certificates/CertHygiene";
+import { ScanCertificates } from "@/components/cbom/certificates/ScanCertificates";
+import { ConfigMentions, type ConfigMention } from "@/components/cbom/results/ConfigMentions";
 import { CodeChanges } from "@/components/cbom/sources/ChangesPanel";
 import { CodeWavesPanel } from "@/components/cbom/sources/WavesControls";
 import { CertInLanePosture } from "@/components/certin/CertInLanePosture";
@@ -158,8 +160,8 @@ function matchesRiskScoreFilter(score: number | null, filter: RiskScoreFilter): 
 
 /** Quantum column: "Broken today" for a classically broken algorithm (MD5, SHA-1, DES …) instead of a misleading
  * "Safe"; "—" when quantum readiness does not apply (libraries, configuration, certificates). */
-function QuantumBadge({ quantumSafe, strength, yesNo = false }: { quantumSafe?: boolean | null; strength?: string | null; yesNo?: boolean }) {
-  if (isBrokenToday({ quantum_safe: quantumSafe, crypto_strength: strength })) {
+function QuantumBadge({ quantumSafe, strength, quantumVulnerable, yesNo = false }: { quantumSafe?: boolean | null; strength?: string | null; quantumVulnerable?: boolean | null; yesNo?: boolean }) {
+  if (isBrokenToday({ quantum_safe: quantumSafe, crypto_strength: strength, quantum_vulnerable: quantumVulnerable })) {
     return (
       <Badge variant="outline" className="border-amber-500/60 text-amber-700 dark:text-amber-400"
         title="Already broken without a quantum computer: replace it now; post-quantum readiness does not help">
@@ -244,6 +246,10 @@ export default function CbomResults({
   // #267: the code findings table's visible columns (per user, localStorage); select and Actions always show
   const scanColumns = useColumnPrefs("scan", SCAN_TABLE_COLUMNS);
   const showCol = scanColumns.isVisible;
+  // phones: the Algorithm cell carries the impact and risk score (cbom-finding-mobile-meta), so their own columns
+  // hide below sm instead of sitting behind a sideways scroll cut at "Mediu" (staging QA N6, Playwright at 390 px);
+  // with the Algorithm column turned off they stay
+  const metaOnPhones = showCol("algorithm") ? "hidden sm:table-cell" : "";
 
   // Jira ticketing state
   const jiraFromSettings =
@@ -942,8 +948,13 @@ export default function CbomResults({
           )}
           {Number.isFinite(tid) && tid > 0 && (
             <div className="mt-6" data-testid="code-cert-hygiene">
-              <CertHygieneSection teamId={tid} />
+              {/* a code scan lists its own certificates; the team estate's hygiene is on the CBOM dashboard (staging
+                  QA N1). A Sources run keeps the estate view. */}
+              {run ? <CertHygieneSection teamId={tid} /> : <ScanCertificates teamId={tid} rows={allRows} />}
             </div>
+          )}
+          {!run && (
+            <ConfigMentions mentions={(meta?.config_evidence as ConfigMention[] | undefined) ?? []} total={meta?.config_evidence_total as number | undefined} />
           )}
           <RbiCsfRollup
             rollup={meta?.rbi_csf_rollup as RbiCsfRollupData | undefined}
@@ -1104,11 +1115,11 @@ export default function CbomResults({
                       </TableHead>
                       {showCol("algorithm") && <TableHead data-col="algorithm" className="min-w-[160px]">Algorithm <InfoTip id="cbom.res.col.algorithm" /></TableHead>}
                       {showCol("type") && <TableHead data-col="type" className="min-w-[120px]">Type <InfoTip id="cbom.res.col.type" /></TableHead>}
-                      {showCol("impact") && <TableHead data-col="impact" className="min-w-[90px]">Impact <InfoTip id="results.table.impact" /></TableHead>}
+                      {showCol("impact") && <TableHead data-col="impact" className={`min-w-[90px] ${metaOnPhones}`}>Impact <InfoTip id="results.table.impact" /></TableHead>}
                       {showCol("strength") && <TableHead data-col="strength" className="min-w-[110px]">Strength <InfoTip id="cbom.res.col.strength" /></TableHead>}
                       {showCol("quantum") && <TableHead data-col="quantum" className="min-w-[100px]">Quantum <InfoTip id="cbom.res.col.quantum" /></TableHead>}
                       {showCol("fixclass") && <TableHead data-col="fixclass" className="min-w-[110px]">Fix class <InfoTip id="cbom.res.col.fix_class" /></TableHead>}
-                      {showCol("risk") && <TableHead data-col="risk" className="min-w-[90px] text-center">Risk score <InfoTip id="cbom.res.col.risk" /></TableHead>}
+                      {showCol("risk") && <TableHead data-col="risk" className={`min-w-[90px] text-center ${metaOnPhones}`}>Risk score <InfoTip id="cbom.res.col.risk" /></TableHead>}
                       {showCol("location") && <TableHead data-col="location" className="min-w-[140px]">Location <InfoTip id="cbom.res.col.location" /></TableHead>}
                       {showCol("status") && <TableHead data-col="status" className="min-w-[100px]">Status <InfoTip id="results.table.status" /></TableHead>}
                       <TableHead data-col="actions" className={`min-w-[150px] text-right ${STICKY_ACTIONS}`}>
@@ -1162,6 +1173,28 @@ export default function CbomResults({
                               >
                                 {finding.algorithm_name || finding.title}
                               </button>
+                              {finding.code_context === "test" && (
+                                // found in test, fixture or example code: lowered to Low by the engine, still listed
+                                <Badge variant="outline" className="mt-1 whitespace-nowrap border-zinc-300 text-zinc-600 dark:text-zinc-300"
+                                       title="Found in test, fixture or example code: downgraded to Low, kept visible" data-testid="cbom-finding-test-code">
+                                  test code
+                                </Badge>
+                              )}
+                              {finding.config_status === "unconfirmed" && (
+                                // a setting no crypto call is proven to read: Low, not scored (re-review 6063599094)
+                                <Badge variant="outline" className="mt-1 whitespace-normal border-amber-300 text-amber-700 dark:text-amber-300"
+                                       title="A settings value that names an algorithm, but no crypto call is proven to read it: listed at Low, not counted in the risk score"
+                                       data-testid="cbom-finding-unconfirmed">
+                                  unconfirmed (configuration only)
+                                </Badge>
+                              )}
+                              {/* phones: the impact and risk score under the name, never only behind a sideways scroll
+                                  (staging QA N6) */}
+                              <span className="mt-1 flex items-center gap-1.5 sm:hidden" data-testid="cbom-finding-mobile-meta">
+                                <Badge variant="outline" className={`whitespace-nowrap ${getImpactBadgeClass(finding.impact)}`}>{finding.impact}</Badge>
+                                <span className={`inline-flex items-center justify-center min-w-9 px-1.5 py-0.5 rounded-md text-xs font-semibold tabular-nums ${getRiskScoreBoxClass(finding.risk_score)}`}
+                                      title="Risk score">{finding.risk_score?.toFixed(1) ?? "—"}</span>
+                              </span>
                             </TableCell>
                             )}
                             {showCol("type") && (
@@ -1170,8 +1203,8 @@ export default function CbomResults({
                             </TableCell>
                             )}
                             {showCol("impact") && (
-                            <TableCell data-col="impact">
-                              <Badge variant="outline" className={getImpactBadgeClass(finding.impact)}>{finding.impact}</Badge>
+                            <TableCell data-col="impact" className={metaOnPhones}>
+                              <Badge variant="outline" className={`whitespace-nowrap ${getImpactBadgeClass(finding.impact)}`}>{finding.impact}</Badge>
                             </TableCell>
                             )}
                             {showCol("strength") && (
@@ -1183,7 +1216,7 @@ export default function CbomResults({
                             )}
                             {showCol("quantum") && (
                             <TableCell data-col="quantum">
-                              <QuantumBadge quantumSafe={finding.quantum_safe} strength={finding.crypto_strength} />
+                              <QuantumBadge quantumSafe={finding.quantum_safe} strength={finding.crypto_strength} quantumVulnerable={finding.quantum_vulnerable} />
                             </TableCell>
                             )}
                             {showCol("fixclass") && (
@@ -1192,7 +1225,7 @@ export default function CbomResults({
                             </TableCell>
                             )}
                             {showCol("risk") && (
-                            <TableCell data-col="risk" className="text-center">
+                            <TableCell data-col="risk" className={`text-center ${metaOnPhones}`}>
                               <span
                                 className={`inline-flex items-center justify-center min-w-9 px-2 py-1 rounded-md text-xs font-semibold tabular-nums ${getRiskScoreBoxClass(finding.risk_score)}`}
                                 title="Risk score"
@@ -1251,6 +1284,7 @@ export default function CbomResults({
                     )}
                   </TableBody>
                 </Table>
+                <ScrollBar orientation="horizontal" />
               </ScrollArea>
             </CardContent>
           </Card>
@@ -1264,34 +1298,36 @@ export default function CbomResults({
               </CardHeader>
               <CardContent>
                 <ScrollArea className="h-[320px] w-full rounded-md border border-zinc-200 dark:border-zinc-800">
-                  <Table className="min-w-max">
+                  <Table className="w-full sm:min-w-max">
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="min-w-[160px]">Algorithm <InfoTip id="cbom.res.col.algorithm" /></TableHead>
-                        <TableHead className="min-w-[120px]">Type <InfoTip id="cbom.res.col.type" /></TableHead>
-                        <TableHead className="min-w-[110px]">Strength <InfoTip id="cbom.res.col.strength" /></TableHead>
-                        <TableHead className="min-w-[110px]">Quantum safe <InfoTip id="cbom.res.col.quantum_safe" /></TableHead>
-                        <TableHead className="min-w-[120px]">Impact <InfoTip id="results.table.impact" /></TableHead>
+                        {/* phones: Algorithm, Quantum safe and Impact fit the card; Type and Strength from sm up (staging QA N6) */}
+                        <TableHead className="whitespace-normal sm:whitespace-nowrap sm:min-w-[160px]">Algorithm <InfoTip id="cbom.res.col.algorithm" /></TableHead>
+                        <TableHead className="hidden sm:table-cell min-w-[120px]">Type <InfoTip id="cbom.res.col.type" /></TableHead>
+                        <TableHead className="hidden sm:table-cell min-w-[110px]">Strength <InfoTip id="cbom.res.col.strength" /></TableHead>
+                        <TableHead className="whitespace-normal sm:whitespace-nowrap sm:min-w-[110px]">Quantum safe <InfoTip id="cbom.res.col.quantum_safe" /></TableHead>
+                        <TableHead className="whitespace-normal sm:whitespace-nowrap sm:min-w-[120px]">Impact <InfoTip id="results.table.impact" /></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {dashboard.top_risks.map((risk, i) => (
                         <TableRow key={i} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
-                          <TableCell className="font-medium text-zinc-900 dark:text-zinc-100">{risk.algorithm_name}</TableCell>
-                          <TableCell className="text-sm text-zinc-600 dark:text-zinc-400">{risk.algorithm_type?.replace(/_/g, " ")}</TableCell>
-                          <TableCell>
+                          <TableCell className="font-medium text-zinc-900 dark:text-zinc-100 break-all sm:break-normal">{risk.algorithm_name}</TableCell>
+                          <TableCell className="hidden sm:table-cell text-sm text-zinc-600 dark:text-zinc-400">{risk.algorithm_type?.replace(/_/g, " ")}</TableCell>
+                          <TableCell className="hidden sm:table-cell">
                             <Badge variant="outline" className={getStrengthBadgeClass(risk.crypto_strength)}>
                               {risk.crypto_strength}
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            <QuantumBadge quantumSafe={risk.quantum_safe} strength={risk.crypto_strength} yesNo />
+                            <QuantumBadge quantumSafe={risk.quantum_safe} strength={risk.crypto_strength} quantumVulnerable={risk.quantum_vulnerable} yesNo />
                           </TableCell>
                           <TableCell className="text-sm text-zinc-600 dark:text-zinc-400 max-w-[200px] truncate" title={risk.impact}>{risk.impact}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
+                  <ScrollBar orientation="horizontal" />
                 </ScrollArea>
               </CardContent>
             </Card>
@@ -1338,7 +1374,7 @@ export default function CbomResults({
                     </div>
                     <div>
                       <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Quantum safe</div>
-                      <QuantumBadge quantumSafe={selectedFinding.quantum_safe} strength={selectedFinding.crypto_strength} yesNo />
+                      <QuantumBadge quantumSafe={selectedFinding.quantum_safe} strength={selectedFinding.crypto_strength} quantumVulnerable={selectedFinding.quantum_vulnerable} yesNo />
                     </div>
                     <div>
                       <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Impact</div>

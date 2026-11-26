@@ -21,6 +21,7 @@ itself satisfy FDA / EU AI Act / HIPAA obligations.
 from __future__ import annotations
 
 import contextlib
+import json
 import re
 import uuid
 from typing import Any, NamedTuple
@@ -807,7 +808,9 @@ def _emit_crypto_asset(
             _add(
                 crypto,
                 "oid",
-                algorithm_oid(
+                # the graph's crypto:oid (cbom.normalize.stamp_algorithm_oids) when the
+                # pipeline stamped it
+                props.get("crypto:oid") or algorithm_oid(
                     comp.name,
                     props.get("crypto:primitive"),
                     key_size,
@@ -1103,8 +1106,26 @@ def emit_cyclonedx(result: ScanResult) -> dict[str, Any]:
     _add(metadata["component"], "version", result.subject.version)
 
     bom_props = dict(result.properties)
+    # configuration mentions (an algorithm named in a label, a comparison, an Enum
+    # member ...; not counted): the count, and one ``crypto:configMention`` property
+    # per listed mention (CycloneDX properties may repeat a name)
+    evidence = bom_props.pop("crypto:configEvidence", None)
+    mentions: list[dict[str, Any]] = []
+    if evidence:
+        with contextlib.suppress(ValueError, TypeError):
+            mentions = [m for m in json.loads(evidence) if isinstance(m, dict)]
     bom_props.setdefault("regulatory:disclaimer", disclaimer_of(result))
-    metadata["properties"] = _properties_list(bom_props)
+    metadata["properties"] = _properties_list(bom_props) + [
+        # file:line and the algorithm token only: no source text in a signed,
+        # distributed BOM (review 6063599094); the API and the PDF keep the text
+        {
+            "name": "crypto:configMention",
+            "value": json.dumps(
+                {k: m.get(k) for k in ("location", "line", "algorithm")}, sort_keys=True
+            ),
+        }
+        for m in mentions
+    ]
 
     # C9 crypto dependency graph: index the algorithm assets once so certificate/
     # protocol/material assets resolve their *Ref / cryptoRefArray links. Only a

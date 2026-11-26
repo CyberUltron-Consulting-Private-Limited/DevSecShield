@@ -24,10 +24,17 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable, Iterator
 from fnmatch import fnmatchcase
 from pathlib import Path
+from typing import Any
 
-from aibom.cbom.detect import _strip_line_comment, detect_crypto, strip_noncode
+from aibom.cbom.detect import (
+    _strip_line_comment,
+    crypto_read_sites,
+    detect_crypto,
+    strip_noncode,
+)
 from aibom.cbom.files import FileWalk, file_walk
 from aibom.cbom.library_versions import resolve_library_versions
 from aibom.cbom.project import ProjectIndex, project_index
@@ -118,11 +125,18 @@ def _display_name(
 class _Asset:
     __slots__ = ("key", "name", "key_size", "mode", "curve", "padding",
                  "operation", "parameter", "info", "location", "library",
-                 "lines", "own_lines", "derived_from", "inner_digest", "purposes", "inferred")
+                 "lines", "own_lines", "derived_from", "inner_digest", "purposes",
+                 "inferred", "config_binding", "config_read_at", "low_confidence")
 
     def __init__(self, key, name, key_size, mode, curve, padding, operation,
                  parameter, info, location, library=None):
         self.inferred: bool | None = None  # every sighting inferred from configuration (see Detection.inferred)
+        # a settings value (Detection.config_binding): its name, the crypto call
+        # that reads it, and whether every sighting is an unproven setting (low
+        # confidence)
+        self.config_binding: str | None = None
+        self.config_read_at: str | None = None
+        self.low_confidence: bool | None = None
         self.lines: list[int] = []
         self.own_lines = 0  # lines where the asset is used on its own (not only as a composite's parameter)
         self.derived_from: str | None = None  # display name of the composite (same file) it is a parameter of
@@ -152,8 +166,297 @@ class _Asset:
         self.library = self.library or library
 
 
+#: the run property that carries configuration evidence to ``normalize`` (the
+#: CycloneDX metadata states only its count)
+CONFIG_EVIDENCE_PROP = "crypto:configEvidence"
+CONFIG_EVIDENCE_MAX = 200
+
+
+_READ_LANGS = frozenset({"python", "java", "javascript"})
+
+
+_IMPORT_LINE = re.compile(r"^\s*(?:import\b|from\b|.*\brequire\s*\(|.*\bimport\s*\()")
+_NOT_OWNERS = frozenset({"exports", "module", "default", "self", "this", "cls", "it"})
+# an import that renames: ``from .base import Cfg as AppCfg``, ``import { Cfg as C }``,
+# ``const { Cfg: C } = require('./cfg')``
+_IMPORT_AS = re.compile(r"\b([A-Za-z_]\w*)\s+as\s+([A-Za-z_]\w*)")
+_REQUIRE_RENAME = re.compile(r"\b([A-Za-z_]\w*)\s*:\s*([A-Za-z_]\w*)\s*[,}]")
+
+
+# a typed declaration: Java ``SecProps props;`` / ``private SecProps props =``, TS
+# ``props: SecProps``: a read through ``props`` reads a ``SecProps``
+_JAVA_TYPED = re.compile(r"\b([A-Z]\w*)(?:<[^<>]*>)?\s+([a-z_]\w*)\s*[;=,)]")
+_TS_TYPED = re.compile(r"\b([a-z_]\w*)\s*:\s*([A-Z]\w*)\b")
+
+
+class _Reader:
+    __slots__ = ("path", "imports", "words", "source")
+
+    def __init__(
+        self, path: str, imports: str, words: frozenset[str], source: Path
+    ) -> None:
+        self.path = path
+        self.imports = imports  # the file's import / require lines
+        self.words = words  # every identifier the file names
+        self.source = source
+
+
+class _Proof:
+    """``prove(binding, owners)`` for one settings file, with ``uses(name)``: where
+    another file that imports it uses a registry of that name."""
+
+    def __init__(
+        self,
+        prove: Callable[[str, tuple[str, ...]], str | None],
+        uses: Callable[[str], str | None],
+    ) -> None:
+        self._prove = prove
+        self.uses = uses
+
+    def __call__(self, binding: str, owners: tuple[str, ...]) -> str | None:
+        return self._prove(binding, owners)
+
+
+class ProjectReads:
+    """The names crypto calls read in each file of the project, per language, and
+    what links a reader to a settings file (review 6061095673 / 6063599094).
+
+    A read in another file proves a setting only through a real link: the reader
+    imports the declaring module (``from config import CONFIG``,
+    ``require('./config')``, ``import { cryptoConfig } from '../ui/options'``), or
+    reads it through, or names, one of the setting's owner symbols (the dict,
+    object, record or class: ``cryptoConfig.digest``, ``cfg: CryptoCfg``). A bare
+    leaf-name match (any ``x.digest``) proves nothing."""
+
+    def __init__(self, walk: FileWalk) -> None:
+        self.walk = walk
+        # lang -> name -> [(reader, line, qualifier, typed)]: ``typed`` when the
+        # qualifier is the declared type of the variable read through
+        self.sites: dict[
+            str, dict[str, list[tuple[_Reader, int, str | None, bool, bool]]]
+        ] = {}
+        # lang -> every file (its imports and identifiers): registry uses
+        self.readers: dict[str, list[_Reader]] = {}
+        # lang -> alias -> the names it renames (a package re-export or an import)
+        self.aliases: dict[str, dict[str, set[str]]] = {}
+        for path in _iter_source_files(walk):
+            lang = source_language(path)
+            if lang not in _READ_LANGS:
+                continue
+            text = walk.read_text(path)
+            if text is None:
+                continue
+            lines = [
+                _strip_line_comment(ln, lang).strip()
+                for ln in strip_noncode(text).split("\n")
+            ]
+            imports = "\n".join(ln for ln in lines if _IMPORT_LINE.match(ln))
+            renames = self.aliases.setdefault(lang or "", {})
+            local: dict[str, str] = {}  # this file's renamed names -> the originals
+            for ln in imports.split("\n"):
+                found = _IMPORT_AS.findall(ln)
+                if "require" in ln:
+                    found += _REQUIRE_RENAME.findall(ln)
+                for original, alias in found:
+                    if original != alias:
+                        renames.setdefault(alias, set()).add(original)
+                        local[alias.lower()] = original.lower()
+            words = frozenset(re.findall(r"[A-Za-z_]\w*", text))
+            reader = _Reader(walk.rel(path), imports, words, path)
+            self.readers.setdefault(lang or "", []).append(reader)
+            sites = crypto_read_sites(lines)
+            if not sites:
+                continue
+            typed = {
+                var: cls
+                for cls, var in _JAVA_TYPED.findall(text)
+                if cls not in ("String", "Object", "Integer", "Boolean")
+            }
+            typed.update(dict(_TS_TYPED.findall(text)))
+            by_name = self.sites.setdefault(lang or "", {})
+            for name, line, qualifier in sites:
+                # a bean getter (``props.getX()``) proves only through a known owner
+                # type, never by a name match (re-review 6066887930)
+                getter = bool(qualifier and qualifier.endswith("()"))
+                owner = qualifier[:-2] if qualifier and getter else qualifier
+                kind = typed.get(owner or "")
+                entry = (reader, line, kind or owner, kind is not None, getter)
+                by_name.setdefault(name, []).append(entry)
+                if qualifier is None and name in local:
+                    # ``const { digest: alg } = require('./config')`` then
+                    # ``createHash(alg)`` reads ``digest`` (re-review 6066152368)
+                    by_name.setdefault(local[name], []).append(entry)
+
+    def for_file(self, lang: str | None, rel: str) -> _Proof:
+        """``prove(binding, owners) -> "path:line" | None`` for ``rel``'s settings,
+        with ``uses(registry name)``."""
+        by_name = self.sites.get(lang or "", {})
+        renames = self.aliases.get(lang or "", {})
+        stem = Path(rel).stem
+        imported = (
+            re.compile(rf"(?<![\w-]){re.escape(stem)}(?![\w-])") if stem else None
+        )
+
+        def prove(binding: str, owners: tuple[str, ...]) -> str | None:
+            real = [o for o in owners if o and o not in _NOT_OWNERS]
+            for reader, line, qualifier, typed, getter in by_name.get(binding, ()):
+                if reader.path == rel:
+                    continue
+                # a renamed import reads the original (``AppCfg.HASH`` reads Cfg's)
+                names = {qualifier, *renames.get(qualifier or "", ())} - {None}
+                if typed or getter:
+                    # read through a variable of a declared type: that type only
+                    # (a ``props`` of another class proves nothing; 6066152368); a
+                    # getter on a variable of unknown type proves nothing either
+                    if any(q in real for q in names):
+                        return f"{reader.path}:{line}"
+                    continue
+                linked = (
+                    (imported is not None and bool(imported.search(reader.imports)))
+                    or any(q in real for q in names)
+                    or any(o in reader.words for o in real)
+                )
+                if linked:
+                    return f"{reader.path}:{line}"
+            return None
+
+        def uses(name: str) -> str | None:
+            """A use of the registry ``name`` in a file that imports ``rel``'s
+            module and names it (``from lib.reg import HASHES``)."""
+            for reader in self.readers.get(lang or "", ()):
+                if reader.path == rel or name not in reader.words:
+                    continue
+                if imported is None or not imported.search(reader.imports):
+                    continue
+                text = self.walk.read_text(reader.source) or ""
+                # ``HASHERS[...]`` or through the module (``reg.HASHERS.get(...)``)
+                word = re.compile(rf"(?<!\w){re.escape(name)}(?!\w)")
+                for n, ln in enumerate(text.split("\n"), start=1):
+                    if word.search(ln) and not _IMPORT_LINE.match(ln.strip()):
+                        return f"{reader.path}:{n}"
+            return None
+
+        return _Proof(prove, uses)
+
+
+# node-config (``config/default.json``, ``config/production.yaml``): settings files a
+# program reads with ``config.get('security.hashAlgorithm')`` (re-review 6066152368)
+_NODE_CONFIG = re.compile(r"(?:^|/)config/[^/]+\.(json|ya?ml)$", re.I)
+_JSON_OPEN = re.compile(r'^\s*"([^"]+)"\s*:\s*\{\s*$')
+_JSON_LEAF = re.compile(r'^\s*"([^"]+)"\s*:\s*"((?:[^"\\]|\\.){1,200})"\s*,?\s*$')
+_YAML_KEY = re.compile(
+    r"""^(\s*)("[^"]+"|'[^']+'|[A-Za-z_][\w.-]*)\s*:(?:\s+(.*?))?\s*$"""
+)
+_PLAIN_KEY = re.compile(r"[A-Za-z_$][\w$]*")
+
+
+def _js_key(key: str) -> str:
+    return key if _PLAIN_KEY.fullmatch(key) else json.dumps(key)
+
+
+def _config_line(path: list[str], leaf: str, value: str) -> str:
+    """One JS statement that puts ``leaf: value`` in an object owned by its parent
+    key, as the detector judges a JS settings module."""
+    parent = next((k for k in reversed(path) if _PLAIN_KEY.fullmatch(k)), None)
+    head = f"__config.{parent}" if parent else "module.exports"
+    return f"{head} = {{ {_js_key(leaf)}: {json.dumps(value)} }};"
+
+
+def node_config_js(text: str, ext: str) -> str:
+    """A node-config JSON / YAML file as JS, line for line: each string leaf on its
+    own line as ``__config.<parent> = { <leaf>: "<value>" };`` (other lines blank),
+    so findings keep the file's line numbers."""
+    out = [""] * len(text.split("\n"))
+    path: list[str] = []
+    if ext == "json":
+        structured = _json_config_lines(text, len(out))
+        if structured is not None:
+            return "\n".join(structured)
+        for i, line in enumerate(text.split("\n")):
+            opened, leaf = _JSON_OPEN.match(line), _JSON_LEAF.match(line)
+            if opened:
+                path.append(opened.group(1))
+            elif leaf:
+                out[i] = _config_line(path, leaf.group(1), leaf.group(2))
+            closes = _STRING_OR_BRACE.sub(
+                lambda m: m.group(0) if m.group(0) == "}" else "", line
+            ).count("}")
+            for _ in range(min(closes, len(path))):
+                path.pop()
+        return "\n".join(out)
+    stack: list[tuple[int, str]] = []
+    for i, line in enumerate(text.split("\n")):
+        m = _YAML_KEY.match(line)
+        if not m or line.lstrip().startswith(("#", "-")):
+            continue
+        indent, key = len(m.group(1)), m.group(2).strip("\"'")
+        while stack and stack[-1][0] >= indent:
+            stack.pop()
+        value = re.sub(r"\s+#.*$", "", m.group(3) or "").strip()
+        if not value:
+            stack.append((indent, key))
+            continue
+        if value[:1] in "\"'" and value[-1:] == value[:1] and len(value) > 1:
+            value = value[1:-1]
+        if value and value[:1] not in "[{|>&*!":
+            out[i] = _config_line([k for _n, k in stack], key, value)
+    return "\n".join(out)
+
+
+def _json_config_lines(text: str, n_lines: int) -> list[str] | None:
+    """A JSON config parsed structurally (nested, inline or minified objects): each
+    string leaf as a JS statement on the line it sits on, several on one line when
+    the file puts them there. None when the file is not JSON."""
+    try:
+        tree = json.loads(text)
+    except ValueError:
+        return None
+    if not isinstance(tree, dict):
+        return None
+    out: list[list[str]] = [[] for _ in range(n_lines)]
+    cursor = 0
+
+    def visit(node: dict[str, Any], path: list[str]) -> None:
+        nonlocal cursor
+        for key, value in node.items():
+            key_at = re.compile(re.escape(json.dumps(key)) + r"\s*:")
+            m = key_at.search(text, cursor)
+            if m is None:
+                continue
+            cursor = m.end()
+            if isinstance(value, dict):
+                visit(value, [*path, key])
+            elif isinstance(value, str):
+                line = text.count("\n", 0, m.start())
+                out[line].append(_config_line(path, key, value))
+
+    visit(tree, [])
+    return [" ".join(parts) for parts in out]
+
+
+_STRING_OR_BRACE = re.compile(r'"(?:[^"\\]|\\.)*"|\}')
+
+
+def _scan_inputs(walk: FileWalk) -> Iterator[tuple[Path, str | None, str, str, bool]]:
+    """``(path, language, rel, text, synthetic)``: the source files, then the
+    node-config JSON / YAML files read as JS settings modules."""
+    for path in _iter_source_files(walk):
+        text = walk.read_text(path)
+        if text is not None:
+            yield path, source_language(path), walk.rel(path), text, False
+    for path in walk.files(lambda p: bool(_NODE_CONFIG.search(p.as_posix()))):
+        rel = walk.rel(path)
+        text = walk.read_text(path)
+        if text is None or not _NODE_CONFIG.search(rel):
+            continue
+        ext = path.suffix.lower().lstrip(".")
+        js = node_config_js(text, "json" if ext == "json" else "yaml")
+        yield path, "javascript", rel, js, True
+
+
 def _detect_assets(
-    root: Path, walk: FileWalk | None = None, project: ProjectIndex | None = None
+    root: Path, walk: FileWalk | None = None, project: ProjectIndex | None = None,
+    config_evidence: list[dict[str, Any]] | None = None,
 ) -> list[_Asset]:
     """Detect concrete algorithm usages (one per distinct name+file).
 
@@ -164,17 +467,24 @@ def _detect_assets(
     """
     walk = walk or FileWalk(root)
     seen: dict[tuple[str, str], _Asset] = {}
-    for path in _iter_source_files(walk):
-        lang = source_language(path)
-        rel = walk.rel(path)
-        text = walk.read_text(path)
-        if text is None:
-            continue
-        external = project.scope_for(rel, lang, text) if project is not None else None
+    reads = ProjectReads(walk)
+    for _path, lang, rel, text, synthetic in _scan_inputs(walk):
+        external = (
+            project.scope_for(rel, lang, text)
+            if project is not None and not synthetic
+            else None
+        )
         code_lines: list[str] | None = None
         at_line: dict[tuple[int, str], str] = {}  # (line, key) -> display name, to find a composite
         inner: list[tuple[_Asset, int, str, str | None]] = []
-        for det in detect_crypto(text, lang, external):
+        found: list[dict[str, Any]] = []
+        same_lang = reads.for_file(lang, rel)
+        dets = detect_crypto(
+            text, lang, external, config_evidence=found, project_reads=same_lang
+        )
+        if config_evidence is not None:
+            config_evidence.extend({"location": rel, **e} for e in found)
+        for det in dets:
             refined = _refine_key(det.key, det.key_size)
             info = algo_info(refined) or {}
             resolved_ks = det.key_size or info.get("key_size")
@@ -194,6 +504,14 @@ def _detect_assets(
             asset = seen[ident]
             asset.lines.append(det.line_no)
             asset.inferred = det.inferred if asset.inferred is None else (asset.inferred and det.inferred)
+            low = det.low_confidence
+            asset.low_confidence = (
+                low if asset.low_confidence is None else asset.low_confidence and low
+            )
+            asset.config_binding = asset.config_binding or det.config_binding
+            if det.config_read_at and not asset.config_read_at:
+                read = det.config_read_at
+                asset.config_read_at = f"{rel}:{read}" if read.isdigit() else read
             at_line.setdefault((det.line_no, det.key), name)
             if det.inner_of:
                 inner.append((asset, det.line_no, det.inner_of, det.inner_role))
@@ -451,6 +769,17 @@ def _context_props(asset: _Asset) -> dict[str, str]:
     if asset.purposes and all(asset.purposes):
         props["crypto:nonSecurityUse"] = "true"
         props["crypto:purpose"] = sorted({p for p in asset.purposes if p})[0]
+    if asset.config_binding:
+        # a settings value (PR #500 review 6061095673): its name and its reader
+        props["crypto:configBinding"] = asset.config_binding
+        if asset.config_read_at:
+            props["crypto:configReadAt"] = asset.config_read_at
+    if asset.low_confidence:
+        props["crypto:confidence"] = "low"
+        props["crypto:resolution"] = (
+            "a settings value no crypto call in the project is proven to read: "
+            "kept as an asset so nothing is lost, at low confidence"
+        )
     if asset.inferred:
         props["crypto:confidence"] = "medium"
         props["crypto:resolution"] = ("inferred (needs review): a field default or the module's one configured "
@@ -488,7 +817,17 @@ class CryptoAlgorithmScanner(Scanner):
                 )
             )
 
-        for asset in _detect_assets(ctx.root, walk, project_index(ctx)):
+        config_evidence: list[dict[str, Any]] = []
+        assets = _detect_assets(ctx.root, walk, project_index(ctx), config_evidence)
+        if config_evidence:
+            # low-confidence configuration evidence (PR #500 takeover): algorithm names
+            # in settings no crypto call
+            # reads; carried to the run object (normalize), never an asset or a total
+            ctx.properties[CONFIG_EVIDENCE_PROP] = json.dumps(
+                config_evidence[:CONFIG_EVIDENCE_MAX], sort_keys=True
+            )
+            ctx.properties["crypto:configEvidenceCount"] = str(len(config_evidence))
+        for asset in assets:
             # The AST scanner (order 8) owns Python algorithm detection with
             # argument binding; defer to any ref it already emitted so the regex
             # pass only adds usages the AST could not see (e.g. an algorithm named

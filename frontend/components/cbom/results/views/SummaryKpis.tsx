@@ -16,8 +16,8 @@ import { pqcGaugeCopy } from "../readinessExplain";
 import type { RunDashboardModel, SectionView } from "../model";
 import { SectionNote } from "../RunSections";
 
-export function KpiTile({ label, value, icon: Icon, box, infoId, testId }: {
-  label: string; value: ReactNode; icon: LucideIcon; box: string; infoId: InfoTipId; testId: string;
+export function KpiTile({ label, value, hint, icon: Icon, box, infoId, testId }: {
+  label: string; value: ReactNode; hint?: string | null; icon: LucideIcon; box: string; infoId: InfoTipId; testId: string;
 }) {
   return (
     <div className="flex items-center gap-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900 min-w-0" data-testid={testId}>
@@ -30,17 +30,18 @@ export function KpiTile({ label, value, icon: Icon, box, infoId, testId }: {
           <InfoTip id={infoId} />
         </p>
         <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums truncate">{value}</p>
+        {hint && <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">{hint}</p>}
       </div>
     </div>
   );
 }
 
 /** The seven tiles, with CbomDashboardCharts' labels, tips and values ("—" until the run's dashboard is there). */
-export function kpiTiles(model: RunDashboardModel): { label: string; value: string; icon: LucideIcon; box: string; tip: InfoTipId; key: string }[] {
+export function kpiTiles(model: RunDashboardModel): { label: string; value: string; hint: string | null; icon: LucideIcon; box: string; tip: InfoTipId; key: string }[] {
   const c = model.dashboard?.card_data;
   return KPI_TILES.map((t) => {
     const v = c ? t.value(c) : null;
-    return { key: t.key, label: t.label, icon: t.icon, box: t.box, tip: t.tip,
+    return { key: t.key, label: t.label, icon: t.icon, box: t.box, tip: t.tip, hint: c && t.hint ? t.hint(c) : null,
              value: v == null ? "—" : typeof v === "number" ? v.toLocaleString() : v };
   });
 }
@@ -88,7 +89,7 @@ export function SummaryKpis({ posture, model, view, meta }: {
         <ReadinessGauge posture={posture} />
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 content-start sm:[&>*:last-child:nth-child(odd)]:col-span-2" data-testid="run-kpi-tiles">
           {kpiTiles(model).map((t) => (
-            <KpiTile key={t.key} label={t.label} value={t.value} icon={t.icon} box={t.box} infoId={t.tip} testId={`run-kpi-${t.key}`} />
+            <KpiTile key={t.key} label={t.label} value={t.value} hint={t.hint} icon={t.icon} box={t.box} infoId={t.tip} testId={`run-kpi-${t.key}`} />
           ))}
         </div>
       </div>

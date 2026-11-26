@@ -16,8 +16,10 @@ from __future__ import annotations
 
 from importlib import resources
 from pathlib import Path
+from typing import Any
 
 from aibom.model.result import ScanResult
+from aibom.score.posture import posture_grade, posture_label, posture_score
 from aibom.score.scorer import score_result
 
 
@@ -51,8 +53,144 @@ def score_crypto(result: ScanResult) -> ScanResult:
     ``component_severity`` / ``flag_count``.
     """
     # the CBOM keeps its own flag-weight scale: the AI BOM posture score (#487) does
-    # not change CBOM scores
-    return score_result(result, str(_CBOM_WEIGHTS_PATH), posture=False)
+    # not change CBOM scores. Findings in test, fixture or example code are listed but
+    # weigh nothing (PR #500 review 6061095673): their components' flags are left out
+    # of every sum, and their stacked severity is low.
+    from aibom.cbom.code_context import is_unscored
+
+    # test code and unconfirmed settings (review 6063599094) are listed, never scored
+    test_refs = {
+        c.bom_ref for c in result.components if is_unscored(c.properties or {})
+    }
+    if not test_refs:
+        return score_result(result, str(_CBOM_WEIGHTS_PATH), posture=False)
+    flags = result.flags
+    result.flags = [f for f in flags if f.target not in test_refs]
+    try:
+        score_result(result, str(_CBOM_WEIGHTS_PATH), posture=False)
+    finally:
+        result.flags = flags
+    result.scores["flag_count"] = len(flags)
+    severity = result.scores.setdefault("component_severity", {})
+    for ref in test_refs & {f.target for f in flags}:
+        severity[ref] = "low"
+    return result
 
 
-__all__ = ["score_crypto", "_CBOM_WEIGHTS_PATH"]
+_SEVERITIES = ("critical", "high", "medium", "low")
+
+
+def finding_severity_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    """Findings by severity over the run-object's result rows, by the rule every D3
+    surface counts with (the
+    backend's ``cbom_rows.is_finding`` / ``cbom_metrics.finding_severity``): a row with
+    a finding code, or one
+    still marked weak or quantum-vulnerable, is a finding; its impact, Low when it has
+    none it recognises."""
+    counts = dict.fromkeys(_SEVERITIES, 0)
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        unscored = row.get("code_context") == "test" or (
+            row.get("config_status") == "unconfirmed"
+        )
+        if unscored:
+            continue  # listed, labelled "test code" / "unconfirmed", never scored
+        if not _is_finding(row):
+            continue  # clean inventory
+        impact = str(row.get("impact") or "").strip().lower()
+        counts[impact if impact in counts else "low"] += 1
+    return counts
+
+
+def posture_scores(
+    scores: dict[str, Any], rows: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """The D3 risk score (staging QA Q2-01, Rule P): the engine's one posture function
+    (``score/posture.py``, with its
+    worst-severity cap) over the scan's findings by severity. ``risk_normalized`` /
+    ``risk_band`` / ``risk_grade`` /
+    ``risk_label`` are what the PDF headline, the PDF summary page, the results page and
+    the API show; the flag-weight
+    sum stays in ``risk_total`` and ``by_flag`` / ``by_component`` /
+    ``component_severity`` are unchanged."""
+    counts = finding_severity_counts(rows)
+    guessed = unverified_severity_counts(rows)
+    headline, status = counts, "scored"
+    n = sum(guessed.values())
+    if n and not sum(counts.values()):
+        # only unconfirmed weak crypto: its worst case, marked unverified, never a
+        # clean A (#505's ``risk_posture_status``; re-review 6066152368)
+        headline, status = guessed, "unverified"
+    score = posture_score(**headline)
+    grade, band = posture_grade(score)
+    return {
+        **scores,
+        "risk_normalized": float(score),
+        "risk_band": band,
+        "risk_grade": grade,
+        "risk_label": posture_label(band),
+        "severity_counts": counts,
+        "risk_scale": "posture",
+        "risk_posture_status": status,
+        "risk_unverified": _unverified(counts, guessed) if n else None,
+    }
+
+
+def _is_finding(row: dict[str, Any]) -> bool:
+    """A row with a finding code, or one still marked weak or quantum-vulnerable."""
+    codes = [c for c in row.get("finding_codes") or [] if isinstance(c, str) and c]
+    return not (
+        "finding_codes" in row
+        and not codes
+        and not (row.get("weak") is True or row.get("quantum_vulnerable") is True)
+    )
+
+
+def unverified_severity_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    """Unconfirmed settings (outside test code) by the severity each would have if a
+    crypto call were proven to read it (``unverified_severity``; the row's own impact
+    for rows stored without it)."""
+    counts = dict.fromkeys(_SEVERITIES, 0)
+    for row in rows:
+        if not isinstance(row, dict) or row.get("config_status") != "unconfirmed":
+            continue
+        if row.get("code_context") == "test" or not _is_finding(row):
+            continue  # test code stays unscored; clean inventory is no finding
+        sev = str(row.get("unverified_severity") or row.get("impact") or "").lower()
+        counts[sev if sev in counts else "low"] += 1
+    return counts
+
+
+def _posture_of(counts: dict[str, int]) -> dict[str, Any]:
+    score = posture_score(**counts)
+    grade, band = posture_grade(score)
+    return {"score": score, "grade": grade, "label": posture_label(band), "band": band}
+
+
+def _unverified(sure: dict[str, int], guessed: dict[str, int]) -> dict[str, Any]:
+    """#505's ``risk_unverified``: how many, the worst, the worst case (confirmed and
+    unconfirmed together, which the lists' risk filter and sort read) and the note."""
+    n = sum(guessed.values())
+    worst = next((sev for sev in _SEVERITIES if guessed[sev]), None)
+    note = f"unverified: {n} unconfirmed setting{'s' if n != 1 else ''}"
+    if worst:
+        note += f" (worst: {worst.capitalize()})"
+    both = {k: sure[k] + guessed[k] for k in _SEVERITIES}
+    # ``kind``: what is unverified (the contract #505's roll-up reads)
+    return {
+        "kind": "unconfirmed_setting",
+        "count": n,
+        "worst": worst,
+        "worst_case": _posture_of(both),
+        "note": note,
+    }
+
+
+__all__ = [
+    "finding_severity_counts",
+    "unverified_severity_counts",
+    "posture_scores",
+    "score_crypto",
+    "_CBOM_WEIGHTS_PATH",
+]

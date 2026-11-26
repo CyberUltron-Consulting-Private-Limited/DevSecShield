@@ -403,6 +403,7 @@ def bom_dict_from_scan_data(
     scan_data: dict[str, Any],
     *,
     subject_name: str | None = None,
+    mosca: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     if not isinstance(scan_data, dict):
         scan_data = {}
@@ -425,10 +426,13 @@ def bom_dict_from_scan_data(
             subject_name=subject_name,
         )
     if scan_type == "cbom":
-        # library components get a purl (SBOM link); every export and its signature are built here, so they agree
+        # library components get a purl (SBOM link); every export and its signature are built here, so they agree.
+        # The served CBOM names the repository, carries each asset's grade / PQC class / fix class and lists the
+        # vulnerabilities its VEX states (code_bom, staging QA A-13b/c/d)
+        from backend.utilities.cbom_sources.code_bom import served_code_cbom
         from backend.utilities.cbom_sources.sbom_link import with_library_purls
 
-        return with_library_purls(bom)
+        return served_code_cbom(with_library_purls(bom), findings, subject_name=subject_name, mosca=mosca)
     if scan_type == "ai_bom":
         return overlay_aibom_compliance(bom, compliance if isinstance(compliance, dict) else None)
     return bom

@@ -94,6 +94,18 @@ _STATEFUL_HASH_LEVEL = 2
 
 _HASH_BITS_RE = re.compile(r"(\d{3})\b")
 
+# Algorithms broken today, whatever the computer (NIST SP 800-131A Rev 2: MD2/MD4/MD5
+# and SHA-1 digests, DES, TDEA, RC2, RC4). CycloneDX 1.6 ``nistQuantumSecurityLevel``:
+# "A value of 0 indicates that none of the categories are met". Anchored at the start
+# of the display name, so HMAC-SHA1 / HMAC-MD5 (MACs; SP 800-131A still accepts
+# HMAC-SHA-1) and PBKDF2-HMAC-SHA1 are not matched.
+_BROKEN_TODAY = re.compile(
+    r"^(?:MD[245]|SHA-?1|3DES|TDEA|TRIPLE-?DES|DES(?:-?EDE3?)?|RC[24]|ARC(?:FOUR|4))"
+    r"(?![A-Z0-9])",
+    re.IGNORECASE,
+)
+_BROKEN_LEVEL = 0
+
 
 def _hash_output_bits(name: str) -> int | None:
     """Digest output length (bits) parsed from a normalized hash display name."""
@@ -125,7 +137,9 @@ def nist_quantum_level(component: AIComponent) -> int | None:
 
     Pure + total over every ``algorithm`` crypto-asset (not just the vulnerable
     ones ``pqc_grade`` handles): a quantum-vulnerable public-key algorithm is 0;
-    quantum-safe primitives are graded by their NIST category anchor. ``None``
+    an algorithm broken today (MD5, SHA-1, DES, RC4, a key under 128 bits) meets no
+    category either and is 0; quantum-safe primitives are graded by their NIST category
+    anchor. ``None``
     means "not gradeable from the inventory" (unknown key size / PQC set, or a
     primitive with no category anchor such as a bare KDF/MAC) — the caller then
     omits the property rather than asserting a level it cannot prove.
@@ -141,6 +155,16 @@ def nist_quantum_level(component: AIComponent) -> int | None:
     primitive = props.get("crypto:primitive")
     param = props.get("crypto:parameterSet")
     name = component.name or ""
+
+    if _BROKEN_TODAY.match(name):
+        # Broken without a quantum computer (NIST SP 800-131A Rev 2 disallows it), so it
+        # meets no category either: level 0, while it stays quantumVulnerable false
+        # ("Broken today", staging QA G-D3-6).
+        return _BROKEN_LEVEL
+    if primitive in ("block-cipher", "stream-cipher", "ae"):
+        bits = props.get("crypto:keySize")
+        if bits is not None and str(bits).isdigit() and int(bits) < 128:
+            return _BROKEN_LEVEL  # below AES-128 key search, the category 1 anchor
 
     # Hybrid KEX is graded at its ML-KEM component's category.
     if props.get("crypto:hybrid") == "true":

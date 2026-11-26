@@ -23,6 +23,7 @@ from backend.utilities.pdf.report_branding import (
     COLOR_WHITE,
     append_bom_compliance_sections,
     append_executive_summary,
+    compute_posture_risk_score,
     append_findings_catalog,
     build_finding_section,
     count_label,
@@ -549,6 +550,9 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         styles=styles,
         project_name="SBOM / SCA Dependencies",
         scan_time=scan_time,
+        # one headline formula for every BOM PDF: the engine's posture score with its worst-severity cap (the AI BOM
+        # and the CBOM use it too; staging QA Q2-01), not the uncapped compute_risk_score
+        risk_score_fn=compute_posture_risk_score,
         meta_chips=[
             # the strip holds 4 chips: a scan with matches on range-guessed versions says so first (review M2)
             ("Unverified version", f"{unverified} not counted") if unverified else ("Scan type", "SBOM / SCA"),
