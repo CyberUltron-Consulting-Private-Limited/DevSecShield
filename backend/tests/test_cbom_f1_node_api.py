@@ -686,6 +686,134 @@ def test_many_nodes_claim_one_segment_at_once_without_a_double_claim():
         assert s.get(CbomCollectionRun, 1).status == "running"
 
 
+def _hold_run_key_share(engine, job_id: int):
+    """An open transaction that holds FOR KEY SHARE on the job's run row the way a concurrent claim or job end does:
+    it updates the job row twice, and PostgreSQL re-checks the job's foreign key to the run on the second UPDATE of a
+    row this transaction already updated (``RI_FKey_fk_upd_check_required``: SELECT 1 FROM run ... FOR KEY SHARE).
+    Returns the connection; the caller rolls it back."""
+    from sqlalchemy import text
+
+    conn = engine.connect()
+    conn.execute(text("UPDATE cbomcollectionjob SET attempts = attempts WHERE id = :j"), {"j": job_id})
+    conn.execute(text("UPDATE cbomcollectionjob SET attempts = attempts WHERE id = :j"), {"j": job_id})
+    return conn
+
+
+def _run_row_skipped_by(engine, run_id: int, mode: str) -> bool:
+    from sqlalchemy import text
+
+    with engine.connect() as probe:
+        got = probe.execute(text(f"SELECT id FROM cbomcollectionrun WHERE id = :r FOR {mode} SKIP LOCKED"),
+                            {"r": run_id}).first()
+        probe.rollback()
+    return got is None
+
+
+@needs_pg
+def test_a_claim_marks_the_run_running_while_another_claim_holds_key_share_on_the_run_row():
+    """Review 6066152368 (PR #500): CI saw 60 "job claimed" lines and the run still "queued".  Every claim of the run
+    held FOR KEY SHARE on the run row (the job's foreign key, re-checked on the claim's second UPDATE of the job row),
+    and ``mark_run_running`` took the row FOR UPDATE SKIP LOCKED, which conflicts with KEY SHARE: each claimer skipped
+    the row the others were key-sharing.  FOR NO KEY UPDATE does not conflict with FOR KEY SHARE."""
+    engine = _pg_world()
+    with Session(engine) as s:
+        nodes = []
+        for i in range(2):
+            n = CbomScanNode(team_id=1, owner_user_id=1, name=f"ks{i}", segment="DC", node_token_hash=f"{i + 70:064d}",
+                             signing_public_key="k" * 44)
+            s.add(n)
+            s.flush()
+            nodes.append(n.id)
+        s.add(CbomCollectionRun(id=1, team_id=1, owner_user_id=1, client_request_id="r-ks-claim", status="queued"))
+        s.commit()
+    _segment_sources(engine, 2)
+    with Session(engine) as s:
+        for src in s.exec(select(CbomCollectionSource).order_by(CbomCollectionSource.id)).all():
+            s.add(CbomCollectionJob(team_id=1, run_id=1, source_id=src.id, node_segment="DC", kind="collect",
+                                    params={"conn_v": J.connection_version(src)}))
+        s.commit()
+        other_job = s.exec(select(CbomCollectionJob.id).order_by(CbomCollectionJob.id)).first()
+    holder = _hold_run_key_share(engine, other_job)  # another node's claim, still in flight
+    try:
+        assert _run_row_skipped_by(engine, 1, "UPDATE")  # the lock mode the claim used to take: skipped
+        assert not _run_row_skipped_by(engine, 1, "NO KEY UPDATE")  # the mode a status UPDATE needs: free
+        with Session(engine) as s:
+            node = s.get(CbomScanNode, nodes[1])
+            payload = J.claim_next(s, node, get_or_create_settings(s, 1), dt.datetime.utcnow())
+            s.commit()
+        assert payload is not None and payload["job"]["id"] != other_job  # the held job row is skipped, not waited on
+        with Session(engine) as s:
+            assert s.get(CbomCollectionRun, 1).status == "running"
+    finally:
+        holder.rollback()
+        holder.close()
+
+
+@needs_pg
+def test_the_closers_close_a_run_while_a_job_end_holds_key_share_on_the_run_row():
+    """The same lock conflict on the closing side: a run closer (``_take_run_row``) and ``close_run`` took the run row
+    FOR UPDATE SKIP LOCKED, so a concurrent job end key-sharing the row made every closer give up and left the run
+    open until a reaper pass."""
+    engine = _pg_world()
+    now = dt.datetime.utcnow()
+    with Session(engine) as s:
+        n = CbomScanNode(team_id=1, owner_user_id=1, name="ks-close", segment="DC", node_token_hash="7" * 64)
+        s.add(n)
+        s.flush()
+        for run_id in (1, 2):
+            s.add(CbomCollectionRun(id=run_id, team_id=1, owner_user_id=1, client_request_id=f"r-ks-close-{run_id}",
+                                    status="running"))
+            s.flush()
+            for _ in range(2):
+                s.add(CbomCollectionJob(team_id=1, run_id=run_id, node_id=n.id, kind="discovery", status="success",
+                                        finished_at=now, attempts=1))
+        s.commit()
+        held = {r: s.exec(select(CbomCollectionJob.id).where(CbomCollectionJob.run_id == r)).first() for r in (1, 2)}
+    holders = [_hold_run_key_share(engine, held[r]) for r in (1, 2)]
+    try:
+        with Session(engine) as s:  # the reaper's reconcile path
+            assert J.close_run(s, 1, now) == "done"
+            s.commit()
+        with Session(engine) as s:  # the after-commit closer of a job end
+            J.touch_run(s, 2)
+            s.commit()
+        with Session(engine) as s:
+            assert s.get(CbomCollectionRun, 1).status == "done"
+            assert s.get(CbomCollectionRun, 2).status == "done"
+    finally:
+        for holder in holders:
+            holder.rollback()
+            holder.close()
+
+
+@needs_pg
+def test_the_reaper_marks_running_a_queued_run_whose_mark_was_skipped():
+    """A claim still skips the run row while another transaction holds it FOR NO KEY UPDATE (another claim marking it,
+    a closer settling refunds); if that holder rolls back, or never marks it, the run would stay "queued" while its
+    jobs run.  The reaper's reconcile marks it running within one pass."""
+    engine = _pg_world()
+    now = dt.datetime.utcnow()
+    with Session(engine) as s:
+        n = CbomScanNode(team_id=1, owner_user_id=1, name="ks-reap", segment="DC", node_token_hash="8" * 64,
+                         last_heartbeat_at=now)
+        s.add(n)
+        s.flush()
+        s.add(CbomCollectionRun(id=1, team_id=1, owner_user_id=1, client_request_id="r-ks-reap-1", status="queued"))
+        s.add(CbomCollectionRun(id=2, team_id=1, owner_user_id=1, client_request_id="r-ks-reap-2", status="queued"))
+        s.flush()
+        s.add(CbomCollectionJob(team_id=1, run_id=1, node_id=n.id, kind="discovery", status="claimed", attempts=1,
+                                lease_id="l" * 24, lease_expires_at=now + dt.timedelta(minutes=10), claimed_at=now))
+        s.add(CbomCollectionJob(team_id=1, run_id=2, node_id=n.id, kind="discovery", status="pending", created_at=now))
+        s.commit()
+    with Session(engine) as s:
+        J.reap(s, now)
+        s.commit()
+    with Session(engine) as s:
+        assert s.get(CbomCollectionJob, 1).status == "claimed"
+        assert s.get(CbomCollectionRun, 1).status == "running"
+        assert s.get(CbomCollectionRun, 2).status == "queued"  # nothing claimed yet: still queued
+
+
 @needs_pg
 def test_the_last_two_jobs_ending_together_finish_the_run(monkeypatch):
     """Before F1.1 each transaction saw the other job still claimed and the run stayed "running" for ever."""

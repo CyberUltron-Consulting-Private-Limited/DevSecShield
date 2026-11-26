@@ -358,6 +358,15 @@ def refund_policy_excluded(session: Session, job: CbomCollectionJob, run: CbomCo
 # runs its check after every other job end committed, so it sees no open job and closes the run; two checkers that
 # both see none race only on the guarded UPDATE, and both would write the same status.  A process that dies between
 # the commit and the check leaves the run to ``reconcile_runs`` (the reaper, every 30 s).
+# The run row is taken FOR NO KEY UPDATE SKIP LOCKED by its markers (``mark_run_running``), closers and settlers, never
+# FOR UPDATE: every transaction that updates a job row twice (a claim: the claim, then ``first_claimed_at``; a job
+# end) holds FOR KEY SHARE on the job's run row, because PostgreSQL re-checks the job's foreign key on the second
+# UPDATE of a row the same transaction already updated.  FOR UPDATE conflicts with FOR KEY SHARE, so with many claims
+# or job ends of a run in flight every marker and closer skipped the row and the run stayed "queued" while its jobs
+# ran (review 6066152368).  FOR NO KEY UPDATE does not conflict with FOR KEY SHARE and still excludes the other
+# markers, closers and settlers (it conflicts with itself); the UPDATEs that follow touch no key column of the run (its
+# id, team_id + client_request_id), so they need no stronger lock.
+RUN_ROW_LOCK = {"skip_locked": True, "key_share": True}
 _RUNS = "zs_runs_touched"
 _SETTLE = "zs_runs_settle"
 _SETTLE_TEAMS = "zs_teams_settle"
@@ -428,7 +437,7 @@ def close_run(session: Session, run_id: int | None, now: _dt.datetime, *, locked
     if not locked and session.get_bind().dialect.name == "postgresql":
         free = session.exec(select(CbomCollectionRun.id).where(
             CbomCollectionRun.id == run_id, CbomCollectionRun.status.in_(("queued", "running")))  # type: ignore[attr-defined]
-            .with_for_update(skip_locked=True)).first()
+            .with_for_update(**RUN_ROW_LOCK)).first()
         if free is None:
             return None
     final = _final_status(session, run_id)
@@ -458,14 +467,15 @@ RUN_ROW_TRIES = 4  # SKIP LOCKED attempts on a run row another closer or settler
 
 
 def _take_run_row(session: Session, run_id: int) -> bool:
-    """Lock the run row for this transaction without ever waiting on a lock: ``FOR UPDATE SKIP LOCKED``, retried a
-    few times a few tens of ms apart while another closer or settler holds it (their transactions are two short
-    UPDATEs).  False: still held, or the run is gone; the reaper's pass then closes and settles it."""
+    """Lock the run row for this transaction without ever waiting on a lock: ``FOR NO KEY UPDATE SKIP LOCKED``
+    (``RUN_ROW_LOCK``), retried a few times a few tens of ms apart while another closer or settler holds it (their
+    transactions are two short UPDATEs).  False: still held, or the run is gone; the reaper's pass then closes and
+    settles it."""
     if session.get_bind().dialect.name != "postgresql":
         return True
     for attempt in range(RUN_ROW_TRIES):
         if session.exec(select(CbomCollectionRun.id).where(CbomCollectionRun.id == run_id)
-                        .with_for_update(skip_locked=True)).first() is not None:
+                        .with_for_update(**RUN_ROW_LOCK)).first() is not None:
             return True
         if attempt + 1 < RUN_ROW_TRIES:
             time.sleep(0.02 * (attempt + 1))
@@ -576,6 +586,29 @@ def reconcile_runs(session: Session, now: _dt.datetime, team_id: int | None = No
     return changed
 
 
+def reconcile_running(session: Session, now: _dt.datetime, team_id: int | None = None, limit: int = 50) -> int:
+    """Mark running the runs still "queued" that have a claimed job: a claim's ``mark_run_running`` skips a run row
+    another transaction holds (a claim marking it that then rolled back, a closer settling the run's refunds).  One
+    guarded UPDATE whose rows are taken ``RUN_ROW_LOCK`` (a row held now is marked by the next pass); the status lines
+    are logged after the caller commits.  Returns how many runs it marked."""
+    claimed = (select(CbomCollectionJob.id).where(CbomCollectionJob.run_id == CbomCollectionRun.id,
+                                                  CbomCollectionJob.status == "claimed").exists())
+    pick = select(CbomCollectionRun.id).where(CbomCollectionRun.status == "queued", claimed)
+    if team_id is not None:
+        pick = pick.where(CbomCollectionRun.team_id == team_id)
+    pick = pick.order_by(CbomCollectionRun.id).limit(limit)
+    if session.get_bind().dialect.name == "postgresql":
+        pick = pick.with_for_update(**RUN_ROW_LOCK)
+    R_ = CbomCollectionRun.__table__
+    rows = session.exec(  # type: ignore[call-overload]
+        update(R_).where(R_.c.id.in_(pick), R_.c.status == "queued")
+        .values(status="running", last_updated=now, finished_at=None)
+        .returning(R_.c.id, R_.c.team_id)).all()
+    for run_id, run_team in rows:
+        log_after_commit(session, "run status", team=run_team, run=run_id, status="running", reconciled=True)
+    return len(rows)
+
+
 def mark_run_running(session: Session, run_id: int | None, now: _dt.datetime) -> None:
     """A job of the run was claimed: the run is running (one guarded UPDATE, only the first claim writes, and on
     PostgreSQL no claim waits for another's lock on the run row)."""
@@ -588,9 +621,11 @@ def mark_run_running(session: Session, run_id: int | None, now: _dt.datetime) ->
     if session.get_bind().dialect.name == "postgresql":
         # EC2 E2a round 7: the first claims of a run all reach this UPDATE together; each waited on the row lock of
         # the first claim's open transaction.  A row someone else is locking is being marked by them: skip it (if
-        # that claim rolls back, the next claim marks the run).
+        # that claim rolls back, the next claim marks the run).  FOR NO KEY UPDATE (``RUN_ROW_LOCK``): the other
+        # claims in flight key-share the row, and FOR UPDATE skipped it for every one of them.  A row a closer or
+        # settler holds is skipped too; the reaper's ``reconcile_runs`` marks such a run running within one pass.
         target = CbomCollectionRun.id == select(CbomCollectionRun.id).where(
-            CbomCollectionRun.id == run_id).with_for_update(skip_locked=True).scalar_subquery()
+            CbomCollectionRun.id == run_id).with_for_update(**RUN_ROW_LOCK).scalar_subquery()
     if session.exec(update(CbomCollectionRun)
                     .where(target, CbomCollectionRun.status.in_(("queued",)))  # type: ignore[attr-defined]
                     .values(status="running", last_updated=now, finished_at=None)
@@ -674,6 +709,7 @@ def reap(session: Session, now: _dt.datetime, *, team_id: int | None = None, nod
     for parent_id in sorted(parents):  # a slice the reaper ended may have been its parent's last open one
         S.maybe_finalize(session, parent_id, now)
     moved += reconcile_runs(session, now, team_id=team_id)
+    reconcile_running(session, now, team_id=team_id)  # run rows, not jobs: not counted in ``moved``
     return moved
 
 
