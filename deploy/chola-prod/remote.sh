@@ -75,6 +75,7 @@ KIT_DIR="${BASE_DIR}/deploy/chola-prod" # the live kit: compose file, nginx, env
 COMPOSE_FILE="${KIT_DIR}/docker-compose.yml"
 ENV_FILE="${KIT_DIR}/.env"
 ENV_FILES=(.env backend.env scan-worker.env dast-worker.env)
+NODE_ARTIFACTS_DIR="${BASE_DIR}/node-artifacts"
 STATE_DIR="${BASE_DIR}/state"
 HISTORY_FILE="${STATE_DIR}/deploy-history"
 RELEASES_DIR="${STATE_DIR}/releases"
@@ -464,7 +465,7 @@ put_live() {
     if [[ -f "${KIT_DIR}/${f}" ]]; then cp -p "${KIT_DIR}/${f}" "${stage}/kit/${f}"; fi
   done
   chmod 700 "${stage}/kit"
-  mkdir -p "$(dirname "${KIT_DIR}")" "${BASE_DIR}/compose"
+  mkdir -p "$(dirname "${KIT_DIR}")" "${BASE_DIR}/compose" "${NODE_ARTIFACTS_DIR}"
   swap_dir "${stage}/kit" "${KIT_DIR}"
   scrub_old_kits
   # an identical overlay is left in place: its readers are not recreated (same files-hash), so it must stay theirs
@@ -519,6 +520,53 @@ load_release_file() { # <docker save archive, plain or compressed>: load, delete
     [[ "${arch}" == linux/amd64 ]] || die "${i} is ${arch}, not linux/amd64"
   done
   log "infrastructure images loaded (linux/amd64): ${INFRA_IMAGES[*]}; archive deleted"
+}
+
+node_artifacts_missing() { # <version>: "missing" when manifest.json or any of the 4 files for <version> is absent
+  local ver=${1:?usage: remote.sh node-artifacts-missing <version>} f
+  [[ "${ver}" =~ ^[0-9][0-9A-Za-z.-]{0,18}$ ]] || die "invalid scan-node version: ${ver}"
+  if [[ ! -f "${NODE_ARTIFACTS_DIR}/manifest.json" ]] ||
+    ! grep -q "\"version\": \"${ver}\"" "${NODE_ARTIFACTS_DIR}/manifest.json" 2>/dev/null; then
+    printf 'missing\n'
+    return 0
+  fi
+  for f in "scan-node-${ver}.tar.gz" "cbom-scan-node-${ver}.tgz" \
+    "cbom-scan-node-ova-kit-${ver}.zip" "cbom-scan-node-ami-kit-${ver}.zip"; do
+    if [[ ! -s "${NODE_ARTIFACTS_DIR}/${f}" ]]; then
+      printf 'missing\n'
+      return 0
+    fi
+  done
+}
+
+cmd_node_artifacts_load() { # <s3 key> <sha256> <version>
+  local key=${1:?usage: remote.sh node-artifacts-load <s3 key> <sha256> <version>} want=${2:?sha256} ver=${3:?version}
+  local file got stage
+  [[ "${key}" =~ ^releases/[A-Za-z0-9._-]+$ ]] || die "not a releases/ S3 key: ${key}"
+  [[ "${want}" =~ ^[0-9a-f]{64}$ ]] || die "not a sha256: ${want}"
+  [[ "${ver}" =~ ^[0-9][0-9A-Za-z.-]{0,18}$ ]] || die "invalid scan-node version: ${ver}"
+  sudo -n mkdir -p "${ARCHIVE_DIR}"
+  sudo -n chown "$(id -u):$(id -g)" "${ARCHIVE_DIR}"
+  chmod 700 "${ARCHIVE_DIR}"
+  file="${ARCHIVE_DIR}/node-artifacts.tar.gz"
+  rm -f "${file}"
+  EXIT_RM=("${file}")
+  log "downloading s3://${BUCKET}/${key} (bucket owner ${ACCOUNT}) to ${file}"
+  aws s3api get-object --region "${REGION}" --bucket "${BUCKET}" --key "${key}" --expected-bucket-owner "${ACCOUNT}" \
+    "${file}" >/dev/null
+  got="$(sha256sum "${file}" | cut -d' ' -f1)"
+  [[ "${got}" == "${want}" ]] || die "node-artifacts archive sha256 ${got} is not ${want}"
+  mkdir -p "${BASE_DIR}"
+  stage="$(mktemp -d "${BASE_DIR}/.stage.XXXXXX")"
+  tar -C "${stage}" -xzf "${file}"
+  rm -f "${file}"
+  EXIT_RM=()
+  (cd "${stage}" && sha256sum -c ./*.sha256 >/dev/null) || { rm -rf "${stage}"; die "scan-node download checksum mismatch"; }
+  chmod 755 "${stage}"
+  chmod 644 "${stage}"/*
+  swap_dir "${stage}" "${NODE_ARTIFACTS_DIR}"
+  find "${BASE_DIR}" -mindepth 1 -maxdepth 1 -type d -name 'node-artifacts.old.*' -exec rm -rf {} + 2>/dev/null || true
+  log "scan-node downloads ${ver} installed in ${NODE_ARTIFACTS_DIR}"
 }
 
 # ------------------------------------------------------------------------------------------------ S3 relay (--from-run)
@@ -838,6 +886,7 @@ up() { # [recover]: after an interrupted run (or for a rollback), start the appl
     log "recovering: removing the application containers (data stays) before starting them"
     clear_app_containers
   fi
+  mkdir -p "${NODE_ARTIFACTS_DIR}"
   log "docker compose up${extra[*]:+ ${extra[*]}} (migrate runs first; everything else waits for it)"
   while :; do
     rc=0
@@ -1128,7 +1177,7 @@ cmd_rollback() {
 }
 
 # ------------------------------------------------------------------------------------------------ detached jobs
-DETACHABLE=" deploy rollback dump infra-load relay-load "
+DETACHABLE=" deploy rollback dump infra-load relay-load node-artifacts-load "
 cmd_job_start() {
   local cmd=${1:?usage: remote.sh job-start <command> [args]} id dir
   [[ "${DETACHABLE}" == *" ${cmd} "* ]] || die "${cmd} cannot run detached"
@@ -1361,7 +1410,7 @@ main() {
   trap on_exit EXIT
   if [[ -n "${CHOLA_JOB_DIR:-}" ]]; then job_worker; fi
   case "${cmd}" in
-    install | infra-load | relay-load | render | pull | dump | deploy | admin | imds-block) lock ;;
+    install | infra-load | node-artifacts-load | relay-load | render | pull | dump | deploy | admin | imds-block) lock ;;
     rollback) [[ " $* " == *" --plan "* ]] || lock ;;
   esac
   case "${cmd}" in
@@ -1371,6 +1420,8 @@ main() {
     install) cmd_install ;;
     infra-missing) docker_setup; infra_missing ;;
     infra-load) docker_setup; cmd_infra_load "$@" ;;
+    node-artifacts-missing) node_artifacts_missing "$@" ;;
+    node-artifacts-load) cmd_node_artifacts_load "$@" ;;
     relay-load) cmd_relay_load "$@" ;;
     render) cmd_render "$@" ;;
     ecr-login) cmd_ecr_login ;;

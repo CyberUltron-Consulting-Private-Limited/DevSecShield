@@ -254,3 +254,36 @@
   clone unless `scan_crypto(..., scan_history=True)`). The certificate lane reads both; rows get `crypto:line=1`.
 - `include_vendored` labels rows `crypto:thirdParty=true`; `node_modules/` contributes only its loose files.
   String folding runs on long (minified) lines in `;`-cut windows.
+
+## Staging host
+- The staging host is THIS dev VM (`ip-172-31-37-52`, public EIP `13.234.69.238`). "Deploy staging" scps the archive here and runs
+  `staging.sh deploy` as user `deploy` in `/opt/devsecshield-staging` (mode 750: read it with `sudo`, run the script
+  with `sudo -u deploy`). Containers are `dss-staging-*`; the running tag is `DSS_TAG` in `deploy/staging/.env`.
+- Never start a local deploy while a "Deploy staging" run is in progress: both load images and switch `DSS_TAG`.
+  Verify a deploy with `sudo -u deploy bash -c 'cd /opt/devsecshield-staging && bash scripts/deploy/staging.sh check'`.
+- In-container Python is `/backend/.venv/bin/python` (run with `-w /`); the image's system python lacks the deps.
+
+## Chola production host
+- Chola production runs on EC2 `i-0b7fe756ebfd4d1e6` (`m7i.2xlarge`, x86_64, Ubuntu 24.04, private IP `10.60.10.108`, NAT EIP `13.127.93.213`, reached via EICE `eice-0f28625757cf08096` with AWS profile `chola`).
+- Public hostnames: `chola.zeroshield.ai` (UI -> `frontend:3000`) and `chola-api.zeroshield.ai` (API -> `backend:8080`), behind ALB `devsec-chola-prod-alb` (TLS on 443 -> HTTP `:80`, health check `GET /nginx-health`, `DSS_REAL_IP_FROM=10.60.1.0/24,10.60.2.0/24`).
+- Dedicated production kit: `deploy/chola-prod/` + `scripts/deploy/chola-prod.sh` (`/opt/devsecshield-chola`, Compose project `dss-chola`, ECR prefix `935951870001.dkr.ecr.ap-south-1.amazonaws.com/devsec-chola`, Qdrant inside Compose on internal `data` network, Google SMTP `smtp.gmail.com:465` `ssl`, scan-node `1.0.9` downloads at `/opt/devsecshield-chola/node-artifacts`, secrets rendered from `devsec-chola/prod/*`).
+
+## Self-hosted GitHub Actions runners (this VM)
+- 6 repo runners `dss-vm-1..6` (labels `self-hosted, Linux, X64, dss-vm`) in `/mnt/nvme/gh-runners/runner-N`, run as
+  user `ghrunner` (uid 1003: no sudo, no host Docker; its own rootless Docker at `unix:///run/user/1003/docker.sock`).
+  Services are USER units: `sudo -u ghrunner env XDG_RUNTIME_DIR=/run/user/1003 systemctl --user status gh-runner@N`.
+  Unit (`~ghrunner/.config/systemd/user/gh-runner@.service`): ExecStart `runner-N/runsvc.sh` (NOT run.sh: with
+  KillMode=process a restart orphans run.sh's listener), HOME=`home-N`, TMPDIR=`tmp-N`, and it UNSETS the host-wide
+  `/etc/environment` vars `BUILDX_BUILDER=nvme` (no such builder for ghrunner) and the shared `/mnt/nvme/cache/*` dirs
+  (`UV_CACHE_DIR` etc.: sticky dirs owned by other users -> EACCES, and a cache-poisoning path into your own tools).
+  Never restart a runner that is running a job (`pgrep -u ghrunner -f Runner.Worker` + its cwd).
+- Workflows: all jobs `runs-on: dss-vm`, or (where a PR can trigger) the fork expression
+  `github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest'
+  || 'dss-vm'` (`.github/tests/test_runners.py`). Persistent runners keep `.git`: `git worktree prune` before any
+  `git worktree add`. The publish amd64 builds use the shared builder `dss-vm-builder` (docker driver cannot
+  push-by-digest). `docker-ci-prune.timer` drops CI images > 72 h; BuildKit GC keeps <= 400 GB.
+- The repo is PUBLIC: `/etc/ghrunner-guard.nft` (system unit `ghrunner-guard.service`) fences uid 1003 off this host's
+  localhost services, the VPC (DNS to 172.31.0.2 only) and instance metadata. A job may only reach listeners in
+  `user.slice/user-1003.slice`, so the runners MUST stay user units (a system-unit runner breaks job-local servers).
+- Jobs on `dss-vm` have no `sudo`: steps like `sudo apt-get`, `sudo sysctl`, `sudo rm -rf /usr/local/lib/android` must be
+  skipped there (`if: runner.environment == 'github-hosted'`). Keep fork pull requests off `dss-vm`.

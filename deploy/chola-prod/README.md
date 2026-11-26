@@ -508,13 +508,19 @@ metadata service:
 * **Least privilege per container**: the backend-image services, the scan/CI-CD workers and the DAST worker each get
   only the variables their code reads (one env file each); the frontend and nginx get none. `BACKEND_WORKERS` is in
   `.env` (gunicorn's `--workers`) and in `backend.env` (the API sizes its CBOM dispatch from it).
-* **Bedrock models**: every AI feature in the code calls `openai.gpt-oss-120b-1:0` (`LLM_MODEL`, `CBOM_AI_MODEL`
-  default); `global.anthropic.claude-haiku-4-5-20251001-v1:0` is used only by the nightly AIBOM benchmark workflow.
+* **Bedrock models**: workers and SAST/IaC/SBOM/DAST call `openai.gpt-oss-120b-1:0` (`LLM_MODEL`), while the CBOM AI
+  assistant uses `global.anthropic.claude-haiku-4-5-20251001-v1:0` (`CBOM_AI_MODEL`, with `CBOM_ALLOW_LLM=1`), matching
+  the two Bedrock models enabled on this account in `ap-south-1`.
 * **Frontend built by the kit**: `NEXT_PUBLIC_BACKEND_URL` is inlined at `next build` (frontend/Dockerfile), and GHCR's
   dev/staging frontends carry `http://localhost:8000` (`.github/ci/ghcr_meta.py`). `CORS_ORIGINS` and
   `CBOM_PUBLIC_APP_URL` are runtime (backend.env). Sign-in tokens travel in headers, so there is no cookie domain.
-* **Mail over SMTP**, not Graph: the instance cannot reach graph.microsoft.com; with `SMTP_HOST` set the backend never
-  tries Graph (`backend/utilities/auth/auth_utils.py`).
+* **Mail over Google SMTP (`smtp.gmail.com:465`, `SMTP_SECURITY=ssl`)**, not Graph: the instance cannot reach
+  graph.microsoft.com; with `SMTP_HOST` set the backend never tries Graph (`backend/utilities/auth/auth_utils.py`).
+  `SMTP_HOST`, `SMTP_PORT`, and `SMTP_SECURITY` can also be overridden in `devsec-chola/prod/app-secrets`.
+* **Scan-node downloads (`1.0.9`)**: `backend` mounts `/opt/devsecshield-chola/node-artifacts` at `/node-artifacts`
+  (`CBOM_NODE_ARTIFACT_DIR=/node-artifacts`) and exposes the public GHCR image and Helm chart refs (`1.0.9`), and
+  `chola-prod.sh node-artifacts` (also run by `deploy`) installs the image archive, Helm chart, OVA/AMI Packer kits,
+  and `manifest.json`.
 * **Qdrant is part of this stack** (it is not in deploy/staging): SAST / IaC / SCA AI analysis needs it.
 * **Infrastructure images pinned by digest** where they are pulled (the owner's machine); the instance cannot pull at
   all, and the archive it loads is checked against its sha256.
@@ -544,9 +550,6 @@ infra team allows the hosts they need (or the feature is not used):
   (`RabbitMQ/worker/helpers/tools/sast_agent/semgrep_util.py`), which downloads rules from semgrep.dev: that step
   fails ("SAST scan failed"). Allow semgrep.dev or vendor the rules.
 * **Public package registries** (npm, PyPI, Maven ...) for SBOM enrichment: off (`DSS_SBOM_REGISTRY=0`).
-* **Scan-node downloads** (Add scan node wizard) are not shipped (`CBOM_NODE_ARTIFACT_DIR` unset); the wizard says they
-  are not available. deploy/staging has the machinery (`staging.sh node-artifacts`) if they are needed here.
 
-What works within the rules: sign-in and mail (SMTP), the UI and API, repository clones from GitHub/GitLab/Bitbucket,
-CBOM / AI-BOM code scans, SCA with the Grype DB, S3 uploads, CBOM AWS sources (STS), the CBOM AI assistant (Bedrock
-gpt-oss).
+What works within the rules: sign-in and mail (Google SMTP on 465 SSL), the UI and API, scan-node downloads (`1.0.9` image, Helm chart, OVA/AMI kits + GHCR pull), repository clones from GitHub/GitLab/Bitbucket,
+CBOM / AI-BOM code scans, SCA with the Grype DB, S3 uploads, CBOM AWS sources (STS), the CBOM AI assistant (Bedrock).

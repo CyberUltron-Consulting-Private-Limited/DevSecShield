@@ -328,6 +328,18 @@ def render_env(app, app_user, collector, cfg, tag, principal=None):
         ("RABBIT_ADMIN_USERNAME", "devsecshield"), ("RABBIT_ADMIN_PASSWORD", app["RABBIT_ADMIN_PASSWORD"]),
         ("QDRANT_API_KEY", app["QDRANT_API_KEY"]),
     ]
+    smtp_host = app.get("SMTP_HOST") or cfg["smtp_host"]
+    smtp_port = str(app.get("SMTP_PORT") or cfg["smtp_port"])
+    smtp_security = (app.get("SMTP_SECURITY") or cfg.get("smtp_security")
+                     or ("ssl" if smtp_port == "465" else "starttls"))
+    if smtp_security not in ("starttls", "ssl"):
+        raise Refused(f"SMTP_SECURITY must be starttls or ssl, not {smtp_security!r}")
+    cbom_ai_model = app.get("CBOM_AI_MODEL") or cfg.get("cbom_ai_model") or cfg["llm_model"]
+    for extra_key, extra_val in (("SMTP_HOST", smtp_host), ("SMTP_PORT", smtp_port),
+                                 ("SMTP_SECURITY", smtp_security), ("CBOM_AI_MODEL", cbom_ai_model)):
+        why = problem(extra_key, str(extra_val))
+        if why:
+            raise Refused(f"{extra_key} is unusable ({why})")
     backend = docker + [
         # gunicorn's --workers comes from .env (Compose interpolation); the API also reads it at run time to size the
         # CBOM dispatch (backend/utilities/cbom_sources/dispatch.py), so it is here too.
@@ -340,15 +352,14 @@ def render_env(app, app_user, collector, cfg, tag, principal=None):
         ("JWT_SECRET_KEY", app["JWT_SECRET_KEY"]), ("JWT_REFRESH_SECRET_KEY", app["JWT_REFRESH_SECRET_KEY"]),
         ("ENCRYPTION_KEY", app["ENCRYPTION_KEY"]), ("CERTIN_HMAC_SECRET", app["CERTIN_HMAC_SECRET"]),
         ("CORS_ORIGINS", "https://" + cfg["frontend_host"]), ("CBOM_PUBLIC_APP_URL", "https://" + cfg["frontend_host"]),
-        # Sign-in codes: Office 365 SMTP AUTH (the instance cannot reach graph.microsoft.com; TENANT_ID etc. unset).
-        ("SMTP_HOST", cfg["smtp_host"]), ("SMTP_PORT", cfg["smtp_port"]), ("SMTP_SECURITY", "starttls"),
+        # Sign-in codes: SMTP (Google SMTP over SSL on 465 by default; overrideable via app-secrets or flags).
+        ("SMTP_HOST", smtp_host), ("SMTP_PORT", smtp_port), ("SMTP_SECURITY", smtp_security),
         ("SMTP_USERNAME", app["SMTP_USERNAME"]), ("SMTP_PASSWORD", app["SMTP_PASSWORD"]),
         ("MAIL_FROM", app["MAIL_FROM"]),
-        # CBOM remediation assistant: Bedrock Converse with the AWS_* above (credential source env). The only Bedrock
-        # models this account may call: openai.gpt-oss-120b-1:0 (every AI feature of the app) and
-        # global.anthropic.claude-haiku-4-5-20251001-v1:0 (not used by the application).
+        # CBOM chat + remediation assistant: Bedrock Converse with the AWS_* above (credential source env).
+        ("CBOM_ALLOW_LLM", "1"),
         ("CBOM_AI_PROVIDER", "bedrock"), ("CBOM_AI_BEDROCK_REGION", cfg["region"]),
-        ("CBOM_AI_AWS_CREDENTIALS", "env"), ("CBOM_AI_MODEL", cfg["llm_model"]),
+        ("CBOM_AI_AWS_CREDENTIALS", "env"), ("CBOM_AI_MODEL", cbom_ai_model),
     ]
     c_id = json_field(collector, ACCESS_KEY_NAMES)
     c_secret = json_field(collector, SECRET_KEY_NAMES)
@@ -438,7 +449,8 @@ def cmd_render(args):
                                  args.region)
     cfg = {"image_prefix": args.image_prefix, "frontend_host": args.frontend_host, "api_host": args.api_host,
            "real_ip_from": args.real_ip_from, "region": args.region, "llm_model": args.llm_model,
-           "smtp_host": args.smtp_host, "smtp_port": args.smtp_port}
+           "cbom_ai_model": args.cbom_ai_model,
+           "smtp_host": args.smtp_host, "smtp_port": args.smtp_port, "smtp_security": args.smtp_security}
     files, warnings = render_env(app, app_user, collector, cfg, tag, principal)
     for name in ENV_FILES:
         write_private(os.path.join(args.dir, name), HEADER + files[name])
@@ -507,8 +519,10 @@ def main(argv=None):
     r.add_argument("--api-host", default="chola-api.zeroshield.ai")
     r.add_argument("--real-ip-from", default="10.60.1.0/24,10.60.2.0/24")
     r.add_argument("--llm-model", default="openai.gpt-oss-120b-1:0")
-    r.add_argument("--smtp-host", default="smtp.office365.com")
-    r.add_argument("--smtp-port", default="587")
+    r.add_argument("--cbom-ai-model", default="global.anthropic.claude-haiku-4-5-20251001-v1:0")
+    r.add_argument("--smtp-host", default="smtp.gmail.com")
+    r.add_argument("--smtp-port", default="465")
+    r.add_argument("--smtp-security", default="ssl")
     k = sub.add_parser("dotenv-keys")
     k.add_argument("file")
     args = p.parse_args(argv)

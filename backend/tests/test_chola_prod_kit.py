@@ -3514,3 +3514,81 @@ def test_rollback_plan_refuses_a_target_neither_here_nor_in_ecr(instance):
     assert proc.returncode == 1 and f"the images of {B12}" in proc.stderr
     assert "neither on the instance nor in ECR: relay that commit again first" in proc.stderr
     assert instance.tag() == C12 and instance.state()["ups"] == []
+
+
+def test_chola_cli_defaults_to_google_smtp_ssl_and_cbom_ai_model(tmp_path):
+    secrets_by_id = {
+        "devsec-chola/prod/app-secrets": json.dumps(_app()),
+        "devsec-chola/prod/app-user": json.dumps({"AccessKeyId": "AKIAAPP", "SecretAccessKey": "s3cr3t"}),
+        "devsec-chola/prod/cbom-collector": json.dumps({
+            "AWS_ACCESS_KEY_ID": "AKIACOL", "AWS_SECRET_ACCESS_KEY": "cols3cr3t",
+            "USER_ARN": "arn:aws:iam::935951870001:user/devsec-chola-prod-cbom-collector",
+        }),
+    }
+    (tmp_path / "secrets.json").write_text(json.dumps(secrets_by_id))
+    fake = tmp_path / "bin" / "aws"
+    fake.parent.mkdir()
+    fake.write_text("#!/usr/bin/env python3\nimport json,sys\nargs=sys.argv[1:]\n"
+                    f"data=json.load(open({str(tmp_path / 'secrets.json')!r}))\n"
+                    "sid=args[args.index('--secret-id')+1]\nprint(data[sid] or 'None')\n")
+    fake.chmod(0o755)
+    out = tmp_path / "kit"
+    out.mkdir()
+    env = dict(os.environ, PATH=f"{fake.parent}:{os.environ['PATH']}")
+    proc = run(["python3", "-I", str(KIT_DIR / "kit.py"), "render-env", "--dir", str(out), "--tag", "b669fa3c467f"],
+               env=env)
+    assert proc.returncode == 0, proc.stderr
+    b = kit.parse_dotenv((out / "backend.env").read_text())
+    assert (b["SMTP_HOST"], b["SMTP_PORT"], b["SMTP_SECURITY"]) == ("smtp.gmail.com", "465", "ssl")
+    assert b["CBOM_ALLOW_LLM"] == "1"
+    assert b["CBOM_AI_MODEL"] == "global.anthropic.claude-haiku-4-5-20251001-v1:0"
+
+
+def test_compose_mounts_node_artifacts_and_pins_1_0_9_refs(compose):
+    be = compose["services"]["backend"]
+    assert be["environment"]["CBOM_NODE_ARTIFACT_DIR"] == "/node-artifacts"
+    assert "devsecshield-scan-node:1.0.9" in be["environment"]["CBOM_NODE_IMAGE_REF"]
+    assert "charts/cbom-scan-node:1.0.9" in be["environment"]["CBOM_NODE_CHART_REF"]
+    assert "../../node-artifacts:/node-artifacts:ro" in be["volumes"]
+
+
+def test_node_artifacts_missing_detection_and_dry_run(tmp_path):
+    base = tmp_path / "base"
+    base.mkdir()
+    proc = run(["bash", str(REMOTE), "node-artifacts-missing", "1.0.9"],
+               env={**os.environ, "CHOLA_BASE_DIR": str(base)})
+    assert proc.returncode == 0 and proc.stdout.strip() == "missing"
+    nd = base / "node-artifacts"
+    nd.mkdir()
+    for f in ("scan-node-1.0.9.tar.gz", "cbom-scan-node-1.0.9.tgz",
+              "cbom-scan-node-ova-kit-1.0.9.zip", "cbom-scan-node-ami-kit-1.0.9.zip"):
+        (nd / f).write_bytes(b"ok")
+    (nd / "manifest.json").write_text('{"version": "1.0.9"}\n')
+    proc = run(["bash", str(REMOTE), "node-artifacts-missing", "1.0.9"],
+               env={**os.environ, "CHOLA_BASE_DIR": str(base)})
+    assert proc.returncode == 0 and proc.stdout.strip() == ""
+    shim_dir, log = _shims(tmp_path)
+    env = dict(os.environ, PATH=f"{shim_dir}:{os.environ['PATH']}", HOME=str(tmp_path), TMPDIR=str(tmp_path))
+    proc = run(["bash", str(OWNER), "node-artifacts", "--dry-run"], env=env, stdin=subprocess.DEVNULL)
+    assert proc.returncode == 0 and "[dry-run]" in proc.stdout and not log.exists()
+
+
+def test_smtp_check_supports_google_smtp_ssl_on_465(monkeypatch, capsys):
+    sc = _load_smtp_check()
+
+    class FakeSSL(_FakeSMTP):
+        def __init__(self, *a, **k):
+            self.extns = {"auth"}
+
+    FakeSSL.reply, FakeSSL.sent = None, []
+    monkeypatch.setattr(sc.smtplib, "SMTP_SSL", FakeSSL)
+    monkeypatch.setenv("SMTP_HOST", "smtp.gmail.com")
+    monkeypatch.setenv("SMTP_PORT", "465")
+    monkeypatch.setenv("SMTP_SECURITY", "ssl")
+    monkeypatch.setenv("SMTP_USERNAME", "support@zeroshield.ai")
+    monkeypatch.setenv("SMTP_PASSWORD", "app-pass-secret-16")
+    assert sc.main() == 0
+    out = capsys.readouterr().out
+    assert "OK" in out and "smtp.gmail.com:465 (ssl)" in out
+    assert "app-pass-secret-16" not in out and "support@zeroshield.ai" not in out and FakeSSL.sent == []
+

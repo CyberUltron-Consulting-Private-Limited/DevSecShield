@@ -36,6 +36,7 @@ API_HOST=chola-api.zeroshield.ai
 REAL_IP_FROM=10.60.1.0/24,10.60.2.0/24
 REMOTE_DIR=/opt/devsecshield-chola
 GHCR="${CHOLA_GHCR:-ghcr.io/cyberultron-consulting-private-limited}"
+NODE_VERSION="${CHOLA_NODE_VERSION:-1.0.9}"
 GH_REPO="${CHOLA_GH_REPO:-CyberUltron-Consulting-Private-Limited/DevSecShield}"
 IMAGES_WORKFLOW=.github/workflows/chola-prod-images.yml # its runs are what --from-run reads (README "Images from a CI run")
 # crane (go-containerregistry) copies a run's image layouts to ECR without Docker. Used from PATH; otherwise this
@@ -108,6 +109,10 @@ Commands
   infra [--force-infra] [--from-run RUN --sha S]
                              the infrastructure images as the S3 release archive, loaded on the instance if missing
                              (--from-run: the run's archive, relayed through S3, instead of pulling them here)
+  node-artifacts [--force-infra]
+                             build/package the scan-node downloads (image, Helm chart, OVA/AMI kits, manifest.json)
+                             for CHOLA_NODE_VERSION (default 1.0.9), relay via S3 and install into
+                             /opt/devsecshield-chola/node-artifacts/ if missing
   backup                     logical dumps on the instance, then the AWS Backup job of the data volume (waits)
   deploy --sha S [--from-run RUN] [--yes]
                              all of the above in order (the IMDS block first; its container probe again before
@@ -1356,6 +1361,50 @@ infra_upload() { # <archive> <sha256>: to S3, then loaded on the instance (detac
   remote_job infra-load "${RELEASE_KEY}" "$2" || die "loading the release archive on the instance failed (above)"
 }
 
+cmd_node_artifacts() {
+  step "node-artifacts: scan-node downloads (${NODE_VERSION})"
+  [[ "${NODE_VERSION}" =~ ^[0-9][0-9A-Za-z.-]{0,18}$ ]] || die "CHOLA_NODE_VERSION ${NODE_VERSION} is not a valid version"
+  ssh_setup
+  local missing="" key="releases/node-artifacts-${NODE_VERSION}.tar.gz" src ref out archive sum
+  local -a plat=()
+  if ((DRY)); then
+    remote node-artifacts-missing "${NODE_VERSION}"
+    note "node-artifacts" ""
+    return 0
+  fi
+  kit_upload
+  missing="$(remote node-artifacts-missing "${NODE_VERSION}" || true)"
+  if [[ -z "${missing}" && "${FORCE_INFRA}" != 1 ]]; then
+    log "the instance already has scan-node downloads ${NODE_VERSION}"
+    note "node-artifacts" "${NODE_VERSION} already installed"
+    return 0
+  fi
+  work
+  out="${WORK}/node-artifacts"
+  archive="${WORK}/node-artifacts.tar.gz"
+  src="${GHCR}/devsecshield-scan-node:${NODE_VERSION}"
+  ref="localhost/zeroshield/cbom-scan-node:${NODE_VERSION}"
+  rm -rf "${out}"
+  mkdir -p "${out}"
+  log "pulling ${src} (linux/amd64) and packaging scan-node downloads ${NODE_VERSION}"
+  docker pull -q --platform linux/amd64 "${src}" >/dev/null || die "cannot pull ${src}"
+  docker tag "${src}" "${ref}"
+  if containerd_store && docker save --help 2>/dev/null | grep -q -- '--platform'; then plat=(--platform linux/amd64); fi
+  docker save ${plat[@]+"${plat[@]}"} "${ref}" | gzip -1 >"${out}/scan-node-${NODE_VERSION}.tar.gz"
+  python3 -I "${REPO_ROOT}/scripts/release/node_artifacts.py" --version "${NODE_VERSION}" --image-ref "${ref}" --out "${out}" >/dev/null
+  tar -C "${out}" -czf "${archive}" .
+  rm -rf "${out}"
+  sum="$(sha256_of "${archive}")"
+  aws_ s3api put-object --bucket "${BUCKET}" --key "${key}" --body "${archive}" --expected-bucket-owner "${ACCOUNT}" \
+    --query ETag --output text >/dev/null
+  rm -f "${archive}"
+  remote_job node-artifacts-load "${key}" "${sum}" "${NODE_VERSION}" ||
+    die "installing scan-node downloads on the instance failed (above)"
+  aws --region "${REGION}" s3api delete-object --bucket "${BUCKET}" --key "${key}" \
+    --expected-bucket-owner "${ACCOUNT}" >/dev/null 2>&1 || true
+  note "node-artifacts" "${NODE_VERSION} installed in ${REMOTE_DIR}/node-artifacts"
+}
+
 # ------------------------------------------------------------------------------------------------ backup
 cmd_backup() {
   step "backup: logical dumps, then AWS Backup of ${VOLUME_ID} (wait for COMPLETED)"
@@ -1480,6 +1529,7 @@ cmd_deploy() {
     note "instance" "env rendered from Secrets Manager (instance role), images of ${SHA12} pulled, frontend URL checked"
   fi
   cmd_infra
+  cmd_node_artifacts
   step "IMDS: a token probe from a container must fail before anything starts"
   remote_step "${PRE_SWITCH}" imds-check
   note "imds" "containers cannot reach the instance metadata service (rule, unit and container probe checked)"
@@ -1488,7 +1538,7 @@ cmd_deploy() {
   remote_job deploy "${SHA12}" || die "the deploy of ${SHA12} failed on the instance (above); to go back: ${0##*/} rollback"
   note "deploy" "${SHA12} running, migrations applied, services healthy"
   step "SMTP login test"
-  if ((DRY)); then remote smtp-test; note "smtp" ""; elif remote smtp-test; then note "smtp" "Office 365 login OK"; else
+  if ((DRY)); then remote smtp-test; note "smtp" ""; elif remote smtp-test; then note "smtp" "SMTP login OK"; else
     warn "SMTP login FAILED (above): sign-in codes cannot be mailed until it works (README 'Troubleshooting: SMTP AUTH')"
     note "smtp" "FAILED - see above"
   fi
@@ -1575,6 +1625,7 @@ main() {
     secrets) aws_identity; cmd_secrets ;;
     images) aws_identity; cmd_images ;;
     infra) aws_identity; cmd_infra ;;
+    node-artifacts) aws_identity; cmd_node_artifacts ;;
     backup) aws_identity; cmd_backup ;;
     deploy) cmd_deploy ;;
     verify) cmd_verify ;;
