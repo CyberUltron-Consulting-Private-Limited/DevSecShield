@@ -545,22 +545,19 @@ cmd_node_artifacts_load() { # <s3 key> <sha256> <version>
   [[ "${key}" =~ ^releases/[A-Za-z0-9._-]+$ ]] || die "not a releases/ S3 key: ${key}"
   [[ "${want}" =~ ^[0-9a-f]{64}$ ]] || die "not a sha256: ${want}"
   [[ "${ver}" =~ ^[0-9][0-9A-Za-z.-]{0,18}$ ]] || die "invalid scan-node version: ${ver}"
-  sudo -n mkdir -p "${ARCHIVE_DIR}"
-  sudo -n chown "$(id -u):$(id -g)" "${ARCHIVE_DIR}"
-  chmod 700 "${ARCHIVE_DIR}"
-  file="${ARCHIVE_DIR}/node-artifacts.tar.gz"
-  rm -f "${file}"
-  EXIT_RM=("${file}")
-  log "downloading s3://${BUCKET}/${key} (bucket owner ${ACCOUNT}) to ${file}"
-  aws s3api get-object --region "${REGION}" --bucket "${BUCKET}" --key "${key}" --expected-bucket-owner "${ACCOUNT}" \
-    "${file}" >/dev/null
-  got="$(sha256sum "${file}" | cut -d' ' -f1)"
-  [[ "${got}" == "${want}" ]] || die "node-artifacts archive sha256 ${got} is not ${want}"
   mkdir -p "${BASE_DIR}"
   stage="$(mktemp -d "${BASE_DIR}/.stage.XXXXXX")"
-  tar -C "${stage}" -xzf "${file}"
+  file="${stage}/node-artifacts.tar.gz"
+  log "downloading s3://${BUCKET}/${key} (bucket owner ${ACCOUNT}) to ${file}"
+  aws s3api get-object --region "${REGION}" --bucket "${BUCKET}" --key "${key}" --expected-bucket-owner "${ACCOUNT}" \
+    "${file}" >/dev/null || { rm -rf "${stage}"; die "cannot download s3://${BUCKET}/${key}"; }
+  got="$(sha256sum "${file}" | cut -d' ' -f1)"
+  if [[ "${got}" != "${want}" ]]; then
+    rm -rf "${stage}"
+    die "node-artifacts archive sha256 ${got} is not ${want}"
+  fi
+  tar -C "${stage}" -xzf "${file}" || { rm -rf "${stage}"; die "cannot unpack node-artifacts archive"; }
   rm -f "${file}"
-  EXIT_RM=()
   (cd "${stage}" && sha256sum -c ./*.sha256 >/dev/null) || { rm -rf "${stage}"; die "scan-node download checksum mismatch"; }
   chmod 755 "${stage}"
   chmod 644 "${stage}"/*
