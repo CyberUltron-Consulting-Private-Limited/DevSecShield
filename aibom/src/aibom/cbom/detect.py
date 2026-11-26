@@ -513,6 +513,11 @@ JS_LITERALS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("3des", re.compile(r"['\"]des-ede3-\w+['\"]|['\"]des3['\"]", _F)),
     # Node ``'des-cbc'`` but NOT the 3DES ``des-ede3`` spelling above.
     ("des", re.compile(r"['\"]des-(?:cbc|ecb|cfb|ofb)['\"]", _F)),
+    # Node OpenSSL Blowfish names: ``'bf-cbc'``, and a bare ``'bf'`` only as the
+    # cipher of ``createCipher[iv]`` (re-review 6066887930)
+    ("blowfish", re.compile(
+        r"['\"]bf-(?:cbc|ecb|cfb|ofb)['\"]"
+        r"|createCipher(?:iv)?\s*\(\s*['\"]bf['\"]", _F)),
     # WebCrypto ``{name:"AES-GCM"|"AES-CBC"|…}`` — no size digit, mode via suffix.
     ("aes", re.compile(r"\bAES-(?:GCM|CBC|CTR|KW|CCM)\b", _F)),
     # WebCrypto RSA identifiers + Node ``generateKeyPair[Sync]('rsa',…)`` (the
@@ -600,6 +605,8 @@ DOTNET_LITERALS: tuple[tuple[str, re.Pattern[str]], ...] = (
     # Hash provider classes (``new SHA1Managed()``, ``new MD5CryptoServiceProvider()``, ``SHA256Cng``): the class
     # suffix leaves no word boundary after the family, so the global ``\bMD5\b`` / ``\bSHA-?1\b`` never fire.
     ("md5", re.compile(r"\bMD5(?:CryptoServiceProvider|Cng)\b", _F)),
+    # BouncyCastle .NET engines: the class name is the algorithm (re-review 6066887930)
+    ("blowfish", re.compile(r"\bBlowfishEngine\b")),
     ("sha1", re.compile(r"\bSHA1(?:Managed|CryptoServiceProvider|Cng)\b", _F)),
     ("sha256", re.compile(r"\bSHA256(?:Managed|CryptoServiceProvider|Cng)\b", _F)),
     ("sha384", re.compile(r"\bSHA384(?:Managed|CryptoServiceProvider|Cng)\b", _F)),
@@ -1383,6 +1390,10 @@ _ALIAS_DECL = re.compile(
     r"^\s*(?:(?:const|let|var|val|final|private|static|String|auto)\s+)*"
     r"([A-Za-z_]\w*)\s*(?::[^=]+)?(?<![=!<>])=(?![=>])\s*(.+)$"
 )
+_GETTER_MARK = "()"
+_GET_THEN_ATTR = re.compile(
+    r"""\.get\(\s*["']([A-Za-z_][\w.-]*)["']\s*\)\s*\.\s*([A-Za-z_]\w*)\b(?!\s*\()"""
+)
 # a Java bean getter (``props.getHashAlgorithm()``) reads the property
 _GETTER = re.compile(r"(?<![\w.])([A-Za-z_]\w*)\s*\.\s*get([A-Z]\w*)\s*\(\s*\)")
 
@@ -1403,13 +1414,17 @@ def _expr_reads(raw: str) -> list[tuple[str, str | None]]:
     out: list[tuple[str, str | None]] = []
     blanked = _blank_strings(raw)
     for m in _GETTER.finditer(blanked):
-        out.append((m.group(2).lower(), m.group(1)))
+        out.append((m.group(2).lower(), m.group(1) + _GETTER_MARK))
+    # node-config ``config.get('security').hashAlgorithm`` reads hashAlgorithm through
+    # ``security`` (re-review 6066887930)
+    for m in _GET_THEN_ATTR.finditer(raw):
+        out.append((m.group(2).lower(), m.group(1).rsplit(".", 1)[-1]))
     code = _CALL_CHAIN.sub("(", blanked)
     for m in _READ_CHAIN.finditer(code):
         parts = [p.strip() for p in m.group(0).split(".")]
         if len(parts) > 1 and parts[-1].lower() in _VALUE_ATTRS:
             parts = parts[:-1]  # ``Hash.WEAK.value`` / ``.name`` read the member
-        out.append((parts[-1].lower(), parts[0] if len(parts) > 1 else None))
+        out.append((parts[-1].lower(), parts[-2] if len(parts) > 1 else None))
     for m in _SUBSCRIPT_KEY.finditer(raw):
         out.append((m.group(2).lower(), m.group(1)))
     for lit in _STR_LIT.finditer(raw):
@@ -1641,6 +1656,7 @@ class _ConfigLiterals:
         if not binding:
             return None
         for name, n, qualifier in self.sites:
+            qualifier = qualifier.removesuffix(_GETTER_MARK) if qualifier else None
             via_owner = bool(qualifier and qualifier in owners)
             if name == binding and (not qualified or via_owner):
                 return str(n)
@@ -1665,6 +1681,29 @@ class _ConfigLiterals:
         uses = getattr(self.project_reads, "uses", None)
         return uses(name) if callable(uses) else None
 
+    def object_text(self, line_idx: int, col: int) -> str:
+        """The text of the object literal holding the literal at ``col`` of line
+        ``line_idx`` (its other keys: ``{'algorithm': 'RSA', 'key_size': 1024}``)."""
+        line = self.lines[line_idx]
+        stack = list(self.stack_at[line_idx])
+        self._walk(line, _blank_strings(line), stack, col)
+        depth = len(stack)
+        start = line_idx
+        while (
+            start > 0
+            and len(self.stack_at[start]) >= depth
+            and line_idx - start < 30
+        ):
+            start -= 1
+        end = line_idx
+        while (
+            end + 1 < len(self.lines)
+            and len(self.stack_at[end + 1]) >= depth
+            and end - line_idx < 30
+        ):
+            end += 1
+        return " ".join(self.lines[start:end + 1])
+
     def _call_target_at(self, line_idx: int, callee: str | None) -> str | None:
         """The first argument of ``callee(`` when it is a plain name, also when the
         call opened on an earlier line (``Object.assign(\n  settings,\n  {...}``)."""
@@ -1683,13 +1722,27 @@ class _ConfigLiterals:
         if not callee:
             return None
         pat = re.compile(
-            rf"(?:^|[^\w.$])([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*(?:await\s+)?"
+            rf"(?:^|[^\w.$])([A-Za-z_$][\w$.]*)\s*(?::[^=]+)?=\s*(?:await\s+)?"
             rf"{re.escape(callee)}\s*\("
         )
+        ret = re.compile(rf"\breturn\s+(?:await\s+)?{re.escape(callee)}\s*\(")
         for j in range(line_idx, max(0, line_idx - 20) - 1, -1):
             if re.search(rf"\b{re.escape(callee)}\s*\(", self.lines[j]):
                 m = pat.search(self.lines[j])
-                return m.group(1) if m else None
+                if m:
+                    # ``module.exports = ...`` / ``app.settings = ...``: the member
+                    return m.group(1).rsplit(".", 1)[-1]
+                if ret.search(self.lines[j]):
+                    # ``return Object.assign(...)``: the function owns its result
+                    return self._enclosing_function(j)
+                return None
+        return None
+
+    def _enclosing_function(self, line_idx: int) -> str | None:
+        for j in range(line_idx, max(0, line_idx - 200) - 1, -1):
+            m = _FUNCTION_NAME.search(self.lines[j])
+            if m:
+                return next(g for g in m.groups() if g)
         return None
 
     def _flows(self, binding: str | None, owners: Sequence[str] = ()) -> bool:
@@ -1913,6 +1966,13 @@ class _ConfigLiterals:
 
 
 Judged = tuple[int, int, str, str, tuple[str, ...]]
+_FUNCTION_NAME = re.compile(
+    r"\bfunction\s*\*?\s*([A-Za-z_$][\w$]*)\s*\("
+    r"|\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?"
+    r"(?:function\b|\([^)]*\)\s*=>)"
+    r"|^\s*(?:async\s+)?([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*\{"
+    r"|\bdef\s+([A-Za-z_]\w*)\s*\("
+)
 _SPRING_PROPS = re.compile(
     r"@ConfigurationProperties\b[^\n]*\n(?:\s*@[^\n]*\n)*\s*"
     r"(?:(?:public|final|open|data|abstract)\s+)*class\s+([A-Za-z_]\w*)"
@@ -2552,7 +2612,12 @@ _MEMBER_BEFORE = re.compile(r"\bin\s+(?:[\w$]+\.)?$")
 _MEMBER_AFTER = re.compile(r"^\s*\.\s*(?:contains|includes|has|containsKey|__contains__)\s*\(")
 _NEGATED_BEFORE = re.compile(r"(?:\bnot\s+in|!)\s*(?:[\w$]+\.)?$")
 _REJECTS = re.compile(
-    r"\b(?:raise|throw)\b|\breturn\s+(?:false|False|null|None|nil|undefined)\b|\b(?:abort|die|panic|reject)\s*\(")
+    r"\b(?:raise|throw)\b|\breturn\s+(?:false|False|null|None|nil|undefined)\b|\b(?:abort|die|panic|reject)\s*\("
+    # an HTTP error response rejects too (``return res.status(400).end()``, a
+    # ``res.sendStatus(403)`` on the next line, ``return;``; re-review 6066887930)
+    r"|\breturn\b.*\b(?:status|sendStatus)\s*\(\s*[45]\d\d\b"
+    r"|(?:[\w$]+\.)*(?:status|sendStatus)\s*\(\s*[45]\d\d\b"
+    r"|\breturn\s*;|\bprocess\.exit\s*\(")
 _CONDITIONAL = re.compile(r"\b(?:if|elif|unless|when)\b")
 _DENY_WORDS = frozenset({
     "weak", "insecure", "forbidden", "forbid", "disallowed", "disallow", "deny", "denied", "denylist",
@@ -3091,6 +3156,58 @@ def _tag_settings(
                 break
 
 
+_SIZE_KEY = re.compile(
+    r"""\b(?:key_?size|key_?length|bits|modulus_?length|size)["']?\s*[:=]\s*"""
+    r"(\d{3,5})\b",
+    re.I,
+)
+_JCA_GUESS = ("Cipher", "MessageDigest", "Mac", "Signature", "KeyPairGenerator",
+              "KeyGenerator", "SecretKeyFactory")
+
+
+def _settings_assets(
+    per_line: dict[str, Detection],
+    settings: list[tuple[int, int, str, tuple[str, ...]]],
+    line: str,
+    line_no: int,
+    config: _ConfigLiterals,
+) -> None:
+    """Assets a setting names that the literal lane cannot spell (re-review
+    6066887930): ``{'algorithm': 'RSA', 'key_size': 1024}`` is RSA-1024 (a bare
+    ``'RSA'`` names nothing elsewhere), and a Spring ``@ConfigurationProperties``
+    field holding a JCA name (``"DES/ECB/PKCS5Padding"``) is that algorithm."""
+    for start, end, binding, owners in settings:
+        value = line[start + 1:end - 1].strip()
+        found: list[Detection] = []
+        if value.lower() == "rsa":
+            size = _SIZE_KEY.search(config.object_text(line_no - 1, start))
+            if size:
+                found.append(Detection(key="rsa", line_no=line_no,
+                                       key_size=int(size.group(1))))
+        elif config.spring_class and re.fullmatch(r"[\w./-]{2,80}", value):
+            for cls in _JCA_GUESS if "/" not in value else ("Cipher",):
+                assets = jca_assets(cls, value)
+                if assets:
+                    found.extend(
+                        Detection(key=k, line_no=line_no, variant=v, mode=md,
+                                  key_size=sz)
+                        for k, v, md, sz in assets
+                    )
+                    break
+        for det in found:
+            read = config.read_at(binding, owners)
+            if read is None and binding in config.keys:
+                read = "library-key"
+            if det.key in per_line:
+                _merge(per_line[det.key], det)
+                det = per_line[det.key]
+            else:
+                per_line[det.key] = det
+            det.config_binding = binding
+            det.config_read_at = read
+            det.low_confidence = read is None
+
+
 def _tag_registries(
     per_line: dict[str, Detection],
     registries: list[tuple[int, int, str, tuple[str, ...]]],
@@ -3331,6 +3448,8 @@ def detect_crypto(
             _tag_settings(per_line, settings, lit_line, pats_by_key, config)
         if registries and config is not None:
             _tag_registries(per_line, registries, line, line_no, pats_by_key, config)
+        if settings and config is not None:
+            _settings_assets(per_line, settings, line, line_no, config)
         for d in substituted.get(line_no, ()):
             keys = _value_keys(d.value, lang)
             for det in per_line.values():

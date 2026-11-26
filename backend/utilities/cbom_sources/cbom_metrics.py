@@ -118,8 +118,37 @@ def _unverified(sure: dict[str, int], guessed: dict[str, int]) -> dict[str, Any]
     score, grade, label = posture_risk(both["critical"], both["high"], both["medium"], both["low"])
     note = f"unverified: {n} unconfirmed setting{'s' if n != 1 else ''}" + (
         f" (worst: {worst.capitalize()})" if worst else "")
-    return {"count": n, "worst": worst, "note": note,
+    # the contract #505 reads (PR #500 defines it; re-review 6066887930): ``kind`` names what is unverified
+    return {"kind": UNVERIFIED_KIND, "count": n, "worst": worst, "note": note,
             "worst_case": {"score": score, "grade": grade, "label": label, "band": label.split(" ")[0].lower()}}
+
+
+UNVERIFIED_KIND = "unconfirmed_setting"
+
+
+def unverified_severity(row: Any) -> str | None:
+    """The severity an unconfirmed-setting finding would have if a crypto call were proven to read it (the engine's
+    ``unverified_severity``; its impact for a row stored without it); None for any other row, test code and clean
+    inventory included."""
+    if not isinstance(row, dict) or row.get("config_status") != "unconfirmed" or row.get("code_context") == "test":
+        return None
+    severity = finding_severity(display_row(row))
+    if severity is None:
+        return None  # clean inventory: no finding to verify
+    worst = str(row.get("unverified_severity") or "").strip().lower()
+    return worst if worst in SEVERITIES else severity
+
+
+def unverified_counts(rows: Iterable[Any]) -> dict[str, int]:
+    """Public: the worst-case severity counts of a scan's unconfirmed settings, ``{"critical", "high", "medium",
+    "low"}``: what ``risk_unverified`` and its ``worst_case`` are built from. #505's team roll-up and Board Report
+    import this rather than recount."""
+    counts = {s: 0 for s in SEVERITIES}
+    for row in rows or ():
+        severity = unverified_severity(row)
+        if severity is not None:
+            counts[severity] += 1
+    return counts
 
 
 RISK_FIELDS = ("risk_score", "risk_grade", "risk_label", "risk_posture")
@@ -218,8 +247,7 @@ class CodeRowSummary:
                 self.findings_in_test_code += 1
             elif row.get("config_status") == "unconfirmed":
                 self.findings_unconfirmed += 1
-                worst = str(row.get("unverified_severity") or "").strip().lower()
-                self.unverified[worst if worst in self.unverified else severity] += 1
+                self.unverified[unverified_severity(raw) or severity] += 1  # the public helper's rule
             else:
                 self.scored[severity] += 1
             for value in (row.get("owasp_top_10") or {}).values():

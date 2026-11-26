@@ -18,6 +18,8 @@ export type SastAppLang = "python" | "javascript" | "java" | "php" | "c" | "ruby
 /** #505's ``risk_unverified`` on a CBOM scan: settings no crypto call is proven to read, kept out of the confirmed
  * score; ``worst_case`` (confirmed and unconfirmed together) is what the risk filter and sort read. */
 export interface RiskUnverified {
+  /** what is unverified: "unconfirmed_setting" on a CBOM code scan (the contract #505 reads) */
+  kind?: string
   count: number
   worst: string | null
   note: string

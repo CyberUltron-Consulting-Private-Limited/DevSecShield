@@ -177,7 +177,14 @@ def _unverified(sure: dict[str, int], guessed: dict[str, int]) -> dict[str, Any]
     if worst:
         note += f" (worst: {worst.capitalize()})"
     both = {k: sure[k] + guessed[k] for k in _SEVERITIES}
-    return {"count": n, "worst": worst, "worst_case": _posture_of(both), "note": note}
+    # ``kind``: what is unverified (the contract #505's roll-up reads)
+    return {
+        "kind": "unconfirmed_setting",
+        "count": n,
+        "worst": worst,
+        "worst_case": _posture_of(both),
+        "note": note,
+    }
 
 
 __all__ = [

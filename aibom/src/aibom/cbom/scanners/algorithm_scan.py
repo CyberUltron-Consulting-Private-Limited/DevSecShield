@@ -233,7 +233,7 @@ class ProjectReads:
         # lang -> name -> [(reader, line, qualifier, typed)]: ``typed`` when the
         # qualifier is the declared type of the variable read through
         self.sites: dict[
-            str, dict[str, list[tuple[_Reader, int, str | None, bool]]]
+            str, dict[str, list[tuple[_Reader, int, str | None, bool, bool]]]
         ] = {}
         # lang -> every file (its imports and identifiers): registry uses
         self.readers: dict[str, list[_Reader]] = {}
@@ -275,8 +275,12 @@ class ProjectReads:
             typed.update(dict(_TS_TYPED.findall(text)))
             by_name = self.sites.setdefault(lang or "", {})
             for name, line, qualifier in sites:
-                kind = typed.get(qualifier or "")
-                entry = (reader, line, kind or qualifier, kind is not None)
+                # a bean getter (``props.getX()``) proves only through a known owner
+                # type, never by a name match (re-review 6066887930)
+                getter = bool(qualifier and qualifier.endswith("()"))
+                owner = qualifier[:-2] if qualifier and getter else qualifier
+                kind = typed.get(owner or "")
+                entry = (reader, line, kind or owner, kind is not None, getter)
                 by_name.setdefault(name, []).append(entry)
                 if qualifier is None and name in local:
                     # ``const { digest: alg } = require('./config')`` then
@@ -295,14 +299,15 @@ class ProjectReads:
 
         def prove(binding: str, owners: tuple[str, ...]) -> str | None:
             real = [o for o in owners if o and o not in _NOT_OWNERS]
-            for reader, line, qualifier, typed in by_name.get(binding, ()):
+            for reader, line, qualifier, typed, getter in by_name.get(binding, ()):
                 if reader.path == rel:
                     continue
                 # a renamed import reads the original (``AppCfg.HASH`` reads Cfg's)
                 names = {qualifier, *renames.get(qualifier or "", ())} - {None}
-                if typed:
+                if typed or getter:
                     # read through a variable of a declared type: that type only
-                    # (a ``props`` of another class proves nothing; 6066152368)
+                    # (a ``props`` of another class proves nothing; 6066152368); a
+                    # getter on a variable of unknown type proves nothing either
                     if any(q in real for q in names):
                         return f"{reader.path}:{line}"
                     continue
@@ -324,7 +329,8 @@ class ProjectReads:
                 if imported is None or not imported.search(reader.imports):
                     continue
                 text = self.walk.read_text(reader.source) or ""
-                word = re.compile(rf"(?<![\w.]){re.escape(name)}(?!\w)")
+                # ``HASHERS[...]`` or through the module (``reg.HASHERS.get(...)``)
+                word = re.compile(rf"(?<!\w){re.escape(name)}(?!\w)")
                 for n, ln in enumerate(text.split("\n"), start=1):
                     if word.search(ln) and not _IMPORT_LINE.match(ln.strip()):
                         return f"{reader.path}:{n}"
@@ -363,6 +369,9 @@ def node_config_js(text: str, ext: str) -> str:
     out = [""] * len(text.split("\n"))
     path: list[str] = []
     if ext == "json":
+        structured = _json_config_lines(text, len(out))
+        if structured is not None:
+            return "\n".join(structured)
         for i, line in enumerate(text.split("\n")):
             opened, leaf = _JSON_OPEN.match(line), _JSON_LEAF.match(line)
             if opened:
@@ -392,6 +401,37 @@ def node_config_js(text: str, ext: str) -> str:
         if value and value[:1] not in "[{|>&*!":
             out[i] = _config_line([k for _n, k in stack], key, value)
     return "\n".join(out)
+
+
+def _json_config_lines(text: str, n_lines: int) -> list[str] | None:
+    """A JSON config parsed structurally (nested, inline or minified objects): each
+    string leaf as a JS statement on the line it sits on, several on one line when
+    the file puts them there. None when the file is not JSON."""
+    try:
+        tree = json.loads(text)
+    except ValueError:
+        return None
+    if not isinstance(tree, dict):
+        return None
+    out: list[list[str]] = [[] for _ in range(n_lines)]
+    cursor = 0
+
+    def visit(node: dict[str, Any], path: list[str]) -> None:
+        nonlocal cursor
+        for key, value in node.items():
+            key_at = re.compile(re.escape(json.dumps(key)) + r"\s*:")
+            m = key_at.search(text, cursor)
+            if m is None:
+                continue
+            cursor = m.end()
+            if isinstance(value, dict):
+                visit(value, [*path, key])
+            elif isinstance(value, str):
+                line = text.count("\n", 0, m.start())
+                out[line].append(_config_line(path, key, value))
+
+    visit(tree, [])
+    return [" ".join(parts) for parts in out]
 
 
 _STRING_OR_BRACE = re.compile(r'"(?:[^"\\]|\\.)*"|\}')
