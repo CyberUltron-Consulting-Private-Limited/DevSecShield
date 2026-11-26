@@ -289,6 +289,12 @@ function AIBOMScanListDashboard({ dashboardData }: { dashboardData: AiBomScanDas
               <div>
                 <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Avg Risk Score <InfoTip id="aibom.kpi.avg_risk" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.average_risk_score?.toFixed(1) ?? "N/A"}</p>
+                {/* scans a scanner did not finish (review 6063929550 of #498, R5-M2) */}
+                {(card.partial_scans ?? 0) > 0 && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400" data-testid="aibom-partial-scans">
+                    Includes {card.partial_scans} partial scan{card.partial_scans === 1 ? "" : "s"}
+                  </p>
+                )}
               </div>
             </div>
           </CardContent>
@@ -868,6 +874,15 @@ export default function AIBOMPage() {
                               <TableCell className="text-sm">
                                 <div className="flex flex-col gap-1.5">
                                   {getStatusBadge(conversation.scan_status as ScanStatus)}
+                                  {conversation.completeness === "partial" && (
+                                    <span
+                                      className="w-fit rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300"
+                                      data-testid="aibom-row-partial"
+                                      title="A scanner did not finish: the grade is withheld"
+                                    >
+                                      Partial: scan incomplete
+                                    </span>
+                                  )}
                                   {progress != null && conversation.scan_status !== "success" && conversation.scan_status !== "failure" && (
                                     <div className="flex items-center gap-2">
                                       <Progress value={progress} className="h-1.5 flex-1" />

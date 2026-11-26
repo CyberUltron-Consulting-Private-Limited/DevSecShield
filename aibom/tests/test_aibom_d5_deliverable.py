@@ -234,20 +234,21 @@ def test_risk_score_is_bounded_by_the_findings(run: dict) -> None:
             (0, 0, 10, 32),
             49,
         ),  # SmarterRouter on staging: 100 / F with zero critical or high
-        ((0, 0, 0, 500), 29),
+        ((0, 0, 0, 500), 14),  # low only: grade A since staging QA round 2
         ((0, 3, 50, 0), 69),
-        ((1, 0, 0, 0), 40),
+        # one critical scores 40 raw; the critical band starts at 50 (review
+        # 6037909737 of #498, m2: the grade follows the worst severity)
+        ((1, 0, 0, 0), 100),
         ((0, 0, 0, 0), 0),
     ],
 )
 def test_posture_score_never_exceeds_the_worst_severity(
     counts: tuple, cap: int
 ) -> None:
-    assert posture_score(*counts) <= cap
-    assert posture_score(*counts) == min(
-        cap if counts[0] == 0 else 100,
-        min(100, 4 * (10 * counts[0] + 5 * counts[1] + 2 * counts[2] + counts[3])),
-    )
+    floor = 50 if counts[0] else 30 if counts[1] else 15 if counts[2] else 0
+    raw = min(100, 4 * (10 * counts[0] + 5 * counts[1] + 2 * counts[2] + counts[3]))
+    assert floor <= posture_score(*counts) <= cap
+    assert posture_score(*counts) == max(floor, min(cap, raw))
 
 
 # --------------------------------------------------------------------------- identity

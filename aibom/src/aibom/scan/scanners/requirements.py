@@ -7,9 +7,11 @@ parser. ``pyproject.toml`` is the modern default for AI/agent repos — a
 For a monorepo (e.g. the MCP reference servers, one pyproject per ``src/<server>``)
 EVERY pyproject under the root is parsed, bounded for safety.
 
-A dependency whose license could NOT be resolved (genuinely unknown — not in the
-manifest) is flagged ``FRAMEWORK_NO_LICENSE`` (advisory): a concluded license per
-component is an FDA §524B / NTIA SBOM minimum element and a NIST governance signal.
+A dependency whose license could NOT be resolved (not in the offline manifest, and
+no registry is consulted: no egress) is flagged ``FRAMEWORK_LICENSE_UNKNOWN``: its
+licence is unknown / partial, which is not the same as a library with no licence
+(QA round 2, Q2-07; #489 treats an SBOM's offline licences the same way). The flag
+has weight 0, so an unresolved licence never drives the risk score.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from aibom.scan.parsers.ai_libraries import classify
+from aibom.scan.parsers.license_resolver import normalize_pkg, unknown_licence_message
 from aibom.scan.parsers.requirements import parse_pyproject, parse_requirements
 from aibom.scan.registry import ScanContext, Scanner, register
 from aibom.scan.safe_files import is_regular_file, walk_files
@@ -52,9 +55,13 @@ class RequirementsScanner(Scanner):
         seen: set[str] = set()
         excluded = {"dev": 0, "other": 0}
         for framework in frameworks:
-            if framework.bom_ref in seen:  # de-dup across manifests
+            # de-dup across manifests by the PEP 503 name: requirements.txt
+            # ``pyannote.audio`` and pyproject ``pyannote-audio`` are one library
+            # (review 6062066749 of #498, m2)
+            key = normalize_pkg(framework.name)
+            if key in seen:
                 continue
-            seen.add(framework.bom_ref)
+            seen.add(key)
             # Only AI/ML libraries are AI components. Test/lint tools and ordinary
             # runtime dependencies (web, database, cache) are SBOM inventory; they
             # are counted on the BOM, never classed as ML frameworks.
@@ -65,14 +72,10 @@ class RequirementsScanner(Scanner):
             ctx.add_component(framework)
             if not framework.licenses:
                 ctx.add_flag(
-                    "FRAMEWORK_NO_LICENSE",
+                    "FRAMEWORK_LICENSE_UNKNOWN",
                     framework.bom_ref,
                     severity="note",
-                    message=(
-                        f"No concluded license for {framework.name!r}; could not "
-                        "resolve from the SPDX manifest. Add a declared license "
-                        "(SBOM minimum element / governance signal)."
-                    ),
+                    message=unknown_licence_message(framework.name),
                 )
         if excluded["dev"]:
             key = "aibom:dependencies_excluded_dev_tools"

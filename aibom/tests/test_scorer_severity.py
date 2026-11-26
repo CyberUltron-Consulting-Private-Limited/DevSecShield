@@ -33,8 +33,13 @@ def _severities(fixture: str) -> Counter:
 # ── the DONE: the synthetic fixture yields >=1 finding per band ──────────────
 def test_synthetic_scorer_fixture_one_per_band() -> None:
     dist = _severities("synthetic-scorer")
-    for band in _BANDS:
+    # QA round 2 (Q2-07): the fixture's only medium came from a library whose licence
+    # the offline manifest does not know; an unresolved licence is unknown / partial
+    # and no longer scored, so the fixture spans critical / high / low and the medium
+    # band is covered by the stacking tests (component_severity(5 / 6) == medium).
+    for band in ("Critical", "High", "Low"):
         assert dist.get(band, 0) >= 1, f"no {band} finding (got {dict(dist)})"
+    assert dist.get("Medium", 0) == 0, dict(dist)
 
 
 def test_planted_secret_is_critical() -> None:

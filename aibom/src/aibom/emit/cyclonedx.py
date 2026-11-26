@@ -175,7 +175,12 @@ def _model_card_dict(card: ModelCard) -> dict[str, Any]:
     if c is not None:
         _add(considerations, "users", list(c.users))
         _add(considerations, "useCases", list(c.use_cases))
-        _add(considerations, "technicalLimitations", list(c.technical_limitations))
+        _add(
+            considerations,
+            "technicalLimitations",
+            list(c.technical_limitations)
+            + [f"Out of scope: {u}" for u in c.out_of_scope],
+        )
         if c.ethical_considerations:
             ethical = []
             for e in c.ethical_considerations:
@@ -233,6 +238,41 @@ def _emit_model(comp: ModelComponent) -> dict[str, Any]:
         merged.update(comp.properties)
     if merged:
         out["properties"] = _properties_list(merged)
+    evidence = _unidentified_evidence(comp.properties or {})
+    if evidence:
+        out["evidence"] = evidence
+    return out
+
+
+def _unidentified_evidence(props: dict[str, str]) -> dict[str, Any] | None:
+    """CycloneDX 1.6 ``evidence`` for a model the code uses without naming it
+    (``ChatOpenAI()``: ``model:identified`` = ``false``, #498 round 3): the name is a
+    placeholder, so its identity confidence is low, and the call is the evidence."""
+    if props.get("model:identified") != "false":
+        return None
+    call = props.get("discovery:snippet", "")
+    reason = props.get("model:unidentified_reason", "library default model applies")
+    library = props.get("model:default_from_library")
+    value = f"{call}: {reason}" + (
+        f" ({library})" if library and "library default" in reason else ""
+    )
+    out: dict[str, Any] = {
+        "identity": [
+            {
+                "field": "name",
+                "confidence": 0.1,
+                "methods": [
+                    {"technique": "source-code-analysis", "confidence": 0.1,
+                     "value": value}
+                ],
+            }
+        ]
+    }
+    sources = (props.get("discovery:sources") or props.get("discovery:source", ""))
+    locations = [s for s in sources.split(",") if _repo_relative(s)]
+    if locations:
+        # every call site of the unidentified model (review 6062066749 of #498, m1)
+        out["occurrences"] = [{"location": s} for s in locations]
     return out
 
 

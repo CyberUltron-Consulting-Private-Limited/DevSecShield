@@ -67,9 +67,18 @@ def _is_concrete(lic: str) -> bool:
     return bool(low) and low not in ("unknown", "none", "null", "n/a")
 
 
+# SPDX's "not determined": a library licence the offline manifest did not resolve (QA round 2, Q2-07). Unknown /
+# partial: neither a declared licence (governance) nor an unlicensed library.
+LICENSE_UNKNOWN = "NOASSERTION"
+
+
+def is_unknown_license(lic: str) -> bool:
+    return str(lic or "").strip().upper() == LICENSE_UNKNOWN
+
+
 def is_governance_license(lic: str) -> bool:
     """True when license counts toward governance readiness (declared SPDX/proprietary)."""
-    if not _is_concrete(lic):
+    if not _is_concrete(lic) or is_unknown_license(lic):
         return False
     low = lic.strip().lower()
     if low in (
@@ -81,7 +90,9 @@ def is_governance_license(lic: str) -> bool:
 
 
 def is_unlicensed_library_gap(lic: str) -> bool:
-    """True when a library row still lacks a usable OSS/SPDX license."""
+    """True when a library row still lacks a usable OSS/SPDX license (an unresolved one is unknown, not a gap)."""
+    if is_unknown_license(lic):
+        return False
     if not _is_concrete(lic):
         return True
     low = lic.strip().lower()

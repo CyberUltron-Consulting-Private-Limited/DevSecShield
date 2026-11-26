@@ -287,6 +287,12 @@ export default function TeamPage() {
                     <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Completed scans <InfoTip id="team.kpi.completed" /></p>
                     <p className="text-xl font-bold text-zinc-900 dark:text-white tabular-nums">{card.total_completed_scans}</p>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">Success</p>
+                    {/* AI BOM scans a scanner did not finish (review 6063929550 of #498, R5-M2) */}
+                    {(card.total_partial_scans ?? 0) > 0 && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400" data-testid="team-partial-scans">
+                        {card.total_partial_scans} partial: scan incomplete
+                      </p>
+                    )}
                   </div>
                 </div>
               </CardContent>

@@ -22,7 +22,9 @@ from typing import Literal
 
 from aibom.emit._disclaimer import ADVISORY_DISCLAIMER, CBOM_DISCLAIMER
 from aibom.model.component import (
+    CloudServiceComponent,
     DatasetComponent,
+    EndpointComponent,
     FrameworkComponent,
     InfraComponent,
     ModelComponent,
@@ -59,6 +61,9 @@ __all__ = [
     "vendor_accountability",
     "models",
     "clinical_models",
+    "unidentified_models",
+    "needs_identification",
+    "UNIDENTIFIED_NOTE",
     "datasets",
     "frameworks",
     "services",
@@ -69,6 +74,7 @@ __all__ = [
     "deployed_sites",
     "depends_on_frameworks",
     "is_deidentified",
+    "external_serving_services",
     "has_license",
 ]
 
@@ -203,30 +209,49 @@ def vendor_accountability(r: ScanResult, ms: list[ModelComponent]) -> CheckResul
     records the contract (``service:dpa``, ``service:contract`` or ``service:baa``
     = ``"true"``) passes. The contract itself is never visible in code, so without
     that fact the requirement needs evidence (attestable), never a fail."""
-    served = [m for m in ms if serving_services(r, m)]
+    served = [m for m in ms if external_serving_services(r, m)]
     if not served:
         return NA("no externally-served models to assess vendor accountability")
     keys = ("service:dpa", "service:contract", "service:baa")
+
+    def self_hosted(m: ModelComponent) -> bool:
+        # every service outside the machine is a self-hosted model server (a remote
+        # Ollama): there is no vendor; who operates the host is the evidence
+        # (review 6063080163 of #498, m3)
+        return all(
+            (s.properties or {}).get("service:kind") == "model_server"
+            for s in external_serving_services(r, m)
+        )
+
     missing = [
-        m.bom_ref
+        m
         for m in served
         if not any(
             (s.properties or {}).get(k) == "true"
-            for s in serving_services(r, m)
-            for k in keys
+            for s in external_serving_services(r, m)
+            for k in keys + ("service:operator_attested",)
         )
     ]
     if not missing:
         return PASS(
             "every externally-served model's vendor records a contract "
-            "(DPA / outsourcing agreement)",
+            "(DPA / outsourcing agreement) or its self-hosted operator",
             [m.bom_ref for m in served],
         )
-    return NOT_EVIDENCEABLE(
-        f"{len(missing)} served model(s): the vendor contract (DPA / outsourcing "
-        "agreement) is not visible in code; attach it as evidence",
-        missing,
-    )
+    hosted = [m.bom_ref for m in missing if self_hosted(m)]
+    vendor = [m.bom_ref for m in missing if not self_hosted(m)]
+    parts = []
+    if vendor:
+        parts.append(
+            f"{len(vendor)} served model(s): the vendor contract (DPA / outsourcing "
+            "agreement) is not visible in code; attach it as evidence"
+        )
+    if hosted:
+        parts.append(
+            f"{len(hosted)} model(s) on a self-hosted model server: no vendor; attest "
+            "who operates the host and its access controls (hosting evidence)"
+        )
+    return NOT_EVIDENCEABLE("; ".join(parts), vendor + hosted)
 
 
 def NOT_EVIDENCEABLE(evidence: str, refs: list[str] | None = None) -> CheckResult:
@@ -257,6 +282,51 @@ def models(r: ScanResult) -> list[ModelComponent]:
         for c in r.components
         if isinstance(c, ModelComponent) and not is_model_mention(c)
     ]
+
+
+UNIDENTIFIED_NOTE = (
+    "AI model use detected; model not identified (library default applies)"
+)
+
+
+def unidentified_models(r: ScanResult) -> list[ModelComponent]:
+    """Models in use whose identity is unknown: a client built with no model argument
+    (``ChatOpenAI()``) runs the library's default model (``model:identified`` =
+    ``false``, recorded by the net-env scanner; #498 round 3)."""
+    return [
+        m for m in models(r) if (m.properties or {}).get("model:identified") == "false"
+    ]
+
+
+def needs_identification(r: ScanResult, cr: CheckResult) -> CheckResult:
+    """A PASS that vouches for an unidentified model cannot stand: nothing about the
+    model is known, so the requirement needs information (attestable), never a pass.
+    A FAIL whose every failing model is unidentified fails only because the model is
+    not known: it needs information too. A FAIL on an identified model stays a FAIL."""
+    if cr.verdict not in ("pass", "fail"):
+        return cr
+    unknown = {m.bom_ref: m for m in unidentified_models(r)}
+    hit = [ref for ref in cr.refs if ref in unknown]
+    if not hit or (cr.verdict == "fail" and len(hit) != len(cr.refs)):
+        return cr
+    calls = "; ".join(
+        (unknown[ref].properties or {}).get("discovery:snippet", unknown[ref].name)
+        for ref in hit
+    )
+    reasons = sorted({
+        r.strip()
+        for ref in hit
+        for r in (unknown[ref].properties or {})
+        .get("model:unidentified_reason", "library default applies")
+        .replace("library default model applies", "library default applies")
+        .split(";")
+    })
+    note = f"AI model use detected; model not identified ({', '.join(reasons)})"
+    return NOT_EVIDENCEABLE(
+        f"{note}: {calls}. Name the model to evidence this requirement "
+        f"for it (otherwise: {cr.evidence})",
+        list(cr.refs),
+    )
 
 
 def clinical_models(r: ScanResult) -> list[ModelComponent]:
@@ -333,11 +403,32 @@ def trained_datasets(r: ScanResult, m: ModelComponent) -> list[DatasetComponent]
     ]
 
 
-def serving_services(r: ScanResult, m: ModelComponent) -> list[ServiceComponent]:
+_SERVING_KINDS = (ServiceComponent, CloudServiceComponent, EndpointComponent)
+
+
+def serving_services(
+    r: ScanResult, m: ModelComponent
+) -> list[ServiceComponent | CloudServiceComponent | EndpointComponent]:
+    """The services a model is ``served_by``: a carded inference service, a vendor
+    API the code calls (net-env ``cloud_service``) or an endpoint. QA round 2 Q2-06:
+    only ``ServiceComponent`` counted, so a model served by the OpenAI API or Amazon
+    Bedrock read as "not externally served" (RBI FREEAI-19-1, NIST GV-2: na)."""
     return [
         c
         for c in r.neighbors(m.bom_ref, REL_SERVED_BY)
-        if isinstance(c, ServiceComponent)
+        if isinstance(c, _SERVING_KINDS)
+    ]
+
+
+def external_serving_services(
+    r: ScanResult, m: ModelComponent
+) -> list[ServiceComponent | CloudServiceComponent | EndpointComponent]:
+    """Serving services outside the application's trust boundary: a loopback
+    endpoint (``service:trust_zone`` local, e.g. Ollama) is not a third party."""
+    return [
+        c
+        for c in serving_services(r, m)
+        if (c.properties or {}).get("service:trust_zone") != "local"
     ]
 
 

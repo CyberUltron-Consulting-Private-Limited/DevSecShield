@@ -12,6 +12,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.platypus import CondPageBreak, KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer
 
+from backend.utilities.compliance import aibom_applicability as APPLICABILITY
 from backend.utilities.dashboard.aibom_license import (
     is_unlicensed_library_gap,
     resolve_aibom_license,
@@ -20,6 +21,7 @@ from backend.utilities.dashboard.aibom_provider import resolve_aibom_provider
 from backend.utilities.dashboard.rbi_posture import build_rbi_csf_rollup
 from backend.utilities.dashboard.risk_scale import average_risk_of
 from backend.utilities.pdf.report_context import ReportContext, details_note, join_parts
+from backend.utilities.pdf import aibom_posture as AIBOM_POSTURE
 from backend.utilities.pdf.report_branding import (
     report_generated,
     append_report_masthead,
@@ -69,6 +71,22 @@ VERDICT_LABEL = {
 
 def _impact_color(impact: str):
     return severity_color(impact)
+
+
+#: candidates named on a finding card before "and N more" (the page's collapsed list shows the same ten first)
+CANDIDATES_SHOWN = 10
+
+
+def candidates_text(v: dict) -> str | None:
+    """"40 candidates: a (Ollama), b (OpenAI) … and 30 more" for a model chosen at run time (``model_candidates``,
+    review 6066180782 of #498, R7-M1): one model, its candidates listed as evidence; None for any other row."""
+    cands = v.get("model_candidates") if isinstance(v, dict) else None
+    if not isinstance(cands, list) or not cands:
+        return None
+    items = [f"{c.get('name')} ({c.get('provider') or 'unknown'})" for c in cands if isinstance(c, dict)]
+    rest = len(items) - CANDIDATES_SHOWN
+    return f"{len(items)} candidates: " + ", ".join(items[:CANDIDATES_SHOWN]) + (
+        f" and {rest} more" if rest > 0 else "")
 
 
 def _asset_name(v: dict) -> str:
@@ -139,7 +157,8 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
 
         lic = _license_type(v)
         if (
-            asset_type not in ("local_model_file", "huggingface_model", "embedding_model", "external_provider")
+            asset_type not in ("local_model_file", "huggingface_model", "embedding_model", "external_provider",
+                               "self_hosted_model", "local_model_server", "self_hosted_model_server")
             and is_unlicensed_library_gap(lic)
         ):
             unlicensed += 1
@@ -169,9 +188,10 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
             )
         )
 
+    scope_payload = raw if raw else (scan_results if isinstance(scan_results, dict) else {})
     scope_rows = [
         ("Average risk score (0–10)", f"{avg_risk:.1f}"),
-        *_bom_scope_rows(raw if raw else (scan_results if isinstance(scan_results, dict) else {})),
+        *_bom_scope_rows(scope_payload),
     ]
 
     overview = [
@@ -210,7 +230,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         project_name="AI BOM Findings",
         scan_time=format_scan_duration(duration),
         # the grade never claims a worse posture than the worst severity found (same formula as the engine's score)
-        risk_score_fn=compute_posture_risk_score,
+        risk_score_fn=_withheld(compute_posture_risk_score, scope_payload),
         meta_chips=[
             ("Scan type", "AI BOM"),
             ("Total assets", str(total)),
@@ -275,6 +295,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                         ("Version", str(v.get("version") or "—")),
                         ("Risk category", str(v.get("risk_category") or "—")),
                         ("Where it was found", finding_location(v)),
+                        *([("Candidates", cands)] if (cands := candidates_text(v)) else []),
                     ],
                     description=str(v.get("description") or ""),
                     evidence=str(v.get("snippet") or ""),
@@ -326,11 +347,37 @@ def _bom_scope_rows(payload: Any) -> List[tuple]:
         comps = [c for c in bom.get("components") or [] if isinstance(c, dict)]
         kinds = [_model_kind(c) for c in comps if c.get("type") == "machine-learning-model"]
         # the models the compliance checks assess ("all N model(s)"): weight files and catalog / test mentions apart
-        rows.append(("Models in use", str(kinds.count("model"))))
+        in_use = kinds.count("model")
+        unidentified = sum(1 for c in comps if c.get("type") == "machine-learning-model"
+                           and _model_kind(c) == "model" and _model_props(c).get("model:identified") == "false")
+        # "N identified + M not identified" (#498 round 4, m1): the same split as the results page
+        rows.append(("Models in use", f"{in_use}" + (f" ({in_use - unidentified} identified, {unidentified} not "
+                                                      "identified)" if unidentified else "")))
+        unnamed = _bom_props(payload).get("aibom:model_unnamed_calls")
+        if unnamed:
+            # a call whose model is not named: the library default, or a model from configuration (#498 rounds 3-4)
+            library = _bom_props(payload).get("aibom:model_unnamed_library", "")
+            detail = _bom_props(payload).get("aibom:model_unnamed_detail", "")
+            rows.append(("Model calls whose model is not identified (library default or configuration)",
+                         f"{unnamed}" + (f" ({library})" if library else "") + (f": {detail}" if detail else "")))
         if kinds.count("weights"):
             rows.append(("Model weight files", str(kinds.count("weights"))))
         rows.append(("AI services and endpoints", str(len(bom.get("services") or []))))
     props = _bom_props(payload)
+    # Scan completeness first: a scanner that did not finish, or notebooks read as raw text (R4-M2)
+    if props.get("aibom:scanner_errors"):
+        # customer wording, the technical detail as a footnote row (review 6063929550 of #498, nit)
+        sentence, detail = AIBOM_POSTURE.scanners_not_finished(props["aibom:scanner_errors"])
+        rows.insert(0, ("Scan completeness", f"Partial: grade withheld because {sentence}; compliance verdicts are "
+                                             "based on an incomplete scan.¹"))
+        rows.insert(1, ("¹ Technical detail (for support)", detail))
+    if props.get("aibom:notebooks_unreadable"):
+        rows.append(("Notebooks read as raw text (not valid notebooks)", props["aibom:notebooks_unreadable"]))
+    coverage = props.get("aibom:licence_coverage", "")
+    if "/" in coverage:  # unknown licences stated in aggregate (review 6037909737 of #498, M7)
+        resolved, _, total = coverage.partition("/")
+        unknown = props.get("aibom:licence_unknown")
+        rows.append(("Library licences resolved", f"{resolved} of {total}" + (f", {unknown} unknown" if unknown else "")))
     for key, label in (
         ("aibom:model_mentions_catalog", "Model names only listed in catalogs (not counted)"),
         ("aibom:model_mentions_test", "Model names only in test code (not counted)"),
@@ -340,6 +387,23 @@ def _bom_scope_rows(payload: Any) -> List[tuple]:
         if props.get(key):
             rows.append((label, props[key]))
     return rows
+
+
+def _withheld(score_fn: Any, payload: Any) -> Any:
+    """The headline grade function, withholding the grade when a scanner did not finish (review 6063080163 of #498,
+    R4-M2): the score is printed as provisional and the grade cell reads "—", never a clean A."""
+    if not (_bom_props(payload).get("aibom:scanner_errors")):
+        return score_fn
+
+    def fn(critical: int, high: int, medium: int, low: int) -> tuple:
+        score, _grade, _band = score_fn(critical, high, medium, low)
+        return score, AIBOM_POSTURE.GRADE_WITHHELD, AIBOM_POSTURE.WITHHELD_LABEL
+
+    return fn
+
+
+def _model_props(comp: dict) -> Dict[str, str]:
+    return {str(p.get("name")): str(p.get("value")) for p in comp.get("properties") or [] if isinstance(p, dict)}
 
 
 def _model_kind(comp: dict) -> str:
@@ -386,20 +450,31 @@ def append_aibom_regulatory_checks(story: List[Any], payload: Any, styles: Dict[
     compliance = payload.get("ai_bom_compliance") if isinstance(payload, dict) else None
     if not isinstance(compliance, dict):
         return False
-    shown = [(k, label) for k, label in SOW_FRAMEWORKS if isinstance(compliance.get(k), dict)]
-    for key, label in HEALTHCARE_FRAMEWORKS:
-        fw = compliance.get(key)
-        if isinstance(fw, dict) and any(int(fw.get(n) or 0) for n in ("pass", "pass_with_evidence", "fail",
-                                                                         "not_bom_evidenceable")):
-            shown.append((key, label))
+    # the frameworks that bind the team's regulatory profile (QA round 2, Q2-08): a bank gets no FDA / HIPAA / GMLP
+    team = payload.get(APPLICABILITY.PROFILE_KEY)
+    team = team if isinstance(team, dict) else None
+    binding, not_applicable = APPLICABILITY.split(compliance, team)
+    shown = [(k, label) for k, label in SOW_FRAMEWORKS + HEALTHCARE_FRAMEWORKS if k in binding]
     if not shown:
         return False
     story.append(CondPageBreak(3.5 * inch))  # a new page unless most of one is left (never a blank page)
+    story.append(Spacer(1, 0.25 * inch))  # never flush under the counts table above (review 6037909737 nit)
     story.append(Paragraph("AI BOM regulatory checks", styles["title"]))
     story.append(Paragraph(
         "Each requirement is checked against the fields and relationships recorded in this AI BOM. Pass: the BOM "
         "shows it. Fail: the BOM shows it is missing. Needs evidence: an organisational control the BOM cannot show; "
         "attach an attestation on the results page. Coverage = pass / (pass + fail).", styles["muted"]))
+    if team is not None and not_applicable:
+        names = ", ".join(APPLICABILITY.LABELS.get(k, k) for k in not_applicable)
+        story.append(Paragraph(escape_html(
+            f"Frameworks shown for this team's regulatory profile ({APPLICABILITY.profile_sentence(team)}). "
+            f"Not applicable to it: {names}."), styles["muted"]))
+    elif team is None and isinstance(payload, dict) and APPLICABILITY.PROFILE_KEY in payload:
+        # the team declared no regulated entity: no filter, and the report says so (review 6037909737 of #498, M4)
+        story.append(Paragraph(escape_html(
+            f"Team regulatory profile: {APPLICABILITY.UNDECLARED}. Every framework this AI BOM is in the scope of is "
+            "shown; set the regulated entity in the CBOM settings to see only the frameworks that bind the team."),
+            styles["muted"]))
     summary = []
     for key, label in shown:
         fw = compliance[key]
@@ -434,6 +509,10 @@ def append_rbi_pillar_rollup(story: List[Any], payload: Any, styles: Dict[str, A
     """The RBI cyber-security framework pillars over the AI BOM's checks (the RBI appendix's one table the
     regulatory checks above do not already show)."""
     ai = payload.get("ai_bom_compliance") if isinstance(payload, dict) else None
+    team = payload.get(APPLICABILITY.PROFILE_KEY) if isinstance(payload, dict) else None
+    if isinstance(ai, dict) and isinstance(team, dict) and "rbi_free_ai" in ai and \
+            not APPLICABILITY.binds("rbi_free_ai", ai["rbi_free_ai"], team):
+        return  # RBI does not bind the team: no RBI pillar table either
     rollup = (payload.get("rbi_csf_rollup") if isinstance(payload, dict) else None) or build_rbi_csf_rollup(
         ai_bom_compliance=ai if isinstance(ai, dict) else None, cbom_compliance=None, sbom_compliance=None)
     pillars = rollup.get("rbi_csf_rollup") if isinstance(rollup, dict) else None

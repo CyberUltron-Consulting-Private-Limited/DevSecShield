@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from aibom.scan.parsers.code_imports import find_ai_imports
+from aibom.scan.parsers.code_imports import find_ai_imports, notebook_text
+from aibom.scan.parsers.license_resolver import normalize_pkg, unknown_licence_message
 from aibom.scan.parsers.requirements import _component_for
 from aibom.scan.registry import ScanContext, Scanner, register
 from aibom.scan.safe_files import read_text, walk_files
@@ -41,22 +42,29 @@ class CodeImportScanner(Scanner):
             text = read_text(path)
             if text is None:
                 continue
-            names |= find_ai_imports(text, notebook=path.suffix.lower() == ".ipynb")
+            if path.suffix.lower() == ".ipynb":
+                text, readable = notebook_text(text)
+                if not readable:
+                    ctx.unreadable_notebooks.add(path.name)
+            names |= find_ai_imports(text)
+        # a manifest may spell the package differently (``pyannote.audio`` for the
+        # import's ``pyannote-audio``; PEP 503 treats ``-`` ``_`` ``.`` alike): the
+        # manifest's component is the same library, never a second one (#498 round 3)
+        declared = {
+            normalize_pkg(c.name) for c in ctx.components if c.kind == "framework"
+        }
         for name in sorted(names):
             ref = f"lib-{name.lower()}"
-            if ctx.has_ref(ref):  # already declared in a manifest — keep that one
-                continue
+            if ctx.has_ref(ref) or normalize_pkg(name) in declared:
+                continue  # already declared in a manifest — keep that one
             comp = _component_for(name)
             ctx.add_component(comp)
-            if not comp.licenses:  # same governance signal as the manifest scanner
+            if not comp.licenses:  # same signal as the manifest scanner
                 ctx.add_flag(
-                    "FRAMEWORK_NO_LICENSE",
+                    "FRAMEWORK_LICENSE_UNKNOWN",
                     comp.bom_ref,
                     severity="note",
-                    message=(
-                        f"No concluded license for {comp.name!r} (imported in code); "
-                        "could not resolve from the SPDX manifest."
-                    ),
+                    message=unknown_licence_message(comp.name, imported=True),
                 )
 
 

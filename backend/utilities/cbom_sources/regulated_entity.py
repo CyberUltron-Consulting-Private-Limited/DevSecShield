@@ -101,10 +101,27 @@ def team_profile(session: Any, team_id: int) -> dict[str, Any]:
     return profile_of(row.risk_model if row is not None else None)
 
 
+def declared_team_profile(session: Any, team_id: int) -> dict[str, Any] | None:
+    """The team's profile when the team declared one (a settings row naming its regulated entity), else None.
+
+    ``team_profile`` falls back to the NBFC default, which the CBOM pages want (their first client is an NBFC). An AI
+    BOM must not: a healthcare team that never opened the CBOM settings would lose its in-scope FDA / HIPAA / GMLP
+    checks to an NBFC profile it never chose (review 6037909737 of #498, M4)."""
+    from sqlmodel import select
+
+    from backend.new_models import CbomCollectionSettings
+
+    row = session.exec(select(CbomCollectionSettings).where(CbomCollectionSettings.team_id == team_id)).first()
+    risk_model = row.risk_model if row is not None else None
+    if not isinstance(risk_model, Mapping) or not str(risk_model.get(SETTINGS_KEY) or "").strip():
+        return None
+    return profile_of(risk_model)
+
+
 def team_entity(session: Any, team_id: int) -> str:
     return team_profile(session, team_id)["entity"]
 
 
 __all__ = ["DEFAULT_ENTITY", "DEFAULT_PROFILE", "ENTITY_TYPES", "FLAGS", "FLAG_LABELS", "JURISDICTION", "LABELS",
-           "SETTINGS_KEY", "applies", "flags_of", "framework_binds", "normalise", "of_risk_model", "profile",
-           "profile_of", "team_entity", "team_profile"]
+           "SETTINGS_KEY", "applies", "declared_team_profile", "flags_of", "framework_binds", "normalise",
+           "of_risk_model", "profile", "profile_of", "team_entity", "team_profile"]

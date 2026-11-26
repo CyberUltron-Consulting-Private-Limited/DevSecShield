@@ -38,6 +38,12 @@ AI_IMPORTS: dict[str, str] = {
     "peft": "peft", "accelerate": "accelerate", "vllm": "vllm",
     "diffusers": "diffusers", "onnxruntime": "onnxruntime", "spacy": "spacy",
     "span_marker": "span-marker",
+    # speech and vision model libraries (#498 round 3 audit)
+    "pyannote": "pyannote-audio", "whisper": "openai-whisper",
+    "faster_whisper": "faster-whisper", "whisperx": "whisperx",
+    "ctranslate2": "ctranslate2", "bitsandbytes": "bitsandbytes",
+    "ultralytics": "ultralytics", "timm": "timm", "gensim": "gensim",
+    "tensorrt": "tensorrt",
     # vector stores
     "chromadb": "chromadb", "qdrant_client": "qdrant", "pinecone": "pinecone",
     "weaviate": "weaviate", "faiss": "faiss", "pymilvus": "milvus",
@@ -64,24 +70,73 @@ def _canon_for(module: str) -> str | None:
     return AI_IMPORTS.get(parts[0])
 
 
-def _notebook_code(text: str) -> str:
-    """Concatenate the source of every code cell in a .ipynb document."""
+_JSON_STRING = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
+
+
+def read_notebook(text: str) -> str | None:
+    """The code cells of a .ipynb document as one Python text, or None when the
+    document is not a readable notebook (invalid JSON, or JSON that is not a notebook).
+
+    Defensive (review 6062066749 of #498, M3): a corrupt or half-saved notebook must
+    never abort a scan. ``cells`` that is not a list, a top-level list, cells that
+    are not objects and ``source`` items that are not strings are skipped. nbformat 3
+    (``worksheets[].cells[].input``) is read too."""
     try:
-        nb = json.loads(text)
-    except (json.JSONDecodeError, ValueError):
-        return ""
+        # a UTF-8 byte-order mark is no reason to read it as raw text (review nit)
+        nb = json.loads(text.lstrip("\ufeff"))
+    except (json.JSONDecodeError, ValueError, RecursionError):
+        return None
+    if not isinstance(nb, dict):
+        return None
+    cells: list = []
+    if isinstance(nb.get("cells"), list):
+        cells = nb["cells"]
+    elif isinstance(nb.get("worksheets"), list):  # nbformat 3
+        for sheet in nb["worksheets"]:
+            if isinstance(sheet, dict) and isinstance(sheet.get("cells"), list):
+                cells.extend(sheet["cells"])
+    elif "cells" in nb or "worksheets" in nb:
+        return None  # a notebook shape we cannot read
     out: list[str] = []
-    for cell in nb.get("cells", []):
-        if cell.get("cell_type") == "code":
-            src = cell.get("source", "")
-            out.append("".join(src) if isinstance(src, list) else str(src))
+    for cell in cells:
+        if not isinstance(cell, dict) or cell.get("cell_type") != "code":
+            continue
+        src = cell.get("source", cell.get("input", ""))
+        if isinstance(src, list):
+            out.append("".join(s for s in src if isinstance(s, str)))
+        elif isinstance(src, str):
+            out.append(src)
     return "\n".join(out)
+
+
+def notebook_code(text: str) -> str:
+    """The code cells of a .ipynb document ("" when it cannot be read)."""
+    return read_notebook(text) or ""
+
+
+def notebook_text(text: str) -> tuple[str, bool]:
+    """``(code, readable)``: the code cells, or for an unreadable notebook (a
+    truncated save, invalid JSON) its raw text with the JSON string escapes undone,
+    so a model or client it names is still seen; ``readable`` False lets the scan
+    record a warning (review 6062066749 of #498, m4)."""
+    code = read_notebook(text)
+    if code is not None:
+        return code, True
+    # every JSON string literal, decoded (a truncated save still holds its cells'
+    # source lines as complete strings)
+    parts: list[str] = []
+    for m in _JSON_STRING.finditer(text):
+        try:
+            parts.append(json.loads(f'"{m.group(1)}"'))
+        except ValueError:
+            continue
+    return "\n".join(parts), False
 
 
 def find_ai_imports(text: str, *, notebook: bool = False) -> set[str]:
     """Canonical AI component names imported in ``text`` (notebook cells if set)."""
     if notebook:
-        text = _notebook_code(text)
+        text = notebook_text(text)[0]
     found: set[str] = set()
     for m in _IMPORT_RE.finditer(text):
         module = m.group(1) or m.group(2) or ""
@@ -91,4 +146,10 @@ def find_ai_imports(text: str, *, notebook: bool = False) -> set[str]:
     return found
 
 
-__all__ = ["AI_IMPORTS", "find_ai_imports"]
+__all__ = [
+    "AI_IMPORTS",
+    "find_ai_imports",
+    "notebook_code",
+    "notebook_text",
+    "read_notebook",
+]

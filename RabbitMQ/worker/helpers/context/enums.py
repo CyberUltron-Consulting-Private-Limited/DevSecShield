@@ -297,6 +297,12 @@ class CryptoStrength(str, Enum):
 class AIComponentType(str, Enum):
     LOCAL_MODEL_FILE = "local_model_file"
     EXTERNAL_PROVIDER = "external_provider"
+    # a self-hosted model server on the machine (Ollama on localhost), inside the trust boundary
+    LOCAL_MODEL_SERVER = "local_model_server"
+    # a model server run elsewhere (a remote / self-hosted Ollama, or its endpoint unknown) (#498 round 4)
+    SELF_HOSTED_MODEL_SERVER = "self_hosted_model_server"
+    # a model a self-hosted server runs (an Ollama tag): no weight file in the repository, no hosted product
+    SELF_HOSTED_MODEL = "self_hosted_model"
     HUGGINGFACE_MODEL = "huggingface_model"
     ML_FRAMEWORK = "ml_framework"
     AI_FRAMEWORK = "ai_framework"

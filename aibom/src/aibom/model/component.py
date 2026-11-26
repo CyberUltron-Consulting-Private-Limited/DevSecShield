@@ -145,6 +145,13 @@ class Considerations(BaseModel):
     technical_limitations: list[str] = Field(default_factory=list)
     ethical_considerations: list[EthicalConsideration] = Field(default_factory=list)
     fairness_assessments: list[FairnessAssessment] = Field(default_factory=list)
+    # Uses the model's licence or provider excludes (CERT-In Table 10 "Out of Scope
+    # Usage"). CycloneDX 1.6 has no field of its own for them: the serializer writes
+    # each as a ``technicalLimitations`` entry starting "Out of scope: ".
+    out_of_scope: list[str] = Field(default_factory=list)
+    # True when the scanner filled this block from known facts (model KB, the
+    # serving graph, the reference itself), not from an author's model card.
+    derived: bool = False
 
 
 class PedigreeAncestor(BaseModel):

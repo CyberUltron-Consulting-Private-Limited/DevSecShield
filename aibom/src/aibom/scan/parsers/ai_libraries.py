@@ -46,6 +46,10 @@ _AI_LIBRARIES = frozenset(
         "vllm", "llama-cpp-python", "ctransformers", "mlx", "mlx-lm", "gguf",
         "spacy", "nltk", "gensim", "span-marker", "mlflow", "wandb",
         "tensorboard", "ray", "triton",
+        # speech: Whisper runtimes and speaker diarization (#498 round 3 audit:
+        # insanely-fast-whisper's pyannote-audio was not an AI library)
+        "pyannote-audio", "openai-whisper", "faster-whisper", "whisperx",
+        "ctranslate2",
         # numerical / imaging data stack the models run on
         "numpy", "scipy", "pandas", "polars", "pyarrow", "pillow",
         "opencv-python", "opencv-python-headless", "scikit-image", "pydicom",
@@ -74,7 +78,7 @@ _AI_LIBRARIES = frozenset(
 _AI_PREFIXES = (
     "langchain-", "llama-index-", "tensorflow-", "onnxruntime-", "torch-",
     "transformers-", "openai-", "anthropic-", "haystack-", "autogen-",
-    "sentence-transformers-", "huggingface-", "nvidia-", "jax-",
+    "sentence-transformers-", "huggingface-", "nvidia-", "jax-", "pyannote-",
 )
 
 _DEV_TOOLS = frozenset(

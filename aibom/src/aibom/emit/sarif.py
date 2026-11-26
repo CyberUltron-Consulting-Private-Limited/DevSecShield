@@ -53,6 +53,28 @@ _RULE_CATALOG: dict[str, dict[str, str]] = {
 }
 
 
+def _invocation(result: Any, timestamp: str) -> dict[str, Any]:
+    """The SARIF invocation: unsuccessful, with one error notification per scanner
+    that did not finish, when the scan is partial (review 6063929550 of #498,
+    R5-M2), so CI and code-scanning consumers never read a partial run as complete."""
+    errors = ((result.properties or {}).get("aibom:scanner_errors") or "").strip()
+    inv: dict[str, Any] = {"executionSuccessful": not errors, "endTimeUtc": timestamp}
+    if errors:
+        inv["toolExecutionNotifications"] = [
+            {
+                "level": "error",
+                "descriptor": {"id": part.split(":", 1)[0].strip()},
+                "message": {
+                    "text": f"Scanner {part.strip()} did not finish; the AI BOM "
+                    "is incomplete and its grade is withheld."
+                },
+            }
+            for part in errors.split(";")
+            if part.strip()
+        ]
+    return inv
+
+
 def _rule_catalog(result: ScanResult) -> list[str]:
     """The flag codes raised, sorted (stable ruleIndex). The static catalog's
     clinical rules (HIPAA / §524B / EU AI Act wording) are listed only for a
@@ -120,7 +142,7 @@ def emit_sarif(result: ScanResult) -> dict[str, Any]:
                     }
                 },
                 "invocations": [
-                    {"executionSuccessful": True, "endTimeUtc": identity.timestamp}
+                    _invocation(result, identity.timestamp)
                 ],
                 # advisory-only hard rule: this report carries the disclaimer.
                 "properties": {"advisoryDisclaimer": disclaimer_of(result)},

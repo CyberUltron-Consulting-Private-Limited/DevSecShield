@@ -49,18 +49,30 @@ from aibom.graph_view import (
     compact_aibom_graph,
 )
 from aibom.model.component import AIComponent, is_model_mention
-from aibom.scan.parsers.license_resolver import resolve_license
-from aibom.model.result import Flag, ScanResult
+from aibom.model.result import REL_SERVED_BY, Flag, ScanResult
 from aibom.owasp import OWASP_LLM_LABELS as _OWASP_2025_LABELS
 from aibom.owasp import categories_for_component as _owasp_categories
+from aibom.scan.parsers.license_resolver import resolve_license
 from aibom.scan.pipeline import scan_repo
 
 # --- enum mappings (values mirror worker helpers/context/enums.py) ---------- #
 
 # component.kind -> AIComponentType value. Unknown kinds fall back to the
 # closest umbrella, external_provider (a discovered external AI surface).
+# AIComponentType for a self-hosted model server (worker enums.AIComponentType)
+LOCAL_MODEL_SERVER = "local_model_server"
+# a model server the organisation runs elsewhere (a remote / self-hosted Ollama, or one
+# whose endpoint the scan could not read): not this machine, not a hosted vendor
+SELF_HOSTED_MODEL_SERVER = "self_hosted_model_server"
+# a model run by a self-hosted model server (an Ollama tag): no weight file in the
+# repository, no hosted vendor product (review 6062066749 of #498, m6)
+SELF_HOSTED_MODEL = "self_hosted_model"
+_SERVICE_KINDS = ("service", "cloud_service", "endpoint")
 _KIND_TO_AI_TYPE = {
+    # a model the scan saw served by a provider is external_provider (see
+    # _component_type); a model with no serving service, and a weight file, are local
     "model": "local_model_file",
+    "model_file": "local_model_file",
     "dataset": "dataset",
     "framework": "ml_framework",
     "prompt": "prompt_asset",
@@ -84,7 +96,8 @@ _SEVERITY_IMPACT = {"error": "High", "warning": "Medium", "note": "Low", "none":
 # (an ungoverned/under-documented component) — the conservative governance bucket.
 _CODE_RISK = {
     "MODEL_NO_LICENSE": "license_compliance_gap",
-    "FRAMEWORK_NO_LICENSE": "license_compliance_gap",  # unresolved library license
+    "FRAMEWORK_NO_LICENSE": "license_compliance_gap",  # library declaring no licence
+    "FRAMEWORK_LICENSE_UNKNOWN": "license_compliance_gap",  # not resolved offline
     "MODEL_LICENSE_UNKNOWN": "license_compliance_gap",  # model with no known license
     "HARDCODED_SECRET": "model_theft_exposure",  # leaked credential -> model access
     "DATASET_NO_DEIDENT": "data_privacy_training_config",
@@ -134,6 +147,7 @@ _PRIVACY_FLAG_CODES = frozenset(
 _SUPPLY_FLAG_CODES = frozenset(
     {
         "FRAMEWORK_NO_LICENSE",
+        "FRAMEWORK_LICENSE_UNKNOWN",
         "MODEL_NO_LICENSE",
         "MODEL_LICENSE_UNKNOWN",
         "UNSANCTIONED_COMPONENT",
@@ -159,6 +173,11 @@ def _provider(
     (cloud vendor, ``pypi``, ``credential``, or ``local``).
     """
     props = props or {}
+    # where the model runs, as the linker resolved it (Bedrock for an
+    # ``anthropic.claude-…`` id, Groq for Llama behind the Groq API): never the
+    # vendor's name when another platform serves it (QA round 2, Q2-06)
+    if props.get("model:provider"):
+        return str(props["model:provider"])
     text = " ".join(
         str(x)
         for x in (
@@ -229,8 +248,101 @@ def _provider(
     return "local"
 
 
-def _component_type(kind: str) -> str:
+def _component_type(
+    kind: str, comp: AIComponent | None = None, result: ScanResult | None = None
+) -> str:
+    """The AIComponentType of a component. A model is ``external_provider`` when it
+    is provider-served (``model:provider``, or ``served_by`` a service outside the
+    trust boundary), else ``local_model_file``; a weight file is
+    ``local_model_file`` (QA round 2, Q2-06; first noted on #487)."""
+    if kind == "model" and comp is not None and _provider_served(comp, result):
+        return "external_provider"
+    if kind == "model" and comp is not None and _self_hosted_model(comp, result):
+        return SELF_HOSTED_MODEL
+    if kind in _SERVICE_KINDS and comp is not None and _is_local_server(comp):
+        # a self-hosted model server on the machine (Ollama on localhost): inside
+        # the trust boundary, never an external provider (#498 round 3 follow-up)
+        return LOCAL_MODEL_SERVER
+    if kind in (*_SERVICE_KINDS, "container") and comp is not None and _is_model_server(
+        comp
+    ):
+        # a remote / self-hosted model server, or one the repo runs as a container
+        return SELF_HOSTED_MODEL_SERVER
     return _KIND_TO_AI_TYPE.get(kind, "external_provider")
+
+
+def _is_model_server(comp: AIComponent) -> bool:
+    return (comp.properties or {}).get("service:kind") == "model_server"
+
+
+def _self_hosted_model(comp: AIComponent, result: ScanResult | None) -> bool:
+    """A model an Ollama call names (``model:served_via`` ollama), or one served by a
+    model server: run by a self-hosted server, never a weight file in the repo."""
+    if (comp.properties or {}).get("model:served_via") == "ollama":
+        return True
+    if result is None:
+        return False
+    return any(
+        _is_model_server(svc) or _is_local_server(svc)
+        for svc in result.neighbors(comp.bom_ref, REL_SERVED_BY)
+    )
+
+
+def _is_local_server(comp: AIComponent) -> bool:
+    return (comp.properties or {}).get("service:trust_zone") == "local"
+
+
+def _served_model_licence(comp: AIComponent, result: ScanResult | None) -> str:
+    """A local model server's row licence: the open-weights licence of the models it
+    serves when they share one, else NOASSERTION. Never a provider's terms: nothing
+    is used under a hosted provider's terms on a self-hosted server."""
+    if result is None:
+        return LICENSE_UNKNOWN
+    served = [
+        e.src for e in result.edges if e.rel == REL_SERVED_BY and e.dst == comp.bom_ref
+    ]
+    by_ref = {c.bom_ref: c for c in result.components}
+    licences = {
+        _license_str(getattr(by_ref.get(ref), "licenses", None)) or "" for ref in served
+    }
+    licences.discard("")
+    if len(licences) == 1:
+        (only,) = licences
+        if only != "LicenseRef-proprietary":
+            return only
+    return LICENSE_UNKNOWN
+
+
+def _candidates(comp: AIComponent) -> list[dict[str, str]] | None:
+    """The candidates of a model chosen at run time, stored as a JSON array of
+    ``{name, provider}`` (review 6066860842 of #498, m5); None for any other row."""
+    raw = (comp.properties or {}).get("model:candidates")
+    if comp.kind != "model" or not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(data, list):
+        return None
+    return [
+        {"name": str(c.get("name", "")),
+         "provider": str(c.get("provider") or "unknown")}
+        for c in data
+        if isinstance(c, dict)
+    ]
+
+
+def _provider_served(comp: AIComponent, result: ScanResult | None) -> bool:
+    provider = (comp.properties or {}).get("model:provider")
+    if provider:
+        return provider not in ("ollama", "local")
+    if result is None:
+        return False
+    return any(
+        (svc.properties or {}).get("service:trust_zone") != "local"
+        for svc in result.neighbors(comp.bom_ref, REL_SERVED_BY)
+    )
 
 
 def _is_catalog_model(comp: AIComponent) -> bool:
@@ -283,10 +395,23 @@ def _license_str(licenses: Any) -> str | None:
 
 
 _ARTIFACT_SUFFIXES = (".bin", ".safetensors", ".gguf", ".pt", ".pth", ".onnx")
+# SPDX's word for "not determined": a library whose licence the offline manifest does
+# not know. Unknown / partial, which is not the same as a library with no licence.
+LICENSE_UNKNOWN = "NOASSERTION"
 
 
-def _finding_license(comp: AIComponent) -> str:
-    """Concrete license label for a finding row (never unknown / None)."""
+def _finding_license(comp: AIComponent, result: ScanResult | None = None) -> str:
+    """Concrete license label for a finding row."""
+    props = comp.properties or {}
+    if (comp.kind or "").lower() in _SERVICE_KINDS and (
+        _is_local_server(comp)
+        or _is_model_server(comp)
+        or props.get("service:kind") == "gateway"
+    ):
+        # a model server or a gateway runs other makers' models: the served models'
+        # shared open-weights licence, else NOASSERTION, never a provider's terms
+        # (review 6062066749 of #498, m5)
+        return _served_model_licence(comp, result)
     declared = _license_str(getattr(comp, "licenses", None))
     if declared and declared.strip().lower() not in ("unknown", "none", "null"):
         return declared.strip()
@@ -305,7 +430,8 @@ def _finding_license(comp: AIComponent) -> str:
         spdx = resolve_license(name)
         if spdx:
             return spdx
-        return "LicenseRef-not-declared"
+        # not resolved offline: unknown, never "not declared" (QA round 2, Q2-07)
+        return LICENSE_UNKNOWN
 
     # Hosted services / external surfaces without a package license.
     if kind in ("service", "cloud_service", "endpoint") or _component_type(kind) == (
@@ -333,6 +459,11 @@ def _finding_license(comp: AIComponent) -> str:
     spdx = resolve_license(name)
     if spdx:
         return spdx
+    if kind == "model" and (comp.bom_ref or "").startswith("modelref-"):
+        # a model the code references, with no licence the knowledge base knows
+        # (MODEL_LICENSE_UNKNOWN): unknown, never "not declared" (nothing was read
+        # that could declare one; #498 round 3, pyannote/speaker-diarization-3.1)
+        return LICENSE_UNKNOWN
     return "LicenseRef-not-declared"
 
 
@@ -409,6 +540,7 @@ def _finding_from_component(comp: AIComponent, result: ScanResult) -> dict[str, 
         risk_category = _DEFAULT_RISK
         suggested_fix = _DEFAULT_FIX
         description = _inventory_description(comp)
+    license_label = _finding_license(comp, result)
     return {
         "title": comp.name,
         "description": description,
@@ -422,7 +554,22 @@ def _finding_from_component(comp: AIComponent, result: ScanResult) -> dict[str, 
         "compliance_controls": _legacy_compliance(flags),
         "suggested_fix": suggested_fix,
         "component_name": comp.name,
-        "component_type": _component_type(comp.kind),
+        "component_type": _component_type(comp.kind, comp, result),
+        # the engine kind: a provider-served model is still a model (model counts)
+        "component_kind": comp.kind,
+        # a model the code uses without naming it (ChatOpenAI(), a model from
+        # configuration): False; any other model True; not a model None. The views
+        # count unidentified models per scan, never merged across repositories
+        # (review 6062066749 of #498, m1)
+        "model_identified": (
+            (comp.properties or {}).get("model:identified") != "false"
+            if comp.kind == "model"
+            else None
+        ),
+        # the candidates of a model chosen at run time (``OPTIONS[choice]``), each
+        # with its provider: evidence of the one entry, never models of their own
+        # (review 6066180782 of #498, R7-M1); None for any other row
+        "model_candidates": _candidates(comp),
         # populated model-card fields (None if absent) — the dashboard's
         # governance-readiness score credits models that carry BOTH a license + card.
         "model_card": _card_summary(comp),
@@ -435,7 +582,9 @@ def _finding_from_component(comp: AIComponent, result: ScanResult) -> dict[str, 
             location=props.get("discovery:source") or props.get("discovery:host") or "",
             props=props,
         ),
-        "license": _finding_license(comp),
+        "license": license_label,
+        # "unknown" when the licence was not resolved (offline manifest only)
+        "license_status": "unknown" if license_label == LICENSE_UNKNOWN else "resolved",
         "location": props.get("discovery:source") or props.get("discovery:host") or "",
         "snippet": props.get("discovery:snippet", ""),
         "risk_category": risk_category,
@@ -474,7 +623,7 @@ def _graph(result: ScanResult) -> dict[str, list[dict[str, str]]]:
             "id": c.bom_ref,
             "label": c.name,
             "kind": c.kind,
-            "type": _component_type(c.kind),
+            "type": _component_type(c.kind, c, result),
         }
         for c in result.components
     ]

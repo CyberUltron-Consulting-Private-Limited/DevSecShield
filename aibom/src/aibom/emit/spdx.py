@@ -140,6 +140,11 @@ def _new(spdx_type: str, spdx_id: str, **props: Any) -> dict[str, Any]:
 
 # A model the application does not use (a catalog / doc / test mention) is kept
 # with this note rather than dropped (review of #487 M1).
+# a model the code uses without naming it (#498 round 3)
+_UNIDENTIFIED_COMMENT = (
+    "Model in use, not identified: {} names no model, so the library's default "
+    "model applies (low confidence)."
+)
 _MENTION_COMMENT = {
     "catalog": "Model named in a catalog, document or example file; not used by the "
     "scanned application.",
@@ -162,9 +167,13 @@ def _ai_package(
     elif card.model_architecture:
         type_of_model.append(card.model_architecture)
 
+    cons = card.considerations
     limitations = (
-        "; ".join(card.considerations.technical_limitations)
-        if card.considerations and card.considerations.technical_limitations
+        "; ".join(
+            list(cons.technical_limitations)
+            + [f"Out of scope: {u}" for u in cons.out_of_scope]
+        )
+        if cons and (cons.technical_limitations or cons.out_of_scope)
         else None
     )
     metrics = []
@@ -181,9 +190,15 @@ def _ai_package(
         "ai_AIPackage",
         sid,
         name=comp.name,
-        comment=_MENTION_COMMENT.get(rtype or ""),
+        comment=_UNIDENTIFIED_COMMENT.format(
+            (comp.properties or {}).get("discovery:snippet", "")
+        )
+        if (comp.properties or {}).get("model:identified") == "false"
+        else _MENTION_COMMENT.get(rtype or ""),
         suppliedBy=supplier,
         software_packageVersion=comp.version,
+        # the Hub purl (pkg:huggingface/<org>/<name>), as CycloneDX carries it
+        software_packageUrl=comp.purl,
         software_primaryPurpose="model",
         ai_typeOfModel=type_of_model or None,
         ai_limitation=limitations,
@@ -274,11 +289,14 @@ def _relationship(
 def _license_expr_str(licenses: list[dict] | None) -> str:
     """Best-effort single SPDX license expression from a CycloneDX licenseChoice."""
     if licenses:
+        if licenses[0].get("expression"):
+            return str(licenses[0]["expression"])  # already an SPDX expression
         lic = licenses[0].get("license", {})
         if lic.get("id"):
             return str(lic["id"])
         if lic.get("name"):
-            return f"LicenseRef-{str(lic['name']).replace(' ', '-')}"
+            name = str(lic["name"]).replace(" ", "-")
+            return name if name.startswith("LicenseRef-") else f"LicenseRef-{name}"
     return "NOASSERTION"
 
 

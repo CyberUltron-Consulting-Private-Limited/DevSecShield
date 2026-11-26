@@ -24,6 +24,12 @@ def _to_date_key(d) -> str | None:
         return d.isoformat()[:10]
     return None
 
+def _partial_ai_bom_scans(scans: list) -> int:
+    from backend.utilities.pdf.aibom_posture import partial_ai_bom_scan
+
+    return sum(1 for s in scans if s.scan_type == "ai_bom" and partial_ai_bom_scan(s))
+
+
 def generate_team_dashboard_data(team_id: int, engine: Engine) -> dict:
     """
     metrics to be added : 
@@ -198,6 +204,8 @@ def generate_team_dashboard_data(team_id: int, engine: Engine) -> dict:
         "total_not_started_scans": scan_status_distribution["not_started"],
         "total_fixed_findings": total_fixed_findings,
         "remediation_percentage": remediation_percentage,
+        # completed AI BOM scans a scanner did not finish: the tile marks them (review 6063929550 of #498, R5-M2)
+        "total_partial_scans": _partial_ai_bom_scans(scans),
     }
 
     # STEP [ 2 ] : =============================== calculate scans - created at data ==========================================

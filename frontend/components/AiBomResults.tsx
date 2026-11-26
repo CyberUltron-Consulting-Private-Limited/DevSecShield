@@ -102,6 +102,14 @@ import {
   type Graph as AiBomGraph,
   type Scores as AiBomScores,
 } from "@/components/ai-bom/AiBomVisualizations";
+import {
+  candidateList,
+  completenessNotice,
+  licenceLabel,
+  unnamedModelHint,
+  type AiBomApplicability,
+  type AiBomCompleteness,
+} from "@/components/ai-bom/aibomDisplay";
 import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRollup";
 import { CertInLanePosture } from "@/components/certin/CertInLanePosture";
 import { type CertInRollupData } from "@/components/certin/certinShared";
@@ -625,6 +633,9 @@ export default function AiBomResults({
   const hasRiskData = severityRadarData.some((d) => d.count > 0);
   const criticalCount = dashboard?.severity_distribution?.critical ?? 0;
   const meta = scanMetadata as AiBomScanMetadata | null;
+  const aiBomApplicability = (meta?.ai_bom_applicability ?? null) as AiBomApplicability | null;
+  // RBI's pillar rollup only when RBI binds the team (review 6037909737 of #498, M3)
+  const rbiBinds = !aiBomApplicability?.binding || aiBomApplicability.binding.includes("rbi_free_ai");
 
   const showTabs = team_id && scan_id != null;
   const hasTicketingTab = showTabs && onIntegrationSettingsUpdated != null;
@@ -834,15 +845,37 @@ export default function AiBomResults({
           {/* Dashboard Summary */}
           {dashboard && cardData && (
             <div className="space-y-6">
+              {/* Scan completeness: a scanner that did not finish withholds the grade (review 6063080163, R4-M2) */}
+              {completenessNotice(meta?.ai_bom_completeness as AiBomCompleteness | undefined) && (
+                <div
+                  role="status"
+                  data-testid="aibom-completeness-notice"
+                  className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200"
+                >
+                  {completenessNotice(meta?.ai_bom_completeness as AiBomCompleteness | undefined)}
+                </div>
+              )}
               {/* Summary Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4">
+              {/* eight per row only from 2xl (1536 px): at 1366 the sidebar leaves ~120 px a tile and labels were cut
+                  ("Unlicense…", "Governanc…"; staging QA round 2, N3) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8 gap-4" data-testid="aibom-summary-tiles">
                 {[
-                  { label: "AI Assets", value: cardData.total_ai_assets, icon: Bot, color: "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400" },
-                  { label: "Models", value: cardData.total_models, icon: Bot, color: "bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400" },
+                  { label: "AI Assets", value: cardData.total_ai_assets, icon: Bot, color: "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400",
+                    // a partial scan's inventory may be short (R4-M2)
+                    hint: (meta?.ai_bom_completeness as AiBomCompleteness | undefined)?.status === "partial" ? "Partial: scan incomplete" : undefined,
+                    testId: "aibom-partial-hint" },
+                  { label: "Models", value: cardData.total_models, icon: Bot, color: "bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400",
+                    // ChatOpenAI() with no model runs the library default: said, never a silent 0 (#498 round 3)
+                    hint: unnamedModelHint(meta?.ai_bom_json as Record<string, unknown> | undefined, {
+                      total: cardData.total_models, unidentified: cardData.total_unidentified_models }) ?? undefined,
+                    testId: "aibom-unnamed-model-hint" },
                   { label: "Datasets", value: cardData.total_datasets, icon: Database, color: "bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400" },
                   { label: "External Providers", value: cardData.total_external_providers, icon: Cloud, color: "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400" },
                   { label: "High Risk", value: cardData.total_high_risk_assets, icon: ShieldAlert, color: "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400" },
-                  { label: "Unlicensed", value: cardData.total_unlicensed_assets, icon: Scale, color: "bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400" },
+                  { label: "Unlicensed", value: cardData.total_unlicensed_assets, icon: Scale, color: "bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400",
+                    // a licence the offline manifest did not resolve is unknown, not unlicensed: say how many (M7)
+                    hint: cardData.total_licence_unknown_assets ? `Licence unknown: ${cardData.total_licence_unknown_assets}` : undefined,
+                    testId: "aibom-licence-unknown-hint" },
                   { label: "Governance Ready", value: `${cardData.governance_readiness_score}%`, icon: Shield, color: "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400" },
                   { label: "Avg Risk", value: cardData.average_risk_score?.toFixed(1) ?? "N/A", icon: Activity, color: "bg-pink-100 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400" },
                 ].map((c) => (
@@ -852,8 +885,11 @@ export default function AiBomResults({
                         <c.icon className="h-5 w-5" />
                       </div>
                       <div className="min-w-0">
-                        <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{c.label}</p>
+                        <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 break-words">{c.label}</p>
                         <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums">{c.value}</p>
+                        {"hint" in c && c.hint && (
+                          <p className="text-[11px] text-zinc-500 dark:text-zinc-400 break-words" data-testid={"testId" in c ? c.testId : undefined}>{c.hint}</p>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -1078,13 +1114,16 @@ export default function AiBomResults({
                     {licenseData.length === 0 ? (
                       <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No license data available</div>
                     ) : (
-                      <ChartContainer config={barConfig} className="mx-auto aspect-auto h-[280px] w-full max-h-[280px]">
-                        <BarChart data={licenseData} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
-                          <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
-                          <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} className="text-xs" />
-                          <YAxis tickLine={false} axisLine={false} className="text-xs" />
-                          <ChartTooltip content={<ChartTooltipContent />} />
-                          <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                      // horizontal bars with every licence named (at 1366 the vertical chart labelled 2 of 4 bars; staging QA
+                      // round 2, N5); long LicenseRef ids are shortened on the axis, the tooltip keeps the full id
+                      <ChartContainer config={barConfig} className="mx-auto aspect-auto h-[280px] w-full max-h-[280px]" data-testid="aibom-licence-chart">
+                        <BarChart data={licenseData} layout="vertical" margin={{ top: 0, right: 8, bottom: 0, left: 0 }}>
+                          <CartesianGrid horizontal={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+                          <XAxis type="number" tickLine={false} axisLine={false} allowDecimals={false} className="text-xs" />
+                          <YAxis dataKey="name" type="category" width={150} interval={0} tickLine={false} axisLine={false}
+                            tickFormatter={(v: string) => licenceLabel(String(v))} className="text-xs" />
+                          <ChartTooltip content={<ChartTooltipContent labelFormatter={(v) => String(v)} />} />
+                          <Bar dataKey="count" radius={[0, 4, 4, 0]}>
                             {licenseData.map((entry, index) => (
                               <Cell key={`cell-${index}`} fill={entry.fill} />
                             ))}
@@ -1281,12 +1320,13 @@ export default function AiBomResults({
             aiBomJson={meta?.ai_bom_json as Record<string, unknown> | undefined}
             findings={(findingsList ?? []) as unknown as Record<string, unknown>[]}
             onAttest={handleCertInAttest}
+            applicability={aiBomApplicability}
             onOpenFinding={(f) =>
               setSelectedFinding(f as unknown as AiBomFinding)
             }
           />
           <RbiCsfRollup
-            rollup={meta?.rbi_csf_rollup as RbiCsfRollupData | undefined}
+            rollup={rbiBinds ? (meta?.rbi_csf_rollup as RbiCsfRollupData | undefined) : undefined}
             onAttest={handleCertInAttest}
             onViewFindings={handleViewRelatedFindings}
             findings={findingsList ?? []}
@@ -1451,7 +1491,7 @@ export default function AiBomResults({
                 onBulkStatusChange={(status) => bulkStatusMutation.mutate(status)}
                 isBulkStatusChanging={bulkStatusMutation.isPending}
               />
-              <ScrollArea className="h-[500px] w-full rounded-md border border-zinc-200 dark:border-zinc-800">
+              <ScrollArea className="h-[500px] w-full rounded-md border border-zinc-200 dark:border-zinc-800" data-testid="aibom-findings-table">
                 <div className="min-w-max">
                   <Table>
                     <TableHeader>
@@ -1470,16 +1510,18 @@ export default function AiBomResults({
                             className="cursor-pointer"
                           />
                         </TableHead>
-                        <TableHead className="min-w-[180px]">Asset</TableHead>
-                        <TableHead className="min-w-[120px]">Type</TableHead>
-                        <TableHead className="min-w-[120px]">Provider</TableHead>
-                        <TableHead className="min-w-[110px]">License</TableHead>
-                        <TableHead className="min-w-[130px]">Risk</TableHead>
-                        <TableHead className="min-w-[90px]">Impact</TableHead>
-                        <TableHead className="min-w-[90px] text-center">Risk score</TableHead>
-                        <TableHead className="min-w-[140px]">Location</TableHead>
-                        <TableHead className="min-w-[100px]">Status</TableHead>
-                        <TableHead className="min-w-[100px] text-right">Actions</TableHead>
+                        {/* the risk columns come first and text cells wrap, so the table fits a 1366 px page; Location
+                            (also in the finding's detail panel) from 2xl (staging QA round 2, N6) */}
+                        <TableHead className="min-w-[84px] sm:min-w-[180px]">Asset</TableHead>
+                        <TableHead className="min-w-[72px]">Impact</TableHead>
+                        <TableHead className="min-w-[72px] text-center">Risk score</TableHead>
+                        <TableHead className="min-w-[90px]">Type</TableHead>
+                        <TableHead className="min-w-[80px]">Provider</TableHead>
+                        <TableHead className="min-w-[100px]">License</TableHead>
+                        <TableHead className="min-w-[110px]">Risk</TableHead>
+                        <TableHead className="hidden 2xl:table-cell min-w-[140px]">Location</TableHead>
+                        <TableHead className="min-w-[84px]">Status</TableHead>
+                        <TableHead className="min-w-[56px] 2xl:min-w-[100px] text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1513,26 +1555,8 @@ export default function AiBomResults({
                                   className="cursor-pointer"
                                 />
                               </TableCell>
-                              <TableCell className="font-medium max-w-[180px] truncate text-zinc-900 dark:text-zinc-100" title={finding.asset_name || finding.title || undefined}>
+                              <TableCell className="font-medium max-w-[84px] sm:max-w-[180px] truncate text-zinc-900 dark:text-zinc-100" title={finding.asset_name || finding.title || undefined}>
                                 {finding.asset_name || finding.title}
-                              </TableCell>
-                              <TableCell className="text-sm text-zinc-600 dark:text-zinc-400">
-                                {finding.asset_type?.replace(/_/g, " ") ?? "—"}
-                              </TableCell>
-                              <TableCell className="text-sm text-zinc-600 dark:text-zinc-400">
-                                {finding.provider ?? "—"}
-                              </TableCell>
-                              <TableCell>
-                                {finding.license_type ? (
-                                  <Badge variant="outline" className="border-zinc-300 text-zinc-600 dark:border-zinc-500/50 dark:text-zinc-400">
-                                    {finding.license_type}
-                                  </Badge>
-                                ) : (
-                                  <span className="text-zinc-500 dark:text-zinc-400 text-xs">—</span>
-                                )}
-                              </TableCell>
-                              <TableCell className="text-sm text-zinc-600 dark:text-zinc-400">
-                                {finding.risk_category?.replace(/_/g, " ") ?? "—"}
                               </TableCell>
                               <TableCell>
                                 <Badge variant="outline" className={getImpactBadgeClass(finding.impact)}>{finding.impact}</Badge>
@@ -1542,7 +1566,26 @@ export default function AiBomResults({
                                   {finding.risk_score?.toFixed(1) ?? "—"}
                                 </Badge>
                               </TableCell>
-                              <TableCell className="text-sm text-zinc-600 dark:text-zinc-400 max-w-[140px] truncate" title={finding.location ?? ""}>
+                              <TableCell className="text-sm text-zinc-600 dark:text-zinc-400 whitespace-normal max-w-[110px]">
+                                {finding.asset_type?.replace(/_/g, " ") ?? "—"}
+                              </TableCell>
+                              <TableCell className="text-sm text-zinc-600 dark:text-zinc-400">
+                                {finding.provider ?? "—"}
+                              </TableCell>
+                              <TableCell>
+                                {finding.license_type ? (
+                                  <Badge variant="outline" title={finding.license_type}
+                                    className="border-zinc-300 text-zinc-600 dark:border-zinc-500/50 dark:text-zinc-400">
+                                    {licenceLabel(finding.license_type, 16)}
+                                  </Badge>
+                                ) : (
+                                  <span className="text-zinc-500 dark:text-zinc-400 text-xs">—</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-sm text-zinc-600 dark:text-zinc-400 whitespace-normal max-w-[120px]">
+                                {finding.risk_category?.replace(/_/g, " ") ?? "—"}
+                              </TableCell>
+                              <TableCell className="hidden 2xl:table-cell text-sm text-zinc-600 dark:text-zinc-400 max-w-[140px] truncate" title={finding.location ?? ""}>
                                 {finding.location ?? "—"}
                               </TableCell>
                               <TableCell>
@@ -1555,7 +1598,7 @@ export default function AiBomResults({
                                   <DropdownMenuTrigger asChild>
                                     <Button variant="outline" size="sm" className="cursor-pointer gap-1.5 h-8 shrink-0" aria-label="Finding actions">
                                       <Pencil className="h-3.5 w-3.5 opacity-70" />
-                                      Action
+                                      <span className="hidden 2xl:inline">Action</span>
                                     </Button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
@@ -1611,8 +1654,9 @@ export default function AiBomResults({
                         <TableCell className="text-sm text-zinc-600 dark:text-zinc-400">{risk.asset_type?.replace(/_/g, " ")}</TableCell>
                         <TableCell className="text-sm text-zinc-600 dark:text-zinc-400">{risk.provider}</TableCell>
                         <TableCell>
-                          <Badge variant="outline" className="border-zinc-300 text-zinc-600 dark:border-zinc-500/50 dark:text-zinc-400">
-                            {risk.license_type}
+                          <Badge variant="outline" title={risk.license_type}
+                            className="border-zinc-300 text-zinc-600 dark:border-zinc-500/50 dark:text-zinc-400">
+                            {licenceLabel(risk.license_type)}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-sm text-zinc-600 dark:text-zinc-400 max-w-[200px] truncate">{risk.impact}</TableCell>
@@ -1683,6 +1727,25 @@ export default function AiBomResults({
                         <p className="text-sm font-mono text-zinc-700 dark:text-zinc-300 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 rounded-md border border-zinc-200 dark:border-zinc-700 break-all">{selectedFinding.location}</p>
                       </div>
                     )}
+
+                    {(() => {
+                      // a model chosen at run time: one model, its candidates collapsed (review 6066180782 of #498)
+                      const cands = candidateList(selectedFinding.model_candidates);
+                      if (!cands) return null;
+                      return (
+                        <div>
+                          <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Chosen at run time from {cands.summary}</div>
+                          <details className="text-sm text-zinc-700 dark:text-zinc-300">
+                            <summary className="cursor-pointer break-words">
+                              {cands.shown.join(", ")}{cands.more > 0 ? ` and ${cands.more} more` : ""}
+                            </summary>
+                            <ul className="mt-2 max-h-48 overflow-y-auto list-disc pl-5 font-mono text-xs break-all">
+                              {cands.all.map((c) => <li key={c}>{c}</li>)}
+                            </ul>
+                          </details>
+                        </div>
+                      );
+                    })()}
 
                     {selectedFinding.description && (
                       <div>

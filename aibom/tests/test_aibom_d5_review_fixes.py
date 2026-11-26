@@ -276,7 +276,8 @@ def test_healthcare_profile_keeps_the_healthcare_wording() -> None:
 @pytest.mark.parametrize(
     ("counts", "expected"),
     [
-        ((0, 0, 0, 7), (28, "B", "Moderate risk")),
+        # low only is Low risk (A) since staging QA round 2 (was 28 / B)
+        ((0, 0, 0, 7), (14, "A", "Low risk")),
         ((0, 0, 10, 32), (49, "C", "Elevated risk")),
         ((0, 3, 50, 0), (69, "D", "High risk")),
         ((2, 0, 0, 0), (80, "F", "Critical risk")),
@@ -385,7 +386,29 @@ def test_only_real_version_words_follow_a_version(
     assert service["endpoints"] == [expected]
 
 
-def test_alibaba_provider_is_not_local(tmp_path: pathlib.Path) -> None:
+def test_an_open_weights_model_gets_no_invented_provider(
+    tmp_path: pathlib.Path,
+) -> None:
+    # A Qwen model the code names with no serving service. Until #498 round 5 it got
+    # an endpoint-less "Alibaba" provider node (source "alibaba", never "local").
+    # Open weights are not run through their maker's API by default, so no provider
+    # is invented at all (review 6063080163 of #498, R4-M3).
+    _write(
+        tmp_path,
+        {"app/llm.py": 'def ask(client):\n'
+         '    return client.chat(model="qwen2.5-72b-instruct", messages=[])\n'},
+    )
+    rows = {
+        r["component_name"]: r
+        for r in scan_to_devsecshield(tmp_path, level=4)["results"]
+    }
+    assert "Alibaba" not in rows
+    assert rows["qwen2.5-72b-instruct"]["component_type"] == "local_model_file"
+
+
+def test_qwen_weights_from_the_hub_have_no_provider_node(
+    tmp_path: pathlib.Path,
+) -> None:
     _write(
         tmp_path,
         {
@@ -394,7 +417,10 @@ def test_alibaba_provider_is_not_local(tmp_path: pathlib.Path) -> None:
         },
     )
     rows = {
-        r["component_name"]: r["source"]
+        r["component_name"]: r
         for r in scan_to_devsecshield(tmp_path, level=4)["results"]
     }
-    assert rows["Alibaba"] == "alibaba"
+    assert "Alibaba" not in rows
+    # run by the application (not an external provider), its licence unknown offline
+    assert rows["Qwen2.5-1.5B-Instruct"]["component_type"] == "local_model_file"
+    assert rows["Qwen2.5-1.5B-Instruct"]["license_status"] == "unknown"

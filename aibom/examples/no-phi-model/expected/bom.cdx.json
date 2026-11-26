@@ -28,6 +28,10 @@
     },
     "properties": [
       {
+        "name": "aibom:licence_coverage",
+        "value": "2/2"
+      },
+      {
         "name": "clinical:modality",
         "value": "DX (hand radiograph)"
       },

@@ -390,6 +390,12 @@ async def get_scan(
             SCAN_STATUS = scan.scan_status
             SCAN_DATA = scan.scan_data
             SCAN_INFO = scan.info
+            # the frameworks an AI BOM page shows follow the team's declared profile, as the PDF and pack do (M3/M4)
+            AIBOM_PROFILE = None
+            if type == "ai_bom":
+                from backend.utilities.cbom_sources.regulated_entity import declared_team_profile
+
+                AIBOM_PROFILE = declared_team_profile(session, team_id)
 
 
         # STEP [ 2 ] : =================== Get the scan status from the celery worker if scan is not completed yet ======================
@@ -427,7 +433,14 @@ async def get_scan(
         else:
             dashboard_data = None
 
-        scan_metadata = get_scan_metadata(scan_type=type, scan=scan) # ✅ done for mcp , sbom_sca , llm , sast , iac 
+        scan_metadata = get_scan_metadata(scan_type=type, scan=scan, regulatory_profile=AIBOM_PROFILE) # ✅ done for mcp , sbom_sca , llm , sast , iac 
+        if type == "ai_bom" and isinstance(dashboard_data, dict) and isinstance(scan_metadata, dict):
+            # the Compliance Controls chart: only the frameworks that bind the team (review 6037909737 of #498, M3)
+            from backend.utilities.compliance.aibom_applicability import filter_controls
+
+            dashboard_data = {**dashboard_data, "compliance_controls": filter_controls(
+                dashboard_data.get("compliance_controls"), scan_metadata.get("ai_bom_compliance"),
+                scan_metadata.get("ai_bom_applicability"))}
 
         findings_list = get_findings_for_scan_type(scan_type=type, scan_id=scan_id) # ✅ done for iac , sbom_sca , mcp , llm , sast 
 
@@ -957,6 +970,13 @@ def _build_scan_report(engine, team_id: int, type: str, scan_id: int, options) -
             subject = subject_name_for(scan.scan_metadata)
             scan_data = {**scan_data, SUBJECT_NAME_KEY: subject,
                          served_bom.SCAN_IDENTITY_KEY: served_bom.pdf_identity(type, scan_id, team_id, subject)}
+        if type == "ai_bom" and isinstance(scan_data, dict):
+            # the regulatory checks the team's profile binds (QA round 2, Q2-08), as in the evidence pack
+            from backend.utilities.cbom_sources.regulated_entity import declared_team_profile
+            from backend.utilities.compliance.aibom_applicability import PROFILE_KEY
+
+            # None when the team declared no regulated entity: every in-scope framework, "regulated entity not set"
+            scan_data = {**scan_data, PROFILE_KEY: declared_team_profile(session, team_id)}
         started_at, completed_at = scan.created_at, scan.last_updated
 
     if type not in TYPE_SECTIONS:  # leakage, agent discovery...: "not supported" (400) before any status read

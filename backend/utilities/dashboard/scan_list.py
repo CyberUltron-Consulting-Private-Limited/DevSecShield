@@ -1695,7 +1695,7 @@ from backend.utilities.dashboard.aibom_license import (
     is_unlicensed_library_gap,
     resolve_aibom_license,
 )
-from backend.utilities.dashboard.aibom_provider import resolve_aibom_provider
+from backend.utilities.dashboard.aibom_provider import is_model_asset, is_service_asset, resolve_aibom_provider
 from backend.utilities.dashboard.bom_risk_score import cbom_finding_risk_score
 
 CBOM_RISK_SCORE_FOR_IMPACT = {"critical": 9, "high": 7, "medium": 5, "low": 2}
@@ -1891,6 +1891,8 @@ def _ai_bom_results(scan: Scan) -> list:
 
 def generate_ai_bom_dashboard_data(scans: list[Scan]) -> dict:
     """Aggregate AI-BOM dashboard data across all scans for the scan-list page."""
+    from backend.utilities.pdf.aibom_posture import partial_ai_bom_scan, scan_succeeded
+
     severity_distribution = {"critical": 0, "high": 0, "medium": 0, "low": 0}
     asset_type_distribution: dict[str, int] = defaultdict(int)
     provider_distribution: dict[str, int] = defaultdict(int)
@@ -1901,19 +1903,24 @@ def generate_ai_bom_dashboard_data(scans: list[Scan]) -> dict:
     top_risks_entries: list[dict] = []
 
     total_ai_assets = 0
+    # scans a scanner did not finish: the team dashboard and its tile mark them (review 6063929550 of #498, R5-M2)
+    partial_scan_ids: list = []
     # Distinct entity sets (count UNIQUE entities, not detection rows).
     # e.g. an OpenAI SDK imported in 4 files is ONE external provider, not 4.
     # Sets span ALL scans so the aggregate dashboard de-dupes across scans too.
     distinct_external_providers: set = set()
     distinct_models: set = set()
+    unidentified_models: set = set()
     distinct_datasets: set = set()
     total_high_risk_assets = 0
     total_unlicensed_assets = 0
     assets_with_license_and_card = 0
 
     for scan in scans:
-        if scan.scan_status != "success":
+        if not scan_succeeded(scan):  # any case (review 6065595627 of #498, m5)
             continue
+        if partial_ai_bom_scan(scan):
+            partial_scan_ids.append(scan.id)
         results = _ai_bom_results(scan)
         if not results:
             continue
@@ -1942,9 +1949,14 @@ def generate_ai_bom_dashboard_data(scans: list[Scan]) -> dict:
             # asset_name comes from the worker field 'component_name'; provider
             # from 'source' (ModelProvider value, e.g. openai/anthropic).
             asset_name = asset.get("component_name") or asset.get("title") or "Unknown"
-            if component_type in AI_BOM_MODEL_COMPONENT_TYPES:
-                # distinct model by (provider, asset_name)
-                distinct_models.add((provider, asset_name))
+            if is_model_asset(asset):
+                # distinct model by (provider, asset_name); a model the code uses without naming it is distinct per
+                # scan: two repositories' "unidentified model (ChatOpenAI)" can run different defaults (#498 round 4)
+                if asset.get("model_identified") is False:
+                    distinct_models.add((scan.id, provider, asset_name))
+                    unidentified_models.add((scan.id, provider, asset_name))
+                else:
+                    distinct_models.add((provider, asset_name))
             if component_type == "external_provider":
                 # distinct provider among external_provider findings
                 distinct_external_providers.add(provider)
@@ -1958,8 +1970,8 @@ def generate_ai_bom_dashboard_data(scans: list[Scan]) -> dict:
 
             # unlicensed assets = libraries still lacking a usable SPDX license
             if (
-                component_type not in AI_BOM_MODEL_COMPONENT_TYPES
-                and component_type != "external_provider"
+                not is_model_asset(asset)
+                and not is_service_asset(component_type)
                 and is_unlicensed_library_gap(license_type)
             ):
                 total_unlicensed_assets += 1
@@ -2045,7 +2057,7 @@ def generate_ai_bom_dashboard_data(scans: list[Scan]) -> dict:
     total_ignored = 0
     all_findings_count = 0
     for scan in scans:
-        if scan.scan_status != "success":
+        if not scan_succeeded(scan):  # any case (review 6065595627 of #498, m5)
             continue
         findings = get_findings_for_scan_id(scan_id=scan.id)
         all_findings.extend(findings)
@@ -2062,13 +2074,16 @@ def generate_ai_bom_dashboard_data(scans: list[Scan]) -> dict:
         "card_data": {
             "total_ai_assets": total_ai_assets,
             "total_models": total_models,
+            "total_unidentified_models": len(unidentified_models),
             "total_datasets": total_datasets,
             "total_external_providers": total_external_providers,
             "total_high_risk_assets": total_high_risk_assets,
             "total_unlicensed_assets": total_unlicensed_assets,
             "governance_readiness_score": governance_readiness_score,
             "average_risk_score": round(average_risk_score * 10) / 10,
+            "partial_scans": len(partial_scan_ids),
         },
+        "partial_scan_ids": partial_scan_ids,
         "remediation_metrics": remediation_metrics,
         "remediation_actions_required": {
             "total_findings": all_findings_count,

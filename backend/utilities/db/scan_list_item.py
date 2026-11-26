@@ -1,5 +1,6 @@
 from backend.new_models import Scan
 from backend.utilities.dashboard import risk_scale, sbom_rows
+from backend.utilities.dashboard.aibom_provider import is_model_asset, resolve_aibom_provider
 
 def owner_full_name(user) -> str | None:
     """"First Last" of a scan's owner; a missing part is left out ("alice", never "alice None"); None when both are."""
@@ -490,8 +491,11 @@ def return_cbom_list_item(scan : Scan) -> dict:
 def return_ai_bom_list_item(scan : Scan) -> dict:
     total_critical , total_high , total_medium , total_low , average_risk_score  = 0,0,0,0,0
     total_high_risk_assets , total_models = 0, 0
-    model_component_types = {"local_model_file", "huggingface_model", "embedding_model"}
-    if scan.scan_data and scan.scan_data != {} and "results" in scan.scan_data and scan.scan_status == "success":
+    model_keys: set = set()
+    from backend.utilities.pdf.aibom_posture import scan_succeeded
+
+    # the status is read as the dashboards read it (review 6065595627 of #498, m5)
+    if scan.scan_data and scan.scan_data != {} and "results" in scan.scan_data and scan_succeeded(scan):
         for asset in scan.scan_data["results"]:
             impact = (asset.get("impact") or "").lower()
             if impact == "critical":
@@ -507,11 +511,12 @@ def return_ai_bom_list_item(scan : Scan) -> dict:
             if impact in ("critical", "high"):
                 total_high_risk_assets += 1
 
-            # Count models by component_type
-            component_type = (asset.get("component_type") or "").lower()
-            if component_type in model_component_types:
-                total_models += 1
+            # Count models as the dashboards do: distinct (provider, name) (a provider-served model is typed
+            # external_provider, QA round 2; #498 round 4: one count rule on the list, the scan and the team views)
+            if is_model_asset(asset):
+                model_keys.add((resolve_aibom_provider(asset), asset.get("component_name") or asset.get("title")))
 
+    total_models = len(model_keys)
     risk_data = {
         "total_critical": total_critical,
         "total_high": total_high,
@@ -550,7 +555,18 @@ def return_ai_bom_list_item(scan : Scan) -> dict:
         "branch": scan.scan_metadata["branch"] if scan.scan_metadata and "branch" in scan.scan_metadata else None,
         "average_risk_score" : average_risk_score,
         "scan_binaries": scan.scan_metadata.get("scan_binaries", False) if scan.scan_metadata else False,
+        # a scanner did not finish: the list marks the scan partial (review 6063929550 of #498, R5-M2)
+        "completeness": _ai_bom_completeness(scan),
     }
+
+
+def _ai_bom_completeness(scan: Scan) -> str | None:
+    """"partial" or "complete" for a successful AI BOM scan, None otherwise."""
+    from backend.utilities.pdf.aibom_posture import partial_ai_bom_scan, scan_succeeded
+
+    if not scan_succeeded(scan) or not isinstance(scan.scan_data, dict):
+        return None
+    return "partial" if partial_ai_bom_scan(scan) else "complete"
 
 
 # Kept at the end of the file so the functions above keep their line numbers (the (i) tips cite them).

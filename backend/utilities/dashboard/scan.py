@@ -11,10 +11,11 @@ from backend.utilities.dashboard.finding_metrics import get_average_resolution_t
 from backend.utilities.dashboard.garak_probes import GARAK_PROBES_DESCRIPTION
 from backend.utilities.dashboard.aibom_license import (
     is_governance_license,
+    is_unknown_license,
     is_unlicensed_library_gap,
     resolve_aibom_license,
 )
-from backend.utilities.dashboard.aibom_provider import resolve_aibom_provider
+from backend.utilities.dashboard.aibom_provider import is_model_asset, is_service_asset, resolve_aibom_provider
 from backend.utilities.dashboard.sbom_license import (
     LICENSE_CATEGORIES as LICENSE_ALL_CATEGORIES,
     resolve_sbom_license_category,
@@ -1269,7 +1270,6 @@ def generate_scan_dashboard(
 
         elif scan_type == "ai_bom":
             # =========== AI-BOM Dashboard ===========================
-            model_component_types = {"local_model_file", "huggingface_model", "embedding_model"}
 
             severity_distribution = {"critical": 0, "high": 0, "medium": 0, "low": 0}
             asset_type_distribution = defaultdict(int)
@@ -1285,9 +1285,12 @@ def generate_scan_dashboard(
             # e.g. an OpenAI SDK imported in 4 files is ONE external provider, not 4.
             distinct_external_providers: set = set()
             distinct_models: set = set()
+            unidentified_models: set = set()
             distinct_datasets: set = set()
             total_high_risk_assets = 0
             total_unlicensed_assets = 0
+            # library licences the offline manifest did not resolve: unknown / partial, not unlicensed (M7)
+            total_licence_unknown_assets = 0
             assets_with_license_and_card = 0
 
             for asset in results:
@@ -1317,13 +1320,15 @@ def generate_scan_dashboard(
                 # asset_name comes from the worker field 'component_name'; provider
                 # from 'source' (ModelProvider value, e.g. openai/anthropic).
                 asset_name = asset.get("component_name") or asset.get("title") or "Unknown"
-                if component_type in model_component_types:
+                if is_model_asset(asset):
                     # distinct model by (provider, asset_name). Catalog-only model
                     # references (supported-model registries, not models the app
                     # uses) are already excluded upstream by the aibom adapter's
                     # _inventory(), so this is the verified true count, not the
                     # catalog over-count.
                     distinct_models.add((provider, asset_name))
+                    if asset.get("model_identified") is False:
+                        unidentified_models.add((provider, asset_name))
                 if component_type == "external_provider":
                     # distinct provider among external_provider findings
                     distinct_external_providers.add(provider)
@@ -1340,11 +1345,16 @@ def generate_scan_dashboard(
                 # (not-applicable / not-declared) do not count as a library gap
                 # when applied to non-libraries; for frameworks, not-declared does.
                 if (
-                    component_type not in model_component_types
-                    and component_type != "external_provider"
+                    not is_model_asset(asset)
+                    and not is_service_asset(component_type)
                     and is_unlicensed_library_gap(license_type)
                 ):
                     total_unlicensed_assets += 1
+                # the libraries among them, as the PDF's "Library licences resolved" row and the BOM's
+                # aibom:licence_unknown count them (a model with no known licence is MODEL_LICENSE_UNKNOWN)
+                if not is_model_asset(asset) and not is_service_asset(component_type) and is_unknown_license(
+                        license_type):
+                    total_licence_unknown_assets += 1
 
                 # governance readiness: assets with both declared license and model card
                 has_license = is_governance_license(license_type)
@@ -1436,10 +1446,13 @@ def generate_scan_dashboard(
                 "card_data": {
                     "total_ai_assets": total_ai_assets,
                     "total_models": total_models,
+                    # of which used without naming the model (ChatOpenAI(), configuration; #498 round 4)
+                    "total_unidentified_models": len(unidentified_models),
                     "total_datasets": total_datasets,
                     "total_external_providers": total_external_providers,
                     "total_high_risk_assets": total_high_risk_assets,
                     "total_unlicensed_assets": total_unlicensed_assets,
+                    "total_licence_unknown_assets": total_licence_unknown_assets,
                     "governance_readiness_score": governance_readiness_score,
                     "average_risk_score": round(average_risk_score * 10) / 10,
                 },

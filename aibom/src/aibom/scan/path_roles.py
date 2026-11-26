@@ -75,6 +75,45 @@ def is_env_file(path: Path) -> bool:
     return bool(_ENV_FILE.match(path.name))
 
 
+# ``.env.example``, ``.env.sample``, ``env.template``, ``.env.dist``: documents the
+# settings, never the deployment's values (review 6065595627 of #498, R6-M1)
+_ENV_TEMPLATE = re.compile(
+    r"(?:^|[._-])(?:example|sample|template|dist|tmpl)(?:[._-]|$)", re.IGNORECASE
+)
+
+
+def is_env_template(path: Path) -> bool:
+    """An environment file that is a template of the real one (``.env.example``)."""
+    return is_env_file(path) and bool(_ENV_TEMPLATE.search(path.name))
+
+
+#: directories that hold vendored / third-party code, never the application's own
+#: (review 6066180782 of #498, m1); the walks prune ``vendor`` / ``node_modules``
+_VENDORED_DIRS = frozenset({"third_party", "third-party", "thirdparty", "external",
+                            "extern", "vendor", "vendored", "_vendor"})
+#: a directory with one of these is a package root
+MANIFESTS = ("pyproject.toml", "setup.py", "setup.cfg", "package.json")
+
+
+def is_vendored_path(path: Path, root: Path) -> bool:
+    """Third-party code shipped in the repository: under third_party/, external/,
+    extern/, vendor/ …, or a ``libs/<pkg>/`` / ``lib/<pkg>/`` with its own manifest.
+    It is neither Ollama evidence nor inventory of the application (review
+    6066860842 of #498, m1)."""
+    try:
+        parts = path.relative_to(root).parts[:-1]
+    except ValueError:
+        return False
+    if any(p.lower() in _VENDORED_DIRS for p in parts):
+        return True
+    for i, part in enumerate(parts[:-1]):
+        if part.lower() in ("libs", "lib"):
+            pkg = root.joinpath(*parts[: i + 2])
+            if any((pkg / m).is_file() for m in MANIFESTS):
+                return True
+    return False
+
+
 def is_test_path(path: Path, root: Path) -> bool:
     """A test file or a file under a test directory (relative to the scan root)."""
     return bool(_TEST_FILE.match(path.name)) or any(
@@ -107,6 +146,9 @@ __all__ = [
     "evidence_rank",
     "is_doc_path",
     "is_env_file",
+    "is_env_template",
     "is_example_path",
     "is_test_path",
+    "is_vendored_path",
+    "MANIFESTS",
 ]

@@ -109,6 +109,10 @@ _AI_COMPONENT_TYPE_TO_CYCLONEDX_TYPE: dict[str, str] = {
     AIComponentType.EMBEDDING_MODEL.value: "machine-learning-model",
     AIComponentType.LOCAL_MODEL_FILE.value: "machine-learning-model",
     AIComponentType.DATASET.value: "data",
+    # #498 round 5 (review 6063080163 m7): a model server is a platform, a model it runs a model
+    AIComponentType.LOCAL_MODEL_SERVER.value: "platform",
+    AIComponentType.SELF_HOSTED_MODEL_SERVER.value: "platform",
+    AIComponentType.SELF_HOSTED_MODEL.value: "machine-learning-model",
 }
 
 

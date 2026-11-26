@@ -1554,8 +1554,8 @@ def compute_risk_score(critical: int, high: int, medium: int, low: int) -> Tuple
 
 
 def compute_posture_risk_score(critical: int, high: int, medium: int, low: int) -> Tuple[int, str, str]:
-    """The AI BOM grade: ``compute_risk_score`` bounded by the worst severity present (no Critical -> at most D, no
-    Critical/High -> at most C, Low only -> at most B, nothing -> A). Computed by the engine's own function and table
+    """The AI BOM grade: ``compute_risk_score`` kept in the worst severity's band (critical 50-100: D/F, high 30-69:
+    C/D, medium 15-49: B/C, low 0-14: A, nothing: A). Computed by the engine's own function and table
     (``aibom/src/aibom/score/posture.py``, loaded by ``aibom_posture``), so the PDF and the dashboard band agree."""
     from backend.utilities.pdf.aibom_posture import posture_risk
 

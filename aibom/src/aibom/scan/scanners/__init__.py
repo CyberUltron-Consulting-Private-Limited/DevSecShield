@@ -7,7 +7,9 @@ from aibom.scan.scanners import (  # noqa: F401
     cloud_iac_scan,
     code_import_scan,
     docker_scan,
+    licence_coverage,
     live_cloud_scan,
+    model_considerations,
     model_file_scan,
     model_graph_link,
     model_ref_scan,
@@ -15,6 +17,7 @@ from aibom.scan.scanners import (  # noqa: F401
     net_env_scan,
     requirements,
     secret_scan,
+    unnamed_models,
 )
 
 __all__ = [
@@ -24,6 +27,9 @@ __all__ = [
     "model_file_scan",
     "model_ref_scan",
     "model_graph_link",
+    "model_considerations",
+    "licence_coverage",
+    "unnamed_models",
     "secret_scan",
     "docker_scan",
     "net_env_scan",

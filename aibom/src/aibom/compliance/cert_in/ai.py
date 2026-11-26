@@ -104,11 +104,13 @@ def _field_value(r: ScanResult, m: ModelComponent, rid: str) -> Any:
         cons = mc.considerations
         if cons is None:
             return None
-        # Considerations may carry use_limitations / prohibited use lists
-        for attr in ("use_limitations", "technical_limitations", "out_of_scope"):
-            val = getattr(cons, attr, None)
-            if has_nonempty(val):
-                return val
+        # prohibited / excluded uses first; an author's model card may state them
+        # as technical limitations, but the scanner's own derived limitations (a
+        # moving alias, cross-Region routing) are not out-of-scope uses
+        if has_nonempty(cons.out_of_scope):
+            return cons.out_of_scope
+        if not cons.derived and has_nonempty(cons.technical_limitations):
+            return cons.technical_limitations
         return None
     if rid == "T10-Environmental-Impact":
         props = m.properties or {}

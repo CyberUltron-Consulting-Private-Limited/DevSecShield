@@ -89,8 +89,12 @@ def test_every_chart_array_is_non_empty() -> None:
 
 def test_severity_spans_bands_and_owasp_has_real_categories() -> None:
     arrays = _dashboard_arrays(_FIXTURE)
-    # engineered fixture: >=1 finding per severity band
-    for band in ("Critical", "High", "Medium", "Low"):
+    # engineered fixture: >=1 finding per scored severity band
+    # QA round 2 (Q2-07): the fixture's only medium came from a library whose licence
+    # the offline manifest does not know; an unresolved licence is unknown / partial
+    # and no longer scored, so the fixture spans critical / high / low and the medium
+    # band is covered by the stacking tests (component_severity(5 / 6) == medium).
+    for band in ("Critical", "High", "Low"):
         assert arrays["severity"].get(band, 0) >= 1, f"no {band}: {arrays['severity']}"
     # >=1 OWASP category and >=1 compliance gap (the chart-data contract)
     assert arrays["owasp"], "OWASP chart blank"

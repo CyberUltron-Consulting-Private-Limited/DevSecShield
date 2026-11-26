@@ -31,6 +31,11 @@ _IMPACT = {"Low", "Medium", "High", "Critical"}
 _AI_COMPONENT_TYPE = {
     "local_model_file", "external_provider", "huggingface_model", "ml_framework",
     "ai_framework", "dataset", "prompt_asset", "embedding_model",
+    # a self-hosted model server (Ollama on localhost): worker enums.AIComponentType
+    # LOCAL_MODEL_SERVER (#498 round 3)
+    "local_model_server",
+    # a remote / self-hosted model server and the models it runs (#498 round 4)
+    "self_hosted_model_server", "self_hosted_model",
 }
 _MODEL_PROVIDER = {
     "openai", "anthropic", "bedrock", "vertex", "cohere", "mistral",
@@ -51,6 +56,13 @@ _FINDING_FIELDS = {
     "suggested_fix", "component_name", "component_type", "framework", "version",
     "source", "license", "location", "snippet", "risk_category",
     "owasp_top_10_llm", "model_card", "risk_score", "bom_ref",
+    # additive (QA round 2): the engine kind (a provider-served model is still a
+    # model) and whether the licence was resolved
+    "component_kind", "license_status",
+    # additive (#498 round 4): False for a model the code uses without naming it
+    "model_identified",
+    # additive (#498 round 8): the candidates of a model chosen at run time
+    "model_candidates",
 }
 _LOCKED_KEYS = {"results", "ai_bom_json", "ai_bom_compliance", "duration_of_scan"}
 _ADDITIVE_KEYS = {"ai_bom_spdx", "ai_bom_sarif", "ai_bom_graph", "ai_bom_scores"}
@@ -198,7 +210,14 @@ def test_raw_bom_artifacts_present_and_cyclonedx_valid() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_normalize_is_deterministic() -> None:
+def test_normalize_is_deterministic(monkeypatch) -> None:
+    # every scan is stamped with its own time (generated_at): two scans either side of
+    # a second boundary differ only there (CI flake on #498). Determinism is "same
+    # input, same scan time -> same output", so the clock is pinned.
+    import aibom.emit.identity as identity
+
+    pinned = identity.utc_now()
+    monkeypatch.setattr(identity, "utc_now", lambda: pinned)
     r1 = run_native_scan(_SHADOW, level=4, allowlist=_ALLOW)
     r2 = run_native_scan(_SHADOW, level=4, allowlist=_ALLOW)
     assert normalize(r1, duration_of_scan=0.0) == normalize(r2, duration_of_scan=0.0)

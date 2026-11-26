@@ -15,6 +15,7 @@ from aibom.compliance.base import (
     CheckResult,
     applicability_for,
     checks_for,
+    needs_identification,
 )
 from aibom.emit._disclaimer import disclaimer_of
 from aibom.model.result import ScanResult
@@ -80,20 +81,32 @@ def run_framework(
 
     counts = dict.fromkeys(_STATES, 0)
     requirements: list[dict[str, Any]] = []
+    # a partial scan qualifies every verdict: a pass or a fail may change once the
+    # scanner that did not finish runs (review 6063929550 of #498, R5-M2)
+    incomplete = incomplete_basis(result)
     for requirement, check in checks_for(framework):
         if oos_reason is not None:
             cr = CheckResult("out_of_scope", oos_reason)
         else:
-            cr = check(result, requirement)
+            # a pass that vouches for an unidentified model needs information (#498
+            # round 3: ChatOpenAI() with no model read "T10-Model-Name pass")
+            cr = needs_identification(result, check(result, requirement))
             if cr.verdict == "not_bom_evidenceable" and requirement.id in evidence:
                 cr = CheckResult(
                     "pass_with_evidence",
                     f"attested: {evidence[requirement.id]}",
                     cr.refs,
                 )
+        if incomplete:
+            # every verdict, not only pass / fail: "na", "needs information" and
+            # "out of scope" may change too once the scanner runs (review 6065595627
+            # of #498, nit: FREEAI-19-1 read "no externally-served models" while
+            # net-env had failed)
+            cr = CheckResult(cr.verdict, f"{cr.evidence} ({incomplete})", cr.refs)
         counts[cr.verdict] = counts.get(cr.verdict, 0) + 1
         requirements.append(
             {
+                **({"basis": "incomplete_scan"} if incomplete else {}),
                 "id": requirement.id,
                 "title": requirement.title_for(result),
                 "source": requirement.source_for(result),
@@ -115,8 +128,25 @@ def run_framework(
         "not_bom_evidenceable": counts["not_bom_evidenceable"],
         "na": counts["na"],
         "coverage": coverage,  # pass/(pass+fail); None when 0 applicable
+        # present only on a partial scan: a complete scan's report is unchanged
+        **({"basis": "incomplete_scan"} if incomplete else {}),
         "requirements": requirements,
     }
+
+
+INCOMPLETE_PREFIX = "based on an incomplete scan"
+
+
+def incomplete_basis(result: ScanResult) -> str:
+    """'' for a complete scan; else the qualifier every verdict carries, naming
+    the scanners that did not finish."""
+    props = result.properties or {}
+    errors = (props.get("aibom:scanner_errors") or "").strip()
+    if not errors and props.get("aibom:scan_completeness") != "partial":
+        return ""
+    names = [e.split(":", 1)[0].strip() for e in errors.split(";") if e.strip()]
+    tail = f": {', '.join(names)} did not finish" if names else ""
+    return f"{INCOMPLETE_PREFIX}{tail}"
 
 
 def run_all(

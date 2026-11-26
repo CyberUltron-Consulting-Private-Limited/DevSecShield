@@ -1,0 +1,202 @@
+/**
+ * AI BOM results-page wording and labels (staging QA round 2, D5).
+ *
+ * - The AI Governance subtitle follows the team's regulatory profile (CBOM settings ``regulated_entity``, the same
+ *   profile the PDF report and the evidence pack's compliance.json use): a bank or an NBFC never reads "Healthcare".
+ *   The healthcare wording is kept only for an "other" entity whose AI BOM itself carries the healthcare disclaimer
+ *   (the engine's ``regulatory:disclaimer`` names FDA / HIPAA only for a BOM with clinical metadata).
+ * - Licence ids can be long (``LicenseRef-Mistral-AI-Non-Production-License``): the chart axis shows a short label
+ *   and the tooltip keeps the full id.
+ */
+import { REGULATED_ENTITY_CHOICES } from "@/components/cbom/sources/regulatedEntity";
+
+type Json = Record<string, unknown>;
+
+const SUBTITLE_TAIL = "compliance readiness, supply-chain lineage, deployment drift and model provenance.";
+
+/** Whether the AI BOM carries the engine's healthcare disclaimer (a BOM with clinical / regulatory metadata). */
+export function isHealthcareBom(aiBomJson: Json | null | undefined): boolean {
+  const meta = aiBomJson?.metadata as Json | undefined;
+  const props = Array.isArray(meta?.properties) ? (meta?.properties as Json[]) : [];
+  const disclaimer = props.find((p) => p?.name === "regulatory:disclaimer")?.value;
+  return typeof disclaimer === "string" && /\b(?:HIPAA|FDA)\b/.test(disclaimer);
+}
+
+/** The AI Governance section subtitle for a team's regulated-entity type. ``null`` / undefined: the team declared no
+ * regulated entity, so nothing is filtered and a clinical BOM keeps the healthcare wording (review 6037909737 M4). */
+export function governanceSubtitle(entity: string | null | undefined, aiBomJson: Json | null | undefined): string {
+  const choice = REGULATED_ENTITY_CHOICES.find((c) => c.value === entity);
+  if (choice && choice.value !== "other") return `${choice.label} AI BOM: ${SUBTITLE_TAIL}`;
+  if (isHealthcareBom(aiBomJson)) return `Healthcare AI BOM: ${SUBTITLE_TAIL}`;
+  return `AI BOM: ${SUBTITLE_TAIL}`;
+}
+
+/** The server's ``ai_bom_applicability`` (backend aibom_applicability.page_view): the frameworks that bind the team. */
+export type AiBomApplicability = {
+  regulatory_profile?: { entity?: string; flags?: string[] } | null;
+  basis?: string;
+  binding?: string[];
+  not_applicable?: { framework: string; label: string }[];
+};
+
+/** The engine's compliance report keeping only the frameworks that bind the team (and its disclaimer), so the
+ * results page shows what the PDF and the evidence pack show (review 6037909737 of #498, M3). No applicability (an
+ * older backend): unchanged. */
+export function bindingCompliance<T extends Record<string, unknown>>(
+  compliance: T | null | undefined,
+  applicability: AiBomApplicability | null | undefined,
+): T | null | undefined {
+  if (!compliance || !applicability || !Array.isArray(applicability.binding)) return compliance;
+  const keep = new Set([...applicability.binding, "disclaimer"]);
+  return Object.fromEntries(Object.entries(compliance).filter(([k]) => keep.has(k))) as T;
+}
+
+/** The sentence under the framework charts: which profile chose them, and which frameworks it leaves out. */
+export function applicabilityNote(applicability: AiBomApplicability | null | undefined): string | null {
+  if (!applicability) return null;
+  if (!applicability.regulatory_profile) {
+    return "Team regulatory profile: regulated entity not set. Every framework this AI BOM is in the scope of is shown.";
+  }
+  const names = (applicability.not_applicable ?? []).map((n) => n.label);
+  if (names.length === 0) return null;
+  return `Frameworks shown for this team's regulatory profile (${applicability.basis}). Not applicable to it: ${names.join(", ")}.`;
+}
+
+/** The Models tile's note for model calls that name no model (engine ``aibom:model_unnamed_*``, #498 round 3):
+ * ``ChatOpenAI()`` runs the library's default model, which depends on the installed release, so the page says so
+ * instead of silently showing fewer models. ``null`` when every call names its model. */
+export function unnamedModelHint(
+  aiBomJson: Json | null | undefined,
+  models?: { total?: unknown; unidentified?: unknown },
+): string | null {
+  const meta = aiBomJson?.metadata as Json | undefined;
+  const props = Array.isArray(meta?.properties) ? (meta?.properties as Json[]) : [];
+  const value = (name: string) => {
+    const v = props.find((p) => p?.name === name)?.value;
+    return typeof v === "string" ? v : "";
+  };
+  // strict: "2abc" is no count (review 6062066749 nit)
+  const count = (v: unknown): number | null => {
+    const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
+    return Number.isInteger(n) && n >= 0 ? n : null;
+  };
+  const library = value("aibom:model_unnamed_library");
+  const total = count(models?.total);
+  const unidentified = count(models?.unidentified);
+  if (total !== null && unidentified !== null && unidentified > 0) {
+    // the dashboard's split (#498 round 4, m1): "1 identified + 2 not identified"
+    return `${total - unidentified} identified + ${unidentified} not identified${library ? ` (${library})` : ""}`;
+  }
+  const n = count(value("aibom:model_unnamed_calls"));
+  if (n === null || n === 0) return null;
+  const calls = n === 1 ? "1 call names no model" : `${n} calls name no model`;
+  return `${calls}: library default or configuration${library ? ` (${library})` : ""}`;
+}
+
+/** The server's ``ai_bom_completeness`` (backend aibom_posture.scan_completeness): scanners that did not finish and
+ * notebooks read as raw text (review 6063080163 of #498, R4-M2). */
+export type AiBomCompleteness = {
+  status?: string;
+  scanner_errors?: string | null;
+  notebooks_unreadable?: string | null;
+};
+
+/** The warning banner over the tiles; null when the scan read everything. A partial scan withholds the grade. */
+export function completenessNotice(c: AiBomCompleteness | null | undefined): string | null {
+  if (!c) return null;
+  const parts: string[] = [];
+  if (c.scanner_errors) {
+    // customer wording; the technical detail stays available in the title (review 6063929550 of #498, nit)
+    parts.push(
+      `Scan incomplete: grade withheld because ${scannersNotFinished(c.scanner_errors)}. ` +
+        "Compliance verdicts are based on an incomplete scan.",
+    );
+  }
+  if (c.notebooks_unreadable) {
+    parts.push(`Notebooks read as raw text (not valid notebooks): ${c.notebooks_unreadable}.`);
+  }
+  return parts.length ? parts.join(" ") : null;
+}
+
+/** Customer-facing scanner names (backend aibom_posture.SCANNER_LABELS, the engine's scanner ``name``s). */
+export const SCANNER_LABELS: Record<string, string> = {
+  "cloud-iac": "cloud infrastructure-as-code",
+  "code-import": "AI library import",
+  docker: "container",
+  "licence-coverage": "licence coverage",
+  "live-cloud": "live cloud",
+  "model-considerations": "model considerations",
+  "model-file": "model file",
+  "model-graph-link": "model linking",
+  "model-ref": "model reference",
+  "model-repo": "model repository",
+  "net-env": "network/endpoint",
+  requirements: "dependency manifest",
+  secret: "secret",
+  "unnamed-models": "unidentified model",
+};
+
+/** "the network/endpoint scanner did not finish" from ``aibom:scanner_errors`` ("net-env: RuntimeError (unexpected)"). */
+export function scannersNotFinished(errors: string): string {
+  const names = errors
+    .split(";")
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => {
+      const id = p.split(":")[0].trim();
+      return SCANNER_LABELS[id] ?? id;
+    });
+  if (names.length === 0) return "a scanner did not finish";
+  if (names.length === 1) return `the ${names[0]} scanner did not finish`;
+  return `the ${names.slice(0, -1).join(", ")} and ${names[names.length - 1]} scanners did not finish`;
+}
+
+/** The risk band chip: a partial scan reads "grade withheld", never a band word such as LOW (review 6063929550 of
+ * #498, R5-M2); a missing band is "—", not "low". */
+export function bandChip(scores: { risk_band?: string; completeness?: string } | null | undefined): {
+  label: string;
+  withheld: boolean;
+} {
+  if (scores?.completeness === "partial" || scores?.risk_band === "withheld") {
+    return { label: "GRADE WITHHELD", withheld: true };
+  }
+  return { label: scores?.risk_band ? scores.risk_band.toUpperCase() : "—", withheld: false };
+}
+
+const MAX_LABEL = 24;
+
+/** A short label for a licence id (at most ``max`` characters); the full id belongs in the tooltip / title. */
+export function licenceLabel(id: string, max: number = MAX_LABEL): string {
+  if (id === "NOASSERTION") return max >= 22 ? "unknown (not resolved)" : "unknown";
+  const text = id.startsWith("LicenseRef-") ? id.slice("LicenseRef-".length).replace(/-/g, " ") : id;
+  return text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
+}
+
+/** A candidate of a model chosen at run time (engine row ``model_candidates``). */
+export type ModelCandidate = { name: string; provider: string };
+
+/** Candidates shown before the rest collapse into "and N more" (the PDF names the same ten). */
+export const CANDIDATES_SHOWN = 10;
+
+/**
+ * A model chosen at run time (``ollama.chat(model=OPTIONS[choice])``) is ONE model; its candidates are evidence, shown
+ * as a collapsed list: the first ten as "name (provider)", the rest as a count, all of them on expanding
+ * (review 6066180782 of #498, R7-M1). Null when the finding has none.
+ */
+export function candidateList(cands: ModelCandidate[] | null | undefined): {
+  total: number;
+  summary: string;
+  shown: string[];
+  more: number;
+  all: string[];
+} | null {
+  if (!Array.isArray(cands) || cands.length === 0) return null;
+  const all = cands.map((c) => `${c?.name ?? "?"} (${c?.provider || "unknown"})`);
+  return {
+    total: all.length,
+    summary: `${all.length} candidate${all.length === 1 ? "" : "s"}`,
+    shown: all.slice(0, CANDIDATES_SHOWN),
+    more: Math.max(0, all.length - CANDIDATES_SHOWN),
+    all,
+  };
+}

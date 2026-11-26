@@ -10,6 +10,8 @@ this file.
 
 from __future__ import annotations
 
+import logging
+import re
 from pathlib import Path
 
 # Importing the scanners package self-registers every scanner into SCANNERS.
@@ -31,6 +33,12 @@ _KIND_ORDER = {
 }
 
 
+_LOG = logging.getLogger("aibom.scan")
+# errors a scanner raises on input it cannot parse (an expected, logged warning)
+_PARSE_ERRORS = (ValueError, UnicodeError, OSError, RecursionError, re.error,
+                 SyntaxError)
+
+
 def scan_repo(
     path: str | Path,
     level: int = 1,
@@ -49,9 +57,30 @@ def scan_repo(
         raise NotADirectoryError(f"scan target is not a directory: {root}")
 
     ctx = ScanContext(root)
+    errors: list[str] = []
     for scanner in ordered_scanners():
         if scanner.level <= level and scanner.matches(root):
-            scanner.scan(ctx)
+            try:
+                scanner.scan(ctx)
+            except _PARSE_ERRORS as exc:
+                # input the scanner could not parse: the BOM is still produced and
+                # says which scanner did not finish (review 6062066749 of #498, M3)
+                _LOG.warning("AI BOM scanner %s did not finish: %s: %s", scanner.name,
+                             type(exc).__name__, exc)
+                errors.append(f"{scanner.name}: {type(exc).__name__}")
+            except Exception as exc:  # noqa: BLE001 - one scanner never aborts a scan
+                # an engine bug, not bad input: logged with its traceback at error
+                # level and counted, never silent (review 6063080163 of #498, R4-M2)
+                _LOG.exception("AI BOM scanner %s failed unexpectedly", scanner.name)
+                errors.append(f"{scanner.name}: {type(exc).__name__} (unexpected)")
+    if errors:
+        ctx.properties["aibom:scanner_errors"] = "; ".join(errors)
+        ctx.properties["aibom:scan_completeness"] = "partial"
+    if ctx.unreadable_notebooks:
+        # read as raw text (JSON escapes undone), and said so in the BOM
+        ctx.properties["aibom:notebooks_unreadable"] = ", ".join(
+            sorted(ctx.unreadable_notebooks)
+        )
 
     if allowlist is not None:
         # Shadow-AI diff is a finalize step: it EMITS flags (lane-clean), the

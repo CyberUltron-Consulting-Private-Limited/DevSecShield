@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import re
 
+from aibom.scan.parsers.code_text import mask
+
 # (pattern, vendor). Bounded by (?<![\w-]) / (?![\w-]) so we capture the whole
 # model token and never a substring of a longer identifier. A leading '/' or '.'
 # is allowed before (namespaced refs) because those are not in [\w-].
@@ -40,6 +42,58 @@ _SEG = r"[a-z0-9]+(?:\.\d+[a-z0-9]*)*"
 # Tail after a constrained first character: rest of the first segment, an
 # optional version, then more '-'-joined segments.
 _TAIL = rf"[a-z0-9]*(?:\.\d+[a-z0-9]*)*(?:-{_SEG})*"
+
+# Amazon Bedrock model ids (QA round 2, Q2-05): ``[<geo>.]<provider>.<model>[:N]``,
+# e.g. ``anthropic.claude-3-5-sonnet-20240620-v1:0``,
+# ``us.anthropic.claude-3-7-sonnet-20250219-v1:0`` (a cross-Region inference
+# profile), ``meta.llama3-70b-instruct-v1:0``, ``amazon.nova-pro-v1:0`` and the
+# provisioned-throughput form ``…-v1:0:200k``. The whole id is the model's
+# identifier: the bare ``claude-…`` family pattern below used to keep only
+# ``claude-3-5-sonnet-20240620-v1``. Each Bedrock provider prefix must be followed
+# by one of its model families, so ``meta.json``, ``amazon.com`` or ``mistral.ai``
+# are never model ids. Provider prefix -> (model family words, vendor).
+_BEDROCK_PROVIDERS: dict[str, tuple[str, str]] = {
+    "anthropic": ("claude", "Anthropic"),
+    "meta": ("llama", "Meta"),
+    "amazon": ("titan|nova", "Amazon"),
+    "mistral": ("mistral|mixtral|pixtral|ministral|codestral", "Mistral"),
+    # the family word is followed by its series ("command-r", "embed-english"), so
+    # prose such as "cohere.command docs" is no model id (review 6037909737 f6)
+    "cohere": ("command-|embed-|rerank-", "Cohere"),
+    "ai21": ("jamba|j2", "AI21 Labs"),
+    # newer Bedrock providers (review 6037909737 of #498, m3): deepseek.r1-v1:0,
+    # openai.gpt-oss-120b-1:0, writer.palmyra-x5-v1:0, qwen.qwen3-32b-v1:0
+    "deepseek": ("r1|v3", "DeepSeek"),
+    "openai": ("gpt-oss", "OpenAI"),
+    "writer": ("palmyra", "Writer"),
+    "qwen": ("qwen", "Alibaba"),
+}
+# Cross-Region inference profile geographies (the id's first label).
+_BEDROCK_GEOS = ("us-gov", "us", "eu", "apac", "global")
+_BEDROCK_SUFFIX = r"(?::\d+(?::\d+k)?)?"  # ":0", ":1", ":0:200k"
+_BEDROCK_RE = re.compile(
+    rf"(?<![\w-])(?:(?P<geo>{'|'.join(_BEDROCK_GEOS)})\.)?"
+    r"(?P<provider>"
+    + "|".join(rf"{p}\.(?:{fam})" for p, (fam, _v) in _BEDROCK_PROVIDERS.items())
+    + rf")[a-z0-9]*(?:-[a-z0-9]+)*{_BEDROCK_SUFFIX}"
+    # end of the id: no further id character (a sentence's full stop is fine)
+    r"(?![\w:-]|\.\w)",
+    re.IGNORECASE,
+)
+
+
+def parse_bedrock_id(name: str) -> dict[str, str] | None:
+    """``{"vendor", "provider_prefix", "profile"?}`` for a whole Bedrock model id, else
+    None. ``profile`` is the cross-Region inference profile geography (``us``)."""
+    m = _BEDROCK_RE.fullmatch(name or "")
+    if m is None:
+        return None
+    prefix = m.group("provider").split(".", 1)[0].lower()
+    out = {"vendor": _BEDROCK_PROVIDERS[prefix][1], "provider_prefix": prefix}
+    if m.group("geo"):
+        out["profile"] = m.group("geo").lower()
+    return out
+
 
 # (raw pattern, vendor, org_prefix). ``org_prefix`` True prepends the optional
 # HuggingFace "org/" repo prefix (_ORG). Compiled with the _B boundary below.
@@ -71,6 +125,9 @@ _RAW: list[tuple[str, str, bool]] = [
     (rf"command-(?:r(?:-plus)?|light|nightly)(?:-{_SEG})*", "Cohere", False),
     # Mistral
     (rf"(?:mistral|mixtral|codestral)-[a-z0-9]{_TAIL}", "Mistral", False),
+    # Google Gemma open weights (gemma2, gemma-2-9b-it, gemma3, codegemma-7b): a
+    # version digit is required, so the word "gemma" alone is not a model
+    (rf"(?:code)?gemma-?\d{_TAIL}", "Google", False),
     # Meta Llama
     (rf"(?:code)?llama-?[234]{_TAIL}", "Meta", False),
     # AWS Bedrock first-party models (Titan / Nova), incl. "amazon." purl prefix
@@ -109,6 +166,24 @@ _FAMILIES: list[tuple[re.Pattern[str], str]] = [
 ]
 
 
+def _matches(text: str):
+    """``(start, name, vendor)`` for every model reference in ``text``: Bedrock ids
+    first, then the family patterns in order. A span one pattern claimed is not
+    matched again by a later one, so a Bedrock id never also yields its bare
+    ``claude-…`` tail."""
+    claimed: list[tuple[int, int]] = []
+    for m in _BEDROCK_RE.finditer(text):
+        prefix = m.group("provider").split(".", 1)[0].lower()
+        claimed.append(m.span())
+        yield m.start(), m.group(0), _BEDROCK_PROVIDERS[prefix][1]
+    for pattern, vendor in _FAMILIES:
+        for m in pattern.finditer(text):
+            start, end = m.span()
+            if any(a < end and start < b for a, b in claimed):
+                continue
+            yield start, m.group(0), vendor
+
+
 def find_model_refs(text: str) -> dict[str, str]:
     """Map every model reference in ``text`` to its vendor (first match wins).
 
@@ -117,13 +192,11 @@ def find_model_refs(text: str) -> dict[str, str]:
     """
     found: dict[str, str] = {}
     lowered_seen: set[str] = set()
-    for pattern, vendor in _FAMILIES:
-        for m in pattern.finditer(text):
-            name = m.group(0)
-            low = name.lower()
-            if low not in lowered_seen:
-                lowered_seen.add(low)
-                found[name] = vendor
+    for _start, name, vendor in _matches(text):
+        low = name.lower()
+        if low not in lowered_seen:
+            lowered_seen.add(low)
+            found[name] = vendor
     return found
 
 
@@ -142,6 +215,12 @@ _USAGE_CONTEXT = re.compile(
     r"\bpipeline\s*\(|"  # transformers pipeline(...)
     r"EmbeddingFunction\s*\(|OllamaEmbeddingFunction\s*\(|"
     r"\.(?:chat|completions|complete|embed|generate|invoke|converse)\s*\(|"
+    # Bedrock: modelId= / ModelId: / model_arn=, invoke_model(…), the JS commands
+    # (review 6037909737 of #498, M2: modelId="eu.anthropic…" read as a catalog)
+    r"\b(?:modelId|ModelId|modelArn|model_arn)\s*[=:]\s*['\"]|"
+    r"\b(?:invoke_model|invoke_model_with_response_stream|converse_stream)\s*\(|"
+    r"\b(?:InvokeModelCommand|InvokeModelWithResponseStreamCommand|ConverseCommand|"
+    r"ConverseStreamCommand)\s*\(|"
     r"\b(?:MODEL|LLM|EMBED(?:DING)?_MODEL|GEN_MODEL|CLAUDE_MODEL)\b\s*[:=]\s*['\"]|"
     # a *_model setting / field with the model as its value or default:
     #   judge_model: str = Field(default="gpt-4o")   embedding_model = "bge-m3"
@@ -177,13 +256,19 @@ _CATALOG_HINT = re.compile(
     r"models\s*[:=]\s*[\[{(]|model_list|choices|enum|mapping|alias)",
     re.IGNORECASE,
 )
+# An environment lookup split over lines (black style): ``os.getenv(`` ends the line
+# before, ``"NAME", "<model>"`` starts this one.
+_ENV_CALL_OPEN = re.compile(r"\b(?:getenv|environ\.get|env\.get)\s*\(\s*$")
+_ENV_DEFAULT_ARG = re.compile(r"""^\s*['"][^'"]*['"]\s*,\s*['"]""")
 _COMMENT = re.compile(r"^\s*(?:#|//|\*|/\*|-{1,}|\|)")  # comment / md table / list row
 
 
 def _classify(line: str, prev: str, before: str = "") -> str:
     """usage | catalog for a reference, from its line (+ the preceding line);
     ``before`` is the text of the line before the reference."""
-    if _USAGE_CONTEXT.search(line):
+    if _USAGE_CONTEXT.search(line) or (
+        _ENV_CALL_OPEN.search(prev) and _ENV_DEFAULT_ARG.match(line)
+    ):
         return "usage"
     if _COMMENT.match(line) or _CATALOG_HINT.search(line) or _CATALOG_HINT.search(prev):
         return "catalog"
@@ -197,14 +282,34 @@ def _classify(line: str, prev: str, before: str = "") -> str:
     return "catalog"
 
 
-def find_model_refs_ctx(text: str) -> dict[str, tuple[str, str]]:
+def _in_comment(text: str, lang: str | None) -> list[bool] | None:
+    """Per character: whether it is inside a comment of ``lang`` source (``py``:
+    ``#``; ``js``: ``//`` and ``/* */``; strings are never comments), or None when
+    the text is not source code (Markdown, JSON …)."""
+    if lang is None:
+        return None
+    code, _bare = mask(text, lang)
+    return [a != b for a, b in zip(code, text, strict=True)]
+
+
+def find_model_refs_ctx(
+    text: str, lang: str | None = None
+) -> dict[str, tuple[str, str]]:
     """Map each model reference to ``(vendor, reference_type)``.
 
     ``reference_type`` is ``"usage"`` (the code loads/calls the model) or
     ``"catalog"`` (the name appears in a supported-model list/registry/doc). A
     name seen in BOTH contexts is promoted to ``"usage"`` (real use dominates).
     De-dup is case-insensitive; first occurrence's casing is kept.
+
+    ``lang`` (``py`` / ``js``, :func:`aibom.scan.parsers.code_text.language_of`)
+    marks ``text`` as source code: a reference inside a comment, such as the
+    commented-out ``# llm = HuggingFaceHub(repo_id="google/flan-t5-xxl")`` or a
+    trailing ``# or model="gpt-4-turbo"``, is a mention (catalog), never usage,
+    whatever call it names (review of #498 round 3: ask-multiple-pdfs counted a
+    commented-out instructor-xl as a model in use).
     """
+    commented = _in_comment(text, lang)
     lines = text.splitlines()
     # Map each match to the line it occurs on via cumulative offsets.
     offsets: list[int] = []
@@ -226,21 +331,170 @@ def find_model_refs_ctx(text: str) -> dict[str, tuple[str, str]]:
 
     found: dict[str, tuple[str, str]] = {}
     casing: dict[str, str] = {}
-    for pattern, vendor in _FAMILIES:
-        for m in pattern.finditer(text):
-            name = m.group(0)
-            low = name.lower()
-            li = line_index(m.start()) if offsets else 0
-            line = lines[li] if li < len(lines) else ""
-            prev = lines[li - 1] if li > 0 else ""
-            start = offsets[li] if offsets else 0
-            rtype = _classify(line, prev, text[start:m.start()])
-            casing.setdefault(low, name)
-            if low not in found:
-                found[low] = (vendor, rtype)
-            elif rtype == "usage" and found[low][1] != "usage":
-                found[low] = (found[low][0], "usage")  # promote to usage
+    from aibom.scan.parsers.ollama_tags import is_ollama_family, valid_tag
+
+    for pos, name, vendor in _matches(text):
+        low = name.lower()
+        # ``llama3:hits`` (a cache key) is no model: a family name followed by a
+        # ``:part`` that is no Ollama tag (review 6063929550 of #498, R5-M1). Only
+        # for a family Ollama serves: ``models/gemini-1.5-flash:generateContent``
+        # is a REST path naming a hosted model
+        after_name = text[pos + len(name) : pos + len(name) + 60]
+        colon = re.match(r":([A-Za-z_][\w.-]*)", after_name)
+        if colon and is_ollama_family(name) and not valid_tag(
+            f"{name}:{colon.group(1)}"
+        ) and parse_bedrock_id(name) is None:
+            continue
+        li = line_index(pos) if offsets else 0
+        line = lines[li] if li < len(lines) else ""
+        prev = lines[li - 1] if li > 0 else ""
+        start = offsets[li] if offsets else 0
+        if commented is not None and pos < len(commented) and commented[pos]:
+            rtype = "catalog"
+        else:
+            rtype = _classify(line, prev, text[start:pos])
+        casing.setdefault(low, name)
+        if low not in found:
+            found[low] = (vendor, rtype)
+        elif rtype == "usage" and found[low][1] != "usage":
+            found[low] = (found[low][0], "usage")  # promote to usage
     return {casing[low]: v for low, v in found.items()}
 
 
-__all__ = ["find_model_refs", "find_model_refs_ctx"]
+# ── Hugging Face Hub repository ids ──────────────────────────────────────────
+# The identifier an open-weights model is published under is its Hub repository id
+# ``<org>/<name>`` (``openai/whisper-large-v3``, ``pyannote/speaker-diarization-3.1``),
+# the id OWASP's AIBOM guidance and the purl ``huggingface`` type use. The family
+# dictionary above knows a fixed set of families; an id in a Hub loading context is
+# a model whatever its family. Recognised only where the code loads it from the Hub:
+# the first argument of a loader (``from_pretrained("…")``, ``pipeline(…,
+# model="…")``, ``SentenceTransformer("…")``, ``hf_hub_download(repo_id="…")``, a
+# LangChain ``HuggingFace*(model_name="…")``) or the default of a command-line
+# option named for a model (``add_argument("--model-name", default="…")``). A
+# provider-prefixed route such as LiteLLM's ``model="openai/gpt-4o"`` is not a Hub id
+# and is not matched (no loader around it).
+_HF_LOADER = (
+    r"(?:\.from_pretrained|\bpipeline|\bSentenceTransformer|\bCrossEncoder|"
+    r"\bhf_hub_download|\bsnapshot_download|\bInferenceClient|\bHuggingFace\w*)"
+)
+_HF_STR = r"""(?:'[^'\n]*'|"[^"\n]*")"""
+_HF_ID = (
+    r"""['"](?P<org>[A-Za-z0-9][\w.-]{0,95})/(?P<name>[A-Za-z0-9][\w.-]{0,95})['"]"""
+)
+_HF_REF = re.compile(
+    rf"""(?:{_HF_LOADER}\s*\((?:[^()'"]|{_HF_STR}){{0,400}}?"""
+    r"""(?:\b(?:model|model_name|model_id|repo_id|pretrained_model_name_or_path|"""
+    r"""model_name_or_path|checkpoint)\s*=\s*)?|"""
+    rf"""\b(?:add_argument|option)\s*\(\s*['"]-{{1,2}}[\w-]*model[\w-]*['"]"""
+    rf"""(?:[^()'"]|{_HF_STR}){{0,400}}?\bdefault\s*=\s*)"""
+    + _HF_ID,
+    re.IGNORECASE,
+)
+# ``<dir>/<name>`` strings that are local paths, not Hub repositories, and MIME types
+_HF_NOT_ORG = frozenset({
+    "models", "model", "checkpoints", "checkpoint", "ckpt", "ckpts", "output",
+    "outputs", "data", "weights", "saved_models", "pretrained", "tmp", "runs",
+    "results", "src", "local", "cache", "artifacts", "application", "text", "image",
+    "audio", "video", "multipart",
+})
+_HF_FILE = re.compile(
+    r"\.(?:py|json|jsonl|txt|csv|bin|pt|pth|ckpt|safetensors|gguf|ggml|onnx|yaml|"
+    r"yml|pkl|h5|tflite|model|zip|tar|gz)$",
+    re.IGNORECASE,
+)
+# Hub organisation -> the model's publisher, where the org is not the maker's name
+_HF_ORG_VENDOR = {
+    "openai": "OpenAI", "meta-llama": "Meta", "facebook": "Meta",
+    "mistralai": "Mistral",
+    "google": "Google", "google-bert": "Google", "microsoft": "Microsoft",
+    "qwen": "Alibaba", "alibaba-nlp": "Alibaba", "deepseek-ai": "DeepSeek",
+    "anthropic": "Anthropic", "cohereforai": "Cohere", "coherelabs": "Cohere",
+    "baai": "HuggingFace", "intfloat": "HuggingFace", "thenlper": "HuggingFace",
+    "sentence-transformers": "sentence-transformers", "nomic-ai": "Nomic",
+    "jinaai": "Jina", "hkunlp": "HKUNLP", "amazon": "Amazon", "nvidia": "NVIDIA",
+    "stabilityai": "Stability AI", "tiiuae": "TII", "bigscience": "BigScience",
+}
+
+
+# An org-less (legacy) Hub id (``bert-base-uncased``, ``gpt2``), accepted only with
+# strong context (review 6062066749 of #498, m4): the first argument of
+# ``.from_pretrained(`` / ``SentenceTransformer(`` / ``CrossEncoder(``, or the
+# ``model=`` of ``pipeline(``; a model-shaped name (a digit or a hyphen), never a path.
+_HF_BARE_REF = re.compile(
+    r"""(?:\.from_pretrained|\bSentenceTransformer|\bCrossEncoder)\s*\(\s*"""
+    r"""['"](?P<id>[A-Za-z][\w.-]{1,95})['"]|"""
+    r"""\bpipeline\s*\((?:[^()'"]|'[^'\n]*'|"[^"\n]*"){0,200}?\bmodel\s*=\s*"""
+    r"""['"](?P<id2>[A-Za-z][\w.-]{1,95})['"]"""
+)
+
+
+def _bare_hub_ok(name: str) -> bool:
+    return bool(
+        re.search(r"[\d-]", name)
+        and not _HF_FILE.search(name)
+        and name.lower() not in _HF_NOT_ORG
+        and ".." not in name
+    )
+
+
+def hf_vendor(org: str) -> str:
+    """The publisher of a Hub model from its organisation (the org itself when it is
+    not a known maker's alias)."""
+    return _HF_ORG_VENDOR.get(org.lower(), org)
+
+
+def find_hf_repo_ids(text: str, lang: str | None = None) -> dict[str, str]:
+    """``{"<org>/<name>": vendor}`` for every Hugging Face Hub repository id the text
+    loads (see ``_HF_REF``). When ``lang`` marks the text as source code, an id in a
+    comment, or a "loader" call written inside a string, is not a load.
+    First occurrence's casing is kept; de-dup is case-insensitive."""
+    masked = mask(text, lang) if lang is not None else None
+    found: dict[str, str] = {}
+    seen: set[str] = set()
+    for m in _HF_REF.finditer(text):
+        org, name = m.group("org"), m.group("name")
+        if masked is not None and (
+            masked[0][m.start("org")] != text[m.start("org")]  # in a comment
+            or masked[1][m.start()] != text[m.start()]  # the "loader" is in a string
+        ):
+            continue
+        if org.lower() in _HF_NOT_ORG or _HF_FILE.search(name) or ".." in name:
+            continue
+        hub_id = f"{org}/{name}"
+        if hub_id.lower() in seen:
+            continue
+        seen.add(hub_id.lower())
+        family = find_model_refs(name)
+        found[hub_id] = next(iter(family.values())) if family else hf_vendor(org)
+    for m in _HF_BARE_REF.finditer(text):
+        name = m.group("id") or m.group("id2")
+        pos = m.start("id") if m.group("id") else m.start("id2")
+        if masked is not None and (
+            masked[0][pos] != text[pos] or masked[1][m.start()] != text[m.start()]
+        ):
+            continue
+        if not _bare_hub_ok(name) or name.lower() in seen:
+            continue
+        seen.add(name.lower())
+        family = find_model_refs(name)
+        found[name] = next(iter(family.values())) if family else "HuggingFace"
+    return found
+
+
+def hf_purl(hub_id: str) -> str:
+    """The package URL of a Hub model (purl type ``huggingface``: namespace = the
+    organisation, name = the repository, both case-sensitive)."""
+    org, _, name = hub_id.partition("/")
+    if not name:  # an org-less (legacy) id
+        return f"pkg:huggingface/{org}"
+    return f"pkg:huggingface/{org}/{name}"
+
+
+__all__ = [
+    "find_hf_repo_ids",
+    "find_model_refs",
+    "find_model_refs_ctx",
+    "hf_purl",
+    "hf_vendor",
+    "parse_bedrock_id",
+]

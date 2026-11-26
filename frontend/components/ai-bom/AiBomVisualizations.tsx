@@ -64,7 +64,11 @@ import {
   type Compliance,
   type FrameworkGroup,
 } from "@/components/compliance/ComplianceMatrix";
-import { FRAMEWORK_GROUPS_AIBOM_WITH_INDIA } from "@/components/compliance/frameworkLabels";
+import {
+  FRAMEWORK_GROUPS_AIBOM_WITH_INDIA,
+  groupsForFrameworks,
+  PROFILE_NOT_SET_SUFFIX,
+} from "@/components/compliance/frameworkLabels";
 import {
   buildModelCandidates,
   fillModelCardRows,
@@ -73,6 +77,13 @@ import {
 import { BomGraphCard } from "@/components/bom/BomGraphCard";
 import { pickBomGraph } from "@/components/bom/layout";
 import type { BomGraph } from "@/components/bom/types";
+import {
+  applicabilityNote,
+  bandChip,
+  bindingCompliance,
+  governanceSubtitle,
+  type AiBomApplicability,
+} from "@/components/ai-bom/aibomDisplay";
 
 export type { AttestHandler, Compliance } from "@/components/compliance/ComplianceMatrix";
 
@@ -130,6 +141,8 @@ export interface Graph {
 export interface Scores {
   risk_normalized?: number;
   risk_band?: string;
+  /** "partial" when a scanner did not finish: grade and band withheld (review 6063929550 of #498, R5-M2) */
+  completeness?: string;
   by_component?: Record<string, number>;
 }
 type Json = Record<string, unknown>;
@@ -144,6 +157,7 @@ export function ComplianceCoverage({
   defaultGroup = "all",
   onAttest,
   hideOutOfScope = false,
+  profileSet = true,
 }: {
   compliance?: Compliance;
   groups?: FrameworkGroup[];
@@ -151,7 +165,13 @@ export function ComplianceCoverage({
   onAttest?: AttestHandler;
   /** Hide frameworks that do not apply at all (every requirement out of scope). */
   hideOutOfScope?: boolean;
+  /** False when the team declared no regulatory profile: the India chip says it is not filtered. */
+  profileSet?: boolean;
 }) {
+  // the India chip names only the regulators whose frameworks this AI BOM shows: the compliance reaching here is the
+  // team's binding set (server ai_bom_applicability), so a bank SEBI does not regulate reads "India / CERT-In / RBI"
+  // (#498 round 3). The CBOM / SBOM matrices keep their pinned chips.
+  const keys = Object.keys(compliance ?? {}).filter((k) => k !== "disclaimer");
   return (
     <ComplianceMatrix
       compliance={compliance}
@@ -160,7 +180,7 @@ export function ComplianceCoverage({
       enableAttestation
       onAttest={onAttest}
       hideOutOfScope={hideOutOfScope}
-      groups={groups}
+      groups={groupsForFrameworks(groups, keys, profileSet ? "" : PROFILE_NOT_SET_SUFFIX)}
       defaultGroup={defaultGroup}
       className="col-span-full"
     />
@@ -229,6 +249,7 @@ export function RiskHeatmap({ scores }: { scores?: Scores }) {
   const tone = (v: number) =>
     v / max <= 0.34 ? C.low : v / max <= 0.66 ? C.medium : C.high;
   const band = scores?.risk_band;
+  const chip = bandChip(scores);
   return (
     <Card>
       <CardHeader>
@@ -238,16 +259,17 @@ export function RiskHeatmap({ scores }: { scores?: Scores }) {
         <CardDescription>
           Normalized risk{" "}
           <span className="font-semibold text-zinc-700 dark:text-zinc-300">
-            {scores?.risk_normalized ?? 0}/100
+            {scores?.risk_normalized ?? 0}/100{chip.withheld ? " (provisional)" : ""}
           </span>{" "}
           ·{" "}
           <span
             className="rounded px-1.5 py-0.5 text-xs font-semibold text-white"
-            style={{ background: bandColor(band) }}
+            style={{ background: chip.withheld ? "#71717a" : bandColor(band) }}
+            data-testid="aibom-risk-band"
           >
-            {(band ?? "low").toUpperCase()}
+            {chip.label}
           </span>{" "}
-          band (locked scale)
+          {chip.withheld ? "(scan incomplete)" : "band (locked scale)"}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -649,7 +671,7 @@ export function ModelCardPanel({
 
 // ── composer ────────────────────────────────────────────────────────────────
 export function AiBomVisualizations({
-  compliance,
+  compliance: computedCompliance,
   graph,
   graphCompact,
   graphExpanded,
@@ -658,6 +680,7 @@ export function AiBomVisualizations({
   findings,
   onAttest,
   onOpenFinding,
+  applicability,
 }: {
   compliance?: Compliance;
   graph?: Graph | BomGraph | null;
@@ -668,7 +691,11 @@ export function AiBomVisualizations({
   findings?: Json[];
   onAttest?: AttestHandler;
   onOpenFinding?: (finding: Json) => void;
+  /** The frameworks that bind the team (server ``ai_bom_applicability``): words the subtitle, filters the charts. */
+  applicability?: AiBomApplicability | null;
 }) {
+  // Only the frameworks that bind the team reach the matrix (every computed one when no profile is declared).
+  const compliance = bindingCompliance(computedCompliance, applicability) ?? undefined;
   const has =
     compliance ||
     graph ||
@@ -683,13 +710,22 @@ export function AiBomVisualizations({
         <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
           AI Governance &amp; Lineage
         </h2>
-        <p className="text-sm text-zinc-500">
-          Healthcare AI-BOM insights — compliance readiness, supply-chain
-          lineage, deployment drift, and model provenance.
+        <p className="text-sm text-zinc-500" data-testid="aibom-governance-subtitle">
+          {governanceSubtitle(applicability?.regulatory_profile?.entity, aiBomJson)}
         </p>
+        {applicabilityNote(applicability) && (
+          <p className="mt-1 text-xs text-zinc-500" data-testid="aibom-applicability-note">
+            {applicabilityNote(applicability)}
+          </p>
+        )}
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <ComplianceCoverage compliance={compliance} onAttest={onAttest} hideOutOfScope />
+        <ComplianceCoverage
+          compliance={compliance}
+          onAttest={onAttest}
+          hideOutOfScope
+          profileSet={!applicability || Boolean(applicability.regulatory_profile)}
+        />
         <DependencyGraph
           graph={graph}
           graphCompact={graphCompact}

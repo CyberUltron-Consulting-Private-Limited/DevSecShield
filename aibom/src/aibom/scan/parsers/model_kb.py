@@ -8,11 +8,20 @@ resolve to the same card. Models not covered here get an empty card ("—").
 Each entry's keys map onto :class:`aibom.model.component.ModelCard`:
 ``approach_type`` (a ModelCard Literal or omitted), ``task``,
 ``architecture_family``, ``model_architecture``, ``license`` (SPDX / LicenseRef),
-and ``lineage`` (pedigree ancestor names). "proprietary" is a *license*, never an
+``lineage`` (pedigree ancestor names) and ``out_of_scope`` (uses the model's
+licence excludes, from the licence's published terms; model-card
+``considerations``). "proprietary" is a *license*, never an
 ``approach_type`` (hosted models' training approach is undisclosed -> omitted).
 """
 
 from __future__ import annotations
+
+import re
+
+from aibom.scan.parsers.model_refs import parse_bedrock_id
+
+# "[<geo>.]<provider>." in front of a Bedrock model id
+_BEDROCK_PREFIX = re.compile(r"^(?:(?:us-gov|us|eu|apac|global)\.)?[a-z0-9]+\.")
 
 _PROPRIETARY = "LicenseRef-proprietary"
 
@@ -86,6 +95,42 @@ _KB: tuple[tuple[str, dict], ...] = (
             "lineage": [],
         },
     ),
+    # ── OpenAI Whisper open weights (the Hub checkpoints openai/whisper-tiny …
+    # -large-v3-turbo: "license: apache-2.0" on their model cards). The API model
+    # ``whisper-1`` matches none of these tokens and keeps OpenAI's terms. ──
+    *(
+        (
+            token,
+            {
+                "approach_type": "supervised",
+                "task": "automatic-speech-recognition",
+                "architecture_family": "transformer (encoder-decoder)",
+                "model_architecture": "Whisper",
+                "license": "Apache-2.0",
+                "lineage": [],
+            },
+        )
+        for token in (
+            "whisper-tiny",
+            "whisper-base",
+            "whisper-small",
+            "whisper-medium",
+            "whisper-large",
+        )
+    ),
+    # ── Google Gemma open weights: the Gemma Terms of Use (ai.google.dev/gemma/terms),
+    # not Google's hosted-API terms and not an OSI licence ──
+    (
+        "gemma",
+        {
+            "approach_type": "self-supervised",
+            "task": "chat/completion",
+            "architecture_family": "transformer",
+            "model_architecture": "Gemma",
+            "license": "LicenseRef-Gemma-Terms-of-Use",
+            "lineage": [],
+        },
+    ),
     # ── proprietary, hosted ──
     (
         "gpt-4",
@@ -147,28 +192,120 @@ _KB: tuple[tuple[str, dict], ...] = (
             "lineage": [],
         },
     ),
-    # ── open generative ──
+    # ── Mistral (QA round 2 Q2-07; review 6037909737 of #498, M6) ──
+    # A licence is the licence of the OPEN WEIGHTS, so it is stated only for an
+    # open-weight id (a Hugging Face style id with its size / instruct tag). Sources:
+    # docs.mistral.ai/getting-started/models/weights (Codestral-22B MNPL; Mistral
+    # Large Instruct 2407 / 2411, Ministral 8B, Pixtral Large: Mistral Research
+    # License; Mistral 7B, Mixtral, Nemo, Small, Codestral Mamba, Mathstral, Pixtral
+    # 12B: Apache 2.0) and mistral.ai/news/codestral. API names (codestral-latest /
+    # -2508, mistral-large-latest, mistral-saba-latest …) are used under Mistral's
+    # commercial terms (legal.mistral.ai): they carry no weights licence here, and the
+    # model-considerations scanner records an API-served Mistral model as provider
+    # terms (LicenseRef-proprietary), with no out-of-scope use.
     (
-        "mixtral",
+        "codestral-22b",
         {
-            "approach_type": "self-supervised",
-            "task": "chat/completion",
-            "architecture_family": "transformer (sparse MoE)",
-            "model_architecture": "Mixtral",
-            "license": "Apache-2.0",
-            "lineage": ["Mistral"],
+            "task": "code completion and generation (fill-in-the-middle)",
+            "architecture_family": "transformer",
+            "model_architecture": "Codestral",
+            "license": "LicenseRef-Mistral-AI-Non-Production-License",
+            "lineage": [],
+            "out_of_scope": [
+                "production / commercial use of the open weights: the Mistral AI "
+                "Non-Production License permits research and testing only; production "
+                "use needs a commercial licence from Mistral AI"
+            ],
         },
     ),
-    (
-        "mistral",
-        {
-            "approach_type": "self-supervised",
-            "task": "chat/completion",
-            "architecture_family": "transformer",
-            "model_architecture": "Mistral",
-            "license": "Apache-2.0",
-            "lineage": [],
-        },
+    *(
+        (
+            token,
+            {
+                "task": task,
+                "model_architecture": arch,
+                "license": "LicenseRef-Mistral-Research-License",
+                "lineage": [],
+            },
+        )
+        for token, task, arch in (
+            ("mistral-large-instruct-2407", "chat/completion", "Mistral Large"),
+            ("mistral-large-instruct-2411", "chat/completion", "Mistral Large"),
+            ("ministral-8b", "chat/completion", "Ministral"),
+            ("pixtral-large", "image-text-to-text", "Pixtral"),
+        )
+    ),
+    *(
+        (
+            token,
+            {
+                "approach_type": "self-supervised",
+                "task": task,
+                "architecture_family": family,
+                "model_architecture": arch,
+                "license": "Apache-2.0",
+                "lineage": [],
+            },
+        )
+        for token, task, family, arch in (
+            ("codestral-mamba", "code generation", "state space model",
+             "Codestral Mamba"),
+            ("mathstral", "chat/completion", "transformer", "Mathstral"),
+            ("pixtral-12b", "image-text-to-text", "transformer", "Pixtral"),
+            ("mixtral-8x", "chat/completion", "transformer (sparse MoE)", "Mixtral"),
+            ("mistral-7b", "chat/completion", "transformer", "Mistral"),
+            ("mistral-nemo", "chat/completion", "transformer", "Mistral NeMo"),
+            ("mistral-small-24b", "chat/completion", "transformer", "Mistral Small"),
+            ("mistral-small-3", "chat/completion", "transformer", "Mistral Small"),
+        )
+    ),
+    # any other Mistral id (codestral-latest, mistral-large-latest, mistral-saba …):
+    # model card fields only, no licence (API terms, or a version-dependent licence)
+    *(
+        (token, {"task": task, "model_architecture": arch, "lineage": []})
+        for token, task, arch in (
+            ("codestral", "code completion and generation (fill-in-the-middle)",
+             "Codestral"),
+            ("mixtral", "chat/completion", "Mixtral"),
+            ("mistral-large", "chat/completion", "Mistral Large"),
+            ("mistral-medium", "chat/completion", "Mistral Medium"),
+            ("mistral-small", "chat/completion", "Mistral Small"),
+            ("mistral", "chat/completion", "Mistral"),
+        )
+    ),
+    # Llama: one licence id per version on every path (Ollama tag, Bedrock id,
+    # config value, Hub id), the same refs as ``ollama_tags`` (review 6063929550 of
+    # #498, m3). HF meta-llama/Llama-2-7b-hf llama2, Meta-Llama-3-8B llama3,
+    # Llama-3.1-8B llama3.1, Llama-3.2-3B llama3.2, Llama-3.3-70B llama3.3,
+    # CodeLlama-7b-hf llama2. A name without its version keeps the generic ref.
+    *(
+        (
+            token,
+            {
+                "approach_type": "self-supervised",
+                "task": (
+                    "code generation" if token.startswith("code") else "chat/completion"
+                ),
+                "architecture_family": "transformer",
+                "model_architecture": (
+                    "Code Llama" if token.startswith("code") else "LLaMA"
+                ),
+                "license": licence,
+                "lineage": [],
+            },
+        )
+        for tokens, licence in (
+            (("codellama", "code-llama"), "LicenseRef-llama2-community"),
+            (("llama-3.3", "llama3.3", "llama3-3", "llama-3-3"),
+             "LicenseRef-llama3.3-community"),
+            (("llama-3.2", "llama3.2", "llama3-2", "llama-3-2"),
+             "LicenseRef-llama3.2-community"),
+            (("llama-3.1", "llama3.1", "llama3-1", "llama-3-1", "meta-llama-3.1"),
+             "LicenseRef-llama3.1-community"),
+            (("llama-3", "llama3"), "LicenseRef-llama3-community"),
+            (("llama-2", "llama2"), "LicenseRef-llama2-community"),
+        )
+        for token in tokens
     ),
     (
         "llama",
@@ -193,6 +330,9 @@ def lookup(name: str) -> dict | None:
     if not name:
         return None
     low = name.lower().split("/")[-1]
+    # a Bedrock id: the model part only ("mistral.pixtral-…" is no "mistral" model)
+    if parse_bedrock_id(low) is not None:
+        low = _BEDROCK_PREFIX.sub("", low)
     for token, fields in _KB:
         if token in low:
             return dict(fields)

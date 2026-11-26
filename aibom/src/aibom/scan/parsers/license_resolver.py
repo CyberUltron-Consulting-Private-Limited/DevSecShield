@@ -66,6 +66,50 @@ _LICENSE_MAP: dict[str, str] = {
     # ── LLM providers / agent frameworks ──
     "openai": "Apache-2.0",
     "anthropic": "MIT",
+    # PyPI JSON, 24 Nov 2026 (QA round 2, Q2-07): boto3 / botocore 1.44.10
+    # license "Apache-2.0"; groq 1.7.0 "Apache-2.0" + "License :: OSI Approved ::
+    # Apache Software License"; replicate 1.0.7 "Apache License" (Apache-2.0)
+    "boto3": "Apache-2.0",
+    "botocore": "Apache-2.0",
+    "groq": "Apache-2.0",
+    "replicate": "Apache-2.0",
+    # PyPI JSON, 25 Nov 2026: faiss-cpu / faiss-gpu 1.16.0 license_expression "MIT"
+    # (the FAISS vector index; alejandro-ao/ask-multiple-pdfs, #498 round 3)
+    "faiss-cpu": "MIT",
+    "faiss-gpu": "MIT",
+    # PyPI JSON, 25 Nov 2026 (#498 round 3, AI-library audit): license_expression,
+    # else the license field / classifier of the current release
+    "pyannote-audio": "MIT",  # 4.1.1 license_expression MIT
+    "whisperx": "BSD-2-Clause",  # 3.8.6 license BSD-2-Clause (review 6062066749 m3)
+    # LangChain partner packages (PyPI, 25 Nov 2026: license MIT / MIT License
+    # classifier): langchain-openai 1.8.5, -anthropic 1.7.12, -community 0.4.2,
+    # -core 1.8.4, -text-splitters 1.2.0, -google-genai 4.5.2, -aws 1.10.0,
+    # -ollama 1.2.0, -mistralai 1.2.0, -groq 1.2.1, -huggingface 1.3.0, -cohere
+    # 0.6.0; langgraph 1.2.24 license_expression MIT
+    "langchain-openai": "MIT",
+    "langchain-anthropic": "MIT",
+    "langchain-text-splitters": "MIT",
+    "langchain-google-genai": "MIT",
+    "langchain-aws": "MIT",
+    "langchain-ollama": "MIT",
+    "langchain-mistralai": "MIT",
+    "langchain-groq": "MIT",
+    "langchain-huggingface": "MIT",
+    "langchain-cohere": "MIT",
+    "openai-whisper": "MIT",  # 20250625 license MIT
+    "faster-whisper": "MIT",  # 1.2.1 MIT License classifier
+    "ctranslate2": "MIT",  # 4.9.1 license MIT
+    "vllm": "Apache-2.0",  # 0.34.0 license_expression Apache-2.0
+    "llama-cpp-python": "MIT",  # 0.3.38 license MIT
+    "ollama": "MIT",  # 0.6.3 license_expression MIT
+    "diffusers": "Apache-2.0",  # 0.43.0 Apache Software License classifier
+    "peft": "Apache-2.0",  # 0.22.0 Apache Software License classifier
+    "bitsandbytes": "MIT",  # 0.50.2 license_expression MIT
+    "tensorrt": "LicenseRef-proprietary",  # 11.5.0.63 Other/Proprietary License
+    "ultralytics": "AGPL-3.0-or-later",  # 8.4.218 classifier AGPLv3 or later
+    "timm": "Apache-2.0",  # 1.0.31 license Apache-2.0
+    "spacy": "MIT",  # 3.8.18 MIT License classifier
+    "gensim": "LGPL-2.1-only",  # 4.4.0 license LGPL-2.1-only
     "cohere": "MIT",
     "mistralai": "Apache-2.0",
     "google-generativeai": "Apache-2.0",
@@ -244,4 +288,15 @@ def resolve_license(
     return None
 
 
-__all__ = ["resolve_license", "normalize_pkg"]
+def unknown_licence_message(name: str, *, imported: bool = False) -> str:
+    """The finding text for a library whose licence was not resolved offline."""
+    where = " (imported in code)" if imported else ""
+    return (
+        f"Licence unknown / partial for {name!r}{where}: not in the offline licence "
+        "manifest, and no package registry is consulted (no egress). It was not "
+        "resolved, which is not the same as having no licence; confirm it from the "
+        "package's own metadata."
+    )
+
+
+__all__ = ["resolve_license", "normalize_pkg", "unknown_licence_message"]
