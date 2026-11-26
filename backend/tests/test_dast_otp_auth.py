@@ -21,24 +21,24 @@ if _REPO_ROOT not in sys.path:
 os.environ.setdefault("JWT_SECRET_KEY", "dast-otp-test-secret-not-for-prod")
 os.environ.setdefault("JWT_REFRESH_SECRET_KEY", "dast-otp-test-refresh-not-for-prod")
 
-from backend.main import app
-from backend.new_models import Team, TeamMembership, User
-from backend.utilities.celery.task_reprs import redact_task_reprs
-from backend.utilities.dashboard.scan_metadata import get_scan_metadata
-from backend.utilities.dast import ssrf
-from backend.utilities.dast.auth_crypto import (
+from backend.main import app  # noqa: E402
+from backend.new_models import Team, TeamMembership, User  # noqa: E402
+from backend.utilities.celery.task_reprs import redact_task_reprs  # noqa: E402
+from backend.utilities.dashboard.scan_metadata import get_scan_metadata  # noqa: E402
+from backend.utilities.dast import ssrf  # noqa: E402
+from backend.utilities.dast.auth_crypto import (  # noqa: E402
     decrypt_auth,
     encrypt_auth,
     redact_auth,
 )
-from backend.utilities.db.metadata import get_scan_metadata_for_type
-from backend.utilities.db.schemas import (
+from backend.utilities.db.metadata import get_scan_metadata_for_type  # noqa: E402
+from backend.utilities.db.schemas import (  # noqa: E402
     AuthRequirements,
     StartDASTScanData,
     StartScanPayload,
 )
-from backend.utilities.log_redaction import safe_repr
-from backend.utilities.scan.format_input import format_input_for_scan
+from backend.utilities.log_redaction import safe_repr  # noqa: E402
+from backend.utilities.scan.format_input import format_input_for_scan  # noqa: E402
 
 CANARY_COOKIE = "sid=canary-cookie-val-991"
 CANARY_BEARER = "Bearer canary-jwt-token-882"

@@ -6,6 +6,7 @@ from pydantic import model_validator
 from backend.utilities.scan.path_patterns import check_excludes
 
 from backend.utilities.git_hosts import check_repo_url
+from backend.utilities.dast.schemas import DastAuthType, DastOtpSource, validate_auth_fields
 
 class CreateScanData(BaseModel):
     title: str = Field(min_length=1, max_length=256)
@@ -199,9 +200,6 @@ class StartLLMBenchmarkingData(BaseModel):
     response_json_field: str | None = None
     model_uri: str | None = None
     method: Literal["get", "post"] = "post"
-
-
-from backend.utilities.dast.schemas import DastAuthType, DastOtpSource, validate_auth_fields
 
 
 class AuthRequirements(BaseModel):

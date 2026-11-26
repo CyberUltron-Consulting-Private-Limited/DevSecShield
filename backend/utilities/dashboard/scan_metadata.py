@@ -32,7 +32,8 @@ _DAST_AUTH_KEYS = (
     "xpath_of_mpin_submit_button",
 )
 _SECRET_WORDS = frozenset({"pat", "token", "tokens", "password", "passwd", "passphrase", "secret", "secrets",
-                           "authorization", "credential", "credentials", "cookie", "apikey", "headers"})
+                           "authorization", "credential", "credentials", "cookie", "apikey", "headers",
+                           "otp", "totp", "mpin"})
 
 
 

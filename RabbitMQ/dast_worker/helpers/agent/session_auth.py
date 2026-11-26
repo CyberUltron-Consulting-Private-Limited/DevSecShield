@@ -47,6 +47,32 @@ def _origin_of(url: str) -> str:
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
+def _scrub_secrets(text: str, *secrets: str | None) -> str:
+    out = text
+    for secret in secrets:
+        if secret and len(secret) >= 3:
+            out = out.replace(secret, "[REDACTED]")
+    return out
+
+
+def _install_same_origin_headers(context: Any, origin: str, extra_headers: dict[str, str]) -> None:
+    """Attach auth headers ONLY to requests matching the target origin (never third-party scripts/CDNs)."""
+    if not extra_headers:
+        return
+    origin_netloc = urllib.parse.urlparse(origin).netloc.lower()
+
+    def _route_handler(route: Any) -> None:
+        req = route.request
+        if urllib.parse.urlparse(req.url).netloc.lower() == origin_netloc:
+            merged = dict(req.headers)
+            merged.update(extra_headers)
+            route.continue_(headers=merged)
+        else:
+            route.continue_()
+
+    context.route("**/*", _route_handler)
+
+
 def _sanitize_header_val(val: str, label: str) -> str:
     if "\r" in val or "\n" in val:
         raise DastAuthError(f"{label} must not contain newline characters")
@@ -336,7 +362,8 @@ def login_with_otp_form(
     except DastAuthError:
         raise
     except Exception as exc:
-        raise DastAuthError(f"OTP login failed during browser flow: {type(exc).__name__}: {str(exc)[:240]}") from exc
+        safe_msg = _scrub_secrets(str(exc)[:240], otp_value, auth.mpin, auth.totp_secret)
+        raise DastAuthError(f"OTP login failed during browser flow: {type(exc).__name__}: {safe_msg}") from exc
 
     session = CapturedSession(
         origin=origin,
@@ -391,8 +418,8 @@ def _verify_session_browser(
                 context = browser.new_context(
                     ignore_https_errors=False,
                     user_agent=_USER_AGENT,
-                    extra_http_headers=session.extra_headers or None,
                 )
+                _install_same_origin_headers(context, session.origin, session.extra_headers)
                 pw_cookies = session.playwright_cookies()
                 if pw_cookies:
                     context.add_cookies(pw_cookies)
@@ -418,8 +445,13 @@ def _verify_session_browser(
     except DastAuthError:
         raise
     except Exception as exc:
+        safe_msg = _scrub_secrets(
+            str(exc)[:200],
+            session.cookie_header,
+            *session.extra_headers.values(),
+        )
         raise DastAuthError(
-            f"Session verification failed in browser for {check_url}: {type(exc).__name__}: {str(exc)[:200]}"
+            f"Session verification failed in browser for {check_url}: {type(exc).__name__}: {safe_msg}"
         ) from exc
 
     if status_code in (401, 403):
@@ -544,8 +576,8 @@ def discover_authenticated_urls(
                 context = browser.new_context(
                     ignore_https_errors=False,
                     user_agent=_USER_AGENT,
-                    extra_http_headers=session.extra_headers or None,
                 )
+                _install_same_origin_headers(context, session.origin, session.extra_headers)
                 pw_cookies = session.playwright_cookies()
                 if pw_cookies:
                     context.add_cookies(pw_cookies)
