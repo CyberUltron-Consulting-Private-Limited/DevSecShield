@@ -47,7 +47,7 @@ class Population:
     code_occurrences: int
     occurrences: int  # the view's current assets (D1 / D14 "asset occurrences")
     same_source_places: int = 0  # a certificate one source read at another place, counted once
-    cross_source: int = 0  # a certificate another source also read, counted once
+    cross_source: int = 0  # an asset (certificate, endpoint, cloud resource) another source also read, counted once
     to_code: int = 0  # a certificate a code scan saw as late or later, counted from the code scan
     estate_repeats: int = 0  # current Sources occurrences of one estate asset beyond the first
     removed_collections: int = 0  # deleted sources' last collections: outside every total
@@ -166,8 +166,10 @@ def steps(pop: Population) -> list[dict[str, Any]]:
         parts.append(f"minus {_n(pop.same_source_places, 'observation')} of a certificate the same source read at "
                      "another place (one certificate, counted once)")
     if pop.cross_source:
-        parts.append(f"minus {_n(pop.cross_source, 'observation')} of a certificate another source also read "
-                     "(counted once, from its latest observation)")
+        # a certificate (CB-21) or, since PR #499, any resource two sources read (an endpoint two probes reached, a cloud
+        # resource two roles read: ``resource_identity``), counted once
+        parts.append(f"minus {_n(pop.cross_source, 'observation')} of an asset another source also read "
+                     "(one certificate, endpoint or cloud resource, counted once, from its latest observation)")
     if pop.to_code:
         parts.append(f"minus {_n(pop.to_code, 'observation')} of a certificate a code scan found as late or later "
                      "(counted from the code scan)")

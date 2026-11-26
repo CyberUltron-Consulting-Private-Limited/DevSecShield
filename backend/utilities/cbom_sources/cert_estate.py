@@ -205,9 +205,17 @@ class EstateCert:
     finding_codes: tuple[str, ...]
     origin: str  # "sources" | "code_scan" | "both"
     cert: CertAgg
+    # the Sources rows (``SourcesRow``) the certificate was built from, newest first, live sources only: the
+    # certificate hygiene list judges its flags on them (Q3-04: the UI and D8 are one list)
+    members: tuple[Any, ...] = field(default=(), compare=False, repr=False)
+    # the provider's own state when it says the certificate is not in service (an AWS Private CA that is DELETED or
+    # DISABLED, an ACM certificate REVOKED or INACTIVE): "deleted", "revoked" ...; "" otherwise (Q3-08)
+    lifecycle: str = ""
 
     @property
     def status(self) -> str:
+        if self.lifecycle:
+            return self.lifecycle  # never "valid": a deleted CA's notAfter is still in the future
         return STATUS_TEXT.get(self.band.band, "unknown")
 
     @property
@@ -236,6 +244,46 @@ class EstateResult:
     def served(self) -> int:
         """Certificates a probed endpoint presented (``host:port#chain[i]``)."""
         return sum(1 for c in self.certificates if any("#chain[" in loc for loc in c.locations))
+
+
+# The codes the classifier gives a certificate whose key or signature is weak (classify: RSA_LT_2048, EC_LT_224, DSA,
+# SIG_MD5, SIG_SHA1, CERT_SELF_SHA1 for a self-signed SHA-1 certificate, WEAK_* for the code lane's names)
+WEAK_CERT_CODES = frozenset({"RSA_LT_2048", "EC_LT_224", "DSA", "SIG_MD5", "SIG_SHA1", "CERT_SELF_SHA1",
+                             "WEAK_PADDING"})
+
+
+def weak_crypto(cert: EstateCert) -> bool:
+    """A certificate with a weak key or signature (D8 "Weak crypto", staging QA Q3-02): its key or signature
+    algorithm is ``disallowed`` under NIST SP 800-131A by the classifier's standards verdict (``standards.grade``,
+    the function the run pages' standards column uses: RSA below 2048 bits, EC below 224 bits, DSA, MD5 or SHA-1
+    signatures), or the classifier gave it a weak-key / weak-signature code.  One rule for the KPI and the register
+    rows it counts."""
+    codes = set(cert.finding_codes)
+    if codes & WEAK_CERT_CODES or any(c.startswith("WEAK_") for c in codes):
+        return True
+    from backend.utilities.cbom_sources import standards as STD
+
+    try:
+        size = int(cert.key_size) if str(cert.key_size or "").isdigit() else None
+        graded = STD.grade([("key", cert.key_algorithm or None, size), ("signature", cert.signature_algorithm or None,
+                                                                       None)])
+    except Exception:  # noqa: BLE001 - a verdict never costs a certificate its row
+        return False
+    return bool(graded) and graded.get("sp800_131a", {}).get("status") == "disallowed"
+
+
+# a provider status (AWS Private CA ``Status``, ACM ``Status``) that takes a certificate out of service
+PROVIDER_LIFECYCLE = {"DELETED": "deleted", "DISABLED": "disabled", "REVOKED": "revoked", "INACTIVE": "inactive",
+                      "FAILED": "failed", "PENDING_CERTIFICATE": "not issued", "CREATING": "not issued",
+                      "PENDING_VALIDATION": "not issued", "VALIDATION_TIMED_OUT": "not issued"}
+
+
+def lifecycle_of(facts: Mapping[str, Any] | None) -> str:
+    """``deleted`` / ``revoked`` / ... from a cloud provider's status of the certificate or CA, else ""."""
+    data = facts if isinstance(facts, Mapping) else {}
+    if str(data.get("source") or "") not in ("aws", "gcp", "azure", "oci") and "ca_type" not in data:
+        return ""
+    return PROVIDER_LIFECYCLE.get(str(data.get("status") or "").upper(), "")
 
 
 class _Groups:
@@ -457,7 +505,8 @@ def _estate_from_group(view: TeamCbomView, inputs: EstateInputs, items: Sequence
         issuer_thumbprint="", sightings=sightings, owners=owners,
         pqc_class=_pqc_class(str(head.node_type), key_alg, head.row, facts_list[0], codes),
         impact=impact, finding_codes=codes, origin="both" if merged is not None and merged.locations_total > 1
-        and any(not str(k).startswith("sources:") for k in merged.source_keys) else "sources", cert=cert)
+        and any(not str(k).startswith("sources:") for k in merged.source_keys) else "sources", cert=cert,
+        members=tuple(items), lifecycle=lifecycle_of(facts_list[0]))
 
 
 def _grouped(sightings: Sequence[Sighting]) -> tuple[tuple[str, str], ...]:
@@ -529,6 +578,23 @@ def count_phrase(count: int) -> str:
     return f"{count} unique certificate" + ("" if count == 1 else "s")
 
 
-__all__ = ["CERT_NODE_TYPES", "DELETED_SOURCE", "EstateCert", "EstateInputs", "EstateResult", "Sighting",
-           "count_phrase", "dn_from_mapping", "inputs_of", "is_certificate_record", "is_deleted", "load_inputs",
-           "thumbprint", "unique_certificates"]
+__all__ = [
+    "CERT_NODE_TYPES",
+    "DELETED_SOURCE",
+    "PROVIDER_LIFECYCLE",
+    "WEAK_CERT_CODES",
+    "EstateCert",
+    "EstateInputs",
+    "EstateResult",
+    "Sighting",
+    "count_phrase",
+    "dn_from_mapping",
+    "inputs_of",
+    "is_certificate_record",
+    "is_deleted",
+    "lifecycle_of",
+    "load_inputs",
+    "thumbprint",
+    "unique_certificates",
+    "weak_crypto",
+]

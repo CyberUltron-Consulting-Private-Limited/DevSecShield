@@ -328,7 +328,8 @@ def test_d9_counts_and_registers_come_from_the_collected_stores(view):
 # ------------------------------------------------------------------------------------------------ D10
 def test_d10_lists_sources_libraries_with_versions_deduplicated_by_purl(view):
     body = story(d10, view)
-    rows = {r["Library"]: r for r in rows_under(body, "Library") if "Version" in r}
+    rows = {r["Component"]: r for r in rows_under(body, "Component") if "Version" in r
+            and not r["Package URL or ecosystem"].startswith("crypto product")}  # Q3-11: products are rows too
     assert set(rows) == {"libcrypto1.1", "libssl3t64", "libcrypto.so.3"}
     apk = rows["libcrypto1.1"]  # two registries, one package URL (qualifiers differ): one component, two sources
     assert (apk["Version"], apk["#Sources"]) == ("1.1.1w-r1", "2")
@@ -401,8 +402,8 @@ def test_d10_prints_the_name_without_the_version_and_merges_the_unversioned_row_
     # PyJWT of repo:b is not known to be 2.3.0 (only repo:a pins it): two rows, both without "@" in the name
     assert sorted((x.name, x.version) for x in by_name["pyjwt"]) == [("PyJWT", ""), ("pyjwt", "2.3.0")]
     assert not any("@" in x.name for x in merged.libs)
-    table = [r for r in rows_under(story(d10, merged), "Library") if "Version" in r]
-    assert [r["Version"] for r in table if r["Library"] == "golang.org/x/crypto"] == ["v0.24.0"]
+    table = [r for r in rows_under(story(d10, merged), "Component") if "Version" in r]
+    assert [r["Version"] for r in table if r["Component"] == "golang.org/x/crypto"] == ["v0.24.0"]
 
 
 # ------------------------------------------------------------------------------------------------ scale (review)
@@ -753,12 +754,14 @@ def test_d7_prints_a_listener_two_sources_collected_once_and_names_both(seeded_v
     cards = kpi_cards(body)
     assert (cards["Endpoints"], cards["Legacy protocol"], cards["Weak suites"]) == ("5", "3", "2")
     weak = rows_under(body, "Endpoint")
-    des = [r for r in weak if r.get("Suite") == "DES-CBC3-SHA"]
+    # QA Q3-10: the IANA name, with the OpenSSL name the AWS policy stored beside it
+    des = [r for r in weak if r.get("Suite") == "TLS_RSA_WITH_3DES_EDE_CBC_SHA (DES-CBC3-SHA)"]
     assert [r["Endpoint"] for r in des] == ["ComplianceShield-LB:443"]
     register = [r for r in weak if "Location" in r and r["Endpoint"] == "ComplianceShield-LB:443"]
     assert len(register) == 1
     where = re.sub(r"\s+", " ", register[0]["Location"])
-    # the newest read wins (the second role, 4 h ago) and the other source is named
+    # the newest read wins (the second role, 4 h ago: review 6060688856 M1, a stale source never hides a fresh read;
+    # the plan and ticket are the resource's, remediation_group) and the other source is named
     assert "AWS prod (second role) (also: AWS prod)" in where
     # both sources stay in the D7 source table: each holds evidence printed here
     assert [s.label for s in scoped.posture.sources] == [

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import datetime as dt
 import importlib.util
-import os
 import re
 import sys
 from pathlib import Path
@@ -29,7 +28,8 @@ api = _base.api
 ROOT = Path(__file__).resolve().parents[2]
 VERSIONS = ROOT / "prod_database_migrations" / "migrations" / "versions"
 MIGRATION = VERSIONS / "cb18evconf001_evidence_confidence_e_levels.py"
-PG = os.environ.get("CBOM_TEST_PG_URL")
+from backend.tests.support.pg_test_db import cbom_test_pg_url  # noqa: E402  (review 6065677758 n1)
+PG = cbom_test_pg_url()  # a database named *test* only
 TODAY = dt.datetime.utcnow().date()
 DOC = {"evidence_title": "Key policy", "evidence_url": "https://intranet.example/policy.pdf"}
 

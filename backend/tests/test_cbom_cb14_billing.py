@@ -21,7 +21,6 @@ on claimed jobs.  Concurrency tests run on SQLite always and on PostgreSQL when 
 from __future__ import annotations
 
 import importlib.util
-import os
 import sys
 import threading
 from pathlib import Path
@@ -46,7 +45,8 @@ from backend.utilities.cbom_sources.settings import get_or_create_settings  # no
 
 REPO = Path(__file__).resolve().parents[2]
 VERSIONS = REPO / "prod_database_migrations" / "migrations" / "versions"
-PG = os.environ.get("CBOM_TEST_PG_URL")
+from backend.tests.support.pg_test_db import cbom_test_pg_url  # noqa: E402  (review 6065677758 n1)
+PG = cbom_test_pg_url()  # a database named *test* only
 needs_pg = pytest.mark.skipif(not PG, reason="set CBOM_TEST_PG_URL to run against PostgreSQL")
 FOUR = ["10.20.0.1", "10.20.0.2", "10.20.0.3", "10.20.0.4"]
 

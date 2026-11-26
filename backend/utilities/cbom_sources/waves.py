@@ -327,9 +327,16 @@ def node_items(session: Session, team_id: int, run: CbomCollectionRun, *,
     sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
         CbomCollectionSource.team_id == team_id)).all()}
     nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
+    from backend.utilities.cbom_sources import resource_identity as RI
+
+    fold = RI.run_fold(session, team_id, int(run.id or 0))
     query = select(CbomCollectedAsset).where(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run.id)
     if asset_ids is not None:
         query = query.where(CbomCollectedAsset.id.in_(list(asset_ids)))  # type: ignore[union-attr]
+    else:
+        # the whole run: one item per resource, the rows the run's assets API lists (review 6039899144 B1: the waves
+        # and the run's tickets planned both jobs' rows, 458 for 229).  Ids a caller names are its own choice.
+        query = query.where(RI.kept_clause(fold))
     from backend.utilities.cbom_sources.classify import shown
 
     items = []
@@ -373,8 +380,90 @@ def node_items(session: Session, team_id: int, run: CbomCollectionRun, *,
         found = _earliest(first.get(item["asset_key"]), others.get(item["asset_id"]))
         # a row with neither (no estate yet, a row the store cannot read back) is its own first observation
         item["first_seen_on"] = found or _day(placed[item["asset_id"]][0].created_at)
-    return _with_assignment(items, _assignments(session, team_id, (i["asset_key"] for i in items)),
-                            fix_windows(session, team_id), as_of)
+    resolved = resolve_run(session, team_id, run, only={int(i["asset_id"]) for i in items}, fold=fold)
+    held: dict[str, CbomRemediationAssignment] = {}
+    for item in items:
+        # review 6060688856 M1-M4: the plan, status and ticket are the RESOURCE's (``remediation_group.resolve`` over
+        # its group key and every copy's key), whichever source's row "latest observation wins" shows; a change is
+        # written to ``asset_key``: the group key (the group record is the final word once it exists, round 7)
+        r = resolved.get(int(item["asset_id"]))
+        if r is None:
+            continue
+        item["own_key"], item["asset_key"] = item["asset_key"], r.key
+        item["group_key"], item["alias_keys"] = r.group, [k for k in r.keys if k != r.key]
+        if r.assignment is not None:
+            held[r.key] = r.assignment
+    out = _with_assignment(items, held, fix_windows(session, team_id), as_of)
+    for item in out:
+        r = resolved.get(int(item["asset_id"]))
+        if r is not None and r.ticket is not None and item.get("assignment") is not None:
+            item["assignment"]["ticket_key"], item["assignment"]["ticket_url"] = r.ticket_key, r.ticket_url
+    return out
+
+
+def resolve_run(session: Session, team_id: int, run: CbomCollectionRun, *, only: set[int] | None = None,
+                fold: Any = None) -> dict[int, Any]:
+    """``row id -> remediation_group.Resolved`` for the run's kept rows (``only``: these ids): each resource's
+    assignment over its group key and the source-scoped keys of every copy this run read (the kept row and the rows
+    ``resource_identity.run_fold`` folded into it).  Light columns; facts only where an identity reads them
+    (certificates' subjects, TLS endpoints' SNI).  The one resolution ``node_items`` and the run list's status filter
+    (``run_assets._status_clause``) use (review 6060688856 M3)."""
+    from types import SimpleNamespace
+
+    from backend.utilities.cbom_sources import remediation_group as RG
+    from backend.utilities.cbom_sources import resource_identity as RI
+
+    fold = fold if fold is not None else RI.run_fold(session, team_id, int(run.id or 0))
+    jobs = {j.id: j for j in session.exec(select(CbomCollectionJob).where(
+        CbomCollectionJob.team_id == team_id, CbomCollectionJob.run_id == run.id)).all()}
+    sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
+        CbomCollectionSource.team_id == team_id)).all()}
+    nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
+    context: dict[Any, tuple[str, str, str]] = {}
+    for job_id, job in jobs.items():
+        src = sources.get(job.source_id or 0)
+        ref = ID.job_source_ref(job, src)
+        context[job_id] = (ref, *RI.job_scope(job, nodes.get(job.node_id or 0), ref))
+    wanted = None if only is None else set(only) | {d for d, k in fold.dropped.items() if k in only}
+    cols = (CbomCollectedAsset.id, CbomCollectedAsset.job_id, CbomCollectedAsset.source_id, CbomCollectedAsset.asset_key,
+            CbomCollectedAsset.asset_type, CbomCollectedAsset.cdx_type, CbomCollectedAsset.target,
+            CbomCollectedAsset.location)
+    with_facts = sa.or_(CbomCollectedAsset.cdx_type == ID.CERT_CDX, CbomCollectedAsset.asset_type.in_(  # type: ignore
+        ("certificate", "k8s_certificate", "tls_endpoint")))
+    scope = [CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run.id,
+             CbomCollectedAsset.asset_type != "coverage"]
+    own: dict[int, str] = {}
+    group: dict[int, str | None] = {}
+    for facts_too in (False, True):
+        query = select(*cols, CbomCollectedAsset.facts).where(*scope, with_facts) if facts_too else \
+            select(*cols).where(*scope, ~with_facts)
+        if wanted is not None:
+            ids = sorted(wanted)
+            parts = [ids[i:i + 500] for i in range(0, len(ids), 500)] or [[]]
+        else:
+            parts = [None]
+        for part in parts:
+            q = query if part is None else query.where(CbomCollectedAsset.id.in_(part))  # type: ignore[union-attr]
+            for rec in session.exec(q).all():
+                aid, job_id, source_id, asset_key, kind, cdx, target, location = rec[:8]
+                facts = (rec[8] if facts_too else None) or {}
+                ref, network, machine = context.get(job_id, (f"source-{source_id}", "", ""))
+                row = SimpleNamespace(asset_key=asset_key, asset_type=kind, cdx_type=cdx, target=target,
+                                      location=location, facts=facts)
+                own[int(aid)] = ID.stable_key("node", ref, ID.node_identity(row))
+                group[int(aid)] = RG.row_group_key(kind, target, location, facts, team_id=team_id, network=network,
+                                                   machine=machine, cluster=ref)
+    members: dict[int, list[int]] = {}
+    for aid in own:
+        kept = fold.dropped.get(aid, aid)
+        members.setdefault(kept, []).append(aid)
+    found = _assignments(session, team_id, [*own.values(), *(g for g in group.values() if g)])
+    out: dict[int, Any] = {}
+    for kept, ids in members.items():
+        if kept not in own or (only is not None and kept not in only):
+            continue
+        out[kept] = RG.resolve(found, [group.get(i) for i in ids], [own[i] for i in ids], own[kept])
+    return out
 
 
 # ----------------------------------------------------------------------------- code scans
@@ -486,6 +575,7 @@ def upsert(session: Session, team_id: int, user_id: int, body: AssignmentBulk, n
         raise HTTPException(status_code=400, detail=f"items: {len(unknown)} asset(s) are not in this run or scan")
     existing = _assignments(session, team_id, (i.asset_key for i in body.items))
     changed = 0
+    trail: list[dict[str, Any]] = []
     for item in body.items:
         fields = {k: getattr(item, k) for k in item.model_fields_set if k != "asset_key"}
         info = known[item.asset_key]
@@ -493,10 +583,15 @@ def upsert(session: Session, team_id: int, user_id: int, body: AssignmentBulk, n
         if row is None:
             row = CbomRemediationAssignment(team_id=team_id, asset_key=item.asset_key, scope=info["scope"],
                                             source_ref=str(info["source_ref"])[:255], created_at=now)
+            # PR #499 round 7: the first write to a resource's group key starts from what the copies show (the
+            # group record is the final word from then on), so the write changes only the fields it names
+            for name, value in _seed(session, team_id, info).items():
+                setattr(row, name, value)
             existing[item.asset_key] = row
         elif not fields:
             continue
-        was_done = row.status == "done" and row.id is not None
+        before = {name: getattr(row, name) for name in _AUDITED}
+        was_done = row.status == "done"
         for key, value in fields.items():
             setattr(row, key, value if key != "status" or value is not None else "open")
         if row.status == "done" and (not was_done or row.done_at is None):
@@ -504,11 +599,49 @@ def upsert(session: Session, team_id: int, user_id: int, body: AssignmentBulk, n
         elif row.status != "done":
             row.done_at = None
         row.label = str(info.get("label") or "")[:255] or None
-        row.updated_by_user_id, row.last_updated = user_id, now
+        row.updated_by_user_id, row.last_updated = user_id, now  # a user's write (a reset too) names its author
         row.row_version = (row.row_version or 0) + 1 if row.id is not None else 1
         session.add(row)
         changed += 1
-    return {"updated": changed}
+        trail.append({"key": row.asset_key, "group": info.get("group_key"), "asset": info.get("own_key"),
+                      "before": before, "fields": sorted(fields)})
+    return {"updated": changed, "audit": trail}
+
+
+_AUDITED = ("status", "wave", "owner", "target_date", "note", "done_at")
+
+
+def _seed(session: Session, team_id: int, info: dict[str, Any]) -> dict[str, Any]:
+    """``remediation_group.seed_values`` for a node item whose write key holds no record yet (code items: none)."""
+    from backend.utilities.cbom_sources import remediation_group as RG
+
+    others = [k for k in (info.get("alias_keys") or ()) if k]
+    if info.get("scope") != "node" or not others:
+        return {}
+    found = _assignments(session, team_id, others)
+    copies = [k for k in others if k != info.get("group_key")]
+    return RG.seed_values(RG.resolve(found, [info.get("group_key")], copies, info.get("own_key") or ""))
+
+
+def audit_items(trail: list[dict[str, Any]]) -> list[list[str]]:
+    """``changed_fields`` of the per-resource ``remediation.assign`` audit rows (PR #499 round 7: the group key, the
+    asset identity and the previous values; a documented exception to "field names only", ``CbomCollectionAuditEvent``).
+    The asset identity is the shown row's own key (``asset=``), the record written is ``key=`` (the group key).  The
+    previous status, wave, due date and ``done_at`` are written as they were; owner and note only as set or empty,
+    with their length (a person's name or free text is not copied into the audit trail)."""
+    out = []
+    for t in trail:
+        before = t["before"]
+        items = [f"key={t['key']}", f"group={t.get('group') or '-'}", f"asset={t.get('asset') or '-'}",
+                 *(f"set={f}" for f in t["fields"])]
+        for name in ("status", "wave", "target_date", "done_at"):
+            value = before.get(name)
+            items.append(f"prev.{name}={value.isoformat() if hasattr(value, 'isoformat') else value}")
+        for name in ("owner", "note"):
+            value = before.get(name)
+            items.append(f"prev.{name}={'set:' + str(len(value)) if value else 'empty'}")
+        out.append([i[:64] for i in items])
+    return out
 
 
 # ----------------------------------------------------------------------------- roadmap

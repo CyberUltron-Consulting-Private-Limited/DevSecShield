@@ -308,6 +308,11 @@ that waits for it. `q110linkuq001` waits at most 60 s per attempt (`lock_timeout
 invalid index a failed attempt leaves; if the one-shot still fails on it, find the old sessions
 (`SELECT pid, state, xact_start, query FROM pg_stat_activity WHERE state LIKE 'idle in transaction%' ORDER BY
 xact_start`), end them (`pg_terminate_backend(pid)`) and run the deploy again: the migration is retry-safe.
+Worst-case total wait for `q110linkuq001` with a transaction that stays open: about 3.5 minutes. Attempt 1 waits
+60 s to build; attempts 2 and 3 each wait 60 s to drop the INVALID index it left; two 10 s pauses; one final 2 s
+wait to drop it (`DROP INDEX CONCURRENTLY`, so the table's readers and writers never queue behind it; when it cannot
+get its lock it logs "cleanup drop ... gave up" and the next run drops the index first): 3 x 60 s + 2 x 10 s + 2 s =
+202 s. Each build wait is cut at 60 s (`lock_timeout`); end the session and rerun.
 
 ## Rollback
 

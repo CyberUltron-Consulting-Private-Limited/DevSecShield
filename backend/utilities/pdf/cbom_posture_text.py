@@ -7,6 +7,7 @@ This module does not read a clock and does not import a client.
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from backend.utilities.pdf.cbom_deliverable_text import CERTIN_DISCLAIMER, RBI_BOM_DISCLAIMER
 
@@ -382,3 +383,49 @@ def unknown_label(reason: object) -> str:
 def unknown_check(reason: object) -> str:
     key = str(reason or "").strip()
     return UNKNOWN_CHECKS.get(key, "Review the declaration by hand.")
+
+
+# ----------------------------------------------------------------------------- readable provider names (QA Q3-10)
+# What the D6 key register prints for a provider's enum (AWS KMS KeySpec / KeyUsage / KeyState, GCP purpose, Azure
+# kty): the API spelling stays in the Location / evidence, the register reads as words.
+PROVIDER_LABELS = {"aws": "AWS", "gcp": "Google Cloud", "azure": "Azure", "oci": "OCI", "self_hosted": "self-hosted"}
+_ENUM_WORDS = {
+    "SYMMETRIC_DEFAULT": "symmetric default", "ENCRYPT_DECRYPT": "encrypt / decrypt",
+    "SIGN_VERIFY": "sign / verify", "GENERATE_VERIFY_MAC": "MAC generate / verify", "KEY_AGREEMENT": "key agreement",
+    "ASYMMETRIC_SIGN": "sign (asymmetric)", "ASYMMETRIC_DECRYPT": "decrypt (asymmetric)", "MAC": "MAC",
+    "RAW_ENCRYPT_DECRYPT": "raw encrypt / decrypt", "PendingImport": "pending import (no key material)",
+    "PendingDeletion": "pending deletion", "PendingReplicaDeletion": "pending replica deletion",
+    "Enabled": "enabled", "Disabled": "disabled", "Unavailable": "unavailable", "Creating": "creating",
+    "Updating": "updating", "ENABLED": "enabled", "DISABLED": "disabled", "DESTROYED": "destroyed",
+    "DESTROY_SCHEDULED": "destroy scheduled", "PENDING_GENERATION": "pending generation",
+}
+_SPEC = re.compile(r"^(RSA|HMAC|ECC_NIST|ECC_SECG|SM2)_?P?(\d+)?K?(\d*)$")
+
+
+def readable_enum(value: Any) -> str:
+    """``RSA_2048`` -> "RSA 2048", ``ECC_NIST_P256`` -> "ECC NIST P-256", ``SIGN_VERIFY`` -> "sign / verify",
+    ``PendingImport`` -> "pending import (no key material)"; any other value as it is."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text in _ENUM_WORDS:
+        return _ENUM_WORDS[text]
+    # a post-quantum key spec reads as its standard parameter-set name, resolved by algid (the one place PQ names live)
+    from backend.utilities.cbom_sources import algid
+
+    found = algid.resolve(text)
+    if found is not None and found.name and found.quantum == "safe" and found.standard:
+        return found.name
+    match = _SPEC.match(text)
+    if match and match.group(2):
+        family, bits = match.group(1).replace("_", " "), match.group(2)
+        if family.startswith("ECC"):
+            return f"{family} {'P-' if 'NIST' in family else 'secp'}{bits}" + ("k1" if match.group(3) else "")
+        return f"{family} {bits}"
+    if re.fullmatch(r"[A-Z0-9]+(_[A-Z0-9]+)+", text):
+        return text.replace("_", " ").lower()
+    return text
+
+
+def provider_label(provider: Any) -> str:
+    return PROVIDER_LABELS.get(str(provider or ""), str(provider or ""))

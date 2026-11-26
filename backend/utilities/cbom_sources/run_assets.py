@@ -29,6 +29,7 @@ from sqlalchemy import String, and_, cast, false, func, or_, true
 from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionRun, CbomCollectionSource
+from backend.utilities.cbom_sources import resource_identity as RI
 from backend.utilities.cbom_sources import clause_evidence as CE
 from backend.utilities.cbom_sources import identity as ID
 from backend.utilities.cbom_sources import inventory as INV
@@ -306,12 +307,14 @@ def run_asset_keys(session: Session, team_id: int, run: CbomCollectionRun) -> di
 
 def _status_clause(session: Session, team_id: int, run: CbomCollectionRun, status: str):
     started = time.perf_counter()
-    keys = run_asset_keys(session, team_id, run)
-    found = WAVES._assignments(session, team_id, keys.values())
-    bucket = {aid: finding_status(found[key].status if key in found else None) for aid, key in keys.items()}
+    # the resource's assignment (``waves.resolve_run``: group key and every copy's key), the status the row shows
+    # (review 6060688856 M3: the filter bucketed rows by their own key and disagreed with the table and waves)
+    resolved = WAVES.resolve_run(session, team_id, run)
+    bucket = {aid: finding_status(r.status) for aid, r in resolved.items()}
     # the cost of this path grows with the run (PR-2's stored keys replace it): one line per request
-    log_line(f"cbom run assets status_filter team={team_id} run={run.id} status={status} keys={len(keys)} "
-             f"planned={len(found)} ms={int((time.perf_counter() - started) * 1000)}")
+    log_line(f"cbom run assets status_filter team={team_id} run={run.id} status={status} keys={len(resolved)} "
+             f"planned={sum(1 for r in resolved.values() if r.assignment is not None)} "
+             f"ms={int((time.perf_counter() - started) * 1000)}")
     if status == "not_started":  # the common case: exclude the (few) planned assets instead of listing every id
         others = [aid for aid, value in bucket.items() if value != "not_started"]
         clause = CbomCollectedAsset.asset_type != COVERAGE
@@ -321,10 +324,13 @@ def _status_clause(session: Session, team_id: int, run: CbomCollectionRun, statu
 
 
 def findings_total(session: Session, team_id: int, run_id: int, changed: dict[int, dict[str, Any]]) -> int:
-    """The run's findings judged today (the ``view=findings`` total with no other filter)."""
+    """The run's findings judged today (the ``view=findings`` total with no other filter); a resource two jobs of the
+    run read is one finding (``resource_identity.run_fold``, as the list)."""
+    fold = RI.run_fold(session, team_id, run_id)
     query = select(func.count()).select_from(CbomCollectedAsset).where(
-        CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run_id,
+        CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run_id, RI.kept_clause(fold),
         CbomCollectedAsset.asset_type != COVERAGE, CbomCollectedAsset.impact.in_(IMPACTS))  # type: ignore[union-attr]
+    changed = {aid: view for aid, view in changed.items() if fold.keeps(aid)}
     if changed:
         query = query.where(CbomCollectedAsset.id.notin_(list(changed)))  # type: ignore[union-attr]
     stored = int(session.exec(query).one())
@@ -393,6 +399,45 @@ def enrich_items(session: Session, team_id: int, run: CbomCollectionRun, items: 
             item[key] = code_row.get(key)
     for item in items:
         add_code_page_fields(item)
+    add_tls_grades(session, team_id, rows, items)
+
+
+_GRADED_TYPES = frozenset({"tls_endpoint"})
+
+
+def add_tls_grades(session: Session, team_id: int, rows: dict[int, CbomCollectedAsset],
+                   items: list[dict[str, Any]], today: _dt.date | None = None) -> None:
+    """``tls_grade`` on every probed TLS endpoint of the page (staging QA Q3-05: D7 graded 10.232.0.101:443 "B*" and
+    the endpoint dialog showed no grade): ``network_estate.grade_tls`` over the row's facts and the chain its job read
+    (the ``host:port#chain[i]`` certificate rows), exactly as D7 grades it; null for any other asset."""
+    from backend.utilities.cbom_sources import network_estate as NE
+
+    graded = {aid: r for aid, r in rows.items() if r.asset_type in _GRADED_TYPES}
+    for item in items:
+        item["tls_grade"] = None
+    if not graded:
+        return
+    chains: dict[tuple[int, str], list[tuple[int, dict[str, Any]]]] = {}
+    jobs = sorted({int(r.job_id) for r in graded.values() if r.job_id is not None})
+    if jobs:
+        cert_rows = session.exec(select(CbomCollectedAsset.job_id, CbomCollectedAsset.location,
+                                        CbomCollectedAsset.facts).where(
+            CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.job_id.in_(jobs),  # type: ignore[union-attr]
+            CbomCollectedAsset.asset_type == "certificate",
+            CbomCollectedAsset.location.like("%#chain[%"))).all()  # type: ignore[union-attr]
+        for job_id, location, facts in cert_rows:
+            base, _sep, rest = str(location or "").partition("#chain[")
+            index = int(rest.split("]", 1)[0]) if rest.split("]", 1)[0].isdigit() else 0
+            chains.setdefault((int(job_id), base), []).append((index, facts if isinstance(facts, dict) else {}))
+    day = today or _dt.datetime.now(_UTC).date()
+    for item in items:
+        row = graded.get(int(item["id"]))
+        if row is None:
+            continue
+        base = str(row.location or "").split("#", 1)[0]
+        chain = [facts for _i, facts in sorted(chains.get((int(row.job_id or 0), base), []), key=lambda p: p[0])]
+        facts = row.facts if isinstance(row.facts, dict) else {}
+        item["tls_grade"] = NE.grade_tls(facts, day, chain).record()
 
 
 def run_item(session: Session, team_id: int, run: CbomCollectionRun, row: CbomCollectedAsset, *,
@@ -407,6 +452,8 @@ def run_item(session: Session, team_id: int, run: CbomCollectionRun, row: CbomCo
     names = INV._source_names(session, team_id, jobs)  # a deleted source: the job's snapshot name (as the list)
     job_names = {j.id: names.get(j.source_id or 0) or (j.params or {}).get("source_name") for j in jobs}
     item = INV.public_asset(row, names, job_names, None, grade, pqc)
+    # the other sources of the run that read the same resource, as the list shows them (QA Q3-01)
+    item["also_seen"] = list(RI.run_fold(session, team_id, int(run.id or 0)).also_seen.get(int(row.id or 0), ()))
     AGILITY.annotate_assets(session, team_id, jobs, [item])
     enrich_items(session, team_id, run, [item])
     return item

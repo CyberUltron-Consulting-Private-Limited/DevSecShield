@@ -1192,8 +1192,10 @@ SCOPE_BOUNDARY_STATEMENT = "Assessment boundary statement and approver"
 # Product text: the engine records a library's name and where it was found, nothing else
 # (backend/utilities/dashboard/cbom_team_rollup.py LibAgg).
 ASSURANCE_LIBRARY_NOTE = (
-    "Code-scan libraries and the packages and mapped libraries CBOM Sources collections found, one "
-    "row per component (same package URL, or same name and version). Version, package URL and "
+    "Code-scan libraries, the packages and mapped libraries CBOM Sources collections found, and the "
+    "cryptographic products those collections read (HSMs, KMIP servers, key managers, network appliances, "
+    "cloud key services; ecosystem \"crypto product\"), one row per component (same package URL, or same "
+    "name and version) with every source that relies on it. Version, package URL and "
     "known-vulnerability or end-of-life status are printed where they were recorded; vendors and "
     "licences are not captured, so those columns are left for the assessor."
 )

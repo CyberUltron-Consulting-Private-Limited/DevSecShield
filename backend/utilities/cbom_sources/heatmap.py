@@ -129,8 +129,11 @@ def _rows(session: Session, team_id: int, run_id: int, *, by: str, metric: str):
         CbomCollectionJob.team_id == team_id, CbomCollectionJob.run_id == run_id)).all()}
     sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
         CbomCollectionSource.team_id == team_id)).all()}
-    rows = session.exec(select(CbomCollectedAsset).where(
-        CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run_id)
+    from backend.utilities.cbom_sources import resource_identity as RI
+
+    rows = session.exec(select(CbomCollectedAsset).where(  # one row per resource, as the run list (Q3-01)
+        CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run_id,
+        RI.kept_clause(RI.run_fold(session, team_id, run_id)))
         .order_by(CbomCollectedAsset.id)).all()
     elsewhere = JudgedElsewhere(rows)
     grading = None

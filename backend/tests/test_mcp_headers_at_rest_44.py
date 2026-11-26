@@ -38,7 +38,8 @@ from backend.utilities.db.metadata import get_scan_metadata_for_type  # noqa: E4
 from backend.utilities.db.schemas import StartScanPayload  # noqa: E402
 
 VERSIONS = _REPO_ROOT / "prod_database_migrations" / "migrations" / "versions"
-PG = os.environ.get("CBOM_TEST_PG_URL")
+from backend.tests.support.pg_test_db import cbom_test_pg_url  # noqa: E402  (review 6065677758 n1)
+PG = cbom_test_pg_url()  # a database named *test* only
 URL = "https://mcp.example.test/mcp"
 
 

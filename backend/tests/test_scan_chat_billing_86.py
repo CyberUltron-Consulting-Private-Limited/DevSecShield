@@ -26,7 +26,6 @@ import asyncio
 import copy
 import datetime as dt
 import logging
-import os
 import sys
 import threading
 import types
@@ -51,7 +50,8 @@ from backend.new_models import Scan, Team, TeamMembership, User  # noqa: E402
 COST = 0.006
 REFUSED = {"content": "Team does not have enough credits to send a message"}
 MODEL_FAILED = "Could not generate response , try again later"  # what create_response raises when the model fails
-PG = os.environ.get("CBOM_TEST_PG_URL")
+from backend.tests.support.pg_test_db import cbom_test_pg_url  # noqa: E402  (review 6065677758 n1)
+PG = cbom_test_pg_url()  # a database named *test* only
 BACKENDS = ["sqlite"] + (["pg"] if PG else [])
 
 

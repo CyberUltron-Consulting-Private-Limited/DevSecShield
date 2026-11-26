@@ -273,7 +273,7 @@ def _rotation_cell(fact: Mapping[str, Any]) -> str:
 
 
 def _source_cell(fact: Mapping[str, Any]) -> str:
-    return str(fact.get("source") or fact.get("source_label") or "")
+    return common.source_text(fact)
 
 
 def _kms_rows(view: object) -> list[list[Any]]:
@@ -289,12 +289,13 @@ def _kms_rows(view: object) -> list[list[Any]]:
     return [
         [
             common.address_of(fact),
-            common.provider_of(fact),
-            fact.get("specification") or "",
+            text.provider_label(common.provider_of(fact)),
+            # readable words, never the API enum (staging QA Q3-10: "RSA_2048", "SIGN_VERIFY", "PendingImport")
+            text.readable_enum(fact.get("specification")),
             fact.get("algorithm") or "",
-            fact.get("usage") or "",
+            ", ".join(text.readable_enum(part.strip()) for part in str(fact.get("usage") or "").split(",") if part.strip()),
             fact.get("protection") or "",
-            fact.get("state") or "",
+            text.readable_enum(fact.get("state")),
             _rotation_cell(fact),
             fact.get("deletion_protection") or "",
             common.codes_cell(fact),
@@ -603,17 +604,24 @@ def _weak_summary(net: Mapping[str, Any]) -> str:
     return f"{lead}: {'; '.join(parts)}"
 
 
-def _ldaps_cell(view: object, source: str) -> str:
-    """The LDAPS / StartTLS posture the AD collection probed: D7's endpoints of the same collection, summarised in
-    D6's words.  Their finding codes are D7's (not in this document's findings), so none is printed here."""
-    parts = []
+def _ldaps_index(view: object) -> dict[str, list[str]]:
+    """Probed TLS endpoints by the collection that probed them (their ``location``), summarised once per document:
+    ``_ldaps_cell`` read every fact of the view once per domain row, so D6 took minutes at 50k assets."""
+    found: dict[str, list[str]] = {}
     for fact in _facts(view):
-        if common.kind_of(fact) != "tls_endpoint" or fact.get("evidence") != PROBED_EVIDENCE \
-                or str(fact.get("location") or "") != source:
+        if common.kind_of(fact) != "tls_endpoint" or fact.get("evidence") != PROBED_EVIDENCE:
             continue
         net = common.net_of(fact)
         span = f"{net.get('min') or '?'} to {net.get('max') or '?'}"
-        parts.append(f"{net.get('endpoint') or common.address_of(fact)}: {span}; {_weak_summary(net)}")
+        found.setdefault(str(fact.get("location") or ""), []).append(
+            f"{net.get('endpoint') or common.address_of(fact)}: {span}; {_weak_summary(net)}")
+    return found
+
+
+def _ldaps_cell(view: object, source: str, index: dict[str, list[str]] | None = None) -> str:
+    """The LDAPS / StartTLS posture the AD collection probed: D7's endpoints of the same collection, summarised in
+    D6's words.  Their finding codes are D7's (not in this document's findings), so none is printed here."""
+    parts = (index if index is not None else _ldaps_index(view)).get(source, [])
     if not parts:
         return "not probed in this collection"
     return "; ".join(sorted(parts)) + " (findings in SOW D7)"
@@ -628,13 +636,17 @@ def _kerberos_rows(view: object) -> list[list[Any]]:
     listed); names are the account rows of the SAME collection (two sources reading one domain each list their own,
     never both: #493 review 6032906354 M2)."""
     facts = scope_facts(view)
-    accounts = [f for f in facts if common.kind_of(f) == "kerberos_account"]
+    accounts_by_source: dict[str, list[dict[str, Any]]] = {}
+    for fact in facts:
+        if common.kind_of(fact) == "kerberos_account":
+            accounts_by_source.setdefault(_source_cell(fact), []).append(fact)
+    ldaps = _ldaps_index(view)
     rows: list[list[Any]] = []
     for domain in sorted((f for f in facts if common.kind_of(f) == "ad_domain"),
                          key=lambda f: (common.address_of(f), _source_cell(f))):
         name, source = common.address_of(domain), _source_cell(domain)
-        own = [a for a in accounts if _source_cell(a) == source
-               and (str(a.get("domain") or "") == name or not a.get("domain"))]
+        own = [a for a in accounts_by_source.get(source, ())
+               if str(a.get("domain") or "") == name or not a.get("domain")]
         codes = {str(c) for c in common.as_rows(domain.get("finding_codes"))}
 
         def picked(rows_of: Sequence[Mapping[str, Any]], code: str) -> str:
@@ -658,7 +670,7 @@ def _kerberos_rows(view: object) -> list[list[Any]]:
              picked(own, "KERBEROS_RC4_ONLY")),
             ("Accounts on the DC default", _names_cell(_account_total(tally, "dc_default"), default) + partial,
              picked(own, "KERBEROS_ENCTYPES_DEFAULT")),
-            ("LDAPS TLS posture", _ldaps_cell(view, source), ""),
+            ("LDAPS TLS posture", _ldaps_cell(view, source, ldaps), ""),
         ):
             rows.append([name, check, value, code, source])
     return rows

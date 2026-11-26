@@ -261,8 +261,12 @@ def _gather(session: Session, run: CbomCollectionRun, team_id: int, now: _dt.dat
     coverage_targets: dict[tuple[str, str], set] = {}
     total = 0
     truncated = False
+    from backend.utilities.cbom_sources import resource_identity as RI
+
+    # one graph node / compliance component per resource, as the run's assets API (review 6039899144 B1)
+    fold = RI.run_fold(session, team_id, int(run.id or 0))
     query = (select(CbomCollectedAsset)
-             .where(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run.id)
+             .where(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run.id, RI.kept_clause(fold))
              .order_by(CbomCollectedAsset.id)  # type: ignore[arg-type]
              .execution_options(yield_per=RR.YIELD_PER))
     for row in session.exec(query):

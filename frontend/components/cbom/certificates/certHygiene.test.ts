@@ -7,8 +7,8 @@ import assert from "node:assert/strict";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { HygieneSummary, HygieneTable } from "./CertHygiene";
-import { HYGIENE_FLAGS, csvFileName, expiryText, filterParams, stateNote, type HygieneCert } from "./certHygiene";
+import { HygieneSummary, HygieneTable, ListBasisNote } from "./CertHygiene";
+import { HYGIENE_FLAGS, SHOWN_FLAGS, csvFileName, expiryText, filterParams, stateNote, type HygieneCert } from "./certHygiene";
 
 const h = React.createElement;
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -19,9 +19,16 @@ const flags = Object.fromEntries(HYGIENE_FLAGS.map((f) => [f, `${f} text`]));
 const counts = { certificates: 4, flagged: 3, by_flag: { unmanaged: 3, prober_only: 1, orphaned: 2, no_owner: 2, expired_served: 1 } };
 const summary = renderToStaticMarkup(h(HygieneSummary, { page: { counts, flags }, active: "orphaned" }));
 assert.equal(attr(summary, "cert-hygiene-summary", "data-flagged"), "3");
-for (const f of HYGIENE_FLAGS) {
+for (const f of SHOWN_FLAGS) {
   assert.equal(attr(summary, `cert-hygiene-flag-${f}`, "data-count"), String((counts.by_flag as Record<string, number>)[f] ?? 0));
 }
+// review 6039899144 M5: no "Not seen lately" chip (the flag is never set: the list is each source's latest collection)
+assert.ok(!summary.includes("cert-hygiene-flag-stale") && !summary.includes("Not seen lately"));
+assert.deepEqual([...SHOWN_FLAGS], HYGIENE_FLAGS.filter((f) => f !== "stale"));
+const basis = renderToStaticMarkup(h(ListBasisNote));
+assert.match(basis, /latest collection, the rule the Certificate Estate Register \(D8\) uses/);
+assert.match(basis, /reported by drift/);
+assert.ok(!basis.includes("Not seen lately"));
 assert.ok(summary.includes('aria-pressed="true"'));
 
 const CERT: HygieneCert = {

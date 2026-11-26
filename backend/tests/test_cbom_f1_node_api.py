@@ -51,7 +51,8 @@ from backend.utilities.cbom_sources.kinds import KINDS  # noqa: E402
 from backend.utilities.cbom_sources.settings import get_or_create_settings  # noqa: E402
 from zs_scan_node import api as node_api  # noqa: E402
 
-PG_URL = os.environ.get("CBOM_TEST_PG_URL")
+from backend.tests.support.pg_test_db import cbom_test_pg_url  # noqa: E402  (review 6065677758 n1)
+PG_URL = cbom_test_pg_url()  # a database named *test* only
 needs_pg = pytest.mark.skipif(not PG_URL, reason="set CBOM_TEST_PG_URL to run against PostgreSQL")
 api, world, enroll_node = base.api, base.world, base.enroll_node  # fixtures, used by name
 LEGACY_API = Path(__file__).resolve().parent / "fixtures/scan_node_1_0/api.py"  # dev 3399452, verbatim

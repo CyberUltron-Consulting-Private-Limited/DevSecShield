@@ -19,7 +19,6 @@ from __future__ import annotations
 import contextlib
 import copy
 import hashlib
-import os
 import random
 import re
 import sys
@@ -47,7 +46,8 @@ from backend.utilities.cbom_sources import q0register  # noqa: E402,F401  (regis
 from backend.utilities.cbom_sources import risk_register as RR  # noqa: E402
 from test_cbom_cb20_estate import ISSUER, NOW, SUBJECT, World, cert, endpoint  # noqa: E402
 
-PG = os.environ.get("CBOM_TEST_PG_URL")
+from backend.tests.support.pg_test_db import cbom_test_pg_url  # noqa: E402  (review 6065677758 n1)
+PG = cbom_test_pg_url()  # a database named *test* only
 needs_pg = pytest.mark.skipif(not PG, reason="set CBOM_TEST_PG_URL to run against PostgreSQL")
 AGILITY_WRITE = re.compile(r"^(WITH carry AS MATERIALIZED .*)?UPDATE cbomestateobservation SET fix_")
 

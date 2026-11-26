@@ -13,7 +13,6 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import importlib.util
-import os
 import re
 import sys
 import threading
@@ -45,7 +44,8 @@ from backend.utilities.cbom_sources import drift as D  # noqa: E402
 from backend.utilities.cbom_sources import estate as E  # noqa: E402
 
 NOW = dt.datetime(2026, 11, 14, 9, 0)
-PG = os.environ.get("CBOM_TEST_PG_URL")
+from backend.tests.support.pg_test_db import cbom_test_pg_url  # noqa: E402  (review 6065677758 n1)
+PG = cbom_test_pg_url()  # a database named *test* only
 needs_pg = pytest.mark.skipif(not PG, reason="set CBOM_TEST_PG_URL to run against PostgreSQL")
 MIGRATION = _REPO_ROOT / "prod_database_migrations/migrations/versions/cb20estate001_estate_store.py"
 

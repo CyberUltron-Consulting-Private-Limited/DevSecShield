@@ -361,8 +361,13 @@ NO_ANSWER_CHECK = "no answer"
 
 def coverage_kind(facts: dict[str, Any] | None) -> str:
     """``gap`` (an unread scope), ``by_choice`` (left out by the team), ``no_answer`` (an address that answered on no
-    probed port: nothing there to read, FP-1) or ``not_present`` (the target has no such thing)."""
+    probed port: nothing there to read, FP-1), ``not_present`` (the target has no such thing) or ``enrichment`` (a
+    listed asset missing one added fact, ``common.enrichment_only``: no scope is unread, review 6058574998 F3)."""
+    from backend.utilities.cbom_sources.common import enrichment_only
+
     facts = facts if isinstance(facts, dict) else {}
+    if enrichment_only(facts):
+        return "enrichment"
     status = str(facts.get("status") or "").strip()
     check = str(facts.get("check") or "").strip()
     detail = str(facts.get("detail") or "")
@@ -771,7 +776,7 @@ class GradeContext:
         explain = {**empty, "fallback": False, "anchor": False, "missing": [], "assumed": [], "provenance": "observed",
                    "item_kind": "scope", "coverage": kind, "check": facts.get("check"), "status": status,
                    "sp800_131a_disallowed": False, "correlation": None}
-        if kind in ("not_present", "no_answer"):
+        if kind in ("not_present", "no_answer", "enrichment"):
             return RowGrade(None, "not_an_item", None, self._stamp(explain))
         reason = "excluded_by_choice" if kind == "by_choice" else "coverage_gap"
         target = str(row.target or "")

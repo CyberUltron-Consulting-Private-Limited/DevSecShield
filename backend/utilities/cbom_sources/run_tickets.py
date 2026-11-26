@@ -45,6 +45,7 @@ from backend.new_models import (
     CbomScanNode,
     Team,
 )
+from backend.utilities.cbom_sources import identity as ID
 from backend.utilities.cbom_sources import waves as WAVES
 from backend.utilities.cbom_sources.common import iso_z, log
 from backend.utilities.integrations import jira as JIRA
@@ -212,41 +213,53 @@ def _error_kind(exc: BaseException) -> str:
 _M = CbomRemediationAssignment
 
 
-def _ensure_row(session: Session, team_id: int, item: dict[str, Any], user_id: int, now: _dt.datetime) -> None:
+def _ensure_row(session: Session, team_id: int, item: dict[str, Any], user_id: int, now: _dt.datetime) -> bool:
     """The asset's assignment row exists (committed by the caller); a concurrent insert by ``waves.upsert`` or another
-    ticket request is fine (``ON CONFLICT DO NOTHING``)."""
+    ticket request is fine (``ON CONFLICT DO NOTHING``).  True when this call inserted it (a blank record: status
+    "open", no plan, no ticket), so a released claim deletes it again (review 6065677758 M1)."""
+    # PR #499 round 7: the record is the resource's group record (the final word once it exists), so it starts from
+    # what the copies show (``remediation_group.seed_values``), never blank over a real plan; a claim is no plan
+    # decision, so it names no author (``updated_by_user_id`` stays empty until a user writes, or the key is stored)
     values = {"team_id": team_id, "asset_key": item["asset_key"], "scope": "node",
               "source_ref": str(item["source_ref"])[:255], "label": str(item.get("label") or "")[:255] or None,
-              "status": "open", "row_version": 1, "updated_by_user_id": user_id, "created_at": now,
-              "last_updated": now}
+              "status": "open", "row_version": 1, "updated_by_user_id": None, "created_at": now,
+              "last_updated": now, **_seed(session, team_id, item)}
     dialect = session.get_bind().dialect.name
     if dialect in ("postgresql", "sqlite"):
         mod = pg_dialect if dialect == "postgresql" else sqlite_dialect
-        session.exec(mod.insert(_M).values(**values)  # type: ignore[call-overload]
-                     .on_conflict_do_nothing(index_elements=["team_id", "asset_key"]))
-        return
+        result = session.exec(mod.insert(_M).values(**values)  # type: ignore[call-overload]
+                              .on_conflict_do_nothing(index_elements=["team_id", "asset_key"]))
+        return bool(result.rowcount)
     try:  # other dialects: the unique key decides
         with session.begin_nested():
             session.exec(_M.__table__.insert().values(**values))  # type: ignore[attr-defined,call-overload]
+        return True
     except IntegrityError:
-        pass
+        return False
+
+
+def _seed(session: Session, team_id: int, item: dict[str, Any]) -> dict[str, Any]:
+    from backend.utilities.cbom_sources.waves import _seed as seed
+
+    return seed(session, team_id, {**item, "scope": "node"})
 
 
 def _claim(engine, team_id: int, item: dict[str, Any], user_id: int, now: _dt.datetime
-           ) -> tuple[str, str | None, bool, CbomRemediationAssignment | None]:
-    """Short committed transaction. Returns (outcome, claim id, search_first, row): outcome ``existing`` (a ticket is
-    stored), ``busy`` (another request holds a live claim) or ``claimed`` (ours; ``search_first`` when we took over a
-    stale claim, whose Jira call may have created the issue)."""
+           ) -> tuple[str, str | None, bool, CbomRemediationAssignment | None, bool]:
+    """Short committed transaction. Returns (outcome, claim id, search_first, row, inserted): outcome ``existing`` (a
+    ticket is stored), ``busy`` (another request holds a live claim) or ``claimed`` (ours; ``search_first`` when we
+    took over a stale claim, whose Jira call may have created the issue); ``inserted``: this claim created the record
+    (``_finish(release=True)`` deletes it again)."""
     with Session(engine) as session:
-        _ensure_row(session, team_id, item, user_id, now)
+        inserted = _ensure_row(session, team_id, item, user_id, now)
         session.commit()
         for _attempt in range(3):
             row = session.exec(select(_M).where(_M.team_id == team_id, _M.asset_key == item["asset_key"])).one()
             if row.ticket_key:
-                return "existing", None, False, row
+                return "existing", None, False, row, inserted
             stale = row.ticket_claimed_at is None or row.ticket_claimed_at < now - CLAIM_TTL
             if row.ticket_state == "claimed" and not stale:
-                return "busy", None, False, row
+                return "busy", None, False, row, inserted
             claim = uuid.uuid4().hex
             previous, was_claimed = row.ticket_claim, row.ticket_state == "claimed"  # read before the commit expires row
             won = session.exec(update(_M).where(  # type: ignore[call-overload]
@@ -257,23 +270,43 @@ def _claim(engine, team_id: int, item: dict[str, Any], user_id: int, now: _dt.da
                 .execution_options(synchronize_session=False)).rowcount
             session.commit()
             if won == 1:
-                return "claimed", claim, was_claimed, None
+                return "claimed", claim, was_claimed, None, inserted
             session.expire_all()  # someone changed the row between the read and the claim: read again
-        return "busy", None, False, None
+        return "busy", None, False, None, inserted
 
 
 def _finish(engine, team_id: int, asset_key: str, claim: str, user_id: int, *, key: str | None = None,
-            url: str | None = None, release: bool = False) -> CbomRemediationAssignment | None:
+            url: str | None = None, release: bool = False, inserted: bool = False) -> CbomRemediationAssignment | None:
     """Short transaction: store the key (or release the claim) only while the claim is still ours. Returns the row
-    as stored when the claim was no longer ours."""
+    as stored when the claim was no longer ours.
+
+    A release puts the record back as it was before the claim (review 6065677758 M1, P10b): the record the claim
+    inserted (``inserted``) is deleted while it is still the claim's and unchanged since (``row_version`` 2: the
+    insert, then the claim; a user's write meanwhile bumps it and keeps the record, only the claim is cleared); a
+    record that existed keeps its ``last_updated`` and author (the claim never changed them).  The inserted record
+    is the resource's group record, which ``resolve`` reads as the final word (round 7), so one left behind would
+    stand in for the copies' plan.
+    """
     now = _utcnow()
-    values: dict[str, Any] = {"row_version": _M.row_version + 1, "last_updated": now, "updated_by_user_id": user_id}
+    values: dict[str, Any] = {"row_version": _M.row_version + 1}
     if key is not None:
         values.update(ticket_key=key[:64], ticket_url=(url or "")[:512] or None, ticket_state="created",
-                      ticket_claim=None, ticket_claimed_at=None)
+                      ticket_claim=None, ticket_claimed_at=None, last_updated=now, updated_by_user_id=user_id)
     elif release:
         values.update(ticket_state=None, ticket_claim=None, ticket_claimed_at=None)
+    else:
+        values.update(last_updated=now, updated_by_user_id=user_id)
     with Session(engine) as session:
+        if release and inserted:
+            from sqlalchemy import delete
+
+            gone = session.exec(delete(_M).where(  # type: ignore[call-overload]
+                _M.team_id == team_id, _M.asset_key == asset_key, _M.ticket_claim == claim,
+                _M.ticket_key.is_(None), _M.row_version == 2)  # type: ignore[union-attr]
+                .execution_options(synchronize_session=False)).rowcount
+            if gone == 1:
+                session.commit()
+                return None
         won = session.exec(update(_M).where(  # type: ignore[call-overload]
             _M.team_id == team_id, _M.asset_key == asset_key, _M.ticket_claim == claim)
             .values(**values).execution_options(synchronize_session=False)).rowcount
@@ -283,14 +316,35 @@ def _finish(engine, team_id: int, asset_key: str, claim: str, user_id: int, *, k
         return session.exec(select(_M).where(_M.team_id == team_id, _M.asset_key == asset_key)).first()
 
 
+def resource_label(group_key: str, salt: str | None) -> str:
+    """The Jira label of a resource: from its team-scoped group key and the team's own random salt in this deployment
+    (``cbomcollectionsettings.aws_external_id``, generated per team per environment), so two teams, or staging and
+    production on one Jira site, never share a label (review 6064356833 M1).  The salt is hashed, never printed.
+
+    The salt and its fallback (review 6065677758 n3): ``aws_external_id`` is generated once per team, in
+    ``get_or_create_settings``, and no code path rotates it.  Were the team's settings row ever recreated, this label
+    would change, and a search for an issue made before (only when a stale claim is taken over: the stored
+    ``ticket_key`` is checked first and is what prevents a second issue) would not find it under the new label; it
+    still reads the labels of the resource's own, write and alias keys (``_jira_issue``), which issues made before
+    the group key carry.  No previous-salt label is tried: the old salt is gone with the row.  A change that rotates
+    the salt must keep the old value and add ``resource_label(group_key, old_salt)`` to that search."""
+    return label_for(ID.stable_key("jira", str(salt or ""), group_key))
+
+
 def _jira_issue(url: str, token: str, email: str, project: str, issue_type: str, item: dict[str, Any],
-                detail: dict[str, Any], run_id: int, search_first: bool) -> tuple[str, bool]:
+                detail: dict[str, Any], run_id: int, search_first: bool,
+                salt: str | None = None) -> tuple[str, bool]:
     """(issue key, found by search). No database session is open here."""
-    label = label_for(item["asset_key"])
+    # one label per RESOURCE (its team-scoped group key, else its own key), so a retry or another run finds the same
+    # issue whichever source's row is shown (review 6060688856 M2); a search, in the team's project only, also reads
+    # the labels of the resource's other keys, which issues made before this rule carry
+    label = resource_label(item["group_key"], salt) if item.get("group_key") else label_for(item["asset_key"])
     if search_first:
-        found = JIRA.find_issue_by_label(url, token, label, jira_email=email)
-        if found:
-            return found, True
+        others = [item.get("own_key"), item["asset_key"], *(item.get("alias_keys") or ())]
+        for candidate in dict.fromkeys([label, *(label_for(k) for k in others if k)]):
+            found = JIRA.find_issue_by_label(url, token, candidate, jira_email=email, project=project)
+            if found:
+                return found, True
     summary, description = ticket_text(run_id, item, detail)
     answer = JIRA.create_issue_in_project(jira_url=url, jira_token=token, summary=summary, description=description,
                                           jira_email=email, issue_type=issue_type, labels=[label],
@@ -318,6 +372,7 @@ def create_tickets(engine, team_id: int, user_id: int, run_id: int, body: Ticket
         if not project:
             raise HTTPException(status_code=400, detail=NO_PROJECT)
         issue_type = (settings.jira_issue_type if settings is not None else None) or DEFAULT_ISSUE_TYPE
+        salt = settings.aws_external_id if settings is not None else None
         rows = {r.id: r for r in session.exec(select(CbomCollectedAsset).where(
             CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run.id,
             CbomCollectedAsset.id.in_(body.asset_ids))).all()}  # type: ignore[union-attr]
@@ -346,8 +401,14 @@ def create_tickets(engine, team_id: int, user_id: int, run_id: int, body: Ticket
         if time.monotonic() - started > budget:  # no new Jira call after the budget: the user retries the rest
             out["deferred"].append({"asset_id": asset_id, "asset_key": item["asset_key"], "reason": OUT_OF_TIME})
             continue
+        held = item.get("assignment") or {}
+        if held.get("ticket_key"):
+            # review 6060688856 M2: the resource already has a ticket on one of its keys (``remediation_group``):
+            # never a second issue, even when the key a plan is written to holds no ticket
+            out["existing"].append(ref(asset_id, item, held.get("ticket_key"), held.get("ticket_url")))
+            continue
         try:
-            outcome, claim, search_first, row = _claim(engine, team_id, item, user_id, _utcnow())
+            outcome, claim, search_first, row, inserted = _claim(engine, team_id, item, user_id, _utcnow())
         except Exception as exc:  # noqa: BLE001 - one asset's failure never loses the others
             log("run ticket FAILED", team=team_id, run=run_id, asset=asset_id, step="claim", error=_error_kind(exc))
             out["failed"].append({"asset_id": asset_id, "asset_key": item["asset_key"], "error": GENERIC_ERROR})
@@ -359,12 +420,13 @@ def create_tickets(engine, team_id: int, user_id: int, run_id: int, body: Ticket
             out["deferred"].append({"asset_id": asset_id, "asset_key": item["asset_key"], "reason": IN_PROGRESS})
             continue
         try:
-            key, found = _jira_issue(url, token, email, project, issue_type, item, detail, run_id, search_first)
+            key, found = _jira_issue(url, token, email, project, issue_type, item, detail, run_id, search_first,
+                                     salt)
         except Exception as exc:  # noqa: BLE001
             uncertain = getattr(exc, "kind", None) in ("timeout", "http_5xx")
             if not uncertain:  # nothing was created: let the next request try at once
                 try:
-                    _finish(engine, team_id, item["asset_key"], claim, user_id, release=True)
+                    _finish(engine, team_id, item["asset_key"], claim, user_id, release=True, inserted=inserted)
                 except Exception as release_exc:  # noqa: BLE001
                     log("run ticket release FAILED", team=team_id, asset=asset_id, error=_error_kind(release_exc))
             log("run ticket FAILED", team=team_id, run=run_id, asset=asset_id, step="jira", error=_error_kind(exc),
@@ -399,25 +461,23 @@ def create_tickets(engine, team_id: int, user_id: int, run_id: int, body: Ticket
 # ----------------------------------------------------------------------------- list fields
 def add_ticket_fields(session: Session, team_id: int, run: CbomCollectionRun, items: list[dict[str, Any]]) -> None:
     """``ticket_key`` / ``ticket_url`` on each run asset list item (None when the asset has no ticket). Reads the
-    assignment the enriched list already carries (``item["wave"]["assignment"]``); items without one are looked up by
-    their ``asset_key``, and items without a key (an older list) by the stable key of the page's assets."""
-    by_id: dict[int, str] = {}
+    assignment the enriched list already carries (``item["wave"]["assignment"]``, resolved for the resource); the
+    other items are resolved the same way (``waves.resolve_run``: the resource's group key and every copy's key,
+    review 6060688856 M4), never by their own key alone."""
+    missing: list[int] = []
     for item in items:
         assignment = (item.get("wave") or {}).get("assignment") if isinstance(item.get("wave"), dict) else None
         if isinstance(assignment, dict) and "ticket_key" in assignment:
             item["ticket_key"], item["ticket_url"] = assignment.get("ticket_key"), assignment.get("ticket_url")
-        elif item.get("asset_key"):
-            by_id[item["id"]] = item["asset_key"]
-    missing = [i["id"] for i in items if "ticket_key" not in i and not i.get("asset_key") and i.get("type") != "coverage"]
-    if missing:
-        by_id.update({i["asset_id"]: i["asset_key"] for i in WAVES.node_items(session, team_id, run, asset_ids=missing)})
-    found = WAVES._assignments(session, team_id, set(by_id.values())) if by_id else {}
+        elif item.get("type") != "coverage" and item.get("id") is not None:
+            missing.append(int(item["id"]))
+    resolved = WAVES.resolve_run(session, team_id, run, only=set(missing)) if missing else {}
     for item in items:
         if "ticket_key" in item:
             continue
-        a = found.get(by_id.get(item["id"]) or "")
-        item["ticket_key"] = a.ticket_key if a is not None else None
-        item["ticket_url"] = a.ticket_url if a is not None else None
+        r = resolved.get(int(item["id"])) if item.get("id") is not None else None
+        item["ticket_key"] = r.ticket_key if r is not None else None
+        item["ticket_url"] = r.ticket_url if r is not None else None
 
 
 # ----------------------------------------------------------------------------- remediation metrics

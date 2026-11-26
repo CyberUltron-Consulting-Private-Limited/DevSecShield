@@ -146,8 +146,11 @@ def engine():
                 s.add(src)
                 s.flush()
                 src_id = src.id
+            # every network source of this lab runs on the lab's scan-node segment: a private address two of them
+            # probe is one endpoint only inside one declared network (review 6058574998 F5: a node-less job is scoped
+            # by its own source, so before this the two lab sources merged 10.0.0.10:443 only by accident)
             job = CbomCollectionJob(team_id=1, run_id=run.id, source_id=src_id if src_id else 9999, kind="collect",
-                                    status="success", attempts=1,
+                                    status="success", attempts=1, node_segment="lab",
                                     finished_at=(NOW - dt.timedelta(hours=hours_ago)).replace(tzinfo=None),
                                     params={"source_uid": f"uid-{name}", "source_name": name})
             s.add(job)
@@ -395,6 +398,8 @@ def _grade(versions, suites, **kw):
 
 @pytest.mark.parametrize("versions,suites,leaf,expected", [
     (["TLSv1.3"], {"TLSv1.3": ["TLS_AES_256_GCM_SHA384"]}, None, "A"),
+    # SSL Labs 2009g: SSL 3 whose suites are not recorded is taken as CBC, i.e. POODLE: C (review 6039899144 M3
+    # restores this row; 2009h's B is for SSL 3 without a CBC suite)
     (["SSLv3", "TLSv1.2"], {"TLSv1.2": ["TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"]}, None, "C"),
     (["TLSv1.2"], {"TLSv1.2": ["TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384", "TLS_RSA_WITH_NULL_SHA256"]}, None, "F"),
     (["TLSv1.2"], {"TLSv1.2": ["TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA", "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"]},
@@ -403,10 +408,10 @@ def _grade(versions, suites, **kw):
      {"key_alg": "RSA", "key_size": 1024, "self_signed": False, "not_after": "2030-01-01T00:00:00Z"}, "B"),
     (["TLSv1.2"], {"TLSv1.2": ["TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"]},
      {"key_alg": "RSA", "key_size": 2048, "self_signed": True, "not_after": "2030-01-01T00:00:00Z"},
-     "T (if trusted: A)"),
+     "T (if trusted: A-)"),  # 2009r: no TLS 1.3 is an A- at best
     (["TLSv1.2"], {"TLSv1.2": ["TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"]},
      {"key_alg": "RSA", "key_size": 2048, "self_signed": False, "not_after": "2026-01-01T00:00:00Z"},
-     "T (if trusted: A)"),
+     "T (if trusted: A-)"),
 ])
 def test_grade_caps(versions, suites, leaf, expected):
     assert _grade(versions, suites, leaf=leaf).text == expected
@@ -505,7 +510,7 @@ def test_weak_suite_count_agrees_with_the_grade(view):
     """RC4 caps 10.0.0.12:25 at C, so the register's weak-suite list names it too (one rule for both)."""
     scoped, model = D7._scoped(view)
     smtp = next(e for e in model.tls if e.key == "10.0.0.12:25")
-    assert "RC4 accepted" in smtp.grade.caps
+    assert "RC4 accepted with TLS 1.1 or later" in smtp.grade.caps  # SSL Labs 2009j: C
     net = next(f.fact["net"] for f in scoped.posture.facts if f.fact.get("address") == "10.0.0.12:25")
     assert [(w["suite"], w["reasons"]) for w in net["weak_suites"]] == [("TLS_RSA_WITH_RC4_128_SHA", ["RC4"])]
 

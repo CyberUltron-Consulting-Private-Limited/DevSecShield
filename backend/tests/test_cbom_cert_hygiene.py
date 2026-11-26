@@ -146,10 +146,20 @@ def test_formula_like_cells_are_neutralised():
     assert _csv_cell("=HYPERLINK(1)") == "'=HYPERLINK(1)" and _csv_cell("ok") == "ok"
 
 
-def test_a_certificate_not_seen_for_n_collections_is_stale(api, estate):
+def test_the_list_is_the_d8_list_when_a_source_reads_nothing_later(api, estate):
+    """Staging QA Q3-04: the list is ``cert_estate.unique_certificates`` (D8's), not the estate store, so nothing
+    listed is stale.  Review 6039899144 M4: a newer collection that read nothing (the file collector's three failed
+    runs, outcome "failed", no rows) never replaces the source's last real read, so its certificates stay in both
+    (before: they left the list and D8, 4 -> 2)."""
+    from backend.utilities.cbom_sources.cert_estate import unique_certificates
+    from backend.utilities.dashboard.cbom_team_rollup import load_core_view
+    from sqlmodel import Session
+
     engine, hdr = estate["engine"], estate["hdr"]
+    HYG.clear_cache()
+    before = _list(api, all="true")
     for n in range(2, 5):  # three more runs: the probe sees its endpoints; the file collector reads nothing
-        _run(api, f"hyg-run-{n:04d}")  # (its targets unreachable: an incomplete collection never removes)
+        _run(api, f"hyg-run-{n:04d}")
         for _ in range(2):
             claim = _claim(api, hdr)
             name = claim["source"]["name"]
@@ -160,12 +170,12 @@ def test_a_certificate_not_seen_for_n_collections_is_stale(api, estate):
         _drift(engine)
         HYG.clear_cache()
     body = _list(api, all="true")
-    items = _by_subject(body)
-    spare = items["CN=spare.lab"]
-    assert spare["not_seen_runs"] == 3 and "stale" in spare["flags"]
-    assert spare["observations"][0]["presence"] == "not_read"
-    assert "stale" not in items["CN=a.lab"]["flags"]  # the probe still sees it
-    assert "stale" not in _by_subject(_list(api, all="true", stale_runs=4))["CN=spare.lab"]["flags"]
+    with Session(engine) as session:
+        d8 = unique_certificates(load_core_view(session, 1))
+    assert body["counts"]["certificates"] == len(d8) == before["counts"]["certificates"] == 4
+    assert set(_by_subject(body)) == set(_by_subject(before)) == {c.subject for c in d8.certificates}
+    assert {"CN=a.lab", "CN=old.lab"} <= set(_by_subject(body))
+    assert body["counts"]["by_flag"]["stale"] == 0
 
 
 def test_managing_systems():

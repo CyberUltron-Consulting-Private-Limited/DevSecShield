@@ -80,7 +80,8 @@ def _kpi(view: object, width: float) -> Flowable:
         ),
         ("Unknown stores", common.kpi_text(view, at_rest["UNKNOWN"]), "Not evidenceable"),
         ("Backups", common.kpi_text(view, len(backups)), f"not encrypted {backup_verdicts['NOT_ENCRYPTED']}"),
-        ("Kubernetes secrets", common.kpi_text(view, len(secrets) or secret_text), secret_text),
+        # a count, never the sentence (staging QA Q3-10: "no cluster configuratio..." was cut in the card)
+        ("Kubernetes secrets", common.kpi_text(view, len(secrets)), secret_text),
         ("Classified", common.kpi_text(view, classified), "Stores with a declared classification"),
         ("Sources", common.kpi_text(view, f"{assessed}/{total}"), "assessed of current sources"),
     ]
@@ -113,7 +114,7 @@ def _store_register(view: object, styles: Styles, width: float) -> list[Flowable
                 common.linkage_cell(fact, "owner_hint"),
                 common.linkage_cell(fact, "classification"),
                 common.linkage_cell(fact, "data_lifetime"),
-                str(fact.get("source") or ""),
+                common.source_text(fact),
                 common.location_of(fact),
             ]
         )
@@ -136,7 +137,7 @@ def _store_register(view: object, styles: Styles, width: float) -> list[Flowable
                 "Location",
             ),
             rows,
-            (85, 50, 45, 100, 75, 50, 45, 45, 50, 45, 70, 80),
+            (85, 60, 45, 90, 75, 50, 45, 45, 50, 45, 70, 80),
             width,
             styles,
             manual=(5, 6, 7, 8, 9),

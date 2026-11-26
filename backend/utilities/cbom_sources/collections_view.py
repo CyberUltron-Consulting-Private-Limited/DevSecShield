@@ -72,6 +72,14 @@ class Collection:
     metadata: dict[str, Any] = field(default_factory=dict, compare=False, repr=False)
     # how the collection was made (``collection_info``: method, window, credential reference by name only); D1 prints it
     info: dict[str, Any] = field(default_factory=dict, compare=False, repr=False)
+    # where its job read from (``resource_identity.job_scope``): a private address or a single-label name it reports
+    # is one resource only within this network (the scan node's segment) or machine (the node), review 6039899144 M2
+    network_scope: str = field(default="", compare=False, repr=False)
+    machine_scope: str = field(default="", compare=False, repr=False)
+    # a newer attempt of this source that read nothing (``latest_collections``): its job id and when it finished; the
+    # documents say "newest collection read nothing on <date>; last read <date>" (review 6039899144 M4)
+    newer_attempt_job_id: int | None = field(default=None, compare=False, repr=False)
+    newer_attempt_at: _dt.datetime | None = field(default=None, compare=False, repr=False)
     # the source's collect-job history (``collection_history``): successful collections, the first one, and the latest
     # attempt whatever its status (D1's "Scans", "First scanned" and "Last attempt"; staging QA2 Q1-02)
     history: dict[str, Any] = field(default_factory=dict, compare=False, repr=False)
@@ -109,6 +117,10 @@ class SourcesRow:
     # impact depends on the facts (a domain's functional level, a key's size) keeps it in the posture facts, so a
     # deliverable's findings table never falls back to the KB default for it (#493 review 6032906354 M1)
     code_impacts: dict[str, str] = field(default_factory=dict, compare=False, repr=False)
+    # the other (still existing) sources that read the same resource, when this row is the observation kept
+    # (``resolve``: one asset counted once; staging QA Q3-01)
+    also_seen: tuple[str, ...] = field(default=(), compare=False, repr=False)
+    also_seen_keys: tuple[str, ...] = field(default=(), compare=False, repr=False)  # their collection keys
     # the stored algorithm and key size (``CbomCollectedAsset``): D13's population reads the asset's function from
     # them (``waves.population_from_rows``), as the roadmap does from the stored row (review 6038529822 M2)
     algorithm: str | None = field(default=None, compare=False, repr=False)
@@ -240,8 +252,25 @@ def node_row(asset: Any, collection: Collection, view: Mapping[str, Any]) -> dic
 
 
 # ----------------------------------------------------------------------------- loading (the one DB read)
-def latest_jobs(session: Any, team_id: int, *, limit: int = 2_000) -> list[Any]:
-    """The newest successful collect job of each source (newest first)."""
+def read_nothing(job: Any) -> bool:
+    """A collect job that finished "success" but read nothing: ``jobs`` gives it the ``failed`` outcome exactly when
+    it stored no row other than coverage rows (every target skipped, refused or unreachable), and refunds it.  The
+    refund rule (``jobs.complete``) and OSCAL (``integrations.oscal``: "nothing read") already treat it as no
+    collection; so do the documents (review 6039899144 M4)."""
+    return getattr(job, "status", None) == "success" and getattr(job, "outcome", None) == "failed"
+
+
+def latest_collections(session: Any, team_id: int, *, limit: int = 2_000) -> list[tuple[Any, Any]]:
+    """``(job, newer)`` per source, newest first: ``job`` is the source's newest successful collect job that read
+    something, ``newer`` the newest attempt after it that read nothing (``read_nothing``), else None.
+
+    A newer attempt that read nothing never replaces the source's last real collection: before review 6039899144 M4
+    one failed run with zero assets dropped every certificate of the source from D8 and the certificate hygiene list
+    (15 -> 0).  A source whose every job read nothing keeps its newest one (``newer`` None), so D1 / D2 still name it
+    with what it read: nothing."""
+    from types import SimpleNamespace
+
+    from sqlalchemy import or_
     from sqlmodel import select
 
     from backend.new_models import CbomCollectionJob, CbomCollectionSource
@@ -249,15 +278,58 @@ def latest_jobs(session: Any, team_id: int, *, limit: int = 2_000) -> list[Any]:
 
     sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
         CbomCollectionSource.team_id == team_id)).all()}
-    latest: dict[str, Any] = {}
+    usable: dict[str, Any] = {}
+    empty: dict[str, Any] = {}  # the newest attempt that read nothing, per source, until a usable one is found
+    order: list[str] = []
+    seen = 0
     for job in session.exec(select(CbomCollectionJob).where(
             CbomCollectionJob.team_id == team_id, CbomCollectionJob.kind == "collect",
             CbomCollectionJob.status == "success", CbomCollectionJob.run_id.is_not(None))  # type: ignore[union-attr]
             .order_by(CbomCollectionJob.finished_at.desc().nulls_last(),  # type: ignore[union-attr]
                       CbomCollectionJob.id.desc())  # type: ignore[union-attr]
             .limit(limit)).all():
-        latest.setdefault(ID.job_source_ref(job, sources.get(job.source_id or 0)), job)
-    return list(latest.values())
+        seen += 1
+        ref = ID.job_source_ref(job, sources.get(job.source_id or 0))
+        if ref in usable:
+            continue
+        if ref not in order:
+            order.append(ref)
+        if read_nothing(job):
+            empty.setdefault(ref, job)
+            continue
+        usable[ref] = job
+    # review 6058574998 F7: the window is shared by every job, so a source whose recent attempts all read nothing (an
+    # hourly schedule failing for weeks) or that ran long ago can have its last real read outside it.  Each existing
+    # source without a real read in the window is asked for its own newest one (one indexed query per such source,
+    # usually none); a deleted source is history and keeps what the window holds.
+    found = 0
+    for source in sources.values():
+        ref = ID.job_source_ref(SimpleNamespace(params={}, source_id=source.id, id=0), source)
+        if ref in usable or (ref not in empty and seen < limit):
+            continue  # a real read in the window, or none anywhere (the window held every job and none of this one)
+        job = session.exec(select(CbomCollectionJob).where(
+            CbomCollectionJob.team_id == team_id, CbomCollectionJob.source_id == source.id,
+            CbomCollectionJob.kind == "collect", CbomCollectionJob.status == "success",
+            CbomCollectionJob.run_id.is_not(None),  # type: ignore[union-attr]
+            or_(CbomCollectionJob.outcome.is_(None), CbomCollectionJob.outcome != "failed"))  # type: ignore[union-attr]
+            .order_by(CbomCollectionJob.finished_at.desc().nulls_last(),  # type: ignore[union-attr]
+                      CbomCollectionJob.id.desc()).limit(1)).first()  # type: ignore[union-attr]
+        if job is None or ID.job_source_ref(job, source) != ref:
+            continue
+        found += 1
+        usable[ref] = job
+        if ref not in order:
+            order.append(ref)
+    out = [(usable[ref], empty.get(ref)) if ref in usable else (empty[ref], None) for ref in order]
+    if found:  # newest first, as the window gives them
+        out.sort(key=lambda pair: (_aware(pair[0].finished_at or pair[0].created_at), pair[0].id or 0), reverse=True)
+    return out
+
+
+def latest_jobs(session: Any, team_id: int, *, limit: int = 2_000) -> list[Any]:
+    """The latest collection of each source (``latest_collections``: the newest successful collect job that read
+    something, else its newest one), newest first."""
+    return [job for job, _newer in latest_collections(session, team_id, limit=limit)]
 
 
 # "Nothing collected: <target>: <code> (<detail>)" (scan node ``zscollect``): the code is the attempt's reason
@@ -428,7 +500,10 @@ def credential_reference(session: Any, source: Any) -> str:
 def load_sources_result(session: Any, team_id: int, now: _dt.datetime | None = None) -> SourcesResult:
     from sqlmodel import select
 
-    from backend.new_models import CbomCollectedAsset, CbomCollectionSource, CbomRemediationAssignment
+    from backend.new_models import (
+        CbomCollectedAsset,
+        CbomCollectionSource,
+    )
     from backend.utilities.cbom_sources import clause_evidence as CE
     from backend.utilities.cbom_sources import crypto_kb
     from backend.utilities.cbom_sources import identity as ID
@@ -437,10 +512,15 @@ def load_sources_result(session: Any, team_id: int, now: _dt.datetime | None = N
     today = _aware(now or _dt.datetime.now(UTC)).replace(tzinfo=None)  # classify works in naive UTC
     sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
         CbomCollectionSource.team_id == team_id)).all()}
+    from backend.new_models import CbomScanNode
+    from backend.utilities.cbom_sources.resource_identity import job_scope
+
+    nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
     out = SourcesResult()
     history = collection_history(session, team_id, sources)
-    for job in latest_jobs(session, team_id):
+    for job, newer in latest_collections(session, team_id):
         source = sources.get(job.source_id or 0)
+        network, machine = job_scope(job, nodes.get(job.node_id or 0), ID.job_source_ref(job, source))
         assets = [a for a in session.exec(select(CbomCollectedAsset).where(
             CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.job_id == job.id,
             CbomCollectedAsset.attempt == job.attempts).order_by(CbomCollectedAsset.id)).all()
@@ -451,6 +531,9 @@ def load_sources_result(session: Any, team_id: int, now: _dt.datetime | None = N
             observed_at=_aware(job.finished_at or job.created_at), asset_count=len(assets),
             endpoints_probed=sum(1 for a in assets if a.asset_type in NETWORK_TYPES),
             metadata=_source_metadata(source, job), info=collection_info(session, source, job),
+            network_scope=network, machine_scope=machine,
+            newer_attempt_job_id=int(newer.id) if newer is not None else None,
+            newer_attempt_at=_aware(newer.finished_at or newer.created_at) if newer is not None else None,
             history=history.get(ID.job_source_ref(job, source), {}))
         out.collections.append(collection)
         for asset in assets:
@@ -465,19 +548,44 @@ def load_sources_result(session: Any, team_id: int, now: _dt.datetime | None = N
                                        clause_evidence=CE.evidence_by_code(asset, rule_codes) if rule_codes else {},
                                        standards_parts=_parts(asset), code_impacts=code_impacts(view),
                                        algorithm=asset.algorithm, key_size=asset.key_size))
-    # the remediation status a finding has on the Sources pages (waves): open / in_progress / done / accepted_risk
-    keys = list(dict.fromkeys(item.asset_key for item in out.rows))
-    status: dict[str, str] = {}
+    link_certificates(out.rows)
+    link_resources(out.rows)
+    remediation_statuses(session, team_id, out.rows)
+    out.collections.sort(key=lambda c: (c.source_name.casefold(), c.source_ref))
+    return out
+
+
+def remediation_statuses(session: Any, team_id: int, rows: list[SourcesRow]) -> None:
+    """Each row's ``remediation_status`` (open / in_progress / done / accepted_risk): the assignment of its RESOURCE,
+    ``remediation_group.resolve`` over the group key and every copy's key of the rows that share its identity, the
+    rule waves and the run list use too (review 6060688856 M4).  Every copy gets the same status, so the row
+    "latest observation wins" keeps carries it whichever source that is."""
+    from sqlmodel import select
+
+    from backend.new_models import CbomRemediationAssignment
+    from backend.utilities.cbom_sources import remediation_group as RG
+
+    groups: dict[str, list[SourcesRow]] = {}
+    group_keys: dict[str, set[str]] = {}
+    for item in rows:
+        groups.setdefault(item.identity, []).append(item)
+        gk = RG.row_group_key(item.node_type, item.target, item.row.get("location"), item.facts,
+                              team_id=team_id, network=item.collection.network_scope,
+                              machine=item.collection.machine_scope, cluster=item.collection.source_ref)
+        if gk:
+            group_keys.setdefault(item.identity, set()).add(gk)
+    keys = list(dict.fromkeys([*(item.asset_key for item in rows), *(k for ks in group_keys.values() for k in ks)]))
+    found: dict[str, Any] = {}
     for start in range(0, len(keys), 500):
         for a in session.exec(select(CbomRemediationAssignment).where(
                 CbomRemediationAssignment.team_id == team_id,
                 CbomRemediationAssignment.asset_key.in_(keys[start:start + 500]))).all():  # type: ignore[attr-defined]
-            status[a.asset_key] = a.status or "open"
-    for item in out.rows:
-        item.row["remediation_status"] = status.get(item.asset_key, "open")
-    link_certificates(out.rows)
-    out.collections.sort(key=lambda c: (c.source_name.casefold(), c.source_ref))
-    return out
+            found[a.asset_key] = a
+    for ident, members in groups.items():
+        own = members[0].asset_key
+        resolved = RG.resolve(found, sorted(group_keys.get(ident, ())), [m.asset_key for m in members], own)
+        for item in members:
+            item.row["remediation_status"] = resolved.status or "open"
 
 
 def _source_metadata(source: Any, job: Any) -> dict[str, Any]:
@@ -527,6 +635,51 @@ def link_certificates(rows: list[SourcesRow]) -> int:
             item.identity = key
             changed += 1
     return changed
+
+
+def link_resources(rows: list[SourcesRow]) -> int:
+    """Give every row that names a resource two sources can both read (``resource_identity``: a cloud resource id,
+    ``host:port``, or target + location) that cross-source identity, so "latest observation wins" counts it once
+    (staging QA Q3-01: two IAM roles reading one AWS account printed every key, bucket and listener twice).  A key two
+    rows of one collection share is ambiguous: those rows keep their own identity.  Idempotent; returns the rows whose
+    identity changed."""
+    from backend.utilities.cbom_sources.resource_identity import (
+        PREFIX,
+        resource_identity,
+    )
+
+    keys: dict[int, str] = {}
+    seen: dict[tuple[str, str], int] = {}
+    for index, item in enumerate(rows):
+        if item.identity.startswith(PREFIX):
+            continue
+        if not item.identity.startswith("node|"):
+            continue  # a certificate's cross-source key (link_certificates) or a hand-made identity
+        key = resource_identity(item.node_type, item.target, item.row.get("location"), item.facts,
+                                network=item.collection.network_scope, machine=item.collection.machine_scope,
+                                cluster=item.collection.source_ref)
+        if key is None:
+            continue
+        own = (item.collection.key, key)
+        seen[own] = seen.get(own, 0) + 1
+        keys[index] = key
+    changed = 0
+    for index, key in keys.items():
+        item = rows[index]
+        if seen[(item.collection.key, key)] > 1:
+            continue
+        item.identity = key
+        changed += 1
+    return changed
+
+
+def _rank(item: SourcesRow) -> tuple:
+    """The observation kept for an identity (``resource_identity.rank``, the same rule): a source that still exists
+    before a deleted one, then an observation with a quantum verdict, then the newer collection, then the higher job
+    id.  Latest observation wins, so a stale source never hides a fresh read (review 6060688856 M1); the plan and the
+    ticket are the resource's, whichever row is kept (``remediation_group``)."""
+    return (not is_deleted_source(item.collection), item.row.get("quantum_safe") is not None,
+            item.collection.observed_at, item.collection.job_id)
 
 
 # ----------------------------------------------------------------------------- latest observation wins
@@ -622,12 +775,26 @@ def resolve(code_observations: Iterable[tuple[int, _dt.datetime, str]], rows: It
         at = _aware(created)
         if canon not in newest_code or at > newest_code[canon]:
             newest_code[canon] = at
+    link_resources(rows)  # idempotent: rows built without load_sources_result get their resource identities too
     best: dict[str, SourcesRow] = {}
+    members: dict[str, list[SourcesRow]] = {}  # only identities read more than once (50k rows: no list per row)
     for item in rows:
         held = best.get(item.identity)
-        if held is None or (item.collection.observed_at, item.collection.job_id) > (
-                held.collection.observed_at, held.collection.job_id):
+        if held is None:
             best[item.identity] = item
+            continue
+        members.setdefault(item.identity, [held]).append(item)
+        if _rank(item) > _rank(held):
+            best[item.identity] = item
+    for ident, group in members.items():  # the other sources that read it (deleted sources are never named)
+        item = best[ident]
+        if len(group) > 1:
+            others = [m for m in sorted(group, key=_rank, reverse=True)
+                      if m is not item and not is_deleted_source(m.collection)
+                      and m.collection.key != item.collection.key]
+            item.also_seen = tuple(dict.fromkeys(m.collection.label for m in others
+                                                 if m.collection.label != item.collection.label))
+            item.also_seen_keys = tuple(dict.fromkeys(m.collection.key for m in others))
     kept: list[SourcesRow] = []
     winners_at: dict[str, _dt.datetime] = {}
     for ident, item in best.items():
@@ -646,7 +813,8 @@ def resolve(code_observations: Iterable[tuple[int, _dt.datetime, str]], rows: It
 def dedup_counts(rows: Iterable[SourcesRow], resolution: Resolution) -> dict[str, int]:
     """How "latest observation wins" (``resolve``) counted the rows of current collections, each bucket counted
     (SOW audit A-09, review 6038529822 B1): ``same_source_places`` (a certificate one source read at another place),
-    ``cross_source`` (a certificate another source also read; the other source's observation is counted),
+    ``cross_source`` (an asset another source also read: a certificate, or a resource ``resource_identity`` keys; the
+    kept observation is counted),
     ``to_code`` (a certificate a code scan saw at the same time or later; the code row is counted), and
     ``estate_repeats`` (current Sources occurrences of one estate asset beyond the first: one endpoint two probes
     read, ``asset_keys.distinct_assets``, the estate store's own key)."""
@@ -675,7 +843,31 @@ def dedup_counts(rows: Iterable[SourcesRow], resolution: Resolution) -> dict[str
     return out
 
 
-__all__ = ["Collection", "dedup_counts", "link_certificates", "NETWORK_TYPES", "REMEDIATION_BUCKET", "ORIGIN_CODE",
-           "ORIGIN_SOURCES", "Resolution", "SourcesResult", "SourcesRow", "attempt_reason", "cert_identity",
-           "code_cert_identities", "code_row_identity", "collection_history", "current_only", "is_deleted_source",
-           "latest_jobs", "load_sources_result", "node_row", "origin_label", "resolve"]
+__all__ = [
+    "NETWORK_TYPES",
+    "ORIGIN_CODE",
+    "ORIGIN_SOURCES",
+    "REMEDIATION_BUCKET",
+    "Collection",
+    "Resolution",
+    "SourcesResult",
+    "SourcesRow",
+    "attempt_reason",
+    "cert_identity",
+    "code_cert_identities",
+    "code_row_identity",
+    "collection_history",
+    "current_only",
+    "dedup_counts",
+    "is_deleted_source",
+    "latest_collections",
+    "latest_jobs",
+    "link_certificates",
+    "link_resources",
+    "load_sources_result",
+    "node_row",
+    "origin_label",
+    "read_nothing",
+    "remediation_statuses",
+    "resolve",
+]

@@ -94,7 +94,8 @@ class _Model:
 D7_ROW_CAP = 1000
 SUITE_ENDPOINT_CAP = 300
 _FULL_LIST = "the full list is in each Sources run's asset list and CycloneDX export (protocolProperties.cipherSuites)"
-_GRADE_ORDER = {letter: rank for rank, letter in enumerate("FTEDCBA-")}
+# lowest first: F, the trust (T) and name (M) grades, then E..A+; "-" (no TLS) last
+_GRADE_ORDER = {letter: rank for rank, letter in enumerate(("F", "T", "M", "E", "D", "C", "B", "A-", "A", "A+", "-"))}
 
 
 def section_heading(text: str, styles: Styles, *, min_space: float = 90) -> list[Flowable]:
@@ -112,9 +113,10 @@ def _capped(rows: list[list[Any]], noun: str, styles: Styles,
 
 
 def _table(headers: tuple[str, ...], rows: list[list[Any]], weights: tuple[float, ...], width: float, styles: Styles,
-           noun: str) -> list[Flowable]:
+           noun: str, cell_limit: int = 300, max_cell_height: float = 180) -> list[Flowable]:
     shown, notes = _capped(rows, noun, styles)
-    return [*notes, *common.register(headers, shown, weights, width, styles, noun=noun)]
+    return [*notes, *common.register(headers, shown, weights, width, styles, noun=noun, cell_limit=cell_limit,
+                                     max_cell_height=max_cell_height)]
 
 
 _SOURCES_RENDERED = frozenset({"tls_endpoint", "ssh_service"})  # kinds this document reads from the rows themselves
@@ -214,6 +216,8 @@ def _scoped(view: TeamCbomView) -> tuple[TeamCbomView, _Model]:
     # cloud account whose only settings are keys, storage or a private CA (D6 / D8 evidence) is in posture.sources too
     collection_keys = {c.key for c in view.collections}
     network_keys = {f.source_key for f in posture.facts if f.source_key in collection_keys and _read_here(f)}
+    network_keys |= {str(k) for f in posture.facts if _read_here(f)  # a source whose read is printed as "also"
+                     for k in common.as_rows(common.fact_map(f).get("also_seen_keys")) if str(k) in collection_keys}
     sources = [s for s in posture.sources
                if s.key not in deleted_keys and (s.key not in collection_keys or s.key in network_keys)]
     listed = {s.key for s in sources}
@@ -244,7 +248,7 @@ def _kpi(view: object, model: _Model, width: float) -> Flowable:
     assessed, total, _missing, _partial = common.coverage_numbers(view)
     tool_text = ", ".join(f"{tool}" for tool in tools) if tools else "none"
     graded = [e.grade.letter for e in model.tls if e.grade.letter != "-"]
-    poor = sum(1 for letter in graded if letter in ("C", "D", "E", "F", "T"))
+    poor = sum(1 for letter in graded if letter in ("C", "D", "E", "F", "T", "M"))
     cards = [
         ("Endpoints", common.kpi_text(view, len(endpoints)), "Unique host:port, static, imported, probed"),
         ("Legacy protocol", common.kpi_text(view, legacy), "SSLv3, TLS 1.0 or TLS 1.1 offered"),
@@ -363,6 +367,19 @@ def _matrix(view: object, styles: Styles, width: float) -> list[Flowable]:
     ]
 
 
+def suite_label(name: Any) -> str:
+    """A suite by its IANA registry name, with the name the collector stored beside it when that was an OpenSSL name
+    (staging QA Q3-10: D7 mixed ``DES-CBC3-SHA`` and ``TLS_RSA_WITH_3DES_EDE_CBC_SHA``).  ``tls_suites`` is the one
+    table of names; a name it does not hold is printed as stored."""
+    import backend.utilities.cbom_sources.tls_suites as tls_suites
+
+    text = str(name or "").strip()
+    hit = tls_suites.lookup(text)
+    if hit is None or hit.iana.upper() == text.upper():
+        return text
+    return f"{hit.iana} ({text})"
+
+
 def _weak_suites(view: object, styles: Styles, width: float) -> list[Flowable]:
     rows = []
     for fact in _endpoints(view):
@@ -370,7 +387,7 @@ def _weak_suites(view: object, styles: Styles, width: float) -> list[Flowable]:
             mapped = common.as_mapping(suite) or {"suite": suite}
             reasons = mapped.get("reasons") or []
             reason_text = "; ".join(str(item) for item in common.as_rows(reasons))
-            rows.append([common.endpoint_label(fact), mapped.get("suite") or "", reason_text])
+            rows.append([common.endpoint_label(fact), suite_label(mapped.get("suite")), reason_text])
     return [
         *section_heading("Weak cipher suites", styles),
         *common.register(
@@ -568,14 +585,21 @@ def _seen(observed: NE.Observed) -> str:
     return observed.source + also
 
 
+RUBRIC_CELL_LIMIT = 900
+GRADES_CELL_LIMIT = 1500  # "Caps and trust" (one reason per rubric rule) and "Source" (the reader and every "also")
+GRADES_CELL_HEIGHT = 400.0  # points: a whole legacy endpoint row, below the 504-point landscape frame with its header
+
+
 def _grade_rubric(styles: Styles, width: float) -> list[Flowable]:
     return [
         *section_heading("TLS grade rubric", styles),
         common.note("Each probed TLS endpoint gets a letter computed only from what the probe observed, modelled on "
                     "the Qualys SSL Labs SSL Server Rating Guide. It is informative: it ranks endpoints for "
                     "remediation and does not replace a live verification.", styles),
+        # a rule is never cut (review 6039899144 m1: Cap B and the trust Divergence row lost their last words at
+        # 300 characters); RUBRIC_CELL_LIMIT holds the longest rule (test_rubric_rows_are_never_cut)
         *common.register(("Part", "Rule"), [list(row) for row in NE.RUBRIC], (140, 580), width, styles,
-                         noun="rubric rows"),
+                         noun="rubric rows", cell_limit=RUBRIC_CELL_LIMIT),
     ]
 
 
@@ -585,8 +609,8 @@ def _grades(model: _Model, styles: Styles, width: float) -> list[Flowable]:
         facts = e.observed.facts
         rows.append([
             e.key, e.service, e.grade.text, "" if e.grade.score is None else e.grade.score,
-            "; ".join(e.grade.caps), facts.get("negotiated_version") or "",
-            facts.get("negotiated_cipher") or "", ", ".join(e.groups),
+            "; ".join(e.grade.reasons), facts.get("negotiated_version") or "",
+            suite_label(facts.get("negotiated_cipher")), ", ".join(e.groups),
             "complete" if not e.grade.provisional else "incomplete: " + "; ".join(e.not_read[:3]),
             _seen(e.observed),
         ])
@@ -594,7 +618,11 @@ def _grades(model: _Model, styles: Styles, width: float) -> list[Flowable]:
         *section_heading("TLS endpoint grades", styles),
         *_table(("Endpoint", "Service", "Grade", "Score", "Caps and trust", "Negotiated", "Cipher",
                           "Groups", "Suite enumeration", "Source"), rows,
-                         (90, 50, 50, 30, 130, 45, 100, 60, 90, 75), width, styles, "graded endpoints"),
+                         (90, 50, 50, 30, 130, 45, 100, 60, 90, 75), width, styles, "graded endpoints",
+                         # every cap, trust issue and warning, and every source, printed whole (review 6058574998
+                         # F4: a legacy appliance's 528 characters ended in "..."); the grade has at most one reason
+                         # per rubric rule, so the rubric's own bound holds for the cell
+                         cell_limit=GRADES_CELL_LIMIT, max_cell_height=GRADES_CELL_HEIGHT),
     ]
 
 
@@ -616,7 +644,8 @@ def _suites(model: _Model, styles: Styles, width: float) -> list[Flowable]:
             done = e.suites_complete.get(version)
             state = "complete" if done else ("incomplete" if done is False else "not reported")
             for position, name in enumerate(names):  # one suite per row: a long list is never cut
-                rows.append([version if position == 0 else "", position + 1, name, state if position == 0 else ""])
+                rows.append([version if position == 0 else "", position + 1, suite_label(name),
+                             state if position == 0 else ""])
                 rows_all += 1
         flow.append(Bookmark(f"{e.key} ({e.grade.text})", f"d7-suites-{index}", 1, closed=True))
         flow.extend(common.register((f"{e.key} · version", "#", "Accepted suite (IANA name)", "Enumeration"),

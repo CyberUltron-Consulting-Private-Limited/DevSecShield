@@ -141,7 +141,9 @@ def cert_hygiene(session: Session, team_id: int, now: _dt.datetime) -> tuple[dic
         moment = now if now.tzinfo is not None else now.replace(tzinfo=_dt.timezone.utc)
         view = module.cached(session, team_id, now=moment)
         state = getattr(view, "state", "ready")
-        return {c.key: c for c in view.certs}, "included" if state == "ready" else f"included:{state}"
+        # the list is D8's (Q3-04): its certificates carry the estate keys of their rows (``aliases``)
+        keyed = {alias: c for c in view.certs for alias in (*getattr(c, "aliases", ()), c.key)}
+        return keyed, "included" if state == "ready" else f"included:{state}"
     except Exception as exc:
         log("estate export cert hygiene FAILED", team=team_id, error=type(exc).__name__)
         return {}, "error"

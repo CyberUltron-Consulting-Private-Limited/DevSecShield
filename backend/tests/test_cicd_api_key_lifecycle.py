@@ -309,7 +309,8 @@ def test_the_settings_log_never_carries_the_key_record(env, monkeypatch):
 
 
 # ---------------------------------------------------------------------------------- PostgreSQL: the row lock
-PG = os.environ.get("CBOM_TEST_PG_URL")
+from backend.tests.support.pg_test_db import cbom_test_pg_url  # noqa: E402  (review 6065677758 n1)
+PG = cbom_test_pg_url()  # a database named *test* only
 
 
 @pytest.mark.skipif(not PG, reason="set CBOM_TEST_PG_URL to run against PostgreSQL (as in CI)")

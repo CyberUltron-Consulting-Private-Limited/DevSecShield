@@ -48,7 +48,8 @@ from backend.utilities.cbom_sources.schemas import Include, RunCreate  # noqa: E
 from backend.utilities.cbom_sources.settings import get_or_create_settings  # noqa: E402
 from backend.workers import cbom_cloud_worker as W  # noqa: E402
 
-PG = os.environ.get("CBOM_TEST_PG_URL")
+from backend.tests.support.pg_test_db import cbom_test_pg_url  # noqa: E402  (review 6065677758 n1)
+PG = cbom_test_pg_url()  # a database named *test* only
 BACKENDS = ["sqlite"] + (["pg"] if PG else [])
 MGMT = "111122223333"
 

@@ -340,16 +340,18 @@ def test_m4_the_chain_adds_up_and_names_every_bucket(team):
     pop = RECON.from_view(view)
     r = RECON.register_numbers(pop.register)
     # each bucket is counted (review 6038529822 B1): the lab-mssql certificate read at master and msdb is ONE source
-    # reading one certificate at two places; the endpoint both probes read is one estate asset
-    assert (pop.collected, pop.same_source_places, pop.cross_source, pop.sources_occurrences) == (8, 1, 0, 7)
-    assert (pop.code_occurrences, pop.estate_repeats, r["not_present"], r["total"]) == (1, 1, 0, 6)
+    # reading one certificate at two places; the public endpoint both probes read is ONE resource since PR #499
+    # (``resource_identity``, Rule P: every surface counts it once), so it is a cross-source observation counted
+    # once, no longer an occurrence per probe that the estate folds later
+    assert (pop.collected, pop.same_source_places, pop.cross_source, pop.sources_occurrences) == (8, 1, 1, 6)
+    assert (pop.code_occurrences, pop.estate_repeats, r["not_present"], r["total"]) == (1, 0, 0, 6)
     assert r["graded"] + r["q0"] + r["none"] == r["total"]
     assert sum(r[c] for c in SC.GRADED_CLASSES) == r["graded"]
     text = " ".join(RECON.lines(pop))
     assert ("8 run assets minus 1 observation of a certificate the same source read at another place (one "
-            "certificate, counted once) = 7 CBOM Sources occurrences") in text
-    assert "another source also read" not in text  # QA2 review: never the cross-source wording for one source
-    assert "minus 1 CBOM Sources occurrence of an estate asset already counted" in text
+            "certificate, counted once), minus 1 observation of an asset another source also read (one certificate, "
+            "endpoint or cloud resource, counted once, from its latest observation) = 6 CBOM Sources occurrences") in text
+    assert "estate asset already counted" not in text  # the fold counted the endpoint once already
     assert f"= {r['total']} distinct assets in the Quantum Risk Register (D12)" in text
     assert "Unexplained" not in text
 
@@ -382,8 +384,9 @@ def test_b1_every_bucket_is_counted_on_the_realistic_team(tmp_path):
     pop = RECON.from_view(view)
     r = RECON.register_numbers(pop.register)
     assert (pop.collections, pop.collected, pop.removed_collections, pop.removed_assets) == (5, 12, 1, 3)
-    assert (pop.same_source_places, pop.cross_source, pop.to_code) == (1, 1, 0)  # master/msdb; ACM + Kubernetes
-    assert (pop.sources_occurrences, pop.code_occurrences, pop.estate_repeats) == (10, 3, 1)
+    # master/msdb; ACM + Kubernetes, and (PR #499) the endpoint both probes read: one resource, counted once
+    assert (pop.same_source_places, pop.cross_source, pop.to_code) == (1, 2, 0)
+    assert (pop.sources_occurrences, pop.code_occurrences, pop.estate_repeats) == (9, 3, 0)
     # #497 on dev: the roll-up counts none of the deleted source's occurrences, so the collection is outside every
     # total (m4: the sentence says so only then); the register leaves its keys out and says how many
     assert pop.removed_counted == 0
@@ -391,7 +394,7 @@ def test_b1_every_bucket_is_counted_on_the_realistic_team(tmp_path):
     text = " ".join(RECON.lines(pop))
     assert "Removed from scope: 1 collection of deleted sources with 3 assets, outside every total." in text
     assert "1 observation of a certificate the same source read at another place" in text
-    assert "1 observation of a certificate another source also read" in text
+    assert "2 observations of an asset another source also read" in text
     assert "Unexplained" not in text and "counted from a code-scan observation instead" not in text
 
 
@@ -446,7 +449,8 @@ def test_q1_08_the_dashboard_counts_what_the_documents_count(team, monkeypatch):
     view = _view(team, now)
     board = _dashboard(team, monkeypatch, now)
     card = board["card_data"]
-    assert card["total_crypto_assets"] == view.asset_occurrences == 8  # scan 901 (superseded) is history
+    # scan 901 (superseded) is history; the endpoint both probes read is one asset (PR #499: 8 before)
+    assert card["total_crypto_assets"] == view.asset_occurrences == 7
     assert card["total_quantum_vulnerable"] == view.pqc_vulnerable
     assert card["quantum_readiness_score"] == (view.readiness_pct or 0.0)
     steps = {s["key"]: s for s in board["population"]["steps"]}
@@ -455,7 +459,7 @@ def test_q1_08_the_dashboard_counts_what_the_documents_count(team, monkeypatch):
         assert steps[key]["value"] == doc[key]["value"], key
         assert steps[key]["text"].split(". ", 1)[1] == doc[key]["text"].split(". ", 1)[1], key
     assert steps["dashboard_card"]["value"] == card["total_crypto_assets"]
-    assert "counts 8: the same occurrences" in steps["dashboard_card"]["text"]
+    assert "counts 7: the same occurrences" in steps["dashboard_card"]["text"]
 
 
 # ============================================================================ m1 (D13 code signing)

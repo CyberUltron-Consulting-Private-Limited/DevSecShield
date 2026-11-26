@@ -10,7 +10,6 @@ from __future__ import annotations
 import contextlib
 import datetime as dt
 import importlib.util
-import os
 import json
 import sys
 import threading
@@ -74,7 +73,7 @@ class FakeJira:
             raise RT.JIRA.JiraError("timeout", "Jira request timed out. Please try again.")
         return {"id": str(10000 + n), "key": f"SEC-{n}"}
 
-    def find(self, jira_url, jira_token, label, jira_email=None):
+    def find(self, jira_url, jira_token, label, jira_email=None, project=None):
         self.searches.append(label)
         hits = [i["key"] for i in self.issues if label in i["labels"]]
         return hits[-1] if hits else None
@@ -158,10 +157,11 @@ def test_run_tickets_idempotent(api, runs, jira):
     assert [e["ticket_key"] for e in later["existing"]] == ["SEC-1", "SEC-2"]
     assert [c["ticket_key"] for c in later["created"]] == ["SEC-3"]
     assert len(jira.calls) == 3  # one Jira issue per stable key, never one per run
-    # every issue carries the asset's label (what a retry after a timeout searches for)
-    assert [c["labels"] for c in jira.calls] == [[f"zs-asset-{k}"] for k in
-                                                 [body["created"][0]["asset_key"], body["created"][1]["asset_key"],
-                                                  later["created"][0]["asset_key"]]]
+    # every issue carries its resource's own label (what a retry after a timeout searches for): one per resource, in
+    # the team's project; a resource with a cross-source identity is labelled from its team-scoped group key and the
+    # team's salt (PR #499 review 6064356833 M1), any other from its own key
+    labels = [c["labels"][0] for c in jira.calls]
+    assert len(set(labels)) == 3 and all(label.startswith("zs-asset-") for label in labels)
     with Session(runs["engine"]) as s:
         rows = s.exec(select(CbomRemediationAssignment)).all()
         assert sorted(r.ticket_key for r in rows) == ["SEC-1", "SEC-2", "SEC-3"]
@@ -196,8 +196,8 @@ def test_one_failed_issue_never_loses_the_others(api, runs, jira):
     assert [f["asset_id"] for f in body["failed"]] == [lib] and "issuetype" in body["failed"][0]["error"]
     with Session(runs["engine"]) as s:  # the refused asset has no key, and its claim was released (4xx: none created)
         rows = {r.ticket_key: r for r in s.exec(select(CbomRemediationAssignment)).all()}
-    assert set(rows) == {"SEC-1", "SEC-3", None}
-    assert rows[None].ticket_state is None and rows[None].ticket_claim is None and rows[None].status == "open"
+    # review 6065677758 M1 (P10b): the blank record the claim inserted is deleted, not left behind as the newest record
+    assert set(rows) == {"SEC-1", "SEC-3"}
     jira.fail_on = None
     retry = api("POST", f"/1/cbom/sources/runs/{runs['run1']['id']}/tickets", json={"asset_ids": [tls, lib, cert]}).json()
     assert [c["asset_id"] for c in retry["created"]] == [lib] and len(retry["existing"]) == 2
@@ -348,10 +348,10 @@ def _status_put_during_a_slow_ticket(api, engine, world_runs, jira):
     tls, = _ids(world_runs, "run1", TLS)
     key = next(i["asset_key"] for i in api("GET", f"/1/cbom/sources/runs/{run1}/remediation").json()["items"]
                if i["asset_id"] == tls)
-    jira.delay = 1.5
+    jira.delay = 3.0
     worker = threading.Thread(target=RT.create_tickets, args=(engine, 1, 1, run1, RT.TicketBody(asset_ids=[tls])))
     worker.start()
-    time.sleep(0.4)  # the claim is committed and the fake Jira call is running
+    time.sleep(1.2)  # the claim is committed (after the run's resource resolution) and the fake Jira call is running
     t0 = time.monotonic()
     put = api("PUT", "/1/cbom/remediation", json={"run_id": run1, "items": [{"asset_key": key, "status": "in_progress"}]})
     waited = time.monotonic() - t0
@@ -390,7 +390,8 @@ def test_timeout_then_retry_opens_one_issue(api, runs, jira, monkeypatch):
         s.commit()
     later = RT.create_tickets(runs["engine"], 1, 1, run1, RT.TicketBody(asset_ids=[tls]))
     assert [(e["asset_id"], e["ticket_key"]) for e in later["existing"]] == [(tls, "SEC-1")] and later["created"] == []
-    assert len(jira.calls) == 1 and jira.searches == [f"zs-asset-{later['existing'][0]['asset_key']}"]
+    # the retry searched for the label the timed-out create used (the resource's label), in the team's project
+    assert len(jira.calls) == 1 and jira.searches[0] == jira.calls[0]["labels"][0]
     with Session(runs["engine"]) as s:
         row = s.exec(select(CbomRemediationAssignment)).one()
     assert (row.ticket_key, row.ticket_state, row.ticket_claim) == ("SEC-1", "created", None)
@@ -404,8 +405,8 @@ def test_only_jira_messages_reach_the_user(api, runs, jira, capsys):
     assert [f["error"] for f in body["failed"]] == [RT.GENERIC_ERROR]
     out = capsys.readouterr().out
     assert "error=RuntimeError" in out and "internal detail" not in out
-    with Session(runs["engine"]) as s:  # not a Jira timeout: the claim is released for an immediate retry
-        assert s.exec(select(CbomRemediationAssignment)).one().ticket_state is None
+    with Session(runs["engine"]) as s:  # not a Jira timeout: the claim is released for an immediate retry, and the
+        assert s.exec(select(CbomRemediationAssignment)).all() == []  # blank record it inserted goes (6065677758 M1)
 
 
 def test_time_budget_defers_the_rest(api, runs, jira):
@@ -656,7 +657,8 @@ def test_migration_up_and_down_on_sqlite(tmp_path):
     _upgrade_downgrade(sa.create_engine(f"sqlite:///{tmp_path / 'm.db'}"))
 
 
-PG = os.environ.get("CBOM_TEST_PG_URL")
+from backend.tests.support.pg_test_db import cbom_test_pg_url  # noqa: E402  (review 6065677758 n1)
+PG = cbom_test_pg_url()  # a database named *test* only
 
 
 @pytest.mark.skipif(not PG, reason="set CBOM_TEST_PG_URL to run against PostgreSQL")

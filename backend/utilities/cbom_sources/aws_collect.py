@@ -25,7 +25,7 @@ from typing import Any, Callable
 
 from backend.utilities.cbom_sources import algid, algid_tables
 from backend.utilities.cbom_sources.aws_validate import _boto, _code
-from backend.utilities.cbom_sources.common import log, new_ref
+from backend.utilities.cbom_sources.common import ENRICHMENT_ONLY, enrichment_only, log, new_ref
 from backend.utilities.cbom_sources.idp_collect import saml_assets_from_xml
 from backend.utilities.cbom_sources.kinds import aws_account_id
 from backend.utilities.cbom_sources.lab_mode import LAB_MODE, own_account_decision
@@ -213,10 +213,17 @@ def _service_scope(service: str, region: str, account: str) -> list[str] | None:
     }.get(service)
 
 
+# a coverage row that a permission newer than the customer's reader stack would close (the row names the action):
+# the asset is listed and only an added fact is missing, so it is shown but never makes the target partial
+TEMPLATE_UPDATE = "template_update"
+
+
 class _GapTally:
     """Passes every asset on and counts what the coverage gaps left unread, which makes a target partial: not the
     ``by_choice`` rows (an option left off) nor the ``not_reported`` ones (a state in which AWS reports nothing, e.g.
-    a key's rotation while it is pending deletion: known and stable, but still hidden from drift).  A row that lists
+    a key's rotation while it is pending deletion: known and stable, but still hidden from drift), nor the
+    ``ENRICHMENT_ONLY`` ones (a listed asset missing one added fact, e.g. a thumbprint a newer reader template allows:
+    review 6039899144 m4, 6058574998 F3).  A row that lists
     several items counts each (``not_read_count``).  ``codes`` counts them by service and error code for the log."""
 
     def __init__(self, emit: Emit):
@@ -225,7 +232,8 @@ class _GapTally:
 
     def __call__(self, asset: dict[str, Any]) -> None:
         facts = asset.get("facts") or {}
-        if asset.get("type") == "coverage" and not facts.get("by_choice") and facts.get("status") != "not_reported":
+        if asset.get("type") == "coverage" and not facts.get("by_choice") and facts.get("status") != "not_reported" \
+                and not enrichment_only(facts):
             count = facts.get("not_read_count")
             # 0: a row that only follows from others already counted (custom key stores behind unread keys)
             count = count if isinstance(count, int) and not isinstance(count, bool) and count >= 0 else 1
@@ -419,6 +427,22 @@ def _kms_facts(meta: dict[str, Any]) -> dict[str, Any]:
 
 
 ACM_KEY_PAIR_ORIGINS = ["AWS_MANAGED", "CUSTOMER_PROVIDED", "ACME"]
+# ACM statuses whose certificate has a body (PENDING_VALIDATION, VALIDATION_TIMED_OUT and FAILED were never issued)
+ACM_WITH_BODY = frozenset({"ISSUED", "EXPIRED", "INACTIVE", "REVOKED"})
+
+
+def _acm_body(pem: str) -> dict[str, Any]:
+    """The SHA-256 thumbprint of an ACM certificate's DER (``GetCertificate`` returns PEM), and ``certificate_read``."""
+    import hashlib
+
+    try:
+        from cryptography import x509
+        from cryptography.hazmat.primitives.serialization import Encoding
+
+        der = x509.load_pem_x509_certificate(str(pem).encode("ascii", "replace")).public_bytes(Encoding.DER)
+    except Exception as exc:  # noqa: BLE001 - the row keeps DescribeCertificate's facts
+        return {"certificate_read": f"unparsable: {type(exc).__name__}"[:60]}
+    return {"fingerprint_sha256": hashlib.sha256(der).hexdigest(), "certificate_read": "ok"}
 
 
 def _pca_certificate(client: Any, ca: dict[str, Any]) -> dict[str, Any]:
@@ -972,14 +996,42 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
                                                           Includes=everything, CertificateKeyPairOrigins=ACM_KEY_PAIR_ORIGINS,
                                                           PaginationConfig={"PageSize": PER_SERVICE_CAP})
         items = _Items("acm", region, acct.account, label, tick)
+        read: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
         for summary in summaries:
             items.step()
             arn = summary["CertificateArn"]
             status, detail = items.call("metadata", arn,
                                         lambda: client.describe_certificate(CertificateArn=arn)["Certificate"])
             if status == "ok":
-                emit(_cert_asset(arn, label, detail, summary=summary))
-        items.flush(emit, {"metadata": ("certificate", False)})
+                read.append((arn, detail, _cert_asset(arn, label, detail, summary=summary)))
+        # the public certificate (GetCertificate: read-only, never the private key) gives its SHA-256 thumbprint, so
+        # D8 and its CSV carry one for every ACM row (staging QA Q3-08: 14 rows had none); asked after every
+        # DescribeCertificate, so a role without acm:GetCertificate still lists every certificate
+        for arn, detail, asset in read:
+            if detail.get("Status") in ACM_WITH_BODY:
+                items.step()
+                body_status, pem = items.call("body", arn, lambda arn=arn: client.get_certificate(
+                    CertificateArn=arn).get("Certificate") or "")
+                asset["facts"].update(_acm_body(pem) if body_status == "ok" else
+                                      {"certificate_read": str(pem or body_status)[:60]})
+            emit(asset)
+        def body_gap(asset: dict[str, Any]) -> None:
+            # Every certificate is listed and described; a body that could not be read costs only its thumbprint, so
+            # the row is a note (ENRICHMENT_ONLY), never a gap, whatever the error (review 6058574998 F3: AWS documents
+            # only RequestInProgressException for a certificate not yet issued, which ACM_WITH_BODY never asks; an
+            # undocumented error for an INACTIVE or REVOKED body is a note too).  A denial means the reader stack
+            # predates the read-only acm:GetCertificate allow (review 6039899144 m4): the row says to update it.
+            facts = asset.get("facts") or {}
+            if asset.get("type") == "coverage" and "#body" in str(asset.get("location") or ""):
+                facts[ENRICHMENT_ONLY] = "certificate body (SHA-256 thumbprint)"
+                if facts.get("status") == "denied":
+                    facts[TEMPLATE_UPDATE] = "acm:GetCertificate"
+                    facts["detail"] = (f"{facts.get('detail') or 'denied'}; the reader stack predates the read-only "
+                                       "acm:GetCertificate allow: update it to the current template")[:300]
+            emit(asset)
+
+        items.flush(body_gap, {"metadata": ("certificate", False),
+                               "body": ("certificate body (SHA-256 thumbprint)", True)})
         if page_error:
             emit(_gap(label, f"{prefix}certificate#list", f"acm certificates in {region}",
                       "throttled" if page_error in _THROTTLE else ("denied" if page_error in _DENIED else "error"),

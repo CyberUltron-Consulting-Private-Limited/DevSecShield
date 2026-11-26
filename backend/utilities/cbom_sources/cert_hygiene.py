@@ -1,8 +1,10 @@
 """Orphaned and unmanaged certificates of the team's estate (architecture diagram output 04; CB-38 PLAN §5.6 made
 estate-wide with the CB-20 store and CB-21 asset keys).
 
-One row per certificate asset of the estate store (``cbomestateasset``, certificate types, not removed): every source
-that read it (its observations), each from its latest stored row. Flags (a certificate can carry several):
+One row per certificate of ``cert_estate.unique_certificates`` (staging QA Q3-04): the list D8 prints and its CSV
+holds, over the latest collection of every source that still exists (and the team's code scans), so the UI, D8 and
+the CSV count the same certificates and "Seen by" never names a deleted source.  Every source that read it is an
+observation, from its row in that collection. Flags (a certificate can carry several):
 
 * ``unmanaged``      no observation comes from a system that manages the certificate's lifecycle: a CA connector,
                      a key manager (Vault PKI, HSM), an identity provider (its signing certificates), AWS ACM or AWS
@@ -16,15 +18,14 @@ that read it (its observations), each from its latest stored row. Flags (a certi
 * ``no_owner``       no observation's source names an owner or an application (the job's metadata snapshot, else
                      the source's current metadata);
 * ``expired_served`` past its notAfter and still served by an endpoint the latest collection read;
-* ``stale``          not seen by any source for ``stale_runs`` successful collections of that source or more (the
-                     certificate stays in the estate as "not read", never confirmed removed).
+* ``stale``          kept for the API's vocabulary: a certificate no latest collection holds is in neither D8 nor this
+                     list (the drift report states the removal), so no listed certificate is stale.
 
-Computed per request from the store (nothing stored), memoised per team on a cheap fingerprint.
+Computed per request from the team view (nothing stored), memoised per team on a cheap fingerprint.
 """
 from __future__ import annotations
 
 import base64
-import bisect
 import csv
 import datetime as _dt
 import io
@@ -33,8 +34,6 @@ import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Iterator
-
-import sqlalchemy as sa
 
 UTC = _dt.timezone.utc
 FLAGS = ("unmanaged", "prober_only", "orphaned", "no_owner", "expired_served", "stale")
@@ -45,7 +44,9 @@ FLAG_TEXT = {
     "orphaned": "Served by no endpoint the team probes",
     "no_owner": "No source that read it names an owner or an application",
     "expired_served": "Expired and still served",
-    "stale": "Not seen for several collections of the sources that knew it",
+    # never set (review 6039899144 M5): kept so an API filter on it still answers, with an empty list
+    "stale": "Never set: the list holds each source's latest collection (the D8 rule); a certificate no longer "
+             "collected is reported by drift",
 }
 MANAGING_KINDS = frozenset({"ca_connector", "key_manager", "idp"})
 MANAGING_AWS = frozenset({"acm", "acm-pca"})
@@ -98,6 +99,8 @@ class Cert:
     owners: tuple[str, ...] = ()
     applications: tuple[str, ...] = ()
     latest: tuple = ()
+    # the estate-store asset keys of its rows (CB-21 identities): the estate export joins its flags on them
+    aliases: tuple[str, ...] = ()
 
     def public(self, today: _dt.date) -> dict[str, Any]:
         days = (self.not_after.date() - today).days if self.not_after else None
@@ -204,111 +207,75 @@ def csv_rows(view: View, **filters: Any) -> Iterator[bytes]:
 
 # ---------------------------------------------------------------------------------------------- the load
 def build(session: Any, team_id: int, *, now: _dt.datetime | None = None, stale_runs: int = STALE_RUNS) -> View:
-    from sqlmodel import select
-
-    from backend.new_models import (CbomCollectedAsset, CbomCollectionJob, CbomCollectionSource, CbomEstateAsset,
-                                    CbomEstateObservation, CbomEstateSource)
-    from backend.utilities.cbom_sources import agility_rollup as ROLLUP
-    from backend.utilities.cbom_sources import asset_keys as AK
-    from backend.utilities.cbom_sources import estate as ESTATE
+    """The team's certificates exactly as D8 lists them (staging QA Q3-04: the UI showed 146 / 29 certificates from
+    the estate store while D8 printed 155 / 33, and named deleted sources under "Seen by"): ``cert_estate.
+    unique_certificates`` over the team view D8 reads (``load_core_view``), deleted sources left out, so the list,
+    its counts and the D8 register are one set (Rule P)."""
+    from backend.utilities.cbom_sources.cert_estate import unique_certificates
+    from backend.utilities.dashboard.cbom_team_rollup import load_core_view
 
     moment = _aware(now) or _dt.datetime.now(UTC)
-    state = "stale" if ESTATE.stale_status(session, team_id) else (
-        "ready" if ROLLUP.store_ready(session, team_id) else "pending")
-    ea, eo, es = CbomEstateAsset.__table__, CbomEstateObservation.__table__, CbomEstateSource.__table__
-    cert_types = sorted(AK.CERT_TYPES)
-    found = session.execute(sa.select(
-        ea.c.asset_key, ea.c.label, ea.c.key_kind, eo.c.source_ref, eo.c.row_key, eo.c.presence, eo.c.location,
-        eo.c.seen_job_id, eo.c.seen_attempt, eo.c.seen_at, es.c.latest_job_id, es.c.latest_attempt, es.c.latest_at,
-        es.c.source_name, es.c.source_kind, es.c.source_id)
-        .select_from(ea.join(eo, sa.and_(eo.c.team_id == ea.c.team_id, eo.c.asset_key == ea.c.asset_key))
-                     .join(es, sa.and_(es.c.team_id == eo.c.team_id, es.c.source_ref == eo.c.source_ref)))
-        .where(ea.c.team_id == team_id, ea.c.asset_type.in_(cert_types), ea.c.presence != "removed",
-               eo.c.presence != "removed")).all()
-    # every successful collect job per source, to count the collections since an observation was last seen
-    jobs_of: dict[int, list[int]] = {}
-    for source_id, job_id in session.execute(sa.select(CbomCollectionJob.source_id, CbomCollectionJob.id).where(
-            CbomCollectionJob.team_id == team_id, CbomCollectionJob.kind == "collect",
-            CbomCollectionJob.status == "success")).all():
-        if source_id is not None:
-            jobs_of.setdefault(int(source_id), []).append(int(job_id))
-    for ids in jobs_of.values():
-        ids.sort()
-    pointers: dict[tuple[int, int], list[Any]] = {}
-    for o in found:
-        ptr = (o.latest_job_id, o.latest_attempt) if o.presence == "present" else (o.seen_job_id, o.seen_attempt)
-        pointers.setdefault(ptr, []).append(o)
-    rows: dict[tuple[int, int, str], Any] = {}
-    for (job_id, attempt), items in pointers.items():
-        wanted = sorted({o.row_key for o in items})
-        for start in range(0, len(wanted), 500):
-            for r in session.execute(sa.select(
-                    CbomCollectedAsset.asset_key, CbomCollectedAsset.asset_type, CbomCollectedAsset.location,
-                    CbomCollectedAsset.facts, CbomCollectedAsset.finding_codes).where(
-                    CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.job_id == job_id,
-                    CbomCollectedAsset.attempt == attempt,
-                    CbomCollectedAsset.asset_key.in_(wanted[start:start + 500]))).all():  # type: ignore[attr-defined]
-                rows[(job_id, attempt, r.asset_key)] = r
-    job_ids = sorted({j for j, _a in pointers})
-    jobs = {j.id: j for start in range(0, len(job_ids), 500) for j in session.exec(select(CbomCollectionJob).where(
-        CbomCollectionJob.team_id == team_id, CbomCollectionJob.id.in_(job_ids[start:start + 500]))).all()}  # type: ignore[union-attr]
-    sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
-        CbomCollectionSource.team_id == team_id)).all()}
+    view = load_core_view(session, team_id, now=moment)
+    return from_estate(unique_certificates(view), moment, stale_runs=stale_runs)
 
-    from backend.utilities.cbom_sources.cert_estate import is_certificate_record, thumbprint
 
-    certs: dict[str, Cert] = {}
-    probed = False
-    for o in found:
-        ptr = (o.latest_job_id, o.latest_attempt) if o.presence == "present" else (o.seen_job_id, o.seen_attempt)
-        row = rows.get((ptr[0], ptr[1], o.row_key))
-        facts = row.facts if row is not None and isinstance(row.facts, dict) else {}
-        if not is_certificate_record(facts):
-            continue  # a trust-store bundle FILE (N roots, no subject) is not a certificate (the D8 rule, cert_estate)
-        location = str((row.location if row is not None else None) or o.location or "")
-        a_type = str(row.asset_type if row is not None else "certificate")
-        job = jobs.get(ptr[0])
-        params = (job.params or {}) if job is not None else {}
-        meta = params.get("metadata") if isinstance(params.get("metadata"), dict) else (
-            (sources.get(o.source_id or 0).config or {}) if sources.get(o.source_id or 0) is not None else {})
-        served = _served(location, facts)
-        if served and o.presence == "present":
-            probed = True
-        ids = jobs_of.get(int(o.source_id or 0), [])
-        since = 0 if o.presence == "present" else len(ids) - bisect.bisect_right(ids, int(ptr[0] or 0))
-        seen = _aware(o.latest_at if o.presence == "present" else o.seen_at)
-        cert = certs.setdefault(o.asset_key, Cert(key=o.asset_key, label=o.label or "", key_kind=o.key_kind))
-        cert.observations.append({
-            "source_ref": o.source_ref, "source_name": o.source_name or o.source_ref, "source_kind": o.source_kind,
-            "location": location, "presence": o.presence, "served": served,
-            "managing": _managing(o.source_kind, a_type, location, facts),
-            "unused": "CERT_UNUSED" in (row.finding_codes or [] if row is not None else []),
-            "seen_at": seen.strftime("%Y-%m-%dT%H:%M:%SZ") if seen else None, "not_seen_runs": since,
-            "owner": str(meta.get("owner") or "").strip() if isinstance(meta, dict) else "",
-            "application": str(meta.get("application") or "").strip() if isinstance(meta, dict) else ""})
-        rank = (o.presence == "present", seen or _dt.datetime(1970, 1, 1, tzinfo=UTC))
-        if not cert.latest or rank > cert.latest:
-            leaf = facts.get("leaf") if isinstance(facts.get("leaf"), dict) else {}
-            cert.latest = rank
-            cert.subject = facts.get("subject") or leaf.get("subject") or cert.subject
-            cert.issuer = facts.get("issuer") or leaf.get("issuer") or cert.issuer
-            serial = facts.get("serial") or facts.get("serial_number")
-            cert.serial = str(serial) if serial else cert.serial
-            cert.not_after = _parse(facts.get("not_after") or leaf.get("not_after")) or cert.not_after
-        cert.thumbprint = cert.thumbprint or thumbprint(facts) or thumbprint(
-            facts.get("leaf") if isinstance(facts.get("leaf"), dict) else None)
-    for cert in certs.values():
+def _codes(row: Any) -> set[str]:
+    data = row if isinstance(row, dict) else {}
+    return {str(c) for c in (data.get("finding_codes") or []) + (data.get("collector_codes") or [])
+            if isinstance(c, str)}
+
+
+def from_estate(estate: Any, moment: _dt.datetime, *, stale_runs: int = STALE_RUNS) -> View:
+    """The hygiene view of one ``cert_estate.EstateResult`` (PURE).  Every observation is a row of a source's latest
+    collection (a deleted source's rows are not in the estate), so ``presence`` is "present" and ``not_seen_runs`` 0:
+    a certificate no latest collection holds is in neither D8 nor this list (drift reports it as removed)."""
+    certs: list[Cert] = []
+    probed = any(_served(str((m.row or {}).get("location") or ""), m.facts if isinstance(m.facts, dict) else {})
+                 for ec in estate.certificates for m in ec.members)
+    for ec in estate.certificates:
+        observations: list[dict[str, Any]] = []
+        placed: set[tuple[str, str]] = set()
+        for member in ec.members:
+            row = member.row if isinstance(member.row, dict) else {}
+            facts = member.facts if isinstance(member.facts, dict) else {}
+            coll = member.collection
+            location = str(row.get("location") or "")
+            meta = coll.metadata if isinstance(getattr(coll, "metadata", None), dict) else {}
+            placed.add((coll.label, location))
+            observations.append({
+                "source_ref": coll.source_ref, "source_name": coll.label, "source_kind": coll.source_kind,
+                "location": location, "presence": "present", "served": _served(location, facts),
+                "managing": _managing(coll.source_kind, str(member.node_type or ""), location, facts),
+                "unused": "CERT_UNUSED" in _codes(row),
+                "seen_at": _aware(coll.observed_at).strftime("%Y-%m-%dT%H:%M:%SZ") if _aware(coll.observed_at) else None,
+                "not_seen_runs": 0, "owner": str(meta.get("owner") or "").strip(),
+                "application": str(meta.get("application") or "").strip()})
+        seen = _aware(ec.cert.last_seen)
+        for sighting in ec.sightings:  # a code scan's sightings (and a merged certificate's earlier code locations)
+            if (sighting.source, sighting.location) in placed or sighting.source_ref:
+                continue
+            placed.add((sighting.source, sighting.location))
+            observations.append({
+                "source_ref": sighting.source, "source_name": sighting.source, "source_kind": "code_scan",
+                "location": sighting.location, "presence": "present", "served": False, "managing": False,
+                "unused": False, "seen_at": seen.strftime("%Y-%m-%dT%H:%M:%SZ") if seen else None,
+                "not_seen_runs": 0, "owner": "", "application": ""})
+        cert = Cert(key=ec.key, label=ec.subject or ec.cert.name or ec.key,
+                    key_kind="sha256" if ec.thumbprint else "identity", observations=observations,
+                    subject=ec.subject or None, issuer=ec.issuer or None, serial=ec.serial or None,
+                    thumbprint=ec.thumbprint, not_after=_parse(ec.not_after),
+                    aliases=tuple(dict.fromkeys(str(m.identity) for m in ec.members if getattr(m, "identity", ""))))
+        certs.append(cert)
         obs = cert.observations
-        obs.sort(key=lambda o: (o["presence"] != "present", o["source_name"].casefold(), o["location"]))
-        cert.owners = tuple(sorted({o["owner"] for o in obs if o["owner"]}))
+        obs.sort(key=lambda o: (o["source_name"].casefold(), o["location"]))
+        cert.owners = tuple(sorted({o["owner"] for o in obs if o["owner"]} | set(ec.owners)))
         cert.applications = tuple(sorted({o["application"] for o in obs if o["application"]}))
-        cert.not_seen_runs = min(o["not_seen_runs"] for o in obs)
-        served_now = any(o["served"] and o["presence"] == "present" for o in obs)
+        served_now = any(o["served"] for o in obs)
         expired = cert.not_after is not None and cert.not_after < moment
         flags = []
         if not any(o["managing"] for o in obs):
             flags.append("unmanaged")
-        if all(o["served"] for o in obs):
+        if obs and all(o["served"] for o in obs):
             flags.append("prober_only")
         if (probed and not served_now) or any(o["unused"] for o in obs):
             flags.append("orphaned")
@@ -316,10 +283,8 @@ def build(session: Any, team_id: int, *, now: _dt.datetime | None = None, stale_
             flags.append("no_owner")
         if expired and served_now:
             flags.append("expired_served")
-        if cert.not_seen_runs >= stale_runs:
-            flags.append("stale")
         cert.flags = tuple(flags)
-    return View(as_of=moment, state=state, certs=list(certs.values()), probed=probed, stale_runs=stale_runs)
+    return View(as_of=moment, state="ready", certs=certs, probed=probed, stale_runs=stale_runs)
 
 
 # ---------------------------------------------------------------------------------------------- cache
@@ -328,17 +293,20 @@ _lock = threading.Lock()
 
 
 def fingerprint(session: Any, team_id: int, now: _dt.datetime, stale_runs: int) -> tuple:
+    """What the list is computed from: the team's finished collect jobs, its CBOM code scans and its sources (a new
+    collection, a re-scan, a deleted or edited source is a new key), the UTC day (expiry) and ``stale_runs``."""
     from sqlmodel import func, select
 
-    from backend.new_models import CbomCollectionSource, CbomEstateAsset, CbomEstateSource
+    from backend.new_models import CbomCollectionJob, CbomCollectionSource, Scan
 
-    store = session.exec(select(func.count(), func.max(CbomEstateSource.updated_at)).where(
-        CbomEstateSource.team_id == team_id)).one()
-    assets = session.exec(select(func.count(), func.max(CbomEstateAsset.updated_run_id)).where(
-        CbomEstateAsset.team_id == team_id)).one()
+    jobs = session.exec(select(func.count(), func.max(CbomCollectionJob.id), func.max(CbomCollectionJob.finished_at))
+                        .where(CbomCollectionJob.team_id == team_id, CbomCollectionJob.kind == "collect",
+                               CbomCollectionJob.status == "success")).one()
+    scans = session.exec(select(func.count(), func.max(Scan.last_updated)).where(
+        Scan.team_id == team_id, Scan.scan_type == "cbom")).one()
     srcs = session.exec(select(func.count(), func.max(CbomCollectionSource.last_updated)).where(
         CbomCollectionSource.team_id == team_id)).one()
-    return (team_id, tuple(store), tuple(assets), tuple(srcs), now.date().isoformat(), stale_runs)
+    return (team_id, tuple(jobs), tuple(scans), tuple(srcs), now.date().isoformat(), stale_runs)
 
 
 def cached(session: Any, team_id: int, *, stale_runs: int = STALE_RUNS, now: _dt.datetime | None = None) -> View:
@@ -365,4 +333,4 @@ def clear_cache() -> None:
 
 
 __all__ = ["CSV_COLUMNS", "FLAGS", "FLAG_TEXT", "MAX_LIMIT", "STALE_RUNS", "View", "build", "cached", "clear_cache",
-           "csv_rows", "decode_after", "encode_after", "page"]
+           "csv_rows", "decode_after", "encode_after", "from_estate", "page"]

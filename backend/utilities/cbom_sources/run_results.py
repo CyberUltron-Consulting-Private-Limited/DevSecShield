@@ -590,8 +590,11 @@ def _compute(session: Session, run: CbomCollectionRun, team_id: int, risk_model:
     refs: dict[int, tuple[str, str]] = {}
     memo = _Memo()
     acc = _Acc()
+    from backend.utilities.cbom_sources import resource_identity as RI
+
+    fold = RI.run_fold(session, team_id, int(run.id or 0))  # one row per resource, as the posture and the list
     query = (select(CbomCollectedAsset)
-             .where(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run.id)
+             .where(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run.id, RI.kept_clause(fold))
              .order_by(CbomCollectedAsset.id)  # type: ignore[arg-type]
              .execution_options(yield_per=YIELD_PER))
     for row in session.exec(query):
@@ -678,9 +681,51 @@ def _finding_fix(code: str) -> dict[str, Any]:
 
 
 # ----------------------------------------------------------------------------- live remediation join
-def _remediation(session: Session, team_id: int, finding_keys: dict[bytes, int]) -> tuple[dict, dict]:
-    status: dict[bytes, str] = {}
-    keys = [k.hex() for k in finding_keys]
+_STATUS_CACHE: "OrderedDict[tuple, dict[bytes, str]]" = OrderedDict()
+_STATUS_CACHE_SIZE = 32
+
+
+def _resolved_statuses(session: Session, team_id: int, run: CbomCollectionRun, *,
+                       fresh: bool = False) -> dict[bytes, str]:
+    """own key -> the resource's status (``waves.resolve_run``).  Cached per finished run, keyed by the run's
+    ``last_updated``, a stamp of the team's assignments (count, highest id, sum of ``row_version``) and the run-fold
+    signature (each job's source alive, name, finish time and scopes, ``resource_identity._jobs_context``: deleting a
+    source moves the kept row and so its own key, review 6064356833 M3).  ``fresh``: skip the cache (a finding key
+    the map does not hold).  An active run is resolved live."""
+    from backend.utilities.cbom_sources import resource_identity as RI
+    from backend.utilities.cbom_sources import waves as WAVES
+
+    stamp = tuple(session.exec(select(func.count(), func.max(CbomRemediationAssignment.id),
+                                      func.coalesce(func.sum(CbomRemediationAssignment.row_version), 0))
+                               .where(CbomRemediationAssignment.team_id == team_id)).one())
+    fold = tuple(sorted((job_id, *ctx) for job_id, ctx in RI._jobs_context(session, team_id, int(run.id or 0)).items()))
+    key = (int(run.id or 0), team_id, iso_z(run.last_updated), *(int(v or 0) for v in stamp), fold)
+    finished = run.status not in ACTIVE_STATUSES
+    if finished and not fresh:
+        with _CACHE_LOCK:
+            hit = _STATUS_CACHE.get(key)
+            if hit is not None:
+                _STATUS_CACHE.move_to_end(key)
+                return hit
+    out = {bytes.fromhex(r.own): r.status or "open" for r in WAVES.resolve_run(session, team_id, run).values()}
+    if finished:
+        with _CACHE_LOCK:
+            _STATUS_CACHE[key] = out
+            while len(_STATUS_CACHE) > _STATUS_CACHE_SIZE:
+                _STATUS_CACHE.popitem(last=False)
+    return out
+
+
+def _remediation(session: Session, team_id: int, finding_keys: dict[bytes, int],
+                 run: CbomCollectionRun | None = None) -> tuple[dict, dict]:
+    """The live remediation buckets.  A finding's status is its RESOURCE's (``waves.resolve_run``: the group key and
+    every copy's key, ``remediation_group``), the status the run list and waves show (review 6060688856 M4); a key
+    the run no longer resolves (none in practice) falls back to its own assignment."""
+    status: dict[bytes, str] = dict(_resolved_statuses(session, team_id, run)) if run is not None else {}
+    if run is not None and any(k not in status for k in finding_keys):
+        # a finding the map does not hold: resolve the run afresh (review 6064356833 M3), never by its own key alone
+        status = dict(_resolved_statuses(session, team_id, run, fresh=True))
+    keys = [k.hex() for k in finding_keys if k not in status]
     for start in range(0, len(keys), 500):
         for key, value in session.exec(select(CbomRemediationAssignment.asset_key, CbomRemediationAssignment.status)
                                        .where(CbomRemediationAssignment.team_id == team_id,
@@ -871,7 +916,7 @@ def run_results(session: Session, run: CbomCollectionRun, *, team_id: int, risk_
             else:
                 computed = _timed_compute(session, run, team_id, risk_model, now, digest, cause)
                 _store(rid, _Entry(key=key, digest=digest, computed=computed, live=True, at=_monotonic()))
-    actions, metrics = _remediation(session, team_id, computed.finding_keys)  # never cached
+    actions, metrics = _remediation(session, team_id, computed.finding_keys, run)  # never cached
     certs = computed.certificates
     return {
         "run": run_detail,

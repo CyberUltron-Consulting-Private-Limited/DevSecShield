@@ -59,6 +59,7 @@ from backend.utilities.cbom_sources import algid
 from backend.utilities.cbom_sources import identity as ID
 from backend.utilities.cbom_sources import policy_scope as PS
 from backend.utilities.cbom_sources.cbom_metrics import code_row_quantum_vulnerable
+from backend.utilities.cbom_sources.common import enrichment_only
 from backend.utilities.cbom_sources.cbom_rows import display_row, is_finding
 from backend.utilities.cbom_sources.common import iso_z, log
 
@@ -283,6 +284,8 @@ def job_gaps(rows: Iterable[CbomCollectedAsset]) -> list[Gap]:
         facts = row.facts or {}
         if str(facts.get("status") or "") in NOT_GAPS:
             continue
+        if enrichment_only(facts):
+            continue  # a listed asset missing one added fact (an ACM body): a note, never a gap (review 6060688856 m1)
         reason = _gap_reason(facts)
         scope = facts.get("scope")
         prefixes = tuple(p for p in scope if isinstance(p, str) and p) if isinstance(scope, list) else ()

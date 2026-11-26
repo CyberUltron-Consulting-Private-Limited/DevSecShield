@@ -22,8 +22,9 @@ from backend.utilities.cbom_sources import crypto_kb
 from backend.utilities.cbom_sources import policy_scope as PS
 from backend.utilities.cbom_sources import qgrade as QG
 from backend.utilities.cbom_sources import qgrade_store as QSTORE
+from backend.utilities.cbom_sources import resource_identity as RI
 from backend.utilities.cbom_sources.classify import DATED_TYPES, classify, shown
-from backend.utilities.cbom_sources.common import iso_z
+from backend.utilities.cbom_sources.common import enrichment_only, iso_z
 # CB-06: per-component provenance, PQC class and algorithm families for the export
 from backend.utilities.cbom_sources import provenance as PROV
 from backend.utilities.cbom_sources.classify import family, quantum_vulnerable, standards_of
@@ -160,8 +161,11 @@ def list_assets(session: Session, *, team_id: int, run_id: int | None = None, jo
                 now: _dt.datetime | None = None, risk_model: dict[str, Any] | None = None) -> dict[str, Any]:
     now = now or _now()
     base = select(CbomCollectedAsset).where(CbomCollectedAsset.team_id == team_id)
+    # a run whose jobs read the same resource lists it once (staging QA Q3-01): the newest job's row, with the other
+    # sources in ``also_seen``; a job's own list is never folded
+    fold = RI.run_fold(session, team_id, int(run_id)) if run_id is not None and job_id is None else RI.RunFold()
     if run_id is not None:
-        base = base.where(CbomCollectedAsset.run_id == run_id)
+        base = base.where(CbomCollectedAsset.run_id == run_id, RI.kept_clause(fold))
     if job_id is not None:
         base = base.where(CbomCollectedAsset.job_id == job_id)
     changed = changed_today(session, base, now)
@@ -179,7 +183,7 @@ def list_assets(session: Session, *, team_id: int, run_id: int | None = None, jo
     scope = select(CbomCollectedAsset.asset_type, CbomCollectedAsset.impact, CbomCollectedAsset.quantum_vulnerable,
                    func.count()).where(CbomCollectedAsset.team_id == team_id)
     if run_id is not None:
-        scope = scope.where(CbomCollectedAsset.run_id == run_id)
+        scope = scope.where(CbomCollectedAsset.run_id == run_id, RI.kept_clause(fold))
     if job_id is not None:
         scope = scope.where(CbomCollectedAsset.job_id == job_id)
     by_type: dict[str, int] = {}
@@ -216,14 +220,17 @@ def list_assets(session: Session, *, team_id: int, run_id: int | None = None, jo
     run = session.get(CbomCollectionRun, run_id) if run_id is not None else None
     stored = QSTORE.status(session, team_id, run) if run is not None and run.team_id == team_id else \
         {"available": False, "reason": "grades are filtered per run", "missing": None}
+    items = [public_asset(r, names, job_names, views[r.id], grades[r.id], pqcs[r.id]) for r in rows]
+    for item in items:  # the other sources of the run that read the same resource (Q3-01)
+        item["also_seen"] = list(fold.also_seen.get(int(item["id"]), ()))
     return {
         "total": total, "all_total": all_total, "page": page, "page_size": page_size,
-        "items": AGILITY.annotate_assets(session, team_id, jobs,  # CB-24: fix class per asset
-                                         [public_asset(r, names, job_names, views[r.id], grades[r.id], pqcs[r.id])
-                                          for r in rows]),
+        "folded": len(fold.dropped),  # rows another job of the run also read, listed once
+        "items": AGILITY.annotate_assets(session, team_id, jobs, items),  # CB-24: fix class per asset
         "grade_model_version": QG.GRADE_MODEL_VERSION, "grade_inputs": grading.inputs(),
         "facets": {"type": by_type, "impact": by_impact, "quantum_vulnerable": quantum_count,
-                   "q_grade": QSTORE.facet(session, team_id, int(run_id)) if stored["available"] else None},
+                   "q_grade": QSTORE.facet(session, team_id, int(run_id), exclude=fold.dropped_ids)
+                   if stored["available"] else None},
         "grade_filter": {"available": stored["available"], "reason": stored["reason"]},
         "targets": [_job_targets(job, names, reads) for job in jobs],
     }
@@ -255,7 +262,8 @@ def job_reads(session: Session, jobs: list[CbomCollectionJob]) -> dict[int, tupl
             .where(CbomCollectedAsset.job_id.in_(list(attempts)),  # type: ignore[attr-defined]
                    CbomCollectedAsset.asset_type == "coverage")).all():
         facts = facts if isinstance(facts, dict) else {}
-        if attempts.get(job_id) != attempt or str(facts.get("status") or "") in NOT_GAPS or facts.get("by_choice"):
+        if attempts.get(job_id) != attempt or str(facts.get("status") or "") in NOT_GAPS or facts.get("by_choice") \
+                or enrichment_only(facts):  # a listed asset missing one added fact is a note, not a gap (F3)
             continue
         places.setdefault(job_id, set()).add((str(target or ""), str(location or "").split("#", 1)[0]))
     return {job_id: (read.get(job_id, 0), len(places.get(job_id, ()))) for job_id in attempts}
@@ -974,8 +982,13 @@ def coverage_gaps(rows: list[CbomCollectedAsset], names: dict[int, str], job_nam
     """The run's coverage rows as document gaps: ``zs:coverage_gap_count`` (all of them) and one ``zs:coverage_gap``
     per row (at most ``COVERAGE_GAP_CAP``), whose value is compact JSON: ``ref`` (``zs-asset-<id>``, the id the asset
     API lists the row under), source, target, location, check, status, detail, scope, incomplete, by_choice, finding,
-    and the row's provenance (``provenance.NAMES`` without the ``zs:`` prefix; job_id and attempt as numbers)."""
-    out = [{"name": "zs:coverage_gap_count", "value": str(len(rows))}] if rows else []
+    ``enrichment_only`` (only when set: a note, not an unread scope) and the row's provenance (``provenance.NAMES`` without the ``zs:`` prefix; job_id and attempt as numbers)."""
+    # a note (``enrichment_only``: a listed asset missing one added fact) is not a gap: counted apart, as the job badge,
+    # Q0 and drift count it (review 6060688856 m1); each row is still listed with its flag
+    notes = sum(1 for row in rows if enrichment_only(row.facts))
+    out = [{"name": "zs:coverage_gap_count", "value": str(len(rows) - notes)}] if rows else []
+    if notes:
+        out.append({"name": "zs:coverage_note_count", "value": str(notes)})
     for row in rows[:COVERAGE_GAP_CAP]:
         facts = row.facts if isinstance(row.facts, dict) else {}
         gap: dict[str, Any] = {
@@ -984,6 +997,8 @@ def coverage_gaps(rows: list[CbomCollectedAsset], names: dict[int, str], job_nam
             "status": _text(facts.get("status"), 64), "detail": _text(facts.get("detail"), 512),
             "scope": _names(facts.get("scope"))[:20], "incomplete": facts.get("incomplete") is True,
             "by_choice": facts.get("by_choice") is True, "finding": row.finding,
+            # a note, not a gap: the asset is listed, one added fact was not read (review 6058574998 F3)
+            **({"enrichment_only": True} if enrichment_only(facts) else {}),
         }
         for key, value in PROV.values(row, provs.get(row.job_id)).items():
             gap[key[3:]] = int(value) if key in ("zs:job_id", "zs:attempt") and value.isdigit() else value
@@ -1035,8 +1050,12 @@ def _document(session: Session, run: CbomCollectionRun, now: _dt.datetime
     """The run's CycloneDX document in three parts, for writing it piece by piece: the head (every key before
     ``components``), the components (made one at a time: the assets, one ``zs-asset-<id>`` component each, then the
     certificate parts they reference) and the vulnerabilities (call it once the components are consumed)."""
+    # one component per resource (review 6039899144 B1): the rows the run's assets API lists, so zs:asset_count,
+    # zs:run_asset_count and the class counts describe the same assets; a dropped row's stable key resolves to the
+    # component kept for it (``_vex_inputs``)
+    fold = RI.run_fold(session, run.team_id, int(run.id or 0))
     rows = session.exec(select(CbomCollectedAsset).where(CbomCollectedAsset.team_id == run.team_id,
-                                                         CbomCollectedAsset.run_id == run.id)
+                                                         CbomCollectedAsset.run_id == run.id, RI.kept_clause(fold))
                         .order_by(CbomCollectedAsset.id).limit(EXPORT_CAP + 1)).all()
     truncated = len(rows) > EXPORT_CAP
     rows = rows[:EXPORT_CAP]
@@ -1138,7 +1157,7 @@ def _document(session: Session, run: CbomCollectionRun, now: _dt.datetime
         yield from parts.components()
 
     return head, components(), lambda: vulnerabilities(
-        list(rows), views, **_vex_inputs(session, run, rows, views, jobs, grading, now), drift_truncated=drift_cut)
+        list(rows), views, **_vex_inputs(session, run, rows, views, jobs, grading, now, fold), drift_truncated=drift_cut)
 
 
 def _business_properties(session: Session, team_id: int, jobs: list[CbomCollectionJob]
@@ -1171,7 +1190,8 @@ def export_identity(session: Session, run: CbomCollectionRun, now: _dt.datetime)
     later run's drift-resolved finding whose asset is gone."""
     today = now if now.tzinfo is None else now.astimezone(_dt.timezone.utc).replace(tzinfo=None)
     scope = select(CbomCollectedAsset).where(CbomCollectedAsset.team_id == run.team_id,
-                                             CbomCollectedAsset.run_id == run.id)
+                                             CbomCollectedAsset.run_id == run.id,
+                                             RI.kept_clause(RI.run_fold(session, run.team_id, int(run.id or 0))))
     judged_on = today.date().isoformat() if changed_today(session, scope, today) else None
     digest = QG.load_context(session, team_id=run.team_id, run_id=run.id).digest  # the serial keys the grade inputs
     return export_serial(run.id or 0, crypto_kb.version(), judged_on, POSTURE.PQC_CLASS_MODEL,
@@ -1181,7 +1201,7 @@ def export_identity(session: Session, run: CbomCollectionRun, now: _dt.datetime)
 
 def _vex_inputs(session: Session, run: CbomCollectionRun, rows: list[CbomCollectedAsset],
                 views: dict[int, dict[str, Any]], jobs: list[CbomCollectionJob], grading: Any,
-                now: _dt.datetime) -> dict[str, Any]:
+                now: _dt.datetime, fold: RI.RunFold | None = None) -> dict[str, Any]:
     """What the VEX analysis reads besides the rows (CB-22): each row's Q-grade (``qgrade``, the run API's grade; only
     asked for rows with a quantum-only code), the run's drift-resolved findings with the bom-ref of each asset still
     listed (by the stable key drift records, ``identity``) and a BOM-Link into the baseline export for each asset that
@@ -1213,6 +1233,14 @@ def _vex_inputs(session: Session, run: CbomCollectionRun, rows: list[CbomCollect
         for row in rows:
             if row.job_id in by_job:
                 ref_of.setdefault(ID.stable_key("node", by_job[row.job_id], ID.node_identity(row)), f"zs-asset-{row.id}")
+        if fold is not None and fold.dropped:
+            # a finding drift recorded under the other source's key is the component kept for that resource
+            for row in session.exec(select(CbomCollectedAsset).where(
+                    CbomCollectedAsset.team_id == run.team_id, CbomCollectedAsset.run_id == run.id,
+                    CbomCollectedAsset.id.in_(fold.dropped_ids))).all():  # type: ignore[union-attr]
+                if row.job_id in by_job:
+                    ref_of.setdefault(ID.stable_key("node", by_job[row.job_id], ID.node_identity(row)),
+                                      f"zs-asset-{fold.dropped[int(row.id or 0)]}")
     return {"grade_of": grade_of, "resolved": resolved, "ref_of": ref_of, "link_of": link_of,
             "grade_meta": {"model_version": QG.GRADE_MODEL_VERSION, "inputs_digest": grading.digest}}
 

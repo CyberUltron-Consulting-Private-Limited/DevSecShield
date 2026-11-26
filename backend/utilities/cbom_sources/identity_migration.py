@@ -186,7 +186,10 @@ def _move_assignments(session: Any, team_id: int, pairs: Mapping[str, str]) -> i
     moved = 0
     for chunk in _chunks(sorted(todo)):
         moved += session.execute(sa.update(ra).where(ra.c.team_id == team_id, ra.c.asset_key.in_(chunk)).values(
-            asset_key=sa.case({k: todo[k] for k in chunk}, value=ra.c.asset_key))).rowcount or 0
+            asset_key=sa.case({k: todo[k] for k in chunk}, value=ra.c.asset_key),
+            # a moved key is a change of the record: readers that stamp the team's assignments by row_version (the
+            # /results status cache) see it (PR #499 review 6064356833 n1)
+            row_version=ra.c.row_version + 1)).rowcount or 0
     return moved
 
 

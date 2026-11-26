@@ -21,6 +21,17 @@ NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$")
 _NUL = "\x00"
 
 
+# A coverage row that does not mark a scope as unread: the asset is listed and described, and only a fact added to it
+# could not be read (an ACM certificate's body for its SHA-256 thumbprint).  It is shown as a note, never a gap: not in
+# a target's partial outcome (``aws_collect._GapTally``), the job's "read, with errors" badge (``inventory.job_reads``)
+# or a Q0 coverage-gap scope item (``qgrade.coverage_kind``), review 6058574998 F3.
+ENRICHMENT_ONLY = "enrichment_only"
+
+
+def enrichment_only(facts: Any) -> bool:
+    return isinstance(facts, dict) and bool(facts.get(ENRICHMENT_ONLY))
+
+
 def utcnow() -> _dt.datetime:
     """Naive UTC, matching the ``DateTime`` columns (which carry no time zone)."""
     return _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None)

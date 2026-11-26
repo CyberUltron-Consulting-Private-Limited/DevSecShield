@@ -26,7 +26,12 @@ from typing import Any, Callable, Iterable, Mapping
 from sqlalchemy import func, or_
 from sqlmodel import Session, select
 
-from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionSource, CbomScanNode
+from backend.new_models import (
+    CbomCollectedAsset,
+    CbomCollectionJob,
+    CbomCollectionSource,
+    CbomScanNode,
+)
 from backend.utilities.cbom_sources import agility as AGILITY
 from backend.utilities.cbom_sources import algid, crypto_kb
 from backend.utilities.cbom_sources import clause_evidence as CE
@@ -638,7 +643,10 @@ def run_class_summary(session: Session, *, team_id: int, run_id: int) -> dict[st
             CbomCollectedAsset.target, CbomCollectedAsset.location, CbomCollectedAsset.algorithm,
             CbomCollectedAsset.quantum_vulnerable, CbomCollectedAsset.facts, CbomCollectedAsset.finding_codes,
             CbomCollectedAsset.key_size)
+    from backend.utilities.cbom_sources import resource_identity as RI
+
     query = select(*cols).where(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run_id,
+                                RI.kept_clause(RI.run_fold(session, team_id, run_id)),  # as run_posture (Q3-01)
                                 CbomCollectedAsset.asset_type != "coverage").order_by(CbomCollectedAsset.id)
     names = ("id", "job_id", "asset_type", "target", "location", "algorithm", "quantum_vulnerable", "facts",
              "finding_codes", "key_size")
@@ -798,11 +806,15 @@ def _repeated_certificates(rows: Iterable[Any]) -> set[int]:
 
 def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict[str, Any] | None,
                 top: int = 10) -> dict[str, Any]:
+    from backend.utilities.cbom_sources import resource_identity as RI
     from backend.utilities.cbom_sources.classify import shown
     from backend.utilities.cbom_sources.qgrade import RunGrades
 
+    # a resource two jobs of the run read is one asset (staging QA Q3-01): the run list's rows, counted once
+    fold = RI.run_fold(session, team_id, run_id)
     rows = session.exec(select(CbomCollectedAsset)
-                        .where(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run_id)).all()
+                        .where(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run_id,
+                               RI.kept_clause(fold))).all()
     now = _dt.datetime.utcnow()
     sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
         CbomCollectionSource.team_id == team_id)).all()}

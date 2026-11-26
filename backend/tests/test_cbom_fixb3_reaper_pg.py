@@ -9,7 +9,6 @@ not.  One reaper pass at a time (a transaction-scoped advisory lock) ends them.
 from __future__ import annotations
 
 import datetime as dt
-import os
 import sys
 import threading
 import time
@@ -36,7 +35,8 @@ from backend.new_models import (  # noqa: E402
 from backend.utilities.cbom_sources import jobs as J  # noqa: E402
 from test_cbom_sources_api import USERS, api, enroll_node, linux_body  # noqa: E402,F401
 
-PG = os.environ.get("CBOM_TEST_PG_URL")
+from backend.tests.support.pg_test_db import cbom_test_pg_url  # noqa: E402  (review 6065677758 n1)
+PG = cbom_test_pg_url()  # a database named *test* only
 pytestmark = pytest.mark.skipif(not PG, reason="CBOM_TEST_PG_URL not set")
 THREADS = 8
 

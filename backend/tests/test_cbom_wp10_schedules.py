@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import datetime as dt
 import multiprocessing
-import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -20,6 +19,7 @@ from sqlmodel import Session, select
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_cbom_sources_api import api, enroll_node, linux_body, world  # noqa: E402,F401
 
+from backend.tests.support.pg_test_db import cbom_test_pg_url  # noqa: E402  (review 6065677758 n1)
 from backend.new_models import (  # noqa: E402
     CbomCollectionAuditEvent,
     CbomCollectionRun,
@@ -208,14 +208,14 @@ def test_one_slot_fires_once_across_two_processes(api, world, tmp_path):
         assert s.get(CbomCollectionSchedule, sched["id"]).next_run_at == dt.datetime(2026, 11, 6, 2, 0)
 
 
-@pytest.mark.skipif(not os.environ.get("CBOM_TEST_PG_URL"), reason="set CBOM_TEST_PG_URL to run against PostgreSQL")
+@pytest.mark.skipif(not cbom_test_pg_url(), reason="set CBOM_TEST_PG_URL to run against PostgreSQL")
 def test_one_slot_fires_once_across_two_processes_on_postgres(tmp_path):
     """The same race on PostgreSQL (FOR UPDATE SKIP LOCKED + compare-and-set + unique client_request_id)."""
     from sqlmodel import SQLModel
 
     from backend.new_models import CbomCollectionSource, CbomScanNode, TeamMembership, User
 
-    url = os.environ["CBOM_TEST_PG_URL"]
+    url = cbom_test_pg_url()
     engine = create_engine(url)
     SQLModel.metadata.drop_all(engine)
     SQLModel.metadata.create_all(engine)

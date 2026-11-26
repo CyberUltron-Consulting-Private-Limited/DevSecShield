@@ -111,6 +111,7 @@ _LIBRARY_SUMMARY = (
 _NOT_CAPTURED = "not captured"
 _STATUS_NONE = "none recorded"
 _STATUS_UNASSESSED = "not assessed (no version)"
+_STATUS_PRODUCT = "product: see the vendor assurance columns"
 _VENDOR_NONE = "No vendor questionnaire is recorded in the Evidence tab of CBOM Sources yet."
 _VENDOR_SOME = (
     "{count} recorded in the Evidence tab of CBOM Sources (attestation date = the day the vendor "
@@ -159,7 +160,7 @@ _KPI_COUNTS_ALL = "The summary counts all {total} controls, including the rows o
 # Column layouts: header labels (the "(assessor)" suffix is added by dense_table to manual
 # columns) and relative widths, scaled to the frame width.
 _LIB_COLUMNS = (
-    "Library",
+    "Component",
     "Version",
     "Package URL or ecosystem",
     "#Sources",
@@ -173,9 +174,10 @@ _LIB_COLUMNS = (
     "PQC statement",
     "Attestation status",
 )
-_LIB_WEIGHTS = (70, 44, 62, 24, 166, 72, 44, 44, 38, 40, 40, 36, 40)  # Sources fits the longest label; a date one line
+# Sources fits the longest label; a date one line; every header word on one line (QA Q3-10: "#Sou / rces")
+_LIB_WEIGHTS = (60, 36, 50, 36, 166, 70, 44, 44, 42, 42, 42, 42, 46)
 _LIB_MANUAL = tuple(range(8, len(_LIB_COLUMNS)))  # vendor-assurance columns
-_PREVIOUS_COLUMNS = ("Library", "#Sources", "Sources", "First seen", "Last seen")
+_PREVIOUS_COLUMNS = ("Component", "#Sources", "Sources", "First seen", "Last seen")
 _PREVIOUS_WEIGHTS = (150, 50, 320, 100, 100)
 _LEDGER_COLUMNS = (
     "Framework",
@@ -343,6 +345,8 @@ def _status_cell(lib: LibAgg) -> str:
         status += " (" + ", ".join(advisories) + (f" +{more} more" if more > 0 else "") + ")"
     if status:
         return status
+    if str(getattr(lib, "ecosystem", "")).startswith("crypto product"):
+        return _STATUS_PRODUCT  # a product, not a package: its assurance is the vendor columns (QA Q3-11)
     return _STATUS_NONE if getattr(lib, "version", "") else _STATUS_UNASSESSED
 
 
@@ -387,8 +391,12 @@ def _library_summary(view: TeamCbomView, current: Sequence[LibAgg]) -> str:
     with_libs = len({key for lib in current for key in lib.current_source_keys})
     sources = max(len(view.sources), with_libs)
     multi = sum(1 for lib in current if len(lib.current_source_keys) > 1)
+    products = sum(1 for lib in current if str(getattr(lib, "ecosystem", "")).startswith("crypto product"))
+    libraries = _plural(len(current) - products, "cryptographic library", "cryptographic libraries")
+    if products:  # QA Q3-11: HSMs, KMIP servers, key managers, appliances and cloud key services are rows too
+        libraries += " and " + _plural(products, "cryptographic product", "cryptographic products")
     return _LIBRARY_SUMMARY.format(
-        libraries=_plural(len(current), "cryptographic library", "cryptographic libraries"),
+        libraries=libraries,
         with_libs=with_libs,
         sources=_plural(sources, "source", "sources"),
         multi=multi,
