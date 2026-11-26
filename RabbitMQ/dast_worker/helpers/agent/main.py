@@ -10,10 +10,16 @@ from helpers.agent.xss_agent import XSSAgent
 from helpers.agent.sqli_agent import SQLiAgent
 from helpers.checks.page_analysis import PageAnalysisCheck
 from helpers.progress_writer import StateUpdateWriter
-from helpers.agent.context import StartDASTScanData, AuthRequirements
+from helpers.agent.context import StartDASTScanData, AuthRequirements, validate_auth_for_worker
 import time
 from helpers.agent.base_vuln import parse_vuln_list
 from helpers.agent.scan_config import ScanRuntime
+from helpers.agent.session_auth import (
+    CapturedSession,
+    discover_authenticated_urls,
+    establish_session,
+    session_from_import,
+)
 from helpers.agent.utils import fetch_authenticated_page, get_auth_login_template
 from helpers.checks.nuclei.run_nuclei import reap_orphan_browsers, set_nuclei_concurrency
 from helpers.net.egress import EgressProxy, ScanEgress
@@ -67,10 +73,10 @@ class DASTAgent():
         # set by run()/estimate_credits(); no scan connection is made without it.
         self.egress: ScanEgress | None = None
         self.egress_proxy: str | None = None
+        self.captured_session: CapturedSession | None = None
         self._errors_lock = threading.Lock()
 
-        if not self.auth_requirements.username or not self.auth_requirements.password or not self.auth_requirements.xpath_of_username_field or not self.auth_requirements.xpath_of_password_field or not self.auth_requirements.xpath_of_submit_button:
-            raise Exception("Username, password, xpath of username field, xpath of password field, and xpath of submit button are required for authentication")
+        validate_auth_for_worker(self.auth_requirements)
 
         # checks 
         self.checks : list[BaseTest] = []
@@ -88,6 +94,7 @@ class DASTAgent():
                 vulnerability_model=FinalVulnResponse,
                 timeout=self.runtime.http_timeout_seconds,
                 egress=self.egress,
+                extra_headers=self.captured_session.http_headers() if self.captured_session else None,
             )
             security_headers_output : type[FinalVulnResponse] = security_headers_check.run()
             parsed = parse_vuln_list(security_headers_output.vulnerabilities)
@@ -106,6 +113,7 @@ class DASTAgent():
                 self.auth_requirements,
                 timeout_seconds=self.runtime.nuclei_timeout_seconds,
                 egress_proxy=self.egress_proxy,
+                session=self.captured_session,
             )
         except Exception as e:
             console.print(f"Error fetching page content for {url}: {e}",style="dim red")
@@ -140,6 +148,7 @@ class DASTAgent():
                 validation_retries=self.runtime.validation_retries,
                 nuclei_timeout_seconds=self.runtime.nuclei_timeout_seconds,
                 egress_proxy=self.egress_proxy,
+                captured_session=self.captured_session,
             )
             vulnerabilities : list[DASTVulnerability] = xss_agent.run_xss_agent_graph()
             parsed = parse_vuln_list(vulnerabilities)
@@ -163,6 +172,7 @@ class DASTAgent():
                 validation_retries=self.runtime.validation_retries,
                 nuclei_timeout_seconds=self.runtime.nuclei_timeout_seconds,
                 egress_proxy=self.egress_proxy,
+                captured_session=self.captured_session,
             )
             vulnerabilities : list[DASTVulnerability] = sqli_agent.run_sqli_agent_graph()
             parsed = parse_vuln_list(vulnerabilities)
@@ -217,7 +227,7 @@ class DASTAgent():
 
         auth_login_template = ""
         try:
-            auth_login_template = get_auth_login_template(url, self.auth_requirements)
+            auth_login_template = get_auth_login_template(url, self.auth_requirements, session=self.captured_session)
         except Exception as e:
             console.print(f"Error building auth template for {url}: {e}", style="dim red")
 
@@ -262,8 +272,16 @@ class DASTAgent():
 
     def scan_urls(self) -> list[str]:
         """Every URL the scan opens itself; their hosts are the scan's network scope."""
-        return [u for u in [self.url, self.auth_requirements.login_url, *(self.additional_urls_to_scan or [])]
-                if u and str(u).strip()]
+        return [
+            u
+            for u in [
+                self.url,
+                getattr(self.auth_requirements, "login_url", None),
+                getattr(self.auth_requirements, "session_check_url", None),
+                *(self.additional_urls_to_scan or []),
+            ]
+            if u and str(u).strip()
+        ]
 
     @contextmanager
     def _egress_scope(self):
@@ -284,9 +302,32 @@ class DASTAgent():
             self.metadata["egress"] = refused
 
     def _run(self):
+        # STEP [ 0.5 ] : ----------------------- Establish & Verify Session (OTP / Session Import) --
+        auth_type = getattr(self.auth_requirements, "auth_type", None) or "password"
+        if auth_type in ("session", "otp_form"):
+            if self.state_update_writer:
+                self.state_update_writer.write_progress_percentage(5)
+            self.captured_session = establish_session(
+                self.url,
+                self.auth_requirements,
+                egress=self.egress,
+                egress_proxy=self.egress_proxy,
+                timeout_seconds=min(int(self.runtime.nuclei_timeout_seconds), 60),
+            )
+
         # STEP [ 1 ] : ----------------------- Run Crawler ----------------------------------------
         if self.state_update_writer:
             self.state_update_writer.write_progress_percentage(10)
+
+        seed_urls: list[str] = []
+        if self.captured_session is not None and self.egress_proxy:
+            seed_urls = discover_authenticated_urls(
+                self.url,
+                self.captured_session,
+                egress_proxy=self.egress_proxy,
+                max_urls=min(self.max_urls, 50),
+                timeout_seconds=min(int(self.runtime.nuclei_timeout_seconds), 30),
+            )
 
         crawler = Crawler(
             url=self.url,
@@ -295,9 +336,14 @@ class DASTAgent():
             include_url_patterns=self.include_url_patterns,
             exclude_url_patterns=self.exclude_url_patterns,
             egress=self.egress,
+            extra_headers=self.captured_session.http_headers() if self.captured_session else None,
+            seed_urls=seed_urls or None,
         )
         urls = list(dict.fromkeys(crawler.crawl()))
         metadata = crawler.metadata
+        if self.captured_session is not None:
+            metadata["auth_type"] = self.auth_requirements.auth_type
+            metadata["auth_verified"] = bool(self.captured_session.verified)
         console.print(f"Scanning {len(urls)} unique URLs", style="bold yellow1")
         console.print(
             f"Scan runtime speed workers={self.runtime.url_workers} "
@@ -352,6 +398,9 @@ class DASTAgent():
     def estimate_credits(self):
         try:
             with self._egress_scope():
+                extra_headers = None
+                if (getattr(self.auth_requirements, "auth_type", None) or "password") == "session":
+                    extra_headers = session_from_import(self.url, self.auth_requirements).http_headers()
                 crawler = Crawler(
                         url=self.url,
                         max_urls=self.max_urls,
@@ -359,6 +408,7 @@ class DASTAgent():
                         include_url_patterns=self.include_url_patterns,
                         exclude_url_patterns=self.exclude_url_patterns,
                         egress=self.egress,
+                        extra_headers=extra_headers,
                 )
                 urls = crawler.crawl()
 

@@ -15,8 +15,22 @@ _RERUN_OPTIONS: dict[str, tuple[str, ...]] = {
     "cbom": ("repo_type", "include_vendored", "scan_history"),
     "ai_bom": ("repo_type",),
 }
-_DAST_AUTH_KEYS = ("login_url", "xpath_of_username_field", "xpath_of_password_field", "username",
-                   "xpath_of_submit_button")
+_DAST_AUTH_KEYS = (
+    "auth_type",
+    "login_url",
+    "xpath_of_username_field",
+    "xpath_of_password_field",
+    "username",
+    "xpath_of_submit_button",
+    "auth_header_name",
+    "session_check_url",
+    "logged_in_indicator",
+    "xpath_of_send_otp_button",
+    "xpath_of_otp_field",
+    "otp_source",
+    "xpath_of_mpin_field",
+    "xpath_of_mpin_submit_button",
+)
 _SECRET_WORDS = frozenset({"pat", "token", "tokens", "password", "passwd", "passphrase", "secret", "secrets",
                            "authorization", "credential", "credentials", "cookie", "apikey", "headers"})
 

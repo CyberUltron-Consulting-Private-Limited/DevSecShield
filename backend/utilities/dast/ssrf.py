@@ -71,12 +71,29 @@ def assert_urls_allowed(urls: list[str], allowed_hosts: list[str]) -> None:
         checked_addresses(host, rules, lambda name: _resolve_ips(name))
 
 
-def dast_target_urls(target_url: str, login_url: str | None, additional_urls: list[str] | None) -> list[str]:
+def dast_target_urls(
+    target_url: str,
+    login_url: str | None,
+    additional_urls: list[str] | None,
+    session_check_url: str | None = None,
+) -> list[str]:
     """Every URL of a DAST run the worker will open."""
-    return [u for u in [target_url, login_url or "", *(additional_urls or [])] if u and str(u).strip()]
+    return [
+        u
+        for u in [target_url, login_url or "", session_check_url or "", *(additional_urls or [])]
+        if u and str(u).strip()
+    ]
 
 
-def assert_manual_dast_allowed(target_url: str, login_url: str | None, additional_urls: list[str] | None) -> None:
+def assert_manual_dast_allowed(
+    target_url: str,
+    login_url: str | None,
+    additional_urls: list[str] | None,
+    session_check_url: str | None = None,
+) -> None:
     """A manual DAST scan (estimate or start) follows the profile rule with the default scope: the target's host."""
     check_scheme(target_url)
-    assert_urls_allowed(dast_target_urls(target_url, login_url, additional_urls), [host_from_url(target_url)])
+    assert_urls_allowed(
+        dast_target_urls(target_url, login_url, additional_urls, session_check_url),
+        [host_from_url(target_url)],
+    )

@@ -8,6 +8,7 @@ from helpers.agent.BaseUtilities import BaseUtilities
 from pydantic import BaseModel, Field
 from helpers.schema import DASTVulnerability , FinalVulnResponse 
 from helpers.agent.BaseSummaryManager import BaseSummaryManager
+from helpers.agent.session_auth import CapturedSession, materialize_session_template
 from helpers.checks.nuclei.run_nuclei import run_nuclei
 from helpers.checks.nuclei.yaml_validate import strip_markdown_fences, validate_nuclei_yaml
 from operator import add
@@ -51,6 +52,7 @@ class OverallState(TypedDict):
     template_validation_reason : str | None = None 
     nuclei_timeout_seconds : int 
     egress_proxy : str | None  # the scan's SOCKS5 egress guard (helpers/net/egress.py); nuclei never runs without it
+    captured_session : CapturedSession | None
 
     vulnerabilities : Annotated[list[DASTVulnerability],add] = []
 
@@ -172,16 +174,24 @@ def execute_template(state : OverallState) -> OverallState:
     try:
         console.print(f"========================== Nuclei Template Execution Node ==================================",style="dim cyan")
         
-        template_path = tempfile.NamedTemporaryFile(delete=False,suffix=".yaml")
-        with open(template_path.name, "w+") as f:
-            f.write(state["current_template"])
-        
-        result_documents : list[Document] = run_nuclei(
-            template_path=template_path.name,
-            url=state["target_url"],
-            timeout_seconds=int(state.get("nuclei_timeout_seconds") or 90),
-            egress_proxy=state.get("egress_proxy"),
-        )
+        materialized = materialize_session_template(state["current_template"], state.get("captured_session"))
+        fd, temp_path = tempfile.mkstemp(prefix="dast_exp_", suffix=".yaml")
+        try:
+            os.chmod(temp_path, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(materialized)
+
+            result_documents : list[Document] = run_nuclei(
+                template_path=temp_path,
+                url=state["target_url"],
+                timeout_seconds=int(state.get("nuclei_timeout_seconds") or 90),
+                egress_proxy=state.get("egress_proxy"),
+            )
+        finally:
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
 
         if not result_documents:
             console.print("Nuclei returned no documents; skipping LLM summary", style="dim yellow")
@@ -194,13 +204,6 @@ def execute_template(state : OverallState) -> OverallState:
 
         console.print(f"Number of vulnerabilities found: {len(summary.vulnerabilities)}",style="dim green")
         console.print("======"*10,style="dim cyan")
-
-        try:
-            #cleanup the temporary file
-            template_path.close()
-        except Exception as e:
-            console.print(f"Error cleaning up temporary file: {e}",style="dim red")
-            pass
 
         if summary.vulnerabilities:
             return {"vulnerabilities": summary.vulnerabilities , "exploit_retries_left": state["exploit_retries_left"] - 1}

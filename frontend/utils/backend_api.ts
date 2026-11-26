@@ -3619,14 +3619,33 @@ const getDASTConversationMessages = async ({queryKey}: {queryKey: ['dast-convers
     }
 }
 
-/** Auth fields for DAST (matches backend AuthRequirements). All required when starting a DAST scan. */
+export type DastAuthType = "password" | "session" | "otp_form"
+export type DastOtpSource = "static" | "totp"
+
+/** Auth fields for DAST (matches backend AuthRequirements). Required fields depend on auth_type (default: "password"). */
 export interface AuthRequirements {
-    login_url: string
-    xpath_of_username_field: string
-    xpath_of_password_field: string
-    username: string
-    password: string
-    xpath_of_submit_button: string
+    auth_type?: DastAuthType
+    login_url?: string | null
+    xpath_of_username_field?: string | null
+    xpath_of_password_field?: string | null
+    username?: string | null
+    password?: string | null
+    xpath_of_submit_button?: string | null
+    session_cookie?: string | null
+    auth_header_name?: string | null
+    auth_header_value?: string | null
+    local_storage_json?: string | null
+    session_storage_json?: string | null
+    session_check_url?: string | null
+    logged_in_indicator?: string | null
+    xpath_of_send_otp_button?: string | null
+    xpath_of_otp_field?: string | null
+    otp_source?: DastOtpSource | null
+    otp_code?: string | null
+    totp_secret?: string | null
+    mpin?: string | null
+    xpath_of_mpin_field?: string | null
+    xpath_of_mpin_submit_button?: string | null
 }
 
 /** DAST start payload (matches backend StartDASTScanData). Include and exclude URL patterns are not used together. Auth is required. */
@@ -3671,11 +3690,20 @@ const reinitializeDASTScan = async (
 }
 
 export interface DastProfileAuthPublic {
+    auth_type?: DastAuthType
     login_url?: string
     xpath_of_username_field?: string
     xpath_of_password_field?: string
     username?: string
     xpath_of_submit_button?: string
+    auth_header_name?: string
+    session_check_url?: string
+    logged_in_indicator?: string
+    xpath_of_send_otp_button?: string
+    xpath_of_otp_field?: string
+    otp_source?: DastOtpSource
+    xpath_of_mpin_field?: string
+    xpath_of_mpin_submit_button?: string
 }
 
 export type DastScheduleKind =
@@ -3729,7 +3757,7 @@ export interface DastScanProfile {
 export interface DastProfileWrite {
     title: string
     target_url: string
-    auth: Omit<AuthRequirements, "password"> & { password?: string }
+    auth: AuthRequirements
     allowed_hosts?: string[] | null
     scan_speed?: "fast" | "medium" | "slow"
     max_urls?: number

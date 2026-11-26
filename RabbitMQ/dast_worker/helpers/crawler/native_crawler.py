@@ -44,17 +44,22 @@ def extract_urls(html: str, base_url: str) -> list[str]:
     return urls
 
 
-def fetch(url: str, egress: ScanEgress, timeout: int = 10) -> str | None:
+def fetch(
+    url: str,
+    egress: ScanEgress,
+    timeout: int = 10,
+    extra_headers: dict[str, str] | None = None,
+) -> str | None:
     """Fetch a URL through the scan's egress (pinned to checked addresses, redirects included)."""
     try:
-        req = urllib.request.Request(
-            url,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (compatible; PyCrawler/1.0)"
-                )
-            },
-        )
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (compatible; PyCrawler/1.0)"
+            )
+        }
+        if extra_headers:
+            headers.update(extra_headers)
+        req = urllib.request.Request(url, headers=headers)
         with egress.urlopen(req, timeout=timeout) as resp:
             content_type = resp.headers.get("Content-Type", "")
             if "html" not in content_type.lower():
@@ -69,7 +74,13 @@ def fetch(url: str, egress: ScanEgress, timeout: int = 10) -> str | None:
         return None
 
 
-def crawl(start_url: str, max_urls: int, egress: ScanEgress | None = None) -> list[str]:
+def crawl(
+    start_url: str,
+    max_urls: int,
+    egress: ScanEgress | None = None,
+    extra_headers: dict[str, str] | None = None,
+    seed_urls: list[str] | None = None,
+) -> list[str]:
     """BFS crawl starting from start_url, stay on same domain. Every fetch goes through ``egress``."""
     if egress is None:
         raise EgressRefused(f"crawl of {start_url} not started: the scan's egress guard is missing")
@@ -77,7 +88,11 @@ def crawl(start_url: str, max_urls: int, egress: ScanEgress | None = None) -> li
     base_domain = parsed_start.netloc
 
     visited: set[str] = set()
-    queue: deque[str] = deque([start_url])
+    initial: list[str] = [start_url]
+    for s in seed_urls or []:
+        if s and urllib.parse.urlparse(s).netloc == base_domain and s not in initial:
+            initial.append(s)
+    queue: deque[str] = deque(initial)
     found: list[str] = []
 
     print(f"\n[*] Starting crawl: {start_url}")
@@ -94,7 +109,7 @@ def crawl(start_url: str, max_urls: int, egress: ScanEgress | None = None) -> li
         print(f"[+] ({len(visited)}/{max_urls}) Crawling: {url}")
         found.append(url)
 
-        html = fetch(url, egress)
+        html = fetch(url, egress, extra_headers=extra_headers)
         if not html:
             continue
 

@@ -27,7 +27,9 @@ CBOM_FILE_CREDITS = 0.01
 FORMULA_VERSIONS: dict[str, str] = {"cbom": "cbom-2026.11-min1-bin5"}
 DEFAULT_FORMULA = "v1"
 _SECRET_KEYS = {"pat", "password", "token", "api_key", "apikey", "secret", "client_secret", "auth", "authorization",
-                "headers", "cookies", "cookie", "login_password", "bearer"}
+                "headers", "cookies", "cookie", "login_password", "bearer",
+                "otp_code", "totp_secret", "mpin", "session_cookie", "auth_header_value",
+                "local_storage_json", "session_storage_json"}
 
 
 def formula_version(scan_type: str) -> str:

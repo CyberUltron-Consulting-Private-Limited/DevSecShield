@@ -1,0 +1,381 @@
+"""Tests for DAST Session Import and 2-Step Mobile/OTP Form authentication."""
+from __future__ import annotations
+
+import http.server
+import json
+import socketserver
+import threading
+import urllib.parse
+
+import pytest
+import yaml
+
+from helpers.agent.context import AuthRequirements, StartDASTScanData
+from helpers.agent.main import DASTAgent
+from helpers.agent.session_auth import (
+    COOKIE_PLACEHOLDER,
+    CapturedSession,
+    DastAuthError,
+    build_session_nuclei_template,
+    establish_session,
+    generate_totp,
+    login_with_otp_form,
+    materialize_session_template,
+    session_from_import,
+)
+from helpers.agent.utils import get_auth_login_template
+from helpers.checks.nuclei.yaml_validate import validate_nuclei_yaml
+from helpers.checks.security_headers import fetch_http_headers
+from helpers.crawler.crawler import Crawler
+from helpers.net.egress import EgressProxy, ScanEgress
+
+
+def _make_otp_server():
+    """Local HTTP server implementing cookie+Bearer session auth AND a 2-step Mobile -> OTP -> MPIN login."""
+    valid_cookie = "sid=valid-session-991"
+    valid_bearer = "Bearer valid-jwt-882"
+    state = {"otp_sent": 0, "headers_seen": []}
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, format, *args):
+            pass
+
+        def _is_authed(self) -> bool:
+            cookie = self.headers.get("Cookie", "")
+            auth = self.headers.get("Authorization", "")
+            return valid_cookie in cookie or auth == valid_bearer
+
+        def do_GET(self):
+            state["headers_seen"].append((self.path, dict(self.headers.items())))
+            path = urllib.parse.urlparse(self.path).path
+            if path == "/login":
+                html = b"""<!doctype html><html><body>
+                <h1>Portal Login</h1>
+                <div id="step1">
+                  <input id="mobile" name="mobile" type="text" />
+                  <button id="send-otp" type="button" onclick="
+                    fetch('/api/send-otp', {method:'POST'}).then(() => {
+                      document.getElementById('step2').style.display='block';
+                    });
+                  ">Send OTP</button>
+                </div>
+                <div id="step2" style="display:none">
+                  <div id="otp-boxes">
+                    <input class="otp" maxlength="1" /><input class="otp" maxlength="1" />
+                    <input class="otp" maxlength="1" /><input class="otp" maxlength="1" />
+                    <input class="otp" maxlength="1" /><input class="otp" maxlength="1" />
+                  </div>
+                  <button id="verify-otp" type="button" onclick="
+                    const code = Array.from(document.querySelectorAll('.otp')).map(i => i.value).join('');
+                    fetch('/api/verify-otp', {method:'POST', body: JSON.stringify({otp: code})})
+                      .then(r => r.json()).then(d => {
+                        if (d.ok) document.getElementById('step3').style.display='block';
+                      });
+                  ">Verify OTP</button>
+                </div>
+                <div id="step3" style="display:none">
+                  <input id="mpin" name="mpin" type="password" />
+                  <button id="verify-mpin" type="button" onclick="
+                    const pin = document.getElementById('mpin').value;
+                    fetch('/api/verify-mpin', {method:'POST', body: JSON.stringify({mpin: pin})})
+                      .then(r => r.json()).then(d => {
+                        if (d.ok) {
+                          localStorage.setItem('portal_token', d.token);
+                          window.location.href = '/dashboard';
+                        }
+                      });
+                  ">Confirm MPIN</button>
+                </div>
+                </body></html>"""
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(html)
+                return
+
+            if path == "/redirect-login":
+                self.send_response(302)
+                self.send_header("Location", "/login")
+                self.end_headers()
+                return
+
+            if path in ("/", "/dashboard"):
+                if not self._is_authed():
+                    self.send_response(401)
+                    self.send_header("Content-Type", "text/html")
+                    self.end_headers()
+                    self.wfile.write(b"<html><body>Unauthorized</body></html>")
+                    return
+                body = b"""<html><body>
+                  <h1>Welcome Authenticated User</h1>
+                  <a href="/loans">My Loans</a>
+                  <a href="/profile">My Profile</a>
+                </body></html>"""
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.send_header("X-Frame-Options", "DENY")
+                self.end_headers()
+                self.wfile.write(body)
+                return
+
+            if path in ("/loans", "/profile"):
+                if not self._is_authed():
+                    self.send_response(403)
+                    self.end_headers()
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(f"<html><body>Protected {path}</body></html>".encode())
+                return
+
+            self.send_response(404)
+            self.end_headers()
+
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length") or 0)
+            raw = self.rfile.read(length) if length else b"{}"
+            data = json.loads(raw.decode("utf-8") or "{}")
+            if self.path == "/api/send-otp":
+                state["otp_sent"] += 1
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"sent":true}')
+                return
+            if self.path == "/api/verify-otp":
+                ok = data.get("otp") == "123456"
+                self.send_response(200 if ok else 401)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": ok}).encode())
+                return
+            if self.path == "/api/verify-mpin":
+                ok = data.get("mpin") == "4321"
+                self.send_response(200 if ok else 401)
+                self.send_header("Content-Type", "application/json")
+                if ok:
+                    self.send_header("Set-Cookie", f"{valid_cookie}; Path=/")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": ok, "token": "jwt-from-mpin"}).encode())
+                return
+            self.send_response(404)
+            self.end_headers()
+
+    class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
+        daemon_threads = True
+
+    srv = Server(("127.0.0.1", 0), Handler)
+    port = srv.server_address[1]
+    thread = threading.Thread(target=srv.serve_forever, daemon=True)
+    thread.start()
+    return srv, port, state, valid_cookie, valid_bearer
+
+
+def test_generate_totp_matches_rfc6238_vector() -> None:
+    # RFC 6238 Appendix B SHA1 secret "12345678901234567890" -> Base32 GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ
+    secret = "GEZD GNBV GY3T QOJQ GEZD GNBV GY3T QOJQ"
+    assert generate_totp(secret, timestamp=59, digits=8) == "94287082"
+    assert generate_totp(secret, timestamp=59, digits=6) == "287082"
+    with pytest.raises(DastAuthError, match="Base32"):
+        generate_totp("!!!not-base32!!!")
+
+
+def test_session_import_verifies_crawls_and_fails_fast_when_expired(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DAST_ALLOWED_PRIVATE", "127.0.0.1")
+    srv, port, _state, valid_cookie, valid_bearer = _make_otp_server()
+    try:
+        base = f"http://127.0.0.1:{port}"
+        egress = ScanEgress([f"{base}/dashboard", f"{base}/redirect-login"])
+
+        # Valid cookie + indicator passes verification and crawls authenticated pages
+        good_auth = AuthRequirements(
+            auth_type="session",
+            session_cookie=valid_cookie,
+            session_check_url=f"{base}/dashboard",
+            logged_in_indicator="Welcome Authenticated User",
+        )
+        sess = establish_session(f"{base}/dashboard", good_auth, egress=egress)
+        assert sess is not None and sess.verified is True
+
+        crawler = Crawler(url=f"{base}/dashboard", max_urls=10, egress=egress, extra_headers=sess.http_headers())
+        urls = crawler.crawl()
+        assert f"{base}/loans" in urls and f"{base}/profile" in urls
+
+        hdrs = fetch_http_headers(f"{base}/dashboard", timeout=5, egress=egress, extra_headers=sess.http_headers())
+        assert hdrs.get("X-Frame-Options") == "DENY"
+
+        # Valid Bearer header alone also passes
+        bearer_auth = AuthRequirements(
+            auth_type="session",
+            auth_header_name="Authorization",
+            auth_header_value=valid_bearer,
+            session_check_url=f"{base}/dashboard",
+        )
+        sess2 = establish_session(f"{base}/dashboard", bearer_auth, egress=egress)
+        assert sess2 is not None and sess2.verified is True
+
+        # Expired/wrong cookie fails fast with 401 DastAuthError
+        bad_auth = AuthRequirements(
+            auth_type="session",
+            session_cookie="sid=expired-000",
+            session_check_url=f"{base}/dashboard",
+        )
+        with pytest.raises(DastAuthError, match="401"):
+            establish_session(f"{base}/dashboard", bad_auth, egress=egress)
+
+        # Redirect to /login fails fast
+        redir_auth = AuthRequirements(
+            auth_type="session",
+            session_cookie=valid_cookie,
+            login_url=f"{base}/login",
+            session_check_url=f"{base}/redirect-login",
+        )
+        with pytest.raises(DastAuthError, match="redirected to login"):
+            establish_session(f"{base}/dashboard", redir_auth, egress=egress)
+
+        # Wrong logged_in_indicator fails fast
+        miss_auth = AuthRequirements(
+            auth_type="session",
+            session_cookie=valid_cookie,
+            session_check_url=f"{base}/dashboard",
+            logged_in_indicator="Not On This Page",
+        )
+        with pytest.raises(DastAuthError, match="Not On This Page"):
+            establish_session(f"{base}/dashboard", miss_auth, egress=egress)
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_nuclei_session_template_never_exposes_secrets_to_llm_and_materializes_safely() -> None:
+    sess = CapturedSession(
+        origin="https://portal.example",
+        cookie_header="sid=super-secret-cookie",
+        extra_headers={"Authorization": "Bearer super-secret-jwt"},
+        local_storage={"token": "super-secret-ls"},
+    )
+    auth = AuthRequirements(auth_type="session", session_cookie="sid=super-secret-cookie")
+
+    # Placeholder template sent to LLM must NEVER contain real secrets
+    llm_tpl = get_auth_login_template("https://portal.example/loans", auth, session=sess)
+    assert "super-secret-cookie" not in llm_tpl
+    assert "super-secret-jwt" not in llm_tpl
+    assert "super-secret-ls" not in llm_tpl
+    assert COOKIE_PLACEHOLDER in llm_tpl
+
+    # Materializing replaces placeholders cleanly and yields valid Nuclei YAML
+    full_yaml = materialize_session_template(llm_tpl.replace("\n<ADD_YOUR_EXPLOIT_ACTIONS_HERE>", ""), sess)
+    ok, reason = validate_nuclei_yaml(full_yaml)
+    assert ok, reason
+    assert "super-secret-cookie" in full_yaml
+    assert "super-secret-jwt" in full_yaml
+    assert "super-secret-ls" in full_yaml
+
+    # Even if an LLM drops the session steps completely, materialize_session_template re-injects them
+    stripped = yaml.safe_dump(
+        {
+            "id": "xss_probe",
+            "info": {"name": "xss_probe", "author": "pdteam", "severity": "high"},
+            "headless": [{"steps": [{"action": "navigate", "args": {"url": "https://portal.example/loans"}}]}],
+        },
+        sort_keys=False,
+    )
+    reinjected = materialize_session_template(stripped, sess)
+    ok2, reason2 = validate_nuclei_yaml(reinjected)
+    assert ok2, reason2
+    parsed = yaml.safe_load(reinjected)
+    actions = [s["action"] for s in parsed["headless"][0]["steps"]]
+    assert actions[:2] == ["setheader", "setheader"]
+    assert "script" in actions
+
+    # Direct fetch template (extract_html=True) also validates
+    fetch_tpl = build_session_nuclei_template(sess, "https://portal.example/loans", extract_html=True)
+    ok3, reason3 = validate_nuclei_yaml(fetch_tpl)
+    assert ok3, reason3
+
+
+def test_dast_agent_accepts_session_and_otp_auth_and_fails_fast_on_bad_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    from helpers.agent import main as agent_main
+
+    monkeypatch.setenv("DAST_ALLOWED_PRIVATE", "127.0.0.1")
+    monkeypatch.setattr(agent_main, "ScanEgress", ScanEgress)
+    srv, port, _state, _valid_cookie, _valid_bearer = _make_otp_server()
+    try:
+        ctx = StartDASTScanData(
+            target_url=f"http://127.0.0.1:{port}/dashboard",
+            auth=AuthRequirements(
+                auth_type="session",
+                session_cookie="sid=expired-token",
+                session_check_url=f"http://127.0.0.1:{port}/dashboard",
+            ),
+            scan_speed="fast",
+            max_urls=5,
+        )
+        agent = DASTAgent(dast_context=ctx)
+        assert f"http://127.0.0.1:{port}/dashboard" in agent.scan_urls()
+        with pytest.raises(DastAuthError, match="401"):
+            agent.run()
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_otp_form_end_to_end_with_split_boxes_and_mpin_in_playwright(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Real Playwright Chromium 2-step Mobile -> Split 6-box OTP -> MPIN login through EgressProxy."""
+    playwright = pytest.importorskip("playwright.sync_api")
+    monkeypatch.setenv("DAST_ALLOWED_PRIVATE", "127.0.0.1")
+    srv, port, state, valid_cookie, _valid_bearer = _make_otp_server()
+    base = f"http://127.0.0.1:{port}"
+    egress = ScanEgress([f"{base}/login", f"{base}/dashboard"])
+    proxy = EgressProxy(egress)
+    try:
+        # Skip cleanly only if Chromium browser binary is not installed in this unit-test environment
+        import os
+
+        launch_kw = {"headless": True}
+        override = (os.environ.get("DAST_CHROMIUM_PATH") or "").strip()
+        if override and os.path.isfile(override):
+            launch_kw["executable_path"] = override
+        try:
+            with playwright.sync_playwright() as p:
+                b = p.chromium.launch(**launch_kw)
+                b.close()
+        except Exception as exc:
+            pytest.skip(f"Playwright Chromium browser binary unavailable in this environment: {exc}")
+
+        auth = AuthRequirements(
+            auth_type="otp_form",
+            login_url=f"{base}/login",
+            username="7011554991",
+            xpath_of_username_field="//input[@id='mobile']",
+            xpath_of_send_otp_button="//button[@id='send-otp']",
+            xpath_of_otp_field="//div[@id='otp-boxes']",
+            xpath_of_submit_button="//button[@id='verify-otp']",
+            otp_source="static",
+            otp_code="123456",
+            mpin="4321",
+            xpath_of_mpin_field="//input[@id='mpin']",
+            xpath_of_mpin_submit_button="//button[@id='verify-mpin']",
+            session_check_url=f"{base}/dashboard",
+            logged_in_indicator="Welcome Authenticated User",
+        )
+        sess = login_with_otp_form(f"{base}/dashboard", auth, egress_proxy=proxy.url, timeout_seconds=30)
+        assert state["otp_sent"] == 1
+        assert valid_cookie in sess.cookie_header
+        assert sess.local_storage.get("portal_token") == "jwt-from-mpin"
+
+        verified = establish_session(f"{base}/dashboard", auth, egress=egress, egress_proxy=proxy.url, timeout_seconds=30)
+        assert verified is not None and verified.verified is True
+    finally:
+        proxy.close()
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_session_from_import_rejects_header_injection() -> None:
+    with pytest.raises(DastAuthError, match="newline"):
+        session_from_import(
+            "https://portal.example",
+            AuthRequirements(auth_type="session", session_cookie="a=1\r\nX-Bad: 2"),
+        )

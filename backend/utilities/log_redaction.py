@@ -58,7 +58,10 @@ class CredentialRedactionFilter(logging.Filter):
 REDACTED = "[REDACTED]"
 _SECRET_NAME_PARTS = ("password", "passwd", "secret", "token", "apikey", "authorization", "cookie", "credential",
                       "privatekey", "accesskey", "sessionkey", "signature", "bearer", "passphrase")
-_SECRET_NAMES = frozenset({"pat", "key", "pwd", "auth_header", "proxy_authorization"})
+_SECRET_NAMES = frozenset({
+    "pat", "key", "pwd", "auth_header", "auth_header_value", "proxy_authorization",
+    "otp_code", "mpin", "local_storage_json", "session_storage_json", "session_cookie", "totp_secret",
+})
 # a name whose last word is one of these (ssh_key, github_pat, sshKey, api-key) is a secret too
 _SECRET_LAST_WORDS = frozenset({"pat", "key", "pwd", "pem", "jwt"})
 _SECRET_QUERY = frozenset({"key", "apikey", "api_key", "token", "access_token", "auth", "sig", "signature", "secret",

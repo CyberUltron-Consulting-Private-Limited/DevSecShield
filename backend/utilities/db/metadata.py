@@ -59,8 +59,15 @@ def get_scan_metadata_for_type(scan_type: scan_types , start_scan_payload: Start
                 "probes": start_scan_payload.llm.probes,
             }
         case "dast":
-            auth = start_scan_payload.dast.auth.model_dump()
-            auth.pop("password", None)
+            from backend.utilities.dast.auth_crypto import redact_auth
+
+            raw_auth = start_scan_payload.dast.auth.model_dump(exclude_none=True)
+            auth = redact_auth(raw_auth) or {}
+            if auth.get("auth_type") == "password":
+                auth.pop("auth_type", None)
+                auth.pop("otp_source", None)
+            elif auth.get("auth_type") == "session":
+                auth.pop("otp_source", None)
             return {
                 "target_url": start_scan_payload.dast.target_url,
                 "auth": auth,

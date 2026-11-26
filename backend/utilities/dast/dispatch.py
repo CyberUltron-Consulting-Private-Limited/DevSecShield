@@ -95,8 +95,12 @@ def run_dast_from_profile(
             allowed = [host_from_url(target_url)]
         auth = decrypt_auth(profile.auth_encrypted or {})
         login_url = (auth.get("login_url") or "").strip()
+        session_check_url = (auth.get("session_check_url") or "").strip()
         try:
-            assert_urls_allowed(dast_target_urls(target_url, login_url, profile.additional_urls_to_scan), allowed)
+            assert_urls_allowed(
+                dast_target_urls(target_url, login_url, profile.additional_urls_to_scan, session_check_url),
+                allowed,
+            )
         except DastSsrfError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 

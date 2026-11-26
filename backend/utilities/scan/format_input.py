@@ -202,8 +202,12 @@ async def format_input_for_scan(
                 # crawls a customer-named URL.
                 dast = start_scan_payload.dast
                 try:
-                    assert_manual_dast_allowed(dast.target_url, dast.auth.login_url if dast.auth else None,
-                                               dast.additional_urls_to_scan)
+                    assert_manual_dast_allowed(
+                        dast.target_url,
+                        dast.auth.login_url if dast.auth else None,
+                        dast.additional_urls_to_scan,
+                        dast.auth.session_check_url if dast.auth else None,
+                    )
                 except DastSsrfError as exc:
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from None
                 scan_kwargs["dast_dict_context"] = start_scan_payload.dast.model_dump()
