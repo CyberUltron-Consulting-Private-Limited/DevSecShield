@@ -805,13 +805,76 @@ def test_the_reaper_marks_running_a_queued_run_whose_mark_was_skipped():
                                 lease_id="l" * 24, lease_expires_at=now + dt.timedelta(minutes=10), claimed_at=now))
         s.add(CbomCollectionJob(team_id=1, run_id=2, node_id=n.id, kind="discovery", status="pending", created_at=now))
         s.commit()
+    stats: dict[str, int] = {}
     with Session(engine) as s:
-        J.reap(s, now)
+        J.reap(s, now, stats=stats)
         s.commit()
     with Session(engine) as s:
         assert s.get(CbomCollectionJob, 1).status == "claimed"
         assert s.get(CbomCollectionRun, 1).status == "running"
         assert s.get(CbomCollectionRun, 2).status == "queued"  # nothing claimed yet: still queued
+    assert stats.get("marked_running") == 1  # review 6066886917: the reaper's summary counts the runs it marked
+
+
+@needs_pg
+def test_a_run_a_user_asked_to_cancel_is_never_marked_running():
+    """Review 6066886917: a queued run whose cancel was requested (``cancelled_at`` set, its claimed job waiting for
+    the node's stop confirmation) stays queued: neither the reaper's ``reconcile_running`` nor a claim's
+    ``mark_run_running`` marks it running; the closer gives it its final status once the node confirms."""
+    engine = _pg_world()
+    now = dt.datetime.utcnow()
+    with Session(engine) as s:
+        n = CbomScanNode(team_id=1, owner_user_id=1, name="ks-cancel", segment="DC", node_token_hash="9" * 64,
+                         last_heartbeat_at=now)
+        s.add(n)
+        s.flush()
+        s.add(CbomCollectionRun(id=1, team_id=1, owner_user_id=1, client_request_id="r-ks-cancel", status="queued",
+                                cancelled_at=now, cancelled_by=1))
+        s.flush()
+        s.add(CbomCollectionJob(team_id=1, run_id=1, node_id=n.id, kind="discovery", status="claimed", attempts=1,
+                                lease_id="c" * 24, lease_expires_at=now + dt.timedelta(minutes=10), claimed_at=now,
+                                cancel_requested_at=now, cancel_reason="Cancelled by a user"))
+        s.commit()
+    stats: dict[str, int] = {}
+    with Session(engine) as s:
+        J.reap(s, now, stats=stats)
+        s.commit()
+    with Session(engine) as s:
+        J.mark_run_running(s, 1, now)  # a claim of the run committing after the cancel
+        s.commit()
+    with Session(engine) as s:
+        run = s.get(CbomCollectionRun, 1)
+        assert run.status == "queued" and run.cancelled_at is not None
+        assert s.get(CbomCollectionJob, 1).status == "claimed"
+    assert "marked_running" not in stats
+
+
+@needs_pg
+def test_the_reaper_summary_line_counts_the_runs_it_marked_running(monkeypatch):
+    """Review 6066886917: ``reap_all``'s "reap pass" line carries ``marked_running``, and a pass that only marked a
+    run running still logs it."""
+    from backend.workers import cbom_cloud_worker as W
+
+    engine = _pg_world()
+    now = dt.datetime.utcnow()
+    with Session(engine) as s:
+        n = CbomScanNode(team_id=1, owner_user_id=1, name="ks-summary", segment="DC", node_token_hash="6" * 64,
+                         last_heartbeat_at=now)
+        s.add(n)
+        s.flush()
+        s.add(CbomCollectionRun(id=1, team_id=1, owner_user_id=1, client_request_id="r-ks-summary", status="queued"))
+        s.flush()
+        s.add(CbomCollectionJob(team_id=1, run_id=1, node_id=n.id, kind="discovery", status="claimed", attempts=1,
+                                lease_id="s" * 24, lease_expires_at=now + dt.timedelta(minutes=10), claimed_at=now))
+        s.commit()
+    lines: list[tuple[str, dict]] = []
+    monkeypatch.setattr(W, "log", lambda message, **fields: lines.append((message, fields)))
+    monkeypatch.setattr(W, "_PASSES", [1])  # not a periodic summary pass: only the mark makes it log
+    W.reap_all(engine)
+    passes = [fields for message, fields in lines if message == "reap pass"]
+    assert len(passes) == 1 and passes[0]["marked_running"] == 1 and passes[0]["moved"] == 0
+    with Session(engine) as s:
+        assert s.get(CbomCollectionRun, 1).status == "running"
 
 
 @needs_pg

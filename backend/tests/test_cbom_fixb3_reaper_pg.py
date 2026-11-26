@@ -232,9 +232,9 @@ def test_m1_concurrent_passes_after_a_long_outage_keep_live_nodes_jobs(api, worl
 
 def test_m4_a_closer_holding_the_run_row_and_the_reapers_settle_never_deadlock(api, world):  # noqa: F811
     """The interleaving behind the one deadlock CI still saw after the advisory lock (run 1, node_offline round 0): a
-    run closer takes the run row (FOR UPDATE SKIP LOCKED), then settles its jobs; the reaper's whole-table settle
-    used to update the jobs first, then the run row.  Run row first in both, the settle leaves a held run to its
-    closer."""
+    run closer takes the run row (FOR NO KEY UPDATE SKIP LOCKED, ``J.RUN_ROW_LOCK``), then settles its jobs; the
+    reaper's whole-table settle used to update the jobs first, then the run row.  Run row first in both, the settle
+    leaves a held run to its closer."""
     engine, _ = world
     node_id, _token, _src, run, job_id = _queue(api, engine, "fixb3-pg-order-0001")
     with Session(engine) as s:
