@@ -31,6 +31,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
+import { RISK_TIER_LABELS, matchesRiskTier, postureOf, postureScore, postureSortValue, riskCellHint, riskCellText, riskTone } from "@/utils/riskPosture";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Play, CheckCircle, XCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, AlertTriangle, TrendingUp, TrendingDown, Bug, Shield, CircleDot, Timer, Clock, Crosshair, Activity, Percent, DollarSign, Check, ChevronDown, ChevronRight, Filter, ArrowUpDown, Info } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { singleFlight } from "@/utils/single_flight";
@@ -84,7 +85,7 @@ import { criticalFixedPct } from "@/components/cbom/remediationKpis";
 
 type ScanStatus = "pending" | "started" | "retry" | "failure" | "success" | "not_started" | "cancelled";
 
-/** Risk score tiers for filtering: Critical ≥9, High 7–9, Medium 5–7, Low <5 */
+/** Risk score tiers for filtering: on the 0-100 grade bands (utils/riskPosture.ts) */
 type RiskScoreFilter = "all" | "critical" | "high" | "medium" | "low";
 type ScanTypeFilter = "all" | "github" | "gitlab" | "bitbucket" | "zip_file";
 type TableSortBy =
@@ -98,22 +99,14 @@ type TableSortBy =
   | "credits_desc"
   | "credits_asc";
 
+/** The scan's one 0-100 risk score (risk_posture), as its tile, its results page and its PDF; null: no score. The
+ * list's own ``risk_score`` (a weighted sum) is never read as it. */
 function getDisplayRiskScore(c: SastConversation): number | null {
-  if (!c.risk_data || c.risk_score == null) return null;
-  const rd = c.risk_data;
-  const total = rd.total_critical + rd.total_high + rd.total_medium + rd.total_low;
-  if (total === 0) return null;
-  return Math.round(Math.min(10, Math.max(0, (c.risk_score / total / 4) * 10)) * 10) / 10;
+  return postureScore(c);
 }
 
 function matchesRiskScoreFilter(score: number | null, filter: RiskScoreFilter): boolean {
-  if (filter === "all") return true;
-  if (score == null) return false;
-  if (filter === "critical") return score >= 9;
-  if (filter === "high") return score >= 7 && score < 9;
-  if (filter === "medium") return score >= 5 && score < 7;
-  if (filter === "low") return score < 5;
-  return true;
+  return matchesRiskTier(score, filter);
 }
 
 const RISK_SCORE_LABELS: Record<RiskScoreFilter, string> = {
@@ -216,32 +209,16 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
     not_started: { label: "Not Started", color: "hsl(270 50% 60%)" },
   } satisfies ChartConfig;
 
-  // ── Average Risk Score (from backend or derived from riskTotals) ──
-  const { averageRiskScore, totalIssues, criticalCount } = useMemo(() => {
-    if (
-      dashboardData.average_risk_score !== undefined &&
-      dashboardData.total_issues !== undefined &&
-      dashboardData.critical_count !== undefined
-    ) {
-      return {
-        averageRiskScore: dashboardData.average_risk_score,
-        totalIssues: dashboardData.total_issues,
-        criticalCount: dashboardData.critical_count,
-      };
+  // ── Risk score: the one 0-100 score over the team's findings (backend risk_posture), as the rows and the PDFs ──
+  const { totalIssues, criticalCount } = useMemo(() => {
+    if (dashboardData.total_issues !== undefined && dashboardData.critical_count !== undefined) {
+      return { totalIssues: dashboardData.total_issues, criticalCount: dashboardData.critical_count };
     }
     const critical = riskTotals.find((r) => r.severity === "Critical")?.count ?? 0;
-    const high = riskTotals.find((r) => r.severity === "High")?.count ?? 0;
-    const medium = riskTotals.find((r) => r.severity === "Medium")?.count ?? 0;
-    const low = riskTotals.find((r) => r.severity === "Low")?.count ?? 0;
-    const total = critical + high + medium + low;
-    const weighted = total > 0 ? (critical * 4 + high * 3 + medium * 2 + low * 1) / total : 0;
-    const score = Math.min(10, Math.max(0, (weighted / 4) * 10));
-    return {
-      averageRiskScore: Math.round(score * 10) / 10,
-      totalIssues: total,
-      criticalCount: critical,
-    };
-  }, [riskTotals, dashboardData.average_risk_score, dashboardData.total_issues, dashboardData.critical_count]);
+    const total = riskTotals.reduce((acc, r) => acc + (r.count ?? 0), 0);
+    return { totalIssues: total, criticalCount: critical };
+  }, [riskTotals, dashboardData.total_issues, dashboardData.critical_count]);
+  const teamPosture = postureOf(dashboardData);
 
   // ── OWASP by category (from backend or fallback from raw_scan_data) ──
   const owaspByCategory = useMemo(() => {
@@ -397,7 +374,9 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
         repoUrl: r.repo_url ?? null,
         zipFileUsed: r.zip_file_used,
         issues: r.issues,
-        riskScore: r.risk_score,
+        // the scan's one 0-100 risk score (risk_posture); an older backend's row has none: "—"
+        riskScore: postureScore(r) ?? 0,
+        riskText: riskCellText(r),
         trend: r.trend,
         language: r.language,
       }));
@@ -423,10 +402,6 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
         const appLang = meta?.app_lang?.toLowerCase() ?? "unknown";
         const displayLang = langDisplay[appLang] ?? appLang.charAt(0).toUpperCase() + appLang.slice(1);
         const total = (rd.total_critical ?? 0) + (rd.total_high ?? 0) + (rd.total_medium ?? 0) + (rd.total_low ?? 0);
-        const weighted = total > 0
-          ? ((rd.total_critical ?? 0) * 4 + (rd.total_high ?? 0) * 3 + (rd.total_medium ?? 0) * 2 + (rd.total_low ?? 0) * 1) / total
-          : 0;
-        const score = Math.min(10, Math.max(0, (weighted / 4) * 10));
         const repoUrl = meta?.repo_url;
         const zipFileUsed = !!meta?.zip_file_used;
         const repoName = repoUrl
@@ -437,7 +412,8 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
           repoUrl: repoUrl ?? null,
           zipFileUsed,
           issues: total,
-          riskScore: Math.round(score * 10) / 10,
+          riskScore: postureScore(s) ?? 0,
+          riskText: riskCellText(s),
           trend: "—" as string,
           language: displayLang,
         };
@@ -560,13 +536,13 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
         <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
           <CardContent className="p-0">
             <div className="flex flex-col items-start gap-2">
-              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${averageRiskScore >= 7 ? "bg-red-500/15 dark:bg-red-500/10" : averageRiskScore >= 5 ? "bg-amber-500/15 dark:bg-amber-500/10" : "bg-green-500/15 dark:bg-green-500/10"}`}>
-                <Shield className={`h-4 w-4 ${averageRiskScore >= 7 ? "text-red-500" : averageRiskScore >= 5 ? "text-amber-500" : "text-green-500"}`} />
+              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${riskTone(teamPosture?.score).box}`}>
+                <Shield className={`h-4 w-4 ${riskTone(teamPosture?.score).icon}`} />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Average Risk Score <InfoTip id="sast.avg_risk" /></p>
-                <p className="text-xl font-bold text-zinc-900 dark:text-white">{averageRiskScore} / 10</p>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">Security posture</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Risk score <InfoTip id="sast.avg_risk" /></p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white" data-testid="sast-kpi-risk-score">{riskCellText(dashboardData)}</p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">{riskCellHint(dashboardData) ?? "Security posture"}</p>
               </div>
             </div>
           </CardContent>
@@ -670,9 +646,9 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
                           </div>
                         </div>
                         <Badge
-                          className={`shrink-0 font-bold text-xs ${r.riskScore >= 7 ? "bg-red-500" : r.riskScore >= 5 ? "bg-amber-500" : "bg-amber-400"}`}
+                          className={`shrink-0 font-bold text-xs ${r.riskScore >= 50 ? "bg-red-500" : r.riskScore >= 30 ? "bg-amber-500" : "bg-amber-400"}`}
                         >
-                          {r.riskScore}
+                          {r.riskText}
                         </Badge>
                       </div>
                     ))}
@@ -742,7 +718,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
         {/* Average Risk Score (radial gauge) */}
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-1">Average Risk Score <InfoTip id="sast.avg_risk" /></CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Risk score <InfoTip id="sast.avg_risk" /></CardTitle>
             <CardDescription>Organization security posture</CardDescription>
           </CardHeader>
           <CardContent>
@@ -752,7 +728,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
                   <RadialBarChart
                     data={[
                       { name: "ref", value: 100, fill: "hsl(220 13% 91%)" },
-                      { name: "score", value: Math.min(100, Math.max(0, averageRiskScore * 10)), fill: averageRiskScore >= 7 ? "#dc2626" : averageRiskScore >= 5 ? "#ea580c" : "#22c55e" },
+                      { name: "score", value: teamPosture?.score ?? 0, fill: riskTone(teamPosture?.score).fill },
                     ]}
                     innerRadius={60}
                     outerRadius={90}
@@ -763,7 +739,8 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
                   </RadialBarChart>
                 </ChartContainer>
               </div>
-              <p className="text-2xl font-bold text-zinc-900 dark:text-white mt-2">{averageRiskScore} out of 10</p>
+              <p className="text-2xl font-bold text-zinc-900 dark:text-white mt-2">{teamPosture ? `${teamPosture.score} of 100 · grade ${teamPosture.grade}` : "—"}</p>
+              {teamPosture && <p className="text-xs text-zinc-500 dark:text-zinc-400">{teamPosture.label}</p>}
               <div className="flex gap-6 mt-4 text-sm text-zinc-600 dark:text-zinc-400">
                 <span>{totalIssues} Total Issues</span>
                 {/* findings marked Fixed / all stored findings, from the list dashboard; was a hard-coded 0% (#36) */}
@@ -1160,8 +1137,9 @@ export default function SASTPage() {
     .sort((a, b) => {
       if (sortBy === "created_asc") return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       if (sortBy === "created_desc") return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      const scoreA = getDisplayRiskScore(a) ?? -1;
-      const scoreB = getDisplayRiskScore(b) ?? -1;
+      // the score, then the uncapped weighted sum: scans the score cannot tell apart (4 Highs vs 1000) still sort
+      const scoreA = postureSortValue(a);
+      const scoreB = postureSortValue(b);
       if (sortBy === "risk_desc") return scoreB - scoreA;
       if (sortBy === "risk_asc") return scoreA - scoreB;
       const covA = a.code_coverage != null ? Number(a.code_coverage) : -1;
@@ -1290,19 +1268,19 @@ export default function SASTPage() {
                         </DropdownMenuItem>
                         <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("critical")}>
                           {riskScoreFilter === "critical" ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4 text-red-500" />}
-                          Critical (≥9)
+                          {RISK_TIER_LABELS.critical}
                         </DropdownMenuItem>
                         <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("high")}>
                           {riskScoreFilter === "high" ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4 text-orange-500" />}
-                          High (7–9)
+                          {RISK_TIER_LABELS.high}
                         </DropdownMenuItem>
                         <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("medium")}>
                           {riskScoreFilter === "medium" ? <Check className="h-4 w-4" /> : <Shield className="h-4 w-4 text-amber-500" />}
-                          Medium (5–7)
+                          {RISK_TIER_LABELS.medium}
                         </DropdownMenuItem>
                         <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("low")}>
                           {riskScoreFilter === "low" ? <Check className="h-4 w-4" /> : <Shield className="h-4 w-4 text-blue-500" />}
-                          Low (&lt;5)
+                          {RISK_TIER_LABELS.low}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -1559,14 +1537,7 @@ export default function SASTPage() {
                               ) : "—"}
                             </TableCell>
                             <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm tabular-nums">
-                              {conversation.risk_data && conversation.risk_score != null
-                                ? (() => {
-                                    const rd = conversation.risk_data;
-                                    const total = rd.total_critical + rd.total_high + rd.total_medium + rd.total_low;
-                                    if (total === 0) return "—";
-                                    return Math.round(Math.min(10, Math.max(0, (conversation.risk_score / total / 4) * 10)) * 10) / 10;
-                                  })()
-                                : "—"}
+                              {riskCellText(conversation)}
                             </TableCell>
                             <TableCell className="text-sm">
                               {conversation.scan_type != null && conversation.scan_type !== "" ? (
@@ -1717,7 +1688,7 @@ export default function SASTPage() {
                                         <CardContent className="p-0">
                                           {(() => {
                                             const score = getDisplayRiskScore(conversation);
-                                            const isHigh = score != null && score >= 7;
+                                            const isHigh = score != null && score >= 50;
                                             return (
                                               <div className="flex flex-col items-start gap-2">
                                                 <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${isHigh ? "bg-red-500/15 dark:bg-red-500/10" : "bg-amber-500/15 dark:bg-amber-500/10"}`}>
@@ -1725,7 +1696,7 @@ export default function SASTPage() {
                                                 </div>
                                                 <div>
                                                   <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Risk Score <InfoTip id="sast.table.risk" /></p>
-                                                  <p className="text-sm font-bold text-zinc-900 dark:text-white">{score != null ? score : "—"}</p>
+                                                  <p className="text-sm font-bold text-zinc-900 dark:text-white">{riskCellText(conversation)}</p>
                                                 </div>
                                               </div>
                                             );

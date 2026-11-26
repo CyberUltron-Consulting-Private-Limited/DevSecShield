@@ -179,11 +179,11 @@ const TEXT = {
     why: "Critical and High findings in a live application are the most urgent.",
     example: "Total high 4: four High findings across all runs.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:104, backend/utilities/dashboard/scan_list.py:257-259, backend/utilities/dashboard/scan_list.py:288 — 10 / 7.5 / 5 / 2.5 per finding, averaged
+  // src: backend/utilities/dashboard/risk_rollup.py:1-17,123-149, backend/utilities/dashboard/risk_scale.py:76-95, frontend/utils/riskPosture.ts:22-28, frontend/app/[team_id]/dast/page.tsx:275-278 — risk_rollup.team_posture: the latest successful scan per target, then risk_scale.posture over every DAST finding
   "dast.kpi.avg_risk": {
-    what: "Average over all DAST findings, 0 to 10: each Critical counts 10, High 7.5, Medium 5, Low 2.5.",
-    why: "One number to compare web-application risk over time.",
-    example: "One High and one Low: (7.5 + 2.5) / 2 = 5.0.",
+    what: "The current risk: the findings of the latest successful scan of each target URL (scheme and host in any case; path and query as typed), scored as one: 0-100: 4 × (10 per Critical, 5 per High, 2 per Medium, 1 per Low), set by the worst severity: any Critical 70+, any High 50–69, Medium at most 49, Low only 29. Grades: A <15, B 15–29, C 30–49, D 50–69, F 70+.",
+    why: "One number and grade to compare web-application risk over time, as every product shows it.",
+    example: "Two targets, the latest scan of each with one High: 4 × 10 = 40, raised to 50 by the High, grade D (High risk).",
   },
   // src: backend/utilities/dashboard/scan_list.py:251-256, backend/utilities/dashboard/scan_list.py:299 — totals per impact
   "dast.chart.severity": {

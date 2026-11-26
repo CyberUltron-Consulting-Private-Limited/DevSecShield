@@ -14,8 +14,19 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, TableStyle
 
-from backend.utilities.dashboard.risk_scale import average_risk_of
-from backend.utilities.dashboard.sbom_rows import is_inventory_row, is_unverified_version
+from backend.utilities.dashboard.risk_scale import (
+    POSTURE_KEY,
+    STATUS_KEY,
+    UNVERIFIED_KEY,
+    posture_field,
+    unverified_note,
+)
+from backend.utilities.dashboard.sbom_rows import (
+    is_incomplete,
+    is_inventory_row,
+    is_unverified_version,
+    unverified_counts,
+)
 from backend.utilities.pdf.report_context import ReportContext, details_note, join_parts
 from backend.utilities.pdf.report_branding import (
     report_generated,
@@ -23,6 +34,7 @@ from backend.utilities.pdf.report_branding import (
     COLOR_WHITE,
     append_bom_compliance_sections,
     append_executive_summary,
+    compute_posture_risk_score,
     append_findings_catalog,
     build_finding_section,
     count_label,
@@ -373,10 +385,15 @@ def _append_sbom_elements_section(story: List[Any], raw: Dict[str, Any], styles:
     story.append(styled_data_table(["Element", "NTIA", "CERT-In field", "Present", "Status"], cells, styles=styles,
                                    col_widths=[2.6 * inch, 0.7 * inch, 1.9 * inch, 0.8 * inch, 0.9 * inch]))
     results = _framework_results(raw, bom)
+    # the frameworks that bind the team, as the SBOM page shows them (bom_applicability; every one without a profile)
+    from backend.utilities.compliance.bom_applicability import pdf_view
+
+    view = pdf_view("sbom_sca", raw, results)
+    binding = set(view["binding"]) if view else None
     fw_lines = []
     for key, label in _FRAMEWORK_LABELS:
         block = results.get(key) if isinstance(results, dict) else None
-        if not isinstance(block, dict):
+        if not isinstance(block, dict) or (binding is not None and key not in binding):
             continue
         cov = block.get("coverage")
         fw_lines.append([label, str(int(block.get("pass", 0)) + int(block.get("pass_with_evidence", 0) or 0)),
@@ -389,6 +406,10 @@ def _append_sbom_elements_section(story: List[Any], raw: Dict[str, Any], styles:
             "Each requirement is checked against the fields above (advisory mapping, not a certification). "
             "Not evidenceable: the SBOM cannot show it (process evidence, or a field the sources do not publish)."),
             styles["muted"]))
+        if view and view.get("not_applicable"):
+            story.append(Paragraph(escape_html(
+                f"Frameworks shown for this team's regulatory profile ({view['basis']}). Not applicable to it: "
+                + ", ".join(n["label"] for n in view["not_applicable"]) + "."), styles["muted"]))
         story.append(Spacer(1, 0.08 * inch))
         fw_cells = [[Paragraph(escape_html(c), styles["table_cell"]) for c in row] for row in fw_lines]
         story.append(styled_data_table(["Framework", "Pass", "Fail", "Not evidenceable", "Coverage"], fw_cells,
@@ -513,8 +534,14 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         ):
             fixable_count += 1
 
-    # the app's one 0-10 scale (#35): the same number as the dashboards' Avg risk score card
-    avg_risk = average_risk_of(v.get("impact") for v in counted)
+    # the one 0-100 risk score (risk_scale.posture): the number, grade and words of the headline, the list row and the
+    # dashboard tile (it replaces the 0-10 average this row printed)
+    # the rows this report reads, with the stored SBOM when the payload carries it: the same score, status and
+    # unverified note as the list row and the results card (risk_scale.posture_field)
+    data = {**(raw if isinstance(raw, dict) else {}), "results": rows}
+    risk_field = posture_field(by_severity, incomplete=is_incomplete(data), unverified=unverified_counts(data))
+    risk, risk_status = risk_field[POSTURE_KEY], risk_field[STATUS_KEY]
+    risk_note = unverified_note(risk_field.get(UNVERIFIED_KEY))
     styles = get_report_styles()
     scan_time = format_scan_duration(duration)
 
@@ -534,7 +561,10 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         ("Unverified version (not counted)", str(unverified)),
         ("Packages affected", str(len(unique_packages))),
         ("Likely fixable via upgrade/update", str(fixable_count)),
-        ("Average risk score (0–10)", f"{avg_risk:.1f}" if avg_risk is not None else "N/A"),
+        ("Risk score", "Incomplete scan (no package inventoried)" if risk is None
+         else f"{risk['score']} / 100 · grade {risk['grade']} · {risk['label']}"
+              + (" (unverified: worst case of guessed-version matches)" if risk_status == "unverified" else "")
+              + (f" · {risk_note}" if risk_note else "")),
         ("Report generated", report_generated(long=True)),
     ]
     summary: List[Any] = []
@@ -549,6 +579,9 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         styles=styles,
         project_name="SBOM / SCA Dependencies",
         scan_time=scan_time,
+        # one headline formula for every BOM PDF: the engine's posture score with its worst-severity cap (the AI BOM
+        # and the CBOM use it too; staging QA Q2-01), not the uncapped compute_risk_score
+        risk_score_fn=compute_posture_risk_score,
         meta_chips=[
             # the strip holds 4 chips: a scan with matches on range-guessed versions says so first (review M2)
             ("Unverified version", f"{unverified} not counted") if unverified else ("Scan type", "SBOM / SCA"),
@@ -558,6 +591,11 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         ],
         ctx=ctx,
         unverified=unverified,  # review 6032108510 m2: the headline agrees with the catalogue
+        # no package inventoried: "incomplete", never grade A; only guessed-version matches: their worst case,
+        # marked unverified (risk_scale statuses)
+        risk_override=(("—", "—", "Incomplete scan") if risk is None else
+                       (risk["score"], risk["grade"], f"{risk['label']} (unverified)") if risk_status == "unverified"
+                       else None),
       )
 
     catalog_part: List[Any] = []

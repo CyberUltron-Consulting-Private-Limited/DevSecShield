@@ -616,14 +616,18 @@ PQC_PRIMITIVE_LABELS = {
 }
 
 # ---------------------------------------------------------------------------------------------
-# Board report: posture grade (D14) - pinned to report_branding.compute_risk_score
+# Board report: posture grade (D14) - pinned to the shared posture (report_branding.compute_posture_risk_score,
+# the engine's aibom/src/aibom/score/posture.py), the score every other product and report prints
 # ---------------------------------------------------------------------------------------------
 GRADE_NOT_ASSESSED = "NOT ASSESSED"
-# Product text: formula of backend/utilities/pdf/report_branding.py compute_risk_score; the
-# constants below are checked against that function by test_grade_constants_are_pinned.
+# Product text: formula of the engine's posture_score; the constants below are checked against that function by
+# test_grade_constants_are_pinned_to_the_shared_posture.
 GRADE_WEIGHTS = {"Critical": 10, "High": 5, "Medium": 2, "Low": 1}
 GRADE_SCORE_MULTIPLIER = 4
 GRADE_SCORE_CAP = 100
+# the worst severity present bounds the score: at most its cap, at least its floor (review 6065663183 of #505, 3)
+GRADE_CAPS = {"Critical": 100, "High": 69, "Medium": 49, "Low": 29}
+GRADE_FLOORS = {"Critical": 70, "High": 50}
 GRADE_BANDS = (
     (70, "F", "Critical risk"),
     (50, "D", "High risk"),
@@ -633,8 +637,15 @@ GRADE_BANDS = (
 )
 GRADE_FORMULA = (
     "Weighted points = 10 x Critical + 5 x High + 2 x Medium + 1 x Low. "
-    "Score = min(100, 4 x weighted points). Grade bands: F at 70 or above, D at 50, "
-    "C at 30, B at 15, A below 15."
+    "Score = min(100, 4 x weighted points), then set by the worst severity found: any Critical scores at least 70, "
+    "any High at least 50 and at most 69, Medium at most 49, Low only at most 29. Grade bands: F at 70 or above, "
+    "D at 50, C at 30, B at 15, A below 15. The same score as every scan's list row, results page and PDF."
+)
+# the exclusion every CBOM surface applies, printed after the grade input in Appendix A (review 6066492618 of #505, 3)
+GRADE_EXCLUSION = (
+    "Findings in test, fixture or example code are listed but not scored. A setting no crypto call is "
+    "proven to read is unverified: graded on its worst case and marked unverified only when the team has "
+    "no other finding, else noted beside the grade. The dashboard tile counts the same way."
 )
 GRADE_INPUT = (
     "Grade input: current crypto assets that carry at least one finding, counted once per "
@@ -1300,6 +1311,9 @@ __all__ = [
     "GENERIC_FINDING_ACTION",
     "GOVERNANCE_ACTIONS",
     "GRADE_BANDS",
+    "GRADE_CAPS",
+    "GRADE_EXCLUSION",
+    "GRADE_FLOORS",
     "GRADE_DISCLAIMER",
     "GRADE_FORMULA",
     "GRADE_INPUT",

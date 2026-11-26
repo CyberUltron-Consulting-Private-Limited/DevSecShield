@@ -17,6 +17,7 @@ from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer
 from backend.utilities.pdf.report_branding import (
     report_generated,
     append_executive_summary,
+    compute_posture_risk_score,
     append_findings_catalog,
     build_finding_section,
     count_label,
@@ -114,6 +115,9 @@ def _build_agent_pdf_story(
             styles=styles,
             project_name=project,
             scan_time=scan_time,
+            # the one 0-100 score of every product (risk_scale.posture): capped by the worst severity, as the
+            # list pages and the AI BOM / CBOM PDFs, not the uncapped compute_risk_score
+            risk_score_fn=compute_posture_risk_score,
             meta_chips=[
                 ("Project", str(components[0].get("logical_component_title") or "Application") if components else "Application"),
                 ("Scan type", "SAST"),
@@ -236,6 +240,9 @@ def _build_semgrep_pdf_story(
             severity_counts=by_severity,
             styles=styles,
             scan_time=format_scan_duration(duration_seconds),
+            # the one 0-100 score of every product (risk_scale.posture): capped by the worst severity, as the
+            # list pages and the AI BOM / CBOM PDFs, not the uncapped compute_risk_score
+            risk_score_fn=compute_posture_risk_score,
             ctx=ctx,
         )
     else:

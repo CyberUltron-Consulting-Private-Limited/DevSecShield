@@ -89,9 +89,11 @@ import TicketingIntegrationsSettings from "@/components/ticketing-integrations-s
 import FindingSelectionMenu from "@/components/finding-selection-menu";
 import { ComplianceCoverage, type Compliance } from "@/components/ai-bom/AiBomVisualizations";
 import { FRAMEWORK_GROUPS_SBOM_WITH_INDIA } from "@/components/compliance/frameworkLabels";
+import { teamCompliance, type ComplianceApplicability } from "@/components/compliance/teamApplicability";
 import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRollup";
 import { CertInLanePosture } from "@/components/certin/CertInLanePosture";
 import { InfoTip } from "@/components/ui/info-tip";
+import { riskCellHint, riskCellText } from "@/utils/riskPosture";
 import { type CertInRollupData } from "@/components/certin/certinShared";
 import { RESULTS_HEADER } from "@/components/resultsHeaderLayout";
 
@@ -214,6 +216,22 @@ const trendsChartConfig = {
   low: { label: "Low", color: "hsl(142 71% 45%)" },
 } satisfies ChartConfig;
 
+/** The SBOM compliance matrix: the frameworks that bind the team (server compliance_applicability) and chips named
+ * after them ("India / CERT-In" for a bank SEBI does not regulate); every framework and the pinned chips without a view. */
+export function SbomComplianceCoverage({ compliance, view, onAttest }: {
+  compliance: Compliance;
+  view?: ComplianceApplicability | null;
+  onAttest?: Parameters<typeof ComplianceCoverage>[0]["onAttest"];
+}) {
+  const team = teamCompliance(compliance, FRAMEWORK_GROUPS_SBOM_WITH_INDIA, view);
+  return (
+    <>
+      <ComplianceCoverage compliance={team.compliance} groups={team.groups} defaultGroup="all" onAttest={onAttest} />
+      {team.note && <p className="col-span-full -mt-4 text-xs text-zinc-500" data-testid="sbom-applicability-note">{team.note}</p>}
+    </>
+  );
+}
+
 function SbomDashboardCharts({ dashboard }: { dashboard: SbomScanDashboardData }) {
   const card = dashboard.card_data ?? {};
   const remediation = dashboard.remediation_actions_required ?? {};
@@ -317,8 +335,10 @@ function SbomDashboardCharts({ dashboard }: { dashboard: SbomScanDashboardData }
               <Target className="h-5 w-5" />
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1">Avg risk score <InfoTip id="sbom.res.kpi.avg_risk" /></p>
-              <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums" title={card.average_risk_score == null ? "No known vulnerabilities" : undefined}>{card.average_risk_score == null ? "—" : Number(card.average_risk_score).toFixed(1)}</p>
+              {/* the scan's one risk score (0-100, grade, words), as its list row and its PDF */}
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1">Risk score <InfoTip id="sbom.res.kpi.avg_risk" /></p>
+              <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums" data-testid="sbom-res-risk-score">{riskCellText(card)}</p>
+              {riskCellHint(card) && <p className="text-[11px] text-zinc-500">{riskCellHint(card)}</p>}
             </div>
           </CardContent>
         </Card>
@@ -1122,10 +1142,9 @@ function SbomResultsView({
         typeof scanMetadata === "object" &&
         "sbom_compliance" in scanMetadata &&
         scanMetadata.sbom_compliance != null && (
-          <ComplianceCoverage
+          <SbomComplianceCoverage
             compliance={scanMetadata.sbom_compliance as Compliance}
-            groups={FRAMEWORK_GROUPS_SBOM_WITH_INDIA}
-            defaultGroup="all"
+            view={(scanMetadata as { compliance_applicability?: ComplianceApplicability | null }).compliance_applicability}
             onAttest={handleCertInAttest}
           />
         )}

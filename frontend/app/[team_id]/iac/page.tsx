@@ -30,6 +30,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
+import { RISK_TIER_LABELS, matchesRiskTier, postureScore, postureSortValue, riskCellHint, riskCellText, riskTone } from "@/utils/riskPosture";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, Play, CheckCircle, XCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, Shield, AlertTriangle, Check, ScanSearch, Target, Percent, AlertCircle, Server, Activity, Filter, ChevronDown, ArrowUpDown, DollarSign, TrendingUp, TrendingDown, Zap, Wrench, MinusCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { singleFlight } from "@/utils/single_flight";
@@ -81,7 +82,7 @@ import { IfAllowed } from "@/components/rbac/team-access";
 
 type ScanStatus = "pending" | "started" | "retry" | "failure" | "success" | "not_started" | "cancelled";
 
-/** Risk score tiers for filtering: Critical ≥9, High 7–9, Medium 5–7, Low <5 */
+/** Risk score tiers for filtering: on the 0-100 grade bands (utils/riskPosture.ts) */
 type RiskScoreFilter = "all" | "critical" | "high" | "medium" | "low";
 type TableSortBy =
   | "none"
@@ -122,19 +123,13 @@ const IAC_CONTEXT_MODE_LABELS: Record<string, string> = {
   aws_cdk: "AWS CDK",
 };
 
+/** The scan's one 0-100 risk score (risk_posture), as its tile, its results page and its PDF; null: no score. */
 function getDisplayRiskScore(c: IACConversation): number | null {
-  if (c.average_risk_score == null) return null;
-  return Math.round(Math.min(10, Math.max(0, c.average_risk_score)) * 10) / 10;
+  return postureScore(c);
 }
 
 function matchesRiskScoreFilter(score: number | null, filter: RiskScoreFilter): boolean {
-  if (filter === "all") return true;
-  if (score == null) return false;
-  if (filter === "critical") return score >= 9;
-  if (filter === "high") return score >= 7 && score < 9;
-  if (filter === "medium") return score >= 5 && score < 7;
-  if (filter === "low") return score < 5;
-  return true;
+  return matchesRiskTier(score, filter);
 }
 
 // ─── Dashboard Tab ──────────────────────────────────────────────────────────────
@@ -315,12 +310,14 @@ function IACDashboard({ dashboardData }: { dashboardData: IACListDashboardData }
         <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
           <CardContent className="p-0">
             <div className="flex flex-col items-start gap-2">
-              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${card.average_risk_score >= 7 ? "bg-red-500/15 dark:bg-red-500/10" : card.average_risk_score >= 5 ? "bg-amber-500/15 dark:bg-amber-500/10" : "bg-green-500/15 dark:bg-green-500/10"}`}>
-                <Activity className={`h-4 w-4 ${card.average_risk_score >= 7 ? "text-red-500" : card.average_risk_score >= 5 ? "text-amber-500" : "text-green-500"}`} />
+              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${riskTone(postureScore(card)).box}`}>
+                <Activity className={`h-4 w-4 ${riskTone(postureScore(card)).icon}`} />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Avg risk score <InfoTip id="iac.kpi.avg_risk" /></p>
-                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.average_risk_score.toFixed(1)}</p>
+                {/* the one risk score (0-100, grade, words) over the findings, as the rows and the PDF */}
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Risk score <InfoTip id="iac.kpi.avg_risk" /></p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white" data-testid="iac-kpi-risk-score">{riskCellText(card)}</p>
+                {riskCellHint(card) && <p className="text-[11px] text-zinc-500">{riskCellHint(card)}</p>}
               </div>
             </div>
           </CardContent>
@@ -722,8 +719,9 @@ export default function IACPage() {
     .sort((a, b) => {
       if (sortBy === "created_asc") return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       if (sortBy === "created_desc") return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      const scoreA = getDisplayRiskScore(a) ?? -1;
-      const scoreB = getDisplayRiskScore(b) ?? -1;
+      // the score, then the uncapped weighted sum: scans the score cannot tell apart (4 Highs vs 1000) still sort
+      const scoreA = postureSortValue(a);
+      const scoreB = postureSortValue(b);
       if (sortBy === "risk_desc") return scoreB - scoreA;
       if (sortBy === "risk_asc") return scoreA - scoreB;
       const credA = a.estimated_credits != null ? Number(a.estimated_credits) : -1;
@@ -848,19 +846,19 @@ export default function IACPage() {
                         </DropdownMenuItem>
                         <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("critical")}>
                           {riskScoreFilter === "critical" ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4 text-red-500" />}
-                          Critical (≥9)
+                          {RISK_TIER_LABELS.critical}
                         </DropdownMenuItem>
                         <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("high")}>
                           {riskScoreFilter === "high" ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4 text-orange-500" />}
-                          High (7–9)
+                          {RISK_TIER_LABELS.high}
                         </DropdownMenuItem>
                         <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("medium")}>
                           {riskScoreFilter === "medium" ? <Check className="h-4 w-4" /> : <Shield className="h-4 w-4 text-amber-500" />}
-                          Medium (5–7)
+                          {RISK_TIER_LABELS.medium}
                         </DropdownMenuItem>
                         <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("low")}>
                           {riskScoreFilter === "low" ? <Check className="h-4 w-4" /> : <Shield className="h-4 w-4 text-blue-500" />}
-                          Low (&lt;5)
+                          {RISK_TIER_LABELS.low}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -1025,7 +1023,7 @@ export default function IACPage() {
                                 ) : "—"}
                               </TableCell>
                               <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm tabular-nums">
-                                {getDisplayRiskScore(conversation) != null ? getDisplayRiskScore(conversation) : "—"}
+                                {riskCellText(conversation)}
                               </TableCell>
                               <TableCell className="text-sm">
                                 {conversation.cloud_provider && conversation.cloud_provider.length > 0 ? (

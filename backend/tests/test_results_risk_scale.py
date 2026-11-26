@@ -154,4 +154,6 @@ def test_the_sbom_pdf_average_is_the_dashboards_number(monkeypatch: pytest.Monke
     list_card = generate_sbom_sca_dashboard_data([scan])["card_data"]["average_risk_score"]
     results_card = generate_scan_dashboard("sbom_sca", scan_object=scan)["card_data"]["average_risk_score"]
     assert table == list_card == results_card == 5.5
-    assert seen["Average risk score (0–10)"] == "5.5"  # the export shows the dashboards' number
+    # the export shows the list row's one 0-100 score (risk_scale.posture; the 0-10 average stays on the API only)
+    assert seen["Risk score"] == "{score} / 100 · grade {grade} · {label}".format(
+        **return_sbom_sca_list_item(scan)["risk_posture"])

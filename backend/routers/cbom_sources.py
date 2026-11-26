@@ -1895,7 +1895,11 @@ def _run_parity(engine, team_id: int, run_id: int) -> dict:
         J.safe_reap(session, now, team_id=team_id)
         session.refresh(run)
         settings = get_or_create_settings(session, team_id)
-        return RUN_PARITY.run_parity(session, run, team_id=team_id, risk_model=settings.risk_model, now=now)
+        parity = RUN_PARITY.run_parity(session, run, team_id=team_id, risk_model=settings.risk_model, now=now)
+        # the run page's compliance matrix shows the frameworks that bind the team, as the code page (bom_applicability)
+        from backend.utilities.compliance.bom_applicability import with_run_applicability
+
+        return with_run_applicability(parity, settings.risk_model)
 
 
 @router.get(BASE + "/runs/{run_id}/parity", dependencies=[*READ, access.team("cbom.read")],

@@ -19,6 +19,7 @@ from backend.utilities.pdf.report_branding import (
     report_generated,
     append_report_masthead,
     append_executive_summary,
+    compute_posture_risk_score,
     append_findings_catalog,
     build_finding_section,
     count_label,
@@ -155,6 +156,9 @@ def generate_pdf(scan_data: Any, output_path: Optional[str] = None, *, ctx: Opti
         extra_tables=extra_tables,
         project_name="DAST Findings",
         scan_time=duration_label,
+        # the one 0-100 score of every product (risk_scale.posture): capped by the worst severity, as the
+        # list pages and the AI BOM / CBOM PDFs, not the uncapped compute_risk_score
+        risk_score_fn=compute_posture_risk_score,
         meta_chips=[
             ("Scan type", "DAST"),
             ("Total issues", str(total)),

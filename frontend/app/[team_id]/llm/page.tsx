@@ -30,6 +30,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
+import { RISK_TIER_LABELS, matchesRiskTier, postureScore, postureSortValue, riskCellHint, riskCellText, riskTone } from "@/utils/riskPosture";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, Play, CheckCircle, XCircle, CalendarPlus, CalendarCheck, Search, X, Shield, Percent, Bug, ChevronDown, ArrowUpDown, Check, Filter, DollarSign, TrendingUp, TrendingDown, AlertTriangle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { singleFlight } from "@/utils/single_flight";
@@ -83,7 +84,7 @@ import { IfAllowed } from "@/components/rbac/team-access";
 
 type ScanStatus = "pending" | "started" | "retry" | "failure" | "success" | "not_started";
 
-/** Risk score tiers for filtering: Critical ≥9, High 7–9, Medium 5–7, Low <5 */
+/** Risk score tiers for filtering: on the 0-100 grade bands (utils/riskPosture.ts) */
 type RiskScoreFilter = "all" | "critical" | "high" | "medium" | "low";
 type TableSortBy =
   | "none"
@@ -112,24 +113,13 @@ const SORT_BY_LABELS: Record<TableSortBy, string> = {
   credits_asc: "Credits (low first)",
 };
 
+/** The scan's one 0-100 risk score (risk_posture), as its tile, its results page and its PDF; null: no score. */
 function getDisplayRiskScore(c: LLMScanListItem): number | null {
-  if (c.average_risk_score != null) return Math.round(Math.min(10, Math.max(0, c.average_risk_score)) * 10) / 10;
-  const rd = c.risk_data;
-  if (!rd) return null;
-  const total = (rd.total_critical ?? 0) + (rd.total_high ?? 0) + (rd.total_medium ?? 0) + (rd.total_low ?? 0);
-  if (total === 0) return null;
-  const weighted = ((rd.total_critical ?? 0) * 4 + (rd.total_high ?? 0) * 3 + (rd.total_medium ?? 0) * 2 + (rd.total_low ?? 0) * 1) / total;
-  return Math.round(Math.min(10, Math.max(0, (weighted / 4) * 10)) * 10) / 10;
+  return postureScore(c);
 }
 
 function matchesRiskScoreFilter(score: number | null, filter: RiskScoreFilter): boolean {
-  if (filter === "all") return true;
-  if (score == null) return false;
-  if (filter === "critical") return score >= 9;
-  if (filter === "high") return score >= 7 && score < 9;
-  if (filter === "medium") return score >= 5 && score < 7;
-  if (filter === "low") return score < 5;
-  return true;
+  return matchesRiskTier(score, filter);
 }
 
 // ─── Full LLM Dashboard (status cards, LLM metrics, charts) ─────────────────────
@@ -308,12 +298,13 @@ function ScanListDashboardLLM({ dashboardData }: { dashboardData: LLMListDashboa
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Avg Risk Score <InfoTip id="llm.kpi.avg_risk" /></CardTitle>
-            <Shield className="h-4 w-4 text-zinc-500" />
+            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Risk score <InfoTip id="llm.kpi.avg_risk" /></CardTitle>
+            <Shield className={`h-4 w-4 ${riskTone(postureScore(card)).icon}`} />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.average_risk_score} / 10</div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">Security posture</p>
+            {/* the one risk score (0-100, grade, words) over the findings, as the rows and the PDF */}
+            <div className="text-2xl font-bold text-zinc-900 dark:text-white" data-testid="llm-kpi-risk-score">{riskCellText(card)}</div>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">{riskCellHint(card) ?? "Security posture"}</p>
           </CardContent>
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
@@ -571,8 +562,9 @@ export default function LLMPage() {
     .sort((a, b) => {
       if (sortBy === "created_asc") return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       if (sortBy === "created_desc") return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      const scoreA = getDisplayRiskScore(a) ?? -1;
-      const scoreB = getDisplayRiskScore(b) ?? -1;
+      // the score, then the uncapped weighted sum: scans the score cannot tell apart (4 Highs vs 1000) still sort
+      const scoreA = postureSortValue(a);
+      const scoreB = postureSortValue(b);
       if (sortBy === "risk_desc") return scoreB - scoreA;
       if (sortBy === "risk_asc") return scoreA - scoreB;
       const credA = a.estimated_credits != null ? Number(a.estimated_credits) : -1;
@@ -770,19 +762,19 @@ export default function LLMPage() {
                         </DropdownMenuItem>
                         <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("critical")}>
                           {riskScoreFilter === "critical" ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4 text-red-500" />}
-                          Critical (≥9)
+                          {RISK_TIER_LABELS.critical}
                         </DropdownMenuItem>
                         <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("high")}>
                           {riskScoreFilter === "high" ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4 text-orange-500" />}
-                          High (7–9)
+                          {RISK_TIER_LABELS.high}
                         </DropdownMenuItem>
                         <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("medium")}>
                           {riskScoreFilter === "medium" ? <Check className="h-4 w-4" /> : <Shield className="h-4 w-4 text-amber-500" />}
-                          Medium (5–7)
+                          {RISK_TIER_LABELS.medium}
                         </DropdownMenuItem>
                         <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("low")}>
                           {riskScoreFilter === "low" ? <Check className="h-4 w-4" /> : <Shield className="h-4 w-4 text-blue-500" />}
-                          Low (&lt;5)
+                          {RISK_TIER_LABELS.low}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -934,7 +926,7 @@ export default function LLMPage() {
                                 ) : "—"}
                               </TableCell>
                               <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm tabular-nums">
-                                {getDisplayRiskScore(conversation) != null ? getDisplayRiskScore(conversation) : "—"}
+                                {riskCellText(conversation)}
                               </TableCell>
                               <TableCell className="text-zinc-600 dark:text-zinc-400">
                                 {conversation.model_type ? (

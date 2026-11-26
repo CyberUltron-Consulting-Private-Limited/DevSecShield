@@ -1540,17 +1540,26 @@ def build_kpi_grid(
 
 
 def compute_risk_score(critical: int, high: int, medium: int, low: int) -> Tuple[int, str, str]:
-    weighted = critical * 10 + high * 5 + medium * 2 + low * 1
-    score = min(100, weighted * 4)
-    if score >= 70:
-        return score, "F", "Critical risk"
-    if score >= 50:
-        return score, "D", "High risk"
-    if score >= 30:
-        return score, "C", "Elevated risk"
-    if score >= 15:
-        return score, "B", "Moderate risk"
-    return score, "A", "Low risk"
+    """``(score, grade, words)`` of these counts: the shared posture (``compute_posture_risk_score``). It was the bare
+    ``min(100, 4 x (10C + 5H + 2M + 1L))``: one Critical graded 40 / C and fifteen Highs 100 / F on the reports that
+    still called it (the CBOM Board Report D14, the CBOM run PDF), against 70 / F and 69 / D everywhere else (review
+    6065663183 of #505, 3). One score, so a caller can no longer pick the unbounded one."""
+    return compute_posture_risk_score(critical, high, medium, low)
+
+
+# The method of compute_posture_risk_score (aibom/src/aibom/score/posture.py), printed under the headline.
+POSTURE_METHOD = (
+    "0 to 100 = 4 x (10 per Critical + 5 per High + 2 per Medium + 1 per Low), at most 100, set by the worst "
+    "severity found: any Critical scores at least 70 (F), any High at least 50 and at most 69 (D), Medium at most 49, "
+    "Low only at most 29. Grades: A under 15, B 15-29, C 30-49, D 50-69, F 70 or more."
+)
+
+
+# The CBOM scan and run PDFs print this after the method (review 6066492618 of #505, 4): what the score leaves out.
+CBOM_METHOD_NOTE = (
+    "Findings in test, fixture or example code are listed but not scored; a setting no crypto call is proven to read "
+    "is unverified: its worst case is the score, marked unverified, only when nothing else was found."
+)
 
 
 def compute_posture_risk_score(critical: int, high: int, medium: int, low: int) -> Tuple[int, str, str]:
@@ -1563,16 +1572,21 @@ def compute_posture_risk_score(critical: int, high: int, medium: int, low: int) 
 
 
 def compute_risk_score_band(score: int) -> Tuple[int, str, str]:
-    """The grade and band of a 0-100 score (the bands of ``compute_risk_score``)."""
-    if score >= 70:
-        return score, "F", "Critical risk"
-    if score >= 50:
-        return score, "D", "High risk"
-    if score >= 30:
-        return score, "C", "Elevated risk"
-    if score >= 15:
-        return score, "B", "Moderate risk"
-    return score, "A", "Low risk"
+    """The grade and words of a 0-100 score, from the engine's one grade table (``POSTURE_GRADES``)."""
+    from backend.utilities.pdf.aibom_posture import engine_posture
+
+    engine = engine_posture()
+    grade, band = engine.posture_grade(score)
+    return score, str(grade), str(engine.posture_label(band))
+
+
+def _prints_method(posture_method: Optional[bool], risk_score_fn: Any) -> bool:
+    """Whether a headline is the shared posture and prints its method line: the explicit ``posture_method`` flag (a
+    caller passing its own function over the posture, as the CBOM scan PDF with #500); unset, when the function is the
+    shared posture or none (the default is the posture)."""
+    if posture_method is not None:
+        return bool(posture_method)
+    return risk_score_fn is None or risk_score_fn is compute_posture_risk_score
 
 
 def build_severity_bar(
@@ -1939,9 +1953,15 @@ def append_executive_summary(
     ctx: Any = None,
     risk_score_fn: Optional[Callable[[int, int, int, int], Tuple[int, str, str]]] = None,
     unverified: int = 0,
+    risk_override: Optional[Tuple[Any, str, str]] = None,
+    posture_method: Optional[bool] = None,
+    method_note: Optional[str] = None,
 ) -> None:
     """``unverified``: findings listed in the catalogue but left out of the counts and the grade (an SBOM match on
-    a version read from a manifest range); the headline says how many, so it agrees with the catalogue."""
+    a version read from a manifest range); the headline says how many, so it agrees with the catalogue.
+    ``risk_override``: ``(score, grade, words)`` to print instead of ``risk_score_fn``'s: ``("—", "—", "Incomplete
+    scan")`` for a scan that cannot be scored, or an SBOM's worst-case score over its unverified matches, its words
+    marked "(unverified)" (``risk_scale`` statuses; review 6064315680 of #505)."""
     styles = styles or get_report_styles()
     meta = REPORT_META.get(report_key, REPORT_META["sast"])
     shaped = ctx is not None and ctx.options.shapes_content
@@ -1995,7 +2015,9 @@ def append_executive_summary(
                 time_label = str(value)
                 break
 
-    risk_score, risk_grade, risk_band = (risk_score_fn or compute_risk_score)(critical, high, medium, low)
+    risk_score, risk_grade, risk_band = (risk_score_fn or compute_posture_risk_score)(critical, high, medium, low)
+    if risk_override:
+        risk_score, risk_grade, risk_band = risk_override
 
     story.append(
         build_kpi_grid(
@@ -2041,6 +2063,10 @@ def append_executive_summary(
     guide_bits: List[Any] = [
         Paragraph(intro, styles["body"]),
         Paragraph(f"<b>How to read:</b> {escape_html(how_to_read)}", styles["muted"]),
+        # the one 0-100 score's method, where the headline is it (every product's PDF but the CBOM board report)
+        *([Paragraph(f"<b>Risk score:</b> {escape_html(POSTURE_METHOD)}"
+                     + (f" {escape_html(method_note)}" if method_note else ""), styles["muted"])]
+          if _prints_method(posture_method, risk_score_fn) else []),
         Paragraph(
             f"<b>Platform:</b> {BRAND_NAME} · <font color='#0F766E'><b>{BRAND_URL}</b></font>",
             styles["muted"],

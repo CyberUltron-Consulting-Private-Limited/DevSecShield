@@ -21,6 +21,8 @@ from backend.get_db import get_db, get_mongo_client_db
 from backend.mongo_models import ActiveContextLog, MessageLog
 from backend.new_models import Scan
 from backend.utilities.dashboard.scan_metadata import get_scan_metadata
+from backend.utilities.compliance import bom_applicability
+from backend.utilities.dashboard import risk_scale
 from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
 # from backend.utilities.celery.celery_connection import get_status_and_update_db
 from backend.utilities.db.functions import get_messages_from_scan, return_scan_list_for_type, update_status_of_scan_in_main_db 
@@ -470,6 +472,10 @@ async def get_scan(
                     # the rows every backend counter reads (cbom_metrics: the PDF, the scan list): the page's
                     # readiness gauge counts them by the same rule (lab UI r1 F3)
                     scan_result = [page_row(row) for row in scan_result]
+        # the CBOM / SBOM compliance matrix shows the frameworks that bind the team (bom_applicability)
+        scan_metadata = bom_applicability.with_applicability(type, scan_metadata, engine, team_id)
+        # a scan that did not succeed has no score on its results page, on every product (CBOM included)
+        dashboard_data = risk_scale.gate_dashboard(type, dashboard_data, SCAN_STATUS)
         data = {
                 "title": scan.title,
                 "scan_metadata": scan_metadata,
@@ -970,6 +976,9 @@ def _build_scan_report(engine, team_id: int, type: str, scan_id: int, options) -
 
     with Session(engine) as session:
         branding = load_report_branding(session, team_id)
+        if type == "sbom_sca" and isinstance(scan_data, dict):
+            # the SBOM PDF lists the frameworks that bind the team, as the SBOM page does (bom_applicability)
+            scan_data = bom_applicability.with_pdf_profile("sbom_sca", scan_data, session, team_id)
     ctx = ReportContext(options=options, branding=branding, row_statuses=row_statuses)
 
     temp_pdf_file = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)

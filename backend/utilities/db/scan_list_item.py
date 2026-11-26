@@ -79,7 +79,7 @@ def return_sast_list_item(scan : Scan) -> dict:
         "repo_url": scan.scan_metadata["repo_url"] if scan.scan_metadata and "repo_url" in scan.scan_metadata else None,
         "branch": scan.scan_metadata["branch"] if scan.scan_metadata and "branch" in scan.scan_metadata else None,
         "app_lang": scan.scan_metadata["app_lang"] if scan.scan_metadata and "app_lang" in scan.scan_metadata else None,
-        "risk_score": total_critical * 4 + total_high * 3 + total_medium * 2 + total_low * 1,
+        "risk_score": total_critical * 4 + total_high * 3 + total_medium * 2 + total_low * 1, **_posture(scan, total_critical, total_high, total_medium, total_low),
         "code_coverage": code_coverage,
         "scan_type": scan_type,
 
@@ -143,7 +143,7 @@ def return_iac_list_item(scan : Scan) -> dict:
         "zip_file_used": scan.scan_metadata["zip_file_used"] if scan.scan_metadata and "zip_file_used" in scan.scan_metadata else None,
         "branch": scan.scan_metadata["branch"] if scan.scan_metadata and "branch" in scan.scan_metadata else None,
         "cloud_provider" : [ iac_context["mode"] for iac_context in scan.scan_metadata["iac_contexts"] ] if scan.scan_metadata and "iac_contexts" in scan.scan_metadata else [] , 
-        "average_risk_score" : average_risk_score,
+        "average_risk_score" : average_risk_score, **_posture(scan, total_critical, total_high, total_medium, total_low),
         "coverage_percentage" : coverage_percentage,
         "environment" : scan.scan_metadata["environment"] if scan.scan_metadata and "environment" in scan.scan_metadata else None,
     }
@@ -196,7 +196,7 @@ def return_sbom_sca_list_item(scan : Scan) -> dict:
         "repo_url": scan.scan_metadata["repo_url"] if scan.scan_metadata and "repo_url" in scan.scan_metadata else None,
         "zip_file_used": scan.scan_metadata["zip_file_used"] if scan.scan_metadata and "zip_file_used" in scan.scan_metadata else None,
         "branch": scan.scan_metadata["branch"] if scan.scan_metadata and "branch" in scan.scan_metadata else None, 
-        "average_risk_score" : average_risk_score,
+        "average_risk_score" : average_risk_score, **_posture(scan, total_critical, total_high, total_medium, total_low, incomplete=sbom_rows.is_incomplete(scan.scan_data), unverified=sbom_rows.unverified_counts(scan.scan_data)),
     }
 
 
@@ -281,7 +281,7 @@ def return_mcp_list_item(scan : Scan) -> dict:
         "info": scan.info, # sometimes maybe None or sometimes may be { "current" : 20 } where 20 is the progress percentage
         'risk_data': risk_data,
         "server" : scan.scan_metadata["server_url"].split(".")[-2].replace("https://","").replace("http://","") if scan.scan_metadata and "server_url" in scan.scan_metadata else None,
-        "average_risk_score" : average_risk_score,
+        "average_risk_score" : average_risk_score, **_posture(scan, total_critical, total_high, total_medium, total_low),
         "discovery_metrics" : {
             "total_tools" : total_tools,
             "total_prompts" : total_prompts,
@@ -368,7 +368,7 @@ def return_llm_list_item(scan : Scan) -> dict:
 
         "info": scan.info,
         "risk_data": risk_data,
-        "average_risk_score": round(average_risk_score * 10) / 10 if total > 0 else 0.0,
+        "average_risk_score": round(average_risk_score * 10) / 10 if total > 0 else 0.0, **_posture(scan, total_critical, total_high, total_medium, total_low),
         "model_type": scan_meta.get("model_type"),
         "model_name": model_name,
         "attack_iterations": scan_meta.get("generations"),
@@ -433,7 +433,7 @@ def return_dast_list_item(scan : Scan) -> dict:
         "info": scan.info, # sometimes maybe None or sometimes may be { "current" : 20 } where 20 is the progress percentage
         'risk_data': risk_data,
         "target_url": scan.scan_metadata["target_url"] if scan.scan_metadata and "target_url" in scan.scan_metadata else None,
-        "average_risk_score" : average_risk_score,
+        "average_risk_score" : average_risk_score, **_posture(scan, total_critical, total_high, total_medium, total_low),
         "urls_scanned": urls_scanned,
         "coverage_percentage": (urls_scanned / (urls_scanned + urls_not_scanned)) * 100 if urls_scanned + urls_not_scanned > 0 else 0,
     }
@@ -460,7 +460,7 @@ def return_cbom_list_item(scan : Scan) -> dict:
     total_weak = summary.weak
     total_quantum_vulnerable = summary.quantum["quantum_vulnerable"]
 
-    return {
+    return _cbom_gate(scan, {
         "id": scan.id,
         "title": scan.title,
         "created_at": scan.created_at,
@@ -482,7 +482,7 @@ def return_cbom_list_item(scan : Scan) -> dict:
         "total_weak_algorithms": total_weak,
         "total_quantum_vulnerable": total_quantum_vulnerable,
         "scan_binaries": scan.scan_metadata.get("scan_binaries", False) if scan.scan_metadata else False,
-    }
+    }, rows)
 
 
 
@@ -558,3 +558,42 @@ def average_risk_0_10(total_critical: int, total_high: int, total_medium: int, t
     """A scan's Risk score on the app's one 0-10 scale (``risk_scale``, #35); None without findings."""
     return risk_scale.average_risk({"critical": total_critical, "high": total_high, "medium": total_medium,
                                     "low": total_low})
+
+
+def _posture(scan: Scan, critical: int, high: int, medium: int, low: int, *, incomplete: bool = False,
+             unverified: dict | None = None) -> dict:
+    """``risk_posture`` and ``risk_posture_status``: the scan's one 0-100 risk score, grade and words
+    (``risk_scale.posture``); no score until the scan succeeded, nor for a finished scan whose result is incomplete.
+    Added next to the older fields, which keep their values."""
+    return risk_scale.posture_field({"critical": critical, "high": high, "medium": medium, "low": low},
+                                    judged=scan.scan_status == "success", incomplete=incomplete, unverified=unverified)
+
+
+def _cbom_gate(scan: Scan, row: dict, rows: list) -> dict:
+    """The CBOM row's one risk score, gated on success like every product (review 6064315680 of #505, 4). It only
+    gates (reviews 6065663183 and 6066492618 of #505):
+
+    * a scan that did not succeed (failed, running, cancelled, pending): no score, ``risk_posture`` and the flat
+      ``risk_score`` / ``risk_grade`` / ``risk_label`` (#500) null, ``not_scored``: the page shows "—", never "0 · A";
+    * a successful scan whose row already carries a ``risk_posture_status`` (#500's ``scored``, ``unverified`` with
+      its worst case, ``incomplete``): unchanged;
+    * #500's ``risk_posture`` without a status: unchanged, plus ``scored`` (``not_scored`` for a null posture, never a
+      computed 0 · A next to it);
+    * neither #500 field: ``risk_rollup.cbom_posture_field`` over the rows (test code not scored; unconfirmed
+      settings "unverified")."""
+    if str(scan.scan_status or "").lower() != "success":
+        return {**row, risk_scale.POSTURE_KEY: None, risk_scale.STATUS_KEY: "not_scored",
+                "risk_score": None, "risk_grade": None, "risk_label": None}
+    return gate_judged(row, rows)
+
+
+def gate_judged(out: dict, rows: list) -> dict:
+    """``_cbom_gate`` for a judged scan or team (the tile uses it too): pass a status through, else compute."""
+    if out.get(risk_scale.STATUS_KEY):
+        return out
+    if risk_scale.POSTURE_KEY in out:
+        scored = out[risk_scale.POSTURE_KEY] is not None
+        return {**out, risk_scale.STATUS_KEY: "scored" if scored else "not_scored"}
+    from backend.utilities.dashboard.risk_rollup import cbom_posture_field
+
+    return {**out, **cbom_posture_field(rows)}

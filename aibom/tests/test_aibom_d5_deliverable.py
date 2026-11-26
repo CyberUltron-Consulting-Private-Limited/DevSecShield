@@ -236,7 +236,7 @@ def test_risk_score_is_bounded_by_the_findings(run: dict) -> None:
         ),  # SmarterRouter on staging: 100 / F with zero critical or high
         ((0, 0, 0, 500), 29),
         ((0, 3, 50, 0), 69),
-        ((1, 0, 0, 0), 40),
+        ((1, 0, 0, 0), 100),  # floor: 70, not 40 (review 6064315680 of #505)
         ((0, 0, 0, 0), 0),
     ],
 )
@@ -244,10 +244,27 @@ def test_posture_score_never_exceeds_the_worst_severity(
     counts: tuple, cap: int
 ) -> None:
     assert posture_score(*counts) <= cap
-    assert posture_score(*counts) == min(
+    floor = 70 if counts[0] else 50 if counts[1] else 0
+    assert posture_score(*counts) == max(floor, min(
         cap if counts[0] == 0 else 100,
         min(100, 4 * (10 * counts[0] + 5 * counts[1] + 2 * counts[2] + counts[3])),
-    )
+    ))
+
+
+@pytest.mark.parametrize(
+    ("counts", "expected"),
+    [
+        ((1, 0, 0, 0), 70),  # one Critical: F, was 40 / C
+        ((0, 1, 0, 0), 50),  # one High: D, was 20 / B
+        ((0, 2, 0, 0), 50),  # was 40 / C
+        ((0, 3, 0, 0), 60),  # above the floor: unchanged
+        ((1, 0, 0, 15), 100),
+        ((0, 0, 4, 0), 32),  # Medium and Low: unchanged
+        ((0, 0, 0, 7), 28),
+    ],
+)
+def test_the_worst_severity_sets_a_floor(counts: tuple, expected: int) -> None:
+    assert posture_score(*counts) == expected
 
 
 # --------------------------------------------------------------------------- identity

@@ -8,6 +8,7 @@ from fastapi import HTTPException , status
 from backend.utilities.db.findings import get_findings_for_scan_id
 from backend.utilities.dashboard.remediation_metrics import get_remediation_metrics
 from backend.utilities.dashboard.finding_metrics import get_issue_status_metrics, get_mttr_per_day
+from backend.utilities.dashboard import risk_rollup, risk_scale
 from backend.utilities.dashboard.sbom_license import (
     LICENSE_CATEGORIES,
     resolve_sbom_license_category,
@@ -221,7 +222,7 @@ def generate_dast_dashboard_data(scans: list[Scan]) -> dict:
     dast_scans = [s for s in scans if s.scan_type == "dast"]
     success_dast = [s for s in dast_scans if s.scan_status == "success"]
     all_findings: list = []
-    for scan in dast_scans:
+    for scan in success_dast:  # a failed or running scan's findings reach no tile (review 6064315680 of #505, 2)
         all_findings.extend(get_findings_for_scan_id(scan_id=scan.id))
 
     severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
@@ -300,6 +301,8 @@ def generate_dast_dashboard_data(scans: list[Scan]) -> dict:
         "total_medium_issues": total_medium,
         "total_low_issues": total_low,
         "average_risk_score": average_risk_score,
+        # the one 0-100 risk score of the latest successful scan per target (risk_rollup), as their list rows
+        **risk_rollup.team_posture("dast", dast_scans),
     }
     SEVERITY_KEYS = ("critical", "high", "medium", "low")
     severity_distribution = {k: severity_counts.get(k, 0) for k in SEVERITY_KEYS}
@@ -585,6 +588,8 @@ def generate_iac_dashboard_data(scans: list[Scan]) -> dict:
         "coverage_percentage": coverage_pct,
         "total_policy_violations": total_policy_violations,
         "average_risk_score": average_risk_score,
+        # the one 0-100 risk score of the latest successful scan per target (risk_rollup), as their list rows
+        **risk_rollup.team_posture("iac", iac_scans),
     }
 
     severity_distribution = {
@@ -772,6 +777,8 @@ def generate_sast_dashboard_data(scans: list[Scan]) -> dict:
                 "zip_file_used": bool(meta.get("zip_file_used")),
                 "issues": total_issues,
                 "risk_score": risk_score,
+                # the scan's one 0-100 risk score (risk_scale.posture); the list ranks the repos by it
+                **risk_scale.posture_field({"critical": c, "high": h, "medium": m, "low": l}),
                 "trend": "—",
                 "language": display_lang,
             })
@@ -842,7 +849,7 @@ def generate_sast_dashboard_data(scans: list[Scan]) -> dict:
     ]
 
     # top_repos_by_risk top 5
-    top_repos_by_risk = sorted(top_repos_candidates, key=lambda x: -x["risk_score"])[:5]
+    top_repos_by_risk = sorted(top_repos_candidates, key=lambda x: -x["risk_posture"]["score"])[:5]
 
     card_data = {
         "pending_scans": pending_scans,
@@ -865,6 +872,8 @@ def generate_sast_dashboard_data(scans: list[Scan]) -> dict:
         "risks_per_day": risks_per_day,
         "risk_totals": risk_totals,
         "average_risk_score": average_risk_score,
+        # the one 0-100 risk score of the latest successful scan per target (risk_rollup), as their list rows
+        **risk_rollup.team_posture("sast", [s for s in scans if s.scan_type == "sast"]),
         "total_issues": total_issues,
         "critical_count": critical_t,
         "owasp_by_category": owasp_by_category,
@@ -1091,6 +1100,8 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
         "total_license_risks": total_license_risks,
         "total_high_risk_licenses": total_high_license,
         "average_risk_score": average_risk_score,
+        # the one 0-100 risk score of the latest successful scan per target (risk_rollup), as their list rows
+        **risk_rollup.team_posture("sbom_sca", sbom_scans),
         "total_reachable_issues": total_reachable,
         "total_unverified_version_findings": unverified_total,
     }
@@ -1259,6 +1270,7 @@ def generate_mcp_dashboard_data(scans: list[Scan]) -> dict:
 
     scan_status_distribution = {"not_started": 0, "started": 0, "success": 0, "failure": 0}
     risk_score_trend: dict[str, float] = {}
+    risk_posture_trend: dict[str, int] = {}
     risks_over_time: dict[str, dict[str, int]] = {}
     severity_distribution = {"critical": 0, "high": 0, "medium": 0, "low": 0}
     environment_risk_analysis = {"development": 0, "production": 0, "staging": 0}
@@ -1309,7 +1321,8 @@ def generate_mcp_dashboard_data(scans: list[Scan]) -> dict:
         else:
             scan_status_distribution["not_started"] += 1
 
-        vulns_with_cat = _mcp_vulns(scan)
+        # a failed or running scan's findings reach no tile (review 6064315680 of #505, 2)
+        vulns_with_cat = _mcp_vulns(scan) if status == "success" else []
         if not vulns_with_cat:
             continue
         date_key = str(scan.created_at.date()) if scan.created_at else ""
@@ -1359,6 +1372,8 @@ def generate_mcp_dashboard_data(scans: list[Scan]) -> dict:
             category_risk_count[cat] += 1
         if vulns_with_cat:
             risk_score_trend[server_label] = round(scan_risk_sum / len(vulns_with_cat), 1)
+            if status == "success":  # the server's one 0-100 risk score (risk_scale.posture), as its list row
+                risk_posture_trend[server_label] = risk_scale.posture(temp_sev)["score"]
         if date_key:
             if date_key not in risks_over_time:
                 risks_over_time[date_key] = {"critical": 0, "high": 0, "medium": 0, "low": 0}
@@ -1381,6 +1396,8 @@ def generate_mcp_dashboard_data(scans: list[Scan]) -> dict:
         "total_scans": len(mcp_scans),
         "total_critical_issues": total_critical,
         "average_risk_score": average_risk_score,
+        # the one 0-100 risk score of the latest successful scan per target (risk_rollup), as their list rows
+        **risk_rollup.team_posture("mcp", mcp_scans),
         "total_active_scans": total_active_scans,
         "total_resolved_issues": total_resolved_past_7_days,
     }
@@ -1435,6 +1452,7 @@ def generate_mcp_dashboard_data(scans: list[Scan]) -> dict:
         "card_data": card_data,
         "scan_status_distribution": scan_status_distribution,
         "risk_score_trend": risk_score_trend,
+        "risk_posture_trend": risk_posture_trend,
         "risks_over_time": risks_over_time,
         "severity_distribution": severity_distribution,
         "environment_risk_analysis": environment_risk_analysis,
@@ -1647,6 +1665,8 @@ def generate_llm_dashboard_data(scans: list[Scan]) -> dict:
     card_data = {
         "total_scans": success_scans,
         "average_risk_score": average_risk_score,
+        # the one 0-100 risk score of the latest successful scan per target (risk_rollup), as their list rows
+        **risk_rollup.team_posture("llm", [s for s in scans if s.scan_type == "llm"]),
         "total_critical_vulnerabilities": total_critical,
         "total_vulnerabilities": total_vulns,
         "owasp_compliance_score": owasp_compliance_score,
@@ -1733,6 +1753,26 @@ def rollup_code_rows(scans: list[Scan], view: Any) -> dict[int, list]:
     return out
 
 
+def _gate_cbom_tile(counted: list, sources: Any, out: dict, rows: Any) -> dict:
+    """The CBOM tile's one risk score, gated like every product (review 6064315680 of #505, 4). It only gates (reviews
+    6065663183 and 6066492618 of #505): with no successful code scan and no Sources row counted, no score,
+    ``not_scored``, and #500's flat ``risk_score`` / ``risk_grade`` / ``risk_label`` nulled ("—", never "0 · A" for a
+    team whose scans failed). A judged team's card passes any status it carries through (#500's ``scored``,
+    ``unverified``, ``incomplete``); without #500's fields the score is ``risk_rollup.cbom_posture_field`` over
+    ``rows`` (the rows the summary counts: test code not scored, unconfirmed settings "unverified"), never the
+    severity distribution."""
+    from backend.utilities.db.scan_list_item import gate_judged
+
+    judged = bool(counted) or bool(getattr(sources, "rows", None))
+    card = dict(out.get("card_data") or {})
+    if not judged:
+        card.update({risk_scale.POSTURE_KEY: None, risk_scale.STATUS_KEY: "not_scored",
+                     "risk_score": None, "risk_grade": None, "risk_label": None})
+    else:
+        card = gate_judged(card, list(rows or []))
+    return {**out, "card_data": card}
+
+
 def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None, *, team_id: int | None = None,
                                  register_summary: Any = None, now: Any = None) -> dict:
     """Aggregate CBOM dashboard data for the scan-list page from the team roll-up the deliverables use (same rules as
@@ -1768,6 +1808,7 @@ def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None, *, team
     rows_of = rollup_code_rows(scans, view)
     counted = [scan for scan in scans if scan.id in rows_of]
     summary = CodeRowSummary()
+    scored_rows: list = []  # the rows the summary counts, for the tile's score (risk_rollup.cbom_posture_field)
     compliance_controls_metrics: dict[str, int] = defaultdict(int)
 
     cert_ids: dict[int, dict[str, str]] = {}
@@ -1787,6 +1828,7 @@ def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None, *, team
             continue
         summary.add_rows(results, origin={"kind": ORIGIN_CODE, "scan_id": scan.id,
                                           "scan_title": getattr(scan, "title", None)})
+        scored_rows.extend(results)
 
         # Framework FAIL counts from cbom_compliance (mirrors single-scan CBOM dashboard)
         _cbom_compliance = (
@@ -1804,6 +1846,7 @@ def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None, *, team
                     compliance_controls_metrics[_label] += int(_fail)
 
     summary.add_rows([item.row for item in resolution.sources_rows])
+    scored_rows.extend(item.row for item in resolution.sources_rows)
     for label, count in summary.compliance.items():
         compliance_controls_metrics[label] += count
     # Rule P (review 6038529822 M1): the headline is the view's, the one the documents print; the distributions below
@@ -1841,7 +1884,7 @@ def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None, *, team
         population = RECON.for_dashboard(view, register_summary, view.asset_occurrences, sources)
     except Exception as exc:  # noqa: BLE001  # pragma: no cover - defensive
         console.print(f"CBOM population reconciliation failed: {type(exc).__name__}", style="bold red")
-    return {
+    return _gate_cbom_tile(counted, sources, {
         "population": population,
         "sources": {
             "collections": len(sources.collections),
@@ -1875,7 +1918,7 @@ def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None, *, team
             "total_not_started": total_not_started,
             "total_ignored": total_ignored,
         },
-    }
+    }, scored_rows)
 
 
 AI_BOM_RISK_SCORE_FOR_IMPACT = {"critical": 10.0, "high": 7.5, "medium": 5.0, "low": 2.5}

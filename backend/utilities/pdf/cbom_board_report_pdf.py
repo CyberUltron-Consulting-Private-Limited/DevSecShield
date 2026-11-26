@@ -9,10 +9,11 @@ plus three appendices (grade formula, scans included, disclaimers).  Plan 5.4 / 
 Design decisions, in one place:
 
 * **Grade input** (plan D-03): only CURRENT issue assets, i.e. de-duplicated current crypto
-  assets with at least one finding code, bucketed by their impact, go into the existing
-  ``compute_risk_score``.  Inventory-only assets are excluded, so the grade does not saturate
-  on inventory volume.  The formula is printed in Appendix A.
-* **NOT ASSESSED** (plan F-06 / R-05): ``compute_risk_score(0, 0, 0, 0)`` is grade A / "Low risk",
+  assets with at least one finding code, bucketed by their impact, go into the shared posture
+  ``compute_posture_risk_score`` (the score every scan's row, results page and PDF print, with the
+  worst-severity cap and floor; review 6065663183 of #505, 3).  Inventory-only assets are excluded,
+  so the grade does not saturate on inventory volume.  The formula is printed in Appendix A.
+* **NOT ASSESSED** (plan F-06 / R-05): ``compute_posture_risk_score(0, 0, 0, 0)`` is grade A / "Low risk",
   which would be false assurance.  A grade is therefore assigned only when current assets were
   inventoried and their findings can be read.  No completed scan, no inventoried asset, or only
   legacy-format scans without any finding data all give "NOT ASSESSED" with the reason; none of
@@ -102,7 +103,7 @@ from backend.utilities.pdf.report_branding import (
     PILL_MEDIUM_FG,
     PILL_UNKNOWN_BD,
     REPORT_META,
-    compute_risk_score,
+    compute_posture_risk_score,
 )
 
 DELIVERABLE_NUMBER = 14  # SOW D14 (REPORT_META sow_id; the Document ID reads it)
@@ -225,7 +226,7 @@ SCANS_NOTE = (
 SCANS_OMITTED = "{omitted} further scans omitted from this list."
 GRADE_NOT_ASSIGNED = "No grade was assigned. {reason}"
 GRADE_WORKED = (
-    "Weighted points: {weighted}. Score = min({cap}, {multiplier} x {weighted}) = {score}. "
+    "Weighted points: {weighted}. Score = min({cap}, {multiplier} x {weighted}) = {score}{bound}. "
     "Grade {grade} ({band})."
 )
 
@@ -281,6 +282,12 @@ class PostureGrade:
     medium: int
     low: int
     weighted_points: int
+    # "scored", or "unverified": the team's only findings are settings no crypto call is proven to read, graded on
+    # their worst case (the band says "(unverified)"); review 6066492618 of #505, 3
+    status: str = "scored"
+    # "unverified: N unconfirmed settings (worst: …)" when unconfirmed settings sit beside scored findings
+    note: str | None = None
+    excluded_test: int = 0  # findings in test, fixture or example code: listed, not scored
 
 
 def _not_assessed_reason(view: TeamCbomView) -> str | None:
@@ -320,14 +327,48 @@ def configuration_posture_line(view: TeamCbomView) -> str | None:
     )
 
 
+def grade_counts(view: TeamCbomView) -> tuple[list[int], list[int], int]:
+    """``(scored, unconfirmed, in_test)`` of the current issue assets by impact, the rule of every other surface
+    (``risk_rollup.cbom_counts``): a finding in test, fixture or example code is listed, not scored; a setting no
+    crypto call is proven to read is "unverified", counted at its worst-case severity (``unverified_severity``).
+    ``scored`` is ``issue_by_impact`` less those two."""
+    scored = [int(view.issue_by_impact.get(level, 0) or 0) for level in IMPACT_LEVELS]
+    unconfirmed = [0] * len(IMPACT_LEVELS)
+    in_test = 0
+    for asset in getattr(view, "assets", ()) or ():
+        if not asset.current or asset.impact not in IMPACT_LEVELS:
+            continue
+        index = IMPACT_LEVELS.index(asset.impact)
+        if asset.code_context == "test":
+            in_test += 1
+            scored[index] -= 1
+        elif asset.config_status == "unconfirmed":
+            # at its worst case (#500's ``unverified_severity``), never its Low row impact; an older row: its impact
+            worst = str(asset.unverified_severity or "").strip().capitalize()
+            unconfirmed[IMPACT_LEVELS.index(worst) if worst in IMPACT_LEVELS else index] += 1
+            scored[index] -= 1
+    return [max(0, n) for n in scored], unconfirmed, in_test
+
+
 def posture_grade(view: TeamCbomView) -> PostureGrade:
-    """Grade of the current issue assets via ``compute_risk_score``; NOT ASSESSED without data."""
-    asset_counts = [int(view.issue_by_impact.get(level, 0) or 0) for level in IMPACT_LEVELS]
+    """Grade of the current issue assets via the shared posture (``compute_posture_risk_score``), counted as the
+    dashboard tile counts them (``grade_counts``); NOT ASSESSED without data. Only unconfirmed settings: their worst
+    case, "unverified"; beside scored findings: the scored grade with a note."""
+    asset_counts, unconfirmed, in_test = grade_counts(view)
     if posture_active(view):
         asset_counts = [
             base + extra
             for base, extra in zip(asset_counts, _posture_issue_counts(view), strict=True)
         ]
+    status, note = "scored", None
+    if not sum(asset_counts) and sum(unconfirmed):
+        asset_counts, status = list(unconfirmed), "unverified"
+    elif sum(unconfirmed):
+        # the words of risk_scale.unverified_note (this module reads only the pdf and roll-up packages; the
+        # round-4 parity test checks the two agree)
+        n = sum(unconfirmed)
+        worst = next(level for level, count in zip(IMPACT_LEVELS, unconfirmed, strict=True) if count)
+        note = f"unverified: {n} unconfirmed setting{'' if n == 1 else 's'} (worst: {worst})"
     critical, high, medium, low = asset_counts
     weights = authored.GRADE_WEIGHTS
     weighted = sum(
@@ -348,8 +389,29 @@ def posture_grade(view: TeamCbomView) -> PostureGrade:
             low,
             weighted,
         )
-    score, grade, band = compute_risk_score(critical, high, medium, low)
-    return PostureGrade(True, grade, score, band, None, critical, high, medium, low, weighted)
+    score, grade, band = compute_posture_risk_score(critical, high, medium, low)
+    if status == "unverified":
+        band = f"{band} (unverified)"
+    return PostureGrade(True, grade, score, band, None, critical, high, medium, low, weighted, status=status,
+                        note=note, excluded_test=in_test)
+
+
+def worked_grade_text(posture: PostureGrade) -> str:
+    """Appendix A's worked line: the weighted points, the score they give, and, when the worst severity bounds it,
+    the bound that set the printed score ("raised to 70 by the Critical floor", "capped at 69 when the worst finding
+    is High")."""
+    raw = min(authored.GRADE_SCORE_CAP, authored.GRADE_SCORE_MULTIPLIER * int(posture.weighted_points or 0))
+    bound = ""
+    counts = dict(zip(IMPACT_LEVELS, (posture.critical, posture.high, posture.medium, posture.low), strict=True))
+    worst = next((level for level in IMPACT_LEVELS if int(counts[level] or 0) > 0), None)
+    if worst is not None and posture.score is not None and posture.score > raw:
+        bound = f", raised to {posture.score} by the {worst} floor"
+    elif worst is not None and posture.score is not None and posture.score < raw:
+        bound = f", capped at {posture.score} when the worst finding is {worst}"
+    text = GRADE_WORKED.format(weighted=posture.weighted_points, cap=authored.GRADE_SCORE_CAP,
+                               multiplier=authored.GRADE_SCORE_MULTIPLIER, score=raw, bound=bound,
+                               grade=posture.grade, band=posture.band)
+    return f"{text} Not in the score: {posture.note}." if posture.note else text
 
 
 def _risk_key(asset: AssetAgg):
@@ -935,6 +997,7 @@ def _summary_paragraphs(view: TeamCbomView, posture: PostureGrade) -> list[str]:
             f"Posture grade {posture.grade} ({posture.band}, score {posture.score} of "
             f"{authored.GRADE_SCORE_CAP}) is computed from the issue assets only. It is a "
             "platform posture grade, not a regulatory rating."
+            + (f" Not in the score: {posture.note}." if posture.note else "")
         ),
         f"{_quantum_sentence(view)} {_certificate_sentence(certificate_posture(view))}",
     ]
@@ -1357,6 +1420,8 @@ def _grade_appendix(view: TeamCbomView, posture: PostureGrade, styles: Styles):
         _gap(3),
         _para(_grade_input_text(view), styles),
         _gap(3),
+        _para(authored.GRADE_EXCLUSION, styles),
+        _gap(3),
         _para(f"This report holds {issue_counts_text(view)}; the table counts the occurrences"
               + (", plus the resources with configuration posture findings." if posture_active(view) else "."),
               styles, "muted"),
@@ -1372,14 +1437,7 @@ def _grade_appendix(view: TeamCbomView, posture: PostureGrade, styles: Styles):
             [level, str(n), str(weights[level]), str(n * weights[level])]
             for level, n in zip(IMPACT_LEVELS, counts, strict=True)
         ]
-        worked = GRADE_WORKED.format(
-            weighted=posture.weighted_points,
-            cap=authored.GRADE_SCORE_CAP,
-            multiplier=authored.GRADE_SCORE_MULTIPLIER,
-            score=posture.score,
-            grade=posture.grade,
-            band=posture.band,
-        )
+        worked = worked_grade_text(posture)
         story += [
             dense_table(["Impact", "Issue occurrences", "Weight", "Points"], rows, [150, 130, 130, 130]),
             _gap(4),

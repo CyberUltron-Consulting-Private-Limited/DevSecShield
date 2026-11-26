@@ -17,6 +17,7 @@ from reportlab.lib.units import inch
 from reportlab.platypus import CondPageBreak, PageBreak, Paragraph, SimpleDocTemplate, Spacer
 
 from backend.utilities.pdf.report_branding import (
+    CBOM_METHOD_NOTE,
     append_executive_summary,
     append_findings_catalog,
     count_label,
@@ -120,6 +121,7 @@ def build_run_pdf(*, run: dict[str, Any], sources: list[dict[str, Any]], posture
     else:
         append_executive_summary(
             summary_part, report_key="cbom", overview_rows=overview,
+            posture_method=True, method_note=CBOM_METHOD_NOTE,
             severity_counts={count_label(k): v for k, v in impacts.items() if v},
             styles=styles, extra_tables=extra_tables, project_name=f"Sources run #{run['id']}",
             scan_time=_duration(run), scan_time_hint="Still collecting" if as_of_note else f"Run {run['status']}",

@@ -86,6 +86,7 @@ import { useDialogNav } from "@/components/cbom/results/useDialogNav";
 import { InfoTipDrawerProvider } from "@/components/ui/info-tip-drawer";
 import { ComplianceMappingSection } from "@/components/cbom/results/ComplianceSummary";
 import { buildComplianceSummary, runDrillFilters, type DrillTarget } from "@/components/cbom/results/complianceSummary";
+import { bindingCompliance, ComplianceApplicabilityContext, type ComplianceApplicability } from "@/components/compliance/teamApplicability";
 import { RunFindingDialog } from "@/components/cbom/results/RunFindingDialog";
 import { ColumnChooser, useColumnPrefs } from "@/components/cbom/results/ColumnChooser";
 import { FINDING_DIALOG_BODY, FINDING_DIALOG_CONTENT, FINDING_DIALOG_FULLSCREEN_SM, rowOpenProps, SCAN_TABLE_COLUMNS, STICKY_ACTIONS } from "@/components/cbom/results/findingTable";
@@ -558,6 +559,11 @@ export default function CbomResults({
     return g && Array.isArray(g.nodes) ? g : null;
   }, [data, scanMetadata]);
 
+  // The team's view of the compliance frameworks (backend bom_applicability; absent on a Sources run and on an older
+  // backend: every framework and the pinned chips, as before).
+  const cbomApplicability = (scanMetadata as { compliance_applicability?: ComplianceApplicability | null } | null)
+    ?.compliance_applicability ?? null;
+
   // Tri-state compliance matrix (F3). Same source precedence as the
   // distributions/graph — present only on reconciled aibom-lane scans; the
   // matrix renders only when it carries ≥1 framework object.
@@ -565,8 +571,9 @@ export default function CbomResults({
     const fromData = (data as Record<string, unknown> | null)?.cbom_compliance;
     const fromMeta = (scanMetadata as Record<string, unknown> | null)?.cbom_compliance;
     const c = (fromData ?? fromMeta) as CbomCompliance | undefined;
-    return c && typeof c === "object" ? c : null;
-  }, [data, scanMetadata]);
+    // only the frameworks that bind the team (server compliance_applicability), here and in the compliance mapping
+    return c && typeof c === "object" ? bindingCompliance(c, cbomApplicability) ?? null : null;
+  }, [data, scanMetadata, cbomApplicability]);
 
   // Compliance mapping (#270): one view over the tri-state checks (code scans and runs) and, for a run, the knowledge
   // base clauses its findings touch; every asset count drills into the findings table.
@@ -655,7 +662,11 @@ export default function CbomResults({
       case "inventory": return <SectionView section={s} onBack={back} loading={resultsPending}><InventoryView ctx={ctx} /></SectionView>;
       case "migration": return <SectionView section={s} onBack={back} loading={resultsPending}><MigrationView ctx={ctx} /></SectionView>;
       case "compliance":
-        return <SectionView section={s} onBack={back} loading={resultsPending || r.parityState === "loading"}><ComplianceView ctx={ctx} /></SectionView>;
+        // the run's matrix: the frameworks that bind the team and chips named after them (/parity
+        // compliance_applicability), as the code scan page
+        return <SectionView section={s} onBack={back} loading={resultsPending || r.parityState === "loading"}>
+          <ComplianceApplicabilityContext.Provider value={cbomApplicability}><ComplianceView ctx={ctx} /></ComplianceApplicabilityContext.Provider>
+        </SectionView>;
       case "remediation": return <SectionView section={s} onBack={back}><RemediationView ctx={ctx} /></SectionView>;
     }
   };
@@ -919,6 +930,7 @@ export default function CbomResults({
           )}
           {/* Crypto-asset charts (aibom CBOM lane) */}
           {cryptoDistributions && (
+            <ComplianceApplicabilityContext.Provider value={cbomApplicability}>
             <CbomCryptoCharts
               distributions={cryptoDistributions}
               graph={cryptoGraph}
@@ -932,6 +944,7 @@ export default function CbomResults({
               showCodeHeatmap
               readinessScope="code"
             />
+            </ComplianceApplicabilityContext.Provider>
           )}
           {/* the code scan's changes and waves: never on a run (they read and write code scan #<id>, and a run's id is not one) */}
           {!run && cryptoDistributions && Number.isFinite(tid) && tid > 0 && Number.isFinite(sid) && sid > 0 && (

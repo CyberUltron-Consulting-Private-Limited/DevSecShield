@@ -61,9 +61,7 @@ def component_licence_categories(scan_data: Any) -> list[str]:
     )
 
     data = scan_data if isinstance(scan_data, dict) else {}
-    bom = data.get("sbom_json") if isinstance(data.get("sbom_json"), dict) else {}
-    comps = [c for c in bom.get("components") or [] if isinstance(c, dict) and str(c.get("name") or "").strip()
-             and not (str(c.get("type") or "").lower() == "file" and not c.get("purl"))]
+    comps = _components(data)
     out: list[str] = []
     if comps:
         for c in comps:
@@ -86,5 +84,33 @@ def component_licence_categories(scan_data: Any) -> list[str]:
     return out
 
 
-__all__ = ["component_licence_categories", "is_inventory_row", "is_unverified_version", "severity_findings", "severity_rows",
+
+def _components(data: dict) -> list[dict[str, Any]]:
+    """The stored SBOM's package components (a file without a purl is not a package)."""
+    bom = data.get("sbom_json") if isinstance(data.get("sbom_json"), dict) else {}
+    return [c for c in bom.get("components") or [] if isinstance(c, dict) and str(c.get("name") or "").strip()
+            and not (str(c.get("type") or "").lower() == "file" and not c.get("purl"))]
+
+
+def is_incomplete(scan_data: Any) -> bool:
+    """Whether a finished SBOM scan cannot be scored: it inventoried no package (no stored component and no result
+    row: nothing was matched, so "no vulnerability" means nothing). Its risk score is "incomplete", never 0 / A. Matches
+    on guessed versions are not incompleteness: they are scored as "unverified" (``unverified_counts``)."""
+    data = scan_data if isinstance(scan_data, dict) else {}
+    rows = [r for r in data.get("results") or [] if isinstance(r, dict)]
+    return not _components(data) and not rows  # every row is a package (an inventory row or a vulnerable one)
+
+
+def unverified_counts(scan_data: Any) -> dict[str, int]:
+    """The matches on versions guessed from a range per severity (listed, not in the confirmed score, review
+    6028132826 M2): the "unverified" note and the worst-case score of a scan that has nothing else."""
+    data = scan_data if isinstance(scan_data, dict) else {}
+    counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    for row in unverified_version_rows(data.get("results") or []):
+        key = str(row.get("impact") or "").strip().lower()
+        if key in counts:
+            counts[key] += 1
+    return counts
+
+__all__ = ["component_licence_categories", "is_incomplete", "unverified_counts", "is_inventory_row", "is_unverified_version", "severity_findings", "severity_rows",
            "unverified_version_rows", "vulnerability_findings", "vulnerability_rows"]

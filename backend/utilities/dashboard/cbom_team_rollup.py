@@ -349,6 +349,14 @@ class AssetAgg:
     # the other places a de-duplicated certificate was read ("source location"; review 6038529822 m6: D13 lists
     # every place, not only the one counted)
     also_at: tuple[str, ...] = field(default=(), compare=False, repr=False)
+    # the row's ``code_context`` ("test": test, fixture or example code) and ``config_status`` ("unconfirmed": a
+    # setting no crypto call is proven to read): the Board Report grades as every other surface (test code not
+    # scored, unconfirmed settings "unverified"; review 6066492618 of #505, 3)
+    code_context: str | None = field(default=None, compare=False, repr=False)
+    config_status: str | None = field(default=None, compare=False, repr=False)
+    # an unconfirmed setting's severity if a crypto call were proven to read it (#500's ``unverified_severity``,
+    # lower case): the Board Report counts it there, as the tile does
+    unverified_severity: str | None = field(default=None, compare=False, repr=False)
 
 
 @dataclass
@@ -1278,6 +1286,9 @@ def _asset_from_row(row: Mapping[str, Any], facts: ScanFacts) -> AssetAgg:
         scan_count=1,
         scan_ids=(facts.scan_id,),
         latest_scan_id=facts.scan_id,
+        code_context=_text(row.get("code_context")),
+        config_status=_text(row.get("config_status")),
+        unverified_severity=_text(row.get("unverified_severity")),
     )
 
 
