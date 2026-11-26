@@ -467,10 +467,15 @@ def _put_remediation(engine, team_id: int, user_id: int, body: WAVES.AssignmentB
     now = utcnow()
     with Session(engine) as session:
         out = WAVES.upsert(session, team_id, user_id, body, now)
+        trail = out.pop("audit", [])
         if out["updated"]:
             audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="remediation.assign",
                   object_type="run" if body.run_id else "scan", object_id=body.run_id or body.scan_id,
                   changed_fields=sorted({f for i in body.items for f in i.model_fields_set if f != "asset_key"}))
+            # PR #499 round 7: one row per resource written, with its group key, asset and previous values
+            for fields in WAVES.audit_items(trail):
+                audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="remediation.assign",
+                      object_type="resource", object_id=body.run_id or body.scan_id, changed_fields=fields)
         session.commit()
         log("remediation assigned", team=team_id, items=out["updated"], by=user_id)
         return out

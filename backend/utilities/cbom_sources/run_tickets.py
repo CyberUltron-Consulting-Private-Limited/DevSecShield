@@ -217,10 +217,13 @@ def _ensure_row(session: Session, team_id: int, item: dict[str, Any], user_id: i
     """The asset's assignment row exists (committed by the caller); a concurrent insert by ``waves.upsert`` or another
     ticket request is fine (``ON CONFLICT DO NOTHING``).  True when this call inserted it (a blank record: status
     "open", no plan, no ticket), so a released claim deletes it again (review 6065677758 M1)."""
+    # PR #499 round 7: the record is the resource's group record (the final word once it exists), so it starts from
+    # what the copies show (``remediation_group.seed_values``), never blank over a real plan; a claim is no plan
+    # decision, so it names no author (``updated_by_user_id`` stays empty until a user writes, or the key is stored)
     values = {"team_id": team_id, "asset_key": item["asset_key"], "scope": "node",
               "source_ref": str(item["source_ref"])[:255], "label": str(item.get("label") or "")[:255] or None,
-              "status": "open", "row_version": 1, "updated_by_user_id": user_id, "created_at": now,
-              "last_updated": now}
+              "status": "open", "row_version": 1, "updated_by_user_id": None, "created_at": now,
+              "last_updated": now, **_seed(session, team_id, item)}
     dialect = session.get_bind().dialect.name
     if dialect in ("postgresql", "sqlite"):
         mod = pg_dialect if dialect == "postgresql" else sqlite_dialect
@@ -233,6 +236,12 @@ def _ensure_row(session: Session, team_id: int, item: dict[str, Any], user_id: i
         return True
     except IntegrityError:
         return False
+
+
+def _seed(session: Session, team_id: int, item: dict[str, Any]) -> dict[str, Any]:
+    from backend.utilities.cbom_sources.waves import _seed as seed
+
+    return seed(session, team_id, {**item, "scope": "node"})
 
 
 def _claim(engine, team_id: int, item: dict[str, Any], user_id: int, now: _dt.datetime
@@ -272,10 +281,12 @@ def _finish(engine, team_id: int, asset_key: str, claim: str, user_id: int, *, k
     as stored when the claim was no longer ours.
 
     A release puts the record back as it was before the claim (review 6065677758 M1, P10b): the record the claim
-    inserted (``inserted``) is deleted while it is still blank and ours (a plan a user wrote meanwhile keeps it, and
-    only the claim is cleared); a record that existed keeps its ``last_updated`` and author (the claim never changed
-    them).  A blank record left behind was the newest one, so it used to hide an older plan, and q111 wrote it to the
-    group key."""
+    inserted (``inserted``) is deleted while it is still the claim's and unchanged since (``row_version`` 2: the
+    insert, then the claim; a user's write meanwhile bumps it and keeps the record, only the claim is cleared); a
+    record that existed keeps its ``last_updated`` and author (the claim never changed them).  The inserted record
+    is the resource's group record, which ``resolve`` reads as the final word (round 7), so one left behind would
+    stand in for the copies' plan.
+    """
     now = _utcnow()
     values: dict[str, Any] = {"row_version": _M.row_version + 1}
     if key is not None:
@@ -291,8 +302,7 @@ def _finish(engine, team_id: int, asset_key: str, claim: str, user_id: int, *, k
 
             gone = session.exec(delete(_M).where(  # type: ignore[call-overload]
                 _M.team_id == team_id, _M.asset_key == asset_key, _M.ticket_claim == claim,
-                _M.ticket_key.is_(None), _M.status == "open", _M.wave.is_(None),  # type: ignore[union-attr]
-                _M.owner.is_(None), _M.target_date.is_(None), _M.note.is_(None))  # type: ignore[union-attr]
+                _M.ticket_key.is_(None), _M.row_version == 2)  # type: ignore[union-attr]
                 .execution_options(synchronize_session=False)).rowcount
             if gone == 1:
                 session.commit()

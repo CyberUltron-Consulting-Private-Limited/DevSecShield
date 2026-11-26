@@ -9,9 +9,10 @@ status and the Jira ticket must NOT follow that choice, or they flip whenever an
   with ``certificates=True``), whichever source read it.  A plan or ticket made from now on is stored under it, so it
   survives any source being deleted (m3) and any finish order (F2);
 * ``resolve``: the one rule every surface uses to find a resource's plan and ticket among its group key and the
-  source-scoped keys of its copies (records made before this rule, on whichever row was shown then), merged field by
-  field: the plan from the most recently updated record that holds one, the ticket from the plan record, else the
-  group key's, else the first copy's (review 6060688856 M2, 6064356833 M2).  The group key is scoped to the team
+  source-scoped keys of its copies (records made before this rule, on whichever row was shown then).  The group
+  record, once it exists, is the final word for the plan (round 7, review 6066796071 M1); without one the copies are
+  merged field by field: the plan from the most recently updated record that holds one, the ticket from the plan
+  record, else the first copy's (review 6060688856 M2, 6064356833 M2).  The group key is scoped to the team
   (6064356833 M1).
 
 Callers: ``collections_view.load_sources_result`` (the team view's remediation status: dashboard fixed counts, the
@@ -55,7 +56,8 @@ def has_plan(a: Any) -> bool:
     ticket claim inserts (``run_tickets._claim``) and, before this release, left behind when Jira refused the call
     (P10b), or "Create tickets" made on another copy (a ticket-only record).  Counted as a plan, such a leftover was
     the newest record and hid an older real plan on every surface (P10), and q111 wrote it to the group key (R4).
-    A user's reset to blank is written to every key of the resource (``waves.upsert``), so it is no exception."""
+    A user's reset to blank is written to the group record, which ``resolve`` reads as the final word, so it is no
+    exception."""
     if a is None:
         return False
     return str(a.status or "open") != "open" or any(
@@ -105,38 +107,71 @@ def _updated(a: Any) -> Any:
 
 
 def resolve(found: Mapping[str, Any], groups: Sequence[str | None], members: Iterable[str], own: str) -> Resolved:
-    """The resource's plan and ticket over its group key and every copy's key, merged FIELD BY FIELD (review
-    6064356833 M2: a copy that holds only a ticket never replaces a real plan):
+    """The resource's plan and ticket over its group key and every copy's key.
+
+    THE GROUP RECORD IS THE FINAL WORD WHENEVER IT EXISTS (PR #499 round 7, review 6066796071 M1).  Every write (a plan
+    edit, a reset, a ticket claim) goes to the team-scoped group key, and q111 copies each legacy plan there; so once
+    the record exists its plan fields are the resource's, a user's reset to blank included, and the per-source copies
+    are not read for the plan again: a copy a run does not read (a scheduled single-source run, a deleted source, an
+    older run) can never bring an older plan back.  Its ticket is the group record's, else the first copy's that holds
+    one (key order), so a ticket made before is never lost.
+
+    Without a group record (a resource no write has touched since the group key, and that q111 could not place), the
+    copies are merged FIELD BY FIELD (review 6064356833 M2):
 
     * the plan shown: the most recently updated record that holds a plan (``has_plan``: never a blank leftover or a
-      ticket-only record, review 6065677758 M1), ties by key order (group keys first); without any plan, the group
-      key's record, else the first copy with a ticket, else the first copy (all blank: shown as not started);
-    * the ticket shown: the plan record's own ticket, else the group key's, else the first copy's by key order; any
-      other ticket key a copy holds is a conflict (``conflicts``: two issues for one resource, made before this rule);
-    * the key a change is written to: the plan record's key, else the group key, else the row's own key.
+      ticket-only record, review 6065677758 M1), ties by key order; without any plan, the first copy with a ticket,
+      else the first copy (all blank: shown as not started);
+    * the ticket shown: the plan record's own ticket, else the first copy's by key order.
 
-    Key order is the keys' text, never which row a view shows."""
+    Any other ticket key a copy holds is a conflict (``conflicts``: two issues for one resource, made before this
+    rule).  The key a change is written to: the group record's key, else the resource's group key (the first write
+    creates the group record from what is shown: ``seed_values``), else (no cross-source identity) the plan record's
+    key or the row's own key.  Key order is the keys' text, never which row a view shows."""
     keys = candidates(groups, members)
     group_set = {g for g in groups if g}
     order = {k: i for i, k in enumerate(keys)}
+    group_keys = [k for k in keys if k in group_set]
     held = [found[k] for k in keys if k in found]
-    planned = [a for a in held if has_plan(a)]
-    if planned:
-        plan = sorted(planned, key=lambda a: (-_updated(a).timestamp(), order[a.asset_key]))[0]
-    else:
-        plan = next((a for a in held if a.asset_key in group_set), None) or next(
-            (a for a in held if a.ticket_key), None) or (held[0] if held else None)
+    copies = [a for a in held if a.asset_key not in group_set]
     ticketed = [a for a in held if a.ticket_key]
-    ticket = plan if plan is not None and plan.ticket_key else next(
-        (a for a in ticketed if a.asset_key in group_set), None) or (ticketed[0] if ticketed else None)
+    record = next((found[k] for k in group_keys if k in found), None)
+    if record is not None:
+        plan = record
+        ticket = record if record.ticket_key else next((a for a in copies if a.ticket_key), None)
+        write = record.asset_key
+    else:
+        planned = [a for a in copies if has_plan(a)]
+        if planned:
+            plan = sorted(planned, key=lambda a: (-_updated(a).timestamp(), order[a.asset_key]))[0]
+        else:
+            plan = next((a for a in copies if a.ticket_key), None) or (copies[0] if copies else None)
+        ticket = plan if plan is not None and plan.ticket_key else next((a for a in copies if a.ticket_key), None)
+        write = group_keys[0] if group_keys else (plan.asset_key if plan is not None else own)
     others = tuple(dict.fromkeys(a.ticket_key for a in ticketed
                                  if ticket is not None and a.ticket_key != ticket.ticket_key))
-    group_keys = [k for k in keys if k in group_set]
-    write = plan.asset_key if plan is not None and has_plan(plan) else (group_keys[0] if group_keys else (
-        plan.asset_key if plan is not None else own))
     return Resolved(key=write, assignment=plan, ticket=ticket, keys=keys,
-                    group=group_keys[0] if group_keys else None, own=own, conflicts=others)
+                    group=record.asset_key if record is not None else (group_keys[0] if group_keys else None),
+                    own=own, conflicts=others)
+
+
+def seed_values(resolved: Resolved) -> dict[str, Any]:
+    """The values a NEW group record starts from (``waves.upsert`` and ``run_tickets._ensure_row``, the first write
+    to a resource that has none): what the copies show now (``resolve``'s legacy rule), so the write changes only
+    what it names.  The plan fields, its creation time and ``done_at`` (time-to-remediate keeps its start) come from
+    the plan record when it holds a plan; the ticket fields from the ticket record.  Empty when there is nothing."""
+    out: dict[str, Any] = {}
+    plan, ticket = resolved.assignment, resolved.ticket
+    if plan is not None and has_plan(plan) and plan.asset_key != resolved.key:
+        out.update({name: getattr(plan, name) for name in PLAN_FIELDS})
+        out["created_at"] = getattr(plan, "created_at", None) or out.get("created_at")
+        out["label"] = getattr(plan, "label", None)
+    if ticket is not None and ticket.asset_key != resolved.key:
+        out.update({name: getattr(ticket, name) for name in TICKET_FIELDS})
+        if out.get("ticket_state") == "claimed":  # a claim is its own record's, never copied
+            out["ticket_state"] = None
+    return {k: v for k, v in out.items() if v is not None}
 
 
 __all__ = ["GROUP_SCOPE", "PLAN_FIELDS", "Resolved", "TICKET_FIELDS", "candidates", "group_key", "has_plan", "resolve",
-           "row_group_key"]
+           "row_group_key", "seed_values"]

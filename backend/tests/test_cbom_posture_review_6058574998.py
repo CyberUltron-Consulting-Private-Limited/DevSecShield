@@ -188,7 +188,8 @@ def test_a_plan_on_another_sources_copy_follows_the_resource(engine):
         item = next(i for i in WAVES.node_items(s, 1, s.get(CbomCollectionRun, second))
                     if i["type"] == "kms_key" and i["label"] == ID.node_label(row))
         assert item["source_name"] == "role A (oldest)"  # run 2: A finished last
-        assert item["asset_key"] == b_key  # the plan's own key: a change edits that record
+        # round 7 (review 6066796071): a change goes to the group key, which starts from this plan (seed_values)
+        assert item["asset_key"] == item["group_key"] and b_key in item["alias_keys"]
         assert item["assignment"]["status"] == "in_progress" and item["assignment"]["ticket_key"] == "SEC-7"
 
 

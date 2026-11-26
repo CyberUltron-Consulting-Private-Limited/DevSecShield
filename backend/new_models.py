@@ -771,7 +771,13 @@ class CbomCollectionAuditEvent(SQLModel, table=True):
 
     A second one: action ``register_model_regrade`` (actor ``system``, object ``risk_register``) records how many
     register rows a re-grade under a new grade model moved, as ``moved=N`` and ``model_version=...``, so D12 marks that
-    week "grade model changed" (``risk_register._record_model_regrade``, PR #496 review 6057476173 M2)."""
+    week "grade model changed" (``risk_register._record_model_regrade``, PR #496 review 6057476173 M2).
+
+    A third one: action ``remediation.assign`` with object ``resource`` (one row per resource a plan edit wrote, next
+    to the request's ``run``/``scan`` row) records ``key=`` (the record written: the group key), ``group=``,
+    ``asset=`` (the shown row's own key), ``set=<field>`` and the previous ``prev.status``, ``prev.wave``,
+    ``prev.target_date`` and ``prev.done_at`` as they were; owner and note only as ``set:<length>`` or ``empty``
+    (``waves.audit_items``, PR #499 round 7)."""
     __tablename__ = "cbomcollectionauditevent"
     id: int | None = Field(default=None, primary_key=True)
     team_id: int = Field(foreign_key="team.id", index=True)

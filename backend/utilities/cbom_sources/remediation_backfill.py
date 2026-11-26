@@ -23,8 +23,11 @@ What it does, per team (one savepoint each, like ``identity_migration.migrate_al
 4. no record on the group key yet: one is INSERTED with the plan record's plan (wave, owner, target date, status,
    note, done time, created time, so time-to-remediate is kept) and the ticket holder's ticket, and
    ``source_ref = "group-backfill:<plan key>[|<ticket key>]"``.  A record whose rows were all purged is left where it
-   is and counted ``unplaced`` (logged).  A record already on the group key keeps its plan; a ticket a copy holds is
-   filled in when it has none, and a copy's plan when it is blank (``plans_filled``).
+   is and counted ``unplaced`` (logged).  A record already on the group key is the final word (``resolve``, round 7)
+   and keeps its plan, a blank one included; a ticket a copy holds is filled in when it has none.  A resource whose
+   copies hold a blank record (no ticket) newer than the plan copied is counted ``blank_newer`` and its group key
+   logged: a reset made before this release cannot be told from a released claim's leftover, and q111 makes the
+   older plan the resource's, so such a reset has to be made again after the upgrade.
 
 Nothing is lost or duplicated: the originals are kept unchanged (an older release still reads them), the group record
 is the one every surface shows (it is what they already showed: the same primary), the Jira issue is the same one
@@ -123,8 +126,9 @@ def backfill_team(session: Any, team_id: int) -> dict[str, int]:
         if group and group != own:
             groups.setdefault(group, []).append(own)
     unplaced = sorted(k for k in wanted if k not in placed and k not in on_group)
-    out = {"groups": len(groups), "inserted": 0, "tickets_filled": 0, "plans_filled": 0, "kept": 0, "blank": 0,
-           "unplaced": len(unplaced), "ticket_conflicts": 0}
+    out = {"groups": len(groups), "inserted": 0, "tickets_filled": 0, "kept": 0, "blank": 0,
+           "unplaced": len(unplaced), "ticket_conflicts": 0, "blank_newer": 0}
+    blank_newer: list[str] = []
     if unplaced:  # their rows are gone: they stay where they are, reachable only if the same source reads them again
         log("cbom remediation group backfill unplaced", team=team_id, count=len(unplaced),
             keys=",".join(k[:12] for k in unplaced[:50]))
@@ -139,29 +143,24 @@ def backfill_team(session: Any, team_id: int) -> dict[str, int]:
             log("cbom remediation group backfill ticket conflict", team=team_id, group=group[:12],
                 shown=resolved.ticket_key, not_shown=",".join(resolved.conflicts))
         held = found.get(group)
-        if held is not None:  # a record on the group key already: fill what it lacks, never replace its plan
-            filled = False
+        if held is not None:  # a record on the group key already: the final word (round 7), its plan is never
+            # replaced (a user's reset to blank included); only a ticket a copy holds is filled in when it has none
             if not held.ticket_key and ticket is not None and ticket is not held:
                 for name in RG.TICKET_FIELDS:
                     setattr(held, name, getattr(ticket, name))
-                out["tickets_filled"] += 1
-                filled = True
-            if not RG.has_plan(held) and plan is not None and plan is not held:
-                # a blank record on the group key (a claim an earlier build of this branch left): the copy's plan
-                for name in RG.PLAN_FIELDS:
-                    setattr(held, name, getattr(plan, name))
-                held.last_updated = plan.last_updated
-                out["plans_filled"] += 1
-                filled = True
-            if filled:
                 held.row_version = int(held.row_version or 1) + 1
                 session.add(held)
+                out["tickets_filled"] += 1
             else:
                 out["kept"] += 1
             continue
         if plan is None and ticket is None:  # only blank records: nothing to move, none is written (R4)
             out["blank"] += 1
             continue
+        if plan is not None and any(  # a reset made before this release looks like a leftover: name it (round 7)
+                not RG.has_plan(found[m]) and not found[m].ticket_key
+                and RG._updated(found[m]) > RG._updated(plan) for m in members if m in found):
+            blank_newer.append(group)
         plan = plan if plan is not None else ticket  # a ticket-only resource: its ticket, no plan
         # field by field (review 6064356833 M2): the plan from the record that holds one, the ticket from the ticket
         # holder; both origins named, so the downgrade writes each part back to where it came from
@@ -173,6 +172,10 @@ def backfill_team(session: Any, team_id: int) -> dict[str, int]:
                   "created_at": plan.created_at, "last_updated": plan.last_updated}
         if _insert(session, values):
             out["inserted"] += 1
+    if blank_newer:  # the operator checks these after the upgrade: a reset made before it has to be made again
+        out["blank_newer"] = len(blank_newer)
+        log("cbom remediation group backfill blank newer than the plan copied", team=team_id, count=len(blank_newer),
+            keys=",".join(k[:12] for k in blank_newer[:50]))
     return out
 
 

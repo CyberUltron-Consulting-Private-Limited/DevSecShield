@@ -221,7 +221,8 @@ def test_a_ticket_only_copy_never_replaces_a_real_plan(engine):
         shown = _item(s, 1, first, label, "cdn_tls")
     plan = shown["assignment"]
     assert (plan["status"], plan["wave"], plan["owner"], plan["ticket_key"]) == ("in_progress", 2, "alice", "SEC-3")
-    assert shown["asset_key"] == a_key  # a change edits alice's plan, not the ticket-only record
+    # a change goes to the group key (round 7), which starts from alice's plan and SEC-3, not the ticket-only record
+    assert shown["asset_key"] == shown["group_key"] and a_key in shown["alias_keys"]
 
 
 def test_the_backfill_merges_plan_and_ticket_and_the_downgrade_splits_them(engine):

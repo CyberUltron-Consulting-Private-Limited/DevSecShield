@@ -10,7 +10,11 @@ sit on one source's own key. Upgrade: ``remediation_backfill.backfill_all`` copi
 group key, merged field by field as ``remediation_group.resolve`` shows it: the plan of the most recently updated
 record that holds one, the ticket of the ticket holder. A blank record (status "open", no wave, owner, due date or
 note: a released ticket claim's leftover) is not a plan and is never written to a group key (PR #499 review
-6065677758 M1). The originals are kept. Idempotent; each team in its own savepoint.
+6065677758 M1). The originals are kept, but once a group record exists it is the resource's final word
+(``remediation_group.resolve``, round 7): a reset to blank made BEFORE the upgrade cannot be told from a leftover, so
+q111 makes the older plan the resource's; those resources are logged per team ("blank newer than the plan copied")
+and such a reset has to be made again after the upgrade. Idempotent; a group record that exists is never replaced;
+each team in its own savepoint.
 
 Downgrade: every record the upgrade inserted writes its current plan and ticket back to the original it was copied
 from, and is deleted.

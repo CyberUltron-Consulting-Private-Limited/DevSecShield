@@ -385,7 +385,7 @@ def node_items(session: Session, team_id: int, run: CbomCollectionRun, *,
     for item in items:
         # review 6060688856 M1-M4: the plan, status and ticket are the RESOURCE's (``remediation_group.resolve`` over
         # its group key and every copy's key), whichever source's row "latest observation wins" shows; a change is
-        # written to ``asset_key`` (the primary's key, else the group key)
+        # written to ``asset_key``: the group key (the group record is the final word once it exists, round 7)
         r = resolved.get(int(item["asset_id"]))
         if r is None:
             continue
@@ -575,6 +575,7 @@ def upsert(session: Session, team_id: int, user_id: int, body: AssignmentBulk, n
         raise HTTPException(status_code=400, detail=f"items: {len(unknown)} asset(s) are not in this run or scan")
     existing = _assignments(session, team_id, (i.asset_key for i in body.items))
     changed = 0
+    trail: list[dict[str, Any]] = []
     for item in body.items:
         fields = {k: getattr(item, k) for k in item.model_fields_set if k != "asset_key"}
         info = known[item.asset_key]
@@ -582,10 +583,15 @@ def upsert(session: Session, team_id: int, user_id: int, body: AssignmentBulk, n
         if row is None:
             row = CbomRemediationAssignment(team_id=team_id, asset_key=item.asset_key, scope=info["scope"],
                                             source_ref=str(info["source_ref"])[:255], created_at=now)
+            # PR #499 round 7: the first write to a resource's group key starts from what the copies show (the
+            # group record is the final word from then on), so the write changes only the fields it names
+            for name, value in _seed(session, team_id, info).items():
+                setattr(row, name, value)
             existing[item.asset_key] = row
         elif not fields:
             continue
-        was_done = row.status == "done" and row.id is not None
+        before = {name: getattr(row, name) for name in _AUDITED}
+        was_done = row.status == "done"
         for key, value in fields.items():
             setattr(row, key, value if key != "status" or value is not None else "open")
         if row.status == "done" and (not was_done or row.done_at is None):
@@ -593,35 +599,49 @@ def upsert(session: Session, team_id: int, user_id: int, body: AssignmentBulk, n
         elif row.status != "done":
             row.done_at = None
         row.label = str(info.get("label") or "")[:255] or None
-        row.updated_by_user_id, row.last_updated = user_id, now
+        row.updated_by_user_id, row.last_updated = user_id, now  # a user's write (a reset too) names its author
         row.row_version = (row.row_version or 0) + 1 if row.id is not None else 1
         session.add(row)
         changed += 1
-        from backend.utilities.cbom_sources import remediation_group as RG
-
-        if not RG.has_plan(row):
-            _reset_other_keys(session, team_id, user_id, info, now)
-    return {"updated": changed}
+        trail.append({"key": row.asset_key, "group": info.get("group_key"), "asset": info.get("own_key"),
+                      "before": before, "fields": sorted(fields)})
+    return {"updated": changed, "audit": trail}
 
 
-def _reset_other_keys(session: Session, team_id: int, user_id: int, info: dict[str, Any], now: _dt.datetime) -> None:
-    """A user cleared the resource's plan (status "open", no wave, owner, due date or note): a blank record is not a
-    plan (``remediation_group.has_plan``, review 6065677758 M1), so an older plan on another key of the resource
-    (q111 keeps the original it copied to the group key; a copy made before the group key) would be shown again.
-    The reset applies to the resource: those records' plan fields are cleared too; their tickets stay."""
+_AUDITED = ("status", "wave", "owner", "target_date", "note", "done_at")
+
+
+def _seed(session: Session, team_id: int, info: dict[str, Any]) -> dict[str, Any]:
+    """``remediation_group.seed_values`` for a node item whose write key holds no record yet (code items: none)."""
     from backend.utilities.cbom_sources import remediation_group as RG
 
     others = [k for k in (info.get("alias_keys") or ()) if k]
-    if not others:
-        return
-    for other in _assignments(session, team_id, others).values():
-        if not RG.has_plan(other):
-            continue
-        other.status, other.wave, other.owner, other.target_date, other.note, other.done_at = (
-            "open", None, None, None, None, None)
-        other.updated_by_user_id, other.last_updated = user_id, now
-        other.row_version = (other.row_version or 0) + 1
-        session.add(other)
+    if info.get("scope") != "node" or not others:
+        return {}
+    found = _assignments(session, team_id, others)
+    copies = [k for k in others if k != info.get("group_key")]
+    return RG.seed_values(RG.resolve(found, [info.get("group_key")], copies, info.get("own_key") or ""))
+
+
+def audit_items(trail: list[dict[str, Any]]) -> list[list[str]]:
+    """``changed_fields`` of the per-resource ``remediation.assign`` audit rows (PR #499 round 7: the group key, the
+    asset identity and the previous values; a documented exception to "field names only", ``CbomCollectionAuditEvent``).
+    The asset identity is the shown row's own key (``asset=``), the record written is ``key=`` (the group key).  The
+    previous status, wave, due date and ``done_at`` are written as they were; owner and note only as set or empty,
+    with their length (a person's name or free text is not copied into the audit trail)."""
+    out = []
+    for t in trail:
+        before = t["before"]
+        items = [f"key={t['key']}", f"group={t.get('group') or '-'}", f"asset={t.get('asset') or '-'}",
+                 *(f"set={f}" for f in t["fields"])]
+        for name in ("status", "wave", "target_date", "done_at"):
+            value = before.get(name)
+            items.append(f"prev.{name}={value.isoformat() if hasattr(value, 'isoformat') else value}")
+        for name in ("owner", "note"):
+            value = before.get(name)
+            items.append(f"prev.{name}={'set:' + str(len(value)) if value else 'empty'}")
+        out.append([i[:64] for i in items])
+    return out
 
 
 # ----------------------------------------------------------------------------- roadmap

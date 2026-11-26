@@ -3,8 +3,8 @@
 M1  A blank leftover record (status "open", no wave, owner, due date or note) counted as a plan: being newest, it hid
     an older real plan on every surface (P10), and q111 wrote it to the group key (R4).  A blank record is not a plan
     (``remediation_group.has_plan``), in ``resolve`` and in the backfill; a released ticket claim deletes the record it
-    inserted (P10b) instead of leaving it behind; a user's reset to blank applies to the whole resource, so an older
-    plan on another key never comes back.
+    inserted (P10b) instead of leaving it behind; a user's reset to blank is written to the group record, the final
+    word once it exists (round 7, ``test_cbom_posture_review_6066796071``), so an older plan never comes back.
 m1  q110's last cleanup drop of an INVALID index is ``DROP INDEX CONCURRENTLY`` under a short ``lock_timeout``: it never
     queues an ACCESS EXCLUSIVE lock in front of the table's readers (PostgreSQL only, scaled timeouts).
 n1  Every test that drops tables in ``CBOM_TEST_PG_URL``'s database reads the URL through the shared guard
@@ -125,10 +125,11 @@ def _p10(engine, *, blank_ticket: str | None = None):
 
 # ------------------------------------------------------------------------------------------------ M1 P10
 def test_p10_a_blank_newer_record_never_hides_an_older_plan(engine):
-    first, label, a_key, _b_key = _p10(engine)
+    first, label, _a_key, _b_key = _p10(engine)
     assert _surfaces(engine, first, label) == DAVE_DONE  # 348d032f: open / None / not_started everywhere
-    with Session(engine) as s:
-        assert _item(s, first, label)["asset_key"] == a_key  # a change edits dave's plan
+    with Session(engine) as s:  # a change goes to the group key (round 7), seeded from dave's plan
+        item = _item(s, first, label)
+        assert item["asset_key"] == item["group_key"]
 
 
 def test_has_plan_rule():
@@ -211,9 +212,9 @@ def test_a_released_claim_keeps_a_plan_written_while_jira_was_called(engine, mon
         item = next(i for i in WAVES.node_items(s, 1, s.get(CbomCollectionRun, first)) if RT.is_ticketable(i))
 
     def create(**_kw):
-        with Session(engine) as s:
+        with Session(engine) as s:  # as waves.upsert writes: the row version moves on
             row = s.exec(select(A)).one()
-            row.owner, row.status = "erin", "in_progress"
+            row.owner, row.status, row.row_version = "erin", "in_progress", row.row_version + 1
             s.add(row)
             s.commit()
         raise RT.JIRA.JiraError("http_4xx", "Jira refused the request")
@@ -278,24 +279,38 @@ def test_r4_a_ticket_only_copy_still_moves_its_ticket(engine):
                                                                               f"group-backfill:{b_key}")
 
 
-def test_r4_a_blank_group_record_takes_the_copy_s_plan(engine):
-    """A blank record already on the group key (a claim this branch's earlier code left) gets the copy's plan."""
+def test_r4_a_group_record_is_never_replaced_by_a_copy_s_plan(engine):
+    """A record already on the group key is the final word (round 7, review 6066796071 M1), a blank one included (a
+    user's reset): the backfill keeps it, so a reset made after the upgrade survives a downgrade and re-upgrade."""
     first, label, a_key, _b_key = _p10(engine)
     with Session(engine) as s:
         group_key = _item(s, first, label)["group_key"]
-        s.add(A(team_id=1, asset_key=group_key, source_ref="srcB", status="open", last_updated=NEWER))
+        s.add(A(team_id=1, asset_key=group_key, source_ref="srcB", status="open", updated_by_user_id=7,
+                last_updated=NEWER))
         s.commit()
     totals = _backfill(engine)
     with Session(engine) as s:
         group = s.exec(select(A).where(A.asset_key == group_key)).one()
-    assert (group.status, group.wave, group.owner) == ("done", 1, "dave") and totals["plans_filled"] == 1
-    assert _surfaces(engine, first, label) == DAVE_DONE
+    assert (group.status, group.wave, group.owner) == ("open", None, None) and totals["kept"] == 1
+    assert _surfaces(engine, first, label)["team"] == "open"
+
+
+def test_r4_a_blank_record_newer_than_the_plan_copied_is_logged(engine, monkeypatch):
+    """n1: a reset made before this release looks like a leftover; q111 names those resources per team."""
+    logged: list[tuple[str, dict]] = []
+    monkeypatch.setattr("backend.utilities.cbom_sources.common.log", lambda what, **kw: logged.append((what, kw)))
+    first, label, _a_key, _b_key = _p10(engine)
+    totals = _backfill(engine)
+    with Session(engine) as s:
+        group_key = _item(s, first, label)["group_key"]
+    line = next(kw for what, kw in logged if what.endswith("blank newer than the plan copied"))
+    assert line["count"] == 1 and line["keys"] == group_key[:12] and totals["blank_newer"] == 1
 
 
 # ------------------------------------------------------------------------------------------------ M1 a reset
 def test_a_user_reset_to_blank_applies_to_the_resource(engine):
     """After q111 the group record holds a copy of dave's plan and the original stays: clearing the plan (the UI's
-    reset: status open, no wave or owner) must not bring the original back."""
+    reset: status open, no wave or owner) must not bring the original back (the group record is the final word)."""
     from backend.utilities.cbom_sources import waves as WAVES
 
     first, label, a_key, _b_key = _p10(engine)
@@ -310,17 +325,18 @@ def test_a_user_reset_to_blank_applies_to_the_resource(engine):
     shown = _surfaces(engine, first, label)
     assert shown == {"waves": ("open", None, None), "list": "not_started", "team": "open",
                      "results": "total_not_started"}
-    with Session(engine) as s:
+    with Session(engine) as s:  # round 7: no cascade; the original keeps its plan and its done_at history
         original = s.exec(select(A).where(A.asset_key == a_key)).one()
-    assert (original.status, original.owner, original.wave) == ("open", None, None)
+    assert (original.status, original.owner, original.wave, original.done_at) == ("done", "dave", 1, OLDER)
 
 
 def test_an_explicit_reopen_keeps_the_plan_fields_and_wins(engine):
     from backend.utilities.cbom_sources import waves as WAVES
 
-    first, label, a_key, _b_key = _p10(engine)
-    with Session(engine) as s:
-        body = WAVES.AssignmentBulk(run_id=first, items=[WAVES.AssignmentItem(asset_key=a_key, status="open")])
+    first, label, _a_key, _b_key = _p10(engine)
+    with Session(engine) as s:  # round 7: the write goes to the group key, which starts from dave's plan
+        key = _item(s, first, label)["asset_key"]
+        body = WAVES.AssignmentBulk(run_id=first, items=[WAVES.AssignmentItem(asset_key=key, status="open")])
         WAVES.upsert(s, 1, 7, body, dt.datetime(2026, 11, 25))
         s.commit()
     shown = _surfaces(engine, first, label)
