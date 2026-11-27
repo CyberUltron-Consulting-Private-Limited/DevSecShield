@@ -453,3 +453,86 @@ def test_error_scrubbing_handles_long_secrets_and_suppresses_cause() -> None:
     assert "aaaaaaa" not in str(exc_info.value)
     assert "topsecret_ls_99" not in str(exc_info.value)
 
+
+def test_captured_session_repr_and_nuclei_doc_scrubbing_and_yaml_fail_closed() -> None:
+    from langchain_core.documents import Document
+
+    sess = CapturedSession(
+        origin="https://app.example.com",
+        cookie_header="sid=super_secret_cookie_val",
+        extra_headers={"Authorization": "Bearer jwt_secret_token_999"},
+        local_storage={"token": "ls_secret_val_777"},
+        session_storage={"skey": "ss_secret_val_888"},
+    )
+    # repr() must never expose any session secret (prevents LangSmith/traceback leakage)
+    rep = repr(sess)
+    for secret in ("super_secret_cookie_val", "jwt_secret_token_999", "ls_secret_val_777", "ss_secret_val_888"):
+        assert secret not in rep
+
+    # Nuclei -me document scrubbing must strip every secret before LLM prompts see it
+    docs = [
+        Document(
+            page_content=(
+                "GET /dashboard HTTP/1.1\n"
+                "Cookie: sid=super_secret_cookie_val\n"
+                "Authorization: Bearer jwt_secret_token_999\n"
+                "localStorage token=ls_secret_val_777 skey=ss_secret_val_888\n"
+                "<html>Dashboard</html>"
+            ),
+            metadata={"source": "req_jwt_secret_token_999.md"},
+        )
+    ]
+    scrubbed = sess.scrub_documents(docs)
+    assert len(scrubbed) == 1
+    for secret in ("super_secret_cookie_val", "jwt_secret_token_999", "ls_secret_val_777", "ss_secret_val_888"):
+        assert secret not in scrubbed[0].page_content
+        assert secret not in str(scrubbed[0].metadata)
+    assert "<html>Dashboard</html>" in scrubbed[0].page_content
+
+    # materialize_session_template must fail closed on invalid or non-headless YAML
+    with pytest.raises(ValueError, match="invalid YAML"):
+        materialize_session_template(":::not:valid:yaml: [", sess)
+    with pytest.raises(ValueError, match="non-headless"):
+        materialize_session_template("id: x\nhttp:\n  - method: GET\n", sess)
+
+
+def test_egress_redirect_handler_strips_auth_headers_on_origin_or_scheme_change() -> None:
+    import urllib.request
+    from helpers.net.egress import _SameOriginHeaderRedirectHandler
+
+    handler = _SameOriginHeaderRedirectHandler()
+    orig_req = urllib.request.Request(
+        "https://app.example.com/start",
+        headers={
+            "Cookie": "sid=secret_cookie",
+            "Authorization": "Bearer secret_jwt",
+            "X-API-Key": "secret_key",
+            "User-Agent": "TestUA",
+        },
+    )
+
+    # Same-origin redirect keeps auth headers
+    same = handler.redirect_request(orig_req, None, 302, "Found", {}, "https://app.example.com:443/next")
+    assert same is not None
+    same_hdrs = {k.lower(): v for k, v in same.header_items()}
+    assert same_hdrs.get("cookie") == "sid=secret_cookie"
+    assert same_hdrs.get("authorization") == "Bearer secret_jwt"
+
+    # HTTPS -> HTTP downgrade strips Cookie, Authorization, X-API-Key
+    downgraded = handler.redirect_request(orig_req, None, 302, "Found", {}, "http://app.example.com/next")
+    assert downgraded is not None
+    down_hdrs = {k.lower(): v for k, v in downgraded.header_items()}
+    assert "cookie" not in down_hdrs
+    assert "authorization" not in down_hdrs
+    assert "x-api-key" not in down_hdrs
+    assert down_hdrs.get("user-agent") == "TestUA"
+
+    # Cross-host redirect strips Cookie, Authorization, X-API-Key
+    cross = handler.redirect_request(orig_req, None, 302, "Found", {}, "https://other.example.com/next")
+    assert cross is not None
+    cross_hdrs = {k.lower(): v for k, v in cross.header_items()}
+    assert "cookie" not in cross_hdrs
+    assert "authorization" not in cross_hdrs
+    assert "x-api-key" not in cross_hdrs
+
+

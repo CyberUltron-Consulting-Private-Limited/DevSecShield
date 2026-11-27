@@ -136,12 +136,69 @@ class CapturedSession:
     """Authenticated browser/HTTP state reused across crawl, headers, page analysis, XSS, and SQLi."""
 
     origin: str
-    cookie_header: str = ""
-    extra_headers: dict[str, str] = field(default_factory=dict)
-    local_storage: dict[str, str] = field(default_factory=dict)
-    session_storage: dict[str, str] = field(default_factory=dict)
+    cookie_header: str = field(default="", repr=False)
+    extra_headers: dict[str, str] = field(default_factory=dict, repr=False)
+    local_storage: dict[str, str] = field(default_factory=dict, repr=False)
+    session_storage: dict[str, str] = field(default_factory=dict, repr=False)
     verified: bool = False
     verify_url: str | None = None
+
+    def secret_values(self) -> list[str]:
+        vals: list[str] = []
+        if self.cookie_header:
+            vals.append(self.cookie_header)
+            for pair in self.cookie_header.split(";"):
+                if "=" in pair:
+                    _k, v = pair.split("=", 1)
+                    if len(v.strip()) >= 4:
+                        vals.append(v.strip())
+        for v in self.extra_headers.values():
+            if v:
+                vals.append(v)
+                parts = v.split(" ", 1)
+                if len(parts) == 2 and len(parts[1].strip()) >= 4:
+                    vals.append(parts[1].strip())
+        for store in (self.local_storage, self.session_storage):
+            for v in store.values():
+                if v and len(v) >= 4:
+                    vals.append(v)
+        # Replace longest secrets first so substrings don't break longer matches
+        return sorted(set(vals), key=len, reverse=True)
+
+    def scrub_text(self, text: str) -> str:
+        if not text:
+            return text
+        return _scrub_secrets(text, *self.secret_values())
+
+    def scrub_documents(self, documents: list[Any]) -> list[Any]:
+        """Scrub all session secrets from Nuclei -me Document outputs before passing to LLM prompts."""
+        if not documents or not self.has_material():
+            return documents
+        secrets = self.secret_values()
+        if not secrets:
+            return documents
+        cleaned: list[Any] = []
+        for doc in documents:
+            content = getattr(doc, "page_content", None)
+            if isinstance(content, str):
+                new_content = _scrub_secrets(content, *secrets)
+                meta = getattr(doc, "metadata", None)
+                new_meta = (
+                    {
+                        k: (_scrub_secrets(v, *secrets) if isinstance(v, str) else v)
+                        for k, v in meta.items()
+                    }
+                    if isinstance(meta, dict)
+                    else meta
+                )
+                try:
+                    cleaned.append(type(doc)(page_content=new_content, metadata=new_meta or {}))
+                except Exception:
+                    doc.page_content = new_content
+                    cleaned.append(doc)
+            else:
+                cleaned.append(doc)
+        return cleaned
 
     def http_headers(self) -> dict[str, str]:
         headers: dict[str, str] = {}
@@ -304,7 +361,7 @@ def login_with_otp_form(
     from playwright.sync_api import sync_playwright
 
     origin = _origin_of(target_url)
-    target_host = urllib.parse.urlparse(target_url).netloc.lower()
+    target_origin_key = _normalized_origin_tuple(target_url)
     timeout_ms = max(10_000, int(timeout_seconds) * 1000)
     observed_auth_headers: dict[str, str] = {}
 
@@ -325,7 +382,7 @@ def login_with_otp_form(
 
                 def _on_request(req: Any) -> None:
                     try:
-                        if urllib.parse.urlparse(req.url).netloc.lower() != target_host:
+                        if _normalized_origin_tuple(req.url) != target_origin_key:
                             return
                         hdrs = req.headers or {}
                         auth_val = hdrs.get("authorization")
@@ -593,7 +650,7 @@ def discover_authenticated_urls(
     try:
         from playwright.sync_api import sync_playwright
 
-        base_netloc = urllib.parse.urlparse(target_url).netloc.lower()
+        base_origin_key = _normalized_origin_tuple(target_url)
         timeout_ms = max(8_000, int(timeout_seconds) * 1000)
         raw_links: list[str] = []
         with sync_playwright() as p:
@@ -634,7 +691,7 @@ def discover_authenticated_urls(
         for href in raw_links:
             full = urllib.parse.urljoin(target_url, str(href).strip())
             parsed = urllib.parse.urlparse(full)
-            if parsed.scheme not in ("http", "https") or parsed.netloc.lower() != base_netloc:
+            if parsed.scheme not in ("http", "https") or _normalized_origin_tuple(full) != base_origin_key:
                 continue
             clean = parsed._replace(fragment="").geturl()
             if clean not in seen:
@@ -721,24 +778,26 @@ def build_session_nuclei_template(
 
 
 def materialize_session_template(yaml_text: str, session: CapturedSession | None) -> str:
-    """Inject real session secrets into a placeholder template right before run_nuclei writes a 0600 file."""
+    """Inject real session secrets into a placeholder template right before run_nuclei writes a 0600 file.
+
+    Fails closed (raises ValueError) if the template is not valid Nuclei headless YAML so untrusted
+    or malformed templates can never trigger raw string-replace YAML injection.
+    """
     if session is None or not session.has_material():
         return yaml_text
     try:
         parsed = yaml.safe_load(yaml_text)
-    except yaml.YAMLError:
-        parsed = None
+    except yaml.YAMLError as exc:
+        raise ValueError("Refusing to materialize session secrets into invalid YAML template") from exc
 
-    if not isinstance(parsed, dict) or not isinstance(parsed.get("headless"), list) or not parsed["headless"]:
-        # Fall back to safe string replacement if structure is unexpected
-        out = yaml_text
-        if session.cookie_header:
-            out = out.replace(COOKIE_PLACEHOLDER, session.cookie_header)
-        for k, v in session.extra_headers.items():
-            out = out.replace(_header_placeholder(k), v)
-        if session.local_storage or session.session_storage:
-            out = out.replace(f"/* {STORAGE_SCRIPT_PLACEHOLDER} */", session.storage_init_js())
-        return out
+    if (
+        not isinstance(parsed, dict)
+        or not isinstance(parsed.get("headless"), list)
+        or not parsed["headless"]
+        or not isinstance(parsed["headless"][0], dict)
+        or not isinstance(parsed["headless"][0].get("steps"), list)
+    ):
+        raise ValueError("Refusing to materialize session secrets into non-headless Nuclei template")
 
     replaced_cookie = False
     replaced_headers: set[str] = set()

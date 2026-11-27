@@ -48,7 +48,20 @@ def _auth_from_write(auth: DastAuthWrite, existing: dict | None = None) -> dict:
         existing_type = existing.get("auth_type") or "password"
         if existing_type == payload.get("auth_type"):
             decrypted = decrypt_auth(existing)
+            skip_restore: set[str] = set()
+            if payload.get("auth_type") == "otp_form":
+                if (payload.get("otp_source") or "static") == "totp":
+                    skip_restore.add("otp_code")
+                    payload["otp_code"] = None
+                else:
+                    skip_restore.add("totp_secret")
+                    payload["totp_secret"] = None
+                if not (payload.get("xpath_of_mpin_field") or "").strip():
+                    skip_restore.add("mpin")
+                    payload["mpin"] = None
             for secret_key in SECRET_AUTH_KEYS:
+                if secret_key in skip_restore:
+                    continue
                 if not payload.get(secret_key) and decrypted.get(secret_key):
                     payload[secret_key] = decrypted[secret_key]
     try:

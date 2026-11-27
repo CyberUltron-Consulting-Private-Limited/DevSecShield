@@ -62,6 +62,8 @@ def fetch_authenticated_page(
             os.unlink(temp_path)
         except OSError:
             pass
+    if session is not None:
+        documents = session.scrub_documents(documents)
     page_content = documents_to_text(documents)
     console.print(f"HTML Page content length: {len(page_content)} characters", style="bold green")
     return page_content, documents

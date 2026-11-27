@@ -73,7 +73,7 @@ class XSSAgent(BaseUtilities):
     def run_xss_agent_graph(self):
         try:
             console.print(f"▶️ Starting XSS Agent Graph",style="bold green")
-            graph = build_graph()
+            graph = build_graph(captured_session=self.captured_session)
             initial_overall_state : OverallState = {
                 "target_url" : self.target_url,
                 "page_content" : self.page_content,
@@ -96,7 +96,6 @@ class XSSAgent(BaseUtilities):
                 "vulnerabilities" : [],
                 "nuclei_timeout_seconds" : self.nuclei_timeout_seconds,
                 "egress_proxy" : self.egress_proxy,
-                "captured_session" : self.captured_session,
             }
             overall_state : OverallState = graph.invoke(initial_overall_state)
 
