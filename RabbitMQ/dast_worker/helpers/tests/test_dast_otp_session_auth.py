@@ -379,3 +379,77 @@ def test_session_from_import_rejects_header_injection() -> None:
             "https://portal.example",
             AuthRequirements(auth_type="session", session_cookie="a=1\r\nX-Bad: 2"),
         )
+
+
+def test_same_origin_header_routing_blocks_downgrade_and_third_party_and_dedupes() -> None:
+    from helpers.agent.session_auth import _install_same_origin_headers
+
+    captured_handler: list = []
+
+    class _FakeContext:
+        def route(self, pattern, handler):
+            assert pattern == "**/*"
+            captured_handler.append(handler)
+
+    _install_same_origin_headers(
+        _FakeContext(),
+        "https://app.example.com",
+        {"Authorization": "Bearer secret-jwt-123"},
+    )
+    handler = captured_handler[0]
+
+    def _run(url: str, req_headers: dict[str, str]):
+        sent: dict = {}
+
+        class _Req:
+            def __init__(self):
+                self.url = url
+                self.headers = req_headers
+
+        class _Route:
+            def __init__(self):
+                self.request = _Req()
+
+            def continue_(self, headers=None):
+                sent["headers"] = headers
+
+        handler(_Route())
+        return sent["headers"]
+
+    # Exact same origin (including explicit default port :443) injects & deduplicates case-insensitively
+    h1 = _run("https://app.example.com:443/api/me", {"authorization": "Bearer old", "accept": "*/*"})
+    assert h1 == {"accept": "*/*", "Authorization": "Bearer secret-jwt-123"}
+
+    # HTTPS -> HTTP downgrade on same host MUST NOT receive Authorization header
+    assert _run("http://app.example.com/pixel.gif", {"accept": "*/*"}) is None
+
+    # Third-party CDN / analytics MUST NOT receive Authorization header
+    assert _run("https://cdn.thirdparty.example/app.js", {"accept": "*/*"}) is None
+
+
+def test_error_scrubbing_handles_long_secrets_and_suppresses_cause() -> None:
+    from helpers.agent.session_auth import _scrub_secrets, verify_session
+
+    long_jwt = "Bearer " + ("a" * 260)
+    raw = f"network failure with header {long_jwt} and storage_secret=topsecret_ls_99"
+    scrubbed = _scrub_secrets(raw, long_jwt, "topsecret_ls_99")[:200]
+    assert "aaaaaaa" not in scrubbed
+    assert "topsecret_ls_99" not in scrubbed
+    assert "[REDACTED]" in scrubbed
+
+    class _FailingEgress:
+        def urlopen(self, _req, timeout=10):
+            raise RuntimeError(f"boom {long_jwt} and topsecret_ls_99")
+
+    sess = CapturedSession(
+        origin="https://app.example.com",
+        extra_headers={"Authorization": long_jwt},
+        local_storage={"tok": "topsecret_ls_99"},
+    )
+    auth = AuthRequirements(auth_type="session", auth_header_value=long_jwt)
+    with pytest.raises(DastAuthError) as exc_info:
+        verify_session(sess, auth, "https://app.example.com/dashboard", egress=_FailingEgress())  # type: ignore[arg-type]
+    assert exc_info.value.__cause__ is None
+    assert "aaaaaaa" not in str(exc_info.value)
+    assert "topsecret_ls_99" not in str(exc_info.value)
+

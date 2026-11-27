@@ -46,7 +46,18 @@ def _current_vex(scan_type: str, vex):
 def _secret_key(key) -> bool:
     name = str(key).lower()
     words = set(re.split(r"[^a-z0-9]+", name))
-    return bool(words & _SECRET_WORDS) or any(w in name for w in ("api_key", "apikey", "private_key", "access_key"))
+    return bool(words & _SECRET_WORDS) or any(
+        w in name
+        for w in (
+            "api_key",
+            "apikey",
+            "private_key",
+            "access_key",
+            "auth_header_value",
+            "local_storage_json",
+            "session_storage_json",
+        )
+    )
 
 
 def _without_secrets(value):

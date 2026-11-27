@@ -47,6 +47,22 @@ def _origin_of(url: str) -> str:
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
+def _normalized_origin_tuple(url: str) -> tuple[str, str, int]:
+    """Return normalized (scheme, hostname, port) for true same-origin comparison (RFC 6454)."""
+    parsed = urllib.parse.urlparse(url)
+    scheme = (parsed.scheme or "").lower()
+    host = (parsed.hostname or "").lower()
+    if parsed.port is not None:
+        port = parsed.port
+    elif scheme == "https":
+        port = 443
+    elif scheme == "http":
+        port = 80
+    else:
+        port = 0
+    return (scheme, host, port)
+
+
 def _scrub_secrets(text: str, *secrets: str | None) -> str:
     out = text
     for secret in secrets:
@@ -56,15 +72,16 @@ def _scrub_secrets(text: str, *secrets: str | None) -> str:
 
 
 def _install_same_origin_headers(context: Any, origin: str, extra_headers: dict[str, str]) -> None:
-    """Attach auth headers ONLY to requests matching the target origin (never third-party scripts/CDNs)."""
+    """Attach auth headers ONLY to requests matching the exact target origin (scheme, host, normalized port)."""
     if not extra_headers:
         return
-    origin_netloc = urllib.parse.urlparse(origin).netloc.lower()
+    origin_key = _normalized_origin_tuple(origin)
+    extra_lower = {k.lower() for k in extra_headers}
 
     def _route_handler(route: Any) -> None:
         req = route.request
-        if urllib.parse.urlparse(req.url).netloc.lower() == origin_netloc:
-            merged = dict(req.headers)
+        if _normalized_origin_tuple(req.url) == origin_key:
+            merged = {k: v for k, v in (req.headers or {}).items() if k.lower() not in extra_lower}
             merged.update(extra_headers)
             route.continue_(headers=merged)
         else:
@@ -362,8 +379,8 @@ def login_with_otp_form(
     except DastAuthError:
         raise
     except Exception as exc:
-        safe_msg = _scrub_secrets(str(exc)[:240], otp_value, auth.mpin, auth.totp_secret)
-        raise DastAuthError(f"OTP login failed during browser flow: {type(exc).__name__}: {safe_msg}") from exc
+        safe_msg = _scrub_secrets(str(exc), otp_value, auth.mpin, auth.totp_secret)[:240]
+        raise DastAuthError(f"OTP login failed during browser flow: {type(exc).__name__}: {safe_msg}") from None
 
     session = CapturedSession(
         origin=origin,
@@ -446,13 +463,15 @@ def _verify_session_browser(
         raise
     except Exception as exc:
         safe_msg = _scrub_secrets(
-            str(exc)[:200],
+            str(exc),
             session.cookie_header,
             *session.extra_headers.values(),
-        )
+            *session.local_storage.values(),
+            *session.session_storage.values(),
+        )[:200]
         raise DastAuthError(
             f"Session verification failed in browser for {check_url}: {type(exc).__name__}: {safe_msg}"
-        ) from exc
+        ) from None
 
     if status_code in (401, 403):
         raise DastAuthError(
@@ -501,10 +520,17 @@ def verify_session(
         if exc.code in (401, 403):
             raise DastAuthError(
                 f"Session verification failed (HTTP {exc.code}) on {check_url}: session cookie or token is expired or invalid."
-            ) from exc
-        raise DastAuthError(f"Session verification failed (HTTP {exc.code}) on {check_url}") from exc
+            ) from None
+        raise DastAuthError(f"Session verification failed (HTTP {exc.code}) on {check_url}") from None
     except Exception as exc:
-        raise DastAuthError(f"Session verification could not reach {check_url}: {exc}") from exc
+        safe_msg = _scrub_secrets(
+            str(exc),
+            session.cookie_header,
+            *session.extra_headers.values(),
+            *session.local_storage.values(),
+            *session.session_storage.values(),
+        )[:200]
+        raise DastAuthError(f"Session verification could not reach {check_url}: {safe_msg}") from None
 
     if status_code in (401, 403):
         raise DastAuthError(
