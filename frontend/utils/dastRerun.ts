@@ -15,11 +15,20 @@ export interface DastRerunPrefill {
   additional_urls: string[];
   pattern_mode: "none" | "include" | "exclude";
   patterns: string[];
+  auth_type?: "password" | "session" | "otp_form";
   login_url: string;
   xpath_username: string;
   xpath_password: string;
   username: string;
   xpath_submit: string;
+  auth_header_name?: string;
+  session_check_url?: string;
+  logged_in_indicator?: string;
+  xpath_send_otp?: string;
+  xpath_otp?: string;
+  otp_source?: "static" | "totp";
+  xpath_mpin?: string;
+  xpath_mpin_submit?: string;
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -48,7 +57,8 @@ export function dastRerunPrefill(scan: unknown): DastRerunPrefill | null {
   const exclude = list(meta.exclude_url_patterns);
   const speed = text(meta.scan_speed);
   const max = meta.max_urls;
-  return {
+  const rawType = text(auth.auth_type);
+  const prefill: DastRerunPrefill = {
     target_url: target,
     scan_speed: SPEEDS.has(speed) ? (speed as DastRerunPrefill["scan_speed"]) : null,
     max_urls: typeof max === "number" && Number.isInteger(max) && max >= 1 ? max : null,
@@ -61,10 +71,22 @@ export function dastRerunPrefill(scan: unknown): DastRerunPrefill | null {
     username: text(auth.username),
     xpath_submit: text(auth.xpath_of_submit_button),
   };
+  if (rawType === "session" || rawType === "otp_form") {
+    prefill.auth_type = rawType;
+    if (text(auth.auth_header_name)) prefill.auth_header_name = text(auth.auth_header_name);
+    if (text(auth.session_check_url)) prefill.session_check_url = text(auth.session_check_url);
+    if (text(auth.logged_in_indicator)) prefill.logged_in_indicator = text(auth.logged_in_indicator);
+    if (text(auth.xpath_of_send_otp_button)) prefill.xpath_send_otp = text(auth.xpath_of_send_otp_button);
+    if (text(auth.xpath_of_otp_field)) prefill.xpath_otp = text(auth.xpath_of_otp_field);
+    if (auth.otp_source === "totp" || auth.otp_source === "static") prefill.otp_source = auth.otp_source;
+    if (text(auth.xpath_of_mpin_field)) prefill.xpath_mpin = text(auth.xpath_of_mpin_field);
+    if (text(auth.xpath_of_mpin_submit_button)) prefill.xpath_mpin_submit = text(auth.xpath_of_mpin_submit_button);
+  }
+  return prefill;
 }
 
 export const DAST_RERUN_NOTE =
-  "Settings copied from the earlier scan. Enter the login password again: passwords are not stored.";
+  "Settings copied from the earlier scan. Enter the login password again (or fresh OTP / session token): secrets are not stored.";
 
 const key = (scanId: number) => `zs-rerun:dast:${scanId}`;
 

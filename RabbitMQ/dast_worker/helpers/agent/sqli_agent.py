@@ -17,6 +17,7 @@ class SQLiAgent(BaseUtilities):
         validation_retries : int = 2,
         nuclei_timeout_seconds : int = 90,
         egress_proxy : str | None = None,
+        captured_session = None,
         ):
 
 
@@ -26,6 +27,7 @@ class SQLiAgent(BaseUtilities):
         self.validation_retries = validation_retries
         self.nuclei_timeout_seconds = nuclei_timeout_seconds
         self.egress_proxy = egress_proxy
+        self.captured_session = captured_session
         self.strategy_generation_system_prompt = """
         You are a cybersecurity expert who is tasked with testing a Web application for SQLi vulnerabilities.
         You will be given the HTML page source of the website and you must generate a strategy for generating a **headless** nuclei template to test for SQLi vulnerabilities in the web application .
@@ -69,7 +71,7 @@ class SQLiAgent(BaseUtilities):
     def run_sqli_agent_graph(self):
         try:
             console.print(f"▶️ Starting SQLi Agent Graph",style="bold green")
-            graph = build_graph()
+            graph = build_graph(captured_session=self.captured_session)
             initial_overall_state : OverallState = {
                 "target_url" : self.target_url,
                 "page_content" : self.page_content,

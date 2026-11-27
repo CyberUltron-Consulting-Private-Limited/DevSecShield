@@ -128,7 +128,7 @@ class ScanEgress:
             _PinnedHTTPHandler(self),
             _PinnedHTTPSHandler(self),
             urllib.request.HTTPDefaultErrorHandler(),
-            urllib.request.HTTPRedirectHandler(),
+            _SameOriginHeaderRedirectHandler(),
             urllib.request.HTTPErrorProcessor(),
         ):
             opener.add_handler(handler)
@@ -136,6 +136,39 @@ class ScanEgress:
 
     def urlopen(self, request: urllib.request.Request | str, timeout: float = 15):
         return self.opener().open(request, timeout=timeout)
+
+
+_SAFE_CROSS_ORIGIN_HEADERS = frozenset({
+    "accept",
+    "accept-encoding",
+    "accept-language",
+    "cache-control",
+    "pragma",
+    "user-agent",
+})
+
+
+def _origin_tuple(url: str) -> tuple[str, str, int]:
+    parsed = urllib.parse.urlparse(url)
+    scheme = (parsed.scheme or "").lower()
+    host = (parsed.hostname or "").lower()
+    port = parsed.port if parsed.port is not None else (443 if scheme == "https" else (80 if scheme == "http" else 0))
+    return (scheme, host, port)
+
+
+class _SameOriginHeaderRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Strip Cookie, Authorization, and custom auth headers whenever a redirect changes (scheme, host, port)."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new_req is not None and _origin_tuple(req.full_url) != _origin_tuple(new_req.full_url):
+            for attr in ("headers", "unredirected_hdrs"):
+                hdr_map = getattr(new_req, attr, None)
+                if isinstance(hdr_map, dict):
+                    for key in list(hdr_map.keys()):
+                        if key.lower() not in _SAFE_CROSS_ORIGIN_HEADERS:
+                            del hdr_map[key]
+        return new_req
 
 
 def _pinned_create_connection(egress: ScanEgress):

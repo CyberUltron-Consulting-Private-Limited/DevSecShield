@@ -29,6 +29,13 @@ import { refreshCreditBalance } from "@/utils/creditBalance";
 import { formatDateIst } from "@/utils/datetime";
 import { refreshCredits } from "@/utils/creditRefresh";
 import { DastScheduleFields, type DastScheduleState } from "@/components/dast/DastScheduleFields";
+import { DastAuthFields } from "@/components/dast/DastAuthFields";
+import {
+  authFormFromPublic,
+  buildDastAuthPayload,
+  EMPTY_DAST_AUTH_FORM,
+  type DastAuthFormState,
+} from "@/utils/dastAuthForm";
 
 function onceAtToIso(local: string): string | null {
   if (!local) return null;
@@ -54,12 +61,10 @@ const EMPTY_SCHEDULE: DastScheduleState = {
 const EMPTY_FORM = {
   title: "Altoro testfire",
   target_url: "https://demo.testfire.net/index.jsp",
-  login_url: "https://demo.testfire.net/login.jsp",
-  xpath_of_username_field: "",
-  xpath_of_password_field: "",
-  username: "",
-  password: "",
-  xpath_of_submit_button: "",
+  auth: {
+    ...EMPTY_DAST_AUTH_FORM,
+    loginUrl: "https://demo.testfire.net/login.jsp",
+  } as DastAuthFormState,
   scan_speed: "fast" as "fast" | "medium" | "slow",
   max_urls: 1,
   schedule: EMPTY_SCHEDULE,
@@ -101,12 +106,7 @@ export function DastProfilesTab() {
     setForm({
       title: profile.title,
       target_url: profile.target_url,
-      login_url: profile.auth?.login_url || "",
-      xpath_of_username_field: profile.auth?.xpath_of_username_field || "",
-      xpath_of_password_field: profile.auth?.xpath_of_password_field || "",
-      username: profile.auth?.username || "",
-      password: "",
-      xpath_of_submit_button: profile.auth?.xpath_of_submit_button || "",
+      auth: authFormFromPublic(profile.auth),
       scan_speed: profile.scan_speed,
       max_urls: profile.max_urls,
       schedule: scheduleFromProfile(profile),
@@ -121,15 +121,8 @@ export function DastProfilesTab() {
   };
 
   const authPayload = useMemo(
-    () => ({
-      login_url: form.login_url,
-      xpath_of_username_field: form.xpath_of_username_field,
-      xpath_of_password_field: form.xpath_of_password_field,
-      username: form.username,
-      password: form.password,
-      xpath_of_submit_button: form.xpath_of_submit_button,
-    }),
-    [form]
+    () => buildDastAuthPayload(form.auth, { omitBlankSecrets: Boolean(editingId) }),
+    [form.auth, editingId]
   );
 
   const saveMutation = useMutation({
@@ -157,11 +150,7 @@ export function DastProfilesTab() {
         consent_ok: form.consent_ok,
       };
       if (editingId) {
-        const { password: _pw, ...authKeep } = authPayload;
-        return updateDASTProfile(teamId, editingId, {
-          ...body,
-          auth: form.password ? authPayload : authKeep,
-        });
+        return updateDASTProfile(teamId, editingId, body);
       }
       return createDASTProfile(teamId, body);
     },
@@ -219,35 +208,13 @@ export function DastProfilesTab() {
               <Input id="dast-profile-target" value={form.target_url} onChange={(e) => set("target_url", e.target.value)} />
             </div>
             <div className="space-y-1.5 sm:col-span-2">
-              <FieldLabel htmlFor="dast-profile-login" infoId="dast.cfg.login_url">Login URL</FieldLabel>
-              <Input id="dast-profile-login" value={form.login_url} onChange={(e) => set("login_url", e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <FieldLabel htmlFor="dast-profile-user" infoId="dast.cfg.username">Username</FieldLabel>
-              <Input id="dast-profile-user" value={form.username} onChange={(e) => set("username", e.target.value)} autoComplete="off" />
-            </div>
-            <div className="space-y-1.5">
-              <FieldLabel htmlFor="dast-profile-password" infoId="dast.cfg.password">Password</FieldLabel>
-              <Input
-                id="dast-profile-password"
-                type="password"
-                value={form.password}
-                placeholder={editingId ? "Leave blank to keep" : ""}
-                onChange={(e) => set("password", e.target.value)}
-                autoComplete="new-password"
+              <DastAuthFields
+                value={form.auth}
+                onChange={(auth) => setForm((prev) => ({ ...prev, auth }))}
+                variant="card"
+                isEditing={Boolean(editingId)}
+                idPrefix="dast-profile"
               />
-            </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <FieldLabel htmlFor="dast-profile-user-xpath" infoId="dast.cfg.xpath_user">Username field XPath</FieldLabel>
-              <Input id="dast-profile-user-xpath" value={form.xpath_of_username_field} onChange={(e) => set("xpath_of_username_field", e.target.value)} />
-            </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <FieldLabel htmlFor="dast-profile-pass-xpath" infoId="dast.cfg.xpath_pass">Password field XPath</FieldLabel>
-              <Input id="dast-profile-pass-xpath" value={form.xpath_of_password_field} onChange={(e) => set("xpath_of_password_field", e.target.value)} />
-            </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <FieldLabel htmlFor="dast-profile-submit-xpath" infoId="dast.cfg.xpath_submit">Submit button XPath</FieldLabel>
-              <Input id="dast-profile-submit-xpath" value={form.xpath_of_submit_button} onChange={(e) => set("xpath_of_submit_button", e.target.value)} />
             </div>
             <div className="space-y-1.5">
               <FieldLabel htmlFor="dast-profile-speed" infoId="dast.cfg.speed">Scan speed</FieldLabel>

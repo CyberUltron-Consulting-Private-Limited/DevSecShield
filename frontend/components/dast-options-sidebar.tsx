@@ -45,6 +45,13 @@ import { scanFailureMessage } from "@/utils/scanFailure";
 import { refreshCredits } from "@/utils/creditRefresh";
 import { stateAfterError } from "@/utils/scanErrorRecovery";
 import { DAST_RERUN_NOTE, readDastRerun } from "@/utils/dastRerun";
+import {
+  buildDastAuthPayload,
+  EMPTY_DAST_AUTH_FORM,
+  validateDastAuthForm,
+  type DastAuthFormState,
+} from "@/utils/dastAuthForm";
+import { DastAuthFields } from "@/components/dast/DastAuthFields";
 import { DastRunAgainButton } from "@/components/scan-run-again";
 import {
   Dialog,
@@ -56,42 +63,6 @@ import {
 } from "@/components/ui/dialog";
 
 type UrlPatternMode = "none" | "include" | "exclude";
-
-function buildAuthRequirements(
-  loginUrl: string,
-  xpathUsername: string,
-  xpathPassword: string,
-  username: string,
-  password: string,
-  xpathSubmit: string
-): AuthRequirements {
-  return {
-    login_url: loginUrl.trim(),
-    xpath_of_username_field: xpathUsername.trim(),
-    xpath_of_password_field: xpathPassword.trim(),
-    username: username.trim(),
-    password: password.trim(),
-    xpath_of_submit_button: xpathSubmit.trim(),
-  };
-}
-
-function isAuthComplete(
-  loginUrl: string,
-  xpathUsername: string,
-  xpathPassword: string,
-  username: string,
-  password: string,
-  xpathSubmit: string
-): boolean {
-  return (
-    Boolean(loginUrl?.trim()) &&
-    Boolean(xpathUsername?.trim()) &&
-    Boolean(xpathPassword?.trim()) &&
-    Boolean(username?.trim()) &&
-    Boolean(password?.trim()) &&
-    Boolean(xpathSubmit?.trim())
-  );
-}
 
 function buildStartDASTPayload(
   targetUrl: string,
@@ -132,12 +103,7 @@ export function DASTOptionsSidebar({
   const [targetUrl, setTargetUrl] = useState("");
   const [scanSpeed, setScanSpeed] = useState<"fast" | "medium" | "slow">("medium");
   const [maxUrls, setMaxUrls] = useState(100);
-  const [loginUrl, setLoginUrl] = useState("");
-  const [xpathUsername, setXpathUsername] = useState("");
-  const [xpathPassword, setXpathPassword] = useState("");
-  const [authUsername, setAuthUsername] = useState("");
-  const [authPassword, setAuthPassword] = useState("");
-  const [xpathSubmit, setXpathSubmit] = useState("");
+  const [authForm, setAuthForm] = useState<DastAuthFormState>(EMPTY_DAST_AUTH_FORM);
   const [additionalUrls, setAdditionalUrls] = useState<string[]>([]);
   const [additionalUrlInput, setAdditionalUrlInput] = useState("");
   const [urlPatternMode, setUrlPatternMode] = useState<UrlPatternMode>("none");
@@ -153,7 +119,7 @@ export function DASTOptionsSidebar({
   const [infoDialogOpen, setInfoDialogOpen] = useState(false);
   const [rerunPrefilled, setRerunPrefilled] = useState(false);
 
-  // A scan opened by "Run again" on a failed DAST scan: its settings, except the login password (never stored).
+  // A scan opened by "Run again" on a failed DAST scan: its settings, except secrets (never stored).
   useEffect(() => {
     const p = Number.isFinite(scan_id) ? readDastRerun(scan_id) : null;
     if (!p) return;
@@ -164,26 +130,32 @@ export function DASTOptionsSidebar({
     setAdditionalUrls(p.additional_urls ?? []);
     setUrlPatternMode(p.pattern_mode ?? "none");
     setUrlPatterns(p.patterns ?? []);
-    setLoginUrl(p.login_url ?? "");
-    setXpathUsername(p.xpath_username ?? "");
-    setXpathPassword(p.xpath_password ?? "");
-    setAuthUsername(p.username ?? "");
-    setXpathSubmit(p.xpath_submit ?? "");
+    setAuthForm({
+      ...EMPTY_DAST_AUTH_FORM,
+      authType: p.auth_type ?? "password",
+      loginUrl: p.login_url ?? "",
+      xpathUsername: p.xpath_username ?? "",
+      xpathPassword: p.xpath_password ?? "",
+      username: p.username ?? "",
+      xpathSubmit: p.xpath_submit ?? "",
+      authHeaderName: p.auth_header_name || "Authorization",
+      sessionCheckUrl: p.session_check_url ?? "",
+      loggedInIndicator: p.logged_in_indicator ?? "",
+      xpathSendOtp: p.xpath_send_otp ?? "",
+      xpathOtp: p.xpath_otp ?? "",
+      otpSource: p.otp_source ?? "static",
+      xpathMpin: p.xpath_mpin ?? "",
+      xpathMpinSubmit: p.xpath_mpin_submit ?? "",
+    });
     setRerunPrefilled(true);
   }, [scan_id]);
 
-  /** Validate required inputs before estimate/start. Target URL and all auth fields are required. */
+  /** Validate required inputs before estimate/start. Target URL and selected auth mode fields are required. */
   const validateScanInputs = (): { valid: true } | { valid: false; message: string } => {
     if (!targetUrl?.trim()) {
       return { valid: false, message: "Target URL is required." };
     }
-    if (!isAuthComplete(loginUrl, xpathUsername, xpathPassword, authUsername, authPassword, xpathSubmit)) {
-      return {
-        valid: false,
-        message: "Authentication is required: fill login URL and all auth fields (XPaths, username, password, submit button).",
-      };
-    }
-    return { valid: true };
+    return validateDastAuthForm(authForm, { requireSecrets: true });
   };
 
   const scanInputsValid = validateScanInputs().valid;
@@ -257,12 +229,7 @@ export function DASTOptionsSidebar({
     targetUrl,
     scanSpeed,
     maxUrls,
-    loginUrl,
-    xpathUsername,
-    xpathPassword,
-    authUsername,
-    authPassword,
-    xpathSubmit,
+    authForm,
     additionalUrls,
     urlPatternMode,
     urlPatterns,
@@ -361,7 +328,7 @@ export function DASTOptionsSidebar({
       targetUrl,
       scanSpeed,
       maxUrls,
-      buildAuthRequirements(loginUrl, xpathUsername, xpathPassword, authUsername, authPassword, xpathSubmit),
+      buildDastAuthPayload(authForm),
       additionalUrls,
       urlPatternMode,
       urlPatterns
@@ -524,80 +491,12 @@ export function DASTOptionsSidebar({
                     </Dialog>
                   </div>
                   <AccordionContent className="pt-4 space-y-4 w-full">
-                    <div className="space-y-2">
-                      <FieldLabel htmlFor="login-url" infoId="dast.cfg.login_url" labelClassName="text-zinc-300" required>
-                        Login URL
-                      </FieldLabel>
-                      <Input
-                        id="login-url"
-                        type="url"
-                        placeholder="https://example.com/login"
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 w-full"
-                        value={loginUrl}
-                        onChange={(e) => setLoginUrl(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <FieldLabel htmlFor="xpath-username" infoId="dast.cfg.xpath_user" labelClassName="text-zinc-300" required>
-                        XPath of username field
-                      </FieldLabel>
-                      <Input
-                        id="xpath-username"
-                        placeholder="//input[@name='username']"
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 w-full"
-                        value={xpathUsername}
-                        onChange={(e) => setXpathUsername(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <FieldLabel htmlFor="xpath-password" infoId="dast.cfg.xpath_pass" labelClassName="text-zinc-300" required>
-                        XPath of password field
-                      </FieldLabel>
-                      <Input
-                        id="xpath-password"
-                        placeholder="//input[@name='password']"
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 w-full"
-                        value={xpathPassword}
-                        onChange={(e) => setXpathPassword(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <FieldLabel htmlFor="auth-username" infoId="dast.cfg.username" labelClassName="text-zinc-300" required>
-                        Username
-                      </FieldLabel>
-                      <Input
-                        id="auth-username"
-                        placeholder="user@example.com"
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 w-full"
-                        value={authUsername}
-                        onChange={(e) => setAuthUsername(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <FieldLabel htmlFor="auth-password" infoId="dast.cfg.password" labelClassName="text-zinc-300" required>
-                        Password
-                      </FieldLabel>
-                      <Input
-                        id="auth-password"
-                        type="password"
-                        placeholder="••••••••"
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 w-full"
-                        value={authPassword}
-                        onChange={(e) => setAuthPassword(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <FieldLabel htmlFor="xpath-submit" infoId="dast.cfg.xpath_submit" labelClassName="text-zinc-300" required>
-                        XPath of submit button
-                      </FieldLabel>
-                      <Input
-                        id="xpath-submit"
-                        placeholder="//button[@type='submit']"
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 w-full"
-                        value={xpathSubmit}
-                        onChange={(e) => setXpathSubmit(e.target.value)}
-                      />
-                    </div>
+                    <DastAuthFields
+                      value={authForm}
+                      onChange={setAuthForm}
+                      variant="sidebar"
+                      idPrefix="sidebar-dast"
+                    />
                   </AccordionContent>
                 </AccordionItem>
               </Accordion>

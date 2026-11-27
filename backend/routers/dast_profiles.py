@@ -13,10 +13,10 @@ from sqlmodel import Session, select
 from backend.get_db import get_db
 from backend.new_models import DastScanProfile
 from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
-from backend.utilities.dast.auth_crypto import decrypt_auth, encrypt_auth
+from backend.utilities.dast.auth_crypto import SECRET_AUTH_KEYS, decrypt_auth, encrypt_auth
 from backend.utilities.dast.dispatch import run_dast_from_profile
 from backend.utilities.dast.schedule import compute_next_run_at, mirror_from_config, normalize_schedule_config
-from backend.utilities.dast.schemas import DastAuthWrite, DastProfileCreate, DastProfileUpdate
+from backend.utilities.dast.schemas import DastAuthWrite, DastProfileCreate, DastProfileUpdate, validate_auth_fields
 from backend.utilities.dast.serialize import public_profile
 from backend.utilities.dast.ssrf import DastSsrfError, host_from_url
 from backend.utilities.team import check_if_user_is_admin_of_team, check_if_user_is_in_team
@@ -44,20 +44,53 @@ def _require_mutate(user, profile, engine) -> None:
 
 def _auth_from_write(auth: DastAuthWrite, existing: dict | None = None) -> dict:
     payload = auth.model_dump()
-    if not payload.get("password"):
-        if existing:
+    if existing:
+        existing_type = existing.get("auth_type") or "password"
+        if existing_type == payload.get("auth_type"):
             decrypted = decrypt_auth(existing)
-            payload["password"] = decrypted.get("password") or ""
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Password is required when creating a DAST profile",
-            )
-    if not payload.get("password"):
+            skip_restore: set[str] = set()
+            if payload.get("auth_type") == "otp_form":
+                if (payload.get("otp_source") or "static") == "totp":
+                    skip_restore.add("otp_code")
+                    payload["otp_code"] = None
+                else:
+                    skip_restore.add("totp_secret")
+                    payload["totp_secret"] = None
+                if not (payload.get("xpath_of_mpin_field") or "").strip():
+                    skip_restore.add("mpin")
+                    payload["mpin"] = None
+            for secret_key in SECRET_AUTH_KEYS:
+                if secret_key in skip_restore:
+                    continue
+                if not payload.get(secret_key) and decrypted.get(secret_key):
+                    payload[secret_key] = decrypted[secret_key]
+    try:
+        validate_auth_fields(
+            auth_type=payload.get("auth_type") or "password",
+            login_url=payload.get("login_url"),
+            xpath_of_username_field=payload.get("xpath_of_username_field"),
+            xpath_of_password_field=payload.get("xpath_of_password_field"),
+            username=payload.get("username"),
+            password=payload.get("password"),
+            xpath_of_submit_button=payload.get("xpath_of_submit_button"),
+            session_cookie=payload.get("session_cookie"),
+            auth_header_name=payload.get("auth_header_name"),
+            auth_header_value=payload.get("auth_header_value"),
+            local_storage_json=payload.get("local_storage_json"),
+            session_storage_json=payload.get("session_storage_json"),
+            xpath_of_otp_field=payload.get("xpath_of_otp_field"),
+            otp_source=payload.get("otp_source"),
+            otp_code=payload.get("otp_code"),
+            totp_secret=payload.get("totp_secret"),
+            mpin=payload.get("mpin"),
+            xpath_of_mpin_field=payload.get("xpath_of_mpin_field"),
+            require_secrets=True,
+        )
+    except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password is required when creating a DAST profile",
-        )
+            detail=str(exc),
+        ) from exc
     return encrypt_auth(payload)
 
 

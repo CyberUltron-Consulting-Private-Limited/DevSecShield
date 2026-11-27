@@ -25,11 +25,17 @@ const TEXT = {
     why: "It caps both what is tested and the most the scan can cost.",
     example: "100 URLs: at most 8 credits.",
   },
-  // src: RabbitMQ/dast_worker/helpers/agent/main.py:72-73, RabbitMQ/dast_worker/helpers/checks/nuclei/basic_templates.py:11-37 — all five fields required; a headless browser signs in with them
+  // src: RabbitMQ/dast_worker/helpers/agent/main.py:72-73, RabbitMQ/dast_worker/helpers/agent/session_auth.py:1-12 — supports password form, session import, and 2-step OTP login
   "dast.cfg.auth": {
-    what: "How the scanner signs in: a headless browser opens the login URL, types the username and password into the fields found by their XPaths and clicks the submit button. All fields are required, so the pages behind the login are tested too.",
-    why: "Most vulnerabilities hide behind the login; without it only public pages are tested.",
-    example: "Login URL https://shop.example.com/login with a test account.",
+    what: "How the scanner signs in: Username & Password form, Session Import (cookies, Bearer token or browser storage after you complete SMS OTP or CAPTCHA), or 2-Step Mobile/OTP login (static UAT OTP or TOTP with optional MPIN).",
+    why: "Most vulnerabilities hide behind the login; choosing the right method lets the scanner reach authenticated pages.",
+    example: "Session Import for a live SMS OTP portal, or 2-Step OTP with a static UAT code.",
+  },
+  // src: backend/utilities/dast/schemas.py:22-24, RabbitMQ/dast_worker/helpers/agent/session_auth.py:390-415 — switches between password, session import, and 2-step OTP
+  "dast.cfg.auth_type": {
+    what: "Choose Username & Password for standard forms, Session Import for live SMS OTP / CAPTCHA / SSO portals, or 2-Step Mobile / OTP for staging test numbers with a static OTP or TOTP secret.",
+    why: "Session Import and 2-Step OTP sign in once and reuse the authenticated session across every page instead of re-requesting an OTP on every check.",
+    example: "Session Import for live SMS OTP portals; 2-Step Mobile / OTP for UAT.",
   },
   // src: backend/utilities/dast/ssrf.py:79-82, RabbitMQ/dast_worker/helpers/checks/nuclei/basic_templates.py:11-21 — opened first; must be on the target's host
   "dast.cfg.login_url": {
@@ -66,6 +72,96 @@ const TEXT = {
     what: "The password of that test account. It is sent to the scan worker for the sign-in and is not shown again.",
     why: "Needed to sign in; use a test account's password, never a real user's.",
     example: "The password of dast-test@shop.example.com.",
+  },
+  // src: RabbitMQ/dast_worker/helpers/agent/session_auth.py:114-138, backend/utilities/dast/auth_crypto.py:8-18 — Cookie header sent to target origin; encrypted at rest and redacted
+  "dast.cfg.session_cookie": {
+    what: "The Cookie header from a browser session where you already passed OTP or CAPTCHA. Sent only to the target host, encrypted at rest, and never shown again.",
+    why: "Lets the scanner crawl and test behind live SMS OTP, MPIN or CAPTCHA without modifying your app.",
+    example: "sessionid=abc123; csrftoken=xyz789.",
+  },
+  // src: backend/utilities/dast/schemas.py:24-25, RabbitMQ/dast_worker/helpers/agent/session_auth.py:118-124 — custom HTTP auth header name (default Authorization)
+  "dast.cfg.auth_header_name": {
+    what: "The HTTP header that carries your session token (defaults to Authorization). Standard letters, digits and hyphens only.",
+    why: "APIs and SPAs often authenticate with Authorization or a custom token header instead of cookies.",
+    example: "Authorization or X-Auth-Token.",
+  },
+  // src: RabbitMQ/dast_worker/helpers/agent/session_auth.py:118-124, backend/utilities/dast/auth_crypto.py:8-18 — header value encrypted at rest and redacted
+  "dast.cfg.auth_header_value": {
+    what: "The token value for the auth header, copied from your browser DevTools after signing in. Encrypted at rest and never sent to the AI model.",
+    why: "Authenticates crawler and scanner requests on token-based portals and SPAs.",
+    example: "Bearer eyJhbGciOiJIUzI1NiIs...",
+  },
+  // src: backend/utilities/dast/schemas.py:39-55, RabbitMQ/dast_worker/helpers/agent/session_auth.py:125-130 — JSON map written to window.localStorage on target origin
+  "dast.cfg.local_storage_json": {
+    what: "A JSON object of key/value pairs to load into window.localStorage on the target origin before crawling. Encrypted at rest and never shown again.",
+    why: "Many React, Angular and Next.js portals store their post-OTP session token in localStorage.",
+    example: "{\"access_token\": \"eyJ...\"}.",
+  },
+  // src: backend/utilities/dast/schemas.py:39-55, RabbitMQ/dast_worker/helpers/agent/session_auth.py:125-130 — JSON map written to window.sessionStorage on target origin
+  "dast.cfg.session_storage_json": {
+    what: "A JSON object of key/value pairs to load into window.sessionStorage on the target origin before scanning. Encrypted at rest and never shown again.",
+    why: "Covers single-tab SPAs that keep their OTP session in sessionStorage.",
+    example: "{\"auth_state\": \"active\"}.",
+  },
+  // src: backend/utilities/dast/ssrf.py:74-86, RabbitMQ/dast_worker/helpers/agent/session_auth.py:349-387 — verified before crawl; fails fast and refunds if expired
+  "dast.cfg.session_check_url": {
+    what: "An authenticated page on the same host that the scanner opens before crawling to confirm your session is active. Defaults to the Target URL.",
+    why: "If the session is expired or OTP login failed, the scan fails immediately and refunds credits instead of scanning the login page.",
+    example: "https://portal.example.com/dashboard.",
+  },
+  // src: RabbitMQ/dast_worker/helpers/agent/session_auth.py:349-387 — optional substring expected when signed in
+  "dast.cfg.logged_in_indicator": {
+    what: "Optional text that appears only when signed in (checked case-insensitively on the Session check URL).",
+    why: "Catches sites that return HTTP 200 on a soft login wall so an unauthenticated scan is rejected up front.",
+    example: "Logout or My Loans.",
+  },
+  // src: RabbitMQ/dast_worker/helpers/agent/session_auth.py:276-280 — optional first-step button that triggers OTP screen
+  "dast.cfg.xpath_send_otp": {
+    what: "XPath of the Send OTP or Continue button clicked after typing the mobile number or email. Leave blank if the OTP box is already on the same page.",
+    why: "Advances two-step mobile portals to the OTP entry screen.",
+    example: "//button[contains(.,'Send OTP')].",
+  },
+  // src: RabbitMQ/dast_worker/helpers/agent/session_auth.py:173-201 — single input or split multi-box OTP container XPath
+  "dast.cfg.xpath_otp": {
+    what: "XPath of the OTP input box (or the first digit box / container for split 6-box OTP widgets).",
+    why: "Tells the browser where to type the static test OTP or generated TOTP code.",
+    example: "//input[@name='otp'] or //div[@id='otp-boxes'].",
+  },
+  // src: backend/utilities/dast/schemas.py:23, RabbitMQ/dast_worker/helpers/agent/session_auth.py:248-252 — static test code or RFC 6238 TOTP secret
+  "dast.cfg.otp_source": {
+    what: "Where the OTP comes from: a fixed test OTP on staging/UAT (such as 123456), or a Base32 TOTP secret for an authenticator app.",
+    why: "Lets scheduled and automated scans complete the OTP step without a human holding a phone.",
+    example: "Static test OTP for UAT; TOTP authenticator for RFC 6238 apps.",
+  },
+  // src: backend/utilities/dast/auth_crypto.py:8-18, RabbitMQ/dast_worker/helpers/agent/session_auth.py:250-252 — write-only static test OTP
+  "dast.cfg.otp_code": {
+    what: "The fixed OTP accepted for this test account in your UAT/staging environment. Encrypted at rest and never shown again.",
+    why: "Enables repeatable OTP login without triggering real SMS messages.",
+    example: "123456.",
+  },
+  // src: backend/utilities/dast/schemas.py:58-70, RabbitMQ/dast_worker/helpers/agent/session_auth.py:66-79 — Base32 RFC 6238 TOTP secret
+  "dast.cfg.totp_secret": {
+    what: "The Base32 setup key shown when enrolling an authenticator app on this test account. The worker computes a fresh 6-digit code at scan start.",
+    why: "Supports unattended scans on apps protected by TOTP MFA.",
+    example: "JBSWY3DPEHPK3PXP.",
+  },
+  // src: backend/utilities/dast/auth_crypto.py:8-18, RabbitMQ/dast_worker/helpers/agent/session_auth.py:290-300 — optional 3rd-step MPIN after OTP
+  "dast.cfg.mpin": {
+    what: "Optional MPIN entered after OTP verification on banking and lending portals. Encrypted at rest and never shown again.",
+    why: "Completes three-step mobile + OTP + MPIN login flows automatically.",
+    example: "4321.",
+  },
+  // src: RabbitMQ/dast_worker/helpers/agent/session_auth.py:290-300 — XPath for MPIN input
+  "dast.cfg.xpath_mpin": {
+    what: "XPath of the MPIN input (or split digit container), required only when an MPIN is configured.",
+    why: "Tells the browser where to type the MPIN after OTP verification.",
+    example: "//input[@name='mpin'].",
+  },
+  // src: RabbitMQ/dast_worker/helpers/agent/session_auth.py:293-297 — optional submit button after MPIN
+  "dast.cfg.xpath_mpin_submit": {
+    what: "Optional XPath of the button that submits the MPIN. Leave blank if the portal submits automatically after the last digit.",
+    why: "Completes portals that require clicking Confirm after entering the MPIN.",
+    example: "//button[contains(.,'Confirm')].",
   },
   // src: RabbitMQ/dast_worker/helpers/crawler/crawler.py:60-63, backend/utilities/dast/ssrf.py:79-82 — always added to the crawl; must be on the target's host
   "dast.cfg.additional_urls": {

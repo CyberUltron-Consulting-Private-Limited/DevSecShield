@@ -15,10 +15,25 @@ _RERUN_OPTIONS: dict[str, tuple[str, ...]] = {
     "cbom": ("repo_type", "include_vendored", "scan_history"),
     "ai_bom": ("repo_type",),
 }
-_DAST_AUTH_KEYS = ("login_url", "xpath_of_username_field", "xpath_of_password_field", "username",
-                   "xpath_of_submit_button")
+_DAST_AUTH_KEYS = (
+    "auth_type",
+    "login_url",
+    "xpath_of_username_field",
+    "xpath_of_password_field",
+    "username",
+    "xpath_of_submit_button",
+    "auth_header_name",
+    "session_check_url",
+    "logged_in_indicator",
+    "xpath_of_send_otp_button",
+    "xpath_of_otp_field",
+    "otp_source",
+    "xpath_of_mpin_field",
+    "xpath_of_mpin_submit_button",
+)
 _SECRET_WORDS = frozenset({"pat", "token", "tokens", "password", "passwd", "passphrase", "secret", "secrets",
-                           "authorization", "credential", "credentials", "cookie", "apikey", "headers"})
+                           "authorization", "credential", "credentials", "cookie", "apikey", "headers",
+                           "otp", "totp", "mpin"})
 
 
 
@@ -31,7 +46,18 @@ def _current_vex(scan_type: str, vex):
 def _secret_key(key) -> bool:
     name = str(key).lower()
     words = set(re.split(r"[^a-z0-9]+", name))
-    return bool(words & _SECRET_WORDS) or any(w in name for w in ("api_key", "apikey", "private_key", "access_key"))
+    return bool(words & _SECRET_WORDS) or any(
+        w in name
+        for w in (
+            "api_key",
+            "apikey",
+            "private_key",
+            "access_key",
+            "auth_header_value",
+            "local_storage_json",
+            "session_storage_json",
+        )
+    )
 
 
 def _without_secrets(value):

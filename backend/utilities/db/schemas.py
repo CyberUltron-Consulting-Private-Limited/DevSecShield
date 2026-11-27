@@ -6,6 +6,7 @@ from pydantic import model_validator
 from backend.utilities.scan.path_patterns import check_excludes
 
 from backend.utilities.git_hosts import check_repo_url
+from backend.utilities.dast.schemas import DastAuthType, DastOtpSource, validate_auth_fields
 
 class CreateScanData(BaseModel):
     title: str = Field(min_length=1, max_length=256)
@@ -202,12 +203,55 @@ class StartLLMBenchmarkingData(BaseModel):
 
 
 class AuthRequirements(BaseModel):
-    login_url: str 
-    xpath_of_username_field: str 
-    xpath_of_password_field: str    
-    username: str 
-    password: str = Field(repr=False)  # secret: never in a printed or logged model
-    xpath_of_submit_button: str 
+    auth_type: DastAuthType = "password"
+    login_url: str | None = None
+    xpath_of_username_field: str | None = None
+    xpath_of_password_field: str | None = None
+    username: str | None = None
+    password: str | None = Field(default=None, repr=False)  # secret: never in a printed or logged model
+    xpath_of_submit_button: str | None = None
+    # Session import (for live SMS OTP / MPIN / CAPTCHA / SSO)
+    session_cookie: str | None = Field(default=None, repr=False)
+    auth_header_name: str | None = None
+    auth_header_value: str | None = Field(default=None, repr=False)
+    local_storage_json: str | None = Field(default=None, repr=False)
+    session_storage_json: str | None = Field(default=None, repr=False)
+    session_check_url: str | None = None
+    logged_in_indicator: str | None = None
+    # 2-step mobile/email + OTP form (static test OTP or TOTP, with optional MPIN)
+    xpath_of_send_otp_button: str | None = None
+    xpath_of_otp_field: str | None = None
+    otp_source: DastOtpSource = "static"
+    otp_code: str | None = Field(default=None, repr=False)
+    totp_secret: str | None = Field(default=None, repr=False)
+    mpin: str | None = Field(default=None, repr=False)
+    xpath_of_mpin_field: str | None = None
+    xpath_of_mpin_submit_button: str | None = None
+
+    @model_validator(mode="after")
+    def validate_auth(self):
+        validate_auth_fields(
+            auth_type=self.auth_type,
+            login_url=self.login_url,
+            xpath_of_username_field=self.xpath_of_username_field,
+            xpath_of_password_field=self.xpath_of_password_field,
+            username=self.username,
+            password=self.password,
+            xpath_of_submit_button=self.xpath_of_submit_button,
+            session_cookie=self.session_cookie,
+            auth_header_name=self.auth_header_name,
+            auth_header_value=self.auth_header_value,
+            local_storage_json=self.local_storage_json,
+            session_storage_json=self.session_storage_json,
+            xpath_of_otp_field=self.xpath_of_otp_field,
+            otp_source=self.otp_source,
+            otp_code=self.otp_code,
+            totp_secret=self.totp_secret,
+            mpin=self.mpin,
+            xpath_of_mpin_field=self.xpath_of_mpin_field,
+            require_secrets=True,
+        )
+        return self
 
 class StartDASTScanData(BaseModel):
     """

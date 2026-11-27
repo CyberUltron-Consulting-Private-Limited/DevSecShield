@@ -44,17 +44,22 @@ def extract_urls(html: str, base_url: str) -> list[str]:
     return urls
 
 
-def fetch(url: str, egress: ScanEgress, timeout: int = 10) -> str | None:
+def fetch(
+    url: str,
+    egress: ScanEgress,
+    timeout: int = 10,
+    extra_headers: dict[str, str] | None = None,
+) -> str | None:
     """Fetch a URL through the scan's egress (pinned to checked addresses, redirects included)."""
     try:
-        req = urllib.request.Request(
-            url,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (compatible; PyCrawler/1.0)"
-                )
-            },
-        )
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (compatible; PyCrawler/1.0)"
+            )
+        }
+        if extra_headers:
+            headers.update(extra_headers)
+        req = urllib.request.Request(url, headers=headers)
         with egress.urlopen(req, timeout=timeout) as resp:
             content_type = resp.headers.get("Content-Type", "")
             if "html" not in content_type.lower():
@@ -69,15 +74,39 @@ def fetch(url: str, egress: ScanEgress, timeout: int = 10) -> str | None:
         return None
 
 
-def crawl(start_url: str, max_urls: int, egress: ScanEgress | None = None) -> list[str]:
-    """BFS crawl starting from start_url, stay on same domain. Every fetch goes through ``egress``."""
+def _origin_key(url: str) -> tuple[str, str, int]:
+    p = urllib.parse.urlparse(url)
+    scheme = (p.scheme or "").lower()
+    host = (p.hostname or "").lower()
+    port = p.port if p.port is not None else (443 if scheme == "https" else (80 if scheme == "http" else 0))
+    return (scheme, host, port)
+
+
+def crawl(
+    start_url: str,
+    max_urls: int,
+    egress: ScanEgress | None = None,
+    extra_headers: dict[str, str] | None = None,
+    seed_urls: list[str] | None = None,
+) -> list[str]:
+    """BFS crawl starting from start_url, stay on same domain (and same scheme/port when auth headers are used)."""
     if egress is None:
         raise EgressRefused(f"crawl of {start_url} not started: the scan's egress guard is missing")
     parsed_start = urllib.parse.urlparse(start_url)
     base_domain = parsed_start.netloc
+    base_origin = _origin_key(start_url)
+
+    def _in_scope(candidate: str) -> bool:
+        if extra_headers:
+            return _origin_key(candidate) == base_origin
+        return urllib.parse.urlparse(candidate).netloc == base_domain
 
     visited: set[str] = set()
-    queue: deque[str] = deque([start_url])
+    initial: list[str] = [start_url]
+    for s in seed_urls or []:
+        if s and _in_scope(s) and s not in initial:
+            initial.append(s)
+    queue: deque[str] = deque(initial)
     found: list[str] = []
 
     print(f"\n[*] Starting crawl: {start_url}")
@@ -94,7 +123,7 @@ def crawl(start_url: str, max_urls: int, egress: ScanEgress | None = None) -> li
         print(f"[+] ({len(visited)}/{max_urls}) Crawling: {url}")
         found.append(url)
 
-        html = fetch(url, egress)
+        html = fetch(url, egress, extra_headers=extra_headers)
         if not html:
             continue
 
@@ -102,9 +131,8 @@ def crawl(start_url: str, max_urls: int, egress: ScanEgress | None = None) -> li
         for child in child_urls:
             if child in visited:
                 continue
-            child_parsed = urllib.parse.urlparse(child)
-            # Stay within the same domain
-            if child_parsed.netloc != base_domain:
+            # Stay within the same domain (and same origin when auth headers are attached)
+            if not _in_scope(child):
                 continue
             if child not in queue:
                 queue.append(child)
